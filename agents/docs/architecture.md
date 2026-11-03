@@ -945,7 +945,7 @@ created on demand.
 | Terminal dial, hangup, catalog and lifecycle events | Authenticated backend management and notifications |
 | Interactive operations, Git queries, terminal I/O and resize | WebRTC DataChannel remotely; direct authenticated channel locally |
 | Agent prompts, steering, permissions, and live Session events | ACP and DeskFleet extensions over the remote DataChannel or local channel |
-| File browsing, transfer, and Agent file references | Independently authorized files WebRTC DataChannel |
+| File browsing, transfer, and Agent file references | Authorized files stream on the shared Mux peer, or a legacy files WebRTC DataChannel |
 | Desktop loopback TCP port forwarding | Independently authorized ports WebRTC DataChannel; byte transport stays in Rust |
 | Desktop video/audio | WebRTC media tracks |
 | Desktop input | WebRTC DataChannel |
@@ -1005,6 +1005,46 @@ their existing transports. The
 cover both transports.
 
 ### Remote WebRTC transport
+
+For clients, API servers, and daemons supporting `fixed4-v1`, Agent/Git,
+terminals, and files share one PeerConnection per authenticated backend login,
+Team, and Machine. Four reliable, ordered DataChannels are negotiated once:
+
+| Lane | Responsibility |
+| --- | --- |
+| Control | Logical stream open/close and consumption credits |
+| Terminal | Terminal requests, readiness, and live output |
+| Agent | ACP requests, replies, and Session notifications |
+| Bulk | File frames and terminal history replay |
+
+The [Mux engine](../../packages/client/src/mux/connection.ts) supplies independent
+logical streams with bounded queues, receive credits, and fair scheduling within
+each lane. Frames are at most 16 KiB, including their header. Per-stream message
+sequences preserve order across lanes. A terminal attachment retains its existing
+`replayEnd` acknowledgement barrier before switching from bulk replay to live
+output; ready and subsequent output use the terminal lane. Multiple embedded
+views retain separate replay and consumption state without extra physical peers.
+The lanes share SCTP congestion control and network bandwidth.
+
+The [client registry](../../packages/client/src/mux-client.ts) shares pending
+negotiations and retains working peers independently of their individual views.
+The browser owns its registry with the authenticated central client. Electron
+owns its registry and native peers in the main process; renderer Agent/Terminal
+streams use a bounded, document-owned IPC bridge, and files use that same registry.
+Closing a logical stream releases its handler without stopping a shell or Agent
+process, or closing sibling streams. Peer failure, grant expiry, revocation, and
+account changes release all streams. Business requests are never automatically
+replayed after a transport failure.
+
+Daemon capability `mux` and the API-derived `muxServer` marker must both name
+`fixed4-v1`. Missing or incompatible capabilities select the existing separate
+peer paths without attempting Mux. A grant explicitly rejected as unsupported
+also permits fallback before any business request; authorization and network
+errors do not. Older clients keep using existing purposes and channel labels.
+This capability profile does not change `PROTOCOL_VERSION`. The grant/action
+checks and rollout constraints are described in [peer authorization](webrtc-security.md).
+Local Electron IPC, native TCP port forwarding, and desktop media retain their
+existing transport ownership.
 
 Deploy STUN and TURN alongside signaling. TURN provides relay access when peers
 cannot connect directly. Desktop streaming, terminal traffic, and bulk results
@@ -1120,7 +1160,7 @@ catalog or Agent history. Native sampling runs off Node's event loop and is shar
 by concurrent reads without a background polling service.
 
 Machine file access shares one service between the two-pane transfer panel and
-Agent Markdown resources. File peers and the transfer queue have independent
+Agent Markdown resources. File endpoints and the transfer queue have independent
 lifetimes from Sessions and desktop media. Electron's main process owns its
 queue and local filesystem endpoint; Web owns its queue at page/account scope
 and uses explicitly selected browser directory handles. A folder is one queue

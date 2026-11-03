@@ -135,7 +135,7 @@ async function connect(): Promise<void> {
     } else {
       interactive.value = false
       attached.value = false
-      failed(event.error, props.independent ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+      failed(event.error, props.independent ? independentRelayDeniedReason.value : terminals.transportStatus(props.terminalId).relayDeniedReason)
     }
   })
   attachment = active
@@ -151,7 +151,7 @@ async function connect(): Promise<void> {
     await activate()
   } catch (reason) {
     if (attachment === active) {
-      failed(reason, independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+      failed(reason, independentClient ? independentRelayDeniedReason.value : terminals.transportStatus(props.terminalId).relayDeniedReason)
     }
   } finally {
     if (!disposed && attachment === active) connecting.value = false
@@ -178,7 +178,7 @@ function input(data: string): void {
 // attachment is safe to re-establish; the daemon replays history on attach.
 useConnectionResume(() => {
   const relayDenied = failureRelayDeniedReason.value
-    ?? (independentClient ? independentRelayDeniedReason.value : terminals.relayDeniedReason)
+    ?? (independentClient ? independentRelayDeniedReason.value : terminals.transportStatus(props.terminalId).relayDeniedReason)
   if (!disposed && error.value && !connecting.value && !relayDenied) void connect()
 })
 

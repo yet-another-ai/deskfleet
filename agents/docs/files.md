@@ -18,7 +18,8 @@ endpoint. The left local pane must never use the selected machine's directory
 browser by accident. The local Electron endpoint works independently of the
 **Run local Agent** preference and does not require local machine enrollment.
 
-The server issues a `files` peer grant with `files:read` and `files:write` actions.
+The server issues a shared `mux` grant or a legacy `files` peer grant, including
+`files:read` and `files:write` actions.
 The daemon checks the grant's actor, Team, target Machine, purpose, and lifetime,
 then checks the required action on requests and outgoing response chunks.
 Listing, stat, Session resource resolution, and reads require `files:read`;
@@ -27,8 +28,11 @@ Paths and channel labels do not grant authority. File access uses the daemon's
 OS user permissions; Session association supplies path context, not a separate
 filesystem sandbox.
 
-File peers have their own lifetime, separate from Agent, terminal, and desktop
-media peers. Switching tools, navigating to another page, changing
+File endpoints and their logical streams have their own lifetime. When the
+client, backend, and daemon support `fixed4-v1`, they share the machine's Mux
+peer with Agent and terminal streams; otherwise they retain a separate files
+peer. Closing a file stream leaves sibling streams running. Switching tools,
+navigating to another page, changing
 the selected machine, or disconnecting a desktop stream does not cancel the
 queue. A functioning peer survives signaling loss under its existing grant.
 Revocation, account changes, peer closure, or the grant's maximum 24-hour lifetime
@@ -93,14 +97,17 @@ OS-user authority; Session roots do not globally restrict daemon filesystem acce
 
 ## Protocol and transfer behavior
 
-The reliable ordered `deskfleet-files` DataChannel carries length-prefixed JSON
-metadata followed by raw binary file bytes. File operations carry at most
+The reliable ordered files stream carries length-prefixed JSON metadata followed
+by raw binary file bytes. It uses the shared Mux bulk lane or the legacy
+`deskfleet-files` DataChannel. File operations carry at most
 127 KiB; this reserves 1 KiB for ordinary frame metadata so a full read or write
 fits two wire messages instead of leaving a tiny third message. Larger metadata
-still uses the same fragmentation. Wire fragments are at most 65,535 bytes and
-respect a smaller negotiated transport limit. These are DataChannel message sizes,
-not UDP packet sizes;
-WebRTC owns SCTP/DTLS fragmentation.
+still uses the same fragmentation. File wire fragments are at most 65,535 bytes
+and respect a smaller negotiated transport limit. Mux divides those fragments
+into frames of at most 16 KiB, including its header, with per-stream credits and
+fair scheduling. These are application message sizes, not UDP packet sizes;
+WebRTC owns SCTP/DTLS fragmentation. See [remote WebRTC transport](architecture.md#remote-webrtc-transport)
+for shared peer ownership and capability selection.
 Metadata frames have an 8 MiB limit. Each peer allows 580 pending requests,
 leaving 64 slots beyond the bulk transfer window for control operations, with at
 most 64 MiB of pending request payload and 8 MiB of

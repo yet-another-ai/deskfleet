@@ -3,6 +3,7 @@ import { FILE_WIRE_CHUNK_BYTES } from "../../../apps/daemon/src/files-wire.ts"
 import type { CentralApi } from "./central.ts"
 import { FilesRpcClient } from "./files-rpc.ts"
 import { connectFilePeer, type FilePeerFactory, type MachineFileTarget } from "./files-signaling.ts"
+import { getMachineMux } from "./mux-client.ts"
 
 const browserPeer: FilePeerFactory = async (iceServers, events) => {
   const peer = new RTCPeerConnection({ iceServers })
@@ -56,5 +57,14 @@ const browserPeer: FilePeerFactory = async (iceServers, events) => {
 }
 
 export function createBrowserFileEndpoint(central: CentralApi, target: MachineFileTarget): FilesRpcClient {
-  return new FilesRpcClient((receive, failed) => connectFilePeer(central, target, browserPeer, receive, failed))
+  return new FilesRpcClient(async (receive, failed) => {
+    const stream = await getMachineMux(central).open(target, "files")
+    if (!stream) return connectFilePeer(central, target, browserPeer, receive, failed)
+    stream.onData = bytes => {
+      if (typeof bytes === "string") { stream.close(new Error("Files require binary frames")); return }
+      receive(bytes)
+    }
+    stream.onClose = error => failed(error ?? new Error("File stream closed"))
+    return { send: bytes => stream.send(bytes), async close() { stream.close() } }
+  })
 }

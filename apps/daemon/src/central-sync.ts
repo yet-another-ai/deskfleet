@@ -3,6 +3,7 @@ import type { DaemonCatalog } from "./catalog.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { ScheduledTasks } from "./scheduled-tasks.ts"
 import { supportsDesktop } from "./desktop-capabilities.ts"
+import { MUX_PROFILE } from "../../../packages/client/src/mux/protocol.ts"
 
 type Post = (path: string, value: unknown) => Promise<unknown>
 
@@ -73,7 +74,7 @@ export class CentralSync {
         this.#catalogDirty = false
         try { await this.#post("/api/daemon/catalog", {
           snapshot: await this.#catalog.snapshot(), providers: this.#providers.metadata(),
-          capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true },
+          capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true, mux: MUX_PROFILE },
         }) }
         catch (error) { this.#catalogDirty = true; throw error }
       }

@@ -18,8 +18,10 @@ use sha1::Sha1;
 use std::io::Cursor;
 
 mod local;
+mod mux;
 mod signaling;
 pub use local::create as create_local;
+pub(crate) use mux::advertise as advertise_mux;
 pub(crate) use signaling::daemon_event;
 pub use signaling::{candidate, offer};
 
@@ -86,6 +88,7 @@ async fn create_grant(
         "desktop" => vec!["desktop:stream", "desktop:control"],
         "files" => vec!["files:read", "files:write"],
         "ports" => vec!["ports:forward"],
+        "mux" => mux::actions(&machine.capabilities, transport)?,
         _ => return Err(ApiError::bad("unsupported peer purpose")),
     };
     let now = now_ms();

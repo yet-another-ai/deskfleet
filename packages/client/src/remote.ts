@@ -7,6 +7,10 @@ import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { TerminalSummary } from "./terminal.ts"
 import { LocalDataChannel } from "./local-channels.ts"
+import type { DataChannel } from "./data-channel.ts"
+import { getMachineMux, supportsMachineMux } from "./mux-client.ts"
+import { MuxDataChannel } from "./mux-data-channel.ts"
+import { legacyDataChannel } from "./legacy-data-channel.ts"
 
 interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout>; telemetry: PeerConnectionTelemetry }
 const management = new Set<string>([
@@ -18,7 +22,8 @@ const management = new Set<string>([
 /** One opened machine owns this adapter until its account/Team scope is released. */
 export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine): void; setLocal(local: boolean): void; dispose(): void } {
   let local = options.local === true && host.platform !== "web"
-  const localChannels = new Map<string, LocalDataChannel>()
+  const localChannels = new Map<string, DataChannel>()
+  let muxUnsupported = false
   const peers = new Map<string, Peer>()
   const events = new Set<(event: DesktopEvent) => void>()
   const catalogEvents = new Set<(sessionId?: string) => void>()
@@ -62,8 +67,33 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     channel.addEventListener("close", () => { localChannels.delete(sessionId) }, { once: true })
     return channel
   }
+  const messageChannel = (purpose: "agent" | "terminal") => {
+    if (local) return connectChannel(purpose)
+    if (muxUnsupported || !supportsMachineMux(machine) || (host.platform !== "web" && !host.muxChannels)) return undefined
+    return (sessionId: string): DataChannel => {
+      if (disposed) throw new Error("Machine connection was closed")
+      const target = { teamId: machine.teamId, machineId: machine.id }
+      const channel = new MuxDataChannel(() => {
+        if (host.platform !== "web" && host.muxChannels) {
+          return new LocalDataChannel(host.muxChannels, { ...target, connectionId: sessionId, purpose })
+        }
+        const pool = getMachineMux(central)
+        pool.observe(machine)
+        return pool.open(target, purpose)
+      }, () => {
+        muxUnsupported = true
+        api.terminal.multiplexed = false
+        api.agent.connectChannel = messageChannel("agent")
+        api.terminal.connectChannel = messageChannel("terminal")
+        return legacyDataChannel(api[purpose], purpose, crypto.randomUUID())
+      })
+      localChannels.set(sessionId, channel)
+      channel.addEventListener("close", () => localChannels.delete(sessionId), { once: true })
+      return channel
+    }
+  }
   const signaling = (purpose: "agent" | "terminal" | "desktop") => ({
-    ...(local && purpose !== "desktop" ? { connectChannel: connectChannel(purpose) } : {}),
+    ...(purpose !== "desktop" ? { connectChannel: messageChannel(purpose) } : {}),
     async prepare(sessionId: string): Promise<RTCIceServer[]> {
       const grant = await central.createPeer(machine.teamId, machine.id, purpose)
       if (disposed) { await central.closePeer(grant.peerId); throw new Error("Machine connection was closed") }
@@ -139,6 +169,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     },
     terminal: {
       ...signaling("terminal"), list: async () => online ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
+      multiplexed: !local && !!messageChannel("terminal"),
       dial: options => rpc("terminalDial", options), hangup: terminalId => rpc("terminalHangup", { terminalId }),
       onSessionEvent: () => () => {},
     },
@@ -172,6 +203,11 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     // A refreshed roster repairs presence events missed during signaling loss,
     // without replacing the adapter or revoking its still-authorized peers.
     updateMachine(value) {
+      if (supportsMachineMux(machine) !== supportsMachineMux(value)) muxUnsupported = false
+      machine = value
+      api.agent.connectChannel = messageChannel("agent")
+      api.terminal.connectChannel = messageChannel("terminal")
+      api.terminal.multiplexed = !local && !!api.terminal.connectChannel
       const lastSeen = value.lastSeenAt ?? undefined
       if (online === value.online && name === value.name && api.target!.lastSeen === lastSeen) return
       online = value.online
@@ -183,8 +219,9 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     setLocal(value) {
       local = value && host.platform !== "web"
       api.target!.local = local
-      api.agent.connectChannel = local ? connectChannel("agent") : undefined
-      api.terminal.connectChannel = local ? connectChannel("terminal") : undefined
+      api.agent.connectChannel = messageChannel("agent")
+      api.terminal.connectChannel = messageChannel("terminal")
+      api.terminal.multiplexed = !local && !!api.terminal.connectChannel
     },
     dispose() { disposed = true; unsubscribe(); for (const channel of localChannels.values()) channel.close(); for (const [id] of peers) void api.agent.close(id).catch(() => {}); events.clear(); catalogEvents.clear(); providerEvents.clear() },
   }

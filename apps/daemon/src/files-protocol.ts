@@ -1,4 +1,4 @@
-/** File bytes use their own authorized machine peer, independently of Agent and desktop peers. */
+/** Legacy files peer label; Mux peers carry the same file protocol on logical streams. */
 export const FILES_CHANNEL = "deskfleet-files"
 // Leave 1 KiB for framing/JSON so ordinary reads and writes fit two 64 KiB
 // DataChannel messages instead of producing a tiny third message.

@@ -52,6 +52,54 @@ test("keeps relay recovery metadata for a failed attachment and clears it when t
   } finally { platformClient.terminal.connectionFailureReason = original }
 })
 
+test("Mux terminal status and relay failures stay scoped while a sibling remains connected", async () => {
+  stubWebRtc()
+  vi.spyOn(platformClient.terminal, "dial").mockImplementation(async options => ({ ...shell, id: options.terminalId }))
+  vi.spyOn(platformClient.terminal, "offer").mockResolvedValue({ sdp: "answer" })
+  vi.spyOn(platformClient.terminal, "close").mockResolvedValue()
+  vi.spyOn(platformClient.terminal, "onEvent").mockReturnValue(() => {})
+  vi.spyOn(platformClient.terminal, "list").mockRejectedValue(new Error("Catalog unavailable"))
+  const originalReason = platformClient.terminal.connectionFailureReason
+  const originalMultiplexed = platformClient.terminal.multiplexed
+  platformClient.terminal.connectionFailureReason = () => "turn_quota_exhausted"
+  platformClient.terminal.multiplexed = true
+  try {
+    const store = setup()
+    const first = store.attach(shell.id, () => {})
+    await flushPromises()
+    const channel = TestPeer.instances[0]!.input as TestPeer["input"] & { onopen: () => void }
+    channel.send.mockImplementation(data => {
+      const request = JSON.parse(data) as { id?: number }
+      if (request.id !== undefined) queueMicrotask(() => channel.onmessage?.({ data: JSON.stringify({ id: request.id, result: shell }) }))
+    })
+    channel.readyState = "open"
+    channel.onopen()
+    await first.ready
+    await store.refresh()
+    expect(store.error).toBe("Catalog unavailable")
+
+    const second = store.attach("shell-2", () => {})
+    const failed = expect(second.ready).rejects.toMatchObject({ code: "turn_quota_exhausted" })
+    await flushPromises()
+    expect(store.state).toBe("connected")
+    expect(store.transportStatus("shell-2").state).toBe("connecting")
+    TestPeer.instances[1]!.changeState("failed")
+    await failed
+    expect(store.state).toBe("connected")
+    expect(store.transportStatus(shell.id)).toEqual({ state: "connected", error: null, relayDeniedReason: undefined })
+    expect(store.transportStatus("shell-2")).toMatchObject({ state: "error", relayDeniedReason: "turn_quota_exhausted" })
+    expect(store.error).toBe("Catalog unavailable")
+    expect(store.relayDeniedReason).toBeUndefined()
+    second.detach()
+    expect(store.state).toBe("connected")
+    first.detach()
+    expect(store.state).toBe("idle")
+  } finally {
+    platformClient.terminal.connectionFailureReason = originalReason
+    platformClient.terminal.multiplexed = originalMultiplexed
+  }
+})
+
 test("lists, dials and hangs up shells through signaling without needing a data peer", async () => {
   const list = vi.spyOn(platformClient.terminal, "list").mockResolvedValue([shell])
   const dial = vi.spyOn(platformClient.terminal, "dial").mockImplementation(async (options) => ({ ...shell, id: options.terminalId }))
@@ -211,4 +259,59 @@ test("a fast command's exit survives a stale attachment response", async () => {
   attaching.resolve(shell)
   await expect(attached.ready).resolves.toMatchObject({ status: "exited", exitCode: 0 })
   expect(store.sessions).toEqual([{ ...shell, status: "exited", exitCode: 0 }])
+})
+
+test.each([false, true])("ordinary terminals use independent logical clients only for Mux: %s", async multiplexed => {
+  const original = platformClient.terminal.multiplexed
+  platformClient.terminal.multiplexed = multiplexed
+  vi.spyOn(platformClient.terminal, "dial").mockImplementation(async options => ({ ...shell, id: options.terminalId }))
+  const clients: TerminalClient[] = []
+  vi.spyOn(TerminalClient.prototype, "subscribe").mockImplementation(function (this: TerminalClient) { clients.push(this); return () => {} })
+  const calls: Array<{ client: TerminalClient; method: string }> = []
+  vi.spyOn(TerminalClient.prototype, "call").mockImplementation(async function (this: TerminalClient, method) {
+    calls.push({ client: this, method }); return shell as never
+  })
+  const close = vi.spyOn(TerminalClient.prototype, "close")
+  try {
+    const store = setup()
+    const first = store.attach("one", () => {}), second = store.attach("two", () => {})
+    await Promise.all([first.ready, second.ready])
+    expect(new Set(clients).size).toBe(multiplexed ? 2 : 1)
+    await store.resize("two", 100, 40)
+    expect(calls.at(-1)).toEqual({ client: clients[1], method: "resize" })
+    first.detach()
+    expect(close).toHaveBeenCalledTimes(multiplexed ? 1 : 0)
+    await store.resize("two", 120, 40)
+    expect(calls.at(-1)!.client).toBe(clients[1])
+    second.detach()
+  } finally { platformClient.terminal.multiplexed = original }
+})
+
+test("stale attachment cleanup keeps the replacement Mux terminal attached", async () => {
+  const original = platformClient.terminal.multiplexed
+  platformClient.terminal.multiplexed = true
+  vi.spyOn(platformClient.terminal, "dial").mockResolvedValue(shell)
+  const clients: TerminalClient[] = []
+  vi.spyOn(TerminalClient.prototype, "subscribe").mockImplementation(function (this: TerminalClient) { clients.push(this); return () => {} })
+  const attaching = deferred<TerminalSummary>()
+  const call = vi.spyOn(TerminalClient.prototype, "call").mockResolvedValue(shell).mockReturnValueOnce(attaching.promise)
+  const close = vi.spyOn(TerminalClient.prototype, "close")
+  try {
+    const store = setup()
+    const first = store.attach(shell.id, () => {})
+    await vi.waitFor(() => expect(call).toHaveBeenCalledOnce())
+    const second = store.attach(shell.id, () => {})
+    await second.ready
+    expect(clients[0]).toBe(clients[1])
+
+    first.detach()
+    expect(close).not.toHaveBeenCalled()
+    attaching.resolve(shell)
+    await expect(first.ready).rejects.toThrow("Terminal attachment was cancelled")
+    expect(call).not.toHaveBeenCalledWith("detach", expect.anything())
+    await store.resize(shell.id, 100, 40)
+    expect(call.mock.instances.at(-1)).toBe(clients[1])
+    second.detach()
+    expect(close).toHaveBeenCalledOnce()
+  } finally { platformClient.terminal.multiplexed = original }
 })

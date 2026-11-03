@@ -15,6 +15,8 @@ test("catalog publication reports runtime desktop support and updates after auth
   const published: boolean[] = []
   const sync = new CentralSync(agents, catalog, providers, async (_path, body) => {
     assert.deepEqual((body as { snapshot: unknown }).snapshot, { githubBranches })
+    assert.equal((body as { capabilities: { mux: string } }).capabilities.mux, "fixed4-v1")
+    assert.equal("muxServer" in (body as { capabilities: object }).capabilities, false, "only the backend advertises its own support")
     published.push((body as { capabilities: { desktop: boolean } }).capabilities.desktop)
   }, async () => desktop)
   t.after(() => sync.close())

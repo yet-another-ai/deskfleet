@@ -34,6 +34,8 @@ function fixture(stall = false) {
   }
   native.createPeer.mockResolvedValue(peer)
   const central = {
+    status: async () => ({ serverUrl: "https://deskfleet.test", user: { id: "user" } }),
+    machines: async () => [{ id: "1", teamId: "1", capabilities: {} }],
     createPeer: async () => ({ peerId: "files", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] }),
     onEvent: () => () => {}, offerPeer: async () => ({ sdp }), closePeer: vi.fn(async () => {}),
   } as unknown as CentralApi

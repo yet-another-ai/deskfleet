@@ -206,6 +206,7 @@ pub async fn machines(
         .await;
     for m in &mut machines {
         m.online = online.contains(&m.id);
+        crate::peers::advertise_mux(&mut m.capabilities);
     }
     Ok(web::Json(json!(
         machines

@@ -66,7 +66,7 @@ interface Attachment {
 /** One authenticated peer's terminal attachments; close detaches, never kills PTYs. */
 export class TerminalChannel {
   readonly #sessions: TerminalSessions
-  readonly #send: (message: string) => Promise<void>
+  readonly #send: (message: string, lane?: "terminal" | "bulk") => Promise<void>
   readonly #fail: (error: unknown) => void
   readonly #authorized: (id: string) => boolean
   readonly #attached = new Map<string, Attachment>()
@@ -76,7 +76,7 @@ export class TerminalChannel {
   #pendingBytes = 0
   #closed = false
 
-  constructor(sessions: TerminalSessions, send: (message: string) => Promise<void>, fail: (error: unknown) => void, authorized: (id: string) => boolean) {
+  constructor(sessions: TerminalSessions, send: (message: string, lane?: "terminal" | "bulk") => Promise<void>, fail: (error: unknown) => void, authorized: (id: string) => boolean) {
     this.#sessions = sessions
     this.#send = send
     this.#fail = fail
@@ -143,15 +143,15 @@ export class TerminalChannel {
     this.#attached.clear()
   }
 
-  async #emit(message: TerminalMessage): Promise<void> {
+  async #emit(message: TerminalMessage, lane: "terminal" | "bulk" = "terminal"): Promise<void> {
     if (this.#closed) return
     const text = JSON.stringify(message)
-    const sending = this.#sending.then(() => this.#sendMessage(text))
+    const sending = this.#sending.then(() => this.#sendMessage(text, lane))
     this.#sending = sending.catch(() => {})
     await sending
   }
 
-  async #sendMessage(message: string): Promise<void> {
+  async #sendMessage(message: string, lane: "terminal" | "bulk"): Promise<void> {
     const deadline = Date.now() + 5_000
     while (!this.#closed) {
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -162,7 +162,7 @@ export class TerminalChannel {
           this.#closing.signal.addEventListener("abort", stopped, { once: true })
         })
         await Promise.race([
-          this.#send(message),
+          this.#send(message, lane),
           stopping,
           new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error("Terminal send buffer stalled")), Math.max(1, deadline - Date.now()))
@@ -253,7 +253,7 @@ export class TerminalChannel {
     const snapshot = this.#sessions.snapshot(id)
     if (attachment.reset) {
       attachment.reset = false
-      await this.#emit({ event: { kind: "reset", sessionId: id } })
+      await this.#emit({ event: { kind: "reset", sessionId: id } }, "bulk")
     }
     if (this.#closed || this.#attached.get(id) !== attachment) return
     if (!attachment.ready && attachment.consumed >= attachment.replayEnd) {
@@ -269,7 +269,7 @@ export class TerminalChannel {
       if (!data.length) throw new Error("Terminal history ended before its persisted offset")
       // Reserve the sent range before sending, including for fast local peers.
       attachment.sent += data.length
-      await this.#emit({ event: { kind: "output", sessionId: id, data: data.toString("base64"), offset: attachment.sent } })
+      await this.#emit({ event: { kind: "output", sessionId: id, data: data.toString("base64"), offset: attachment.sent } }, attachment.ready ? "terminal" : "bulk")
       return
     }
     if (attachment.consumed < snapshot.end) return

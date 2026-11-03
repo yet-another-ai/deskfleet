@@ -103,6 +103,21 @@ test("resuming the page reattaches a terminal after a transport error", async ()
   fixture.wrapper.unmount()
 })
 
+test("a sibling relay denial does not relabel this terminal's error or suppress its reconnect", async () => {
+  const fixture = setup()
+  fixture.resolve()
+  await flushPromises()
+  fixture.terminals.relayDeniedReason = "turn_quota_exhausted"
+  vi.spyOn(fixture.terminals, "transportStatus").mockReturnValue({ state: "error", error: "Peer disconnected" })
+  fixture.emit({ kind: "error", sessionId: "terminal-1", error: "Peer disconnected" }, () => {})
+  await flushPromises()
+  expect(fixture.wrapper.get('[role="alert"]').text()).not.toContain(i18n.global.t("errors.turn_quota_exhausted.title"))
+  window.dispatchEvent(new Event("online"))
+  await flushPromises()
+  expect(fixture.terminals.attach).toHaveBeenCalledTimes(2)
+  fixture.wrapper.unmount()
+})
+
 test("a displayed relay failure keeps its cause when another terminal refresh clears shared errors", async () => {
   const fixture = setup()
   fixture.resolve()

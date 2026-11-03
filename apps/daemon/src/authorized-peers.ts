@@ -13,6 +13,8 @@ import type { TerminalSessions } from "./terminals.ts"
 import { FilesChannel, fileAction } from "./files-channel.ts"
 import { FILES_CHANNEL } from "./files-protocol.ts"
 import { FilesService } from "./files-service.ts"
+import { AuthorizedMux } from "./authorized-mux.ts"
+import type { MuxPurpose } from "../../../packages/client/src/mux/protocol.ts"
 
 const DAY_MS = 86_400_000
 const AGENT_READ = new Set<AgentMethod>([
@@ -28,15 +30,19 @@ const AGENT_EXECUTE = new Set<AgentMethod>([
   "_deskfleet/elicitation/respond",
 ])
 
-interface AuthorizedPeer {
+interface AuthorizedChannels {
+  terminal?: TerminalChannel
+  agent?: AgentChannel
+  files?: FilesChannel
+}
+
+interface AuthorizedPeer extends AuthorizedChannels {
   authorization: PeerAuthorization
   native?: Promise<NativePeer>
   timer: ReturnType<typeof setTimeout>
   remoteSdp?: string
   localSdp?: string
-  terminal?: TerminalChannel
-  agent?: AgentChannel
-  files?: FilesChannel
+  mux?: AuthorizedMux
   input?: DesktopInputChannel
   desktopStart?: "starting" | "started"
   local?: {
@@ -97,7 +103,7 @@ export class AuthorizedPeers {
     if (!Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.#now() + 60_000 || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
       throw new Error("Peer authorization is expired or exceeds 24 hours")
     }
-    if (!["agent", "terminal", "desktop", "files", "ports"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
+    if (!["agent", "terminal", "desktop", "files", "ports", "mux"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
     if (grant.purpose === "ports" && !grant.actions.includes("ports:forward")) throw new Error("Peer grant does not allow port forwarding")
   }
 
@@ -138,19 +144,35 @@ export class AuthorizedPeers {
         this.#signal(params.peerId, { kind: "error", error: error instanceof Error ? error.message : String(error) })
         void this.close(params.peerId).catch(cleanup => console.error("Peer cleanup failed", cleanup))
       }
-      this.#channels(params.peerId, owned, (data, isString) => isString
-        ? peer.sendText(TERMINAL_CHANNEL, data.toString("utf8")) : peer.sendData(AGENT_CHANNEL, data), failure)
-      if (purpose === "files") {
-        owned.files = new FilesChannel(
-          new FilesService(
-            this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
-            this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
-          ),
-          data => peer.sendData(FILES_CHANNEL, Buffer.from(data.buffer, data.byteOffset, data.byteLength)),
-          method => { this.#live(params.peerId, fileAction(method)) },
-          failure,
-        )
-      }
+      Object.assign(owned, this.#channels(params.peerId, owned, (data, isString) => isString
+        ? peer.sendText(TERMINAL_CHANNEL, data.toString("utf8")) : peer.sendData(purpose === "files" ? FILES_CHANNEL : AGENT_CHANNEL, data), failure))
+      if (purpose === "mux") owned.mux = new AuthorizedMux({
+        peer,
+        authorize: () => { this.#live(params.peerId) },
+        failed: failure,
+        create: stream => {
+          const permissions = this.#live(params.peerId).authorization.actions
+          const required: Record<MuxPurpose, string[]> = {
+            agent: ["agent:read"], terminal: ["terminal:read", "terminal:write"], files: ["files:read", "files:write"],
+          }
+          if (!required[stream.purpose].some(action => permissions.includes(action))) throw new Error("Peer grant does not allow this stream")
+          const failed = (error: unknown) => stream.close(error instanceof Error ? error : new Error(String(error)))
+          const channels = this.#channels(params.peerId, owned, (data, isString, lane) => stream.send(isString ? data.toString("utf8") : data, lane), failed, stream.purpose)
+          return {
+            receive: data => {
+              const bytes = typeof data === "string" ? Buffer.from(data) : Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+              channels.agent?.receive(bytes, typeof data === "string")
+              channels.files?.receive(bytes, typeof data === "string")
+              if (channels.terminal) {
+                this.#live(params.peerId, "terminal:write")
+                // PTY operations must not hold up output ACKs on this stream.
+                void channels.terminal.receive(bytes, typeof data === "string").catch(failed)
+              }
+            },
+            close: async () => { channels.agent?.close(); channels.terminal?.close(); await channels.files?.close() },
+          }
+        },
+      })
       if (purpose === "desktop") owned.input = new DesktopInputChannel(peer, () => { this.#live(params.peerId, "desktop:control") })
       if (purpose === "ports") {
         this.#live(params.peerId, "ports:forward")
@@ -166,8 +188,9 @@ export class AuthorizedPeers {
     } catch (error) { await this.close(params.peerId); throw error }
   }
 
-  #channels(id: string, owned: AuthorizedPeer, send: LocalPeerSink["send"], failure: (error: unknown) => void): void {
-    if (owned.authorization.purpose === "agent") {
+  #channels(id: string, owned: AuthorizedPeer, send: (data: Buffer, isString: boolean, lane?: "terminal" | "bulk") => Promise<void>, failure: (error: unknown) => void, purpose = owned.authorization.purpose): AuthorizedChannels {
+    const channels: AuthorizedChannels = {}
+    if (purpose === "agent") {
       const sessions: AgentChannelSessions = {
         journal: this.#agents.journal,
         onEvent: listener => this.#agents.onEvent(event => {
@@ -205,20 +228,30 @@ export class AuthorizedPeers {
           return this.#agents.handle(method, value, owned.authorization.actor)
         },
       }
-      owned.agent = new AgentChannel(sessions, owned.authorization.actor, bytes => {
+      channels.agent = new AgentChannel(sessions, owned.authorization.actor, bytes => {
         this.#live(id, "agent:read")
         return send(Buffer.from(bytes), false)
       }, failure)
     }
-    if (owned.authorization.purpose === "terminal") {
-      owned.terminal = new TerminalChannel(this.#terminals, text => {
+    if (purpose === "terminal") {
+      channels.terminal = new TerminalChannel(this.#terminals, (text, lane) => {
         this.#live(id, "terminal:read")
-        return send(Buffer.from(text), true)
+        return send(Buffer.from(text), true, lane)
       }, failure, terminalId => {
         this.#live(id, "terminal:write")
         return this.#terminals.list().some(terminal => terminal.id === terminalId)
       })
     }
+    if (purpose === "files") channels.files = new FilesChannel(
+      new FilesService(
+        this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
+        this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
+      ),
+      bytes => send(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), false),
+      method => { this.#live(id, fileAction(method)) },
+      failure,
+    )
+    return channels
   }
 
   /** Only the authenticated central control link may prepare a local grant. */
@@ -256,10 +289,10 @@ export class AuthorizedPeers {
     clearTimeout(owned.timer)
     owned.timer = setTimeout(() => { void this.close(id).catch(() => {}) }, Date.parse(owned.authorization.expiresAt) - this.#now())
     owned.timer.unref()
-    this.#channels(id, owned, sink.send, error => {
+    Object.assign(owned, this.#channels(id, owned, sink.send, error => {
       const detail = error instanceof Error ? error.message : String(error)
       void this.close(id, detail).catch(() => {})
-    })
+    }))
   }
 
   sendLocal(id: string, owner: object, data: Buffer, isString: boolean): void {
@@ -330,6 +363,7 @@ export class AuthorizedPeers {
         if (!event) break
         this.#live(id)
         await owned.input?.receive(event)
+        owned.mux?.receive(event)
         if (event.kind === "data" && event.data) {
           if (owned.agent && event.label === AGENT_CHANNEL) owned.agent.receive(event.data, event.isString === true)
           if (owned.files && event.label === FILES_CHANNEL) owned.files.receive(event.data, event.isString === true)
@@ -363,7 +397,7 @@ export class AuthorizedPeers {
     peer.agent?.close(); peer.terminal?.close()
     peer.input?.close()
     peer.local?.close?.(error)
-    const pending = Promise.allSettled([peer.files?.close(), peer.native ? this.#native.close(id) : undefined]).then(results => {
+    const pending = Promise.allSettled([peer.mux?.close(), peer.files?.close(), peer.native ? this.#native.close(id) : undefined]).then(results => {
       const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
       if (failures.length) throw new AggregateError(failures, "Failed to close authorized peer")
     })

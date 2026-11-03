@@ -42,6 +42,7 @@ function fixture(maxMessageSize: number, stallAfter?: number) {
   }
   vi.stubGlobal("RTCPeerConnection", class { constructor() { return peer } })
   const central = {
+    machines: vi.fn(async () => []),
     createPeer: vi.fn(async () => ({ peerId: "files", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] })),
     onEvent: () => () => {}, offerPeer: async () => ({ sdp }), closePeer: vi.fn(async () => {}),
   } as unknown as CentralApi

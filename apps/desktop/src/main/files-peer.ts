@@ -3,6 +3,8 @@ import type { CentralApi } from "@deskfleet/client/central"
 import { FilesRpcClient } from "@deskfleet/client/files-rpc"
 import { connectFilePeer, type FilePeerFactory, type MachineFileTarget } from "@deskfleet/client/files-signaling"
 import { FILES_CHANNEL } from "../../../../apps/daemon/src/files-protocol.ts"
+import { getMachineMux } from "@deskfleet/client/mux-client"
+import { nativeMuxPeer } from "./mux-peer.ts"
 
 const nativePeer: FilePeerFactory = async (iceServers, events) => {
   const peer = await createPeer({ iceServers: iceServers.map(server => ({
@@ -58,5 +60,17 @@ const nativePeer: FilePeerFactory = async (iceServers, events) => {
 
 /** Runs in Electron main so a hidden/destroyed renderer does not own transfers. */
 export function createNativeFileEndpoint(central: CentralApi, target: MachineFileTarget): FilesRpcClient {
-  return new FilesRpcClient((receive, failed) => connectFilePeer(central, target, nativePeer, receive, failed))
+  return new FilesRpcClient(async (receive, failed) => {
+    const stream = await getMachineMux(central, nativeMuxPeer).open(target, "files")
+    if (!stream) return connectFilePeer(central, target, nativePeer, receive, failed)
+    stream.onClose = error => failed(error ?? new Error("File Mux stream closed"))
+    stream.onData = data => {
+      if (typeof data === "string") { failed(new Error("File Mux stream requires binary frames")); stream.close(); return }
+      receive(data)
+    }
+    return {
+      send: bytes => stream.send(bytes),
+      async close() { stream.onClose = undefined; stream.close() },
+    }
+  })
 }
