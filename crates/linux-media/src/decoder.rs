@@ -13,8 +13,9 @@ use crate::ffi::{self, Api};
 use crate::pipeline::{Object, Pipeline};
 use crate::{Codec, Error, Result};
 
-const MAX_INPUT_BYTES: u64 = 1024 * 1024;
-const MAX_INPUT_PACKETS: u64 = 256;
+#[path = "decoder/description.rs"]
+mod description;
+use description::{MAX_INPUT_BYTES, MAX_INPUT_PACKETS, codec_description, depay};
 fn factories(codec: Codec, software: bool) -> &'static [&'static str] {
     match (codec, software) {
         (Codec::H264, false) => &["vah264dec", "nvh264dec", "vaapih264dec"],
@@ -57,14 +58,6 @@ pub fn supported_decoder_codecs() -> Result<Vec<Codec>> {
                     .any(|factory| api.has_factory(factory))
         })
         .collect())
-}
-
-fn depay(codec: Codec) -> &'static str {
-    match codec {
-        Codec::H264 => "rtph264depay",
-        Codec::H265 => "rtph265depay",
-        Codec::Av1 => "rtpav1depay",
-    }
 }
 
 /// Tightly packed RGBA pixels, owned independently of the decoder surface pool.
@@ -223,40 +216,6 @@ impl RtpVideoDecoder {
     pub fn stop(&self) -> Result<()> {
         self.pipeline.stop()
     }
-}
-
-fn codec_description(payload_type: u8, codec: Codec, factory: &str) -> String {
-    // The small RTP reorder window handles packet jitter, not presentation PTS.
-    // No queue or clock-synchronizing sink is added after decoding. An explicit
-    // AU capsfilter makes wait-for-keyframe apply to complete H.264 pictures.
-    let settings = match factory {
-        // DeskFleet negotiates constrained baseline and sends no reordered
-        // pictures. Flush the decoded picture immediately, including when the
-        // desktop goes idle after a single update rather than filling the DPB.
-        "vah264dec" | "nvh264dec" | "vah265dec" | "nvh265dec" => "compliance=flexible",
-        "vaapih264dec" | "vaapih265dec" => "low-latency=true",
-        "avdec_h264" | "avdec_h265" | "avdec_av1" => "max-threads=1",
-        _ => "",
-    };
-    let encoding = match codec {
-        Codec::H264 => "H264",
-        Codec::H265 => "H265",
-        Codec::Av1 => "AV1",
-    };
-    let depay = depay(codec);
-    let caps = codec.output_caps();
-    let parser = codec.parser();
-    let recovery = "request-keyframe=true wait-for-keyframe=true";
-    format!(
-        "appsrc name=input is-live=true format=time do-timestamp=true block=false \
-         max-bytes={MAX_INPUT_BYTES} max-buffers={MAX_INPUT_PACKETS} \
-         caps=application/x-rtp,media=video,encoding-name={encoding},clock-rate=90000,payload={payload_type} ! \
-         rtpjitterbuffer latency=10 faststart-min-packets=1 do-lost=true drop-on-latency=true ! \
-         {depay} {recovery} ! {parser} ! {caps} ! \
-         {factory} name=decoder {settings} ! videoconvert ! video/x-raw,format=RGBA ! \
-         appsink name=frames sync=false max-buffers=1 drop=false \
-         enable-last-sample=false wait-on-eos=false"
-    )
 }
 
 struct KeyframeProbe {

@@ -153,6 +153,80 @@ fn runtime_packet_loss_requests_a_keyframe_and_recovers_at_the_next_idr() {
 }
 
 #[test]
+#[ignore = "requires GStreamer H.264/HEVC RTP depayloaders"]
+fn runtime_depay_recovery_keeps_parameter_sets_with_the_keyframe() {
+    for (codec, bytes, parser, parameters) in [
+        (
+            Codec::H264,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.h264").as_slice(),
+            "h264parse",
+            &[7_u8, 8][..],
+        ),
+        (
+            Codec::H265,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.h265").as_slice(),
+            "h265parse",
+            &[32_u8, 33, 34][..],
+        ),
+    ] {
+        // Observe the depayloader's output before a parser or decoder can cache
+        // headers and conceal their loss. The real graph's caps must group the
+        // parameter NALs and the IDR/IRAP into the same complete access unit.
+        let graph = codec_description(96, codec, "unused");
+        let parser_boundary = format!(" ! {parser}");
+        let (prefix, _) = graph.split_once(parser_boundary.as_str()).unwrap();
+        let pipeline = Pipeline::new(&format!(
+            "{prefix} ! appsink name=frames sync=false max-buffers=1 drop=false"
+        ))
+        .unwrap();
+        let input = pipeline.child(c"input").unwrap();
+        let probe = KeyframeProbe::new(&input).unwrap();
+        let decoder = RtpVideoDecoder {
+            pipeline,
+            input,
+            probe,
+            factory: "unused",
+        };
+        let mut sequence = 100;
+        for timestamp in [3000, 6000] {
+            for packet in packetize(bytes, timestamp, &mut sequence) {
+                assert!(decoder.try_push(&packet).unwrap());
+            }
+            let sample = decoder
+                .pipeline
+                .pull(Duration::from_secs(2))
+                .unwrap()
+                .expect("complete keyframe access unit");
+            let output = sample.bytes().unwrap();
+            let kinds: Vec<_> = output
+                .windows(5)
+                .filter(|window| window.starts_with(&[0, 0, 0, 1]))
+                .map(|window| {
+                    if codec == Codec::H264 {
+                        window[4] & 31
+                    } else {
+                        (window[4] >> 1) & 63
+                    }
+                })
+                .collect();
+            for parameter in parameters {
+                assert!(
+                    kinds.contains(parameter),
+                    "{codec:?} lost parameter NAL {parameter}: {kinds:?}"
+                );
+            }
+            assert!(kinds.iter().any(|kind| if codec == Codec::H264 {
+                *kind == 5
+            } else {
+                (16..=21).contains(kind)
+            }));
+            sequence = sequence.wrapping_add(1); // Force recovery before the next picture.
+        }
+        decoder.stop().unwrap();
+    }
+}
+
+#[test]
 #[ignore = "requires a working GStreamer VA-API or NVDEC H.264 decoder"]
 fn runtime_reports_static_fixture_hardware_output_delay() {
     let decoder = RtpVideoDecoder::new(96).unwrap();

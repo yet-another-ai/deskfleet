@@ -79,6 +79,8 @@ function openAttempt(
   let inputReady = !request.control
   let videoReady = false
   let readyResolved = false
+  let startPending = false
+  let startFailure: Error | undefined
   let selectedCodec: VideoCodec | undefined
   let remoteCodecs: VideoCodec[] = []
   let startCommand: Omit<Extract<ViewerCommand, { type: "start" }>, "codec"> | undefined
@@ -121,6 +123,12 @@ function openAttempt(
     void close().catch(error => console.error("Native desktop cleanup failed", error))
     failed(error)
   }
+  function transportFailed(error: Error): void {
+    // Encoder startup closes the remote peer before its RPC rejection arrives.
+    // Preserve that rejection's reason so it can select the next codec.
+    if (startPending) startFailure ??= error
+    else fail(error)
+  }
   function flushLocal(): void {
     if (!answered || closed) return
     const candidates = localCandidates.splice(0)
@@ -140,8 +148,12 @@ function openAttempt(
   async function startCapture(): Promise<void> {
     if (!answerApplied || !connected || starting || closed) return
     starting = true
-    await central.startPeer(peerId!, { displayId: request.displayId, ...(request.control ? { control: true } : {}) })
+    startPending = true
+    try {
+      await central.startPeer(peerId!, { displayId: request.displayId, ...(request.control ? { control: true } : {}) })
+    } finally { startPending = false }
     if (closed) return
+    if (startFailure) throw startFailure
     started = true
     finishStartup()
     if (!inputReady) inputTimeout = setTimeout(() => fail(new Error("Native desktop input readiness timed out")), 10_000)
@@ -188,8 +200,15 @@ function openAttempt(
         case "connected":
           connected = true; localDisconnects.update("connected"); void startCapture().catch(fail); break
         case "disconnected": connected = false; localDisconnects.update("disconnected"); break
-        case "error": fail(Object.assign(new Error(event.error), event.reason ? { reason: event.reason } : {})); break
-        case "closed": void close().catch(fail); break
+        case "error": {
+          const error = Object.assign(new Error(event.error), event.reason ? { reason: event.reason } : {})
+          if (event.reason) fail(error)
+          else transportFailed(error)
+          break
+        }
+        case "closed":
+          if (startPending && startFailure) break
+          void close().catch(fail); break
         case "stats": break
       }
     } catch (error) { fail(error) }
@@ -206,7 +225,7 @@ function openAttempt(
         else remoteCandidates.push(candidate)
       } else if (value.kind === "error") fail(Object.assign(new Error("error" in value ? String(value.error) : "Remote desktop failed"), "reason" in value ? { reason: value.reason } : {}))
       else if (value.kind === "stateChanged" && "state" in value) {
-        if (["failed", "closed"].includes(String(value.state).toLowerCase())) fail(new Error("Remote desktop connection closed"))
+        if (["failed", "closed"].includes(String(value.state).toLowerCase())) transportFailed(new Error("Remote desktop connection closed"))
         else remoteDisconnects.update(String(value.state))
       }
     } catch (error) { fail(error) }

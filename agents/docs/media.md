@@ -471,6 +471,11 @@ or decoder startup failure tries the next common codec, using a new native
 process and grant after both the previous viewer and remote peer have closed.
 Authorization, signaling, input, and transport failures do not trigger codec
 fallback. Unavailable codec extensions or hardware never imply support.
+While the capture-start RPC is pending, a peer closure or resulting native
+transport error waits for that RPC's result: encoder startup may close the peer
+before returning its classified failure. A successful RPC still surfaces any
+pending transport failure. Revocation, expiry, and explicit window closure
+remain immediate, and the existing startup deadline bounds the wait.
 
 Capture startup waits for both the native peer's connection and its explicit
 acknowledgement that the SDP answer was applied. Local ICE candidates wait for
@@ -495,6 +500,10 @@ The receive task and blocking decode worker run independently of the window.
 RTP packets through `rtpjitterbuffer`, the matching H.264/HEVC/AV1 depayloader
 and parser, and a hardware decoder. AV1 requires the `rsrtp` plugin's
 `rtpav1depay`; parsed output is constrained to complete temporal units.
+H.264 and HEVC constrain depayloader output to complete access units before the
+parser so loss recovery retains in-band SPS/PPS or VPS/SPS/PPS with the keyframe.
+AV1 retains OBU-aligned depayloader output until `av1parse` assembles temporal
+units; its depayloader preserves the sequence header at the RTP new-sequence bit.
 The RTP reorder budget is 10 ms; appsrc accepts at most 256 queued
 packets and 1 MiB, returning backpressure to its caller instead of silently
 discarding compressed input. The depayloader waits for a keyframe after loss and
