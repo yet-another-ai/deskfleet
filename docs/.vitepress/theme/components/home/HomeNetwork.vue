@@ -19,12 +19,6 @@ const t = computed(() => networkCopy[props.locale])
     </header>
     <div class="network__visual reveal-line" style="--line: 2">
       <div class="network__stage"><RelayGlobe :locale="locale" /></div>
-      <div class="network__footer">
-        <ul class="network__legend">
-          <li :title="t.ownedTitle"><i class="network__marker" aria-hidden="true" />yetanother.ai</li>
-          <li :title="t.anycastTitle"><i class="network__marker network__marker--anycast" aria-hidden="true" />Cloudflare</li>
-        </ul>
-      </div>
     </div>
   </section>
 </template>
@@ -36,16 +30,10 @@ const t = computed(() => networkCopy[props.locale])
 .network__lead { margin: 18px auto 0; color: var(--home-ink-2); font-size: 17px; line-height: 1.6; text-wrap: balance; }
 .network__visual { max-width: 960px; min-width: 0; margin: 16px auto 0; }
 .network__stage { width: 100%; height: clamp(380px, 48vw, 560px); min-width: 0; }
-.network__footer { display: flex; min-height: 40px; align-items: center; justify-content: center; }
-.network__legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 28px; margin: 0; padding: 0; color: var(--ui-color-text-muted); font-size: 12px; font-weight: 550; list-style: none; }
-.network__legend li { display: flex; align-items: center; gap: 9px; }
-.network__marker { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ui-color-accent); }
-.network__marker--anycast { width: 6px; height: 6px; border-radius: 1px; background: var(--ui-color-text-muted); transform: rotate(45deg); }
 @media (max-width: 560px) {
   .network { width: calc(100% - 32px); }
   .network__lead { max-width: 330px; margin-top: 14px; font-size: 15px; }
   .network__visual { margin-top: 8px; }
   .network__stage { height: clamp(320px, 92vw, 400px); }
-  .network__legend { gap: 10px 20px; font-size: 11px; }
 }
 </style>
