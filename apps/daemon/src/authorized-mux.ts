@@ -19,7 +19,6 @@ function opened() {
 export class AuthorizedMux {
   readonly #peer: NativePeer
   readonly #authorize: () => void
-  readonly #failed: (error: unknown) => void
   readonly #connection: MuxConnection
   readonly #opened = new Map<MuxLane, ReturnType<typeof opened>>()
   readonly #handlers = new Map<number, MuxHandler>()
@@ -35,7 +34,6 @@ export class AuthorizedMux {
   }) {
     this.#peer = options.peer
     this.#authorize = options.authorize
-    this.#failed = options.failed
     for (const lane of Object.keys(MUX_LABELS) as MuxLane[]) this.#opened.set(lane, opened())
     this.#connection = new MuxConnection({
       role: "server",
@@ -88,8 +86,11 @@ export class AuthorizedMux {
     this.#handlers.delete(id)
     const pending = Promise.resolve().then(() => handler.close())
     this.#closing.add(pending)
-    // Retain failures for the peer cleanup barrier, without unhandled rejections.
-    void pending.then(() => this.#closing.delete(pending), error => { if (!this.#closed) this.#failed(error) })
+    // Cleanup belongs to the retired stream. Report it without failing siblings,
+    // and retain the rejection for the eventual peer cleanup barrier.
+    void pending.then(() => this.#closing.delete(pending), error => {
+      if (!this.#closed) console.error("Mux stream cleanup failed", error)
+    })
   }
 
   async close(): Promise<void> {

@@ -1,9 +1,15 @@
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { defineStore } from "pinia"
-import { onScopeDispose, ref } from "vue"
+import { computed, onScopeDispose, reactive, ref } from "vue"
 import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { TerminalSummary } from "../../../../apps/daemon/src/terminal-protocol.ts"
 import { TerminalClient, type TerminalConnectionState, type TerminalListener } from "../services/terminal-client.ts"
+
+interface TerminalTransportStatus {
+  state: TerminalConnectionState
+  error: string | null
+  relayDeniedReason?: RelayDeniedReason
+}
 
 /** Shell lifecycle uses signaling; Mux gives each terminal its own stream on one peer. */
 export const useTerminalsStore = defineStore("terminals", () => {
@@ -11,7 +17,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const sessions = ref<TerminalSummary[]>([])
   /** Whether the daemon's complete terminal list has been loaded at least once. */
   const loaded = ref(false)
-  const state = ref<TerminalConnectionState>("idle")
+  const sharedState = ref<TerminalConnectionState>("idle")
+  const streamStates = ref<Record<string, TerminalTransportStatus>>({})
+  // A live terminal remains usable during signaling loss even if a sibling fails.
+  const state = computed<TerminalConnectionState>(() => {
+    const states = [sharedState.value, ...Object.values(streamStates.value).map(status => status.state)]
+    return states.includes("connected") ? "connected" : states.includes("connecting") ? "connecting" : states.includes("error") ? "error" : "idle"
+  })
   const error = ref<string | null>(null)
   const relayDeniedReason = ref<RelayDeniedReason>()
   /** The shell last shown in each terminal window owner. */
@@ -29,11 +41,23 @@ export const useTerminalsStore = defineStore("terminals", () => {
     else forget(event.terminalId)
   })
 
-  function newClient(): TerminalClient {
+  function transportStatus(sessionId: string): TerminalTransportStatus {
+    return streamStates.value[sessionId] ?? { state: sharedState.value, error: error.value, relayDeniedReason: relayDeniedReason.value }
+  }
+
+  function newClient(sessionId?: string): TerminalClient {
+    const status = sessionId ? reactive<TerminalTransportStatus>({ state: "idle", error: null }) : undefined
+    if (sessionId && status) streamStates.value[sessionId] = status
     return new TerminalClient(platformClient.terminal, (next, detail, relayReason) => {
-      state.value = next
-      error.value = detail ?? null
-      relayDeniedReason.value = relayReason
+      if (status) {
+        status.state = next
+        status.error = detail ?? null
+        status.relayDeniedReason = relayReason
+      } else {
+        sharedState.value = next
+        error.value = detail ?? null
+        relayDeniedReason.value = relayReason
+      }
     }, (event) => {
       if (event.kind !== "exit") return
       const terminal = sessions.value.find(({ id }) => id === event.sessionId)
@@ -45,7 +69,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     const existing = streams.get(sessionId)
     if (existing) return existing
     if (platformClient.terminal.multiplexed) {
-      const stream = newClient()
+      const stream = newClient(sessionId)
       streams.set(sessionId, stream)
       return stream
     }
@@ -140,7 +164,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       detached = true; unsubscribe()
       if (attachments.get(sessionId) !== attachment) return
       attachments.delete(sessionId)
-      if (streams.get(sessionId) === active) { streams.delete(sessionId); active.close() }
+      if (streams.get(sessionId) === active) { streams.delete(sessionId); active.close(); delete streamStates.value[sessionId] }
     } }
   }
 
@@ -156,8 +180,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     client?.close(); client = null
     for (const stream of streams.values()) stream.close()
     streams.clear()
+    streamStates.value = {}
     attachments.clear()
   }
   onScopeDispose(() => { unsubscribe(); closeTransport() })
-  return { sessions, loaded, state, error, relayDeniedReason, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
+  return { sessions, loaded, state, error, relayDeniedReason, selected, titles, transportStatus, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
 })

@@ -13,6 +13,7 @@ import type { AgentActor } from "./agent-protocol.ts"
 import type { PeerAuthorization } from "./central-protocol.ts"
 import type { TerminalSessions, TerminalChange } from "./terminals.ts"
 import { encodeFileFrame, FileFrameDecoder } from "./files-wire.ts"
+import { FilesService } from "./files-service.ts"
 
 const sdp = "v=0\r\na=fingerprint:sha-256 AA:BB:CC\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\na=ice-ufrag:test\r\n"
 const actions = ["agent:read", "agent:execute", "git:read", "terminal:read", "terminal:write", "files:read", "files:write"]
@@ -164,6 +165,40 @@ test("Mux stream admission and operations cannot broaden the immutable grant", {
   assert.match(agent.messages.find(value => value.id === 2).error.message, /does not allow/)
   assert.equal(f.calls.length, 0)
   await assert.rejects(f.server.start("mux", { displayId: 0 }), /does not allow/)
+})
+
+test("failed file stream cleanup preserves Agent and terminal siblings and reaches peer cleanup", { timeout: 5_000 }, async t => {
+  const cleanupError = new Error("staging cleanup failed")
+  const closeFiles = FilesService.prototype.close
+  t.mock.method(FilesService.prototype, "close", async function (this: FilesService) {
+    await closeFiles.call(this)
+    throw cleanupError
+  })
+  const report = t.mock.method(console, "error", () => {})
+  const f = await fixture(t)
+  const agent = f.open("agent"), terminal = f.open("terminal"), files = f.open("files")
+  await Promise.all([agent.stream.ready, terminal.stream.ready, files.stream.ready])
+  await f.rpc(agent.stream, 1, "initialize", { protocolVersion: 1 })
+  await f.rpc(terminal.stream, 1, "attach", { sessionId: "shell" })
+  await until(() => terminal.messages.some(value => value.event?.kind === "ready"))
+
+  files.stream.close()
+  await until(() => report.mock.callCount() > 0)
+  assert.deepEqual(report.mock.calls[0]!.arguments, ["Mux stream cleanup failed", cleanupError])
+  assert.equal(f.closed(), false)
+  await f.rpc(agent.stream, 2, "_deskfleet/session/list")
+  await until(() => agent.messages.some(value => value.id === 2))
+  f.append("output after file cleanup failure\r\n")
+  await until(() => terminal.messages.some(value => value.event?.kind === "output" && Buffer.from(value.event.data, "base64").toString() === "output after file cleanup failure\r\n"))
+  assert.deepEqual(f.errors, [])
+
+  await assert.rejects(f.server.closeAll(), error => {
+    assert.ok(error instanceof AggregateError)
+    const peerError = error.errors[0] as AggregateError
+    const muxError = peerError.errors[0] as AggregateError
+    assert.deepEqual(muxError.errors, [cleanupError])
+    return true
+  })
 })
 
 for (const ending of ["expiry", "revocation"] as const) {
