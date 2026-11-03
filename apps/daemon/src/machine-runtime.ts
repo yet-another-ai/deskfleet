@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { hostname } from "node:os"
 import { AgentProviders } from "./agent-providers.ts"
 import { AgentSessions } from "./agent-sessions.ts"
@@ -24,6 +24,7 @@ interface MachineOptions {
   capabilities: () => Promise<DesktopCapabilities>
   agentProvider?: AgentProvider
   agentQuotas?: AgentQuotaAuthority
+  auvPath?: string
   terminals?: TerminalSessions
   allowLocalControlForTests?: boolean
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
@@ -32,7 +33,7 @@ interface MachineOptions {
 async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const catalog = new DaemonCatalog(directory, hostDirectory)
-  const providers = new AgentProviders(directory, options.agentProvider)
+  const providers = new AgentProviders(directory, options.agentProvider, options.auvPath ? dirname(options.auvPath) : undefined)
   const mcpServers = new McpServers(directory)
   const terminals = options.terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
   const setup = new ProviderSetup(terminals)
@@ -68,6 +69,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
       return central.authorizeDelegation(actor)
     }
     mcp = new AgentMcp({
+      ...(options.auvPath ? { auvPath: options.auvPath } : {}),
       servers: () => mcpServers.resolve(),
       authorize: async actor => { await authorize(actor) },
       dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope),

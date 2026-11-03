@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { isAbsolute } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import * as acp from "@agentclientprotocol/sdk/unstable"
+import { commandEnvironment } from "../agent-command-path.ts"
 import { MAX_TERMINAL_HISTORY_READ_BYTES } from "../terminal-history.ts"
 import type { TerminalSummary } from "../terminal-protocol.ts"
 import type { TerminalSessions } from "../terminals.ts"
@@ -11,6 +12,8 @@ export interface AgentTerminalContext {
   sessions: TerminalSessions
   cwd: string
   worktreeId?: string
+  commandDirectory?: string
+  path?: string
 }
 
 interface Handle {
@@ -67,7 +70,12 @@ export class AcpTerminals {
     const terminalId = randomUUID()
     const ready = this.#context.sessions.run({
       terminalId, title: truncateGeneratedTitle([params.command, ...params.args ?? []].join(" ")),
-      command: params.command, args: params.args, env: Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])),
+      command: params.command, args: params.args,
+      env: commandEnvironment(
+        Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])),
+        this.#context.commandDirectory,
+        this.#context.path === undefined ? process.env : { PATH: this.#context.path },
+      ),
       cwd, cols: 80, rows: 24, worktreeId: this.#context.worktreeId, kind: "acp",
     })
     // Publish the pending launch before yielding, so close/rollback owns it too.

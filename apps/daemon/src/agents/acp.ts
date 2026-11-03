@@ -13,6 +13,8 @@ export interface AgentConfig {
   name: string
   binaryPath?: string
   env?: Record<string, string>
+  /** Host-owned bundled commands, also supplied to daemon-hosted ACP terminals. */
+  commandDirectory?: string
   /** Connection checks may consume existing credentials but must never start login. */
   authentication?: "existing"
 }

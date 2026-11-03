@@ -4,6 +4,7 @@ import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { build, createServer } from "vite"
 import type { ViteDevServer } from "vite"
+import { stageAuv } from "./stage-auv.ts"
 
 // Vite's build API defaults NODE_ENV to production even with development mode.
 // Set it before starting either watcher so the dev server uses Vue's dev runtime.
@@ -155,6 +156,7 @@ process.once("SIGTERM", () => void shutdown(0))
 
 try {
   const buildsReady = Promise.all([
+    stageAuv(),
     createBuildWatcher("vite.main.config.ts", scheduleElectronRestart),
     createBuildWatcher("vite.preload.config.ts", scheduleElectronRestart)
   ])

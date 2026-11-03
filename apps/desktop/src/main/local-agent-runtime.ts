@@ -14,6 +14,7 @@ export interface HostedDaemon {
 
 export interface LocalAgentRuntimeOptions {
   directory: string
+  auvPath?: string
   /** Starts the daemon library in this process; tests inject a deterministic host. */
   start?: (directory: string) => Promise<HostedDaemon>
 }
@@ -22,7 +23,11 @@ export interface LocalAgentRuntimeOptions {
 export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): LocalAgentRuntime {
   // The daemon preserves startup Portal authorization on Wayland; guided mode
   // applies to the macOS welcome flow.
-  const start = options.start ?? (directory => startDaemon(0, { controlDirectory: directory, permissionMode: "guided" }))
+  const start = options.start ?? (directory => startDaemon(0, {
+    controlDirectory: directory,
+    permissionMode: "guided",
+    ...(options.auvPath ? { auvPath: options.auvPath } : {}),
+  }))
   let hosted: HostedDaemon | undefined
   return {
     async connect(onDisconnect, onPermissionsChanged) {

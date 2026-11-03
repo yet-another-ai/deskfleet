@@ -39,6 +39,7 @@ publish:
 files:
   - out/**/*
   - "!out/**/*.map"
+  - "!out/auv/**/*"
   - "!out/windows/**/*"
   - "!out/native/**/*"
   # Runtime window and tray images; build/ is otherwise packaging input only.
@@ -48,9 +49,12 @@ files:
 
 mac:
   extraResources:
+    - from: out/auv/auv
+      to: ../MacOS/auv
     - from: out/native/deskfleet-viewer
       to: native/deskfleet-viewer
   binaries:
+    - Contents/MacOS/auv
     - Contents/Resources/native/deskfleet-viewer
   category: public.app-category.developer-tools
   hardenedRuntime: true
@@ -62,6 +66,8 @@ mac:
 
 win:
   extraResources:
+    - from: out/auv/auv.exe
+      to: bin/auv.exe
     - from: out/native/deskfleet-viewer.exe
       to: native/deskfleet-viewer.exe
     - from: out/windows/deskfleet-desktop-service.exe
@@ -77,6 +83,8 @@ nsis:
 
 linux:
   extraResources:
+    - from: out/auv
+      to: bin
     - from: out/native/deskfleet-viewer
       to: native/deskfleet-viewer
   category: Development

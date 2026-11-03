@@ -66,11 +66,11 @@ export default async function macBuildUuid(context: MacBuildContext): Promise<vo
   const helpers = (await readdir(frameworks, { withFileTypes: true }))
     .filter(entry => entry.isDirectory() && entry.name.endsWith(".app"))
     .map(entry => join(frameworks, entry.name))
-  // Shared frameworks keep upstream UUIDs so their debug symbols still match.
+  // Shared frameworks and bundled native tools keep their upstream Mach-O UUIDs.
   for (const bundle of [app, ...helpers]) {
     const executables = join(bundle, "Contents", "MacOS")
     for (const entry of await readdir(executables, { withFileTypes: true })) {
-      if (!entry.isFile()) continue
+      if (!entry.isFile() || entry.name === "auv") continue
       const path = join(executables, entry.name)
       const identity = `${appInfo.id}\0${relative(app, path).split("\\").join("/")}`
       await writeFile(path, rewriteMachOUuids(await readFile(path), identity))
