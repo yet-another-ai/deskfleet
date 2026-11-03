@@ -9,6 +9,9 @@ export default defineConfig({
     vue(),
     VueI18nPlugin({ strictMessage: false, runtimeOnly: true }),
   ],
+  resolve: {
+    dedupe: ["pinia", "vue", "vue-i18n", "vue-router"],
+  },
   test: {
     restoreMocks: true,
     projects: [

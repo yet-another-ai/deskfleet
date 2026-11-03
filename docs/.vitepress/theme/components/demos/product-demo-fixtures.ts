@@ -31,7 +31,7 @@ export function fixtures(locale: AppLocale) {
   const sessions: AgentSessionRecord[] = [
     { id: "301", workspaceId: "201", provider: "claude-code", title: say("Polish the homepage", "完善主页", "ホームページを改善"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } },
     { id: "302", workspaceId: "202", provider: "codex", title: say("Add session search", "添加会话搜索", "セッション検索を追加"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } },
-    { id: "303", workspaceId: "201", provider: "claude-code", title: say("Keyboard navigation", "键盘导航", "キーボード操作"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", capabilities: { steering: true, resume: true } },
+    { id: "303", workspaceId: "201", provider: "claude-code", title: say("Keyboard navigation", "键盘导航", "キーボード操作"), context: "worktree", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "", updatedAt: "", viewers: [{ userId: "Maya", seenAt: "2" }, { userId: "Alex", seenAt: "1" }, { userId: "Sam", seenAt: "0" }], capabilities: { steering: true, resume: true } },
   ]
   const machine: MachineSummary = { id: "demo-machine", name: "Studio Mac", local: false, online: true, desktop: true, terminals: [], sessions: [], workspaces: [
     { id: "201", name: "website", directories: [{ path: "/workspace/website" }], terminals: [], sessions: [] },
