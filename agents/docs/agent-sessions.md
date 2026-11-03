@@ -279,6 +279,8 @@ through an ACP client on the same machine before opening a DeskFleet Session.
 The runtime uses the profile under `GEMINI_HOME`, with settings at
 `~/.gemini/antigravity-acp/settings.json` by default. **Test Connection** uses
 those existing credentials and reports authentication required when absent.
+DeskFleet disables `clientCapabilities.fs` for Antigravity so the harness uses
+its native file tools and diff edits.
 
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
