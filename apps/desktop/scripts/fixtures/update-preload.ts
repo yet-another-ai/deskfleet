@@ -19,6 +19,7 @@ api.providers.list = async () => ({ revision: "updates-smoke", templates: [], pr
 api.settings.get = async () => ({ enabled: false, status: "stopped" })
 api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: false })
 api.settings.getKeepAwake = async () => ({ enabled: false })
+api.settings.getAutoDownloadUpdates = async () => ({ enabled: true })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/projects/worktrees" })
 if (process.argv.includes("--updates-account")) {
   const methods: Record<string, () => Promise<unknown>> = {

@@ -12,9 +12,9 @@ export interface UpdateState {
 /** Updates belong to the local Electron client, independently of the selected Machine. */
 export interface UpdateApi {
   get(): Promise<UpdateState>
-  /** Check for a newer version without downloading or installing it. */
+  /** Check for a newer version without installing it. */
   check(): Promise<UpdateState>
-  /** Download, stop the hosted services, and restart into the update after an explicit click. */
+  /** Download if needed, stop the hosted services, and restart into the update after an explicit click. */
   install(): Promise<void>
   onChanged(listener: (state: UpdateState) => void): () => void
 }

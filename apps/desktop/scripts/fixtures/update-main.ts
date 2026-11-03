@@ -81,7 +81,7 @@ void app.whenReady().then(async () => {
   const controller = new UpdateController(driver, publishUpdateState, async () => {
     await new Promise<void>(resolve => { releaseShutdown = resolve })
     shutdowns++
-  })
+  }, undefined, false)
   installUpdateIpc(controller)
   process.on("message", () => { controller.close(); app.quit() })
   process.on("disconnect", () => { controller.close(); app.quit() })

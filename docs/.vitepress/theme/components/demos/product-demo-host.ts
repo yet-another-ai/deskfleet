@@ -16,6 +16,7 @@ const providers = AGENT_PROVIDER_TEMPLATES.filter(template => template.id !== "a
 }))
 const workspaces: CatalogWorkspace[] = []
 let keepAwake = false
+let autoDownloadUpdates = true
 let worktreeRoot: string | null = null
 let notifications: NotificationSettings = { enabled: true, taskCompleted: true, taskNeedsInput: true }
 
@@ -37,6 +38,8 @@ const host: DeskfleetDesktopApi = {
     setLaunchAtStartup: async () => ({ available: false, enabled: false }),
     getKeepAwake: async () => ({ enabled: keepAwake }),
     setKeepAwake: async enabled => ({ enabled: keepAwake = enabled }),
+    getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates }),
+    setAutoDownloadUpdates: async enabled => ({ enabled: autoDownloadUpdates = enabled }),
     getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/workspace/.worktrees" }),
     setWorktreeRoot: async root => ({ root: worktreeRoot = root, defaultRoot: "/workspace/.worktrees" }),
     chooseWorktreeRoot: async () => null,

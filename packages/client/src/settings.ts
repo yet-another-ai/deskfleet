@@ -12,6 +12,10 @@ export interface KeepAwakeState {
   enabled: boolean
 }
 
+export interface AutoDownloadUpdatesState {
+  enabled: boolean
+}
+
 export interface WorktreeRootState {
   root: string | null
   defaultRoot: string
@@ -40,6 +44,8 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
   getKeepAwake(): Promise<KeepAwakeState>
   setKeepAwake(enabled: boolean): Promise<KeepAwakeState>
+  getAutoDownloadUpdates(): Promise<AutoDownloadUpdatesState>
+  setAutoDownloadUpdates(enabled: boolean): Promise<AutoDownloadUpdatesState>
   getWorktreeRoot(): Promise<WorktreeRootState>
   setWorktreeRoot(root: string | null): Promise<WorktreeRootState>
   chooseWorktreeRoot(): Promise<string | null>

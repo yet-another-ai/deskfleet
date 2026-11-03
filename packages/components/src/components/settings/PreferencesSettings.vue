@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useI18n } from "vue-i18n"
+import AutoDownloadUpdatesSettings from "./AutoDownloadUpdatesSettings.vue"
 import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
@@ -18,6 +19,7 @@ const { t } = useI18n()
     <div class="ui-card px-4">
       <LaunchAtStartupSettings />
       <KeepAwakeSettings />
+      <AutoDownloadUpdatesSettings />
       <WorktreeRootSettings />
       <LocalAgentSettings />
     </div>

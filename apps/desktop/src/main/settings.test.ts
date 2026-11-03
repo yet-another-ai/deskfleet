@@ -139,3 +139,26 @@ test("Keep Awake settings restrict callers, validate writes, and report failures
   sender.emit("destroyed")
   await expect(invoke(event, "getKeepAwake")).rejects.toThrow("restricted")
 })
+
+test("automatic update settings restrict callers, validate writes, and report failures", async () => {
+  const updates = { get: vi.fn(() => ({ enabled: true })), setEnabled: vi.fn((enabled: boolean) => ({ enabled })) }
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController, updates)
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  await expect(invoke(event, "setAutoDownloadUpdates", false)).rejects.toThrow("restricted")
+  attachSettings({ webContents: sender } as unknown as BrowserWindow)
+  await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "setAutoDownloadUpdates", false)).rejects.toThrow("restricted")
+  expect(await invoke(event, "setAutoDownloadUpdates", "false")).toEqual({ ok: false, error: "Automatic update setting must be a boolean" })
+  expect(updates.setEnabled).not.toHaveBeenCalled()
+  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: true, value: { enabled: true } })
+  expect(await invoke(event, "setAutoDownloadUpdates", false)).toEqual({ ok: true, value: { enabled: false } })
+  expect(updates.setEnabled).toHaveBeenCalledExactlyOnceWith(false)
+  updates.setEnabled.mockImplementationOnce(() => { throw new Error("Could not save automatic updates") })
+  expect(await invoke(event, "setAutoDownloadUpdates", true)).toEqual({ ok: false, error: "Could not save automatic updates" })
+  updates.get.mockImplementationOnce(() => { throw new Error("Invalid automatic update settings") })
+  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: false, error: "Invalid automatic update settings" })
+  sender.emit("destroyed")
+  await expect(invoke(event, "getAutoDownloadUpdates")).rejects.toThrow("restricted")
+})

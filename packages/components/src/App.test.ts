@@ -352,6 +352,8 @@ test("settings replaces the app layout, returns to the previous page, and refres
   expect(view.get("#launch-at-startup-label").text()).toBe("Launch at startup")
   expect(view.get("#keep-awake-label").text()).toBe("Keep Awake")
   expect(view.get('main [role="switch"][aria-labelledby="keep-awake-label"]').attributes("aria-checked")).toBe("false")
+  expect(view.get("#auto-download-updates-label").text()).toBe("Automatically download updates")
+  expect(view.get('main [role="switch"][aria-labelledby="auto-download-updates-label"]').attributes("aria-checked")).toBe("true")
   expect(view.get('main section[aria-labelledby="this-computer-heading"]').text()).toContain("Run local Agent")
   vi.mocked(platformClient.catalog.list).mockClear()
   list.mockClear()

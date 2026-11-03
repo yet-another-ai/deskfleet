@@ -402,6 +402,7 @@
     "thisComputer": "このコンピューター", "launchAtStartup": "ログイン時に起動",
     "launchAtStartupDescription": "ログイン時に DeskFleet を自動で起動します。", "launchAtStartupUnavailable": "Linux、macOS、Windows にインストールしたアプリで利用できます。",
     "keepAwake": "スリープを防止", "keepAwakeDescription": "DeskFleet の実行中は、トレイに格納されている間も、無操作によるスリープを防ぎます。ディスプレイはオフにできます。",
+    "autoDownloadUpdates": "アップデートを自動ダウンロード", "autoDownloadUpdatesDescription": "新しいバージョンをバックグラウンドでダウンロードし、インストールして再起動する前に確認を待ちます。",
     "windowsLockControl": "ロック中のリモート操作",
     "windowsLockControlDescription": "現在の Windows セッションがロックされている間もリモートデスクトップにアクセスできます。DeskFleet を起動したまま、コンピューターをスリープさせないでください。有効化と無効化には管理者の承認が必要です。",
     "windowsLockControlUnavailable": "ロック中のリモート操作を有効にするには、デスクトップサービスを含む Windows 版をインストールしてください。",

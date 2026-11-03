@@ -853,6 +853,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
   const subscribe = () => () => {}
   const profiles = structuredClone(storybookProviderProfiles)
   let keepAwake = false
+  let autoDownloadUpdates = true
   let launchAtStartup = false
   let worktreeRoot: string | null = "/Users/ada/.deskfleet/worktrees"
   let notifications = { enabled: true, taskCompleted: true, taskNeedsInput: true }
@@ -913,6 +914,8 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
       setLaunchAtStartup: async (enabled) => ({ available: true, enabled: (launchAtStartup = enabled) }),
       getKeepAwake: async () => ({ enabled: keepAwake }),
       setKeepAwake: async (enabled) => ({ enabled: (keepAwake = enabled) }),
+      getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates }),
+      setAutoDownloadUpdates: async (enabled) => ({ enabled: (autoDownloadUpdates = enabled) }),
       getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
       setWorktreeRoot: async (root) => ({ root: (worktreeRoot = root), defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
       chooseWorktreeRoot: async () => "/Users/ada/CustomWorktrees",
