@@ -1911,6 +1911,7 @@ dependencies = [
 name = "deskfleet-desktop-viewer"
 version = "0.7.0"
 dependencies = [
+ "bytes",
  "deskfleet-input",
  "deskfleet-linux-media",
  "deskfleet-native",
@@ -1920,6 +1921,7 @@ dependencies = [
  "objc2-core-video",
  "objc2-video-toolbox",
  "pollster",
+ "rtc",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

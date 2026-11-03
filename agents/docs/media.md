@@ -432,7 +432,8 @@ cannot inject input.
 ## Native desktop window
 
 The Linux, Windows, and macOS Electron clients offer **Open in native window**
-when the `native_presentor` Statsig gate passes and the display advertises H.264.
+when the `native_presentor` Statsig gate passes and the display advertises a
+supported video codec.
 The gate defaults off and remains in place for testing across several future
 versions; see [analytics rollout](analytics.md#feature-gates-and-experiments).
 Closing the gate blocks new launches while existing native windows retain their
@@ -440,7 +441,8 @@ normal session lifecycle. Team authorization remains independent of the gate.
 It opens `deskfleet-viewer`, a Rust executable whose thin entry
 point calls the reusable `deskfleet-desktop-viewer` library. The viewer owns its
 winit window, receive-only WebRTC peer, decoder, and wgpu renderer. The current
-native receive path supports H.264 video and optional mouse/keyboard control;
+native receive path supports AV1 Main, HEVC Main, H.264 constrained baseline,
+and optional mouse/keyboard control;
 it does not negotiate system audio. The embedded browser viewer remains available.
 
 Electron's main process owns Team authorization, capability discovery, peer
@@ -460,6 +462,36 @@ Before connection, the same failure ends startup and releases the grant.
 Revocation, expiry, account changes, and transport failures retain their normal
 cleanup behavior.
 
+Before making an offer, the viewer reports its installed platform decoders.
+Electron intersects these with the selected display's encoder capabilities,
+preferring AV1, HEVC, then H.264. The selected codec and display dimensions cross
+the control pipe explicitly and the same codec is used in the daemon offer.
+Startup also waits for the first successfully decoded frame. Only an encoder
+or decoder startup failure tries the next common codec, using a new native
+process and grant after both the previous viewer and remote peer have closed.
+Authorization, signaling, input, and transport failures do not trigger codec
+fallback. Unavailable codec extensions or hardware never imply support.
+While the capture-start RPC is pending, a peer closure, expired local or remote
+disconnect grace, or resulting native transport error waits for that RPC's result:
+encoder startup may close the peer before returning its classified failure.
+A successful RPC still surfaces any
+pending transport failure. Revocation, expiry, and explicit window closure
+remain immediate, and the existing startup deadline bounds the wait.
+The native window emits `closeRequested` before shutting down its transport.
+Electron treats this user action as immediate cancellation even after a deferred
+transport failure; the final process `closed` notification remains separate.
+
+Capture startup waits for both the native peer's connection and its explicit
+acknowledgement that the SDP answer was applied. Local ICE candidates wait for
+the signaling answer; remote candidates remain ordered behind that answer on
+the viewer pipe. Control input is sent only after the remote `deskfleet-input`
+channel returns `ready`; an error or channel closure ends the session. Opening
+a control window waits for capture startup, the first decoded frame, and this readiness acknowledgement,
+with a 10-second input readiness deadline after capture starts. View-only windows
+do not create or wait for an input channel. A transient `disconnected` state on
+either peer has the shared 10-second recovery grace; recovery keeps the same
+capture, while sustained loss releases the viewer and grant.
+
 The window-to-session input queue holds at most 256 events and coalesces only
 adjacent pointer moves, preserving key/button/wheel ordering. On overflow, it
 discards pending input and the overflowing action, then queues `ReleaseAll`
@@ -469,8 +501,14 @@ fresh input follows it. Actual transport send failures still close the peer.
 
 The receive task and blocking decode worker run independently of the window.
 `deskfleet-linux-media::RtpVideoDecoder` loads GStreamer on demand and feeds full
-RTP packets through `rtpjitterbuffer`, `rtph264depay`, `h264parse`, and a hardware
-H.264 decoder. The RTP reorder budget is 10 ms; appsrc accepts at most 256 queued
+RTP packets through `rtpjitterbuffer`, the matching H.264/HEVC/AV1 depayloader
+and parser, and a hardware decoder. AV1 requires the `rsrtp` plugin's
+`rtpav1depay`; parsed output is constrained to complete temporal units.
+H.264 and HEVC constrain depayloader output to complete access units before the
+parser so loss recovery retains in-band SPS/PPS or VPS/SPS/PPS with the keyframe.
+AV1 retains OBU-aligned depayloader output until `av1parse` assembles temporal
+units; its depayloader preserves the sequence header at the RTP new-sequence bit.
+The RTP reorder budget is 10 ms; appsrc accepts at most 256 queued
 packets and 1 MiB, returning backpressure to its caller instead of silently
 discarding compressed input. The depayloader waits for a keyframe after loss and
 its upstream refresh events become WebRTC PLI requests. The decoded appsink has
@@ -478,13 +516,20 @@ one FIFO position and `sync=false`; it does not wait for a PTS playback clock.
 VA-API and NVDEC factories are tried when installed. Hardware setup or stream
 errors remain visible rather than silently selecting a software decoder.
 
-On Windows, the viewer uses the system Media Foundation H.264 decoder with a
-D3D11 device manager and low-latency mode. `h264.rs` owns a bounded 64-packet,
+On Windows, the viewer uses synchronous system Media Foundation decoders with a
+D3D11 device manager and low-latency mode. HEVC and AV1 are discovered through
+`MFTEnumEx` and require their installed Windows codec extensions.
+HEVC samples carry explicit NAL length metadata so an idle final picture does
+not wait for a following sample. `rtp_video.rs` owns a bounded 64-packet,
 10 ms RTP reorder window and Annex B access-unit assembly for single NAL,
 STAP-A, and FU-A packets. Duplicate/late packets are ignored; loss or malformed
 fragmentation discards the incomplete picture, requests PLI, and waits for an
 IDR with cached SPS/PPS. Complete pictures are bounded to 8 MiB. A full reorder
 window or pending compressed access unit backpressures the receive worker.
+HEVC supports single NAL, aggregation, and fragmentation units without DONL;
+recovery waits for an IRAP with cached VPS/SPS/PPS. AV1 reassembles sized OBUs
+using the transport's AV1 depacketizer, rejects orphaned fragments, and waits
+for a new coded sequence after loss. Fragmented OBUs share the picture bound.
 Media Foundation output is polled while idle, without EOS flushing or a PTS
 playback scheduler. Output type changes renegotiate NV12; owned RGBA pixels
 honor the output color matrix and nominal range. Hardware mode requires DXGI
@@ -493,10 +538,13 @@ output surfaces and fails visibly if acceleration cannot start. The explicit
 without a D3D11 manager. Windows requires the Media Foundation components
 (including the Media Feature Pack on Windows N editions), not GStreamer.
 
-On macOS, VideoToolbox decodes the same bounded H.264 RTP assembly into BGRA
+On macOS, VideoToolbox decodes the same bounded RTP assembly into BGRA
 pixel buffers, copied row by row into owned RGBA. The default decoder requires
 hardware acceleration; `DESKFLEET_VIEWER_DECODER=software` explicitly disables
 hardware decoding for diagnostics. No additional media runtime is installed.
+Capability discovery uses `VTIsHardwareDecodeSupported`. HEVC format descriptions
+use VPS/SPS/PPS; AV1's dimensions and `av1C` record are parsed from the sequence
+header, accepting the negotiated 8-bit Main-profile 4:2:0 stream.
 The decode worker submits each access unit synchronously, with asynchronous and
 temporal processing disabled, so output does not wait for a later picture or
 EOS. Parameter-set changes recreate the decompression session. Session
@@ -544,19 +592,22 @@ Linux, Windows, and macOS packaging stage the release viewer executable outside 
 (`native/deskfleet-viewer.exe` on Windows). On macOS it lives at
 `Contents/Resources/native/deskfleet-viewer` and is included in application
 signing. The Linux client also
-needs the GStreamer app, RTP, H.264 parser, video conversion, and hardware decoder
+needs the GStreamer app, RTP, matching codec parser, video conversion, and hardware decoder
 plugins on the receiving machine.
 
 ```sh
 mise run viewer:build
 mise run desktop:smoke-native-viewer
+DESKFLEET_SMOKE_CODEC=h265 mise run desktop:smoke-native-viewer
+DESKFLEET_SMOKE_CODEC=av1 mise run desktop:smoke-native-viewer
 DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_FPS=60 mise run desktop:smoke-native-viewer
 mise exec -- cargo test -p deskfleet-linux-media --locked decoder::tests -- --ignored --nocapture
 ```
 
-The smoke command opens a real native window and negotiates fixture H.264 video
-with another Rust peer. It checks decode and wgpu submission, without desktop
-capture or input injection. On Linux, `DESKFLEET_VIEWER_DECODER=software` explicitly selects
+The smoke command opens a real native window and negotiates fixture video
+with another Rust peer. It checks answer application, the real ordered input
+channel's readiness handshake, decode, and wgpu submission, without desktop
+capture or OS input injection. On Linux, `DESKFLEET_VIEWER_DECODER=software` explicitly selects
 GStreamer's `avdec_h264` for diagnostics; this requires the libav plugin and is
 never an automatic fallback. Runtime decoder tests separately exercise hardware
 encoding/decoding, delivery of an initial IDR and a final dependent P picture

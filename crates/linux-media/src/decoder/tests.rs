@@ -2,6 +2,33 @@ use std::time::Instant;
 
 use super::*;
 
+#[test]
+fn negotiated_codec_selects_matching_rtp_caps_parser_and_decoder() {
+    for (codec, factory, encoding, depayloader, parser) in [
+        (
+            Codec::H264,
+            "vah264dec",
+            "H264",
+            "rtph264depay",
+            "h264parse",
+        ),
+        (
+            Codec::H265,
+            "vah265dec",
+            "H265",
+            "rtph265depay",
+            "h265parse",
+        ),
+        (Codec::Av1, "vaav1dec", "AV1", "rtpav1depay", "av1parse"),
+    ] {
+        let pipeline = codec_description(104, codec, factory);
+        assert!(pipeline.contains(&format!("encoding-name={encoding}")));
+        assert!(pipeline.contains(depayloader) && pipeline.contains(parser));
+        assert!(pipeline.contains("sync=false max-buffers=1 drop=false"));
+        assert!(factories(codec, false).contains(&factory));
+    }
+}
+
 fn red_frame_packets(timestamp: u32, sequence: &mut u16) -> Vec<Vec<u8>> {
     let encoded = include_bytes!("../../../native/examples/fixtures/red-64x64.h264");
     packetize(encoded, timestamp, sequence)
@@ -123,6 +150,80 @@ fn runtime_packet_loss_requests_a_keyframe_and_recovers_at_the_next_idr() {
         decoder.take_keyframe_request(),
         "packet loss did not request a PLI"
     );
+}
+
+#[test]
+#[ignore = "requires GStreamer H.264/HEVC RTP depayloaders"]
+fn runtime_depay_recovery_keeps_parameter_sets_with_the_keyframe() {
+    for (codec, bytes, parser, parameters) in [
+        (
+            Codec::H264,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.h264").as_slice(),
+            "h264parse",
+            &[7_u8, 8][..],
+        ),
+        (
+            Codec::H265,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.h265").as_slice(),
+            "h265parse",
+            &[32_u8, 33, 34][..],
+        ),
+    ] {
+        // Observe the depayloader's output before a parser or decoder can cache
+        // headers and conceal their loss. The real graph's caps must group the
+        // parameter NALs and the IDR/IRAP into the same complete access unit.
+        let graph = codec_description(96, codec, "unused");
+        let parser_boundary = format!(" ! {parser}");
+        let (prefix, _) = graph.split_once(parser_boundary.as_str()).unwrap();
+        let pipeline = Pipeline::new(&format!(
+            "{prefix} ! appsink name=frames sync=false max-buffers=1 drop=false"
+        ))
+        .unwrap();
+        let input = pipeline.child(c"input").unwrap();
+        let probe = KeyframeProbe::new(&input).unwrap();
+        let decoder = RtpVideoDecoder {
+            pipeline,
+            input,
+            probe,
+            factory: "unused",
+        };
+        let mut sequence = 100;
+        for timestamp in [3000, 6000] {
+            for packet in packetize(bytes, timestamp, &mut sequence) {
+                assert!(decoder.try_push(&packet).unwrap());
+            }
+            let sample = decoder
+                .pipeline
+                .pull(Duration::from_secs(2))
+                .unwrap()
+                .expect("complete keyframe access unit");
+            let output = sample.bytes().unwrap();
+            let kinds: Vec<_> = output
+                .windows(5)
+                .filter(|window| window.starts_with(&[0, 0, 0, 1]))
+                .map(|window| {
+                    if codec == Codec::H264 {
+                        window[4] & 31
+                    } else {
+                        (window[4] >> 1) & 63
+                    }
+                })
+                .collect();
+            for parameter in parameters {
+                assert!(
+                    kinds.contains(parameter),
+                    "{codec:?} lost parameter NAL {parameter}: {kinds:?}"
+                );
+            }
+            assert!(kinds.iter().any(|kind| if codec == Codec::H264 {
+                *kind == 5
+            } else {
+                (16..=21).contains(kind)
+            }));
+            sequence = sequence.wrapping_add(1); // Force recovery before the next picture.
+        }
+        decoder.stop().unwrap();
+    }
 }
 
 #[test]

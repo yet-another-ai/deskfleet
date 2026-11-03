@@ -3,7 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { join, resolve } from "node:path"
 import { createInterface } from "node:readline"
 
-// Opens a real native window using 64x64 H.264 fixture frames. Set
+// Opens a real native window using 64x64 H.264/HEVC/AV1 fixture frames. Set
 // DESKFLEET_SMOKE_HARDWARE=1 to encode generated 320x240 pixels with the host's
 // hardware encoder. Neither mode captures a desktop or requests permissions.
 // The viewer uses its normal decoder selection. Explicit diagnostic decoder
@@ -12,6 +12,8 @@ import { createInterface } from "node:readline"
 // DESKFLEET_SMOKE_VIEWER can point at the executable inside a packaged app.
 const root = resolve(import.meta.dirname, "../../..")
 const hardware = process.env.DESKFLEET_SMOKE_HARDWARE === "1"
+const codec = process.env.DESKFLEET_SMOKE_CODEC ?? "h264"
+assert.ok(["h264", "h265", "av1"].includes(codec), "unsupported smoke codec")
 assert.ok(!hardware || process.platform === "linux", "generated hardware smoke requires Linux")
 const durationSeconds = Number(process.env.DESKFLEET_SMOKE_DURATION_SECONDS ?? "1")
 assert.ok(Number.isInteger(durationSeconds) && durationSeconds >= 1 && durationSeconds <= 300,
@@ -27,7 +29,7 @@ let result: Stats | undefined
 function launch(kind: "viewer" | "source", executable: string): ChildProcessWithoutNullStreams {
   const child = spawn(executable, [], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, DESKFLEET_SMOKE_CAPTURE: "0", DESKFLEET_SMOKE_HARDWARE: hardware ? "1" : "0", DESKFLEET_SMOKE_WINDOWS_SERVICE: "0", DESKFLEET_SMOKE_VIDEO_ONLY: "1", DESKFLEET_SMOKE_CODEC: "h264" },
+    env: { ...process.env, DESKFLEET_SMOKE_CAPTURE: "0", DESKFLEET_SMOKE_HARDWARE: hardware ? "1" : "0", DESKFLEET_SMOKE_WINDOWS_SERVICE: "0", DESKFLEET_SMOKE_VIDEO_ONLY: "1", DESKFLEET_SMOKE_CODEC: codec },
   })
   const exited = new Promise<void>(resolveExit => { child.once("close", () => resolveExit()) })
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { diagnostics = (diagnostics + `[${kind}] ${chunk}`).slice(-32_768) })
@@ -61,7 +63,7 @@ try {
       child.stdin.on("error", fail)
       child.once("exit", (code, signal) => fail(new Error(`${kind} exited early (${signal ?? code})`)))
     }
-    let offered = false, answered = false
+    let offered = false, answered = false, answerApplied = false, inputReady = false
     let observationStarted: number | undefined
     const localCandidates: Candidate[] = [], remoteCandidates: Candidate[] = []
     const sendLocal = (value: Candidate) => {
@@ -74,10 +76,15 @@ try {
     }
     viewerLines.on("line", line => {
       try {
-        const event = JSON.parse(line) as { type: string; sdp?: string; candidate?: Candidate; error?: string } & Stats
+        const event = JSON.parse(line) as { type: string; codecs?: string[]; sdp?: string; candidate?: Candidate; error?: string } & Stats
         switch (event.type) {
+          case "capabilities":
+            assert.ok(event.codecs?.includes(codec), `native decoder does not support ${codec}`)
+            send(viewer, { type: "start", title: `DeskFleet ${codec} native viewer smoke`, codec,
+              width: hardware ? 320 : 64, height: hardware ? 240 : 64, iceServers: [], relayOnly: false, control: true })
+            break
           case "offer":
-            assert.ok(event.sdp?.toLowerCase().includes("h264/90000"), "viewer must negotiate H.264")
+            assert.ok(event.sdp?.toLowerCase().includes(`${codec}/90000`), `viewer must negotiate ${codec}`)
             send(source, { kind: "offer", sdp: event.sdp })
             offered = true
             for (const candidate of localCandidates.splice(0)) sendLocal(candidate)
@@ -88,10 +95,16 @@ try {
             else localCandidates.push(event.candidate)
             break
           case "connected": connected = true; break
+          case "inputReady": inputReady = true; break
+          case "answerApplied":
+            assert.ok(answered, "viewer must apply the signaled answer")
+            answerApplied = true
+            for (const candidate of remoteCandidates.splice(0)) sendRemote(candidate)
+            break
           case "error": throw new Error(event.error ?? "Native viewer failed")
           case "closed": throw new Error("Native viewer closed before receiving frames")
           case "stats":
-            if (!connected || typeof event.decodedFrames !== "number" || event.decodedFrames < 3
+            if (!answerApplied || !inputReady || !connected || typeof event.decodedFrames !== "number" || event.decodedFrames < 3
               || typeof event.submittedFrames !== "number" || event.submittedFrames < 3) break
             assert.equal(event.width, hardware ? 320 : 64)
             assert.equal(event.height, hardware ? 240 : 64)
@@ -115,15 +128,13 @@ try {
           assert.ok(event.sdp)
           send(viewer, { type: "answer", sdp: event.sdp })
           answered = true
-          for (const candidate of remoteCandidates.splice(0)) sendRemote(candidate)
         } else if (event.kind === "candidate") {
           assert.ok(event.candidate)
-          if (answered) sendRemote(event.candidate)
+          if (answerApplied) sendRemote(event.candidate)
           else remoteCandidates.push(event.candidate)
         } else if (event.kind === "error") throw new Error(event.error ?? "Fixture sender failed")
       } catch (error) { fail(error) }
     })
-    send(viewer, { type: "start", title: "DeskFleet native viewer smoke", iceServers: [], relayOnly: false, control: false })
   }).finally(() => { viewerLines.close(); sourceLines.close() })
 } catch (error) {
   failed = true
@@ -153,4 +164,4 @@ try {
 }
 assert.ok(result)
 const presentation = result.presentationMode === "wayland-presentation" ? " and Wayland presentation acknowledgements" : ""
-console.log(`Native WebRTC viewer: ${hardware ? "generated hardware" : "fixture"} H.264 receive, decode, wgpu submission${presentation}, and clean shutdown passed`, result)
+console.log(`Native WebRTC viewer: ${hardware ? "generated hardware" : "fixture"} ${codec} receive, decode, input readiness, wgpu submission${presentation}, and clean shutdown passed`, result)

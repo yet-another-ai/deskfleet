@@ -396,3 +396,33 @@ mod encoder {
         output.lock().unwrap().push(annex);
     }
 }
+#[test]
+#[ignore = "requires a Mac with hardware HEVC and AV1 decoding"]
+fn runtime_decodes_hevc_and_av1_without_following_picture() {
+    for (codec, bytes) in [
+        (
+            deskfleet_native::rtc::VideoCodec::H265,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.h265").as_slice(),
+        ),
+        (
+            deskfleet_native::rtc::VideoCodec::Av1,
+            include_bytes!("../../../native/examples/fixtures/red-64x64.av1").as_slice(),
+        ),
+    ] {
+        let decoder = super::RtpVideoDecoder::with_codec(96, codec).unwrap();
+        let frame = decoder
+            .0
+            .borrow_mut()
+            .decode(bytes, 0)
+            .unwrap()
+            .expect("idle keyframe");
+        assert_eq!((frame.width, frame.height), (64, 64));
+        for pixel in frame.pixels.as_chunks::<4>().0 {
+            assert!(
+                pixel[0] > 230 && pixel[1] < 20 && pixel[2] < 20,
+                "{codec:?}: {pixel:?}"
+            );
+        }
+        decoder.stop().unwrap();
+    }
+}

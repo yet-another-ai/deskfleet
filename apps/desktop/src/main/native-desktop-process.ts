@@ -33,6 +33,9 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
       if (!event || typeof event !== "object" || !("type" in event)) throw new Error("Invalid native desktop response")
       const value = event as Record<string, unknown>
       switch (value.type) {
+        case "capabilities":
+          if (!Array.isArray(value.codecs) || !value.codecs.every(codec => ["h264", "h265", "av1"].includes(codec))) throw new Error("Invalid native desktop capabilities")
+          break
         case "offer":
           if (typeof value.sdp !== "string") throw new Error("Invalid native desktop offer")
           break
@@ -41,8 +44,9 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
           break
         case "error":
           if (typeof value.error !== "string") throw new Error("Invalid native desktop error")
+          if (value.reason !== undefined && value.reason !== "decoder") throw new Error("Invalid native desktop error reason")
           break
-        case "connected": case "closed": case "stats": break
+        case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "closeRequested": case "closed": case "stats": break
         default: throw new Error("Unknown native desktop response")
       }
       receive(event as ViewerEvent)

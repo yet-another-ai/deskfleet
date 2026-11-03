@@ -15,6 +15,8 @@ path = "src/main.rs"
 [dependencies]
 deskfleet-native.workspace = true
 deskfleet-input.workspace = true
+bytes.workspace = true
+rtc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -27,7 +29,7 @@ pollster = "1.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-foundation = { workspace = true, features = [
-    "CFNumber", "CFString", "CFDictionary",
+    "CFNumber", "CFString", "CFDictionary", "CFData",
 ] }
 objc2-core-media = { workspace = true, features = [
     "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime",

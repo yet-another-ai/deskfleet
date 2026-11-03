@@ -1,15 +1,20 @@
 //! Native desktop viewer. Network, decoding and presentation run independently.
 
-#[cfg(any(target_os = "windows", target_os = "macos", test))]
-mod h264;
+#[cfg(any(target_os = "macos", test))]
+mod av1_config;
+#[cfg(test)]
+mod codec_tests;
 mod input;
 mod input_queue;
+mod input_reply;
 #[cfg(target_os = "macos")]
 mod macos_decoder;
 mod presentation;
 mod protocol;
 mod queue;
 mod renderer;
+#[cfg(any(target_os = "windows", target_os = "macos", test))]
+mod rtp_video;
 mod session;
 mod window;
 #[cfg(target_os = "windows")]
