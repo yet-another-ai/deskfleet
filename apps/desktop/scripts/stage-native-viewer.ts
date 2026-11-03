@@ -7,7 +7,10 @@ import { join, resolve } from "node:path"
 if (process.platform === "linux" || process.platform === "win32" || process.platform === "darwin") {
   const root = resolve(import.meta.dirname, "../../..")
   const target = execFileSync("rustc", ["--print", "host-tuple"], { cwd: root, encoding: "utf8" }).trim()
-  execFileSync("cargo", ["build", "-p", "deskfleet-desktop-viewer", "--bin", "deskfleet-viewer", "--release", "--locked", "--target", target], { cwd: root, stdio: "inherit" })
+  // CI's workspace release build already produced this executable.
+  if (process.env.DESKFLEET_NATIVE_PREBUILT !== "1") {
+    execFileSync("cargo", ["build", "-p", "deskfleet-desktop-viewer", "--bin", "deskfleet-viewer", "--release", "--locked", "--target", target], { cwd: root, stdio: "inherit" })
+  }
   const output = resolve(import.meta.dirname, "../out/native")
   await mkdir(output, { recursive: true })
   const name = process.platform === "win32" ? "deskfleet-viewer.exe" : "deskfleet-viewer"

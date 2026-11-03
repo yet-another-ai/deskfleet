@@ -103,6 +103,10 @@ depends = ["rust:shear", "rust:clippy"]
 description = "Run script, daemon, desktop, and Rust tests"
 depends = ["check:scripts", "check:daemon", "check:desktop", "check:rust-tests"]
 
+[tasks."ci:test:platform"]
+description = "Run platform tests; the shared renderer suite runs on Linux CI"
+depends = ["check:scripts", "check:daemon", "ci:check:desktop-main", "check:rust-tests"]
+
 [tasks.build]
 description = "Build the release server and standalone daemon"
 depends = ["rust:release", "web:build"]
@@ -340,6 +344,13 @@ depends = ["install"]
 # concurrent native compilation and daemon tests; focused desktop runs stay standalone.
 wait_for = ["native:debug", "rust:test", "check:daemon"]
 run = "pnpm --filter @deskfleet/desktop test"
+
+[tasks."ci:check:desktop-main"]
+hide = true
+depends = ["install"]
+wait_for = ["native:debug", "rust:test", "check:daemon"]
+# This project includes Electron main, shared modules, and client tests.
+run = "pnpm --filter @deskfleet/desktop test --project main"
 
 [tasks."check:scripts"]
 hide = true

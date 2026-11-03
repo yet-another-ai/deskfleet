@@ -69,8 +69,8 @@ test("classifies complete PR and push changes, including removals during renames
   assert.equal(push(sha, docs), false)
 })
 
-test("manual runs, unrelated refs, and malformed events retain full validation", context => {
-  for (const [eventName, ref] of [["workflow_dispatch", "refs/heads/main"], ["push", "refs/tags/v1"], ["push", "refs/heads/topic"]])
+test("manual and scheduled runs, unrelated refs, and malformed events retain full validation", context => {
+  for (const [eventName, ref] of [["workflow_dispatch", "refs/heads/main"], ["schedule", "refs/heads/main"], ["push", "refs/tags/v1"], ["push", "refs/heads/topic"]])
     assert.equal(classifyDocumentation(eventName, ref, { before: sha, after: sha }), false)
   assert.equal(classifyDocumentation("pull_request", "refs/pull/1/merge", {}), false)
   assert.equal(classifyDocumentation("push", "refs/heads/main", { before: "--help", after: sha }), false)

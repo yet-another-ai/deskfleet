@@ -311,6 +311,7 @@ to check module initialization order as well as file sizes.
 | `mise run check` | Run static checks, TypeScript and Rust tests, and debug workspace and desktop builds |
 | `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |
 | `mise run test` | Run repository script, daemon, desktop, and Rust tests |
+| `mise run ci:test:platform` | Run the CI platform suites with desktop main/shared/client tests; Linux CI runs the renderer through `test` |
 | `mise run build` | Build the release server and standalone SEA daemon |
 | `mise run ci:build` | Build all release bundles with one shared Rust workspace build |
 | `mise run daemon:pack` | Package the daemon as a standalone SEA executable |
