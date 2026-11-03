@@ -2,22 +2,16 @@ import { nextTick, ref } from "vue"
 import type { RouteLocationNormalizedLoadedGeneric } from "vue-router"
 import { router } from "../router/index.ts"
 import { resolvePreviewKind, type PreviewDescriptor, type PreviewSource } from "../services/preview.ts"
-import { activeDetailsTab, useLayoutStore } from "./layout.ts"
+import { useLayoutStore } from "./layout.ts"
 
 export interface PreviewLocateRequest extends PreviewSource {
   id: number
   content: string
 }
 
-export interface PreviewSidebarTab extends PreviewDescriptor {
-  id: string
-}
-
-export const previewSidebarTabs = ref<PreviewSidebarTab[]>([])
 export const pendingPreviewLocate = ref<PreviewLocateRequest | null>(null)
 
 const PREVIEW_WINDOW_CHANNEL = "deskfleet.preview-window"
-let nextSidebarTabId = 1
 let nextLocateRequestId = 1
 let locatedTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -69,35 +63,9 @@ export function focusedPreviewFromRoute(
   }
 }
 
-export function openPreviewInSidebar(item: PreviewDescriptor): string {
-  const existing = previewSidebarTabs.value.find(tab => tab.content === item.content && tab.kind === item.kind)
-  if (existing) {
-    existing.source = { ...existing.source, ...item.source }
-    if (item.title) existing.title = item.title
-    if (item.mimeType) existing.mimeType = item.mimeType
-    activeDetailsTab.value = existing.id
-  } else {
-    const tab: PreviewSidebarTab = { ...item, id: `preview-${nextSidebarTabId++}` }
-    previewSidebarTabs.value = [...previewSidebarTabs.value, tab]
-    activeDetailsTab.value = tab.id
-  }
-  useLayoutStore().requestDetailsOpen()
-  return activeDetailsTab.value
-}
-
 /** Session renderers open previews as desktop tabs or mobile views. */
-export function openPreviewFromAction(item: PreviewDescriptor): string | undefined {
-  const layout = useLayoutStore()
-  if (layout.requestSessionWindow({ kind: "preview", item })) return undefined
-  return openPreviewInSidebar(item)
-}
-
-export function closePreviewSidebarTab(id: string): void {
-  const index = previewSidebarTabs.value.findIndex(tab => tab.id === id)
-  if (index === -1) return
-  const next = previewSidebarTabs.value.filter(tab => tab.id !== id)
-  previewSidebarTabs.value = next
-  if (activeDetailsTab.value === id) activeDetailsTab.value = next[Math.min(index, next.length - 1)]?.id ?? "changes"
+export function openPreviewFromAction(item: PreviewDescriptor): void {
+  useLayoutStore().requestSessionWindow({ kind: "preview", item })
 }
 
 export function performPreviewLocateDom(request: PreviewLocateRequest | null = pendingPreviewLocate.value): boolean {
@@ -158,8 +126,8 @@ export function broadcastPreviewLocate(content: string, source?: PreviewSource):
   broadcast({ type: "locate", content, source })
 }
 
-export function broadcastPreviewSidebar(item: PreviewDescriptor): void {
-  broadcast({ type: "sidebar", item })
+export function broadcastPreviewTab(item: PreviewDescriptor): void {
+  broadcast({ type: "tab", item })
 }
 
 export function listenPreviewWindowMessages(
@@ -168,7 +136,7 @@ export function listenPreviewWindowMessages(
   try {
     const channel = new BroadcastChannel(PREVIEW_WINDOW_CHANNEL)
     channel.onmessage = ({ data }) => {
-      if (data?.type === "sidebar" && data.item && typeof data.item.content === "string") {
+      if (data?.type === "tab" && data.item && typeof data.item.content === "string") {
         openPreviewFromAction(data.item as PreviewDescriptor)
       } else if (data?.type === "locate" && typeof data.content === "string") {
         locate(data.content, data.source)

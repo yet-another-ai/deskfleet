@@ -8,7 +8,6 @@ import type { PreviewDescriptor } from "../services/preview.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
-export interface MermaidSidebarTab { id: string; code: string; source?: MermaidSource }
 export type SessionWindowRequest =
   | { id: number; kind: "preview"; item: PreviewDescriptor }
   | { id: number; kind: "mermaid"; code: string; source?: MermaidSource }
@@ -16,41 +15,11 @@ type NewSessionWindowRequest =
   | { kind: "preview"; item: PreviewDescriptor }
   | { kind: "mermaid"; code: string; source?: MermaidSource }
 
-export const mermaidSidebarTabs = ref<MermaidSidebarTab[]>([])
-export const activeDetailsTab = ref("changes")
 export const pendingMermaidLocate = ref<MermaidLocateRequest | null>(null)
 const MERMAID_LOCATE_CHANNEL = "deskfleet.mermaid-locate"
 let nextId = 1
 let nextWindowRequestId = 1
 let locatedTimer: ReturnType<typeof setTimeout> | undefined
-
-export function openMermaidSidebarTab(code: string, source?: MermaidSource): string {
-  const existing = mermaidSidebarTabs.value.find(tab => tab.code === code)
-  if (existing) {
-    if (source) existing.source = { ...existing.source, ...source }
-    return (activeDetailsTab.value = existing.id)
-  }
-  const tab: MermaidSidebarTab = { id: `mermaid-${nextId++}`, code, ...(source ? { source } : {}) }
-  mermaidSidebarTabs.value = [...mermaidSidebarTabs.value, tab]
-  return (activeDetailsTab.value = tab.id)
-}
-
-export function closeMermaidSidebarTab(id: string): void {
-  const index = mermaidSidebarTabs.value.findIndex(tab => tab.id === id)
-  if (index === -1) return
-  const next = mermaidSidebarTabs.value.filter(tab => tab.id !== id)
-  mermaidSidebarTabs.value = next
-  if (activeDetailsTab.value === id) activeDetailsTab.value = next[Math.min(index, next.length - 1)]?.id ?? "changes"
-}
-
-export function resetMermaidSidebarTabs(): void {
-  mermaidSidebarTabs.value = []
-  activeDetailsTab.value = "changes"
-  pendingMermaidLocate.value = null
-  nextId = 1
-  clearTimeout(locatedTimer)
-  locatedTimer = undefined
-}
 
 export function performMermaidLocateDom(request: MermaidLocateRequest | null = pendingMermaidLocate.value): boolean {
   if (!request || typeof document === "undefined") return false
@@ -109,7 +78,6 @@ export const useLayoutStore = defineStore("layout", () => {
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
   const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
   const compactPanel = ref<"sidebar" | "details" | null>(null)
-  const detailsOpenRequest = ref(0)
   const sessionWindowRequest = shallowRef<SessionWindowRequest>()
   const sessionWindowsAvailable = computed(() => router.currentRoute.value.name === "session")
   const sidebarOpen = computed({
@@ -136,10 +104,6 @@ export const useLayoutStore = defineStore("layout", () => {
   function toggleDetails(): void {
     compactPanel.value = detailsOpen.value ? null : "details"
   }
-  function requestDetailsOpen(): void {
-    if (compact.value) compactPanel.value = "details"
-    else detailsOpenRequest.value++
-  }
   function requestSessionWindow(request: NewSessionWindowRequest): boolean {
     if (!sessionWindowsAvailable.value) return false
     const routeSessionId = router.currentRoute.value.params.sessionId
@@ -148,11 +112,6 @@ export const useLayoutStore = defineStore("layout", () => {
     sessionWindowRequest.value = { id: nextWindowRequestId++, ...request } as SessionWindowRequest
     return true
   }
-  function openMermaidInSidebar(code: string, source?: MermaidSource): string {
-    if (requestSessionWindow({ kind: "mermaid", code, source })) return `window:${sessionWindowRequest.value!.id}`
-    requestDetailsOpen()
-    return openMermaidSidebarTab(code, source)
-  }
 
   return {
     compact,
@@ -160,20 +119,14 @@ export const useLayoutStore = defineStore("layout", () => {
     sidebarOpen,
     sidebarWidth,
     detailsOpen,
-    detailsOpenRequest,
     sessionWindowsAvailable,
     sessionWindowRequest,
     conversationPath,
     sessionContext,
     terminalPanelOpen,
     terminalPanelHeight,
-    mermaidTabs: mermaidSidebarTabs,
-    activeDetailsTab,
     toggleSidebar,
     toggleDetails,
-    requestDetailsOpen,
     requestSessionWindow,
-    openMermaidInSidebar,
-    closeMermaidTab: closeMermaidSidebarTab,
   }
 })

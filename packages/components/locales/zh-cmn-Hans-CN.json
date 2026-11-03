@@ -1439,7 +1439,6 @@
     "locateMessage": "定位到原始消息",
     "focus": "聚焦",
     "more": "更多",
-    "showInSidebar": "在侧边栏显示",
     "showInRightTab": "在右侧新标签页显示",
     "showInNewWindow": "在新窗口显示",
     "closeTab": "关闭 {title}"

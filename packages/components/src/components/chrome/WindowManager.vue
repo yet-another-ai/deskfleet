@@ -358,7 +358,6 @@ function openChangesPanel(group?: DockviewGroupPanel): void {
 }
 
 watch([sessionShellIds, () => terminals.loaded, sessionWorktreeId], scheduleTerminalReconcile)
-watch(() => layout.detailsOpenRequest, () => openChangesPanel())
 watch(() => layout.sessionWindowRequest?.id, () => {
   const request = layout.sessionWindowRequest
   if (request) openSessionWindow(request)

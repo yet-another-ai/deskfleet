@@ -3,12 +3,12 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
-import { clientCodeSplitting } from "../../packages/components/src/chunking.ts"
+import { clientCodeSplitting, tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
 
 export default defineConfig({
   plugins: [
     UnoCSS({ configFile: resolve(import.meta.dirname, "../../packages/components/uno.config.ts") }),
-    vue({ features: { vapor: true } }),
+    vue({ features: { vapor: true }, ...tresTemplateCompilerOptions }),
     VueI18nPlugin({ strictMessage: false, runtimeOnly: true }),
   ],
   server: { host: "localhost", port: 5174, strictPort: true },

@@ -1,3 +1,13 @@
+const tresWhitelist = ["TresCanvas", "TresLeches", "TresScene"]
+
+export const tresTemplateCompilerOptions = {
+  template: {
+    compilerOptions: {
+      isCustomElement: (tag: string) => ((/^Tres[A-Z]/u.test(tag) || tag.startsWith("tres-")) && !tresWhitelist.includes(tag)) || tag === "primitive",
+    },
+  },
+}
+
 /**
  * Rolldown groups shared by the desktop renderer and the web client.
  * Heavy groups split at module boundaries using pre-minification byte sizes.
@@ -7,6 +17,13 @@
  */
 export const clientCodeSplitting = {
   groups: [
+    {
+      name: "three",
+      test: /[\\/]node_modules[\\/](?:three|@tresjs)[\\/]/,
+      priority: 30,
+      maxSize: 500_000,
+      entriesAware: true,
+    },
     {
       name: "echarts",
       test: /[\\/]node_modules[\\/](?:echarts|zrender)[\\/]/,

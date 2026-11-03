@@ -54,9 +54,10 @@ onBeforeUnmount(() => {
       :data-preview="uri"
       :kind="previewKindFromMime(state.mimeType) ?? 'image'"
       :content="state.url"
+      :data="state.data"
       :mime-type="state.mimeType"
       :alt="alt"
-      :title="node.title ?? undefined"
+      :title="node.title || uri.split(/[\\/]/u).at(-1)"
       mode="inline"
     />
   </span>
