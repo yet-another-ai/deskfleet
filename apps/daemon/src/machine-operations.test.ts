@@ -80,3 +80,16 @@ test("Session read acknowledgement passes the server-verified actor to the Agent
   assert.deepEqual(await operations.handle("_deskfleet/session/read", params, actor), { read: true })
   assert.deepEqual(calls, [["_deskfleet/session/read", params, actor]])
 })
+
+test("marking a Session unread passes only the server-verified actor to the Agent service", async () => {
+  const calls: unknown[][] = []
+  const operations = new MachineOperations({
+    agents: { handle: async (...args: unknown[]) => { calls.push(args); return { unread: true } } },
+    catalog: {}, terminals: {}, providers: {}, setup: {}, capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  const params = { sessionId: "1", operationId: "unread", actor: { userId: "spoof" } }
+  await assert.rejects(operations.handle("_deskfleet/session/unread", params, undefined), /verified user and login/u)
+  assert.deepEqual(calls, [])
+  assert.deepEqual(await operations.handle("_deskfleet/session/unread", params, actor), { unread: true })
+  assert.deepEqual(calls, [["_deskfleet/session/unread", params, actor]])
+})

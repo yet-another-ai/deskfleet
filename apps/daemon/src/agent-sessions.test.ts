@@ -399,6 +399,57 @@ test("restart recovery marks an interrupted active turn unread without starting 
   } finally { await restored.close() }
 })
 
+test("a person can mark the latest completed result unread again", async t => {
+  const f = await setup(t)
+  const markRead = (throughSeq: string, actor = f.bob) => f.service.handle("_deskfleet/session/read", {
+    sessionId: f.sessionId, operationId: randomUUID(), throughSeq,
+  }, actor) as Promise<AgentSnapshot>
+  const markUnread = (actor: AgentActor = f.bob, operationId = randomUUID()) => f.service.handle("_deskfleet/session/unread", {
+    sessionId: f.sessionId, operationId,
+  }, actor) as Promise<AgentSnapshot>
+  await assert.rejects(markUnread(), /no completed result/u)
+  await assert.rejects(markUnread({ kind: "system" }), /Only a person/u)
+
+  await f.submit("first completion").result
+  await until(f.read, () => f.provider.prompts.length === 1)
+  f.provider.finish()
+  const completed = await until(f.read, snapshot => snapshot.turns[0]?.state === "completed")
+  const completionSeq = completed.session.lastCompletedSeq!
+  const acknowledged = await markRead(completed.session.lastEventSeq)
+  assert.ok(BigInt(acknowledged.session.lastReadSeq!) >= BigInt(completionSeq))
+  const unread = await markUnread()
+  assert.equal(unread.session.lastReadSeq, String(BigInt(completionSeq) - 1n))
+  assert.equal(unread.session.lastCompletedSeq, completionSeq)
+  assert.equal(unread.session.updatedAt, acknowledged.session.updatedAt, "marking unread does not reorder recent Sessions")
+  assert.ok(BigInt(unread.session.lastEventSeq) > BigInt(acknowledged.session.lastEventSeq))
+  const repeated = await markUnread()
+  assert.equal(repeated.session.lastEventSeq, unread.session.lastEventSeq, "an unread Session is not rewritten")
+  assert.equal(repeated.session.lastReadSeq, unread.session.lastReadSeq)
+  const stale = await markRead(String(BigInt(completionSeq) - 1n))
+  assert.equal(stale.session.lastReadSeq, unread.session.lastReadSeq, "an older watermark does not move the unread mark")
+  const cleared = await markRead(completionSeq)
+  assert.equal(cleared.session.lastReadSeq, completionSeq)
+
+  await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  const archived = await markRead((await f.read()).session.lastEventSeq)
+  assert.equal(archived.session.archiveState, "archived")
+  const operationId = randomUUID()
+  const marked = await markUnread(f.bob, operationId)
+  assert.equal(marked.session.archiveState, "archived")
+  assert.equal(marked.session.lastReadSeq, String(BigInt(marked.session.lastCompletedSeq!) - 1n))
+  assert.equal(marked.session.updatedAt, archived.session.updatedAt)
+  assert.deepEqual(await markUnread(f.bob, operationId), marked, "lost unread marks can be retried")
+
+  await f.service.close()
+  const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
+  await restored.init()
+  try {
+    const session = await restored.journal.session(f.sessionId)
+    assert.equal(session.lastReadSeq, marked.session.lastReadSeq)
+    assert.equal(session.lastCompletedSeq, marked.session.lastCompletedSeq)
+  } finally { await restored.close() }
+})
+
 test("prompt token usage is persisted per turn and replayed independently from context usage", async t => {
   const f = await setup(t)
   const responses: acp.PromptResponse[] = [

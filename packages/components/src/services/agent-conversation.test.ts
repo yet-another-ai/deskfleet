@@ -1,7 +1,7 @@
 import { expect, test } from "vitest"
 import type { AgentEvent, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot } from "../test/agent.ts"
-import { groupTranscript, projectConversation, sessionIsUnread, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
+import { groupTranscript, projectConversation, sessionCanMarkUnread, sessionIsUnread, snapshotIsWorking, summarizeTools } from "./agent-conversation.ts"
 const update = (seq: number, update: Record<string, unknown>) => agentEvent(seq, "acp", { sessionId: "provider-session", update } as AgentEvent["payload"])
 test("reconstructs text around tools without user echoes or mutating the durable journal", () => {
   const input = agentInput({ state: "delivered" })
@@ -150,6 +150,12 @@ test("unread completion compares durable sequence numbers without losing integer
   expect(sessionIsUnread({ lastCompletedSeq: "9", lastReadSeq: "9" })).toBe(false)
   expect(sessionIsUnread({ lastCompletedSeq: "9", lastReadSeq: "10" })).toBe(false)
   expect(sessionIsUnread({ lastCompletedSeq: "9007199254740993", lastReadSeq: "9007199254740992" })).toBe(true)
+  expect(sessionCanMarkUnread(undefined)).toBe(false)
+  expect(sessionCanMarkUnread({ lastCompletedSeq: "9" })).toBe(false)
+  expect(sessionCanMarkUnread({ lastCompletedSeq: "0", lastReadSeq: "0" })).toBe(false)
+  expect(sessionCanMarkUnread({ lastCompletedSeq: "9", lastReadSeq: "9" })).toBe(true)
+  expect(sessionCanMarkUnread({ lastCompletedSeq: "9", lastReadSeq: "12" })).toBe(true)
+  expect(sessionCanMarkUnread({ lastCompletedSeq: "not-a-sequence", lastReadSeq: "1" })).toBe(false)
 })
 
 test.each(["starting", "running", "cancelling"] as const)("snapshotIsWorking is true for a %s turn", state => {

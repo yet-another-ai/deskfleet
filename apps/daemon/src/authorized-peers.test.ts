@@ -341,7 +341,11 @@ test("shared Session read acknowledgements require read authority and use the ve
   await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), actions: ["agent:read"] }, iceServers: [] })
   await f.rpc(1, "initialize", { protocolVersion: 1 })
   await f.rpc(2, "_deskfleet/session/read", { sessionId: "1", operationId: "read", throughSeq: "3", actor: { userId: "spoof" } })
-  assert.deepEqual(f.calls, [{ method: "_deskfleet/session/read", actor: grant().actor }])
+  await f.rpc(3, "_deskfleet/session/unread", { sessionId: "1", operationId: "unread", actor: { userId: "spoof" } })
+  assert.deepEqual(f.calls, [
+    { method: "_deskfleet/session/read", actor: grant().actor },
+    { method: "_deskfleet/session/unread", actor: grant().actor },
+  ])
 })
 
 test("composer search and resolution require execution authority and use the verified peer actor", async context => {

@@ -500,13 +500,19 @@ shows unread when that sequence exceeds `lastReadSeq`; both absent values mean
 zero. Opening a conversation acknowledges only its observed history watermark
 through `_deskfleet/session/read`. The daemon advances `lastReadSeq` monotonically
 and rejects watermarks beyond its journal, so a delayed acknowledgement cannot
-hide a newer completion. The acknowledgement is shared by all viewers, survives
-restart, and is included in synchronized history and central Session summaries.
+hide a newer completion. `_deskfleet/session/unread` lets a person mark that
+latest completion unread again by rewinding `lastReadSeq` to the sequence
+immediately before it. A conversation that already displayed the completion
+does not acknowledge it again, so the mark remains until the conversation is
+opened again or a newer completion is displayed. The acknowledgement and unread
+mark are shared by all viewers, survive restart, and are included in
+synchronized history and central Session summaries.
 Ordinary subscriptions, history reads, and agent MCP reads do not acknowledge
-anything. Archived Sessions can be acknowledged without restoring them; reading
-does not update their activity timestamp. The visible conversation acknowledges
-after its history loads successfully, including later completions while it stays
-open. Hidden windows and retained machine stores do not acknowledge results.
+anything. Archived Sessions can be acknowledged or marked unread without
+restoring them; neither action updates their activity timestamp. The visible
+conversation acknowledges after its history loads successfully, including later
+completions while it stays open. Hidden windows and retained machine stores do
+not acknowledge results.
 Offline history stays unread until the owning daemon reconnects and the open
 conversation can acknowledge it.
 
@@ -867,6 +873,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/session/read` | A person acknowledges shared history through an observed `throughSeq`, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
+| `_deskfleet/session/unread` | A person rewinds the shared read watermark to just before the latest completion, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |
 | `_deskfleet/git/diff` | Read one changed file's patch by Session, repository, relative path, and change kind |
 | `_deskfleet/input/submit` | Persist prompt content (`text`, `image`, inline text `resource`, and `resource_link` blocks, with at least one non-empty text or text-resource block) with operation ID and backlog/steer intent |

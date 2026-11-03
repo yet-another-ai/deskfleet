@@ -181,6 +181,14 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     if (agents.sessions[id]) agents.sessions[id].lastReadSeq = throughSeq
     if (agents.views[id]?.snapshot) agents.views[id].snapshot.session.lastReadSeq = throughSeq
   }
+  agents.markUnread = async id => {
+    const session = agents.sessions[id]
+    const completed = session?.lastCompletedSeq
+    if (!session || !completed || BigInt(completed) === 0n || BigInt(completed) > BigInt(session.lastReadSeq ?? "0")) return
+    const lastReadSeq = String(BigInt(completed) - 1n)
+    session.lastReadSeq = lastReadSeq
+    if (agents.views[id]?.snapshot) agents.views[id].snapshot.session.lastReadSeq = lastReadSeq
+  }
   agents.checkOperation = async () => undefined
   agents.agentConfiguration = async params => configuration(locale, params.provider, params.model, params.reasoningEffort)
   agents.releaseAgentConfiguration = async () => {}

@@ -172,6 +172,8 @@ test("revokes only the matching peer and sends management over the central RPC",
   expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/rename", { sessionId: "1", operationId: "rename-op", title: "Investigate payment errors" })
   await f.remote.api.agent.control!("_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
   expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/read", { sessionId: "1", operationId: "read-op", throughSeq: "42" })
+  await f.remote.api.agent.control!("_deskfleet/session/unread", { sessionId: "1", operationId: "unread-op" })
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "_deskfleet/session/unread", { sessionId: "1", operationId: "unread-op" })
   expect(f.remote.api.agent.control!("_deskfleet/input/submit", { sessionId: "1", operationId: "prompt", content: [], delivery: "backlog" })).toBeUndefined()
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1", working: false }])
 })
