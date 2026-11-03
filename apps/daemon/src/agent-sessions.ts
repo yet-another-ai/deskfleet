@@ -8,6 +8,7 @@ import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./agent-store.ts"
+import { SessionPresence, type SessionPresenceUpdate } from "./session-presence.ts"
 import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
 import { consumedTurns, SessionAdmissions, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { copyForkHistory } from "./agent-fork-history.ts"
@@ -105,6 +106,7 @@ export class AgentSessions {
   readonly #transitions = new Map<string, Promise<unknown>>()
   readonly #archiveListeners = new Set<(worktreeId: string) => Promise<void>>()
   readonly #discovery = new Set<Promise<unknown>>()
+  readonly #presence = new SessionPresence()
   readonly #configurationProbes = new AgentConfigurationProbes()
   readonly #unsubscribeProviders?: () => void
   readonly #closing = new AbortController()
@@ -162,6 +164,42 @@ export class AgentSessions {
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
   onPreview(listener: (preview: AgentPreview) => void): () => void { return this.journal.onPreview(listener) }
+  onPresence(listener: (update: SessionPresenceUpdate) => void): () => void { return this.#presence.onChange(listener) }
+  presence(): SessionPresenceUpdate[] { return this.#presence.snapshot() }
+
+  async attend(sessionId: string, connectionId: string, actor: AgentActor): Promise<void> {
+    if (this.#closed || actor.kind !== "user" || !actor.userId) return
+    const session = await this.journal.session(id(sessionId, "Session ID"))
+    if (this.#closed) return
+    this.#presence.watch(session.id, connectionId, actor.userId)
+    await this.#rememberViewer(session.id, actor.userId).catch(error => console.error("Could not record a Session visitor", error))
+  }
+
+  leave(sessionId: string, connectionId: string): void {
+    this.#presence.unwatch(id(sessionId, "Session ID"), connectionId)
+  }
+
+  leaveAll(connectionId: string): void {
+    this.#presence.disconnect(connectionId)
+  }
+
+  async #rememberViewer(sessionId: string, userId: string): Promise<void> {
+    await this.journal.serial(sessionId, async () => {
+      if (this.#closed) return
+      const snapshot = await this.journal.read(sessionId)
+      if (snapshot.session.viewers?.some(viewer => viewer.userId === userId)) return
+      const session = {
+        ...snapshot.session,
+        viewers: [...snapshot.session.viewers ?? [], { userId, seenAt: timestamp() }],
+        updatedAt: timestamp(),
+        lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n),
+      }
+      await this.journal.commit(snapshot, {
+        session,
+        events: [this.journal.event(sessionId, "session", session)],
+      })
+    })
+  }
   preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
 

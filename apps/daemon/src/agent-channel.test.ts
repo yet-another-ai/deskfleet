@@ -39,6 +39,11 @@ class Sessions implements AgentChannelSessions {
     this.calls.push({ method, params, actor })
     return this.handler(method, params, actor)
   }
+  attend?: AgentChannelSessions["attend"]
+  leave?: AgentChannelSessions["leave"]
+  leaveAll?: AgentChannelSessions["leaveAll"]
+  onPresence?: AgentChannelSessions["onPresence"]
+  presence?: AgentChannelSessions["presence"]
   onEvent(listener: (event: AgentEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   onPreview(listener: (preview: AgentPreview) => void): () => void { this.previewListeners.add(listener); return () => this.previewListeners.delete(listener) }
   preview(): AgentPreview | undefined { return this.pendingPreview }
@@ -515,4 +520,36 @@ test("AgentChannel rejects malformed envelopes and bounds messages and slow view
     assert.deepEqual((await fresh.subscribe()).result, snapshot)
     fresh.channel.close()
   })
+})
+
+test("attendance is announced to initialized viewers and ends when the channel closes", async t => {
+  const sessions = new Sessions()
+  const watchers = new Map<string, Map<string, string>>()
+  const listeners = new Set<(update: { sessionId: string; userIds: string[] }) => void>()
+  const emit = (sessionId: string) => {
+    const userIds = [...new Set(watchers.get(sessionId)?.values() ?? [])].sort()
+    for (const listener of listeners) listener({ sessionId, userIds })
+  }
+  sessions.attend = async (sessionId, connectionId, person) => {
+    const session = watchers.get(sessionId) ?? new Map<string, string>()
+    watchers.set(sessionId, session)
+    session.set(connectionId, person.userId ?? "")
+    emit(sessionId)
+  }
+  sessions.leaveAll = connectionId => {
+    for (const [sessionId, session] of watchers) if (session.delete(connectionId)) emit(sessionId)
+  }
+  sessions.onPresence = listener => { listeners.add(listener); return () => { listeners.delete(listener) } }
+  sessions.presence = () => [...watchers].map(([sessionId, session]) => ({ sessionId, userIds: [...new Set(session.values())].sort() }))
+  const ada = attach(sessions, { ...actor, kind: "user", userId: "ada" })
+  const bob = attach(sessions, { ...actor, kind: "user", userId: "bob", deviceId: "second" })
+  t.after(() => { ada.channel.close(); bob.channel.close() })
+  await ada.initialize()
+  await bob.initialize()
+  ada.request("attend", "_deskfleet/session/attend", { sessionId: "1" })
+  const announced = await bob.waitFor(message => message.method === "_deskfleet/session/presence" && message.params.userIds.includes("ada"))
+  assert.deepEqual(announced.params, { sessionId: "1", userIds: ["ada"] })
+  ada.channel.close()
+  const departed = await bob.waitFor(message => message.method === "_deskfleet/session/presence" && message.params.userIds.length === 0)
+  assert.deepEqual(departed.params, { sessionId: "1", userIds: [] })
 })

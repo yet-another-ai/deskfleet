@@ -41,6 +41,8 @@ export interface AgentSessionRecord {
   lastCompletedSeq?: string
   /** Shared watermark acknowledged by a person opening this Session. */
   lastReadSeq?: string
+  /** People who have opened this Session. */
+  viewers?: { userId: string; seenAt: string }[]
   createdAt: string
   updatedAt: string
   capabilities?: { steering: boolean; resume: boolean; fork?: boolean; additionalDirectories?: boolean; promptCapabilities?: AgentPromptCapabilities }
@@ -209,6 +211,9 @@ export interface AgentMethods {
   /** Viewer-owned, transient subscriptions; never written to the Session journal. */
   "_deskfleet/git/subscribe": { params: { sessionId: string; subscriptionId: string }; result: null }
   "_deskfleet/git/unsubscribe": { params: { subscriptionId: string }; result: null }
+  /** The caller is looking at this Session. Repeat calls keep the first visit. */
+  "_deskfleet/session/attend": { params: { sessionId: string }; result: null }
+  "_deskfleet/session/leave": { params: { sessionId: string }; result: null }
   "_deskfleet/input/submit": { params: AgentMutation & { content: ContentBlock[]; delivery: "backlog" | "steer"; turnId?: string }; result: AgentReceipt }
   "_deskfleet/input/steer": { params: AgentMutation & { inputId: string; turnId: string }; result: AgentReceipt }
   "_deskfleet/input/withdraw": { params: AgentMutation & { inputId: string }; result: AgentReceipt }

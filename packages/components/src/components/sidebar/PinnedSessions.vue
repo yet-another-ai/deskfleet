@@ -11,6 +11,7 @@ import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
+import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 
 const { t } = useI18n()
@@ -46,7 +47,9 @@ function open(machineId: string, sessionId: string): void {
             :title="`${sessionLabel({ id: item.sessionId, title: item.title })} · ${item.machineName}`"
             @click="open(item.machineId, item.sessionId)"
           >
-            <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
+            <SessionPresenceIcon :session-id="item.sessionId" :machine-id="item.machineId">
+              <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
+            </SessionPresenceIcon>
             <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
             <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
             <SessionWorkingIndicator v-if="item.working" />

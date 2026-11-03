@@ -78,6 +78,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const error = ref<string | null>(null)
   const relayDeniedReason = ref<RelayDeniedReason>()
   const operations = ref<Record<string, PendingAgentOperation>>({})
+  const sessionPresence = ref<Record<string, string[]>>({})
   const journals = new Map<string, Map<string, AgentEvent>>()
   const journalTails = new Map<string, string>()
   const previews = new AgentPreviews()
@@ -92,6 +93,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const permissionRequests = new Map<string, { sessionId: string; permissionId: string; resolve(value: unknown): void }>()
   const gitSubscriptions = new Map<string, { sessionId: string; listener(error?: string): void }>()
   let connectionGeneration = 0
+  let attendanceAttempt = 0
   let initialized: Promise<void> | null = null
   let refreshPending = false
   let refreshing: Promise<void> | null = null
@@ -308,6 +310,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       initialized = null
       connectionGeneration++
       gitSubscriptions.clear()
+      sessionPresence.value = {}
       for (const pending of permissionRequests.values()) pending.resolve({ outcome: { outcome: "cancelled" } })
       permissionRequests.clear()
     }
@@ -324,6 +327,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (!deletedSessions.has(preview.sessionId) && previews.receive(preview)) {
         pendingPreviews.add(preview.sessionId)
         if (!displayTimer.isPending.value) displayTimer.start()
+      }
+    } else if (notification.method === "_deskfleet/session/presence") {
+      const update = notification.params as { sessionId: string; userIds: string[] }
+      if (update.userIds.length) sessionPresence.value = { ...sessionPresence.value, [update.sessionId]: update.userIds }
+      else {
+        const next = { ...sessionPresence.value }
+        delete next[update.sessionId]
+        sessionPresence.value = next
       }
     } else if (notification.method === "_deskfleet/git/changed") {
       const change = notification.params as GitChangedNotification
@@ -470,7 +481,42 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (command) commandReceived(command)
     }
   }
-  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/prepare" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
+  async function attend(sessionId: string): Promise<boolean> {
+    if (state.value !== "connected") return false
+    const generation = connectionGeneration
+    const attempt = ++attendanceAttempt
+    try {
+      const controlled = api.control?.("_deskfleet/session/attend", { sessionId })
+      if (controlled) await controlled
+      else {
+        await initialize()
+        // call() would reconnect and send this attempt on the replacement channel.
+        if (attempt !== attendanceAttempt || generation !== connectionGeneration || state.value !== "connected") return false
+        await client.call("_deskfleet/session/attend", { sessionId })
+      }
+      const current = attempt === attendanceAttempt && generation === connectionGeneration && state.value === "connected"
+      if (current) return true
+      // This attempt registered on a channel the view no longer owns, and nothing newer replaced it.
+      if (attempt === attendanceAttempt && state.value === "connected") {
+        try { await client.call("_deskfleet/session/leave", { sessionId }) } catch { /* The replacement channel already dropped this viewer. */ }
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+  async function leave(sessionId: string): Promise<void> {
+    const generation = connectionGeneration
+    if (state.value !== "connected") return
+    try {
+      const controlled = api.control?.("_deskfleet/session/leave", { sessionId })
+      if (controlled) { await controlled; return }
+      await initialize()
+      if (generation !== connectionGeneration || state.value !== "connected") return
+      await client.call("_deskfleet/session/leave", { sessionId })
+    } catch { /* A closed channel already removed this viewer. */ }
+  }
+  async function mutation<M extends Exclude<AgentMethod, "_deskfleet/session/list" | "_deskfleet/session/subscribe" | "_deskfleet/session/history" | "_deskfleet/command/get" | "_deskfleet/agent/configuration" | "_deskfleet/session/configuration" | "_deskfleet/git/branches" | "_deskfleet/git/prepare" | "_deskfleet/git/status" | "_deskfleet/git/diff" | "_deskfleet/git/subscribe" | "_deskfleet/git/unsubscribe" | "_deskfleet/session/attend" | "_deskfleet/session/leave" | "_deskfleet/composer/references" | "_deskfleet/composer/resolve">>(
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
@@ -709,5 +755,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, refresh, open, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

@@ -294,6 +294,7 @@ impl LocalCatalog {
             last_event_seq: 0.into(),
             last_completed_seq: None,
             last_read_seq: None,
+            viewers: Vec::new(),
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),
             capabilities: None,

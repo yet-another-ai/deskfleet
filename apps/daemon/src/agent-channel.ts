@@ -14,6 +14,11 @@ export interface AgentChannelSessions {
   onPreview?(listener: (preview: AgentPreview) => void): () => void
   preview?(sessionId: string): AgentPreview | undefined
   watchGit?(sessionId: string, actor: AgentActor, listener: (error?: string) => void): Promise<() => void>
+  attend?(sessionId: string, connectionId: string, actor: AgentActor): Promise<void>
+  leave?(sessionId: string, connectionId: string): void
+  leaveAll?(connectionId: string): void
+  onPresence?(listener: (update: { sessionId: string; userIds: string[] }) => void): () => void
+  presence?(): { sessionId: string; userIds: string[] }[]
 }
 
 type RpcId = string | number | null
@@ -32,6 +37,7 @@ const METHODS = new Set<AgentMethod>([
   "_deskfleet/elicitation/respond",
   "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/delete", "_deskfleet/command/get",
   "_deskfleet/git/branches", "_deskfleet/git/prepare", "_deskfleet/git/status", "_deskfleet/git/diff", "_deskfleet/git/subscribe", "_deskfleet/git/unsubscribe",
+  "_deskfleet/session/attend", "_deskfleet/session/leave",
 ])
 const MAX_PENDING_REQUESTS = 128
 const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2
@@ -51,8 +57,10 @@ export class AgentChannel {
   readonly #actor: AgentActor
   readonly #send: (bytes: Uint8Array) => Promise<void>
   readonly #onFailure: (error: unknown) => void
+  readonly #connectionId = randomUUID()
   readonly #unsubscribe: () => void
   readonly #unsubscribePreview: (() => void) | undefined
+  readonly #unsubscribePresence: (() => void) | undefined
   readonly #subscriptions = new Map<string, Subscription>()
   readonly #gitSubscriptions = new Map<string, GitSubscription>()
   readonly #permissionCalls = new Map<string, PermissionCall>()
@@ -78,6 +86,10 @@ export class AgentChannel {
     this.#unsubscribe = sessions.onEvent(event => this.#event(event))
     this.#unsubscribePreview = sessions.onPreview?.(preview => {
       if (this.#subscriptions.get(preview.sessionId)?.ready) this.#preview(preview)
+    })
+    this.#unsubscribePresence = sessions.onPresence?.(update => {
+      if (this.#closed || !this.#initialized) return
+      this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/presence", params: update })
     })
   }
 
@@ -110,8 +122,10 @@ export class AgentChannel {
     this.#closing.abort()
     clearImmediate(this.#writeScheduled)
     this.#writeScheduled = undefined
+    this.#sessions.leaveAll?.(this.#connectionId)
     this.#unsubscribe()
     this.#unsubscribePreview?.()
+    this.#unsubscribePresence?.()
     for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
     this.#gitSubscriptions.clear()
     this.#subscriptions.clear()
@@ -183,12 +197,20 @@ export class AgentChannel {
           agentCapabilities: { _meta: { deskfleet: { sessions: true, maxMessageBytes: AGENT_MESSAGE_BYTES } } },
           _meta: { deskfleet: { identity: this.#sessions.journal.identity } },
         } })
+        for (const update of this.#sessions.presence?.() ?? []) {
+          this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/presence", params: update })
+        }
         return
       }
       if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
       if (!METHODS.has(method as AgentMethod)) { this.#error(id, -32601, "Method not found"); return }
       if (method === "_deskfleet/git/subscribe" || method === "_deskfleet/git/unsubscribe") {
         await this.#gitSubscription(method, params)
+        this.#queue({ jsonrpc: "2.0", id, result: null })
+        return
+      }
+      if (method === "_deskfleet/session/attend" || method === "_deskfleet/session/leave") {
+        await this.#attendance(method, params)
         this.#queue({ jsonrpc: "2.0", id, result: null })
         return
       }
@@ -235,6 +257,17 @@ export class AgentChannel {
       }
       this.#error(id, -32000, errorMessage(error))
     }
+  }
+
+  async #attendance(method: string, params: unknown): Promise<void> {
+    if (!object(params) || typeof params.sessionId !== "string" || !params.sessionId) throw new Error("Missing Session ID")
+    const sessionId = params.sessionId
+    if (method === "_deskfleet/session/leave") {
+      this.#sessions.leave?.(sessionId, this.#connectionId)
+      return
+    }
+    if (!this.#sessions.attend) throw new Error("Session presence is unavailable")
+    await this.#sessions.attend(sessionId, this.#connectionId, this.#actor)
   }
 
   async #gitSubscription(method: string, params: unknown): Promise<void> {

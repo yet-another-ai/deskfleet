@@ -2,7 +2,7 @@ import type { NativePeer } from "@deskfleet/native"
 import { timingSafeEqual } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
-import { AGENT_CHANNEL, type AgentMethod } from "./agent-protocol.ts"
+import { AGENT_CHANNEL, type AgentActor, type AgentMethod } from "./agent-protocol.ts"
 import type { ControlPeers } from "./control-server.ts"
 import { desktopErrorEvent, desktopStartupCleanupFailure, encoderFailure, type DesktopStart, type IceCandidate } from "./control-protocol.ts"
 import type { LocalPeerGrant, MachineCredentials, PeerAuthorization, PeerOffer, PeerSignal } from "./central-protocol.ts"
@@ -187,6 +187,17 @@ export class AuthorizedPeers {
             try { this.#live(id, "git:read"); listener(error) } catch { /* expiry closes subscriptions */ }
           })
         },
+        ...(this.#agents.attend ? { attend: (sessionId: string, connectionId: string, actor: AgentActor) => {
+          this.#live(id, "agent:read")
+          return this.#agents.attend!(sessionId, connectionId, actor)
+        } } : {}),
+        ...(this.#agents.leave ? { leave: (sessionId: string, connectionId: string) => {
+          this.#live(id, "agent:read")
+          this.#agents.leave!(sessionId, connectionId)
+        } } : {}),
+        leaveAll: this.#agents.leaveAll?.bind(this.#agents),
+        onPresence: this.#agents.onPresence?.bind(this.#agents),
+        presence: this.#agents.presence?.bind(this.#agents),
         handle: (method, value) => {
           const scope = AGENT_READ.has(method) ? "agent:read" : AGENT_EXECUTE.has(method) ? "agent:execute" : method.startsWith("_deskfleet/git/") ? "git:read" : undefined
           if (!scope) return Promise.reject(new Error("Manage Sessions through the backend API"))

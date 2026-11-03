@@ -38,6 +38,8 @@ import { useConnectionResume } from "../composables/useConnectionResume.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
+import { useSessionFaces } from "../composables/useSessionFaces.ts"
+import UserAvatarStack from "../components/common/UserAvatarStack.vue"
 import { liveTurnStates } from "../services/agent-conversation.ts"
 import { useConversationProjection } from "../composables/useConversationProjection.ts"
 import { createAgentUsageSelector } from "../services/agent-usage.ts"
@@ -192,6 +194,7 @@ function locateEntry(id: string): void {
   activeEntry.value = id
 }
 
+const faces = useSessionFaces(() => props.sessionId)
 watchImmediate(() => props.sessionId, id => {
   busy.value = false
   forkOpen.value = false
@@ -201,6 +204,13 @@ watchImmediate(() => props.sessionId, id => {
   locatedEntry = undefined
   followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id))
   void agents.open(id)
+})
+watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _, onCleanup) => {
+  // A dropped channel already clears attendance. Attend again when this view is still mounted.
+  if (connection !== "connected") return
+  let left = false
+  onCleanup(() => { left = true; void agents.leave(id) })
+  void agents.attend(id).then(present => { if (left && present) void agents.leave(id) })
 })
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading], () => {
@@ -280,14 +290,17 @@ async function checkOperation(operationId: string): Promise<void> {
 </script>
 
 <template>
-  <SessionHeader :has-actions="!!snapshot">
+  <SessionHeader :has-actions="!!snapshot || faces.length > 0">
     <template v-if="location">{{ snapshot?.session.title || sessionLabel(location.session) }}<ResourcePath :segments="[location.machine.name, ...(location.workspace ? [location.workspace.name] : [])]" /></template>
     <template #actions>
-      <div v-if="snapshot" data-session-window-actions class="app-no-drag flex items-center gap-1">
-        <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
-        <IconButton v-if="newTerminalWindow && !compact" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
-        <IconButton v-if="compact && !windowedMainWindow && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
-        <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+      <div v-if="snapshot || faces.length" data-session-window-actions class="app-no-drag flex items-center gap-1">
+        <template v-if="snapshot">
+          <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
+          <IconButton v-if="newTerminalWindow && !compact" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
+          <IconButton v-if="compact && !windowedMainWindow && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
+          <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+        </template>
+        <UserAvatarStack v-if="faces.length" :people="faces" :size="22" :limit="5" :class="snapshot && 'ml-1'" />
       </div>
     </template>
   </SessionHeader>

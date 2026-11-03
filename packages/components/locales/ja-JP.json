@@ -647,6 +647,8 @@
       "cost": "セッションの費用"
     },
     "localUser": "ローカルユーザー", "system": "システム",
+    "presenceHere": "{name} が閲覧中", "presenceVisited": "{name} が閲覧しました",
+    "presenceMore": "他 {count} 人",
     "sourceMachine": "マシン {id}", "image": "エージェントの画像",
     "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
     "expandText": "すべて表示", "collapseText": "折りたたむ",
