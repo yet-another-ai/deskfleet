@@ -32,13 +32,15 @@ const awaitingApproval = computed(() => tools.value.some(step => step.permission
       <span v-if="awaitingApproval" class="ui-badge text-ui-warning">{{ t('agent.awaitingApproval') }}</span>
       <ChevronRight :size="14" :stroke-width="2" class="shrink-0 ui-motion" :class="open && 'rotate-90'" aria-hidden="true" />
     </CollapsibleTrigger>
-    <CollapsibleContent class="ui-collapsible mt-2 ml-1.5 flex flex-col gap-2 border-l border-ui-border pl-4">
-      <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
-        <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="live" :default-open="step.id === expandedToolId" />
-        <template v-else>
-          <div class="text-xs">{{ t('agent.thinking') }}</div>
-          <AgentContent :content="step.content" markdown :final="!live || step.id !== lastStepId" class="mt-1" />
-        </template>
+    <CollapsibleContent class="ui-collapsible">
+      <div class="mt-2 ml-1.5 flex flex-col gap-2 border-l border-ui-border pl-4">
+        <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">
+          <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="live" :default-open="step.id === expandedToolId" />
+          <template v-else>
+            <div class="text-xs">{{ t('agent.thinking') }}</div>
+            <AgentContent :content="step.content" markdown :final="!live || step.id !== lastStepId" class="mt-1" />
+          </template>
+        </div>
       </div>
     </CollapsibleContent>
   </CollapsibleRoot>

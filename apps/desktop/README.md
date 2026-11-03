@@ -547,7 +547,9 @@ utilities can't express:
   until its exit animation ends.
 - The `ui-route-stage` page entrance.
 - `ui-rise-in` and `ui-pop-in`.
-- `ui-collapsible`.
+- `ui-collapsible` height animation. Keep that element bare and put spacing,
+  borders, and backgrounds on a child; padding or a border would stop it
+  collapsing fully.
 - The halo on status dots and the `ui-status-live` ping for running states.
 - The radio ring tint and dot pop.
 - Meter grow-in and sheen, and the `ui-meter-indeterminate` sweep.
