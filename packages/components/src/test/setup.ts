@@ -90,7 +90,16 @@ const api: DeskfleetDesktopApi = {
 }
 
 configureClient(api)
-// Avatars probe Gravatar before painting. Keep that lookup local so a missing image stays initials.
+// Avatars probe Gravatar with an image element. Default to a miss so unrelated tests keep initials.
+vi.stubGlobal("Image", class {
+  referrerPolicy = ""
+  onload: (() => void) | null = null
+  onerror: ((event?: unknown) => void) | null = null
+  set src(_url: string) {
+    queueMicrotask(() => this.onerror?.(new Event("error")))
+  }
+})
+// Keep accidental renderer fetches local; avatars no longer use fetch for Gravatar.
 vi.stubGlobal("fetch", vi.fn(async () => new Response("404 Not Found", { status: 404, headers: { "content-type": "text/html" } })))
 // Icon chunks are hundreds of SVG modules. Finish that import before a worker exits.
 await loadProviderIcons()

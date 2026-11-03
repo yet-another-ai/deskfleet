@@ -48,6 +48,13 @@ test("renderers may load images only from the app and Gravatar", () => {
   expect(injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true)).toContain("img-src 'self' data: blob: https://gravatar.com;")
 })
 
+test("production renderers do not open connect-src for Gravatar avatar probes", () => {
+  const connect = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true)
+    .split("; ")
+    .find(directive => directive.startsWith("connect-src "))
+  expect(connect).toBe("connect-src 'none'")
+})
+
 test("renderer HTML must declare the policy placeholder", () => {
   expect(() => injectRendererContentSecurityPolicy("<html></html>", true)).toThrow()
 })
