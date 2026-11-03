@@ -107,6 +107,11 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const sessionScope = new AcpSessionScope()
   const filesystem = createAcpFilesystem(id => sessionScope.require(id))
   const terminals = client.terminals ? new AcpTerminals(client.terminals, id => sessionScope.require(id)) : undefined
+  const fs = {
+    readTextFile: options.clientCapabilities?.fs?.readTextFile ?? true,
+    writeTextFile: options.clientCapabilities?.fs?.writeTextFile ?? true,
+    ...(options.clientCapabilities?.fs?._meta ? { _meta: options.clientCapabilities.fs._meta } : {}),
+  }
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
   let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
@@ -130,8 +135,6 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         connection.close(error)
       }
     })
-    .onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
-    .onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
     .onNotification(acp.methods.client.elicitation.complete, async ({ params }) => {
       await client.completeElicitation?.(params)
     })
@@ -154,6 +157,12 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
+  if (fs.readTextFile) {
+    clientApp = clientApp.onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
+  }
+  if (fs.writeTextFile) {
+    clientApp = clientApp.onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
+  }
   if (terminals) {
     clientApp = clientApp
       .onRequest(acp.methods.client.terminal.create, ({ params, signal }) => terminals.create(params, signal))
@@ -238,7 +247,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.7.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
-        fs: { readTextFile: true, writeTextFile: true },
+        fs,
         ...(terminals ? { terminal: true } : { terminal: false }),
         ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
       },

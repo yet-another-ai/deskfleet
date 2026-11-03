@@ -259,6 +259,10 @@ test("Antigravity launches its ACP runtime without interactive authentication", 
   const connection = await provider.connect(config, { onUpdate() {} })
   t.after(() => connection.close())
   assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, process.platform === "linux" ? ["--uid="] : [])
+  assert.deepEqual(
+    (connection.initialization._meta?.clientCapabilities as acp.ClientCapabilities | undefined)?.fs,
+    { readTextFile: false, writeTextFile: false },
+  )
   assert.match((await connection.newSession({ cwd: directory, mcpServers: [] })).sessionId, /^fixture-session-/u)
   await connection.close()
   await assert.rejects(registry.test({ template: "antigravity", name: "Antigravity", binaryPath, env: { DESKFLEET_TEST_AGENT_MODE: "antigravity-signed-out" } }), /Use the Log in button before testing the connection/u)

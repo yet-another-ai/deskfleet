@@ -78,6 +78,8 @@ export async function runAntigravityLogin(): Promise<void> {
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   connect(config, client) {
-    return connectAcpProcess(antigravityProcess(config), client)
+    return connectAcpProcess(antigravityProcess(config), client, {
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+    })
   },
 }
