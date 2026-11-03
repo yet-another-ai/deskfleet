@@ -14,6 +14,7 @@ import { AgentElicitations } from "./agent-elicitations.ts"
 import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
+import { truncateGeneratedTitle } from "./titles.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -373,7 +374,7 @@ export class AgentRuntime {
       const current = await this.journal.session(this.sessionId)
       const turnId = this.#active?.turn.id
       const session = params.update.sessionUpdate === "session_info_update" && params.update.title && !current.titleCustomized
-        ? { ...current, title: params.update.title, updatedAt: timestamp() } : undefined
+        ? { ...current, title: truncateGeneratedTitle(params.update.title), updatedAt: timestamp() } : undefined
       const events = [this.journal.event(this.sessionId, "acp", params, { runGeneration: generation, turnId })]
       if (session) events.push(this.journal.event(this.sessionId, "session", session))
       await this.journal.commit(current, { session, events })

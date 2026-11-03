@@ -4,6 +4,7 @@ import { createTerminal, type NativeTerminal, type TerminalConfig } from "@deskf
 import { TerminalHistory } from "./terminal-history.ts"
 import { terminalImageEnvironment } from "./terminal-image-launcher.ts"
 import type { TerminalDial, TerminalSessionEvent, TerminalSummary } from "./terminal-protocol.ts"
+import { truncateGeneratedTitle } from "./titles.ts"
 
 export type TerminalFactory = (config: TerminalConfig) => Promise<NativeTerminal>
 export type TerminalChange = "output" | "state" | "hangup"
@@ -158,7 +159,7 @@ export class TerminalSessions {
   async #spawn(id: string, config: TerminalConfig, worktreeId?: string, title?: string, kind?: "acp"): Promise<TerminalSummary> {
     if (config.command === undefined) config.env = await (this.#shellEnvironment ??= terminalImageEnvironment(this.#directory))
     const { cwd, cols, rows } = config
-    const summary: TerminalSummary = { id, title: title || basename(cwd) || cwd, cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}), ...(kind ? { kind } : {}) }
+    const summary: TerminalSummary = { id, title: truncateGeneratedTitle(title || basename(cwd) || cwd), cwd, cols, rows, status: "running", ...(worktreeId ? { worktreeId } : {}), ...(kind ? { kind } : {}) }
     const history = await TerminalHistory.create(this.#directory, summary)
     let native: NativeTerminal
     try { native = await this.#factory(config) }

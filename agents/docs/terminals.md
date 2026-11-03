@@ -335,7 +335,8 @@ The renderer rebuilds its terminal from the recorded bytes and keeps 5,000
 scrollback lines locally. A future **Settings → Terminal → History size** will
 choose that window. This client memory limit never truncates the daemon's files.
 Each tab shows its connection as an icon, which reconnects a broken view, and
-titles itself with the title the running program sets (OSC 0/2), replayed from
+titles itself with the title the running program sets (OSC 0/2), truncated to 40
+UTF-16 code units like other generated tab titles, replayed from
 history after reattaching; until one is set it is numbered. History is terminal output, including control sequences;
 keystrokes that the shell does not echo are not recorded separately.
 
