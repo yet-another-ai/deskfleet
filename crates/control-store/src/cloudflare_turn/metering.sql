@@ -2,9 +2,15 @@ WITH coturn AS (
  SELECT c.*, COALESCE((SELECT jsonb_array_length(urls)>0 FROM cp_turn_settings WHERE singleton),TRUE) AS required
  FROM cp_turn_collector c WHERE singleton
 ), sources AS (
- SELECT s.created_at, (SELECT MAX(u.collected_at) FROM cp_cloudflare_turn_usage u
+ -- A recently collected contiguous prior period can bridge the first two
+ -- minutes of a rollover while the collector writes the new period's snapshot.
+ SELECT s.created_at, COALESCE((SELECT MAX(u.collected_at) FROM cp_cloudflare_turn_usage u
  WHERE u.identifier=s.identifier AND u.period_start<=$2 AND u.period_end>$2
- AND ($3::bigint IS NULL OR (u.period_start=$3 AND u.period_end=$4))) AS last_seen_at
+ AND ($3::bigint IS NULL OR (u.period_start=$3 AND u.period_end=$4))),
+ (SELECT MAX(u.collected_at) FROM cp_cloudflare_turn_usage u
+ WHERE u.identifier=s.identifier AND u.period_end=$3
+ AND s.expires_at>$2 AND $3>$2-120000 AND $3<=$2
+ AND u.collected_at>$2-120000 AND u.query_end>=$3-120000)) AS last_seen_at
  FROM cp_cloudflare_turn_sources s WHERE ($1::bigint IS NULL OR s.team_id=$1)
  AND (s.expires_at>$2 OR EXISTS (
  SELECT 1 FROM cp_cloudflare_turn_usage u WHERE u.identifier=s.identifier

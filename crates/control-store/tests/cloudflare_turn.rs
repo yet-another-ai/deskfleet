@@ -137,6 +137,125 @@ async fn admin_billing_reports_freshness_for_each_team() {
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn rollover_uses_only_recent_contiguous_previous_usage_until_the_new_snapshot_arrives() {
+    let f = Fixture::new().await;
+    f.store
+        .update_cloudflare_turn_settings(&f.admin, &update())
+        .await
+        .unwrap();
+    let now = now_ms();
+    let start = now - 20_000;
+    f.store
+        .database()
+        .execute_raw(sql(
+            "UPDATE cp_billing_profiles SET period_anchor=$2 WHERE team_id=$1",
+            vec![f.team.parse::<i64>().unwrap().into(), start.into()],
+        ))
+        .await
+        .unwrap();
+    let profile = f.store.billing_profile(&f.team).await.unwrap();
+    let (period_start, period_end) =
+        deskfleet_control_store::billing::period_at(profile.period_anchor, now);
+    assert_eq!(period_start, start);
+    let config = f.store.cloudflare_turn_config().await.unwrap();
+    let identifier = f
+        .store
+        .prepare_cloudflare_turn_usage(&f.team, &config, now + 3_600_000)
+        .await
+        .unwrap();
+    f.store
+        .database()
+        .execute_raw(sql(
+            "UPDATE cp_cloudflare_turn_sources SET created_at=$2 WHERE identifier=$1",
+            vec![identifier.as_str().into(), (now - 180_000).into()],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        f.store.relay_denied_reason(&f.team).await.unwrap(),
+        Some(RelayDeniedReason::MeteringUnavailable)
+    );
+
+    // The immediately preceding period was healthy at the boundary, while the
+    // current period's row still has no collector result.
+    f.store.database().execute_raw(sql(
+        "INSERT INTO cp_cloudflare_turn_usage(identifier,period_start,period_end,expires_at,query_end,collected_at) VALUES($1,$2,$3,$3,$4,$5)",
+        vec![identifier.as_str().into(), (start - 2_592_000_000_i64).into(), start.into(), (start - 1000).into(), (now - 1000).into()],
+    )).await.unwrap();
+    assert!(f.store.relay_allowed(&f.team).await.unwrap());
+    assert_eq!(
+        f.store.billing_summary(&f.team).await.unwrap()["metering"]["fresh"],
+        true
+    );
+    let page = f
+        .store
+        .admin_billing_teams(&f.admin, None, 10)
+        .await
+        .unwrap();
+    let team = page.teams.iter().find(|team| team["id"] == f.team).unwrap();
+    assert_eq!(team["billing"]["metering"]["fresh"], true);
+
+    // The transition grace has an explicit bound even if a backfill completes later.
+    let expired_grace: bool = f
+        .store
+        .database()
+        .query_one_raw(sql(
+            include_str!("../src/cloudflare_turn/metering.sql"),
+            vec![
+                f.team.parse::<i64>().unwrap().into(),
+                (start + 120_000).into(),
+                start.into(),
+                period_end.into(),
+            ],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "fresh")
+        .unwrap();
+    assert!(!expired_grace);
+
+    f.store.database().execute_raw(sql(
+        "UPDATE cp_cloudflare_turn_usage SET collected_at=$3 WHERE identifier=$1 AND period_end=$2",
+        vec![identifier.as_str().into(), start.into(), (now - 121_000).into()],
+    )).await.unwrap();
+    assert_eq!(
+        f.store.relay_denied_reason(&f.team).await.unwrap(),
+        Some(RelayDeniedReason::MeteringUnavailable)
+    );
+    // A recently queried but old-ended backfill must not stand in for recent usage.
+    f.store.database().execute_raw(sql(
+        "UPDATE cp_cloudflare_turn_usage SET collected_at=$3,query_end=$4 WHERE identifier=$1 AND period_end=$2",
+        vec![identifier.as_str().into(), start.into(), (now - 1000).into(), (start - 120_001).into()],
+    )).await.unwrap();
+    assert_eq!(
+        f.store.relay_denied_reason(&f.team).await.unwrap(),
+        Some(RelayDeniedReason::MeteringUnavailable)
+    );
+    // A different boundary is not a normal rollover, including a changed anchor.
+    f.store.database().execute_raw(sql(
+        "UPDATE cp_cloudflare_turn_usage SET period_end=$3,query_end=$4 WHERE identifier=$1 AND period_end=$2",
+        vec![identifier.as_str().into(), start.into(), (start - 1).into(), (start - 1000).into()],
+    )).await.unwrap();
+    assert_eq!(
+        f.store.relay_denied_reason(&f.team).await.unwrap(),
+        Some(RelayDeniedReason::MeteringUnavailable)
+    );
+
+    // Once the current snapshot arrives it is authoritative, including quota exhaustion.
+    f.store.database().execute_raw(sql(
+        "UPDATE cp_cloudflare_turn_usage SET collected_at=$3,query_end=$3,egress_bytes=2147483648 WHERE identifier=$1 AND period_start=$2",
+        vec![identifier.as_str().into(), start.into(), now_ms().into()],
+    )).await.unwrap();
+    assert_eq!(
+        f.store.relay_denied_reason(&f.team).await.unwrap(),
+        Some(RelayDeniedReason::TurnQuotaExhausted)
+    );
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn credentials_are_private_audited_preserved_and_explicitly_clearable() {
     let f = Fixture::new().await;
     let member = f
