@@ -54,16 +54,21 @@ function entries(text: string): [string, string][] {
   })
 }
 
-// Local config is data, not executable policy. Unknown keys fail closed so a
-// new Git execution feature cannot silently bypass a list of dangerous keys.
-function allowed(key: string): boolean {
-  return /^core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|autocrlf|eol|symlinks|ignorestat|trustctime|checkstat|protectntfs|protecthfs)$/u.test(key)
-    || /^extensions\.(objectformat|worktreeconfig|refstorage)$/u.test(key)
-    || /^remote\..+\.(url|pushurl|fetch|tagopt|mirror|prune|prunetags)$/u.test(key)
-    || /^branch\..+\.(remote|merge|pushremote|rebase|description|vscode-merge-base)$/u.test(key)
-    || /^(user\.(name|email)|commit\.gpgsign|push\.default|remote\.pushdefault)$/u.test(key)
-    || /^(status\.renames|diff\.(renames|external)|diff\..+\.(command|textconv))$/u.test(key)
-    || /^submodule\..+\.(url|active|branch|ignore|shallow|fetchrecursesubmodules)$/u.test(key)
+// Block known executable and transport policy while allowing unrelated tool metadata.
+// New Git operations and configuration features must be reviewed against this list.
+function prohibited(key: string): boolean {
+  return /^(include|includeif)\./u.test(key)
+    || /^credential\.(.+\.)?helper$/u.test(key)
+    || /^filter\..+\.(clean|smudge|process|required)$/u.test(key)
+    || /^hook\..+\.(command|event)$/u.test(key)
+    || /^http\.(.+\.)?(proxy|proxyauthmethod|proxysslcert|proxysslkey|proxysslcertpasswordprotected|proxysslcerttype|proxysslkeytype|proxysslcainfo|proxysslverify|sslverify|sslcert|sslkey|sslcertpasswordprotected|sslcerttype|sslkeytype|sslcainfo|sslcapath|sslbackend|pinnedpubkey|extraheader|cookiefile)$/u.test(key)
+    || /^url\..+\.(insteadof|pushinsteadof)$/u.test(key)
+    || /^core\.(fsmonitor|hookspath|sshcommand|gitproxy|askpass|alternaterefscommand)$/u.test(key)
+    || /^remote\..+\.(uploadpack|receivepack|proxy|proxyauthmethod|vcs|promisor|partialclonefilter)$/u.test(key)
+    || /^branch\..+\.mergeoptions$/u.test(key)
+    || /^merge\..+\.driver$/u.test(key)
+    || /^submodule\..+\.(update|gitdir)$/u.test(key)
+    || /^(extensions\.partialclone|gc\.recentobjectshook)$/u.test(key)
 }
 
 async function checkoutRoot(path: string): Promise<string> {
@@ -104,7 +109,7 @@ async function inspect(context: string[], flags: string[], execute: Runner): Pro
     })
     for (const [key, value] of entries(stdout)) {
       if (key === "core.worktree") await checkWorktree(context, value, flags, execute)
-      else if (!allowed(key)) throw new GitPolicyError(`Repository-local Git configuration is not supported by DeskFleet: ${key}`)
+      else if (prohibited(key)) throw new GitPolicyError(`Repository-local Git configuration is not supported by DeskFleet: ${key}`)
       if (key === "extensions.worktreeconfig") {
         worktreeConfig = (await execute([...flags, ...context, "config", "--local", "--no-includes", "--bool", "--get", key])).stdout.trim() === "true"
       }
@@ -141,7 +146,7 @@ export async function executeGit(args: string[], options: Options = {}): Promise
     return run(command, { ...commandOptions, timeout: remaining }, env)
   }
   hooks ??= mkdtemp(join(tmpdir(), "deskfleet-git-hooks-"))
-  const flags = ["--no-pager", "-c", `core.hooksPath=${await hooks}`, "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false"]
+  const flags = ["--no-pager", "-c", `core.hooksPath=${await hooks}`, "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "maintenance.auto=false", "-c", "gc.auto=0"]
   const context = args[0] === "-C" || args[0] === "--git-dir" ? args.slice(0, 2) : undefined
   if (!context || !context[1]) throw new Error("Git automation requires an explicit repository")
   if (context[0] === "-C") await inspectCheckout(context[1], flags, execute, new Set())

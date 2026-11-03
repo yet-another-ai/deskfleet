@@ -33,13 +33,18 @@ test("safe Git supports linked worktrees and shared metadata operations", async 
   assert.match((await executeGit(["--git-dir", common, "worktree", "list"])).stdout, /linked/)
 })
 
-test("Git status accepts VS Code branch merge-base metadata", async t => {
+test("Git status accepts unrelated repository and branch configuration", async t => {
   const { root } = await fixture(t)
   await git(root, "config", "branch.feat/mark-session-unread.vscode-merge-base", "origin/main")
+  await git(root, "config", "branch.feat/mark-session-unread.unknown", "value")
+  await git(root, "config", "some-tool.custom-setting", "value")
+  await git(root, "config", "filter.example.description", "metadata")
+  await git(root, "config", "http.custom-setting", "value")
   await writeFile(join(root, "file.txt"), "changed\n")
   assert.match((await executeGit(["-C", root, "status", "--porcelain"])).stdout, / M file\.txt/)
-  await git(root, "config", "branch.feat/mark-session-unread.unknown", "value")
-  await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), /branch\.feat\/mark-session-unread\.unknown/)
+  await git(root, "config", "extensions.worktreeConfig", "true")
+  await git(root, "config", "--worktree", "some-tool.worktree-setting", "value")
+  assert.match((await executeGit(["-C", root, "status", "--porcelain"])).stdout, / M file\.txt/)
 })
 
 test("Git rejects common-config worktree redirection before touching a victim directory", async t => {
@@ -85,8 +90,8 @@ test("Git validates worktree-local redirection while retaining valid layout meta
   assert.equal(await readFile(join(root, "file.txt"), "utf8"), "source\n")
 })
 
-for (const key of ["core.fsmonitor", "core.sshCommand", "credential.helper", "filter.attack.smudge", "filter.attack.process", "remote.origin.uploadpack"]) {
-  test(`Git rejects executable repository configuration: ${key}`, async t => {
+for (const key of ["core.fsmonitor", "core.sshCommand", "credential.helper", "credential.https://example.com.helper", "filter.attack.smudge", "filter.attack.process", "remote.origin.uploadpack", "hook.attack.command", "hook.attack.event", "merge.attack.driver", "gc.recentObjectsHook", "branch.main.mergeOptions", "url.file:///tmp.insteadOf", "http.sslVerify"]) {
+  test(`Git rejects restricted repository configuration: ${key}`, async t => {
     const { root, marker } = await fixture(t)
     await git(root, "config", key, `!echo executed > '${marker.replaceAll("\\", "/")}'`)
     await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), /Repository-local Git configuration/)
