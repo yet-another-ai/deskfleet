@@ -216,6 +216,32 @@ test("discovers displays without capturing, then connects with the automatic cod
   expect(track.stop).toHaveBeenCalledTimes(1)
 })
 
+test("keeps autoplay muted across track rebind when system audio is enabled", async () => {
+  const firstPlay = deferred<void>()
+  const mutedAtPlay: boolean[] = []
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(async function (this: HTMLMediaElement) {
+    mutedAtPlay.push(this.muted)
+    if (mutedAtPlay.length === 1) return firstPlay.promise
+  })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await wrapper.get('[role="checkbox"]').trigger("click")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  const peer = TestPeer.instances[0]!
+  const element = wrapper.get("video").element as HTMLVideoElement
+  expect(mutedAtPlay).toEqual([true])
+  peer.ontrack?.({ track: { stop: vi.fn() } as unknown as MediaStreamTrack })
+  await flushPromises()
+  // The track rebind play must also start muted; the delayed empty-stream play must not win the unmute race.
+  expect(mutedAtPlay).toEqual([true, true])
+  expect(element.muted).toBe(false)
+  firstPlay.resolve()
+  await flushPromises()
+  expect(element.muted).toBe(false)
+  expect(wrapper.findAll("button").some(entry => entry.text() === "Play desktop video")).toBe(false)
+})
+
 test("selects HEVC ahead of H264 when the display has no AV1 encoder", async () => {
   mock.api.capabilities.mockResolvedValueOnce({
     displays: [{ id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264", "h265"] }],

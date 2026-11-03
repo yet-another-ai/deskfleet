@@ -124,21 +124,27 @@ onBeforeUnmount(() => {
   void exitFullscreen()
 })
 
+let playGeneration = 0
+
 async function play(userGesture = false): Promise<void> {
   const element = video.value
   const media = element?.srcObject
   if (!element || !media) return
-  // Safari blocks unmuted autoplay once system audio is enabled. Start muted,
-  // then unmute after playback begins or when the viewer taps Play.
+  // Safari blocks unmuted autoplay once system audio is enabled. Mute the
+  // element synchronously before play(); :muted alone can lag a srcObject rebind.
+  const run = ++playGeneration
   const wantAudio = audio.value
-  videoMuted.value = userGesture ? !wantAudio : true
+  const mutedForPlay = userGesture ? !wantAudio : true
+  videoMuted.value = mutedForPlay
+  element.muted = mutedForPlay
   try {
     await element.play()
-    if (video.value !== element || element.srcObject !== media) return
+    if (run !== playGeneration || video.value !== element || element.srcObject !== media) return
     videoMuted.value = !wantAudio
+    element.muted = !wantAudio
     playbackBlocked.value = false
   } catch {
-    if (video.value === element && element.srcObject === media) playbackBlocked.value = true
+    if (run === playGeneration && video.value === element && element.srcObject === media) playbackBlocked.value = true
   }
 }
 
@@ -147,6 +153,9 @@ watch([video, stream], ([element, media]) => {
   fullscreenError.value = false
   videoMuted.value = true
   if (!element) return
+  // Invalidate any in-flight autoplay unmute from the previous empty-stream bind.
+  playGeneration += 1
+  element.muted = true
   // Rebind even when the MediaStream identity is unchanged. Safari/WebKit does
   // not reliably start rendering tracks added after the first srcObject assign.
   if (element.srcObject === media) element.srcObject = null
