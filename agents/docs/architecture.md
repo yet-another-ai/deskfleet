@@ -1205,6 +1205,14 @@ the single writer even when multiple clients operate concurrently.
 Central event pages and their completeness watermark are read in one SQL
 statement so concurrent synchronization cannot mix different snapshots.
 
+ACP event strings can contain NUL, which PostgreSQL JSONB cannot represent.
+For those events, `cp_events.record_original` retains the exact serialized JSON
+in TEXT; `record` remains a query/search projection with NUL replaced by U+FFFD.
+History reads and duplicate-event comparisons use the original when present.
+Ordinary events retain only their existing JSONB record. The daemon journal and
+wire event format are unchanged, and failed uploads can replay their original
+events after the server is upgraded.
+
 Search spans the selected Team's Machines using central synchronized data. It
 matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
 Task titles and prompts. Results retain their owning Machine and Workspace;

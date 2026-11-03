@@ -684,6 +684,15 @@ and `machine-identity.json` beside the registered directories. Keep the host
 identity file with these directories when backing up the daemon; the central
 database contains only its hash.
 
+Version 26 adds the nullable `cp_events.record_original` text column. Events with
+NUL characters retain their original serialized JSON there; the existing JSONB
+record remains a query/search projection with NUL replaced by U+FFFD. Existing
+rows need no backfill. After the server upgrade, daemons can retry history pages
+previously rejected with SQLSTATE `22P05` because of NUL in event strings.
+Complete the upgrade across API instances: older binaries still reject those
+uploads and return the replacement-character projection when reading new rows.
+If rolling back the binary, keep the column to preserve the originals.
+
 Application logs distinguish control-plane database errors from stored JSON
 decoding failures. Database diagnostics include the error phase and SQLSTATE
 when the driver provides one; JSON diagnostics include the category, position,
