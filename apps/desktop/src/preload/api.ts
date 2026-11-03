@@ -17,6 +17,7 @@ import { applicationsApi } from "./applications.ts"
 import { networkDiagnosticsApi } from "./network-diagnostics.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
+import { muxChannelsApi } from "./mux-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import { NATIVE_DESKTOP_CHANNEL } from "@deskfleet/client/native-desktop"
 import { APPLICATION_RESTART_CHANNEL } from "@deskfleet/client/application"
@@ -66,6 +67,7 @@ return {
   files: filesApi(),
   ports: portsApi(),
   localChannels: localChannelsApi(),
+  muxChannels: muxChannelsApi(),
   settings: {
     get: () => invokeSettings("get"),
     setLocalAgentEnabled: (enabled) => invokeSettings("setLocalAgentEnabled", enabled),

@@ -9,6 +9,8 @@ export const TERMINAL_SESSION_EVENT = "deskfleet:terminal-session"
 
 /** Shell lifecycle is separate from the local or remote channel carrying terminal I/O. */
 export interface TerminalSignalingApi {
+  /** Each terminal can own an independent logical stream on a shared physical peer. */
+  multiplexed?: boolean
   connectChannel?(sessionId: string): DataChannel
   prepare?(sessionId: string): Promise<RTCIceServer[]>
   /** Additional context for a transport failure, without masking authorization errors. */

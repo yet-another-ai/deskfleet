@@ -39,6 +39,7 @@ test("native file peers copy folders both ways and read session-relative images 
     }
   })().catch(error => { if (!closed) errors.push(error) })
   const central = {
+    machines: async () => [{ id: "2", teamId: "1", capabilities: {} }],
     async createPeer(_team: string, _machine: string, purpose: string) {
       assert.equal(purpose, "files")
       return { peerId: "files", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] }

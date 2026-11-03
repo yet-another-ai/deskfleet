@@ -15,6 +15,7 @@ import type { AppearanceApi } from "./appearance.ts"
 import type { LocalApplicationsApi } from "./applications.ts"
 import type { UpdateApi } from "./updates.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
+import type { MuxChannelsApi } from "./mux-channels.ts"
 import type { WindowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import type { NativeDesktopApi } from "./native-desktop.ts"
 import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
@@ -37,6 +38,7 @@ export interface DeskfleetDesktopApi {
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi
+  muxChannels?: MuxChannelsApi
   locale: AppLocale
   settings: SettingsApi
   catalog: CatalogApi

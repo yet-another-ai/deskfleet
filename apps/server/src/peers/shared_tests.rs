@@ -11,6 +11,8 @@ use tokio::sync::{mpsc, watch};
 mod cloudflare_turn_tests;
 #[path = "local_tests.rs"]
 mod local_tests;
+#[path = "mux_tests.rs"]
+mod mux_tests;
 #[path = "turn_settings_tests.rs"]
 mod turn_settings_tests;
 

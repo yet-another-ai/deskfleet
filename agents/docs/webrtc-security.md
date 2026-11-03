@@ -57,7 +57,7 @@ The client is the offerer and the daemon is the answerer, matching the existing
 Agent, terminal, and desktop transports.
 
 1. The client requests a peer for a selected Team, target Machine, and transport
-   purpose (`agent`, `terminal`, `desktop`, or `files`) through its authenticated API
+   purpose (`agent`, `terminal`, `desktop`, `files`, `ports`, or `mux`) through its authenticated API
    session. The server resolves the user/device, checks Team access, and selects
    the target's authenticated daemon connection. A request cannot supply its own
    trusted actor or expand its permissions.
@@ -113,6 +113,41 @@ media starts. A `disconnected` connection is transient during network switches
 and page suspension, so clients wait 10 seconds for recovery before treating it
 as failed. `failed` and `closed` remain immediate failures. A resumed page
 creates a new authorized peer rather than renegotiating the old transport.
+
+### Shared Mux authorization and compatibility
+
+The `fixed4-v1` Mux profile shares one authorized WebRTC peer across Agent, Git,
+terminal, and file streams. Its four reliable ordered DataChannels carry control,
+terminal, Agent, and bulk frames. A logical stream is a viewer/service instance,
+not a new grant: its stream ID never changes the verified actor, Team, Machine,
+actions, or expiry. Separate views of the same terminal retain separate replay
+and consumption state. Closing one stream detaches only that viewer or aborts
+that file stream's unfinished staging; it does not close sibling streams or
+terminate the terminal process.
+
+The daemon advertises `capabilities.mux = "fixed4-v1"` in its catalog. The new
+backend derives `capabilities.muxServer = "fixed4-v1"` in machine-list responses
+only for that supported profile, replacing any daemon-supplied server marker.
+Clients require both markers. This distinction matters during upgrades: an old
+backend can relay a new daemon's capability JSON without supporting Mux grants.
+Missing or unsupported capability selects the existing purpose-specific peer
+paths, and new daemons continue accepting their original channel labels. The
+shared control `PROTOCOL_VERSION` remains `1`.
+
+Creating a `mux` grant rechecks the registered daemon's profile and authorizes
+only Agent/Git, terminal, and files actions. Native desktop media and TCP ports
+retain their dedicated grants and transports; local Electron Agent/terminal
+traffic retains the authenticated IPC path. The daemon checks the requested
+logical stream against the immutable grant and preserves each service's
+per-operation and outgoing-data checks. A terminal or files stream cannot gain
+desktop control or native port-forwarding authority through its label or body.
+
+An explicit unsupported-profile response can select the legacy transport before
+business traffic begins. Authentication failures, revocation, network timeouts,
+and malformed traffic are failures, not evidence of an older peer. Transport
+replacement must not automatically replay submitted commands. Mux revocation,
+expiry, and physical connection closure release all logical streams under that
+grant, using the same lifecycle below.
 
 ## Transport encryption and TURN
 
@@ -177,8 +212,8 @@ closes the peer and all its sockets. Desktop listeners bind only `127.0.0.1`.
 This grants access to Machine loopback services, not a Workspace network sandbox.
 See [TCP forwarding](ports.md) for ownership and flow control.
 
-Files peers separately require `files:read` or `files:write` on each operation and
-outgoing response. Closing a files peer aborts its unfinished destination staging;
+Files peers and Mux file streams require `files:read` or `files:write` on each operation and
+outgoing response. Closing a files peer or logical stream aborts its unfinished destination staging;
 committed files remain. The application owns the transfer queue independently of
 Agent and desktop viewers. See [files and transfers](files.md).
 

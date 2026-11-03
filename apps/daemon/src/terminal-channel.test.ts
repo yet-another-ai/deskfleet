@@ -29,11 +29,13 @@ function fixture(context: TestContext, initial: Buffer, expectedErrors: unknown[
     },
   }
   const messages: TerminalMessage[] = []
+  const lanes: ("terminal" | "bulk" | undefined)[] = []
   const errors: unknown[] = []
-  const channel = new TerminalChannel(sessions as unknown as TerminalSessions, async text => {
+  const channel = new TerminalChannel(sessions as unknown as TerminalSessions, async (text, lane) => {
     const message = JSON.parse(text) as TerminalMessage
     await send(message)
     messages.push(message)
+    lanes.push(lane)
   }, error => errors.push(error), id => id === state.summary.id)
   context.after(() => {
     channel.close()
@@ -46,6 +48,7 @@ function fixture(context: TestContext, initial: Buffer, expectedErrors: unknown[
   return {
     state,
     messages,
+    lanes,
     errors,
     events,
     output,
@@ -131,11 +134,13 @@ test("ready waits for the replay tail and exit or error waits for all live outpu
   await nextTurn()
   assert.equal(f.output().at(-1)!.offset, history.length)
   assert.deepEqual(f.events().map(event => event.kind), ["reset", "output", "output", "output"])
+  assert.deepEqual(f.messages.flatMap((message, index) => "event" in message ? [f.lanes[index]] : []), ["bulk", "bulk", "bulk", "bulk"])
 
   await f.ack(history.length)
   await nextTurn()
   assert.equal(f.output().at(-1)!.offset, history.length + live.length)
   assert.deepEqual(f.events().map(event => event.kind), ["reset", "output", "output", "output", "ready", "output"])
+  assert.deepEqual(f.lanes.slice(-2), ["terminal", "terminal"], "ready and subsequent live output share the interactive lane after replay ACK")
   await f.ack(history.length + live.length - 1)
   await nextTurn()
   assert.equal(f.events().some(event => event.kind === "exit" || event.kind === "error"), false)

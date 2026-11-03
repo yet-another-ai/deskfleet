@@ -5,7 +5,7 @@ import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { TerminalSummary } from "../../../../apps/daemon/src/terminal-protocol.ts"
 import { TerminalClient, type TerminalConnectionState, type TerminalListener } from "../services/terminal-client.ts"
 
-/** Shell lifecycle uses signaling; the shared data-only peer carries terminal I/O. */
+/** Shell lifecycle uses signaling; Mux gives each terminal its own stream on one peer. */
 export const useTerminalsStore = defineStore("terminals", () => {
   const platformClient = usePlatformClient()
   const sessions = ref<TerminalSummary[]>([])
@@ -19,6 +19,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /** The title each shell's running program last reported; replay restores it after reattaching. */
   const titles = ref<Record<string, string>>({})
   let client: TerminalClient | null = null
+  const streams = new Map<string, TerminalClient>()
+  const attachments = new Map<string, symbol>()
   let refreshing: Promise<void> | null = null
   let refreshChanges: Map<string, TerminalSummary | null> | null = null
   const opening = new Map<string, Promise<TerminalSummary>>()
@@ -27,8 +29,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     else forget(event.terminalId)
   })
 
-  function connection(): TerminalClient {
-    client ??= new TerminalClient(platformClient.terminal, (next, detail, relayReason) => {
+  function newClient(): TerminalClient {
+    return new TerminalClient(platformClient.terminal, (next, detail, relayReason) => {
       state.value = next
       error.value = detail ?? null
       relayDeniedReason.value = relayReason
@@ -37,7 +39,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
       const terminal = sessions.value.find(({ id }) => id === event.sessionId)
       if (terminal) remember({ ...terminal, status: "exited", exitCode: event.exitCode })
     })
-    return client
+  }
+
+  function connection(sessionId: string): TerminalClient {
+    const existing = streams.get(sessionId)
+    if (existing) return existing
+    if (platformClient.terminal.multiplexed) {
+      const stream = newClient()
+      streams.set(sessionId, stream)
+      return stream
+    }
+    return client ??= newClient()
   }
 
   function remember(summary: TerminalSummary): TerminalSummary {
@@ -102,7 +114,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   function attach(sessionId: string, listener: TerminalListener) {
-    const active = connection()
+    const active = connection(sessionId)
+    const attachment = Symbol(sessionId)
+    attachments.set(sessionId, attachment)
     const unsubscribe = active.subscribe(sessionId, listener)
     let detached = false
     const rememberAttachment = (summary: TerminalSummary) => {
@@ -116,23 +130,34 @@ export const useTerminalsStore = defineStore("terminals", () => {
       rememberAttachment(summary)
       const attached = await active.call("attach", { sessionId })
       if (detached) {
-        await active.call("detach", { sessionId })
+        if (!attachments.has(sessionId) && (streams.get(sessionId) === active || active === client)) await active.call("detach", { sessionId })
         throw new Error("Terminal attachment was cancelled")
       }
       return rememberAttachment(attached)
     })
-    return { ready, detach: () => { detached = true; unsubscribe() } }
+    return { ready, detach: () => {
+      if (detached) return
+      detached = true; unsubscribe()
+      if (attachments.get(sessionId) !== attachment) return
+      attachments.delete(sessionId)
+      if (streams.get(sessionId) === active) { streams.delete(sessionId); active.close() }
+    } }
   }
 
-  const input = (sessionId: string, data: string) => connection().input(sessionId, data)
-  const resize = (sessionId: string, cols: number, rows: number) => connection().call("resize", { sessionId, cols, rows })
+  const input = (sessionId: string, data: string) => connection(sessionId).input(sessionId, data)
+  const resize = (sessionId: string, cols: number, rows: number) => connection(sessionId).call("resize", { sessionId, cols, rows })
   async function hangup(sessionId: string): Promise<void> {
     await platformClient.terminal.hangup(sessionId)
     forget(sessionId)
     delete titles.value[sessionId]
   }
 
-  function closeTransport(): void { client?.close(); client = null }
+  function closeTransport(): void {
+    client?.close(); client = null
+    for (const stream of streams.values()) stream.close()
+    streams.clear()
+    attachments.clear()
+  }
   onScopeDispose(() => { unsubscribe(); closeTransport() })
   return { sessions, loaded, state, error, relayDeniedReason, selected, titles, refresh, create, ensureWorktreeTerminal, attach, input, resize, hangup, closeTransport }
 })

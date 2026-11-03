@@ -238,7 +238,7 @@ cannot create a duplicate shell. Resume requires an existing ID. Session changes
 and hangups trigger central catalog notifications so clients refresh their tabs.
 Hangup works without a live message channel.
 
-The `deskfleet-terminal` channel carries attach, detach, input and resize requests
+The terminal message channel carries attach, detach, input and resize requests
 plus output, replay-ready, exit and hangup events. A terminal must already exist
 on the target machine; the connection's authenticated grant authorizes its attachment.
 Remote terminal input and output use the DataChannel. The local adapter
@@ -246,6 +246,14 @@ carries these same messages through the narrow Electron preload bridge and
 authenticated local connection, without SDP/ICE or central payload forwarding.
 Both paths preserve attachment ownership, permissions, and grant expiry/revocation.
 A desktop media peer cannot invoke the terminal dispatcher.
+
+With the negotiated `fixed4-v1` profile, each terminal attachment uses a logical
+stream on the machine's shared Mux peer. History replay uses the bulk lane;
+requests, readiness, and live output use the terminal lane. Per-stream sequence
+numbers and the existing replay-consumption barrier preserve output ordering
+without tying another terminal's live output to that replay. Legacy connections
+retain the `deskfleet-terminal` DataChannel and the ordinary terminal store's
+shared client. Electron local connections retain their existing IPC transport.
 
 Output and input preserve raw bytes using base64 in JSON messages. This also
 preserves UTF-8 characters split across reads. Output is sent in chunks of at

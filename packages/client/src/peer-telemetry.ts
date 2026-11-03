@@ -1,7 +1,7 @@
 import type { PeerGrant } from "./central.ts"
 import type { RelayDeniedReason } from "./relay.ts"
 
-export type PeerFeature = "agent" | "terminal" | "desktop" | "files" | "ports"
+export type PeerFeature = "agent" | "terminal" | "desktop" | "files" | "ports" | "mux"
 export type PeerRelayAccess = "allowed" | "unconfigured" | RelayDeniedReason
 export interface PeerTelemetryEvents {
   peer_granted: { feature: PeerFeature; relay: PeerRelayAccess }

@@ -1,5 +1,6 @@
 import { expect, test, vi } from "vitest"
 import { DataChannelErrorEvent } from "./data-channel.ts"
+import { RelayConnectionError } from "./relay.ts"
 import { LocalDataChannel, LOCAL_CHANNEL_BUFFER_BYTES, LOCAL_CHANNEL_BUFFER_MESSAGES, LOCAL_CHANNEL_MESSAGE_BYTES, type LocalChannelEvent, type LocalChannelsApi } from "./local-channels.ts"
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -12,6 +13,25 @@ function fixture() {
   const channel = new LocalDataChannel(api, { connectionId: "local", teamId: "team", machineId: "machine", purpose: "agent" })
   return { api, channel, events, emit(event: LocalChannelEvent) { for (const listener of events) listener(event) } }
 }
+
+test("preserves relay recovery metadata from a main-owned Mux peer", async () => {
+  const f = fixture(), failed = vi.fn()
+  f.channel.onerror = failed
+  await settle()
+  f.emit({ connectionId: "local", kind: "closed", error: "Direct connection failed", relayDeniedReason: "turn_quota_exhausted" })
+  const error = (failed.mock.calls[0]![0] as DataChannelErrorEvent).error
+  expect(error).toBeInstanceOf(RelayConnectionError)
+  expect(error).toMatchObject({ relayDeniedReason: "turn_quota_exhausted" })
+})
+
+test("rebuilds a relay error from plain IPC results even when the close event is delayed", async () => {
+  const f = fixture(), failed = vi.fn()
+  vi.mocked(f.api.open).mockResolvedValue({ relayDeniedReason: "free_plan" })
+  f.channel.onerror = failed
+  await settle()
+  expect((failed.mock.calls[0]![0] as DataChannelErrorEvent).error).toBeInstanceOf(RelayConnectionError)
+  expect(f.channel.readyState).toBe("closed")
+})
 
 test("opens asynchronously and preserves frames arriving before authorization finishes", async () => {
   const f = fixture(), order: string[] = [], message = vi.fn()

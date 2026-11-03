@@ -1,4 +1,5 @@
 import { DataChannelErrorEvent, type DataChannel } from "./data-channel.ts"
+import { RelayConnectionError, type RelayDeniedReason } from "./relay.ts"
 
 export const LOCAL_CHANNEL = "deskfleet:local-channel"
 export const LOCAL_CHANNEL_EVENT = "deskfleet:local-channel-event"
@@ -14,12 +15,13 @@ export interface LocalChannelOpen {
 }
 export type LocalChannelEvent =
   | { connectionId: string; kind: "message"; data: string | Uint8Array }
-  | { connectionId: string; kind: "closed"; error?: string }
+  | { connectionId: string; kind: "closed"; error?: string; relayDeniedReason?: RelayDeniedReason }
+export interface MessageChannelFailure { relayDeniedReason: RelayDeniedReason }
 
 /** Plain values only: instances and EventTargets never cross Electron's context bridge. */
 export interface LocalChannelsApi {
-  open(options: LocalChannelOpen): Promise<void>
-  send(connectionId: string, data: string | Uint8Array): Promise<void>
+  open(options: LocalChannelOpen): Promise<void | MessageChannelFailure>
+  send(connectionId: string, data: string | Uint8Array): Promise<void | MessageChannelFailure>
   close(connectionId: string): Promise<void>
   onEvent(listener: (event: LocalChannelEvent) => void): () => void
 }
@@ -56,7 +58,7 @@ export class LocalDataChannel extends EventTarget implements DataChannel {
     this.#unsubscribe = api.onEvent(event => {
       if (event.connectionId !== this.#id || this.#state === "closed") return
       if (event.kind === "closed") {
-        if (event.error) this.#fail(new Error(event.error))
+        if (event.error) this.#fail(event.relayDeniedReason ? new RelayConnectionError(event.relayDeniedReason) : new Error(event.error))
         else this.#finish()
         return
       }
@@ -72,7 +74,8 @@ export class LocalDataChannel extends EventTarget implements DataChannel {
     // Start after the caller has attached its protocol handlers.
     void Promise.resolve().then(async () => {
       if (this.#state !== "connecting") return
-      await api.open(options)
+      const failure = await api.open(options)
+      if (failure) throw new RelayConnectionError(failure.relayDeniedReason)
       if (this.#state !== "connecting") { await api.close(this.#id); return }
       this.#state = "open"
       this.dispatchEvent(new Event("open"))
@@ -104,7 +107,8 @@ export class LocalDataChannel extends EventTarget implements DataChannel {
     try {
       while (this.#state === "open" && this.#outgoing.length > 0) {
         const data = this.#outgoing.shift()!
-        await this.#api.send(this.#id, data)
+        const failure = await this.#api.send(this.#id, data)
+        if (failure) throw new RelayConnectionError(failure.relayDeniedReason)
         if (this.#state !== "open") return
         const previous = this.#buffered
         this.#buffered -= bytesOf(data)
