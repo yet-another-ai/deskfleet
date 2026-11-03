@@ -6,6 +6,7 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
 import { onMounted, ref, shallowRef, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
+import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import LiveTerminal, { type TerminalConnection } from "./LiveTerminal.vue"
 
@@ -153,7 +154,7 @@ onMounted(() => {
       :terminal-id="activeId"
       :read-only="readOnly || agentTerminal(activeId)"
       @connection="(state, label) => { connection = { state, label } }"
-      @title="title => { store.titles[activeId!] = title }"
+      @title="title => { store.titles[activeId!] = truncateGeneratedTitle(title) }"
     /></TabsContent>
     <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-ui-text-muted">
       <p class="m-0">{{ t("terminal.empty") }}</p>

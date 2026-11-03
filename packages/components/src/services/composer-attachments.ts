@@ -1,4 +1,5 @@
 import type { AgentInput } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { truncateGeneratedTitle } from "../../../../apps/daemon/src/titles.ts"
 import { filePathToUri, type FileEntry, type FilesApi, type FileTarget } from "../../../client/src/files.ts"
 
 export const PASTED_TEXT_LINE_THRESHOLD = 25
@@ -73,9 +74,9 @@ export function hasSubmittableText(draft: string, attachments: readonly Composer
 
 export function sessionTitleFromDraft(draft: string, attachments: readonly ComposerAttachment[]): string {
   const trimmed = draft.trim()
-  if (trimmed) return trimmed.split(/\r\n|\r|\n/u)[0]!.slice(0, 100)
+  if (trimmed) return truncateGeneratedTitle(trimmed.split(/\r\n|\r|\n/u)[0]!)
   const pasted = attachments.find((item): item is Extract<ComposerAttachment, { kind: "pasted_text" }> => item.kind === "pasted_text" && Boolean(item.text.trim()))
-  return (pasted?.text.trim().split(/\r\n|\r|\n/u)[0] ?? "Session").slice(0, 100)
+  return truncateGeneratedTitle(pasted?.text.trim().split(/\r\n|\r|\n/u)[0] ?? "Session")
 }
 
 export async function buildPromptContent(params: {

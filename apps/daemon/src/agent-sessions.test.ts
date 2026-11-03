@@ -20,6 +20,7 @@ import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-co
 import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentReceipt, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
+import { MAX_GENERATED_TITLE_LENGTH } from "./titles.ts"
 
 const execute = promisify(execFile)
 const questionRequest: acp.CreateElicitationRequest = {
@@ -499,6 +500,33 @@ test("rename preserves running work, synchronizes its audited title, and takes p
   assert.equal((await f.read()).session.title, renamed.session.title)
   assert.equal(f.provider.clients.length, 1)
   assert.equal(f.provider.cancelCount, 0)
+})
+
+test("generated Session titles from create, submit, and provider updates are truncated for tabs", async t => {
+  const f = await setup(t)
+  const long = "Please investigate why the payment webhook retries forever and dumps a huge stack"
+  assert.equal((await f.read()).session.title, "")
+  await f.provider.client.onUpdate({
+    sessionId: "provider-conversation",
+    update: { sessionUpdate: "session_info_update", title: `  ${long}  ` },
+  })
+  assert.equal((await f.read()).session.title, long.slice(0, MAX_GENERATED_TITLE_LENGTH))
+
+  const created = await f.service.handle("_deskfleet/session/create", {
+    ...f.create, operationId: randomUUID(), title: `  ${long}  `,
+  }, f.actor) as AgentSnapshot
+  assert.equal(created.session.title, long.slice(0, MAX_GENERATED_TITLE_LENGTH))
+  assert.equal(created.session.title.length, MAX_GENERATED_TITLE_LENGTH)
+
+  const untitled = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: f.create.workspaceId, operationId: randomUUID(), provider: f.create.provider, context: "worktree",
+  }, f.actor) as AgentSnapshot
+  assert.equal(untitled.session.title, "")
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: untitled.session.id, operationId: randomUUID(),
+    content: [{ type: "text", text: `${long}\nsecond line` }], delivery: "backlog",
+  }, f.actor)
+  assert.equal((await f.service.journal.read(untitled.session.id)).session.title, long.slice(0, MAX_GENERATED_TITLE_LENGTH))
 })
 
 test("rename validates titles and persists customization for archived and machine-scoped Sessions", async t => {

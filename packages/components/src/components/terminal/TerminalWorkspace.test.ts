@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
 import type { TerminalSummary } from "../../../../client/src/terminal.ts"
+import { MAX_GENERATED_TITLE_LENGTH } from "../../../../../apps/daemon/src/titles.ts"
 import { i18n } from "../../i18n/index.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import TerminalWorkspace from "./TerminalWorkspace.vue"
@@ -156,6 +157,11 @@ test("the active tab shows its connection as an icon, reconnects when broken, an
   await flushPromises()
   expect(terminals.titles.first).toBe("htop")
   expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(["htop", "Shell 2"])
+  const long = "Please run the full integration suite with verbose logging and keep the output"
+  live().vm.$emit("title", long)
+  await flushPromises()
+  expect(terminals.titles.first).toBe(long.slice(0, MAX_GENERATED_TITLE_LENGTH))
+  expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual([long.slice(0, MAX_GENERATED_TITLE_LENGTH), "Shell 2"])
   expect(wrapper.text()).not.toMatch(/history|Scrollback/u)
   wrapper.unmount()
 })

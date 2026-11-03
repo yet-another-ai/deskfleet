@@ -3,6 +3,7 @@ import { Grid3x3, Plus, SquareTerminal, X } from "@lucide/vue"
 import { useElementSize, usePreferredReducedMotion } from "@vueuse/core"
 import { computed, defineAsyncComponent, nextTick, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useMobileViewportSwipe } from "../../composables/useMobileViewportSwipe.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -194,7 +195,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />
-              <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = $event" />
+              <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = truncateGeneratedTitle($event)" />
               <SessionPreviewWindow v-else-if="view.kind === 'preview'" :request="view.request" />
             </template>
             <div v-else-if="view.kind === 'terminal'" data-unopened-terminal class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">

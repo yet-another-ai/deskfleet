@@ -5,6 +5,7 @@ import * as acp from "@agentclientprotocol/sdk/unstable"
 import { MAX_TERMINAL_HISTORY_READ_BYTES } from "../terminal-history.ts"
 import type { TerminalSummary } from "../terminal-protocol.ts"
 import type { TerminalSessions } from "../terminals.ts"
+import { truncateGeneratedTitle } from "../titles.ts"
 
 export interface AgentTerminalContext {
   sessions: TerminalSessions
@@ -65,7 +66,7 @@ export class AcpTerminals {
     }
     const terminalId = randomUUID()
     const ready = this.#context.sessions.run({
-      terminalId, title: [params.command, ...params.args ?? []].join(" "),
+      terminalId, title: truncateGeneratedTitle([params.command, ...params.args ?? []].join(" ")),
       command: params.command, args: params.args, env: Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])),
       cwd, cols: 80, rows: 24, worktreeId: this.#context.worktreeId, kind: "acp",
     })

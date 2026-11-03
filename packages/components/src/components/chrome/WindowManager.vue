@@ -21,6 +21,7 @@ import {
   DropdownMenuRoot,
   DropdownMenuTrigger,
 } from "reka-ui"
+import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -89,8 +90,9 @@ function tabPresentation(params: IDockviewPanelHeaderProps): { title: string; to
 }
 
 function updateTerminalTitle(panel: DockviewPanelApi, terminalId: string, title: string): void {
-  terminals.titles[terminalId] = title
-  panel.setTitle(title)
+  const capped = truncateGeneratedTitle(title)
+  terminals.titles[terminalId] = capped
+  panel.setTitle(capped)
 }
 
 function addChangesPanel(group?: DockviewGroupPanel): void {

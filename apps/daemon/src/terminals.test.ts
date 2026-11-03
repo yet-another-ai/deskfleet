@@ -9,6 +9,7 @@ import type { NativeTerminal, TerminalConfig } from "@deskfleet/native"
 import { TerminalChannel } from "./terminal-channel.ts"
 import { TERMINAL_CHUNK_BYTES, TERMINAL_OUTPUT_WINDOW_BYTES, type TerminalMessage } from "./terminal-protocol.ts"
 import { TerminalSessions } from "./terminals.ts"
+import { MAX_GENERATED_TITLE_LENGTH } from "./titles.ts"
 
 type NativeEvent = Awaited<ReturnType<NativeTerminal["nextEvent"]>>
 
@@ -93,6 +94,16 @@ async function fixture(context: TestContext) {
 function output(messages: TerminalMessage[]) {
   return messages.flatMap(message => "event" in message && message.event.kind === "output" ? [message.event] : [])
 }
+
+test("durable Terminal titles are truncated to the generated-title max", async context => {
+  const f = await fixture(context)
+  const long = "Please run the full integration suite with verbose logging and keep the output"
+  const terminal = await f.sessions.run({
+    terminalId: randomUUID(), title: `  ${long}  `, command: "true", cwd: homedir(), cols: 80, rows: 24,
+  })
+  assert.equal(terminal.title, long.slice(0, MAX_GENERATED_TITLE_LENGTH))
+  assert.equal(terminal.title.length, MAX_GENERATED_TITLE_LENGTH)
+})
 
 test("setup commands keep exact launch arguments outside their machine-terminal history", async context => {
   const f = await fixture(context)

@@ -23,6 +23,7 @@ import { ComposerReferences } from "./composer-references.ts"
 import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentPreview, AgentReceipt, AgentSnapshot,
 } from "./agent-protocol.ts"
+import { truncateGeneratedTitle } from "./titles.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected request parameters")
@@ -540,7 +541,7 @@ export class AgentSessions {
         || typeof value.path !== "string" || typeof value.revision !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(value.revision)))) {
       throw new Error("Invalid prepared Git revisions")
     }
-    const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : ""
+    const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : ""
     const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
       this.journal.create(command, command.workspaceId, title, context, provider, { admissionGeneration }))
     command.sessionId = session.id
@@ -574,7 +575,7 @@ export class AgentSessions {
     if (!sourceSession.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     return this.#runtime(sourceId).withFork(async source => {
       this.#resolveProvider(source.session.provider)
-      const title = typeof command.params.title === "string" ? command.params.title.trim().slice(0, 200) : source.session.title
+      const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
       const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
         this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider,
@@ -627,7 +628,7 @@ export class AgentSessions {
         ...(delivery === "steer" ? { dispatchCommandId: command.id, dispatcher: command.actor } : {}),
       }
       const titleSource = blocks.map(block => block.type === "text" ? block.text : block.type === "resource" && "text" in block.resource ? block.resource.text : "").filter(Boolean).join(" ").trim()
-      const title = snapshot.session.title || (titleSource.split(/\r?\n/u)[0] ?? "").slice(0, 100)
+      const title = snapshot.session.title || truncateGeneratedTitle(titleSource.split(/\r?\n/u)[0] ?? "")
       const session = { ...snapshot.session, title, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, inputs: [input], command: { ...command, status: delivery === "steer" ? "accepted" : "completed", result: receipt, completedAt: delivery === "steer" ? undefined : timestamp() }, events: [
         this.journal.event(sessionId, "input", input), this.journal.event(sessionId, "session", session),
