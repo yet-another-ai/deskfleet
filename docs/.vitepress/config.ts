@@ -3,6 +3,7 @@ import { defineConfig } from "vitepress"
 import UnoCSS from "unocss/vite"
 
 const repository = "https://github.com/yet-another-ai/deskfleet"
+const siteUrl = "https://www.deskfleet.org"
 const description = "All your agents, working together. Step into their computers, collaborate with your team, and keep using the agents you love. Fully open source."
 
 export default defineConfig({
@@ -32,14 +33,26 @@ export default defineConfig({
     ["meta", { name: "theme-color", content: "#17191f" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "DeskFleet" }],
-    ["meta", { property: "og:image", content: "/og.png" }],
-    ["meta", { name: "twitter:card", content: "summary" }],
+    ["meta", { property: "og:image", content: `${siteUrl}/social-card.png` }],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    ["meta", { property: "og:image:alt", content: "DeskFleet — All your agents, working together" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
   transformPageData(page) {
+    const path = page.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, "")
+    const url = `${siteUrl}/${path}`
+    const title = page.title || "DeskFleet"
+    const pageDescription = page.description || description
     page.frontmatter.head ??= []
     page.frontmatter.head.push(
-      ["meta", { property: "og:title", content: page.title || "DeskFleet" }],
-      ["meta", { property: "og:description", content: page.description || description }],
+      ["link", { rel: "canonical", href: url }],
+      ["meta", { property: "og:url", content: url }],
+      ["meta", { property: "og:title", content: title }],
+      ["meta", { property: "og:description", content: pageDescription }],
+      ["meta", { name: "twitter:title", content: title }],
+      ["meta", { name: "twitter:description", content: pageDescription }],
+      ["meta", { name: "twitter:image", content: `${siteUrl}/social-card.png` }],
     )
   },
   locales: {
