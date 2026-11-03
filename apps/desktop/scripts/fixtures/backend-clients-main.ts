@@ -254,25 +254,34 @@ async function captureScreenshots(window: BrowserWindow, context: BackendClients
 async function openTerminal(machineId: string, local: boolean): Promise<void> {
   location.hash = `/machines/${machineId}/control?tab=terminal`
   const deadline = Date.now() + 30_000
-  async function until(predicate: () => boolean): Promise<void> {
+  async function until(predicate: () => boolean, description: string): Promise<void> {
     while (!predicate()) {
-      if (Date.now() > deadline) throw new Error(`Terminal UI timed out: ${document.body.innerText}`)
+      if (Date.now() > deadline) {
+        const input = document.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
+        const connection = document.querySelector("[data-connection]")?.getAttribute("data-connection")
+        throw new Error(`Terminal UI timed out (${description}; connection=${connection ?? "none"}; readOnly=${input?.readOnly}; rows=${JSON.stringify(document.querySelector(".xterm-rows")?.textContent?.slice(-200) ?? "")}): ${document.body.innerText}`)
+      }
       await new Promise(resolve => setTimeout(resolve, 25))
     }
   }
   const label = local ? "Local control" : "Remote control"
   const tools = () => document.querySelector(`[role="tablist"][aria-label="${label}"]`)
-  await until(() => tools()?.querySelector('[aria-selected="true"]')?.textContent?.trim() === "Terminal")
+  await until(() => tools()?.querySelector('[aria-selected="true"]')?.textContent?.trim() === "Terminal", "terminal tab")
   const desktop = [...tools()!.querySelectorAll('[role="tab"]')].some(tab => tab.textContent?.trim() === "Desktop")
   if (desktop === local) throw new Error(local ? "Local controls must hide Desktop" : "Remote controls must retain Desktop")
-  await until(() => !!document.querySelector('button[aria-label="New shell"]'))
+  await until(() => !!document.querySelector('button[aria-label="New shell"]'), "new shell")
   document.querySelector<HTMLButtonElement>('button[aria-label="New shell"]')!.click()
-  await until(() => !!document.querySelector('[data-connection="connected"]'))
+  await until(() => !!document.querySelector('[data-connection="connected"]'), "peer connected")
   const terminalId = new URLSearchParams(location.hash.split("?", 2)[1]).get("terminal")
   if (!terminalId || document.querySelector(`[role="tab"][data-terminal-id="${terminalId}"]`)?.getAttribute("aria-selected") !== "true") throw new Error("Control route did not select the new terminal")
-  await until(() => !!document.querySelector(".xterm-rows")?.textContent?.trim())
-  // A login shell can finish its startup repaint after the peer's replay marker.
-  await new Promise(resolve => setTimeout(resolve, 300))
+  await until(() => !!document.querySelector(".xterm-rows")?.textContent?.trim(), "shell prompt")
+  // LiveTerminal keeps `data-connection` on replaying until stdin is enabled; also
+  // assert the helper textarea itself so a future connection-label drift still fails
+  // closed instead of dropping keystrokes with an empty prompt.
+  await until(() => {
+    const input = document.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")
+    return !!input && !input.readOnly
+  }, "interactive stdin")
   document.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea")!.focus()
 }
 
@@ -372,11 +381,33 @@ void app.whenReady().then(async () => {
   await captureScreenshots(window, context)
   await window.webContents.executeJavaScript(`(${openTerminal.toString()})(${JSON.stringify(context.machines[0])},${context.mode === "electron"})`)
   const terminalTitle = `DF_${context.mode}_REMOTE_PTY`
-  const command = process.platform === "win32" ? `powershell -NoProfile -Command "Write-Output ('DF_' + '${context.mode}' + '_REMOTE_PTY')"` : `printf 'DF_%s_REMOTE_PTY\\n' ${context.mode}`
-  await window.webContents.executeJavaScript(`(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(command)});document.querySelector('.xterm-helper-textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}));})()`)
-  window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" })
-  window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" })
-  await window.webContents.executeJavaScript(`(async()=>{const end=Date.now()+20000;while(!document.querySelector('.xterm-rows')?.textContent.includes(${JSON.stringify(terminalTitle)})){if(Date.now()>end)throw new Error('Terminal PTY output did not return: '+document.body.innerText);await new Promise(r=>setTimeout(r,25));}if(window.__deskfleetRtcGuard.forbiddenAttempts)throw new Error('Local interaction attempted WebRTC');})()`)
+  // Type through xterm's helper textarea in-page (same path as agent smoke). Avoid
+  // synthetic ClipboardEvent paste + main-process Return: both race stdin enablement
+  // and fail on a hidden BrowserWindow that is not focused.
+  const command = process.platform === "win32"
+    ? `powershell -NoProfile -Command "Write-Output ('DF_' + '${context.mode}' + '_REMOTE_PTY')"`
+    : `printf 'DF_%s_REMOTE_PTY\\n' ${context.mode}`
+  await window.webContents.executeJavaScript(`(async()=>{
+    const title=${JSON.stringify(terminalTitle)};
+    const keys=${JSON.stringify(command + "\r")};
+    const input=document.querySelector('.xterm-helper-textarea');
+    if(!input||input.readOnly){
+      const connection=document.querySelector('[data-connection]')?.getAttribute('data-connection');
+      throw new Error('Terminal stdin not interactive before input (connection='+connection+'; readOnly='+!!input?.readOnly+'): '+document.body.innerText);
+    }
+    input.focus();
+    for(const key of keys)input.dispatchEvent(new KeyboardEvent('keypress',{key,charCode:key.charCodeAt(0),bubbles:true}));
+    const end=Date.now()+20000;
+    while(!document.querySelector('.xterm-rows')?.textContent.includes(title)){
+      if(Date.now()>end){
+        const connection=document.querySelector('[data-connection]')?.getAttribute('data-connection');
+        const rows=document.querySelector('.xterm-rows')?.textContent??'';
+        throw new Error('Terminal PTY output did not return (connection='+connection+'; readOnly='+input.readOnly+'; focused='+(document.activeElement===input)+'; rows='+JSON.stringify(rows.slice(-500))+'): '+document.body.innerText);
+      }
+      await new Promise(r=>setTimeout(r,25));
+    }
+    if(window.__deskfleetRtcGuard.forbiddenAttempts)throw new Error('Local interaction attempted WebRTC');
+  })()`)
   process.send?.({ phase: "online", result })
   const exit = () => { void Promise.all([localChannels?.close(), muxChannels?.close(), controller?.close()]).finally(() => { keepAwake?.close(); app.exit(0) }) }
   process.on("message", message => {
