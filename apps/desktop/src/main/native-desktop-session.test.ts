@@ -63,7 +63,7 @@ test("native signaling buffers early ICE and starts H264 capture only after answ
   expect(f.central.startPeer).not.toHaveBeenCalled()
   expect(f.central.candidatePeer).not.toHaveBeenCalled()
   expect(f.child.send).not.toHaveBeenCalledWith({ type: "candidate", candidate: remote })
-  expect(f.central.offerPeer).toHaveBeenCalledWith("peer", "offer", { sessionId: "peer", sdp: "offer", codec: "h264", audio: false })
+  expect(f.central.offerPeer).toHaveBeenCalledWith("peer", "offer", { codec: "h264", audio: false })
   answer.resolve({ sdp: "answer" })
   await session.ready
   expect(f.child.send.mock.calls.slice(1)).toEqual([[{ type: "answer", sdp: "answer" }], [{ type: "candidate", candidate: remote }]])
@@ -270,7 +270,7 @@ test.each(["av1", "h265", "h264"] as const)("negotiates %s from actual native de
   f.receive({ type: "offer", sdp: `${codec} offer` })
   f.receive({ type: "connected" })
   await session.ready
-  expect(f.central.offerPeer).toHaveBeenCalledWith("peer", `${codec} offer`, expect.objectContaining({ codec, audio: false }))
+  expect(f.central.offerPeer).toHaveBeenCalledWith("peer", `${codec} offer`, { codec, audio: false })
 })
 
 test("decoder fallback waits for old peer cleanup and fences old events", async () => {

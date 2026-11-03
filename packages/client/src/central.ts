@@ -6,7 +6,7 @@ import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
-import type { DesktopEvent, IceCandidate } from "./desktop-media.ts"
+import type { DesktopEvent, IceCandidate, VideoCodec } from "./desktop-media.ts"
 import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
@@ -27,6 +27,8 @@ export interface LocalEnrollment {
 export interface LocalMachineStatus { machineName: string; registrations: LocalEnrollment[] }
 export interface MachineEnrollmentRequest { name: string; originId: string; localMachineId: string; identityToken: string }
 export interface PeerGrant { peerId: string; authorization: PeerAuthorization; iceServers: RTCIceServer[]; relayDeniedReason?: RelayDeniedReason | null }
+/** Media preferences only; SDP belongs in the offer body and session IDs stay local. */
+export interface PeerOfferOptions { codec?: VideoCodec; audio?: boolean }
 /** Kept in Electron main; the one-use token binds a grant to a local IPC connection. */
 export interface LocalPeerGrant { peerId: string; authorization: PeerAuthorization; token: string }
 /** List and notification state without conversation content or request payloads. */
@@ -112,7 +114,7 @@ export interface CentralApi {
   events(teamId: string, machineId: string, sessionId: string, after: string, limit: number): Promise<{ events: AgentEvent[]; lastEventSeq: string }>
   rpc<T = unknown>(teamId: string, machineId: string, method: string, params: unknown): Promise<T>
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports" | "mux"): Promise<PeerGrant>
-  offerPeer(peerId: string, sdp: string, options?: unknown): Promise<{ sdp: string }>
+  offerPeer(peerId: string, sdp: string, options?: PeerOfferOptions): Promise<{ sdp: string }>
   startPeer(peerId: string, options: { displayId: number; control?: boolean }): Promise<void>
   candidatePeer(peerId: string, candidate: IceCandidate): Promise<void>
   closePeer(peerId: string): Promise<void>

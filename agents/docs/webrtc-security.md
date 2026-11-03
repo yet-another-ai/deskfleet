@@ -13,9 +13,11 @@ the server's peer routes, with independent grant enforcement in the daemon's
 
 Peer offers accept at most 2 MiB of JSON and candidates at most 32 KiB. SDP
 strings retain their 1 MiB limit. Options accept only `codec` (`h264`, `h265`,
-`av1`) and `audio`; ICE objects accept only their standard candidate, media ID,
-media index, and username-fragment fields. Candidate text is at most 16 KiB;
-media IDs and username fragments are at most 256 bytes. Pending candidates have
+`av1`) and `audio`. Data-only offers omit options; desktop adapters send only
+these media preferences. SDP stays at the top level of the offer body, and
+client-local session IDs are never options. ICE objects accept only their standard
+candidate, media ID, media index, and username-fragment fields. Candidate text is
+at most 16 KiB; media IDs and username fragments are at most 256 bytes. Pending candidates have
 both a 256-item limit and a 256 KiB serialized JSONB limit, checked atomically.
 Database constraints also bound options, SDP, and pending bytes. Migration 24
 revokes and discards oversized existing negotiations; those clients reconnect.

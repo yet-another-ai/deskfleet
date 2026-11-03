@@ -171,7 +171,7 @@ function openAttempt(
     if (offered) throw new Error("Native desktop sent a second offer")
     offered = true
     if (!selectedCodec) throw new Error("Native desktop offered before codec selection")
-    const answer = await central.offerPeer(peerId!, sdp, { sessionId: peerId!, sdp, codec: selectedCodec, audio: false })
+    const answer = await central.offerPeer(peerId!, sdp, { codec: selectedCodec, audio: false })
     if (closed) return
     answered = true
     viewer!.send({ type: "answer", sdp: answer.sdp })

@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, SiteAdministrationApi, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -294,7 +294,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   rpc<T>(teamId: string, machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
   createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports" | "mux") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
   createLocalPeer(teamId: string, machineId: string, purpose: "agent" | "terminal") { return this.request<LocalPeerGrant>("POST", "/api/peers/local", { teamId, machineId, purpose }) }
-  offerPeer(peerId: string, sdp: string, options?: unknown) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }
+  offerPeer(peerId: string, sdp: string, options?: PeerOfferOptions) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }
   async startPeer(peerId: string, options: { displayId: number; control?: boolean }) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
   async candidatePeer(peerId: string, candidate: IceCandidate) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/candidate`, { candidate }) }
   async closePeer(peerId: string) { await this.request("DELETE", `/api/peers/${encodeURIComponent(peerId)}`) }

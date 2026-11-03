@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { remoteMachineClient } from "./remote.ts"
+import { HttpCentralClient } from "./http-central.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
 import type { LocalChannelsApi } from "./local-channels.ts"
 const disposers: (() => void)[] = []
@@ -21,6 +22,38 @@ function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
   disposers.push(remote.dispose)
   return { remote, central, machine, emit: (event: CentralEvent) => listener(event) }
 }
+
+function offerHttpFixture() {
+  const f = fixture()
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ sdp: "answer" }), { headers: { "Content-Type": "application/json" } }))
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
+  disposers.push(() => client.dispose())
+  f.central.offerPeer = client.offerPeer.bind(client)
+  return { ...f, fetch }
+}
+
+test.each(["terminal", "agent"] as const)("legacy %s offers omit media options from the HTTP request", async purpose => {
+  const f = offerHttpFixture(), signaling = f.remote.api[purpose]
+  const sdp = `v=0\r\na=x-test:${"x".repeat(2_048)}\r\n`
+  await signaling.prepare!("local-session")
+  expect(await signaling.offer({ sessionId: "local-session", sdp })).toEqual({ sdp: "answer" })
+  expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", purpose)
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/offer", expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ sdp })
+})
+
+test.each([
+  { codec: "h264", audio: false },
+  { codec: "h265", audio: true },
+  { codec: "av1", audio: false },
+] as const)("desktop offers send only codec=$codec and audio=$audio as HTTP options", async options => {
+  const f = offerHttpFixture()
+  await f.remote.api.desktop.prepare!("local-desktop")
+  expect(await f.remote.api.desktop.offer({ sessionId: "local-desktop", sdp: "desktop-offer", ...options })).toEqual({ sdp: "answer" })
+  expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", "desktop")
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/offer", expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ sdp: "desktop-offer", options })
+})
 
 test("native desktop opens the adapter's authorized machine and outlives renderer signaling", async () => {
   const open = vi.fn(async () => {})
@@ -48,7 +81,7 @@ test("a refreshed machine reconciles missed presence without replacing its peer"
   f.remote.updateMachine({ ...updated })
   expect(changed).toHaveBeenCalledOnce()
   await f.remote.api.agent.offer({ sessionId: "retained-peer", sdp: "offer" })
-  expect(f.central.offerPeer).toHaveBeenCalledWith("peer1", "offer", { sessionId: "retained-peer", sdp: "offer" })
+  expect(f.central.offerPeer).toHaveBeenCalledWith("peer1", "offer", undefined)
   expect(f.central.closePeer).not.toHaveBeenCalled()
 })
 
