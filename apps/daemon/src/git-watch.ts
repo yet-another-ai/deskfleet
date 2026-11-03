@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { executeGit } from "./git-execution.ts"
 import { watch, type FSWatcher } from "node:fs"
 import { lstat, readdir, realpath } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -14,20 +14,12 @@ const transientGitConfigLock = (error: unknown) => {
   return /unable to access .+config['"]?: Permission denied/iu.test(text)
 }
 
-function git(root: string, args: string[], input?: string): Promise<string> {
+async function git(root: string, args: string[], input?: string): Promise<string> {
   // check-ignore does not support literal pathspec magic. Its stdin paths are
   // prefixed with ./ instead, which also handles filenames beginning with :.
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_LITERAL_PATHSPECS: "0", LC_ALL: "C" }
-  for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete (env as NodeJS.ProcessEnv)[name]
-  return new Promise((accept, reject) => {
-    const child = execFile("git", ["-C", root, ...args], { env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 15_000, windowsHide: true }, (error, stdout, stderr) => {
-      if (error && !(["check-ignore", "config"].includes(args[0]!) && error.code === 1)) reject(new Error(stderr.trim() || error.message))
-      else accept(stdout)
-    })
-    // check-ignore accepts NUL-delimited paths, including names with newlines.
-    child.stdin?.on("error", () => {})
-    child.stdin?.end(input)
-  })
+  return (await executeGit(["-C", root, ...args], { optionalLocks: false, input,
+    maxBuffer: 32 * 1024 * 1024, timeout: 15_000, acceptExit: ["check-ignore", "config"].includes(args[0]!) ? [1] : [],
+  })).stdout
 }
 
 interface DirectoryWatch { watcher: FSWatcher; metadata: boolean }

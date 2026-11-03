@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process"
+import { executeGit, GitPolicyError } from "./git-execution.ts"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { promisify } from "node:util"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
 import type { GitPreparedRevision } from "./git-protocol.ts"
-
-const execute = promisify(execFile)
 
 export interface ManagedSessionCatalog {
   snapshot(): Promise<CatalogSnapshot>
@@ -38,7 +35,7 @@ interface WorktreeStorage {
 }
 
 async function git(args: string[]): Promise<string> {
-  return (await execute("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
+  return (await executeGit(args, { maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
 }
 
 /** Git for Windows prints worktree paths with forward slashes and its own casing. */
@@ -73,6 +70,7 @@ async function sourceDirectory(path: string, baseBranch?: string, primaryReposit
     repository = await realpath(await git(["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"]))
     head = await git(["-C", root, "rev-parse", "--verify", "HEAD"])
   } catch (error) {
+    if (error instanceof GitPolicyError) throw error
     throw new Error(`Cannot isolate ${path}: a Git working tree with a committed HEAD is required`, { cause: error })
   }
   let revision = head

@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process"
+import { executeGit, GitPolicyError } from "./git-execution.ts"
 import { createHash } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { relative, resolve, sep } from "node:path"
-import { promisify } from "node:util"
 import type { GitPreparationSnapshot } from "./git-protocol.ts"
 
-const execute = promisify(execFile)
 type Context = "worktree" | "directory"
 interface Repository {
   root: string
@@ -20,15 +18,15 @@ interface Repository {
 }
 
 async function git(root: string, args: string[]): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" }
-  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete env[key]
   try {
-    return (await execute("git", ["--no-pager", "-C", root, ...args], {
-      encoding: "utf8", env, timeout: 20_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true,
+    return (await executeGit(["-C", root, ...args], {
+      timeout: 20_000, maxBuffer: 16 * 1024 * 1024,
     })).stdout.replace(/\r?\n$/u, "")
   } catch (reason) {
     const error = reason as Error & { stderr?: string }
-    throw new Error(`${root}: ${error.stderr?.trim() || error.message}`)
+    const message = `${root}: ${error.stderr?.trim() || error.message}`
+    if (reason instanceof GitPolicyError) throw new GitPolicyError(message)
+    throw new Error(message)
   }
 }
 
@@ -136,7 +134,7 @@ async function prepare(workspaceId: string, directories: { path: string }[], con
     let root: string
     try { root = await realpath(await git(directory.path, ["rev-parse", "--show-toplevel"])) }
     catch (error) {
-      if (context === "worktree") throw error
+      if (context === "worktree" || error instanceof GitPolicyError) throw error
       continue
     }
     if (!roots.has(root)) roots.set(root, await fetchDefault(root))

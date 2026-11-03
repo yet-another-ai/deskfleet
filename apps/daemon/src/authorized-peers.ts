@@ -14,6 +14,7 @@ import { FilesChannel, fileAction } from "./files-channel.ts"
 import { FILES_CHANNEL } from "./files-protocol.ts"
 import { FilesService } from "./files-service.ts"
 import { AuthorizedMux } from "./authorized-mux.ts"
+import { PeerAdmission } from "./peer-admission.ts"
 import type { MuxPurpose } from "../../../packages/client/src/mux/protocol.ts"
 
 const DAY_MS = 86_400_000
@@ -37,6 +38,7 @@ interface AuthorizedChannels {
 }
 
 interface AuthorizedPeer extends AuthorizedChannels {
+  release(): void
   authorization: PeerAuthorization
   native?: Promise<NativePeer>
   timer: ReturnType<typeof setTimeout>
@@ -72,6 +74,7 @@ export function normalizeCandidate(candidate: IceCandidate, sdp: string): IceCan
 
 /** Peer lifetime belongs to its immutable grant, never to a signaling socket. */
 export class AuthorizedPeers {
+  readonly #admission: PeerAdmission
   readonly #native: ControlPeers
   readonly #agents: AgentChannelSessions
   readonly #terminals: TerminalSessions
@@ -89,7 +92,22 @@ export class AuthorizedPeers {
     signal: (peerId: string, event: PeerSignal) => void; now?: () => number
   }) {
     this.#native = options.peers; this.#agents = options.agents; this.#terminals = options.terminals
-    this.#identity = options.identity; this.#signal = options.signal; this.#now = options.now ?? Date.now
+    this.#admission = PeerAdmission.for(options.peers)
+    this.#identity = options.identity
+    this.#signal = (id, event) => {
+      if (event.kind === "error") {
+        // Native/encoder diagnostics can be arbitrarily long. Keep valid UTF-8
+        // within the server's error budget at this common emission boundary.
+        const bytes = Buffer.from(event.error)
+        if (bytes.length > 2048) {
+          let end = 2048
+          while ((bytes[end]! & 0xc0) === 0x80) end--
+          event = { ...event, error: bytes.subarray(0, end).toString("utf8") }
+        }
+      }
+      options.signal(id, event)
+    }
+    this.#now = options.now ?? Date.now
   }
 
   bind(credentials: MachineCredentials): void { this.#credentials = credentials }
@@ -126,11 +144,16 @@ export class AuthorizedPeers {
     if (this.#used.has(params.peerId)) throw new Error("Create a new peer for another negotiation")
     if (!/^a=fingerprint:sha-256 [\dA-Fa-f:]+\r?$/mu.test(params.sdp)) throw new Error("An authenticated DTLS SHA-256 fingerprint is required")
     const purpose = params.authorization.purpose
-    const native = this.#native.create(params.peerId, {
+    const release = this.#reserve(params.peerId, params.authorization)
+    let native: Promise<NativePeer>
+    try {
+    native = this.#native.create(params.peerId, {
       iceServers: params.iceServers,
       ...(purpose === "desktop" ? { video: params.options?.codec ?? "h264", audio: params.options?.audio ?? false } : {}),
     })
+    } catch (error) { release(); throw error }
     const owned: AuthorizedPeer = {
+      release,
       authorization: structuredClone(params.authorization), native, remoteSdp: params.sdp,
       timer: setTimeout(() => { void this.close(params.peerId).catch(error => console.error("Expired peer cleanup failed", error)) }, Date.parse(params.authorization.expiresAt) - this.#now()),
     }
@@ -264,12 +287,15 @@ export class AuthorizedPeers {
     if (typeof params.token !== "string" || params.token.length < 32 || params.token.length > 256) throw new Error("Invalid local channel claim token")
     for (const [id, expires] of this.#used) if (expires <= this.#now()) this.#used.delete(id)
     if (this.#used.has(params.peerId)) throw new Error("Create a new peer for another connection")
+    if ([...this.#peers.values()].filter(peer => peer.local?.token).length >= 16) throw new Error("Local peer claim capacity exceeded")
+    const release = this.#reserve(params.peerId, params.authorization)
     const expires = Date.parse(params.authorization.expiresAt)
     const claimBy = Math.min(expires, this.#now() + 30_000)
     const timer = setTimeout(() => { void this.close(params.peerId).catch(() => {}) }, claimBy - this.#now())
     timer.unref()
     this.#used.set(params.peerId, expires)
     this.#peers.set(params.peerId, {
+      release,
       authorization: structuredClone(params.authorization), timer,
       local: { token: params.token, claimBy },
     })
@@ -403,7 +429,12 @@ export class AuthorizedPeers {
     })
     this.#closing.set(id, pending)
     try { await pending }
-    finally { this.#closing.delete(id) }
+    finally { this.#closing.delete(id); peer.release() }
+  }
+
+  #reserve(id: string, grant: PeerAuthorization): () => void {
+    if (this.#peers.size + this.#closing.size >= 64 || this.#used.size >= 4096) throw new Error("Registration peer capacity exceeded")
+    return this.#admission.reserve(id, Date.parse(grant.expiresAt), this.#now())
   }
 
   async closeAll(): Promise<void> {

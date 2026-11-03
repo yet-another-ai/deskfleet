@@ -9,6 +9,50 @@ The native transport performs DTLS. Central identity binding is implemented in
 the server's peer routes, with independent grant enforcement in the daemon's
 `AuthorizedPeers` service and both client adapters.
 
+## Signaling resource admission
+
+Peer offers accept at most 2 MiB of JSON and candidates at most 32 KiB. SDP
+strings retain their 1 MiB limit. Options accept only `codec` (`h264`, `h265`,
+`av1`) and `audio`; ICE objects accept only their standard candidate, media ID,
+media index, and username-fragment fields. Candidate text is at most 16 KiB;
+media IDs and username fragments are at most 256 bytes. Pending candidates have
+both a 256-item limit and a 256 KiB serialized JSONB limit, checked atomically.
+Database constraints also bound options, SDP, and pending bytes. Migration 24
+revokes and discards oversized existing negotiations; those clients reconnect.
+
+Daemon peer events accept only ICE candidates, known connection states, and
+bounded errors. Admission precedes asynchronous work and cross-instance fan-out:
+64 events per socket per second, 128 per registration per second across replicas,
+16 concurrent tasks per socket, and 256 per API process. Socket overload closes
+the connection without blocking its reader on a negotiation or queued permit.
+The registration budget survives reconnects. Error text is limited to 2 KiB;
+events to 24 KiB and their complete wire messages to 32 KiB. Other control
+messages retain their existing limits.
+The daemon truncates outgoing peer errors at a UTF-8 boundary. An invalid or
+oversized peer event is dropped without disconnecting the Machine; it still
+consumes the socket rate budget, so sustained invalid traffic closes the socket.
+
+## Peer allocation budgets
+
+Grant admission is serialized across API replicas by user and Team, within the
+same transaction as insertion. Active limits are 16 per login, 64 per user,
+64 per Machine registration, 256 per Team, and 32 per purpose per registration
+(8 for desktop). Issuance attempts also consume shared fixed windows of 60 per
+user per minute and 240 per registration per minute. HTTP returns 429 on
+saturation. WebRTC grants reserve capacity before requesting TURN credentials;
+provisioning failure revokes the reservation. Local grants use the same quotas.
+
+The daemon admits at most 64 active/creating/closing peers per registration and
+128 across registrations, including unclaimed local peers. A registration may
+have at most 16 unclaimed local peers. Native creation has its own 128-peer cap.
+Replay records remain until grant expiry, capped at 4,096 per registration and
+16,384 per daemon; saturation rejects new grants rather than evicting valid
+records. Closing keeps its allocation charged until cleanup settles.
+
+Expired grants remain available for acknowledged close for 24 hours after
+expiry, then maintenance deletes at most 1,000 per pass, cascading negotiation
+and ICE snapshots. This bounds retention without changing live grant lifetime.
+
 ## Trust model
 
 The central service is trusted to authenticate users and enrolled machines,

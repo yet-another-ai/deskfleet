@@ -281,7 +281,9 @@ test("transient .git/config permission errors are retried without a sticky failu
   const mock = context.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
     const argv = args[1]
     const callback = args.find(argument => typeof argument === "function") as ((error: Error | null, stdout: string, stderr: string) => void) | undefined
-    if (Array.isArray(argv) && argv.includes("rev-parse") && revParse++ === 0 && callback) {
+    // Inject into watcher discovery, after GitInspection's initial resolution.
+    // Both paths now use the same Git execution boundary.
+    if (Array.isArray(argv) && argv.includes("rev-parse") && argv.includes("--git-common-dir") && revParse++ === 0 && callback) {
       const error = Object.assign(new Error("Command failed: git"), { code: 128 })
       queueMicrotask(() => callback(error, "", `${lock}\n`))
       return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
@@ -352,7 +354,8 @@ test("a successful classify config-lock retry restores the full rebuild retry bu
       return { stdin: { on() { return this }, end() { return this } }, stdout: { on() { return this } }, stderr: { on() { return this } }, on() { return this }, once() { return this } } as unknown as ReturnType<typeof childProcess.execFile>
     }
     if (Array.isArray(argv) && argv.includes("check-ignore") && checkIgnoreLocks++ === 0 && callback) return fail()
-    if (Array.isArray(argv) && argv.includes("rev-parse") && revParseLocks++ < rebuildLocks && callback) return fail()
+    // Inject rebuild locks, not the execution boundary's preflight discovery.
+    if (Array.isArray(argv) && argv.includes("rev-parse") && argv.includes("--git-common-dir") && revParseLocks++ < rebuildLocks && callback) return fail()
     return original(...args)
   })
   syncBuiltinESMExports()

@@ -1,12 +1,10 @@
-import { execFile } from "node:child_process"
+import { executeGit } from "./git-execution.ts"
 import { createHash } from "node:crypto"
 import { lstat, open, readlink, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
-import { promisify } from "node:util"
 import type { GitBranchesSnapshot, GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "./git-protocol.ts"
 import { GitWatch } from "./git-watch.ts"
 
-const execute = promisify(execFile)
 const STATUS_BYTES = 2 * 1024 * 1024
 const PATCH_BYTES = 1024 * 1024
 const COUNT_BYTES = 128 * 1024
@@ -14,17 +12,10 @@ const MAX_FILES = 10_000
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 type CommandError = Error & { code?: string | number; stdout?: string; stderr?: string }
 
-function environment(): NodeJS.ProcessEnv {
-  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_LITERAL_PATHSPECS: "1", LC_ALL: "C" }
-  // A host started inside another Git command must still inspect the requested checkout.
-  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete (env as NodeJS.ProcessEnv)[key]
-  return env
-}
-
 async function git(root: string, args: string[], limit = STATUS_BYTES, allowTruncation = false): Promise<{ text: string; truncated: boolean }> {
   try {
-    const result = await execute("git", ["--no-pager", "-C", root, ...args], {
-      encoding: "utf8", env: environment(), maxBuffer: limit, timeout: 15_000, windowsHide: true,
+    const result = await executeGit(["-C", root, ...args], {
+      optionalLocks: false, literalPaths: true, maxBuffer: limit, timeout: 15_000,
     })
     return { text: result.stdout, truncated: false }
   } catch (reason) {

@@ -28,6 +28,10 @@ impl ControlStore {
         offer: &str,
         options: &Value,
     ) -> Result<PeerOfferState> {
+        crate::signaling_limits::options(options)?;
+        if offer.len() > crate::signaling_limits::SDP_BYTES {
+            return Err(Error::Invalid("SDP exceeds supported limit"));
+        }
         let tx = self.db.begin().await?;
         let row = negotiation(&tx, peer_id).await?;
         if row.try_get::<bool>("", "failed")? {
@@ -67,6 +71,9 @@ impl ControlStore {
 
     /// Commit the answer and take all candidates buffered before it atomically.
     pub async fn finish_peer_offer(&self, peer_id: &str, answer: &str) -> Result<Vec<Value>> {
+        if answer.len() > crate::signaling_limits::SDP_BYTES {
+            return Err(Error::Invalid("SDP exceeds supported limit"));
+        }
         let tx = self.db.begin().await?;
         let row = negotiation(&tx, peer_id).await?;
         check_attempt(&row)?;
@@ -92,6 +99,7 @@ impl ControlStore {
         peer_id: &str,
         candidate: &Value,
     ) -> Result<PeerCandidateState> {
+        crate::signaling_limits::candidate(candidate)?;
         let tx = self.db.begin().await?;
         let row = negotiation(&tx, peer_id).await?;
         check_attempt(&row)?;
@@ -109,11 +117,14 @@ impl ControlStore {
             {
                 return Err(Error::Invalid("too many pending candidates"));
             }
-            tx.execute_raw(sql(
-                "UPDATE cp_peer_negotiations SET pending=pending || $2::jsonb WHERE peer_id=$1",
-                vec![peer_id.into(), json!([candidate]).into()],
+            let updated = tx.execute_raw(sql(
+                "UPDATE cp_peer_negotiations SET pending=pending || $2::jsonb WHERE peer_id=$1 AND octet_length((pending || $2::jsonb)::text)<=$3",
+                vec![peer_id.into(), json!([candidate]).into(), (crate::signaling_limits::PENDING_BYTES as i64).into()],
             ))
             .await?;
+            if updated.rows_affected() == 0 {
+                return Err(Error::Invalid("pending ICE candidates exceed byte budget"));
+            }
             PeerCandidateState::Queued
         };
         tx.commit().await?;
