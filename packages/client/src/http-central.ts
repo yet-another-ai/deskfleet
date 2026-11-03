@@ -7,9 +7,11 @@ import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.t
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
-import { centralRequestFailure } from "./request-diagnostics.ts"
+import { attachRequestStack, centralRequestFailure, HttpError, requestDiagnostics, type RequestTransport } from "./request-diagnostics.ts"
 import type { NetworkConfiguration } from "../../../crates/protocol/control.ts"
-import { isDesktopErrorReason, type DesktopErrorReason } from "./desktop-media.ts"
+import { isDesktopErrorReason } from "./desktop-media.ts"
+
+export { HttpError } from "./request-diagnostics.ts"
 
 const HEARTBEAT_MS = 20_000
 const IDLE_TIMEOUT_MS = 60_000
@@ -28,6 +30,7 @@ export interface HttpCentralOptions {
   persist(account: SavedAccount): Promise<void>
   authorize(client: HttpCentralClient): Promise<void>
   fetch?: typeof fetch
+  transport?: RequestTransport
   socket?: (url: string) => WebSocket
   cookieAuth?: boolean
   openExternal?: (url: string) => Promise<unknown>
@@ -153,14 +156,24 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       ...(signal === undefined ? {} : { signal }),
     }
     const started = performance.now()
+    const details = () => ({ method, path, body, signal, transport: this.#options.transport, elapsedMs: performance.now() - started })
     let response: Response
     try { response = await (this.#options.fetch ?? fetch)(`${this.#account.serverUrl}${path}`, init) }
-    catch (cause) { throw centralRequestFailure(cause, { method, path, body, elapsedMs: performance.now() - started }, requestStack.stack) }
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: { code: string; message: string; reason?: string } }
-      throw new HttpError(response.status, error.error?.message ?? response.statusText, isDesktopErrorReason(error.error?.reason) ? error.error.reason : undefined, error.error?.code)
+    catch (cause) { throw centralRequestFailure(cause, details(), requestStack.stack) }
+    let result: { csrfToken?: string; error?: { code: string; message: string; reason?: string } } | undefined
+    let bodyFailure: unknown
+    try { result = response.status === 204 ? undefined : await response.json() }
+    catch (cause) {
+      if (response.ok) throw centralRequestFailure(cause, { ...details(), phase: "response_body", status: response.status }, requestStack.stack)
+      bodyFailure = cause
     }
-    const result = response.status === 204 ? undefined : await response.json() as { csrfToken?: string }
+    if (!response.ok) {
+      const error = result?.error
+      throw attachRequestStack(new HttpError(response.status, error?.message ?? response.statusText,
+        isDesktopErrorReason(error?.reason) ? error.reason : undefined, error?.code,
+        requestDiagnostics(bodyFailure, { ...details(), kind: "http", phase: "response_body", status: response.status }),
+        bodyFailure ? { cause: bodyFailure } : undefined), requestStack.stack)
+    }
     if (result?.csrfToken) this.#csrf = result.csrfToken
     return result as T
   }
@@ -384,10 +397,4 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     this.#disconnect()
     this.#listeners.clear()
   }
-}
-export class HttpError extends Error {
-  readonly status: number
-  readonly reason?: DesktopErrorReason
-  readonly code?: string
-  constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string) { super(message); this.status = status; this.reason = reason; this.code = code }
 }

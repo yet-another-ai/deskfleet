@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { captureEvent, getClient, init, type ErrorEvent } from "@sentry/vue"
 import type { AccountState, CentralApi } from "@deskfleet/client/central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
+import { browserClient } from "@deskfleet/client/browser"
+import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, installErrorReportingAccount, setErrorReportingUser, shutdownErrorReporting } from "./error-reporting.ts"
 
 // Exercise the real SDK and Vue error handler; replace only outbound delivery.
@@ -29,6 +31,7 @@ afterEach(async () => {
   await shutdownErrorReporting()
   vi.clearAllMocks()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 function events(): ErrorEvent[] {
@@ -36,11 +39,12 @@ function events(): ErrorEvent[] {
     .filter(([header]) => header.type === "event").map(([, event]) => event as ErrorEvent))
 }
 
-function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "ENOTFOUND"): Error {
+function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "ENOTFOUND", requestTransport: "node_fetch" | "browser_fetch" = "node_fetch"): Error {
   return centralRequestFailure(new TypeError("fetch failed", {
     cause: Object.assign(new Error("getaddrinfo ENOTFOUND private-host"), { code }),
   }), {
     method: "POST", path: "/api/teams/private-team/machines/private-machine/rpc?token=private-query", elapsedMs: 123.4,
+    transport: requestTransport,
     body: { method: rpcMethod, params: { provider: "private-provider", workspaceId: "private-workspace" } },
   }, "Error\n    at loadConfiguration (app:///client.js:10:20)")
 }
@@ -193,7 +197,7 @@ test("retains consecutive failures with the same stack but distinct RPC methods 
   }
   expect(events()).toHaveLength(3)
   expect(events().map(event => event.fingerprint)).toEqual(requests.map(([method, code]) => [
-    "central-request", "node_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", method, code,
+    "central-request", "node_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", method, code === "ETIMEDOUT" ? "timeout" : "network", "fetch", code,
   ]))
 })
 
@@ -213,12 +217,45 @@ test("groups the same operation across generated platform stacks while retaining
 
 test("enriches an unhandled central rejection with the same operation identity", async () => {
   initializeErrorReporting("web")
-  globalThis.onunhandledrejection?.call(window, { reason: requestFailure() } as PromiseRejectionEvent)
+  globalThis.onunhandledrejection?.call(window, { reason: requestFailure(undefined, undefined, "browser_fetch") } as PromiseRejectionEvent)
   await getClient()?.flush(1000)
   expect(events()[0]?.fingerprint).toEqual([
-    "central-request", "browser_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "_deskfleet/agent/configuration", "ENOTFOUND",
+    "central-request", "browser_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "_deskfleet/agent/configuration", "network", "fetch", "ENOTFOUND",
   ])
   expect(events()[0]?.exception?.values?.[0]?.type).toBe("CentralRequestError")
+})
+
+test("the Web adapter reports handled HTTP and decoding failures with bounded diagnostics", async () => {
+  initializeErrorReporting("web")
+  const fetch = vi.fn<typeof globalThis.fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "private-code", message: "private-response" } }), { status: 503 }))
+    .mockResolvedValueOnce(new Response("<html>private-response</html>"))
+  vi.stubGlobal("fetch", fetch)
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError)
+  try {
+    await adapter.central!.teams().catch(() => {})
+    await adapter.central!.teams().catch(() => {})
+    await getClient()?.flush(1000)
+    expect(events()).toHaveLength(2)
+    expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(["GET /api/teams — HTTP 503", "GET /api/teams — decode"])
+    expect(events()[0]?.contexts?.central_request).toMatchObject({ transport: "browser_fetch", kind: "http", status: 503 })
+    expect(events()[1]?.contexts?.central_request).toMatchObject({ kind: "decode", phase: "response_body", status: 200 })
+    for (const secret of ["private-response", "private-code", "fleet.example"]) expect(JSON.stringify(events())).not.toContain(secret)
+  } finally { (adapter.central as HttpCentralClient).dispose() }
+})
+
+test("caller cancellation is ignored while deadlines still report a timeout", async () => {
+  initializeErrorReporting("web")
+  for (const name of ["AbortError", "TimeoutError"]) {
+    const controller = new AbortController()
+    controller.abort(new DOMException("stopped", name))
+    const error = centralRequestFailure(controller.signal.reason, { method: "GET", path: "/api/me", elapsedMs: 10, signal: controller.signal })
+    captureCentralRequestError(error)
+    globalThis.onunhandledrejection?.call(window, { reason: error } as PromiseRejectionEvent)
+  }
+  await getClient()?.flush(1000)
+  expect(events()).toHaveLength(1)
+  expect(events()[0]?.tags?.["central.failure_kind"]).toBe("timeout")
 })
 
 test("captures real Vue errors from multiple apps through one client without props", async () => {

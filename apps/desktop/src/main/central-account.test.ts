@@ -203,12 +203,14 @@ test("central IPC preserves network diagnostics for caught renderer failures wit
   expect(JSON.stringify(failure)).not.toMatch(/private-|restored-token|Authorization/)
 })
 
-test("central IPC keeps HTTP and ordinary failures out of network error reporting", async () => {
+test("central IPC distinguishes HTTP failures from network failures", async () => {
   const f = await setup()
   await f.install()
   const invoke = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "operation_failed", message: "Provider unavailable" } }), { status: 502 }))
-  await expect(invoke({} as Electron.IpcMainInvokeEvent, "rpc", ["machine", "_deskfleet/agent/configuration", {}])).resolves.toEqual({
-    ok: false, error: { message: "Error invoking remote method 'deskfleet:central': Error: Provider unavailable" },
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "rpc", ["team", "machine", "_deskfleet/agent/configuration", {}])).resolves.toMatchObject({
+    ok: false, error: { message: "Error invoking remote method 'deskfleet:central': Error: Provider unavailable",
+      request: { diagnostics: { kind: "http", status: 502, rpcMethod: "_deskfleet/agent/configuration" } },
+    },
   })
 })

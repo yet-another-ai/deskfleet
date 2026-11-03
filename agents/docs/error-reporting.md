@@ -2,8 +2,8 @@
 
 Web and Electron renderers use `@sentry/vue` through the shared Vue frontend.
 Sentry captures Vue errors, uncaught JavaScript errors, and unhandled promise
-rejections. Desktop also reports failed central API fetches when their callers
-handle the error. The integration covers authentication, the root application, and
+rejections. Both clients also report central API transport, decoding, HTTP 5xx,
+and rate-limit failures when their callers handle the error. The integration covers authentication, the root application, and
 the separate Vue applications that render machine surfaces. It does not run in
 the Rust server, daemon, or Electron main process.
 
@@ -80,7 +80,7 @@ system version reports the macOS product version rather than the Darwin kernel
 version. These fields describe the client running the renderer, not its selected
 remote machine.
 
-Central API fetch failures carry the HTTP method, an allowlisted route template,
+Central API failures carry the HTTP method, an allowlisted route template,
 the allowlisted machine RPC method when applicable, elapsed milliseconds, and a
 bounded summary of error names and network/TLS error codes from nested causes
 and aggregate connection failures. The transport captures the request's caller
@@ -88,6 +88,11 @@ stack before awaiting fetch; local filenames in the serialized stack are reduced
 to `app:///` basenames. Hostnames, resource IDs, query strings, headers, request
 bodies, and raw nested-cause messages are not included in this diagnostic context.
 Unknown routes or cause codes do not expand the collection automatically.
+Diagnostics distinguish `network`, `timeout`, `cancelled`, `http`, and `decode`,
+identify `node_fetch` or `browser_fetch`, record whether the failure occurred
+during `fetch` or `response_body`, and include HTTP status when a response exists.
+A non-JSON HTTP error retains its HTTP status; malformed successful JSON is a
+decoding failure. Response-body connection failures retain their transport cause.
 
 The main process returns a plain success/error envelope through Electron IPC and
 the preload context bridge. The renderer reconstructs the diagnostic Error,
@@ -99,9 +104,19 @@ and sorted cause codes, for example `GET /api/teams/:teamId/machines — ECONNRE
 Fingerprints use the transport, method, route, RPC, and sorted cause codes without
 Sentry's default stack fingerprint. Different platform bundles therefore group
 the same operation together while preserving their original stacks and OS/release
-tags. The same enrichment applies to unhandled central request errors.
-HTTP error responses retain their existing behavior;
-this reporting path does not retry requests or change proxy/network selection.
+tags. Kind and phase are also part of grouping, so an interrupted response body
+does not group with a failure before the response. The same enrichment applies
+to unhandled central request errors.
+
+`reportingCentral` observes the public API promise after internal recovery has
+completed. The Web adapter uses it around its HTTP client; the desktop adapter
+uses it after reconstructing IPC errors. Expired-login recovery therefore does
+not generate an error event. Handled HTTP 4xx other than 429 remain with their UI
+handlers; unhandled HTTP errors are enriched normally. Caller cancellations are
+excluded from both paths, while deadlines still report as timeouts. HTTP status,
+codes, and recovery reasons remain on the existing Web `HttpError`; desktop keeps
+its existing displayed error shape and carries HTTP status in diagnostic context.
+This reporting path does not retry requests or change proxy/network selection.
 
 The integration does not enable tracing, profiling, session replay, or log
 capture. It does not attach component props, breadcrumbs, other profile fields, or

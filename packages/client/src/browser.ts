@@ -3,16 +3,17 @@ import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
 import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
+import { reportingCentral, type CentralErrorReporter } from "./reporting-central.ts"
 
 /** The browser owns no bearer token; its login session stays in an HttpOnly cookie. */
-export async function browserClient(configuredServerUrl: string): Promise<DeskfleetDesktopApi> {
+export async function browserClient(configuredServerUrl: string, report: CentralErrorReporter = () => {}): Promise<DeskfleetDesktopApi> {
   const serverUrl = serverAddress(configuredServerUrl)
-  const central = new HttpCentralClient({
-    account: { serverUrl }, cookieAuth: true,
+  const central = reportingCentral(new HttpCentralClient({
+    account: { serverUrl }, cookieAuth: true, transport: "browser_fetch",
     persist: async () => {},
     authorize: async () => { location.assign("/auth/login") },
     openExternal: async url => { location.assign(url) },
-  })
+  }), report)
   const unavailable = async (): Promise<never> => { throw new Error("Select a machine to continue") }
   const subscribe = () => () => {}
   const signaling = { offer: unavailable, candidate: unavailable, close: unavailable, onEvent: subscribe }

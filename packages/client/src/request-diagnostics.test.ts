@@ -15,6 +15,7 @@ test("summarizes nested network and aggregate causes without their addresses or 
   expect(error.cause).toBe(cause)
   expect(error.diagnostics).toEqual({
     method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", elapsedMs: 13,
+    kind: "timeout", transport: "node_fetch", phase: "fetch",
     causes: [{ name: "TypeError" }, { name: "AggregateError" }, { name: "Error", code: "ECONNREFUSED" }, { name: "Error", code: "ETIMEDOUT" }],
   })
   const serialized = JSON.stringify(serializeCentralRequestError(error))
@@ -26,7 +27,7 @@ test("unknown routes, methods and cause properties cannot become diagnostic valu
   const error = centralRequestFailure(cause, {
     method: "private-method", path: "/api/private-workspace/private-file?token=secret", body: { method: "private-rpc" }, elapsedMs: 2,
   })
-  expect(error.diagnostics).toEqual({ method: "unknown", route: "unknown", elapsedMs: 2, causes: [{ name: "Error" }] })
+  expect(error.diagnostics).toEqual({ method: "unknown", route: "unknown", elapsedMs: 2, causes: [{ name: "Error" }], kind: "network", transport: "node_fetch", phase: "fetch" })
   const rpc = centralRequestFailure(cause, { method: "POST", path: "/api/teams/private-team/machines/private/rpc", body: { method: "private-rpc" }, elapsedMs: 2 })
   expect(rpc.diagnostics.rpcMethod).toBeUndefined()
   expect(JSON.stringify(serializeCentralRequestError(error))).not.toContain("private")
