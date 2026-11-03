@@ -1,5 +1,13 @@
 use super::{BillingAnalyticsEvent, BillingProfile, Plan, analytics, profile};
-use crate::{ControlStore, Error, Result, now_ms, one, resource_id, sql};
+use crate::entities::{
+    cp_billing_profiles as profiles, cp_checkout_attempts as checkouts,
+    cp_payment_events as payments, cp_teams as teams,
+};
+use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id};
+use sea_orm::sea_query::{
+    Asterisk, Cond, Expr, ExprTrait, Func, IntoIden, LockBehavior, LockType, OnConflict, Order,
+    Query, TableRef,
+};
 use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
 
 #[derive(Clone, Debug)]
@@ -52,16 +60,22 @@ fn parse_interval(interval: &str) -> Result<&str> {
 
 async fn lock_billing_operation(tx: &DatabaseTransaction, team: i64, token: &str) -> Result<()> {
     // Match subscription reconciliation: Team, profile, then checkout/outbox.
-    one(
+    one_query(
         tx,
-        "SELECT id FROM cp_teams WHERE id=$1 FOR KEY SHARE",
-        vec![team.into()],
+        Query::select()
+            .column(teams::Column::Id)
+            .from(teams::Entity)
+            .and_where(Expr::col(teams::Column::Id).eq(team))
+            .lock(LockType::KeyShare),
     )
     .await?;
-    let row = one(
+    let row = one_query(
         tx,
-        "SELECT lease_token,lease_until FROM cp_billing_profiles WHERE team_id=$1 FOR UPDATE",
-        vec![team.into()],
+        Query::select()
+            .columns([profiles::Column::LeaseToken, profiles::Column::LeaseUntil])
+            .from(profiles::Entity)
+            .and_where(Expr::col(profiles::Column::TeamId).eq(team))
+            .lock(LockType::Update),
     )
     .await?;
     // Check time after waiting, and retain the profile lock through commit so
@@ -81,11 +95,37 @@ impl ControlStore {
     pub async fn claim_billing_operation(&self, team_id: &str) -> Result<Option<String>> {
         self.billing_profile(team_id).await?;
         let token = uuid::Uuid::new_v4().to_string();
-        let changed=self.db.execute_raw(sql("UPDATE cp_billing_profiles SET lease_token=$2,lease_until=$3+180000 WHERE team_id=$1 AND (lease_until IS NULL OR lease_until<$3)",vec![resource_id(team_id)?.into(),token.clone().into(),now_ms().into()])).await?.rows_affected()==1;
+        let now = now_ms();
+        let changed = self
+            .db
+            .execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::LeaseToken, token.clone())
+                    .value(profiles::Column::LeaseUntil, now + 180_000)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(resource_id(team_id)?))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col(profiles::Column::LeaseUntil).is_null())
+                            .add(Expr::col(profiles::Column::LeaseUntil).lt(now)),
+                    ),
+            )
+            .await?
+            .rows_affected()
+            == 1;
         Ok(changed.then_some(token))
     }
     pub async fn release_billing_operation(&self, team_id: &str, token: &str) -> Result<()> {
-        self.db.execute_raw(sql("UPDATE cp_billing_profiles SET lease_token=NULL,lease_until=NULL WHERE team_id=$1 AND lease_token=$2",vec![resource_id(team_id)?.into(),token.into()])).await?;
+        self.db
+            .execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::LeaseToken, Option::<String>::None)
+                    .value(profiles::Column::LeaseUntil, Option::<i64>::None)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(profiles::Column::LeaseToken).eq(token)),
+            )
+            .await?;
         Ok(())
     }
     pub async fn billing_customer(
@@ -94,7 +134,24 @@ impl ControlStore {
         token: &str,
         customer_id: &str,
     ) -> Result<()> {
-        let changed=self.db.execute_raw(sql("UPDATE cp_billing_profiles SET customer_id=$3 WHERE team_id=$1 AND lease_token=$2 AND lease_until>$4 AND (customer_id IS NULL OR customer_id=$3)",vec![resource_id(team_id)?.into(),token.into(),customer_id.into(),now_ms().into()])).await?.rows_affected()==1;
+        let changed = self
+            .db
+            .execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::CustomerId, customer_id)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(profiles::Column::LeaseToken).eq(token))
+                    .and_where(Expr::col(profiles::Column::LeaseUntil).gt(now_ms()))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col(profiles::Column::CustomerId).is_null())
+                            .add(Expr::col(profiles::Column::CustomerId).eq(customer_id)),
+                    ),
+            )
+            .await?
+            .rows_affected()
+            == 1;
         if changed {
             Ok(())
         } else {
@@ -103,10 +160,12 @@ impl ControlStore {
     }
     pub async fn billing_profile_by_customer(&self, customer: &str) -> Result<BillingProfile> {
         profile(
-            one(
+            one_query(
                 &self.db,
-                "SELECT * FROM cp_billing_profiles WHERE customer_id=$1",
-                vec![customer.into()],
+                Query::select()
+                    .column(Asterisk)
+                    .from(profiles::Entity)
+                    .and_where(Expr::col(profiles::Column::CustomerId).eq(customer)),
             )
             .await?,
         )
@@ -114,10 +173,41 @@ impl ControlStore {
     /// Claim one due customer without retaining SQL locks during provider I/O.
     pub async fn claim_billing_reconciliation(&self) -> Result<Option<(String, String)>> {
         let token = uuid::Uuid::new_v4().to_string();
-        let row = self.db.query_one_raw(sql(
-            "UPDATE cp_billing_profiles b SET lease_token=$2,lease_until=$1+180000,reconcile_after=$1+180000 FROM (SELECT team_id FROM cp_billing_profiles WHERE customer_id IS NOT NULL AND reconcile_after<=$1 AND (lease_until IS NULL OR lease_until<$1) ORDER BY reconcile_after,team_id FOR UPDATE SKIP LOCKED LIMIT 1) candidate WHERE b.team_id=candidate.team_id RETURNING b.team_id",
-            vec![now_ms().into(),token.clone().into()],
-        )).await?;
+        let now = now_ms();
+        let candidate = Query::select()
+            .column(profiles::Column::TeamId)
+            .from(profiles::Entity)
+            .and_where(Expr::col(profiles::Column::CustomerId).is_not_null())
+            .and_where(Expr::col(profiles::Column::ReconcileAfter).lte(now))
+            .cond_where(
+                Cond::any()
+                    .add(Expr::col(profiles::Column::LeaseUntil).is_null())
+                    .add(Expr::col(profiles::Column::LeaseUntil).lt(now)),
+            )
+            .order_by(profiles::Column::ReconcileAfter, Order::Asc)
+            .order_by(profiles::Column::TeamId, Order::Asc)
+            .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+            .limit(1)
+            .to_owned();
+        let row = self
+            .db
+            .query_one(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::LeaseToken, token.clone())
+                    .value(profiles::Column::LeaseUntil, now + 180_000)
+                    .value(profiles::Column::ReconcileAfter, now + 180_000)
+                    .from(TableRef::SubQuery(
+                        Box::new(candidate),
+                        "candidate".into_iden(),
+                    ))
+                    .and_where(
+                        Expr::col((profiles::Entity, profiles::Column::TeamId))
+                            .eq(Expr::col(("candidate", profiles::Column::TeamId))),
+                    )
+                    .returning_col((profiles::Entity, profiles::Column::TeamId)),
+            )
+            .await?;
         row.map(|row| Ok((row.try_get::<i64>("", "team_id")?.to_string(), token)))
             .transpose()
     }
@@ -127,10 +217,20 @@ impl ControlStore {
         token: &str,
         success: bool,
     ) -> Result<()> {
-        self.db.execute_raw(sql(
-            "UPDATE cp_billing_profiles SET lease_token=NULL,lease_until=NULL,reconcile_after=$3 WHERE team_id=$1 AND lease_token=$2",
-            vec![resource_id(team_id)?.into(),token.into(),(now_ms()+if success {60_000} else {300_000}).into()],
-        )).await?;
+        self.db
+            .execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(profiles::Column::LeaseToken, Option::<String>::None)
+                    .value(profiles::Column::LeaseUntil, Option::<i64>::None)
+                    .value(
+                        profiles::Column::ReconcileAfter,
+                        now_ms() + if success { 60_000 } else { 300_000 },
+                    )
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(profiles::Column::LeaseToken).eq(token)),
+            )
+            .await?;
         Ok(())
     }
     pub async fn apply_subscription(
@@ -149,16 +249,78 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         // The analytics FK also locks this parent. Acquire it before the profile,
         // matching Enterprise updates rather than reversing their lock order.
-        one(
+        one_query(
             &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR KEY SHARE",
-            vec![resource_id(team_id)?.into()],
+            Query::select()
+                .column(teams::Column::Id)
+                .from(teams::Entity)
+                .and_where(Expr::col(teams::Column::Id).eq(resource_id(team_id)?))
+                .lock(LockType::KeyShare),
         )
         .await?;
-        let changed=tx.execute_raw(sql(
-            "UPDATE cp_billing_profiles SET subscription_id=$3,subscription_status=$4,plan=COALESCE($5,plan),paid_through=CASE WHEN $5::text IS NULL THEN paid_through ELSE $6 END,period_anchor=CASE WHEN subscription_id IS NULL OR subscription_id<>$3 THEN $7 ELSE period_anchor END,cancel_at_period_end=$8,reconciled_at=$9 WHERE team_id=$1 AND lease_token=$2 AND lease_until>$9 AND (subscription_id IS NULL OR subscription_id=$3 OR paid_through IS NULL OR paid_through<=$9)",
-            vec![resource_id(team_id)?.into(),token.into(),projection.subscription_id.clone().into(),projection.status.clone().into(),projection.paid_plan.clone().into(),projection.paid_through.into(),projection.period_anchor.into(),projection.cancel_at_period_end.into(),now_ms().into()]
-        )).await?.rows_affected()==1;
+        let now = now_ms();
+        let changed = tx
+            .execute(
+                Query::update()
+                    .table(profiles::Entity)
+                    .value(
+                        profiles::Column::SubscriptionId,
+                        projection.subscription_id.clone(),
+                    )
+                    .value(
+                        profiles::Column::SubscriptionStatus,
+                        projection.status.clone(),
+                    )
+                    .value(
+                        profiles::Column::Plan,
+                        Func::coalesce([
+                            Expr::val(projection.paid_plan.clone()),
+                            Expr::col(profiles::Column::Plan),
+                        ]),
+                    )
+                    .value(
+                        profiles::Column::PaidThrough,
+                        if projection.paid_plan.is_none() {
+                            Expr::col(profiles::Column::PaidThrough)
+                        } else {
+                            Expr::val(projection.paid_through)
+                        },
+                    )
+                    .value(
+                        profiles::Column::PeriodAnchor,
+                        Expr::case(
+                            Cond::any()
+                                .add(Expr::col(profiles::Column::SubscriptionId).is_null())
+                                .add(
+                                    Expr::col(profiles::Column::SubscriptionId)
+                                        .ne(projection.subscription_id.clone()),
+                                ),
+                            projection.period_anchor,
+                        )
+                        .finally(Expr::col(profiles::Column::PeriodAnchor)),
+                    )
+                    .value(
+                        profiles::Column::CancelAtPeriodEnd,
+                        projection.cancel_at_period_end,
+                    )
+                    .value(profiles::Column::ReconciledAt, now)
+                    .and_where(Expr::col(profiles::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(profiles::Column::LeaseToken).eq(token))
+                    .and_where(Expr::col(profiles::Column::LeaseUntil).gt(now))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col(profiles::Column::SubscriptionId).is_null())
+                            .add(
+                                Expr::col(profiles::Column::SubscriptionId)
+                                    .eq(projection.subscription_id.clone()),
+                            )
+                            .add(Expr::col(profiles::Column::PaidThrough).is_null())
+                            .add(Expr::col(profiles::Column::PaidThrough).lte(now)),
+                    ),
+            )
+            .await?
+            .rows_affected()
+            == 1;
         if changed {
             analytics::enqueue(&tx, team_id, events).await?;
             tx.commit().await?;
@@ -169,16 +331,28 @@ impl ControlStore {
     }
     pub async fn checkout_attempt(&self, request_id: &str) -> Result<Option<CheckoutAttempt>> {
         self.db
-            .query_one_raw(sql(
-                "SELECT * FROM cp_checkout_attempts WHERE request_id=$1",
-                vec![request_id.into()],
-            ))
+            .query_one(
+                Query::select()
+                    .column(Asterisk)
+                    .from(checkouts::Entity)
+                    .and_where(Expr::col(checkouts::Column::RequestId).eq(request_id)),
+            )
             .await?
             .map(checkout)
             .transpose()
     }
     pub async fn open_checkout(&self, team_id: &str) -> Result<Option<CheckoutAttempt>> {
-        self.db.query_one_raw(sql("SELECT * FROM cp_checkout_attempts WHERE team_id=$1 AND status IN ('pending','open')",vec![resource_id(team_id)?.into()])).await?.map(checkout).transpose()
+        self.db
+            .query_one(
+                Query::select()
+                    .column(Asterisk)
+                    .from(checkouts::Entity)
+                    .and_where(Expr::col(checkouts::Column::TeamId).eq(resource_id(team_id)?))
+                    .and_where(Expr::col(checkouts::Column::Status).is_in(["pending", "open"])),
+            )
+            .await?
+            .map(checkout)
+            .transpose()
     }
     pub async fn create_checkout_attempt(
         &self,
@@ -196,7 +370,33 @@ impl ControlStore {
         let team = resource_id(team_id)?;
         let tx = self.db.begin().await?;
         lock_billing_operation(&tx, team, token).await?;
-        let attempt = checkout(one(&tx,"INSERT INTO cp_checkout_attempts(request_id,team_id,plan,billing_interval,status,created_at,actor_user_id) VALUES($2,$1,$3,$4,'pending',$5,$6) RETURNING *",vec![team.into(),request_id.into(),plan.into(),interval.into(),now_ms().into(),actor_user_id.into()]).await?)?;
+        let attempt = checkout(
+            one_query(
+                &tx,
+                Query::insert()
+                    .into_table(checkouts::Entity)
+                    .columns([
+                        checkouts::Column::RequestId,
+                        checkouts::Column::TeamId,
+                        checkouts::Column::Plan,
+                        checkouts::Column::BillingInterval,
+                        checkouts::Column::Status,
+                        checkouts::Column::CreatedAt,
+                        checkouts::Column::ActorUserId,
+                    ])
+                    .values_panic([
+                        request_id.into(),
+                        team.into(),
+                        plan.into(),
+                        interval.into(),
+                        "pending".into(),
+                        now_ms().into(),
+                        actor_user_id.into(),
+                    ])
+                    .returning_all(),
+            )
+            .await?,
+        )?;
         tx.commit().await?;
         Ok(attempt)
     }
@@ -215,7 +415,18 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         let team = resource_id(team_id)?;
         lock_billing_operation(&tx, team, token).await?;
-        let changed=tx.execute_raw(sql("UPDATE cp_checkout_attempts SET session_id=$3,status=$4 WHERE request_id=$2 AND team_id=$1",vec![team.into(),request_id.into(),session_id.into(),status.into()])).await?.rows_affected()==1;
+        let changed = tx
+            .execute(
+                Query::update()
+                    .table(checkouts::Entity)
+                    .value(checkouts::Column::SessionId, session_id)
+                    .value(checkouts::Column::Status, status)
+                    .and_where(Expr::col(checkouts::Column::RequestId).eq(request_id))
+                    .and_where(Expr::col(checkouts::Column::TeamId).eq(team)),
+            )
+            .await?
+            .rows_affected()
+            == 1;
         if changed {
             analytics::enqueue(&tx, team_id, events).await?;
             tx.commit().await?;
@@ -233,10 +444,13 @@ impl ControlStore {
         let team = resource_id(team_id)?;
         let tx = self.db.begin().await?;
         lock_billing_operation(&tx, team, token).await?;
-        tx.execute_raw(sql(
-            "UPDATE cp_checkout_attempts SET status='complete' WHERE team_id=$1 AND request_id=$2",
-            vec![team.into(), request_id.into()],
-        ))
+        tx.execute(
+            Query::update()
+                .table(checkouts::Entity)
+                .value(checkouts::Column::Status, "complete")
+                .and_where(Expr::col(checkouts::Column::TeamId).eq(team))
+                .and_where(Expr::col(checkouts::Column::RequestId).eq(request_id)),
+        )
         .await?;
         tx.commit().await?;
         Ok(())
@@ -252,12 +466,83 @@ impl ControlStore {
         if id.is_empty() || id.len() > 255 || object_id.is_empty() || object_id.len() > 255 {
             return Err(Error::Invalid("invalid payment event"));
         }
-        self.db.execute_raw(sql("INSERT INTO cp_payment_events(id,event_type,object_id,available_at,received_at,occurred_at,payment_attempt) VALUES($1,$2,$3,$4,$4,$5,$6) ON CONFLICT(id) DO NOTHING",vec![id.into(),event_type.into(),object_id.into(),now_ms().into(),occurred_at.into(),payment_attempt.into()])).await?;
+        let now = now_ms();
+        self.db
+            .execute(
+                Query::insert()
+                    .into_table(payments::Entity)
+                    .columns([
+                        payments::Column::Id,
+                        payments::Column::EventType,
+                        payments::Column::ObjectId,
+                        payments::Column::AvailableAt,
+                        payments::Column::ReceivedAt,
+                        payments::Column::OccurredAt,
+                        payments::Column::PaymentAttempt,
+                    ])
+                    .values_panic([
+                        id.into(),
+                        event_type.into(),
+                        object_id.into(),
+                        now.into(),
+                        now.into(),
+                        occurred_at.into(),
+                        payment_attempt.into(),
+                    ])
+                    .on_conflict(
+                        OnConflict::column(payments::Column::Id)
+                            .do_nothing()
+                            .to_owned(),
+                    ),
+            )
+            .await?;
         Ok(())
     }
     pub async fn claim_payment_event(&self) -> Result<Option<PaymentEvent>> {
         let token = uuid::Uuid::new_v4().to_string();
-        let row=self.db.query_one_raw(sql("UPDATE cp_payment_events e SET status='processing',attempts=attempts+1,claim_token=$2,claimed_until=$1+180000 FROM (SELECT id FROM cp_payment_events WHERE status<>'processed' AND attempts<10 AND available_at<=$1 AND (claimed_until IS NULL OR claimed_until<$1) ORDER BY received_at FOR UPDATE SKIP LOCKED LIMIT 1) candidate WHERE e.id=candidate.id RETURNING e.*",vec![now_ms().into(),token.clone().into()])).await?;
+        let now = now_ms();
+        let candidate = Query::select()
+            .column(payments::Column::Id)
+            .from(payments::Entity)
+            .and_where(Expr::col(payments::Column::Status).ne("processed"))
+            .and_where(Expr::col(payments::Column::Attempts).lt(10))
+            .and_where(Expr::col(payments::Column::AvailableAt).lte(now))
+            .cond_where(
+                Cond::any()
+                    .add(Expr::col(payments::Column::ClaimedUntil).is_null())
+                    .add(Expr::col(payments::Column::ClaimedUntil).lt(now)),
+            )
+            .order_by(payments::Column::ReceivedAt, Order::Asc)
+            .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+            .limit(1)
+            .to_owned();
+        let row = self
+            .db
+            .query_one(
+                Query::update()
+                    .table(payments::Entity)
+                    .value(payments::Column::Status, "processing")
+                    .value(
+                        payments::Column::Attempts,
+                        Expr::col(payments::Column::Attempts).add(1),
+                    )
+                    .value(payments::Column::ClaimToken, token.clone())
+                    .value(payments::Column::ClaimedUntil, now + 180_000)
+                    .from(TableRef::SubQuery(
+                        Box::new(candidate),
+                        "candidate".into_iden(),
+                    ))
+                    .and_where(
+                        Expr::col((payments::Entity, payments::Column::Id))
+                            .eq(Expr::col(("candidate", payments::Column::Id))),
+                    )
+                    .returning(
+                        Query::returning()
+                            .column((payments::Entity, Asterisk))
+                            .to_owned(),
+                    ),
+            )
+            .await?;
         row.map(|r| {
             Ok(PaymentEvent {
                 id: r.try_get("", "id")?,
@@ -271,7 +556,37 @@ impl ControlStore {
         .transpose()
     }
     pub async fn finish_payment_event(&self, event: &PaymentEvent, success: bool) -> Result<()> {
-        self.db.execute_raw(sql("UPDATE cp_payment_events SET status=$3,claim_token=NULL,claimed_until=NULL,available_at=$4+(LEAST(3600,power(2,attempts)::integer)*1000),error_code=$5 WHERE id=$1 AND claim_token=$2",vec![event.id.clone().into(),event.claim_token.clone().into(),(if success {"processed"}else{"failed"}).into(),now_ms().into(),(!success).then_some("reconciliation_failed").into()])).await?;
+        let delay = Func::least([
+            Expr::val(3600),
+            Func::cust("power")
+                .args([Expr::val(2), Expr::col(payments::Column::Attempts)])
+                .cast_as("integer"),
+        ])
+        .mul(1000);
+        self.db
+            .execute(
+                Query::update()
+                    .table(payments::Entity)
+                    .value(
+                        payments::Column::Status,
+                        if success { "processed" } else { "failed" },
+                    )
+                    .value(payments::Column::ClaimToken, Option::<String>::None)
+                    .value(payments::Column::ClaimedUntil, Option::<i64>::None)
+                    .value(
+                        payments::Column::AvailableAt,
+                        Expr::val(now_ms()).add(delay),
+                    )
+                    .value(
+                        payments::Column::ErrorCode,
+                        (!success).then_some("reconciliation_failed"),
+                    )
+                    .and_where(Expr::col(payments::Column::Id).eq(event.id.clone()))
+                    .and_where(
+                        Expr::col(payments::Column::ClaimToken).eq(event.claim_token.clone()),
+                    ),
+            )
+            .await?;
         Ok(())
     }
 }

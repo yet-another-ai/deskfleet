@@ -1,9 +1,15 @@
 //! Private Cloudflare credentials and replaceable, period-attributed usage snapshots.
+pub(crate) mod metering;
 mod usage;
 pub use usage::CloudflareTurnUsageQuery;
 
-use crate::{ControlStore, Error, Result, now_ms, one, sql};
+use crate::entities::{
+    cp_billing_profiles as profiles, cp_cloudflare_turn_settings as settings,
+    cp_cloudflare_turn_sources as sources, cp_site_admins as admins, cp_site_audit as audit,
+};
+use crate::{ControlStore, Error, Result, now_ms, one_query};
 use deskfleet_protocol::control::{CloudflareTurnSettings, CloudflareTurnSettingsUpdate};
+use sea_orm::sea_query::{Asterisk, Expr, ExprTrait, LockType, Query};
 use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde_json::json;
 
@@ -13,10 +19,12 @@ pub(crate) async fn metering(
     now: i64,
 ) -> Result<QueryResult> {
     let period = if let Some(team) = team_id {
-        let anchor = one(
+        let anchor = one_query(
             db,
-            "SELECT period_anchor FROM cp_billing_profiles WHERE team_id=$1",
-            vec![team.into()],
+            Query::select()
+                .column(profiles::Column::PeriodAnchor)
+                .from(profiles::Entity)
+                .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
         )
         .await?
         .try_get("", "period_anchor")?;
@@ -24,15 +32,14 @@ pub(crate) async fn metering(
     } else {
         None
     };
-    one(
+    one_query(
         db,
-        include_str!("metering.sql"),
-        vec![
-            team_id.into(),
-            now.into(),
-            period.map(|p| p.0).into(),
-            period.map(|p| p.1).into(),
-        ],
+        &metering::query(
+            Expr::val(team_id),
+            Expr::val(now),
+            Expr::val(period.map(|p| p.0)),
+            Expr::val(period.map(|p| p.1)),
+        ),
     )
     .await
 }
@@ -94,10 +101,12 @@ fn token(value: Option<&str>, previous: String) -> Result<String> {
 impl ControlStore {
     pub async fn cloudflare_turn_config(&self) -> Result<CloudflareTurnConfig> {
         config(
-            one(
+            one_query(
                 &self.db,
-                "SELECT * FROM cp_cloudflare_turn_settings WHERE singleton",
-                vec![],
+                Query::select()
+                    .column(Asterisk)
+                    .from(settings::Entity)
+                    .and_where(Expr::col(settings::Column::Singleton)),
             )
             .await?,
         )
@@ -121,20 +130,26 @@ impl ControlStore {
     ) -> Result<CloudflareTurnSettings> {
         let tx = self.db.begin().await?;
         if tx
-            .query_one_raw(sql(
-                "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
-                vec![user_id.into()],
-            ))
+            .query_one(
+                Query::select()
+                    .column(admins::Column::UserId)
+                    .from(admins::Entity)
+                    .and_where(Expr::col(admins::Column::UserId).eq(user_id))
+                    .lock(LockType::Share),
+            )
             .await?
             .is_none()
         {
             return Err(Error::Forbidden);
         }
         let previous = config(
-            one(
+            one_query(
                 &tx,
-                "SELECT * FROM cp_cloudflare_turn_settings WHERE singleton FOR UPDATE",
-                vec![],
+                Query::select()
+                    .column(Asterisk)
+                    .from(settings::Entity)
+                    .and_where(Expr::col(settings::Column::Singleton))
+                    .lock(LockType::Update),
             )
             .await?,
         )?;
@@ -162,10 +177,51 @@ impl ControlStore {
         }
         let after = next.settings();
         if !next.analytics_token.is_empty() {
-            tx.execute_raw(sql("UPDATE cp_cloudflare_turn_sources SET analytics_token=$3 WHERE account_id=$1 AND key_id=$2 AND analytics_token<>''",vec![next.account_id.as_str().into(),next.key_id.as_str().into(),next.analytics_token.as_str().into()])).await?;
+            tx.execute(
+                Query::update()
+                    .table(sources::Entity)
+                    .value(
+                        sources::Column::AnalyticsToken,
+                        next.analytics_token.as_str(),
+                    )
+                    .and_where(Expr::col(sources::Column::AccountId).eq(next.account_id.as_str()))
+                    .and_where(Expr::col(sources::Column::KeyId).eq(next.key_id.as_str()))
+                    .and_where(Expr::col(sources::Column::AnalyticsToken).ne("")),
+            )
+            .await?;
         }
-        tx.execute_raw(sql("UPDATE cp_cloudflare_turn_settings SET enabled=$1,account_id=$2,key_id=$3,api_token=$4,analytics_token=$5 WHERE singleton", vec![next.enabled.into(),next.account_id.into(),next.key_id.into(),next.api_token.into(),next.analytics_token.into()])).await?;
-        tx.execute_raw(sql("INSERT INTO cp_site_audit(actor_user_id,source,action,before_value,after_value,occurred_at) VALUES($1,'user','cloudflare.turn.settings.update',$2,$3,$4)", vec![user_id.into(),json!(before).into(),json!(after).into(),now_ms().into()])).await?;
+        tx.execute(
+            Query::update()
+                .table(settings::Entity)
+                .value(settings::Column::Enabled, next.enabled)
+                .value(settings::Column::AccountId, next.account_id)
+                .value(settings::Column::KeyId, next.key_id)
+                .value(settings::Column::ApiToken, next.api_token)
+                .value(settings::Column::AnalyticsToken, next.analytics_token)
+                .and_where(Expr::col(settings::Column::Singleton)),
+        )
+        .await?;
+        tx.execute(
+            Query::insert()
+                .into_table(audit::Entity)
+                .columns([
+                    audit::Column::ActorUserId,
+                    audit::Column::Source,
+                    audit::Column::Action,
+                    audit::Column::BeforeValue,
+                    audit::Column::AfterValue,
+                    audit::Column::OccurredAt,
+                ])
+                .values_panic([
+                    user_id.into(),
+                    "user".into(),
+                    "cloudflare.turn.settings.update".into(),
+                    json!(before).into(),
+                    json!(after).into(),
+                    now_ms().into(),
+                ]),
+        )
+        .await?;
         tx.commit().await?;
         Ok(after)
     }

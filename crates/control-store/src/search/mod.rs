@@ -1,11 +1,16 @@
 //! Search read models derived from synchronized machine records.
 mod projection;
+mod query;
 mod schedules;
 
 pub(crate) use projection::{backfill, project_history, terminal_sequence};
 
-use crate::{ControlStore, Error, Result, policies::TeamAction, resource_id, sql};
-use sea_orm::ConnectionTrait;
+use crate::entities::cp_search_documents as documents;
+use crate::{ControlStore, Error, Result, policies::TeamAction, resource_id};
+use sea_orm::{
+    ConnectionTrait, EntityTrait, Set,
+    sea_query::{Alias, BinOper, Expr, ExprTrait, OnConflict},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -54,21 +59,17 @@ impl ControlStore {
                 serde_json::from_str(value).map_err(|_| Error::Invalid("invalid search cursor"))
             })
             .transpose()?;
-        let cursor = cursor.as_ref().map(serde_json::to_value).transpose()?;
         let pattern = format!("%{}%", escape_like(query));
         let mut rows = self
             .db
-            .query_all_raw(sql(
-                include_str!("query.sql"),
-                vec![
-                    resource_id(team_id)?.into(),
-                    user_id.into(),
-                    kind.into(),
-                    pattern.into(),
-                    cursor.into(),
-                    i64::from(limit + 1).into(),
-                    query.into(),
-                ],
+            .query_all(&query::search(
+                resource_id(team_id)?,
+                user_id,
+                kind,
+                &pattern,
+                cursor.as_ref(),
+                limit + 1,
+                query,
             ))
             .await?;
         let more = rows.len() > limit as usize;
@@ -130,13 +131,34 @@ pub(super) async fn write_document(
     priority: i16,
     content: &str,
 ) -> Result<()> {
-    db.execute_raw(sql(
-        "INSERT INTO cp_search_documents(registration_id,kind,resource_id,entry_id,block_no,priority,content)
-         VALUES($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT(registration_id,kind,resource_id,entry_id,block_no) DO UPDATE
-         SET content=excluded.content WHERE cp_search_documents.content IS DISTINCT FROM excluded.content",
-        vec![machine.into(),kind.into(),resource.into(),entry.into(),block.into(),priority.into(),content.into()],
-    )).await?;
+    documents::Entity::insert(documents::ActiveModel {
+        registration_id: Set(machine),
+        kind: Set(kind.to_owned()),
+        resource_id: Set(resource.to_owned()),
+        entry_id: Set(entry.to_owned()),
+        block_no: Set(block),
+        priority: Set(priority),
+        content: Set(content.to_owned()),
+    })
+    .on_conflict(
+        OnConflict::columns([
+            documents::Column::RegistrationId,
+            documents::Column::Kind,
+            documents::Column::ResourceId,
+            documents::Column::EntryId,
+            documents::Column::BlockNo,
+        ])
+        .update_column(documents::Column::Content)
+        .action_and_where(
+            Expr::col((documents::Entity, documents::Column::Content)).binary(
+                BinOper::Custom("IS DISTINCT FROM"),
+                Expr::col((Alias::new("excluded"), documents::Column::Content)),
+            ),
+        )
+        .to_owned(),
+    )
+    .exec_without_returning(db)
+    .await?;
     Ok(())
 }
 

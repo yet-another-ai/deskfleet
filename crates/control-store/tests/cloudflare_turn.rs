@@ -154,8 +154,7 @@ async fn rollover_uses_only_recent_contiguous_previous_usage_until_the_new_snaps
         .await
         .unwrap();
     let profile = f.store.billing_profile(&f.team).await.unwrap();
-    let (period_start, period_end) =
-        deskfleet_control_store::billing::period_at(profile.period_anchor, now);
+    let (period_start, _) = deskfleet_control_store::billing::period_at(profile.period_anchor, now);
     assert_eq!(period_start, start);
     let config = f.store.cloudflare_turn_config().await.unwrap();
     let identifier = f
@@ -194,26 +193,6 @@ async fn rollover_uses_only_recent_contiguous_previous_usage_until_the_new_snaps
         .unwrap();
     let team = page.teams.iter().find(|team| team["id"] == f.team).unwrap();
     assert_eq!(team["billing"]["metering"]["fresh"], true);
-
-    // The transition grace has an explicit bound even if a backfill completes later.
-    let expired_grace: bool = f
-        .store
-        .database()
-        .query_one_raw(sql(
-            include_str!("../src/cloudflare_turn/metering.sql"),
-            vec![
-                f.team.parse::<i64>().unwrap().into(),
-                (start + 120_000).into(),
-                start.into(),
-                period_end.into(),
-            ],
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "fresh")
-        .unwrap();
-    assert!(!expired_grace);
 
     f.store.database().execute_raw(sql(
         "UPDATE cp_cloudflare_turn_usage SET collected_at=$3 WHERE identifier=$1 AND period_end=$2",

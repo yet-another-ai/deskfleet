@@ -1,18 +1,21 @@
 //! Private installation-wide TURN endpoints and the ICE snapshot of each peer grant.
 //! Team-owned TURN servers live in `team_turn`.
+use crate::entities::{
+    cp_peers as peers, cp_site_admins as admins, cp_site_audit as audit, cp_turn_settings as turn,
+};
 use crate::{
-    ControlStore, Error, Result, now_ms, one,
+    ControlStore, Error, Result, now_ms,
     policies::{SiteAction, SitePolicy, authorize},
-    sql,
 };
 use deskfleet_protocol::control::{IceServer, TurnSettings};
-use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
+use sea_orm::sea_query::{Expr, Func, OnConflict};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait};
 use serde_json::json;
 
-fn settings(row: &QueryResult) -> Result<TurnSettings> {
+fn settings(row: turn::Model) -> Result<TurnSettings> {
     Ok(TurnSettings {
-        urls: serde_json::from_value(row.try_get("", "urls")?)?,
-        allow_team_servers: row.try_get("", "allow_team_servers")?,
+        urls: serde_json::from_value(row.urls)?,
+        allow_team_servers: row.allow_team_servers,
     })
 }
 
@@ -60,27 +63,29 @@ impl ControlStore {
     /// Initialize from deployment configuration only once, including an empty list.
     pub async fn seed_turn_settings(&self, urls: &[String]) -> Result<()> {
         let urls = turn_urls(urls)?;
-        self.db
-            .execute_raw(sql(
-                "INSERT INTO cp_turn_settings(singleton, urls) VALUES(TRUE, $1) ON CONFLICT(singleton) DO NOTHING",
-                vec![json!(urls).into()],
-            ))
-            .await?;
+        turn::Entity::insert(turn::ActiveModel {
+            singleton: Set(true),
+            urls: Set(json!(urls)),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::column(turn::Column::Singleton)
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_without_returning(&self.db)
+        .await?;
         Ok(())
     }
-
     /// Internal grant generation reads the current list directly from PostgreSQL.
     pub async fn turn_settings(&self) -> Result<TurnSettings> {
         settings(
-            &one(
-                &self.db,
-                "SELECT urls, allow_team_servers FROM cp_turn_settings WHERE singleton",
-                vec![],
-            )
-            .await?,
+            turn::Entity::find_by_id(true)
+                .one(&self.db)
+                .await?
+                .ok_or(Error::NotFound)?,
         )
     }
-
     pub async fn read_turn_settings(&self, user_id: &str) -> Result<TurnSettings> {
         authorize(
             &SitePolicy::new(self.is_site_admin(user_id).await?),
@@ -88,7 +93,6 @@ impl ControlStore {
         )?;
         self.turn_settings().await
     }
-
     /// Retain the administrator grant through the audited settings transaction.
     pub async fn update_turn_settings(
         &self,
@@ -96,11 +100,9 @@ impl ControlStore {
         input: &TurnSettings,
     ) -> Result<TurnSettings> {
         let tx = self.db.begin().await?;
-        let is_admin = tx
-            .query_one_raw(sql(
-                "SELECT user_id FROM cp_site_admins WHERE user_id=$1 FOR SHARE",
-                vec![user_id.into()],
-            ))
+        let is_admin = admins::Entity::find_by_id(user_id)
+            .lock_shared()
+            .one(&tx)
             .await?
             .is_some();
         authorize(&SitePolicy::new(is_admin), SiteAction::UpdateTurnSettings)?;
@@ -109,27 +111,35 @@ impl ControlStore {
             allow_team_servers: input.allow_team_servers,
         };
         let before = settings(
-            &one(
-                &tx,
-                "SELECT urls, allow_team_servers FROM cp_turn_settings WHERE singleton FOR UPDATE",
-                vec![],
-            )
-            .await?,
+            turn::Entity::find_by_id(true)
+                .lock_exclusive()
+                .one(&tx)
+                .await?
+                .ok_or(Error::NotFound)?,
         )?;
-        tx.execute_raw(sql(
-            "UPDATE cp_turn_settings SET urls=$1, allow_team_servers=$2 WHERE singleton",
-            vec![json!(after.urls).into(), after.allow_team_servers.into()],
-        ))
-        .await?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_site_audit(actor_user_id, source, action, before_value, after_value, occurred_at) VALUES($1, 'user', 'turn.settings.update', $2, $3, $4)",
-            vec![user_id.into(), json!(before).into(), json!(after).into(), now_ms().into()],
-        ))
+        turn::Entity::update_many()
+            .col_expr(turn::Column::Urls, Expr::val(json!(after.urls)))
+            .col_expr(
+                turn::Column::AllowTeamServers,
+                Expr::val(after.allow_team_servers),
+            )
+            .filter(turn::Column::Singleton.eq(true))
+            .exec(&tx)
+            .await?;
+        audit::Entity::insert(audit::ActiveModel {
+            actor_user_id: Set(Some(user_id.into())),
+            source: Set("user".into()),
+            action: Set("turn.settings.update".into()),
+            before_value: Set(json!(before)),
+            after_value: Set(json!(after)),
+            occurred_at: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
         .await?;
         tx.commit().await?;
         Ok(after)
     }
-
     /// Initialize a missing ICE snapshot and return the snapshot that won the write.
     /// Concurrent reconstruction must agree, and an issued empty list stays empty.
     pub async fn save_peer_ice_servers(
@@ -137,26 +147,34 @@ impl ControlStore {
         peer_id: &str,
         servers: &[IceServer],
     ) -> Result<Vec<IceServer>> {
-        let row = one(
-            &self.db,
-            "UPDATE cp_peers SET ice_servers=COALESCE(ice_servers,$2) WHERE id=$1 RETURNING ice_servers",
-            vec![peer_id.into(), json!(servers).into()],
-        )
-        .await?;
-        Ok(serde_json::from_value(row.try_get("", "ice_servers")?)?)
+        let row = peers::Entity::update_many()
+            .col_expr(
+                peers::Column::IceServers,
+                Func::coalesce([
+                    Expr::col(peers::Column::IceServers),
+                    Expr::val(json!(servers)),
+                ])
+                .into(),
+            )
+            .filter(peers::Column::Id.eq(peer_id))
+            .exec_with_returning(&self.db)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound)?;
+        Ok(serde_json::from_value(
+            row.ice_servers
+                .expect("COALESCE writes a non-null ICE snapshot"),
+        )?)
     }
-
     /// Offer forwarding uses the issued snapshot even after TURN settings change.
     /// None identifies a legacy grant; Some([]) is an intentionally empty snapshot.
     pub async fn peer_ice_servers(&self, peer_id: &str) -> Result<Option<Vec<IceServer>>> {
-        let row = one(
-            &self.db,
-            "SELECT ice_servers FROM cp_peers WHERE id=$1",
-            vec![peer_id.into()],
-        )
-        .await?;
-        let servers: Option<serde_json::Value> = row.try_get("", "ice_servers")?;
-        Ok(servers.map(serde_json::from_value).transpose()?)
+        let row = peers::Entity::find_by_id(peer_id)
+            .one(&self.db)
+            .await?
+            .ok_or(Error::NotFound)?;
+        Ok(row.ice_servers.map(serde_json::from_value).transpose()?)
     }
 }
 

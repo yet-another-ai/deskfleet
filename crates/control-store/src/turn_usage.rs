@@ -1,5 +1,9 @@
-use crate::{ControlStore, Error, Result, sql};
+use crate::entities::{
+    cp_peers as peers, cp_turn_collector as collector, cp_turn_usage as usage_rows,
+};
+use crate::{ControlStore, Error, Result};
 use sea_orm::ConnectionTrait;
+use sea_orm::sea_query::{Cond, Expr, ExprTrait, Query};
 
 /// The allocation socket whose counters coturn reported.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,21 +61,48 @@ impl ControlStore {
         {
             return Err(Error::Invalid("invalid TURN usage event"));
         }
-        let values = vec![
-            usage.peer_id.as_str().into(),
-            usage.realm.as_str().into(),
-            usage.allocation_id.as_str().into(),
-            usage.side.as_str().into(),
-            usage.received_bytes.into(),
-            usage.sent_bytes.into(),
-            usage.collected_at.into(),
-            owner.map(str::to_owned).into(),
-            crate::now_ms().into(),
-        ];
-        let inserted = self.db.execute_raw(sql(
-            "INSERT INTO cp_turn_usage(peer_id,team_id,realm,allocation_id,side,received_bytes,sent_bytes,collected_at) SELECT id,team_id,$2,$3,$4,$5,$6,$7 FROM cp_peers WHERE id=$1 AND ($8::text IS NULL OR EXISTS(SELECT 1 FROM cp_turn_collector WHERE singleton AND owner=$8 AND lease_until>$9))",
-            values,
-        )).await?;
+        let lease = Query::select()
+            .expr(Expr::val(1))
+            .from(collector::Entity)
+            .and_where(Expr::col(collector::Column::Singleton))
+            .and_where(Expr::col(collector::Column::Owner).eq(owner))
+            .and_where(Expr::col(collector::Column::LeaseUntil).gt(crate::now_ms()))
+            .to_owned();
+        let source = Query::select()
+            .columns([peers::Column::Id, peers::Column::TeamId])
+            .expr(Expr::val(usage.realm.as_str()))
+            .expr(Expr::val(usage.allocation_id.as_str()))
+            .expr(Expr::val(usage.side.as_str()))
+            .expr(Expr::val(usage.received_bytes))
+            .expr(Expr::val(usage.sent_bytes))
+            .expr(Expr::val(usage.collected_at))
+            .from(peers::Entity)
+            .and_where(Expr::col(peers::Column::Id).eq(usage.peer_id.as_str()))
+            .cond_where(
+                Cond::any()
+                    .add(Expr::val(owner.is_none()))
+                    .add(Expr::exists(lease)),
+            )
+            .to_owned();
+        let inserted = self
+            .db
+            .execute(
+                Query::insert()
+                    .into_table(usage_rows::Entity)
+                    .columns([
+                        usage_rows::Column::PeerId,
+                        usage_rows::Column::TeamId,
+                        usage_rows::Column::Realm,
+                        usage_rows::Column::AllocationId,
+                        usage_rows::Column::Side,
+                        usage_rows::Column::ReceivedBytes,
+                        usage_rows::Column::SentBytes,
+                        usage_rows::Column::CollectedAt,
+                    ])
+                    .select_from(source)
+                    .expect("eight selected TURN usage columns"),
+            )
+            .await?;
         Ok(inserted.rows_affected() == 1)
     }
 }

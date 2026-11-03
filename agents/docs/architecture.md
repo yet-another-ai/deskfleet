@@ -524,8 +524,25 @@ Machine identity and its proof-token hash. `cp_machine_registrations` owns the
 Team association and enforces `UNIQUE(machine_id, team_id)`, including revoked
 rows. Catalogs, history, search, quota admissions, peers, and realtime routes
 reference its internal registration ID. Public responses continue to expose the
-shared Machine ID together with their Team scope. The local journal retains
-SQLite-specific SQL. Both stores have integration tests against their actual database engines.
+shared Machine ID together with their Team scope.
+
+Both stores use SeaORM entities for persisted records and SeaQuery builders for
+joins, bulk operations, CTEs, and atomic updates. Runtime table and column names
+come from their typed schema mappings; do not concatenate SQL or build queries
+from string predicates. The local journal has its own entities alongside the
+resource catalog. Central projections without a primary key use typed SeaQuery
+identifiers rather than inventing an ORM key. Database transactions, lock order,
+conflict predicates, pagination, and single-statement snapshot boundaries remain
+part of the persistence contract.
+
+The narrow runtime expression exceptions are PostgreSQL `EXTRACT(EPOCH FROM ...)`
+and ordered JSON aggregates, which SeaQuery cannot express directly. Their
+arguments, including column references, still come from typed expressions.
+Historical PostgreSQL DDL/functions/triggers and the SQLite table-rebuild and
+expression-index migrations retain static engine-specific SQL. These exceptions
+do not permit interpolated runtime queries. Both stores have integration tests
+against their actual database engines, including generated-query plans and a
+check that every central table/column mapping resolves against the migrated schema.
 See the [server guide](../../apps/server/README.md) for configuration and migration
 commands.
 

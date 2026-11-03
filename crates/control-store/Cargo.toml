@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 deskfleet-protocol.workspace = true
-sea-orm = { workspace = true, features = ["sqlx-postgres", "with-json", "runtime-tokio-rustls"] }
+sea-orm = { workspace = true, features = ["sqlx-postgres", "with-json", "with-chrono", "with-rust_decimal", "runtime-tokio-rustls"] }
 serde_json.workspace = true
 serde.workspace = true
 thiserror.workspace = true

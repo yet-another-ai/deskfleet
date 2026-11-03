@@ -1,5 +1,15 @@
-use crate::{ControlStore, Error, Result, json_rows, now_ms, one, resource_id, sql, timestamp};
-use sea_orm::ConnectionTrait;
+use crate::entities::{
+    cp_catalogs as catalogs, cp_commands as commands, cp_events as events,
+    cp_machine_registrations as registrations, cp_sessions as sessions,
+};
+use crate::{ControlStore, Error, Result, json_query, now_ms, one_query, resource_id, timestamp};
+use sea_orm::{
+    EntityTrait, Set,
+    sea_query::{
+        Alias, BinOper, Expr, ExprTrait, Func, JoinType, OnConflict, Order, Query, SelectStatement,
+        extension::postgres::PgExpr,
+    },
+};
 
 mod event_storage;
 mod sync;
@@ -12,14 +22,48 @@ impl ControlStore {
         snapshot: Value,
         providers: Value,
     ) -> Result<()> {
-        self.db.execute_raw(sql("INSERT INTO cp_catalogs(registration_id,snapshot,providers,observed_at) VALUES($1,$2,$3,$4) ON CONFLICT(registration_id) DO UPDATE SET snapshot=excluded.snapshot,providers=excluded.providers,observed_at=excluded.observed_at",vec![resource_id(machine_id)?.into(),snapshot.into(),providers.into(),now_ms().into()])).await?;
+        catalogs::Entity::insert(catalogs::ActiveModel {
+            registration_id: Set(resource_id(machine_id)?),
+            snapshot: Set(snapshot),
+            providers: Set(providers),
+            observed_at: Set(now_ms()),
+        })
+        .on_conflict(
+            OnConflict::column(catalogs::Column::RegistrationId)
+                .update_columns([
+                    catalogs::Column::Snapshot,
+                    catalogs::Column::Providers,
+                    catalogs::Column::ObservedAt,
+                ])
+                .to_owned(),
+        )
+        .exec_without_returning(&self.db)
+        .await?;
         Ok(())
     }
     pub async fn catalog(&self, machine_id: &str) -> Result<Value> {
-        let row = one(
+        let row = one_query(
             &self.db,
-            "SELECT c.snapshot,c.providers,c.observed_at,r.machine_id FROM cp_catalogs c JOIN cp_machine_registrations r ON r.id=c.registration_id WHERE c.registration_id=$1",
-            vec![resource_id(machine_id)?.into()],
+            Query::select()
+                .columns([
+                    catalogs::Column::Snapshot,
+                    catalogs::Column::Providers,
+                    catalogs::Column::ObservedAt,
+                ])
+                .column((registrations::Entity, registrations::Column::MachineId))
+                .from(catalogs::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    registrations::Entity,
+                    Expr::col((registrations::Entity, registrations::Column::Id)).eq(Expr::col((
+                        catalogs::Entity,
+                        catalogs::Column::RegistrationId,
+                    ))),
+                )
+                .and_where(
+                    Expr::col((catalogs::Entity, catalogs::Column::RegistrationId))
+                        .eq(resource_id(machine_id)?),
+                ),
         )
         .await?;
         Ok(
@@ -37,27 +81,56 @@ impl ControlStore {
         if !matches!(archive, "all" | "active" | "archiving" | "archived") {
             return Err(Error::Invalid("invalid archive state filter"));
         }
-        let machine = resource_id(machine_id)?;
-        // Retained history can outlive its daemon Session. Apply the journal's
-        // catalog inventory before pagination; replayed history cannot restore it.
-        let rows = if archive == "all" {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND session_id::bigint>$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $3", vec![machine.into(), after.into(), i64::from(limit+1).into()]).await?
-        } else {
-            json_rows(&self.db, "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND summary#>>'{session,archiveState}'=$2 AND session_id::bigint>$3 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id ORDER BY session_id::bigint LIMIT $4", vec![machine.into(), archive.into(), after.into(), i64::from(limit+1).into()]).await?
-        };
+        // Filter by the daemon inventory before pagination: retained history cannot
+        // restore a Session removed from its catalog.
+        let mut query = session_summaries(resource_id(machine_id)?);
+        query
+            .and_where(
+                Expr::col(sessions::Column::SessionId)
+                    .cast_as("bigint")
+                    .gt(after),
+            )
+            .order_by_expr(
+                Expr::col(sessions::Column::SessionId).cast_as("bigint"),
+                Order::Asc,
+            )
+            .limit(u64::from(limit + 1));
+        if archive != "all" {
+            query.and_where(
+                Expr::col(sessions::Column::Summary)
+                    .binary(
+                        BinOper::Custom("#>>"),
+                        Expr::Constant("{session,archiveState}".into()),
+                    )
+                    .eq(archive),
+            );
+        }
+        let rows = json_query(&self.db, &query).await?;
         Ok(page(rows, limit, "sessions", "/session/id"))
     }
     pub async fn session_summary(&self, machine_id: &str, session_id: &str) -> Result<Value> {
-        let rows = json_rows(
+        let rows = json_query(
             &self.db,
-            "SELECT summary AS record FROM cp_sessions WHERE registration_id=$1 AND session_id=$2 AND (SELECT snapshot->'sessionIds' FROM cp_catalogs WHERE registration_id=$1) ? session_id",
-            vec![resource_id(machine_id)?.into(), session_id.into()],
+            session_summaries(resource_id(machine_id)?)
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id)),
         )
         .await?;
         Ok(json!({"sessions": rows}))
     }
     pub async fn session_snapshot(&self, machine_id: &str, session_id: &str) -> Result<Value> {
-        let row=one(&self.db,"SELECT snapshot,event_seq,observed_at FROM cp_sessions WHERE registration_id=$1 AND session_id=$2",vec![resource_id(machine_id)?.into(),session_id.into()]).await?;
+        let row = one_query(
+            &self.db,
+            Query::select()
+                .columns([
+                    sessions::Column::Snapshot,
+                    sessions::Column::EventSeq,
+                    sessions::Column::ObservedAt,
+                ])
+                .from(sessions::Entity)
+                .and_where(Expr::col(sessions::Column::RegistrationId).eq(resource_id(machine_id)?))
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id)),
+        )
+        .await?;
         Ok(
             json!({"snapshot":row.try_get::<Value>("","snapshot")?,"lastEventSeq":row.try_get::<i64>("","event_seq")?.to_string(),"lastObservedAt":timestamp(row.try_get("","observed_at")?)}),
         )
@@ -72,25 +145,48 @@ impl ControlStore {
         if after < 0 || limit == 0 || limit > 1000 {
             return Err(Error::Invalid("invalid history cursor or limit"));
         }
-        // One statement keeps the page and completeness watermark on the same
-        // MVCC snapshot even when another connection commits a sync meanwhile.
-        // Aggregate as JSON, not JSONB: originals can contain escaped NUL.
-        let row = one(
+        // Keep the page and watermark on one MVCC snapshot. JSON (not JSONB)
+        // preserves escaped NUL in originals. SeaQuery has no ordered-aggregate
+        // argument API, so only that expression's syntax is supplied explicitly.
+        let machine = resource_id(machine_id)?;
+        let event_page = Query::select()
+            .columns([
+                events::Column::Seq,
+                events::Column::Record,
+                events::Column::RecordOriginal,
+            ])
+            .from(events::Entity)
+            .and_where(Expr::col(events::Column::RegistrationId).eq(machine))
+            .and_where(Expr::col(events::Column::SessionId).eq(session_id))
+            .and_where(Expr::col(events::Column::Seq).gt(after))
+            .order_by(events::Column::Seq, Order::Asc)
+            .limit(u64::from(limit))
+            .to_owned();
+        let aggregate = Query::select()
+            .expr(Expr::cust_with_exprs(
+                "json_agg($1 ORDER BY $2)",
+                [
+                    Func::coalesce([
+                        Expr::col((Alias::new("page"), events::Column::RecordOriginal)),
+                        Expr::col((Alias::new("page"), events::Column::Record)).cast_as("text"),
+                    ])
+                    .cast_as("json"),
+                    Expr::col((Alias::new("page"), events::Column::Seq)),
+                ],
+            ))
+            .from_subquery(event_page, Alias::new("page"))
+            .to_owned();
+        let row = one_query(
             &self.db,
-            "SELECT event_seq, COALESCE((
-                SELECT json_agg(COALESCE(page.record_original, page.record::text)::json ORDER BY page.seq) FROM (
-                    SELECT seq,record,record_original FROM cp_events
-                    WHERE registration_id=$1 AND session_id=$2 AND seq>$3
-                    ORDER BY seq LIMIT $4
-                ) page
-             ), '[]'::json) AS events
-             FROM cp_sessions WHERE registration_id=$1 AND session_id=$2",
-            vec![
-                resource_id(machine_id)?.into(),
-                session_id.into(),
-                after.into(),
-                i64::from(limit).into(),
-            ],
+            Query::select()
+                .column(sessions::Column::EventSeq)
+                .expr_as(
+                    Func::coalesce([Expr::from(aggregate), Expr::val("[]").cast_as("json")]),
+                    Alias::new("events"),
+                )
+                .from(sessions::Entity)
+                .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id)),
         )
         .await?;
         let watermark: i64 = row.try_get("", "event_seq")?;
@@ -105,15 +201,74 @@ impl ControlStore {
         limit: u32,
     ) -> Result<Value> {
         validate_page(after, limit)?;
-        let rows=json_rows(&self.db,"SELECT record FROM cp_commands WHERE registration_id=$1 AND record->>'sessionId'=$2 AND command_id::bigint>$3 ORDER BY command_id::bigint LIMIT $4",vec![resource_id(machine_id)?.into(),session_id.into(),after.into(),i64::from(limit+1).into()]).await?;
+        let rows = json_query(
+            &self.db,
+            Query::select()
+                .column(commands::Column::Record)
+                .from(commands::Entity)
+                .and_where(Expr::col(commands::Column::RegistrationId).eq(resource_id(machine_id)?))
+                .and_where(
+                    Expr::col(commands::Column::Record)
+                        .cast_json_field(Expr::Constant("sessionId".into()))
+                        .eq(session_id),
+                )
+                .and_where(
+                    Expr::col(commands::Column::CommandId)
+                        .cast_as("bigint")
+                        .gt(after),
+                )
+                .order_by_expr(
+                    Expr::col(commands::Column::CommandId).cast_as("bigint"),
+                    Order::Asc,
+                )
+                .limit(u64::from(limit + 1)),
+        )
+        .await?;
         Ok(page(rows, limit, "commands", "/id"))
     }
-}
-impl ControlStore {
     pub async fn command_by_operation(&self, machine_id: &str, operation: &str) -> Result<Value> {
-        let row=one(&self.db,"SELECT record FROM cp_commands WHERE registration_id=$1 AND record->>'operationId'=$2 AND record->>'isCanonical'='true' LIMIT 1",vec![resource_id(machine_id)?.into(),operation.into()]).await?;
+        let row = one_query(
+            &self.db,
+            Query::select()
+                .column(commands::Column::Record)
+                .from(commands::Entity)
+                .and_where(Expr::col(commands::Column::RegistrationId).eq(resource_id(machine_id)?))
+                .and_where(
+                    Expr::col(commands::Column::Record)
+                        .cast_json_field(Expr::Constant("operationId".into()))
+                        .eq(operation),
+                )
+                .and_where(
+                    Expr::col(commands::Column::Record)
+                        .cast_json_field(Expr::Constant("isCanonical".into()))
+                        .eq("true"),
+                )
+                .limit(1),
+        )
+        .await?;
         Ok(row.try_get("", "record")?)
     }
+}
+
+fn session_summaries(machine: i64) -> SelectStatement {
+    let inventory = Query::select()
+        .expr(
+            Expr::col(catalogs::Column::Snapshot)
+                .get_json_field(Expr::Constant("sessionIds".into())),
+        )
+        .from(catalogs::Entity)
+        .and_where(Expr::col(catalogs::Column::RegistrationId).eq(machine))
+        .to_owned();
+    Query::select()
+        .expr_as(Expr::col(sessions::Column::Summary), Alias::new("record"))
+        .from(sessions::Entity)
+        .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+        // PostgreSQL's JSONB key-existence operator is not exposed by PgBinOper.
+        .and_where(
+            Expr::from(inventory)
+                .binary(BinOper::Custom("?"), Expr::col(sessions::Column::SessionId)),
+        )
+        .to_owned()
 }
 
 fn validate_page(after: i64, limit: u32) -> Result<()> {

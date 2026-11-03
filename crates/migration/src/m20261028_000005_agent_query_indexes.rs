@@ -7,13 +7,54 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
+            .alter_table(
+                Table::alter()
+                    .table(AgentCommand::Table)
+                    .add_column(
+                        ColumnDef::new(AgentCommand::Revision)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(AgentCommandRevision::Table)
+                    .col(
+                        ColumnDef::new(AgentCommandRevision::Id)
+                            .integer()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(AgentCommandRevision::LastRevision)
+                            .integer()
+                            .not_null(),
+                    )
+                    .check(Expr::col(AgentCommandRevision::Id).eq(1))
+                    .check(Expr::col(AgentCommandRevision::LastRevision).gte(0))
+                    .to_owned(),
+            )
+            .await?;
+        manager
             .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE agent_commands ADD COLUMN revision INTEGER NOT NULL DEFAULT 0; \
-                 CREATE TABLE agent_command_revisions (id INTEGER PRIMARY KEY CHECK (id = 1), \
-                 last_revision INTEGER NOT NULL CHECK (last_revision >= 0)); \
-                 INSERT INTO agent_command_revisions (id, last_revision) VALUES (1, 0); \
-                 CREATE INDEX idx_agent_commands_revision ON agent_commands (session_id, revision)",
+            .execute(
+                Query::insert()
+                    .into_table(AgentCommandRevision::Table)
+                    .columns([AgentCommandRevision::Id, AgentCommandRevision::LastRevision])
+                    .values_panic([1.into(), 0.into()]),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_agent_commands_revision")
+                    .table(AgentCommand::Table)
+                    .col(AgentCommand::SessionId)
+                    .col(AgentCommand::Revision)
+                    .to_owned(),
             )
             .await?;
         for (table, columns) in [
@@ -32,6 +73,8 @@ impl MigrationTrait for Migration {
         }
         // The live Session FK becomes NULL on deletion; immutable audit JSON
         // retains the Session identity needed to reconcile lost quota releases.
+        // SeaQuery's SQLite backend does not support expression index columns.
+        // Keep this static DDL in the migration; runtime queries use typed expressions.
         manager
             .get_connection()
             .execute_unprepared(
@@ -57,11 +100,32 @@ impl MigrationTrait for Migration {
                 .await?;
         }
         manager
-            .get_connection()
-            .execute_unprepared(
-                "DROP TABLE agent_command_revisions; ALTER TABLE agent_commands DROP COLUMN revision",
+            .drop_table(Table::drop().table(AgentCommandRevision::Table).to_owned())
+            .await?;
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(AgentCommand::Table)
+                    .drop_column(AgentCommand::Revision)
+                    .to_owned(),
             )
             .await?;
         Ok(())
     }
+}
+
+#[derive(DeriveIden)]
+enum AgentCommand {
+    #[sea_orm(iden = "agent_commands")]
+    Table,
+    SessionId,
+    Revision,
+}
+
+#[derive(DeriveIden)]
+enum AgentCommandRevision {
+    #[sea_orm(iden = "agent_command_revisions")]
+    Table,
+    Id,
+    LastRevision,
 }

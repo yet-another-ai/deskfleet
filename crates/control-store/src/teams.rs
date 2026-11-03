@@ -1,12 +1,22 @@
+use crate::entities::{
+    cp_billing_profiles as billing, cp_checkout_attempts as checkouts, cp_invites as invites,
+    cp_machine_registrations as registrations, cp_members as members, cp_site_settings as settings,
+    cp_teams as teams, cp_users as users,
+};
 use crate::policies::{
     TeamAction, TeamCreationAction, TeamCreationPolicy, TeamPolicy, TeamScope, authorize,
 };
 use crate::{
-    ControlStore, Error, Result, json_rows, name, now_ms, one, resource_id, secret, secret_hash,
-    sql, timestamp,
+    ControlStore, Error, Result, name, now_ms, one_query, resource_id, secret, secret_hash,
+    timestamp,
 };
 use deskfleet_protocol::control::Team;
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::sea_query::{
+    Alias, Asterisk, Cond, Expr, ExprTrait, JoinType, LockType, OnConflict, Order, Query, UnionType,
+};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+};
 use serde_json::{Value, json};
 
 impl ControlStore {
@@ -56,37 +66,39 @@ impl ControlStore {
         usage["metering"] = summary["metering"].take();
         Ok(usage)
     }
-
     pub async fn create_team(&self, user_id: &str, value: &str) -> Result<Team> {
         let value = name(value)?;
         let tx = self.db.begin().await?;
-        let allow_creation = one(
-            &tx,
-            "SELECT allow_team_creation FROM cp_site_settings WHERE singleton FOR SHARE",
-            vec![],
-        )
-        .await?
-        .try_get("", "allow_team_creation")?;
+        let allow_creation = settings::Entity::find_by_id(true)
+            .lock_shared()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?
+            .allow_team_creation;
         authorize(
             &TeamCreationPolicy::new(allow_creation),
             TeamCreationAction::Create,
         )?;
-        let id = one(
-            &tx,
-            "INSERT INTO cp_teams(name) VALUES($1) RETURNING id",
-            vec![value.into()],
-        )
+        let id = teams::Entity::insert(teams::ActiveModel {
+            name: Set(value.into()),
+            ..Default::default()
+        })
+        .exec_with_returning(&tx)
         .await?
-        .try_get::<i64>("", "id")?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_billing_profiles(team_id,period_anchor) VALUES($1,$2)",
-            vec![id.into(), now_ms().into()],
-        ))
+        .id;
+        billing::Entity::insert(billing::ActiveModel {
+            team_id: Set(id),
+            period_anchor: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
         .await?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_members VALUES($1,$2,'owner')",
-            vec![id.into(), user_id.into()],
-        ))
+        members::Entity::insert(members::ActiveModel {
+            team_id: Set(id),
+            user_id: Set(user_id.into()),
+            role: Set("owner".into()),
+        })
+        .exec_without_returning(&tx)
         .await?;
         tx.commit().await?;
         Ok(Team {
@@ -100,11 +112,11 @@ impl ControlStore {
         let tx = self.db.begin().await?;
         let policy = lock_team_policy(&tx, user_id, team_id).await?;
         authorize(&policy, TeamAction::Rename)?;
-        tx.execute_raw(sql(
-            "UPDATE cp_teams SET name=$1 WHERE id=$2",
-            vec![value.into(), resource_id(team_id)?.into()],
-        ))
-        .await?;
+        teams::Entity::update_many()
+            .col_expr(teams::Column::Name, Expr::val(value))
+            .filter(teams::Column::Id.eq(resource_id(team_id)?))
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(Team {
             id: team_id.into(),
@@ -117,38 +129,66 @@ impl ControlStore {
             .await?;
         let tx = self.db.begin().await?;
         let id = resource_id(team_id)?;
-        one(
-            &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![id.into()],
-        )
-        .await?;
+        teams::Entity::find_by_id(id)
+            .lock_exclusive()
+            .select_only()
+            .column(teams::Column::Id)
+            .into_tuple::<i64>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
         authorize(
             &team_policy(&tx, user_id, team_id).await?,
             TeamAction::Delete,
         )?;
-        if tx.query_one_raw(sql("SELECT team_id FROM cp_billing_profiles WHERE team_id=$1 AND (customer_id IS NOT NULL OR subscription_id IS NOT NULL OR lease_until>$2) UNION ALL SELECT team_id FROM cp_checkout_attempts WHERE team_id=$1 LIMIT 1",vec![id.into(),now_ms().into()])).await?.is_some() {
-            return Err(Error::Conflict("team owns billing records and cannot be deleted"));
-        }
+        let checkout = Query::select()
+            .column(checkouts::Column::TeamId)
+            .from(checkouts::Entity)
+            .and_where(checkouts::Column::TeamId.eq(id))
+            .to_owned();
         if tx
-            .query_one_raw(sql(
-                "SELECT id FROM cp_machine_registrations WHERE team_id=$1 LIMIT 1",
-                vec![id.into()],
-            ))
+            .query_one(
+                Query::select()
+                    .column(billing::Column::TeamId)
+                    .from(billing::Entity)
+                    .and_where(billing::Column::TeamId.eq(id))
+                    .cond_where(
+                        Cond::any()
+                            .add(billing::Column::CustomerId.is_not_null())
+                            .add(billing::Column::SubscriptionId.is_not_null())
+                            .add(billing::Column::LeaseUntil.gt(now_ms())),
+                    )
+                    .union(UnionType::All, checkout)
+                    .limit(1),
+            )
+            .await?
+            .is_some()
+        {
+            return Err(Error::Conflict(
+                "team owns billing records and cannot be deleted",
+            ));
+        }
+        if registrations::Entity::find()
+            .filter(registrations::Column::TeamId.eq(id))
+            .one(&tx)
             .await?
             .is_some()
         {
             return Err(Error::Conflict("team still owns machine records"));
         }
-        tx.execute_raw(sql("DELETE FROM cp_teams WHERE id=$1", vec![id.into()]))
-            .await?;
+        teams::Entity::delete_by_id(id).exec(&tx).await?;
         tx.commit().await?;
         Ok(())
     }
     pub async fn members(&self, user_id: &str, team_id: &str) -> Result<Vec<Value>> {
         self.authorize_team(user_id, team_id, TeamAction::ReadMembers)
             .await?;
-        json_rows(&self.db,"SELECT jsonb_build_object('userId',u.id,'name',u.name,'email',u.email,'role',m.role) AS record FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 ORDER BY u.id",vec![resource_id(team_id)?.into()]).await
+        self.db.query_all(Query::select().columns([(users::Entity, users::Column::Id), (users::Entity, users::Column::Name), (users::Entity, users::Column::Email)])
+            .column((members::Entity, members::Column::Role)).from(members::Entity).join(JoinType::InnerJoin, users::Entity,
+                Expr::col((users::Entity, users::Column::Id)).eq(Expr::col((members::Entity, members::Column::UserId))))
+            .and_where(members::Column::TeamId.eq(resource_id(team_id)?)).order_by((users::Entity, users::Column::Id), Order::Asc))
+            .await?.into_iter().map(|row| Ok(json!({"userId":row.try_get::<String>("","id")?,"name":row.try_get::<String>("","name")?,
+                "email":row.try_get::<String>("","email")?,"role":row.try_get::<String>("","role")?}))).collect()
     }
     pub async fn change_member(
         &self,
@@ -162,40 +202,39 @@ impl ControlStore {
         }
         let tx = self.db.begin().await?;
         let id = resource_id(team_id)?;
-        one(
-            &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![id.into()],
-        )
-        .await?;
+        teams::Entity::find_by_id(id)
+            .lock_exclusive()
+            .select_only()
+            .column(teams::Column::Id)
+            .into_tuple::<i64>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
         authorize(
             &team_policy(&tx, actor, team_id).await?,
             TeamAction::ManageMembers,
         )?;
-        let current = one(
-            &tx,
-            "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
-            vec![id.into(), user_id.into()],
-        )
-        .await?
-        .try_get::<String>("", "role")?;
+        let current = members::Entity::find_by_id((id, user_id.to_owned()))
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?
+            .role;
         if current == "owner" {
             return Err(Error::Conflict(
                 "transfer team ownership before changing the owner",
             ));
         }
         if let Some(role) = role {
-            tx.execute_raw(sql(
-                "UPDATE cp_members SET role=$1 WHERE team_id=$2 AND user_id=$3",
-                vec![role.into(), id.into(), user_id.into()],
-            ))
-            .await?;
+            members::Entity::update_many()
+                .col_expr(members::Column::Role, Expr::val(role))
+                .filter(members::Column::TeamId.eq(id))
+                .filter(members::Column::UserId.eq(user_id))
+                .exec(&tx)
+                .await?;
         } else {
-            tx.execute_raw(sql(
-                "DELETE FROM cp_members WHERE team_id=$1 AND user_id=$2",
-                vec![id.into(), user_id.into()],
-            ))
-            .await?;
+            members::Entity::delete_by_id((id, user_id.to_owned()))
+                .exec(&tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -218,19 +257,18 @@ impl ControlStore {
         let id = resource_id(team_id)?;
         // Both accounts must stay active until commit. Lock users before the
         // Team, matching other membership mutations and peer creation.
-        one(
-            &tx,
-            "SELECT id FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
-            vec![target_user_id.into()],
-        )
-        .await
-        .map_err(|error| {
-            if matches!(error, Error::NotFound) {
-                Error::Invalid("new owner must be an active verified team member")
-            } else {
-                error
-            }
-        })?;
+        users::Entity::find_by_id(target_user_id)
+            .filter(users::Column::EmailVerified.eq(true))
+            .filter(users::Column::Disabled.eq(false))
+            .lock_shared()
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Invalid(
+                "new owner must be an active verified team member",
+            ))?;
         authorize(
             &lock_team_policy(&tx, actor, team_id).await?,
             TeamAction::TransferOwnership,
@@ -238,23 +276,30 @@ impl ControlStore {
         if actor == target_user_id {
             return Err(Error::Invalid("target is already the team owner"));
         }
-        if tx.query_one_raw(sql(
-            "SELECT m.user_id FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 AND m.user_id=$2 AND u.email_verified AND NOT u.disabled",
-            vec![id.into(), target_user_id.into()],
-        )).await?.is_none() {
-            return Err(Error::Invalid("new owner must be an active verified team member"));
+        if tx
+            .query_one(
+                member_query(target_user_id, id).column((members::Entity, members::Column::UserId)),
+            )
+            .await?
+            .is_none()
+        {
+            return Err(Error::Invalid(
+                "new owner must be an active verified team member",
+            ));
         }
         // Demote first so the unique owner index holds throughout the transaction.
-        tx.execute_raw(sql(
-            "UPDATE cp_members SET role='admin' WHERE team_id=$1 AND user_id=$2",
-            vec![id.into(), actor.into()],
-        ))
-        .await?;
-        tx.execute_raw(sql(
-            "UPDATE cp_members SET role='owner' WHERE team_id=$1 AND user_id=$2",
-            vec![id.into(), target_user_id.into()],
-        ))
-        .await?;
+        members::Entity::update_many()
+            .col_expr(members::Column::Role, Expr::val("admin"))
+            .filter(members::Column::TeamId.eq(id))
+            .filter(members::Column::UserId.eq(actor))
+            .exec(&tx)
+            .await?;
+        members::Entity::update_many()
+            .col_expr(members::Column::Role, Expr::val("owner"))
+            .filter(members::Column::TeamId.eq(id))
+            .filter(members::Column::UserId.eq(target_user_id))
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -276,75 +321,82 @@ impl ControlStore {
             &lock_team_policy(&tx, user_id, team_id).await?,
             TeamAction::ManageMembers,
         )?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_invites VALUES($1,$2,$3,$4,$5)",
-            vec![
-                secret_hash(&token).into(),
-                resource_id(team_id)?.into(),
-                email.into(),
-                role.into(),
-                expires.into(),
-            ],
-        ))
+        invites::Entity::insert(invites::ActiveModel {
+            token_hash: Set(secret_hash(&token)),
+            team_id: Set(resource_id(team_id)?),
+            email: Set(email),
+            role: Set(role.into()),
+            expires_at: Set(expires),
+        })
+        .exec_without_returning(&tx)
         .await?;
         tx.commit().await?;
         Ok(json!({"token":token,"expiresAt":timestamp(expires)}))
     }
     pub async fn accept_invite(&self, user_id: &str, token: &str) -> Result<Team> {
         let tx = self.db.begin().await?;
-        let id: i64 = one(
-            &tx,
-            "SELECT team_id FROM cp_invites WHERE token_hash=$1 AND expires_at>$2",
-            vec![secret_hash(token).into(), now_ms().into()],
-        )
-        .await?
-        .try_get("", "team_id")?;
+        let id = invites::Entity::find_by_id(secret_hash(token))
+            .filter(invites::Column::ExpiresAt.gt(now_ms()))
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?
+            .team_id;
         // Account disabling and email changes must finish before checking the
         // invitee, or wait until membership and invitation consumption commit.
-        let user = one(
-            &tx,
-            "SELECT email FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
-            vec![user_id.into()],
-        )
-        .await
-        .map_err(|error| {
-            if matches!(error, Error::NotFound) {
-                Error::Forbidden
-            } else {
-                error
-            }
-        })?;
+        let user = users::Entity::find_by_id(user_id)
+            .filter(users::Column::EmailVerified.eq(true))
+            .filter(users::Column::Disabled.eq(false))
+            .lock_shared()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Forbidden)?;
         // Team deletion locks the parent before cascading to its invitations.
-        one(
+        teams::Entity::find_by_id(id)
+            .lock_exclusive()
+            .select_only()
+            .column(teams::Column::Id)
+            .into_tuple::<i64>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let invite = one_query(
             &tx,
-            "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-            vec![id.into()],
+            Query::select()
+                .columns([
+                    (invites::Entity, invites::Column::TeamId),
+                    (invites::Entity, invites::Column::Email),
+                    (invites::Entity, invites::Column::Role),
+                ])
+                .column((teams::Entity, teams::Column::Name))
+                .from(invites::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    teams::Entity,
+                    Expr::col((teams::Entity, teams::Column::Id))
+                        .eq(Expr::col((invites::Entity, invites::Column::TeamId))),
+                )
+                .and_where(invites::Column::TokenHash.eq(secret_hash(token)))
+                .and_where(invites::Column::ExpiresAt.gt(now_ms()))
+                .lock_with_tables(LockType::Update, [invites::Entity]),
         )
         .await?;
-        let invite=one(&tx,"SELECT i.team_id,i.email,i.role,t.name FROM cp_invites i JOIN cp_teams t ON t.id=i.team_id WHERE i.token_hash=$1 AND i.expires_at>$2 FOR UPDATE OF i",vec![secret_hash(token).into(),now_ms().into()]).await?;
-        if user
-            .try_get::<Option<String>>("", "email")?
-            .map(|s| s.to_lowercase())
-            != Some(invite.try_get("", "email")?)
-        {
+        if user.email.to_lowercase() != invite.try_get::<String>("", "email")? {
             return Err(Error::Forbidden);
         }
         let role = invite.try_get::<String>("", "role")?;
-        let existing = tx
-            .query_one_raw(sql(
-                "SELECT role FROM cp_members WHERE team_id=$1 AND user_id=$2",
-                vec![id.into(), user_id.into()],
-            ))
+        let existing = members::Entity::find_by_id((id, user_id.to_owned()))
+            .one(&tx)
             .await?
-            .map(|row| row.try_get::<String>("", "role"))
-            .transpose()?;
+            .map(|row| row.role);
         if existing.is_none() {
             let plan = crate::billing::effective_plan(&tx, id, self.hosted, now_ms()).await?;
             if let Some(limit) = plan.limits().max_members {
-                let count: i64 = one(
+                let count: i64 = one_query(
                     &tx,
-                    "SELECT COUNT(*) AS count FROM cp_members WHERE team_id=$1",
-                    vec![id.into()],
+                    Query::select()
+                        .expr_as(Expr::col(Asterisk).count(), Alias::new("count"))
+                        .from(members::Entity)
+                        .and_where(members::Column::TeamId.eq(id)),
                 )
                 .await?
                 .try_get("", "count")?;
@@ -353,22 +405,36 @@ impl ControlStore {
                 }
             }
         }
-        tx.execute_raw(sql(
-            "INSERT INTO cp_members VALUES($1,$2,$3) ON CONFLICT(team_id,user_id) DO NOTHING",
-            vec![id.into(), user_id.into(), role.clone().into()],
-        ))
+        members::Entity::insert(members::ActiveModel {
+            team_id: Set(id),
+            user_id: Set(user_id.into()),
+            role: Set(role.clone()),
+        })
+        .on_conflict(
+            OnConflict::columns([members::Column::TeamId, members::Column::UserId])
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_without_returning(&tx)
         .await?;
-        tx.execute_raw(sql(
-            "DELETE FROM cp_invites WHERE token_hash=$1",
-            vec![secret_hash(token).into()],
-        ))
-        .await?;
+        invites::Entity::delete_by_id(secret_hash(token))
+            .exec(&tx)
+            .await?;
         tx.commit().await?;
         Ok(Team {
             id: id.to_string(),
             name: invite.try_get("", "name")?,
             role: existing.unwrap_or(role),
         })
+    }
+    pub async fn team_user_ids(&self, team_id: &str) -> Result<Vec<String>> {
+        Ok(members::Entity::find()
+            .select_only()
+            .column(members::Column::UserId)
+            .filter(members::Column::TeamId.eq(resource_id(team_id)?))
+            .into_tuple()
+            .all(&self.db)
+            .await?)
     }
 }
 
@@ -379,38 +445,36 @@ pub(crate) async fn lock_team_policy(
     user_id: &str,
     team_id: &str,
 ) -> Result<TeamPolicy> {
-    one(
-        db,
-        "SELECT id FROM cp_users WHERE id=$1 AND email_verified AND NOT disabled FOR SHARE",
-        vec![user_id.into()],
-    )
-    .await
-    .map_err(|error| {
-        if matches!(error, Error::NotFound) {
-            Error::Forbidden
-        } else {
-            error
-        }
-    })?;
-    one(
-        db,
-        "SELECT id FROM cp_teams WHERE id=$1 FOR UPDATE",
-        vec![resource_id(team_id)?.into()],
-    )
-    .await?;
+    users::Entity::find_by_id(user_id)
+        .filter(users::Column::EmailVerified.eq(true))
+        .filter(users::Column::Disabled.eq(false))
+        .lock_shared()
+        .select_only()
+        .column(users::Column::Id)
+        .into_tuple::<String>()
+        .one(db)
+        .await?
+        .ok_or(Error::Forbidden)?;
+    teams::Entity::find_by_id(resource_id(team_id)?)
+        .lock_exclusive()
+        .select_only()
+        .column(teams::Column::Id)
+        .into_tuple::<i64>()
+        .one(db)
+        .await?
+        .ok_or(Error::NotFound)?;
     team_policy(db, user_id, team_id).await
 }
-
 async fn team_policy(
     db: &impl ConnectionTrait,
     user_id: &str,
     team_id: &str,
 ) -> Result<TeamPolicy> {
     let role = db
-        .query_one_raw(sql(
-            "SELECT m.role FROM cp_members m JOIN cp_users u ON u.id=m.user_id WHERE m.team_id=$1 AND m.user_id=$2 AND u.email_verified AND NOT u.disabled",
-            vec![resource_id(team_id)?.into(), user_id.into()],
-        ))
+        .query_one(
+            member_query(user_id, resource_id(team_id)?)
+                .column((members::Entity, members::Column::Role)),
+        )
         .await?
         .map(|row| row.try_get::<String>("", "role"))
         .transpose()?
@@ -418,16 +482,18 @@ async fn team_policy(
         .transpose()?;
     Ok(TeamPolicy::new(role))
 }
-impl ControlStore {
-    pub async fn team_user_ids(&self, team_id: &str) -> Result<Vec<String>> {
-        self.db
-            .query_all_raw(sql(
-                "SELECT user_id FROM cp_members WHERE team_id=$1",
-                vec![resource_id(team_id)?.into()],
-            ))
-            .await?
-            .into_iter()
-            .map(|r| r.try_get("", "user_id").map_err(Error::from))
-            .collect()
-    }
+fn member_query(user_id: &str, team_id: i64) -> sea_orm::sea_query::SelectStatement {
+    Query::select()
+        .from(members::Entity)
+        .join(
+            JoinType::InnerJoin,
+            users::Entity,
+            Expr::col((users::Entity, users::Column::Id))
+                .eq(Expr::col((members::Entity, members::Column::UserId))),
+        )
+        .and_where(members::Column::TeamId.eq(team_id))
+        .and_where(members::Column::UserId.eq(user_id))
+        .and_where(users::Column::EmailVerified.eq(true))
+        .and_where(users::Column::Disabled.eq(false))
+        .to_owned()
 }

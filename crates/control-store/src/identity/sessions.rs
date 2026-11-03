@@ -1,8 +1,16 @@
+use crate::entities::{
+    cp_identity_challenges as challenges, cp_login_attempts as attempts, cp_login_codes as codes,
+    cp_login_sessions as sessions, cp_peers as peers, cp_users as users,
+};
 use crate::{
-    AuthSession, ControlStore, Error, Result, now_ms, one, secret, secret_hash, sql, timestamp,
+    AuthSession, ControlStore, Error, Result, now_ms, one_query, secret, secret_hash, timestamp,
 };
 use deskfleet_protocol::control::{PeerAuthorization, User};
-use sea_orm::{ConnectionTrait, TransactionTrait};
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, JoinType, Query};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    TransactionTrait,
+};
 use serde_json::{Value, json};
 
 impl ControlStore {
@@ -24,10 +32,12 @@ impl ControlStore {
     pub async fn authentication_generation(&self) -> Result<i64> {
         let tx = self.db.begin().await?;
         super::lock_authentication_generation(&tx).await?;
-        let generation = one(
+        let generation = one_query(
             &tx,
-            "SELECT nextval('cp_authentication_generation') AS generation",
-            vec![],
+            Query::select().expr_as(
+                super::next_authentication_generation(),
+                Alias::new("generation"),
+            ),
         )
         .await?
         .try_get("", "generation")?;
@@ -41,27 +51,59 @@ impl ControlStore {
         generation: Option<i64>,
     ) -> Result<Value> {
         let tx = self.db.begin().await?;
-        let row = one(&tx,"SELECT id,name,email,credential_version,authentication_generation FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR SHARE",vec![user_id.into()]).await.map_err(|e| if matches!(e, Error::NotFound){Error::Unauthorized}else{e})?;
-        if version.is_some_and(|v| row.try_get::<i64>("", "credential_version").ok() != Some(v)) {
-            return Err(Error::Unauthorized);
-        }
-        if generation.is_some_and(|v| {
-            row.try_get::<i64>("", "authentication_generation")
-                .map_or(true, |current| current > v)
-        }) {
+        let row = users::Entity::find_by_id(user_id)
+            .filter(users::Column::Disabled.eq(false))
+            .filter(users::Column::EmailVerified.eq(true))
+            .lock_shared()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        if version.is_some_and(|v| row.credential_version != v)
+            || generation.is_some_and(|v| row.authentication_generation > v)
+        {
             return Err(Error::Unauthorized);
         }
         let token = secret();
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_ms();
         let expires = now + 30 * 24 * 60 * 60 * 1000;
-        tx.execute_raw(sql("INSERT INTO cp_login_sessions(id,user_id,device_id,token_hash,created_at,authenticated_at,expires_at) VALUES($1,$2,$1,$3,$4,$4,$5)",vec![id.clone().into(),user_id.into(),secret_hash(&token).into(),now.into(),expires.into()])).await?;
-        let user = super::user(&row)?;
+        sessions::Entity::insert(sessions::ActiveModel {
+            id: Set(id.clone()),
+            user_id: Set(user_id.into()),
+            device_id: Set(id.clone()),
+            token_hash: Set(secret_hash(&token)),
+            created_at: Set(now),
+            authenticated_at: Set(now),
+            expires_at: Set(expires),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await?;
+        let user = super::user(&row);
         tx.commit().await?;
         Ok(json!({"token":token,"user":user,"sessionId":id,"expiresAt":timestamp(expires)}))
     }
     pub async fn authenticate(&self, token: &str) -> Result<AuthSession> {
-        let row=self.db.query_one_raw(sql("SELECT s.id,s.device_id,u.id AS user_id,u.name,u.email FROM cp_login_sessions s JOIN cp_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND NOT s.revoked AND s.expires_at>$2 AND NOT u.disabled AND u.email_verified",vec![secret_hash(token).into(),now_ms().into()])).await?.ok_or(Error::Unauthorized)?;
+        let row = self
+            .db
+            .query_one(
+                active_session_query()
+                    .columns([
+                        (sessions::Entity, sessions::Column::Id),
+                        (sessions::Entity, sessions::Column::DeviceId),
+                    ])
+                    .expr_as(
+                        Expr::col((users::Entity, users::Column::Id)),
+                        Alias::new("user_id"),
+                    )
+                    .columns([
+                        (users::Entity, users::Column::Name),
+                        (users::Entity, users::Column::Email),
+                    ])
+                    .and_where(sessions::Column::TokenHash.eq(secret_hash(token))),
+            )
+            .await?
+            .ok_or(Error::Unauthorized)?;
         Ok(AuthSession {
             id: row.try_get("", "id")?,
             device_id: row.try_get("", "device_id")?,
@@ -73,27 +115,60 @@ impl ControlStore {
         })
     }
     pub async fn session_is_active(&self, id: &str) -> Result<bool> {
-        Ok(self.db.query_one_raw(sql("SELECT s.id FROM cp_login_sessions s JOIN cp_users u ON u.id=s.user_id WHERE s.id=$1 AND NOT s.revoked AND s.expires_at>$2 AND NOT u.disabled AND u.email_verified",vec![id.into(),now_ms().into()])).await?.is_some())
+        Ok(self
+            .db
+            .query_one(
+                active_session_query()
+                    .column((sessions::Entity, sessions::Column::Id))
+                    .and_where(Expr::col((sessions::Entity, sessions::Column::Id)).eq(id)),
+            )
+            .await?
+            .is_some())
     }
     pub async fn recent_authentication(&self, id: &str) -> Result<bool> {
-        Ok(self.db.query_one_raw(sql("SELECT id FROM cp_login_sessions WHERE id=$1 AND NOT revoked AND expires_at>$2 AND authenticated_at>$3",vec![id.into(),now_ms().into(),(now_ms()-600_000).into()])).await?.is_some())
+        Ok(sessions::Entity::find_by_id(id)
+            .filter(sessions::Column::Revoked.eq(false))
+            .filter(sessions::Column::ExpiresAt.gt(now_ms()))
+            .filter(sessions::Column::AuthenticatedAt.gt(now_ms() - 600_000))
+            .one(&self.db)
+            .await?
+            .is_some())
     }
     pub async fn refresh_authentication(&self, id: &str, version: i64) -> Result<()> {
-        let result = self.db.execute_raw(sql("UPDATE cp_login_sessions s SET authenticated_at=$1 FROM cp_users u WHERE s.id=$2 AND u.id=s.user_id AND NOT u.disabled AND u.credential_version=$3 AND NOT s.revoked AND s.expires_at>$1",vec![now_ms().into(),id.into(),version.into()])).await?;
+        let now = now_ms();
+        let result = self
+            .db
+            .execute(
+                Query::update()
+                    .table(sessions::Entity)
+                    .value(sessions::Column::AuthenticatedAt, now)
+                    .from(users::Entity)
+                    .and_where(Expr::col((sessions::Entity, sessions::Column::Id)).eq(id))
+                    .and_where(
+                        Expr::col((users::Entity, users::Column::Id))
+                            .eq(Expr::col((sessions::Entity, sessions::Column::UserId))),
+                    )
+                    .and_where(users::Column::Disabled.eq(false))
+                    .and_where(users::Column::CredentialVersion.eq(version))
+                    .and_where(sessions::Column::Revoked.eq(false))
+                    .and_where(sessions::Column::ExpiresAt.gt(now)),
+            )
+            .await?;
         if result.rows_affected() != 1 {
             return Err(Error::Unauthorized);
         }
         Ok(())
     }
     pub async fn login_sessions(&self, user_id: &str, current: &str) -> Result<Vec<Value>> {
-        self.db.query_all_raw(sql("SELECT id,device_id,created_at,expires_at FROM cp_login_sessions WHERE user_id=$1 AND NOT revoked AND expires_at>$2 ORDER BY created_at DESC",vec![user_id.into(),now_ms().into()])).await?.into_iter().map(|row|{let id:String=row.try_get("","id")?;Ok(json!({"current":id==current,"id":id,"deviceId":row.try_get::<String>("","device_id")?,"createdAt":timestamp(row.try_get("","created_at")?),"expiresAt":timestamp(row.try_get("","expires_at")?)}))}).collect()
+        Ok(sessions::Entity::find().filter(sessions::Column::UserId.eq(user_id)).filter(sessions::Column::Revoked.eq(false))
+            .filter(sessions::Column::ExpiresAt.gt(now_ms())).order_by_desc(sessions::Column::CreatedAt).all(&self.db).await?
+            .into_iter().map(|row| json!({"current":row.id==current,"id":row.id,"deviceId":row.device_id,"createdAt":timestamp(row.created_at),"expiresAt":timestamp(row.expires_at)})).collect())
     }
     pub async fn logout(&self, id: &str) -> Result<()> {
-        self.db
-            .execute_raw(sql(
-                "UPDATE cp_login_sessions SET revoked=TRUE WHERE id=$1",
-                vec![id.into()],
-            ))
+        sessions::Entity::update_many()
+            .col_expr(sessions::Column::Revoked, Expr::val(true))
+            .filter(sessions::Column::Id.eq(id))
+            .exec(&self.db)
             .await?;
         Ok(())
     }
@@ -106,68 +181,112 @@ impl ControlStore {
         if session_id.is_none() {
             super::lock_authentication_generation(&tx).await?;
         }
-        one(
-            &tx,
-            "SELECT id FROM cp_users WHERE id=$1 FOR UPDATE",
-            vec![user_id.into()],
-        )
-        .await?;
-        tx.execute_raw(sql("UPDATE cp_login_sessions SET revoked=TRUE WHERE user_id=$1 AND NOT revoked AND ($2::text IS NULL OR id=$2)",vec![user_id.into(),session_id.map(str::to_owned).into()])).await?;
+        users::Entity::find_by_id(user_id)
+            .lock_exclusive()
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let mut update = sessions::Entity::update_many()
+            .col_expr(sessions::Column::Revoked, Expr::val(true))
+            .filter(sessions::Column::UserId.eq(user_id))
+            .filter(sessions::Column::Revoked.eq(false));
+        if let Some(id) = session_id {
+            update = update.filter(sessions::Column::Id.eq(id));
+        }
+        update.exec(&tx).await?;
         if session_id.is_none() {
             // Outstanding native codes and login ceremonies must not recreate a
             // session after the owner has explicitly revoked every session.
-            tx.execute_raw(sql(
-                "UPDATE cp_users SET credential_version=credential_version+1,authentication_generation=nextval('cp_authentication_generation') WHERE id=$1",
-                vec![user_id.into()],
-            ))
-            .await?;
-            tx.execute_raw(sql(
-                "DELETE FROM cp_login_codes WHERE user_id=$1",
-                vec![user_id.into()],
-            ))
-            .await?;
-            tx.execute_raw(sql(
-                "DELETE FROM cp_identity_challenges WHERE user_id=$1",
-                vec![user_id.into()],
-            ))
-            .await?;
+            users::Entity::update_many()
+                .col_expr(
+                    users::Column::CredentialVersion,
+                    Expr::col(users::Column::CredentialVersion).add(1),
+                )
+                .col_expr(
+                    users::Column::AuthenticationGeneration,
+                    super::next_authentication_generation(),
+                )
+                .filter(users::Column::Id.eq(user_id))
+                .exec(&tx)
+                .await?;
+            codes::Entity::delete_many()
+                .filter(codes::Column::UserId.eq(user_id))
+                .exec(&tx)
+                .await?;
+            challenges::Entity::delete_many()
+                .filter(challenges::Column::UserId.eq(user_id))
+                .exec(&tx)
+                .await?;
         }
-        let peers=crate::json_rows(&tx,"UPDATE cp_peers SET revoked=TRUE WHERE user_id=$1 AND ($2::text IS NULL OR login_session_id=$2) AND NOT revoked RETURNING grant_json AS record",vec![user_id.into(),session_id.map(str::to_owned).into()]).await?.into_iter().map(serde_json::from_value).collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut update = peers::Entity::update_many()
+            .col_expr(peers::Column::Revoked, Expr::val(true))
+            .filter(peers::Column::UserId.eq(user_id))
+            .filter(peers::Column::Revoked.eq(false));
+        if let Some(id) = session_id {
+            update = update.filter(peers::Column::LoginSessionId.eq(id));
+        }
+        let peers = update
+            .exec_with_returning(&tx)
+            .await?
+            .into_iter()
+            .map(|row| serde_json::from_value(row.grant_json))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         tx.commit().await?;
         Ok(peers)
     }
     pub async fn save_login_attempt(&self, state: &str, record: Value) -> Result<()> {
-        self.db
-            .execute_raw(sql(
-                "INSERT INTO cp_login_attempts VALUES($1,$2,$3)",
-                vec![
-                    secret_hash(state).into(),
-                    record.into(),
-                    (now_ms() + 600_000).into(),
-                ],
-            ))
-            .await?;
+        attempts::Entity::insert(attempts::ActiveModel {
+            state_hash: Set(secret_hash(state)),
+            record: Set(record),
+            expires_at: Set(now_ms() + 600_000),
+        })
+        .exec_without_returning(&self.db)
+        .await?;
         Ok(())
     }
     pub async fn consume_login_attempt(&self, state: &str) -> Result<Value> {
-        Ok(one(
-            &self.db,
-            "DELETE FROM cp_login_attempts WHERE state_hash=$1 AND expires_at>$2 RETURNING record",
-            vec![secret_hash(state).into(), now_ms().into()],
-        )
-        .await
-        .map_err(|e| {
-            if matches!(e, Error::NotFound) {
-                Error::Unauthorized
-            } else {
-                e
-            }
-        })?
-        .try_get("", "record")?)
+        Ok(attempts::Entity::delete_many()
+            .filter(attempts::Column::StateHash.eq(secret_hash(state)))
+            .filter(attempts::Column::ExpiresAt.gt(now_ms()))
+            .exec_with_returning(&self.db)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?
+            .record)
     }
     pub async fn new_login_code(&self, user_id: &str, verifier_hash: &str) -> Result<String> {
         let code = secret();
-        let result=self.db.execute_raw(sql("INSERT INTO cp_login_codes(code_hash,user_id,verifier_hash,credential_version,expires_at) SELECT $1,id,$3,credential_version,$4 FROM cp_users WHERE id=$2 AND NOT disabled AND email_verified",vec![secret_hash(&code).into(),user_id.into(),verifier_hash.into(),(now_ms()+60_000).into()])).await?;
+        let query = Query::select()
+            .expr(Expr::val(secret_hash(&code)))
+            .column(users::Column::Id)
+            .expr(Expr::val(verifier_hash))
+            .column(users::Column::CredentialVersion)
+            .expr(Expr::val(now_ms() + 60_000))
+            .from(users::Entity)
+            .and_where(users::Column::Id.eq(user_id))
+            .and_where(users::Column::Disabled.eq(false))
+            .and_where(users::Column::EmailVerified.eq(true))
+            .to_owned();
+        let result = self
+            .db
+            .execute(
+                Query::insert()
+                    .into_table(codes::Entity)
+                    .columns([
+                        codes::Column::CodeHash,
+                        codes::Column::UserId,
+                        codes::Column::VerifierHash,
+                        codes::Column::CredentialVersion,
+                        codes::Column::ExpiresAt,
+                    ])
+                    .select_from(query)
+                    .expect("login code insert has five selected columns"),
+            )
+            .await?;
         if result.rows_affected() != 1 {
             return Err(Error::Unauthorized);
         }
@@ -180,19 +299,65 @@ impl ControlStore {
         verifier_hash: &str,
     ) -> Result<String> {
         let tx = self.db.begin().await?;
-        let row=one(&tx,"SELECT credential_version FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR UPDATE",vec![user_id.into()]).await?;
-        one(&tx,"SELECT id FROM cp_login_sessions WHERE id=$1 AND user_id=$2 AND NOT revoked AND expires_at>$3 AND authenticated_at>$4 FOR SHARE",vec![session_id.into(),user_id.into(),now_ms().into(),(now_ms()-600_000).into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
+        let row = users::Entity::find_by_id(user_id)
+            .filter(users::Column::Disabled.eq(false))
+            .filter(users::Column::EmailVerified.eq(true))
+            .lock_exclusive()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        sessions::Entity::find_by_id(session_id)
+            .filter(sessions::Column::UserId.eq(user_id))
+            .filter(sessions::Column::Revoked.eq(false))
+            .filter(sessions::Column::ExpiresAt.gt(now_ms()))
+            .filter(sessions::Column::AuthenticatedAt.gt(now_ms() - 600_000))
+            .lock_shared()
+            .select_only()
+            .column(sessions::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?;
         let code = secret();
-        tx.execute_raw(sql("INSERT INTO cp_login_codes(code_hash,user_id,verifier_hash,credential_version,expires_at) VALUES($1,$2,$3,$4,$5)",vec![secret_hash(&code).into(),user_id.into(),verifier_hash.into(),row.try_get::<i64>("","credential_version")?.into(),(now_ms()+60_000).into()])).await?;
+        codes::Entity::insert(codes::ActiveModel {
+            code_hash: Set(secret_hash(&code)),
+            user_id: Set(user_id.into()),
+            verifier_hash: Set(verifier_hash.into()),
+            credential_version: Set(row.credential_version),
+            expires_at: Set(now_ms() + 60_000),
+        })
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(code)
     }
     pub async fn exchange_login_code(&self, code: &str, verifier: &str) -> Result<Value> {
-        let row=one(&self.db,"DELETE FROM cp_login_codes WHERE code_hash=$1 AND expires_at>$2 AND verifier_hash=$3 RETURNING user_id,credential_version",vec![secret_hash(code).into(),now_ms().into(),secret_hash(verifier).into()]).await.map_err(|e|if matches!(e,Error::NotFound){Error::Unauthorized}else{e})?;
-        self.new_session_at_version(
-            &row.try_get::<String>("", "user_id")?,
-            Some(row.try_get("", "credential_version")?),
-        )
-        .await
+        let row = codes::Entity::delete_many()
+            .filter(codes::Column::CodeHash.eq(secret_hash(code)))
+            .filter(codes::Column::ExpiresAt.gt(now_ms()))
+            .filter(codes::Column::VerifierHash.eq(secret_hash(verifier)))
+            .exec_with_returning(&self.db)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or(Error::Unauthorized)?;
+        self.new_session_at_version(&row.user_id, Some(row.credential_version))
+            .await
     }
+}
+
+fn active_session_query() -> sea_orm::sea_query::SelectStatement {
+    Query::select()
+        .from(sessions::Entity)
+        .join(
+            JoinType::InnerJoin,
+            users::Entity,
+            Expr::col((users::Entity, users::Column::Id))
+                .eq(Expr::col((sessions::Entity, sessions::Column::UserId))),
+        )
+        .and_where(sessions::Column::Revoked.eq(false))
+        .and_where(sessions::Column::ExpiresAt.gt(now_ms()))
+        .and_where(users::Column::Disabled.eq(false))
+        .and_where(users::Column::EmailVerified.eq(true))
+        .to_owned()
 }

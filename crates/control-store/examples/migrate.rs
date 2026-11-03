@@ -1,4 +1,4 @@
-use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use sea_orm::Database;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = std::env::var("DATABASE_URL")?;
@@ -10,23 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "up" => deskfleet_control_store::schema::migrate(&db).await?,
         "down" => deskfleet_control_store::schema::down(&db).await?,
         "status" => {
-            let exists = db
-                .query_one_raw(Statement::from_string(
-                    DbBackend::Postgres,
-                    "SELECT to_regclass('cp_migrations') IS NOT NULL AS present",
-                ))
-                .await?
-                .ok_or("missing query result")?
-                .try_get::<bool>("", "present")?;
-            if exists {
-                for row in db
-                    .query_all_raw(Statement::from_string(
-                        DbBackend::Postgres,
-                        "SELECT version FROM cp_migrations ORDER BY version",
-                    ))
-                    .await?
-                {
-                    println!("applied: {}", row.try_get::<i32>("", "version")?);
+            if let Some(versions) = deskfleet_control_store::schema::applied_versions(&db).await? {
+                for version in versions {
+                    println!("applied: {version}");
                 }
             } else {
                 println!("no central migrations applied");

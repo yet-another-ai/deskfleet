@@ -1,6 +1,19 @@
-use super::{period_at, profile, summary_value};
-use crate::{ControlStore, Error, Result, now_ms, resource_id, sql};
+use super::{period_at, profile, summary_value, usage_query};
+use crate::entities::{
+    cp_billing_profiles as profiles, cp_members as members, cp_teams as teams, cp_users as users,
+};
+use crate::{ControlStore, Error, Result, now_ms, resource_id};
 use sea_orm::ConnectionTrait;
+use sea_orm::DeriveIden;
+use sea_orm::sea_query::{Asterisk, Expr, ExprTrait, Func, JoinType, OnConflict, Order, Query};
+
+#[derive(Clone, Copy, DeriveIden)]
+enum Period {
+    Rows,
+    TeamId,
+    StartAt,
+    EndAt,
+}
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -26,10 +39,14 @@ impl ControlStore {
         let limit = limit.clamp(1, 100);
         let mut ids = self
             .db
-            .query_all_raw(sql(
-                "SELECT id FROM cp_teams WHERE id>$1 ORDER BY id LIMIT $2",
-                vec![after.into(), ((limit + 1) as i64).into()],
-            ))
+            .query_all(
+                Query::select()
+                    .column(teams::Column::Id)
+                    .from(teams::Entity)
+                    .and_where(Expr::col(teams::Column::Id).gt(after))
+                    .order_by(teams::Column::Id, Order::Asc)
+                    .limit((limit + 1) as u64),
+            )
             .await?
             .into_iter()
             .map(|row| row.try_get::<i64>("", "id"))
@@ -44,34 +61,114 @@ impl ControlStore {
             });
         }
         let now = now_ms();
-        let selected = json!(ids);
-        self.db.execute_raw(sql(
-            "INSERT INTO cp_billing_profiles(team_id,period_anchor) SELECT t.id,$2 FROM jsonb_array_elements_text($1) p JOIN cp_teams t ON t.id=p.value::bigint ON CONFLICT(team_id) DO NOTHING",
-            vec![selected.clone().into(),now.into()],
-        )).await?;
-        let profiles = self.db.query_all_raw(sql(
-            "SELECT b.* FROM jsonb_array_elements_text($1) p JOIN cp_billing_profiles b ON b.team_id=p.value::bigint ORDER BY b.team_id",
-            vec![selected.into()],
-        )).await?.into_iter().map(profile).collect::<Result<Vec<_>>>()?;
-        let periods: Vec<Value> = profiles
+        self.db
+            .execute(
+                Query::insert()
+                    .into_table(profiles::Entity)
+                    .columns([profiles::Column::TeamId, profiles::Column::PeriodAnchor])
+                    .select_from(
+                        Query::select()
+                            .column(teams::Column::Id)
+                            .expr(Expr::val(now))
+                            .from(teams::Entity)
+                            .and_where(Expr::col(teams::Column::Id).is_in(ids.clone()))
+                            .to_owned(),
+                    )
+                    .expect("two selected profile columns")
+                    .on_conflict(
+                        OnConflict::column(profiles::Column::TeamId)
+                            .do_nothing()
+                            .to_owned(),
+                    ),
+            )
+            .await?;
+        let profiles = self
+            .db
+            .query_all(
+                Query::select()
+                    .column(Asterisk)
+                    .from(profiles::Entity)
+                    .and_where(Expr::col(profiles::Column::TeamId).is_in(ids))
+                    .order_by(profiles::Column::TeamId, Order::Asc),
+            )
+            .await?
+            .into_iter()
+            .map(profile)
+            .collect::<Result<Vec<_>>>()?;
+        if profiles.is_empty() {
+            return Ok(AdminBillingPage {
+                teams: Vec::new(),
+                next_cursor,
+            });
+        }
+        let periods = profiles
             .iter()
             .map(|p| {
                 let (start, end) = period_at(p.period_anchor, now);
-                json!({"team_id":p.team_id,"start_at":start,"end_at":end})
+                Ok((resource_id(&p.team_id)?, start, end))
             })
-            .collect();
-        // Reuse the Team summary's metering query, binding its Team and period
-        // arguments to each page row rather than issuing one query per Team.
-        let meter = include_str!("../cloudflare_turn/metering.sql")
-            .replace("$1", "p.team_id")
-            .replace("$3", "p.start_at")
-            .replace("$4", "p.end_at");
-        let query = format!(
-            "SELECT p.team_id,t.name,jsonb_build_object('id',u.id,'name',u.name,'email',u.email) AS owner,(SELECT COUNT(*) FROM cp_session_admissions a JOIN cp_machine_registrations m ON m.id=a.registration_id WHERE a.team_id=p.team_id AND a.status<>'released' AND NOT m.revoked) AS sessions,(SELECT COUNT(*) FROM cp_members WHERE team_id=p.team_id) AS members,cp_turn_sent_bytes(p.team_id,p.start_at,p.end_at)::text AS bytes,meter.last_seen_at,meter.gap_since,meter.fresh FROM jsonb_to_recordset($1) AS p(team_id bigint,start_at bigint,end_at bigint) JOIN cp_teams t ON t.id=p.team_id JOIN cp_members o ON o.team_id=t.id AND o.role='owner' JOIN cp_users u ON u.id=o.user_id CROSS JOIN LATERAL ({meter}) AS meter ORDER BY p.team_id"
+            .collect::<Result<Vec<_>>>()?;
+        let period_rows = Query::select()
+            .expr_as(Expr::col(("periods", "column1")), Period::TeamId)
+            .expr_as(Expr::col(("periods", "column2")), Period::StartAt)
+            .expr_as(Expr::col(("periods", "column3")), Period::EndAt)
+            .from_values(periods, "periods")
+            .to_owned();
+        let team = Expr::col((Period::Rows, Period::TeamId));
+        let start = Expr::col((Period::Rows, Period::StartAt));
+        let end = Expr::col((Period::Rows, Period::EndAt));
+        // The same composable query serves a single Team and every row in this
+        // page, preserving its correlated period and single statement snapshot.
+        let meter = crate::cloudflare_turn::metering::query(
+            team.clone(),
+            Expr::val(now),
+            start.clone(),
+            end.clone(),
         );
         let usage = self
             .db
-            .query_all_raw(sql(&query, vec![json!(periods).into(), now.into()]))
+            .query_all(
+                usage_query(team.clone(), start, end)
+                    .column((Period::Rows, Period::TeamId))
+                    .column((teams::Entity, teams::Column::Name))
+                    .expr_as(
+                        Func::cust("jsonb_build_object").args([
+                            Expr::val("id"),
+                            Expr::col((users::Entity, users::Column::Id)),
+                            Expr::val("name"),
+                            Expr::col((users::Entity, users::Column::Name)),
+                            Expr::val("email"),
+                            Expr::col((users::Entity, users::Column::Email)),
+                        ]),
+                        "owner",
+                    )
+                    .columns([
+                        ("meter", "last_seen_at"),
+                        ("meter", "gap_since"),
+                        ("meter", "fresh"),
+                    ])
+                    .from_subquery(period_rows, Period::Rows)
+                    .join(
+                        JoinType::InnerJoin,
+                        teams::Entity,
+                        Expr::col((teams::Entity, teams::Column::Id)).eq(team),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        members::Entity,
+                        Expr::col((members::Entity, members::Column::TeamId))
+                            .eq(Expr::col((teams::Entity, teams::Column::Id)))
+                            .and(Expr::col((members::Entity, members::Column::Role)).eq("owner")),
+                    )
+                    .join(
+                        JoinType::InnerJoin,
+                        users::Entity,
+                        Expr::col((users::Entity, users::Column::Id))
+                            .eq(Expr::col((members::Entity, members::Column::UserId))),
+                    )
+                    .join_lateral(JoinType::InnerJoin, meter, "meter", Expr::val(true))
+                    .order_by((Period::Rows, Period::TeamId), Order::Asc),
+            )
             .await?;
         let mut by_id = profiles
             .into_iter()

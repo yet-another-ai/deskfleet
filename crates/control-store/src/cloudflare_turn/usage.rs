@@ -1,6 +1,27 @@
 use super::CloudflareTurnConfig;
-use crate::{ControlStore, Error, Result, billing::period_at, now_ms, one, resource_id, sql};
+use super::metering::incomplete_usage;
+use crate::entities::{
+    cp_billing_profiles as profiles, cp_cloudflare_turn_collector as collector,
+    cp_cloudflare_turn_sources as sources, cp_cloudflare_turn_usage as usage,
+};
+use crate::{ControlStore, Error, Result, billing::period_at, now_ms, one_query, resource_id};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::{
+    Asterisk, Cond, Expr, ExprTrait, Func, JoinType, NullOrdering, OnConflict, Order, Query,
+};
 use sea_orm::{ConnectionTrait, TransactionTrait};
+
+fn lease(owner: &str, now: i64) -> Expr {
+    Expr::exists(
+        Query::select()
+            .expr(Expr::val(1))
+            .from(collector::Entity)
+            .and_where(Expr::col(collector::Column::Singleton))
+            .and_where(Expr::col(collector::Column::Owner).eq(owner))
+            .and_where(Expr::col(collector::Column::LeaseUntil).gt(now))
+            .to_owned(),
+    )
+}
 use serde_json::json;
 
 /// One aggregate query for a Team, TURN key, and billing period. Credentials stay internal.
@@ -31,14 +52,104 @@ impl ControlStore {
         }
         let profile = self.billing_profile(team_id).await?;
         let tx = self.db.begin().await?;
-        let identifier: String = one(&tx,
-            "INSERT INTO cp_cloudflare_turn_sources(identifier,team_id,account_id,key_id,analytics_token,expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(team_id,account_id,key_id) DO UPDATE SET analytics_token=EXCLUDED.analytics_token,created_at=CASE WHEN cp_cloudflare_turn_sources.expires_at<$7 AND NOT EXISTS(SELECT 1 FROM cp_cloudflare_turn_usage u WHERE u.identifier=cp_cloudflare_turn_sources.identifier AND u.period_start<=$7 AND u.period_end>$7 AND (u.collected_at IS NULL OR u.collected_at<u.expires_at+300000 OR u.query_end<u.expires_at)) THEN $7 ELSE cp_cloudflare_turn_sources.created_at END,expires_at=GREATEST(cp_cloudflare_turn_sources.expires_at,EXCLUDED.expires_at) RETURNING identifier",
-            vec![uuid::Uuid::new_v4().simple().to_string().into(),resource_id(team_id)?.into(),config.account_id.as_str().into(),config.key_id.as_str().into(),config.analytics_token.as_str().into(),expires_at.into(),now.into()],
-        ).await?.try_get("", "identifier")?;
+        let unfinished = Query::select()
+            .expr(Expr::val(1))
+            .from(usage::Entity)
+            .and_where(
+                Expr::col((usage::Entity, usage::Column::Identifier))
+                    .eq(Expr::col((sources::Entity, sources::Column::Identifier))),
+            )
+            .and_where(Expr::col((usage::Entity, usage::Column::PeriodStart)).lte(now))
+            .and_where(Expr::col((usage::Entity, usage::Column::PeriodEnd)).gt(now))
+            .cond_where(incomplete_usage())
+            .to_owned();
+        let identifier: String = one_query(
+            &tx,
+            Query::insert()
+                .into_table(sources::Entity)
+                .columns([
+                    sources::Column::Identifier,
+                    sources::Column::TeamId,
+                    sources::Column::AccountId,
+                    sources::Column::KeyId,
+                    sources::Column::AnalyticsToken,
+                    sources::Column::ExpiresAt,
+                    sources::Column::CreatedAt,
+                ])
+                .values_panic([
+                    uuid::Uuid::new_v4().simple().to_string().into(),
+                    resource_id(team_id)?.into(),
+                    config.account_id.as_str().into(),
+                    config.key_id.as_str().into(),
+                    config.analytics_token.as_str().into(),
+                    expires_at.into(),
+                    now.into(),
+                ])
+                .on_conflict(
+                    OnConflict::columns([
+                        sources::Column::TeamId,
+                        sources::Column::AccountId,
+                        sources::Column::KeyId,
+                    ])
+                    .update_column(sources::Column::AnalyticsToken)
+                    .value(
+                        sources::Column::CreatedAt,
+                        Expr::case(
+                            Expr::col((sources::Entity, sources::Column::ExpiresAt))
+                                .lt(now)
+                                .and(Expr::exists(unfinished).not()),
+                            now,
+                        )
+                        .finally(Expr::col((sources::Entity, sources::Column::CreatedAt))),
+                    )
+                    .value(
+                        sources::Column::ExpiresAt,
+                        Func::greatest([
+                            Expr::col((sources::Entity, sources::Column::ExpiresAt)),
+                            Expr::col(("excluded", sources::Column::ExpiresAt)),
+                        ]),
+                    )
+                    .to_owned(),
+                )
+                .returning_col(sources::Column::Identifier),
+        )
+        .await?
+        .try_get("", "identifier")?;
         let mut start = period_at(profile.period_anchor, now).0;
         while start < expires_at {
             let (_, end) = period_at(profile.period_anchor, start);
-            tx.execute_raw(sql("INSERT INTO cp_cloudflare_turn_usage(identifier,period_start,period_end,expires_at) VALUES($1,$2,$3,$4) ON CONFLICT(identifier,period_start,period_end) DO UPDATE SET expires_at=GREATEST(cp_cloudflare_turn_usage.expires_at,EXCLUDED.expires_at)",vec![identifier.as_str().into(),start.into(),end.into(),expires_at.min(end).into()])).await?;
+            tx.execute(
+                Query::insert()
+                    .into_table(usage::Entity)
+                    .columns([
+                        usage::Column::Identifier,
+                        usage::Column::PeriodStart,
+                        usage::Column::PeriodEnd,
+                        usage::Column::ExpiresAt,
+                    ])
+                    .values_panic([
+                        identifier.as_str().into(),
+                        start.into(),
+                        end.into(),
+                        std::cmp::min(expires_at, end).into(),
+                    ])
+                    .on_conflict(
+                        OnConflict::columns([
+                            usage::Column::Identifier,
+                            usage::Column::PeriodStart,
+                            usage::Column::PeriodEnd,
+                        ])
+                        .value(
+                            usage::Column::ExpiresAt,
+                            Func::greatest([
+                                Expr::col((usage::Entity, usage::Column::ExpiresAt)),
+                                Expr::col(("excluded", usage::Column::ExpiresAt)),
+                            ]),
+                        )
+                        .to_owned(),
+                    ),
+            )
+            .await?;
             start = end;
         }
         tx.commit().await?;
@@ -55,32 +166,138 @@ impl ControlStore {
         // A replacement subscription can move the billing anchor without issuing
         // another credential. Retain analytics access for the maximum monthly
         // lookback so even a previously finalized source can be queried again.
-        self.db.execute_raw(sql("UPDATE cp_cloudflare_turn_sources SET analytics_token='' WHERE expires_at<$1-2764800000 AND analytics_token<>''",vec![now.into()])).await?;
+        self.db
+            .execute(
+                Query::update()
+                    .table(sources::Entity)
+                    .value(sources::Column::AnalyticsToken, "")
+                    .and_where(Expr::col(sources::Column::ExpiresAt).lt(now - 2_764_800_000_i64))
+                    .and_where(Expr::col(sources::Column::AnalyticsToken).ne("")),
+            )
+            .await?;
         let mut periods = Vec::new();
-        for row in self.db.query_all_raw(sql("SELECT s.identifier,s.expires_at,b.period_anchor FROM cp_cloudflare_turn_sources s JOIN cp_billing_profiles b ON b.team_id=s.team_id WHERE s.analytics_token<>''",vec![])).await? {
-            let (start,end) = period_at(row.try_get("","period_anchor")?,now);
-            let expires: i64 = row.try_get("","expires_at")?;
-            if expires>start {
-                periods.push(json!({"identifier":row.try_get::<String>("","identifier")?,"period_start":start,"period_end":end,"expires_at":expires.min(end)}));
+        for row in self
+            .db
+            .query_all(
+                Query::select()
+                    .columns([
+                        (sources::Entity, sources::Column::Identifier),
+                        (sources::Entity, sources::Column::ExpiresAt),
+                    ])
+                    .column((profiles::Entity, profiles::Column::PeriodAnchor))
+                    .from(sources::Entity)
+                    .join(
+                        JoinType::InnerJoin,
+                        profiles::Entity,
+                        Expr::col((profiles::Entity, profiles::Column::TeamId))
+                            .eq(Expr::col((sources::Entity, sources::Column::TeamId))),
+                    )
+                    .and_where(
+                        Expr::col((sources::Entity, sources::Column::AnalyticsToken)).ne(""),
+                    ),
+            )
+            .await?
+        {
+            let (start, end) = period_at(row.try_get("", "period_anchor")?, now);
+            let expires: i64 = row.try_get("", "expires_at")?;
+            if expires > start {
+                periods.push(json!({"identifier":row.try_get::<String>("","identifier")?,"period_start":start,"period_end":end,"expires_at":std::cmp::min(expires, end)}));
             }
         }
         if !periods.is_empty() {
-            self.db.execute_raw(sql("INSERT INTO cp_cloudflare_turn_usage(identifier,period_start,period_end,expires_at) SELECT identifier,period_start,period_end,expires_at FROM jsonb_to_recordset($1) AS p(identifier text,period_start bigint,period_end bigint,expires_at bigint) ON CONFLICT DO NOTHING",vec![json!(periods).into()])).await?;
+            let item = Expr::col(("periods", "value"));
+            let selected = Query::select()
+                .expr(item.clone().cast_json_field("identifier"))
+                .expr(
+                    item.clone()
+                        .cast_json_field("period_start")
+                        .cast_as("bigint"),
+                )
+                .expr(item.clone().cast_json_field("period_end").cast_as("bigint"))
+                .expr(item.cast_json_field("expires_at").cast_as("bigint"))
+                .from_function(
+                    Func::cust("jsonb_array_elements").arg(Expr::val(json!(periods))),
+                    "periods",
+                )
+                .to_owned();
+            self.db
+                .execute(
+                    Query::insert()
+                        .into_table(usage::Entity)
+                        .columns([
+                            usage::Column::Identifier,
+                            usage::Column::PeriodStart,
+                            usage::Column::PeriodEnd,
+                            usage::Column::ExpiresAt,
+                        ])
+                        .select_from(selected)
+                        .expect("four selected usage period columns")
+                        .on_conflict(OnConflict::new().do_nothing().to_owned()),
+                )
+                .await?;
         }
-        self.db.query_all_raw(sql(
-            "SELECT s.*,u.period_start,u.period_end,u.expires_at AS window_expires_at,LEAST($1,u.expires_at) AS query_end FROM cp_cloudflare_turn_usage u JOIN cp_cloudflare_turn_sources s USING(identifier) WHERE s.analytics_token<>'' AND u.period_start<$1 AND (u.last_attempt_at IS NULL OR u.last_attempt_at<=$1-60000) AND (u.collected_at IS NULL OR u.collected_at<u.expires_at+300000 OR u.query_end<u.expires_at) ORDER BY u.last_attempt_at NULLS FIRST,u.period_start,s.identifier LIMIT $2",
-            vec![now.into(),(limit.clamp(1,1000) as i64).into()],
-        )).await?.into_iter().map(|row| Ok(CloudflareTurnUsageQuery {
-            identifier: row.try_get("", "identifier")?,
-            team_id: row.try_get::<i64>("", "team_id")?.to_string(),
-            account_id: row.try_get("", "account_id")?,
-            key_id: row.try_get("", "key_id")?,
-            analytics_token: row.try_get("", "analytics_token")?,
-            period_start: row.try_get("", "period_start")?,
-            period_end: row.try_get("", "period_end")?,
-            query_end: row.try_get("", "query_end")?,
-            expires_at: row.try_get("", "window_expires_at")?,
-        })).collect()
+        self.db
+            .query_all(
+                Query::select()
+                    .column((sources::Entity, Asterisk))
+                    .columns([
+                        (usage::Entity, usage::Column::PeriodStart),
+                        (usage::Entity, usage::Column::PeriodEnd),
+                    ])
+                    .expr_as(
+                        Expr::col((usage::Entity, usage::Column::ExpiresAt)),
+                        "window_expires_at",
+                    )
+                    .expr_as(
+                        Func::least([
+                            Expr::val(now),
+                            Expr::col((usage::Entity, usage::Column::ExpiresAt)),
+                        ]),
+                        "query_end",
+                    )
+                    .from(usage::Entity)
+                    .join(
+                        JoinType::InnerJoin,
+                        sources::Entity,
+                        Expr::col((sources::Entity, sources::Column::Identifier))
+                            .eq(Expr::col((usage::Entity, usage::Column::Identifier))),
+                    )
+                    .and_where(Expr::col((sources::Entity, sources::Column::AnalyticsToken)).ne(""))
+                    .and_where(Expr::col((usage::Entity, usage::Column::PeriodStart)).lt(now))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col((usage::Entity, usage::Column::LastAttemptAt)).is_null())
+                            .add(
+                                Expr::col((usage::Entity, usage::Column::LastAttemptAt))
+                                    .lte(now - 60_000),
+                            ),
+                    )
+                    .cond_where(incomplete_usage())
+                    .order_by_with_nulls(
+                        (usage::Entity, usage::Column::LastAttemptAt),
+                        Order::Asc,
+                        NullOrdering::First,
+                    )
+                    .order_by((usage::Entity, usage::Column::PeriodStart), Order::Asc)
+                    .order_by((sources::Entity, sources::Column::Identifier), Order::Asc)
+                    .limit(limit.clamp(1, 1000) as u64),
+            )
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(CloudflareTurnUsageQuery {
+                    identifier: row.try_get("", "identifier")?,
+                    team_id: row.try_get::<i64>("", "team_id")?.to_string(),
+                    account_id: row.try_get("", "account_id")?,
+                    key_id: row.try_get("", "key_id")?,
+                    analytics_token: row.try_get("", "analytics_token")?,
+                    period_start: row.try_get("", "period_start")?,
+                    period_end: row.try_get("", "period_end")?,
+                    query_end: row.try_get("", "query_end")?,
+                    expires_at: row.try_get("", "window_expires_at")?,
+                })
+            })
+            .collect()
     }
 
     /// Lease fencing prevents a stale replica overwriting a newer aggregate.
@@ -98,10 +315,22 @@ impl ControlStore {
         }
         let now = now_ms();
         let tx = self.db.begin().await?;
-        let changed = tx.execute_raw(sql(
-            "UPDATE cp_cloudflare_turn_usage SET egress_bytes=$4,query_end=$5,collected_at=$6,last_attempt_at=$6 WHERE identifier=$1 AND period_start=$2 AND period_end=$3 AND EXISTS(SELECT 1 FROM cp_cloudflare_turn_collector WHERE singleton AND owner=$7 AND lease_until>$6)",
-            vec![query.identifier.as_str().into(),query.period_start.into(),query.period_end.into(),egress_bytes.into(),query.query_end.into(),now.into(),owner.into()],
-        )).await?.rows_affected()==1;
+        let changed = tx
+            .execute(
+                Query::update()
+                    .table(usage::Entity)
+                    .value(usage::Column::EgressBytes, egress_bytes)
+                    .value(usage::Column::QueryEnd, query.query_end)
+                    .value(usage::Column::CollectedAt, now)
+                    .value(usage::Column::LastAttemptAt, now)
+                    .and_where(Expr::col(usage::Column::Identifier).eq(query.identifier.as_str()))
+                    .and_where(Expr::col(usage::Column::PeriodStart).eq(query.period_start))
+                    .and_where(Expr::col(usage::Column::PeriodEnd).eq(query.period_end))
+                    .and_where(lease(owner, now)),
+            )
+            .await?
+            .rows_affected()
+            == 1;
         tx.commit().await?;
         Ok(changed)
     }
@@ -114,22 +343,78 @@ impl ControlStore {
         owner: &str,
     ) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_cloudflare_turn_usage SET last_attempt_at=$4 WHERE identifier=$1 AND period_start=$2 AND period_end=$3 AND EXISTS(SELECT 1 FROM cp_cloudflare_turn_collector WHERE singleton AND owner=$5 AND lease_until>$4)",vec![query.identifier.as_str().into(),query.period_start.into(),query.period_end.into(),now.into(),owner.into()])).await?.rows_affected()==1)
+        Ok(self
+            .db
+            .execute(
+                Query::update()
+                    .table(usage::Entity)
+                    .value(usage::Column::LastAttemptAt, now)
+                    .and_where(Expr::col(usage::Column::Identifier).eq(query.identifier.as_str()))
+                    .and_where(Expr::col(usage::Column::PeriodStart).eq(query.period_start))
+                    .and_where(Expr::col(usage::Column::PeriodEnd).eq(query.period_end))
+                    .and_where(lease(owner, now)),
+            )
+            .await?
+            .rows_affected()
+            == 1)
     }
 
     pub async fn claim_cloudflare_turn_collector(&self, owner: &str) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_cloudflare_turn_collector SET owner=$1,lease_until=$2+45000 WHERE singleton AND (owner=$1 OR lease_until IS NULL OR lease_until<$2)",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+        Ok(self
+            .db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(collector::Column::Owner, owner)
+                    .value(collector::Column::LeaseUntil, now + 45_000)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .cond_where(
+                        Cond::any()
+                            .add(Expr::col(collector::Column::Owner).eq(owner))
+                            .add(Expr::col(collector::Column::LeaseUntil).is_null())
+                            .add(Expr::col(collector::Column::LeaseUntil).lt(now)),
+                    ),
+            )
+            .await?
+            .rows_affected()
+            == 1)
     }
 
     /// Call after a successful analytics request, including a verified empty result.
     pub async fn heartbeat_cloudflare_turn_collector(&self, owner: &str) -> Result<bool> {
         let now = now_ms();
-        Ok(self.db.execute_raw(sql("UPDATE cp_cloudflare_turn_collector SET lease_until=$2+45000,last_seen_at=$2 WHERE singleton AND owner=$1 AND lease_until>$2",vec![owner.into(),now.into()])).await?.rows_affected()==1)
+        Ok(self
+            .db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(collector::Column::LeaseUntil, now + 45_000)
+                    .value(collector::Column::LastSeenAt, now)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .and_where(Expr::col(collector::Column::Owner).eq(owner))
+                    .and_where(Expr::col(collector::Column::LeaseUntil).gt(now)),
+            )
+            .await?
+            .rows_affected()
+            == 1)
     }
 
     pub async fn cloudflare_turn_collector_gap(&self, owner: &str) -> Result<()> {
-        self.db.execute_raw(sql("UPDATE cp_cloudflare_turn_collector SET gap_since=COALESCE(gap_since,$2),lease_until=$2 WHERE singleton AND owner=$1",vec![owner.into(),now_ms().into()])).await?;
+        let now = now_ms();
+        self.db
+            .execute(
+                Query::update()
+                    .table(collector::Entity)
+                    .value(
+                        collector::Column::GapSince,
+                        Func::coalesce([Expr::col(collector::Column::GapSince), Expr::val(now)]),
+                    )
+                    .value(collector::Column::LeaseUntil, now)
+                    .and_where(Expr::col(collector::Column::Singleton))
+                    .and_where(Expr::col(collector::Column::Owner).eq(owner)),
+            )
+            .await?;
         Ok(())
     }
 }

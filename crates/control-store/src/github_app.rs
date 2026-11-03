@@ -1,6 +1,12 @@
 //! Per-user GitHub App grants. Tokens stay in central storage, never in client settings.
-use crate::{ControlStore, Error, Result, now_ms, one, sql};
-use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
+use crate::entities::{
+    cp_github_app_authorizations as grants, cp_login_sessions as sessions, cp_users as users,
+};
+use crate::{ControlStore, Error, Result, now_ms};
+use sea_orm::sea_query::{Cond, Expr, Func, OnConflict};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
+};
 use serde::Serialize;
 
 #[derive(Default, Serialize)]
@@ -42,10 +48,23 @@ impl GithubAppAccess {
     /// Release the lock before making the repository request.
     pub async fn finish(mut self, refreshed: Option<GithubAppTokens>) -> Result<String> {
         if let Some(tokens) = refreshed {
-            self.tx.execute_raw(sql(
-                "UPDATE cp_github_app_authorizations SET access_token=$2,expires_at=$3,refresh_token=$4,refresh_expires_at=$5 WHERE user_id=$1",
-                vec![self.user_id.into(),tokens.access_token.clone().into(),tokens.expires_at.into(),tokens.refresh_token.clone().into(),tokens.refresh_expires_at.into()],
-            )).await?;
+            grants::Entity::update_many()
+                .col_expr(
+                    grants::Column::AccessToken,
+                    Expr::val(tokens.access_token.clone()),
+                )
+                .col_expr(grants::Column::ExpiresAt, Expr::val(tokens.expires_at))
+                .col_expr(
+                    grants::Column::RefreshToken,
+                    Expr::val(tokens.refresh_token.clone()),
+                )
+                .col_expr(
+                    grants::Column::RefreshExpiresAt,
+                    Expr::val(tokens.refresh_expires_at),
+                )
+                .filter(grants::Column::UserId.eq(self.user_id))
+                .exec(&self.tx)
+                .await?;
             self.tokens = tokens;
         }
         self.tx.commit().await?;
@@ -61,45 +80,48 @@ impl ControlStore {
         client_id: &str,
     ) -> Result<Option<GithubAppAccess>> {
         let tx = self.db.begin().await?;
-        let row = tx.query_one_raw(sql(
-            "SELECT access_token,expires_at,refresh_token,refresh_expires_at FROM cp_github_app_authorizations WHERE user_id=$1 AND client_id=$2 AND act_as_you FOR UPDATE",
-            vec![user_id.into(),client_id.into()],
-        )).await?;
+        let row = grants::Entity::find_by_id(user_id)
+            .filter(grants::Column::ClientId.eq(client_id))
+            .filter(grants::Column::ActAsYou.eq(true))
+            .lock_exclusive()
+            .one(&tx)
+            .await?;
         let Some(row) = row else {
             return Ok(None);
         };
         Ok(Some(GithubAppAccess {
             tokens: GithubAppTokens {
-                access_token: row.try_get("", "access_token")?,
-                expires_at: row.try_get("", "expires_at")?,
-                refresh_token: row.try_get("", "refresh_token")?,
-                refresh_expires_at: row.try_get("", "refresh_expires_at")?,
+                access_token: row.access_token,
+                expires_at: row.expires_at,
+                refresh_token: row.refresh_token,
+                refresh_expires_at: row.refresh_expires_at,
             },
             tx,
             user_id: user_id.to_owned(),
         }))
     }
-
     pub async fn github_app_status(
         &self,
         user_id: &str,
         client_id: &str,
     ) -> Result<GithubAppStatus> {
-        let row = self.db.query_one_raw(sql(
-            "SELECT login,act_as_you,(expires_at IS NULL OR expires_at>$3 OR (refresh_token IS NOT NULL AND COALESCE(refresh_expires_at>$3,FALSE))) AS authorized FROM cp_github_app_authorizations WHERE user_id=$1 AND client_id=$2",
-            vec![user_id.into(),client_id.into(),now_ms().into()],
-        )).await?;
+        let now = now_ms();
+        let row = grants::Entity::find_by_id(user_id)
+            .filter(grants::Column::ClientId.eq(client_id))
+            .one(&self.db)
+            .await?;
         let Some(row) = row else {
             return Ok(GithubAppStatus::default());
         };
-        let authorized: bool = row.try_get("", "authorized")?;
+        let authorized = row.expires_at.is_none_or(|expiry| expiry > now)
+            || (row.refresh_token.is_some()
+                && row.refresh_expires_at.is_some_and(|expiry| expiry > now));
         Ok(GithubAppStatus {
             authorized,
-            login: Some(row.try_get("", "login")?),
-            act_as_you: authorized && row.try_get::<bool>("", "act_as_you")?,
+            login: Some(row.login),
+            act_as_you: authorized && row.act_as_you,
         })
     }
-
     /// Callback must still belong to its original active browser session at commit time.
     pub async fn save_github_app_grant(
         &self,
@@ -109,39 +131,85 @@ impl ControlStore {
         grant: GithubAppGrant,
     ) -> Result<()> {
         let tx = self.db.begin().await?;
-        one(
-            &tx,
-            "SELECT id FROM cp_users WHERE id=$1 AND NOT disabled AND email_verified FOR SHARE",
-            vec![user_id.into()],
+        users::Entity::find_by_id(user_id)
+            .filter(users::Column::Disabled.eq(false))
+            .filter(users::Column::EmailVerified.eq(true))
+            .lock_shared()
+            .select_only()
+            .column(users::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        sessions::Entity::find_by_id(session_id)
+            .filter(sessions::Column::UserId.eq(user_id))
+            .filter(sessions::Column::Revoked.eq(false))
+            .filter(sessions::Column::ExpiresAt.gt(now_ms()))
+            .lock_shared()
+            .select_only()
+            .column(sessions::Column::Id)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        grants::Entity::insert(grants::ActiveModel {
+            user_id: Set(user_id.into()),
+            client_id: Set(client_id.into()),
+            subject: Set(grant.subject),
+            login: Set(grant.login),
+            access_token: Set(grant.access_token),
+            expires_at: Set(grant.expires_at),
+            refresh_token: Set(grant.refresh_token),
+            refresh_expires_at: Set(grant.refresh_expires_at),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::column(grants::Column::UserId)
+                .update_columns([
+                    grants::Column::ClientId,
+                    grants::Column::Subject,
+                    grants::Column::Login,
+                    grants::Column::AccessToken,
+                    grants::Column::ExpiresAt,
+                    grants::Column::RefreshToken,
+                    grants::Column::RefreshExpiresAt,
+                ])
+                .value(grants::Column::ActAsYou, false)
+                .to_owned(),
         )
-        .await
-        .map_err(|error| {
-            if matches!(error, Error::NotFound) {
-                Error::Unauthorized
-            } else {
-                error
-            }
-        })?;
-        one(&tx, "SELECT id FROM cp_login_sessions WHERE id=$1 AND user_id=$2 AND NOT revoked AND expires_at>$3 FOR SHARE", vec![session_id.into(),user_id.into(),now_ms().into()]).await.map_err(|error| if matches!(error, Error::NotFound) { Error::Unauthorized } else { error })?;
-        tx.execute_raw(sql(
-            "INSERT INTO cp_github_app_authorizations(user_id,client_id,subject,login,access_token,expires_at,refresh_token,refresh_expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(user_id) DO UPDATE SET client_id=excluded.client_id,subject=excluded.subject,login=excluded.login,access_token=excluded.access_token,expires_at=excluded.expires_at,refresh_token=excluded.refresh_token,refresh_expires_at=excluded.refresh_expires_at,act_as_you=FALSE",
-            vec![user_id.into(),client_id.into(),grant.subject.into(),grant.login.into(),grant.access_token.into(),grant.expires_at.into(),grant.refresh_token.into(),grant.refresh_expires_at.into()],
-        )).await?;
+        .exec_without_returning(&tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
-
     pub async fn set_github_act_as_you(
         &self,
         user_id: &str,
         client_id: &str,
         enabled: bool,
     ) -> Result<()> {
-        let result = self.db.execute_raw(sql(
-            "UPDATE cp_github_app_authorizations SET act_as_you=$3 WHERE user_id=$1 AND client_id=$2 AND (NOT $3 OR expires_at IS NULL OR expires_at>$4 OR (refresh_token IS NOT NULL AND COALESCE(refresh_expires_at>$4,FALSE)))",
-            vec![user_id.into(),client_id.into(),enabled.into(),now_ms().into()],
-        )).await?;
-        if enabled && result.rows_affected() == 0 {
+        let now = now_ms();
+        let mut query = grants::Entity::update_many()
+            .col_expr(grants::Column::ActAsYou, Expr::val(enabled))
+            .filter(grants::Column::UserId.eq(user_id))
+            .filter(grants::Column::ClientId.eq(client_id));
+        if enabled {
+            query = query.filter(
+                Cond::any()
+                    .add(grants::Column::ExpiresAt.is_null())
+                    .add(grants::Column::ExpiresAt.gt(now))
+                    .add(
+                        Cond::all()
+                            .add(grants::Column::RefreshToken.is_not_null())
+                            .add(Expr::from(Func::coalesce([
+                                grants::Column::RefreshExpiresAt.gt(now),
+                                Expr::val(false),
+                            ]))),
+                    ),
+            );
+        }
+        let result = query.exec(&self.db).await?;
+        if enabled && result.rows_affected == 0 {
             return Err(Error::Invalid("GitHub App authorization is required"));
         }
         Ok(())
