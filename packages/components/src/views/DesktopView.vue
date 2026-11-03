@@ -233,7 +233,7 @@ const errorDescription = computed(() => {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- The stream fills the pane; its controls and settings float above it. -->
-    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors" :class="stream ? 'border-transparent bg-ui-desktop' : 'border-ui-border bg-ui-surface'" @fullscreenchange="updateFullscreen">
+    <div ref="stage" data-desktop-stage class="relative flex min-h-64 min-w-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border ui-motion" :class="stream ? 'border-transparent bg-ui-desktop' : 'border-ui-border bg-ui-surface'" @fullscreenchange="updateFullscreen">
       <video
         v-if="local"
         v-show="stream"
@@ -291,7 +291,7 @@ const errorDescription = computed(() => {
           @keydown="nudgeToolbar"
         ><GripVertical :size="14" :stroke-width="1.75" aria-hidden="true" /></button>
         <span v-if="stream" role="status" class="flex items-center gap-1.5 px-2 text-[13px] text-ui-text-muted">
-          <span class="h-1.5 w-1.5 rounded-full" :class="state === 'connected' ? 'bg-ui-success' : 'bg-ui-text-faint'" aria-hidden="true" />{{ status }}
+          <span class="ui-status-dot" :class="state === 'connected' ? 'ui-status-live text-ui-success' : 'text-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
         <IconButton :portal-to="stage ?? undefined" v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
         <UiButton v-if="stream && control && state === 'connected'" type="button" class="py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">

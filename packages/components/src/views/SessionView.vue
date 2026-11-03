@@ -320,7 +320,7 @@ async function checkOperation(operationId: string): Promise<void> {
         </div>
       </ScrollAreaViewport>
       <ScrollAreaScrollbar orientation="vertical" class="group z-20 flex w-2.5 touch-none select-none p-0.5">
-        <ScrollAreaThumb class="relative flex-1 rounded-full bg-ui-text-faint/50 transition-colors group-hover:bg-ui-text-faint/70" />
+        <ScrollAreaThumb class="relative flex-1 rounded-full bg-ui-text-faint/50 ui-motion group-hover:bg-ui-text-faint/70" />
       </ScrollAreaScrollbar>
     </ScrollAreaRoot>
     <ReadingSpotlight />

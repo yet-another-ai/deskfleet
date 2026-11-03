@@ -182,7 +182,7 @@ onBeforeUnmount(() => { finished = true })
 
     <div v-if="step === 'template'" class="flex min-h-0 flex-1 flex-col">
       <div role="group" :aria-label="t('providers.template')" class="min-h-0 flex-1 overflow-y-auto rounded-xl border border-ui-border">
-        <button v-for="item in templates" :key="item.id" type="button" class="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 border-b border-ui-border px-3 py-2 text-left transition-colors last:border-b-0 enabled:hover:bg-ui-control-hover disabled:cursor-default" :disabled="disabled" :data-provider-template-choice="item.id" @click="choose(item.id)">
+        <button v-for="item in templates" :key="item.id" type="button" class="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 border-b border-ui-border px-3 py-2 text-left ui-motion last:border-b-0 enabled:hover:bg-ui-control-hover disabled:cursor-default" :disabled="disabled" :data-provider-template-choice="item.id" @click="choose(item.id)">
           <ProviderIcon :template="item.id" :size="18" class="shrink-0" />
           <span class="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-2">
             <span class="block truncate text-sm font-medium leading-5 sm:shrink-0">{{ item.name }}</span>
@@ -213,7 +213,7 @@ onBeforeUnmount(() => { finished = true })
 
       <CollapsibleRoot v-if="!setupExpanded" v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
         <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-[13px] text-ui-text-muted hover:text-ui-text">
-          <ChevronRight :size="14" :stroke-width="1.75" class="transition-transform" :class="advanced && 'rotate-90'" aria-hidden="true" />
+          <ChevronRight :size="14" :stroke-width="1.75" class="ui-motion" :class="advanced && 'rotate-90'" aria-hidden="true" />
           {{ t("providers.advanced") }}
           <span v-if="!advanced && advancedSummary" class="text-ui-text-faint">· {{ advancedSummary }}</span>
         </CollapsibleTrigger>

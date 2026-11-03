@@ -82,3 +82,10 @@
     --ui-duration-slow: 1ms;
   }
 }
+
+/*
+ * UnoCSS `duration-*` and `ease-*` utilities set these; `ui-motion` reads them.
+ * They must not inherit, or a parent's duration would leak into its children.
+ */
+@property --un-duration { syntax: "*"; inherits: false; }
+@property --un-ease { syntax: "*"; inherits: false; }

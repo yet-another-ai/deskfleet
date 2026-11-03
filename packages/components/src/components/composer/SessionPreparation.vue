@@ -77,7 +77,7 @@ async function prepare(): Promise<void> {
 </script>
 
 <template>
-  <button type="button" class="ml-auto inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted transition-colors hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+  <button type="button" class="ml-auto inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
     :class="ready ? 'text-ui-success' : ''" :disabled="disabled || busy || !location.machine.online" :aria-busy="busy || undefined"
     :aria-label="label" :title="hint" data-prepare-session @click="prepare">
     <LoaderCircle v-if="busy" :size="15" class="animate-spin" aria-hidden="true" />

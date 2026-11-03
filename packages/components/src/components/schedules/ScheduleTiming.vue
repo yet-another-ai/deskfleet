@@ -62,7 +62,7 @@ const unit = computed({
 <template>
   <div class="flex flex-col gap-4">
     <RadioGroupRoot :model-value="kind" name="schedule-repeat" :disabled="disabled" orientation="horizontal" :aria-label="t('schedules.repeat')" class="inline-flex self-start rounded-lg border border-ui-border-strong bg-ui-control p-0.5" @update:model-value="kind = $event as typeof kind">
-      <RadioGroupItem v-for="option in KINDS" :key="option" :value="option" class="cursor-pointer rounded-md px-3 py-1 text-[13px] font-medium text-ui-text-muted transition-colors hover:text-ui-text data-[state=checked]:bg-ui-active data-[state=checked]:text-ui-text disabled:op-50">{{ t(`schedules.trigger.${option}`) }}</RadioGroupItem>
+      <RadioGroupItem v-for="option in KINDS" :key="option" :value="option" class="cursor-pointer rounded-md px-3 py-1 text-[13px] font-medium text-ui-text-muted ui-motion hover:text-ui-text enabled:active:scale-[0.97] data-[state=checked]:bg-ui-active data-[state=checked]:text-ui-text disabled:op-50">{{ t(`schedules.trigger.${option}`) }}</RadioGroupItem>
     </RadioGroupRoot>
     <p v-if="trigger.kind === 'manual'" class="m-0 text-[13px] text-ui-text-muted">{{ t('schedules.manualHint') }}</p>
     <div v-else-if="trigger.kind === 'interval'" class="flex flex-wrap items-center gap-2 text-sm">
@@ -72,7 +72,7 @@ const unit = computed({
     </div>
     <template v-else>
       <div v-if="trigger.kind === 'weekly'" role="group" :aria-label="t('schedules.days')" class="flex flex-wrap gap-1.5">
-        <CheckboxRoot v-for="day in WEEKDAYS" :key="day" name="schedule-weekday" :value="String(day)" :model-value="trigger.weekdays.includes(day)" :aria-label="weekdayName(day, locale, 'long')" :disabled="disabled" class="min-w-11 cursor-pointer rounded-lg border border-ui-border-strong bg-ui-control px-2 py-1 text-center text-[13px] text-ui-text-muted transition-colors hover:text-ui-text data-[state=checked]:border-ui-accent/60 data-[state=checked]:bg-ui-accent/12 data-[state=checked]:text-ui-accent disabled:op-50" @update:model-value="toggleDay(day)">{{ weekdayName(day, locale) }}</CheckboxRoot>
+        <CheckboxRoot v-for="day in WEEKDAYS" :key="day" name="schedule-weekday" :value="String(day)" :model-value="trigger.weekdays.includes(day)" :aria-label="weekdayName(day, locale, 'long')" :disabled="disabled" class="min-w-11 cursor-pointer rounded-lg border border-ui-border-strong bg-ui-control px-2 py-1 text-center text-[13px] text-ui-text-muted ui-motion hover:text-ui-text enabled:active:scale-[0.95] data-[state=checked]:border-ui-accent/60 data-[state=checked]:bg-ui-accent/12 data-[state=checked]:text-ui-accent disabled:op-50" @update:model-value="toggleDay(day)">{{ weekdayName(day, locale) }}</CheckboxRoot>
       </div>
       <div class="flex flex-wrap gap-3">
         <label class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">

@@ -295,7 +295,7 @@ onBeforeUnmount(() => {
         </template>
       </template>
       <template v-else-if="location.worktree">
-        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted transition-colors hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
+        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted ui-motion hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
           <FolderOpen v-if="location.session?.context === 'directory'" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <GitBranch v-else :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="truncate">{{ checkoutLabel }}</span>

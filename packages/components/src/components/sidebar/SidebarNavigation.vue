@@ -63,13 +63,13 @@ function destination(section: Section) {
 <style scoped>
 .section-link {
   min-width: 2.25rem;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-out), color var(--ui-duration-fast) var(--ui-ease-out);
 }
 .section-label {
   max-width: 0;
   margin-inline-start: 0;
   opacity: 0;
-  transition: max-width 180ms ease, margin-inline-start 180ms ease, opacity 150ms ease;
+  transition: max-width var(--ui-duration-base) var(--ui-ease-out), margin-inline-start var(--ui-duration-base) var(--ui-ease-out), opacity var(--ui-duration-fast) var(--ui-ease-out);
 }
 .section-link[aria-current="page"] {
   background: var(--ui-color-active);

@@ -184,9 +184,9 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
         </div>
         <div v-if="state.paymentsAvailable" class="flex flex-wrap items-center justify-between gap-3" data-billing-interval>
           <p class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.chooseInterval") }}</p>
-          <div role="group" :aria-label="t('billing.chooseInterval')" class="flex rounded-lg border border-ui-border bg-ui-hover p-1">
-            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'month' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="selectInterval('month')">{{ t("billing.interval.month") }}</button>
-            <button type="button" class="cursor-pointer rounded-md px-3 py-1.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-ui-accent" :class="interval === 'year' ? 'bg-ui-surface text-ui-text shadow-sm' : 'text-ui-text-muted hover:text-ui-text'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="selectInterval('year')">{{ t("billing.interval.year") }}</button>
+          <div role="group" :aria-label="t('billing.chooseInterval')" class="ui-segmented">
+            <button type="button" class="ui-segment" :class="interval === 'month' && 'ui-segment-active'" :aria-pressed="interval === 'month'" data-billing-interval-option="month" @click="selectInterval('month')">{{ t("billing.interval.month") }}</button>
+            <button type="button" class="ui-segment" :class="interval === 'year' && 'ui-segment-active'" :aria-pressed="interval === 'year'" data-billing-interval-option="year" @click="selectInterval('year')">{{ t("billing.interval.year") }}</button>
           </div>
         </div>
         <p v-if="state.paymentsAvailable" class="m-0 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }} · {{ t("billing.comparison.monthlyReset") }}</p>

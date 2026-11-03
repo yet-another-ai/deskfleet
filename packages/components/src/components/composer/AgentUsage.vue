@@ -39,8 +39,8 @@ const cost = computed(() => {
           <h3 class="m-0 text-[13px] font-medium">{{ t('agent.usage.context') }}</h3>
           <span class="text-xs tabular-nums" :class="tone">{{ percent }}</span>
         </div>
-        <div v-if="ratio !== undefined" role="progressbar" :aria-label="t('agent.usage.context')" :aria-valuemin="0" :aria-valuemax="usage.size" :aria-valuenow="Math.min(usage.used, usage.size)" :aria-valuetext="summary" class="mb-4 h-1.5 overflow-hidden rounded-full bg-ui-hover">
-          <div class="h-full rounded-full" :class="ratio >= 0.9 ? 'bg-ui-warning' : 'bg-ui-accent'" :style="{ width: `${fill}%` }" />
+        <div v-if="ratio !== undefined" role="progressbar" :aria-label="t('agent.usage.context')" :aria-valuemin="0" :aria-valuemax="usage.size" :aria-valuenow="Math.min(usage.used, usage.size)" :aria-valuetext="summary" class="ui-meter mb-4">
+          <div class="ui-meter-fill" :class="ratio >= 0.9 ? 'bg-ui-warning' : 'bg-ui-accent'" :style="{ width: `${fill}%` }" />
         </div>
         <dl class="m-0 flex flex-col gap-2 text-xs">
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.used') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-used>{{ t('agent.usage.tokens', { count: numbers.format(usage.used) }) }}</dd></div>

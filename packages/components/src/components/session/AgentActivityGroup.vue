@@ -30,7 +30,7 @@ const awaitingApproval = computed(() => tools.value.some(step => step.permission
       <span>{{ summary }}</span>
       <LoaderCircle v-if="running" :size="14" :stroke-width="2" class="shrink-0 animate-spin" :aria-label="t('agent.toolStatus.in_progress')" />
       <span v-if="awaitingApproval" class="ui-badge text-ui-warning">{{ t('agent.awaitingApproval') }}</span>
-      <ChevronRight :size="14" :stroke-width="2" class="shrink-0 transition-transform" :class="open && 'rotate-90'" aria-hidden="true" />
+      <ChevronRight :size="14" :stroke-width="2" class="shrink-0 ui-motion" :class="open && 'rotate-90'" aria-hidden="true" />
     </CollapsibleTrigger>
     <CollapsibleContent class="ui-collapsible mt-2 ml-1.5 flex flex-col gap-2 border-l border-ui-border pl-4">
       <div v-for="step in steps" :key="step.id" :data-conversation-entry="step.id">

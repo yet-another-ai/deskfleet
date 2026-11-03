@@ -532,8 +532,13 @@ only toggles overshoot. Under `prefers-reduced-motion`, every duration collapses
 
 UnoCSS uses `presetWind4` from `packages/components/uno.config.ts`. It exposes colors
 as `*-ui-<name>` utilities and owns the component shortcuts (`ui-button`, `ui-card`,
-and so on). The `ui-motion` rule applies the shared transition to interactive
-controls. The renderer imports the generated utilities through `virtual:uno.css`,
+and so on). Shortcuts cover status dots (`ui-status-dot`, colored with `text-*`),
+radios (`ui-radio`, `ui-radio-dot`), meters (`ui-meter`, `ui-meter-fill`), underlined
+tabs (`ui-tab`, `ui-tab-active`), and segmented controls (`ui-segmented`,
+`ui-segment`, `ui-segment-active`). Use them instead of restyling these controls
+inline. The `ui-motion` rule applies the shared transition to interactive
+controls. Use it rather than `transition-*` utilities with fixed durations. A
+`duration-*` or `ease-*` utility on the same element still adjusts it. The renderer imports the generated utilities through `virtual:uno.css`,
 and production builds emit them as a static stylesheet.
 
 `packages/components/src/styles.css` holds the base reset and the effects that
@@ -543,6 +548,10 @@ utilities can't express:
 - The `ui-route-stage` page entrance.
 - `ui-rise-in` and `ui-pop-in`.
 - `ui-collapsible`.
+- The halo on status dots and the `ui-status-live` ping for running states.
+- The radio ring tint and dot pop.
+- Meter grow-in and sheen, and the `ui-meter-indeterminate` sweep.
+- The tab underline.
 - `ui-shimmer-text` for live status.
 - `ui-attention` for pending decisions.
 - `ui-aurora` and `ui-gradient-text` for hero content.

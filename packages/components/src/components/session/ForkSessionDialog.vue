@@ -46,8 +46,8 @@ async function submit(): Promise<void> {
     <fieldset class="m-0 mt-5 border-0 p-0">
       <legend class="mb-2 text-xs font-medium text-ui-text-muted">{{ t('composer.context') }}</legend>
       <RadioGroupRoot v-model="context" :name="`${id}-context`" :aria-label="t('composer.context')" :disabled="pending || retrying" class="flex flex-col gap-2">
-        <RadioGroupItem v-for="option in contexts" :key="option.id" :value="option.id" class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-left disabled:cursor-default disabled:op-50" :class="context === option.id ? 'border-ui-accent bg-ui-hover' : 'border-ui-border'">
-          <span class="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong"><RadioGroupIndicator class="h-2 w-2 rounded-full bg-ui-accent" /></span>
+        <RadioGroupItem v-for="option in contexts" :key="option.id" :value="option.id" class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-left ui-motion disabled:cursor-default disabled:op-50" :class="context === option.id ? 'border-ui-accent bg-ui-hover' : 'border-ui-border'">
+          <span class="ui-radio mt-1"><RadioGroupIndicator class="ui-radio-dot" /></span>
           <component :is="option.icon" :size="16" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="min-w-0"><span class="block text-sm">{{ t(`composer.contextOption.${option.id}`) }}</span><span class="mt-1 block text-xs text-ui-text-muted">{{ t(`composer.contextHint.${option.id}`) }}</span></span>
         </RadioGroupItem>

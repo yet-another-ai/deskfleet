@@ -59,7 +59,7 @@ function open(result: SearchResult): void {
         <input ref="input" v-model="query" type="search" class="ui-input w-full py-3 pl-11 pr-4 text-[15px]" :placeholder="t('search.placeholder')" :aria-label="t('search.placeholder')" :disabled="!available" maxlength="256" />
       </form>
       <div class="flex gap-1.5" role="group" :aria-label="t('search.filter')">
-        <button v-for="value in kinds" :key="value" type="button" class="cursor-pointer rounded-full px-3 py-1.5 text-[13px] transition-colors" :class="kind === value ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover'" :aria-pressed="kind === value" @click="kind = value">{{ t(`search.kind.${value}`) }}</button>
+        <button v-for="value in kinds" :key="value" type="button" class="cursor-pointer rounded-full px-3 py-1.5 text-[13px] ui-motion active:scale-[0.97]" :class="kind === value ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover'" :aria-pressed="kind === value" @click="kind = value">{{ t(`search.kind.${value}`) }}</button>
       </div>
       <p v-if="!available" class="ui-notice m-0" role="status">{{ t('search.signIn') }}</p>
       <div v-else-if="error" class="ui-notice m-0 justify-between border-ui-danger/30 bg-ui-danger/8">
@@ -72,7 +72,7 @@ function open(result: SearchResult): void {
       </div>
       <ul v-if="results.length" class="ui-card m-0 list-none divide-y divide-ui-border p-0">
         <li v-for="result in results" :key="`${result.kind}:${result.machineId}:${result.resourceId}:${result.entryId ?? ''}`">
-          <button type="button" data-search-result class="flex w-full cursor-pointer items-start gap-3.5 px-4 py-4 text-left transition-colors hover:bg-ui-hover" @click="open(result)">
+          <button type="button" data-search-result class="flex w-full cursor-pointer items-start gap-3.5 px-4 py-4 text-left ui-motion hover:bg-ui-hover" @click="open(result)">
             <component :is="result.kind === 'chat' ? MessagesSquare : CalendarClock" :size="18" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
             <div class="min-w-0 flex-1">
               <p class="m-0 truncate text-sm font-medium"><SearchHighlight :text="result.title || t('search.untitled')" :query="query" /></p>

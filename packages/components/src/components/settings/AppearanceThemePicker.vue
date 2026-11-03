@@ -16,7 +16,7 @@ const options = [
 
 <template>
   <RadioGroupRoot :model-value="modelValue" :disabled="disabled" :aria-label="t('appearance.theme')" class="grid grid-cols-3 gap-3" @update:model-value="emit('update:modelValue', $event as AppearanceSettings['theme'])">
-    <RadioGroupItem v-for="option in options" :key="option.value" :value="option.value" :data-appearance-theme="option.value" :aria-label="t(option.label)" class="theme-option group min-w-0 cursor-pointer rounded-xl border-2 border-transparent p-1 text-left transition-colors hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/5 disabled:cursor-default disabled:op-50">
+    <RadioGroupItem v-for="option in options" :key="option.value" :value="option.value" :data-appearance-theme="option.value" :aria-label="t(option.label)" class="theme-option group min-w-0 cursor-pointer rounded-xl border-2 border-transparent p-1 text-left ui-motion duration-[var(--ui-duration-base)] hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/5 disabled:cursor-default disabled:op-50">
       <div class="theme-picture" :data-mode="option.value" aria-hidden="true">
         <div v-for="palette in option.value === 'system' ? ['light', 'dark'] : [option.value]" :key="palette" class="mini-app" :data-palette="palette">
           <div class="mini-titlebar"><i /><i /><i /><span /></div>
@@ -37,8 +37,8 @@ const options = [
       <div class="flex items-center gap-2 px-1.5 pb-1 pt-2.5 text-[13px] font-medium">
         <component :is="option.icon" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         <span class="truncate">{{ t(option.label) }}</span>
-        <span class="theme-check ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong">
-          <Check v-if="modelValue === option.value" :size="11" :stroke-width="2.5" aria-hidden="true" />
+        <span class="theme-check ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong ui-motion">
+          <Check v-if="modelValue === option.value" :size="11" :stroke-width="2.5" class="ui-pop-in" aria-hidden="true" />
         </span>
       </div>
     </RadioGroupItem>
@@ -47,7 +47,13 @@ const options = [
 
 <style scoped>
 .theme-option[data-state="checked"] .theme-check { border-color: var(--ui-color-accent); background: var(--ui-color-accent); color: var(--ui-color-canvas); }
-.theme-picture { position: relative; height: 112px; overflow: hidden; border: 1px solid var(--ui-color-border); border-radius: 8px; }
+.theme-picture {
+  position: relative; height: 112px; overflow: hidden; border: 1px solid var(--ui-color-border); border-radius: 8px;
+  transition: translate var(--ui-duration-base) var(--ui-ease-out), box-shadow var(--ui-duration-base) var(--ui-ease-out);
+}
+/* The preview lifts toward the pointer, and the chosen theme stays raised. */
+.theme-option:not([data-disabled]):hover .theme-picture { translate: 0 -2px; box-shadow: var(--ui-shadow-raised); }
+.theme-option[data-state="checked"] .theme-picture { box-shadow: var(--ui-shadow-raised); }
 .mini-app {
   --mini-canvas: #fbfbfd; --mini-sidebar: #f0f1f6; --mini-surface: #ffffff;
   --mini-line: #c3c8d7; --mini-border: #e3e6ed; --mini-accent: #6674df; --mini-bubble: #e8ebfc;

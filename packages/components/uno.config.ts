@@ -70,6 +70,10 @@ export default defineConfig({
       "relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-ui-border-strong ui-motion [&[aria-checked=true]]:bg-ui-accent disabled:op-50",
     "ui-switch-thumb":
       "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-ui-switch-thumb shadow-ui-card",
+    // A radio's ring; the checked item's ring tints, and its `ui-radio-dot` indicator springs in.
+    "ui-radio":
+      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-ui-border-strong bg-ui-control ui-motion",
+    "ui-radio-dot": "h-2 w-2 rounded-full bg-ui-accent",
 
     // Surfaces
     "ui-card": "overflow-hidden rounded-xl border border-ui-border bg-ui-surface shadow-ui-card",
@@ -87,18 +91,32 @@ export default defineConfig({
     "ui-menu-item":
       "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
     "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
+    // A segmented control: the active segment is a raised pill that settles in (styles.css).
+    "ui-segmented": "flex rounded-lg border border-ui-border bg-ui-hover p-1",
+    "ui-segment":
+      "cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs text-ui-text-muted ui-motion hover:text-ui-text enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-ui-accent",
+    "ui-segment-active": "bg-ui-surface text-ui-text shadow-ui-card",
+
+    // Status and progress. A status dot takes its color from `text-*`; add `ui-status-live` for running states.
+    "ui-status-dot": "relative inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current",
+    "ui-meter": "h-1.5 overflow-hidden rounded-full bg-ui-hover",
+    "ui-meter-fill": "h-full rounded-full",
 
     // Navigation
     "ui-nav-item": "flex h-8 items-center gap-2.5 rounded-lg text-ui-text ui-motion active:scale-[0.985] [&:not(.ui-nav-active):hover]:bg-ui-hover",
     "ui-nav-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/20",
+    // Underlined tabs; styles.css draws the underline, which grows in under `ui-tab-active`.
+    "ui-tab": "relative flex shrink-0 cursor-pointer items-center whitespace-nowrap text-ui-text-muted ui-motion hover:text-ui-text",
+    "ui-tab-active": "text-ui-accent hover:text-ui-accent",
     "ui-avatar": "inline-flex shrink-0 items-center justify-center bg-ui-avatar text-xs font-semibold text-ui-avatar-text",
   },
   rules: [
     // The shared interaction transition: state colors, elevation, and press scale.
+    // `duration-*` and `ease-*` utilities set these variables, so they adjust it regardless of CSS order.
     ["ui-motion", {
-      "transition-property": "color, background-color, border-color, outline-color, box-shadow, opacity, transform, translate, scale",
-      "transition-duration": "var(--ui-duration-fast)",
-      "transition-timing-function": "var(--ui-ease-out)",
+      "transition-property": "color, background-color, border-color, outline-color, box-shadow, opacity, transform, translate, scale, rotate",
+      "transition-duration": "var(--un-duration, var(--ui-duration-fast))",
+      "transition-timing-function": "var(--un-ease, var(--ui-ease-out))",
     }],
     // Frameless windows move by dragging these regions; controls inside opt out.
     ["app-drag", { "app-region": "drag", "-webkit-app-region": "drag" }],

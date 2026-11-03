@@ -36,9 +36,9 @@ const fill = computed(() => ratio.value >= 1 ? "bg-ui-danger" : ratio.value >= 0
       :aria-valuenow="Math.round(ratio * 100)"
       aria-valuemin="0"
       aria-valuemax="100"
-      class="mt-2 h-1.5 overflow-hidden rounded-full bg-ui-hover"
+      class="ui-meter mt-2"
     >
-      <div class="h-full rounded-full transition-[width]" :class="fill" :style="{ width: `${ratio * 100}%` }" />
+      <div class="ui-meter-fill" :class="fill" :style="{ width: `${ratio * 100}%` }" />
     </div>
     <p v-if="caption" class="m-0 mt-1.5 text-xs text-ui-text-muted">{{ caption }}</p>
   </div>

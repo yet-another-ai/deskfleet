@@ -95,7 +95,7 @@ onMounted(() => {
           v-for="(terminal, index) in terminals"
           :key="terminal.id"
           role="presentation"
-          class="group flex h-full max-w-56 shrink-0 items-center border-r border-ui-border"
+          class="group flex h-full max-w-56 shrink-0 items-center border-r border-ui-border ui-motion"
           :class="activeId === terminal.id ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover hover:text-ui-text'"
         >
           <button
@@ -127,7 +127,7 @@ onMounted(() => {
             :aria-label="t('terminal.hangupTab', { name: tabName(terminal.id, index) })"
             :title="t('terminal.hangupHint')"
             :disabled="readOnly || closing.has(terminal.id)"
-            class="mr-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded opacity-0 hover:bg-ui-hover group-hover:opacity-100 focus-visible:opacity-100 disabled:op-40"
+            class="mr-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded opacity-0 ui-motion hover:bg-ui-hover enabled:active:scale-90 group-hover:opacity-100 focus-visible:opacity-100 disabled:op-40"
             :class="activeId === terminal.id && 'opacity-100'"
             @click="hangup(terminal.id)"
           ><X :size="13" aria-hidden="true" /></button>

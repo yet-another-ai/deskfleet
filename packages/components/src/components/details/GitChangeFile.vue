@@ -51,7 +51,7 @@ const statusColor: Record<GitFileStatus, string> = {
     :disabled="disabled"
     @click="emit('select')"
   >
-    <ChevronRight v-if="disclosure" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted transition-transform" :class="expanded && 'rotate-90'" aria-hidden="true" />
+    <ChevronRight v-if="disclosure" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-muted ui-motion" :class="expanded && 'rotate-90'" aria-hidden="true" />
     <span class="min-w-0 flex-1 truncate">
       <span :class="change.status === 'deleted' && 'line-through op-70'">{{ fileName }}</span>
       <span v-if="showParent && parent" class="ml-1.5 text-xs text-ui-text-faint">{{ parent }}</span>

@@ -476,8 +476,10 @@ onScopeDispose(() => {
   cursor: pointer;
   padding: 0;
   border-radius: 0.5rem;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-out), color var(--ui-duration-fast) var(--ui-ease-out);
 }
+/* The window that comes forward settles into its highlight, like a selected nav item. */
+.deskfleet-windows :deep(.dv-active-tab) { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
 .deskfleet-windows :deep(.dv-tab::before) { display: none; }
 .deskfleet-windows :deep(.dv-active-tab:hover) { background: color-mix(in srgb, var(--ui-color-accent) 20%, transparent); }
 .deskfleet-windows :deep(.dv-inactive-tab:hover) { background: var(--ui-color-hover); }
@@ -487,6 +489,6 @@ onScopeDispose(() => {
   display: flex;
   align-items: center;
 }
-.deskfleet-windows :deep(.dv-sash) { transition: background-color 120ms ease-out; }
+.deskfleet-windows :deep(.dv-sash) { transition: background-color var(--ui-duration-fast) var(--ui-ease-out); }
 .deskfleet-windows :deep(.dv-sash:hover) { background: color-mix(in srgb, var(--ui-color-focus) 45%, transparent); }
 </style>
