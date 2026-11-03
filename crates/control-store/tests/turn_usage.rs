@@ -3,7 +3,7 @@ use deskfleet_control_store::{
     AuthSession, ControlStore, Error, TurnUsage, TurnUsageSide, now_ms, timestamp,
 };
 use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ConnectOptions, ConnectionTrait, Database, DbBackend, Statement};
 use serde_json::json;
 
 async fn peer(store: &ControlStore, auth: &AuthSession, expires: i64) -> PeerAuthorization {
@@ -64,6 +64,106 @@ async fn totals(store: &ControlStore, team: &str, side: &str) -> (i64, i64, i64)
         row.try_get("", "received").unwrap(),
         row.try_get("", "sent").unwrap(),
     )
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_turn_usage_peer_retention_migration_preserves_orphans_on_rollback() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
+    let mut options = ConnectOptions::new(url);
+    options.max_connections(1).min_connections(1);
+    let db = Database::connect(options).await.unwrap();
+    let schema = format!("turn_retention_{}", uuid::Uuid::new_v4().simple());
+    db.execute_unprepared(&format!(
+        "CREATE SCHEMA {schema}; SET search_path TO {schema}"
+    ))
+    .await
+    .unwrap();
+    db.execute_unprepared(
+        "CREATE TABLE cp_peers (id TEXT PRIMARY KEY); \
+         CREATE TABLE cp_turn_usage (peer_id TEXT NOT NULL REFERENCES cp_peers(id)); \
+         INSERT INTO cp_peers VALUES ('peer'); INSERT INTO cp_turn_usage VALUES ('peer')",
+    )
+    .await
+    .unwrap();
+    assert!(db.execute_unprepared("DELETE FROM cp_peers").await.is_err());
+    db.execute_unprepared(include_str!("../src/turn_usage_peer_retention.sql"))
+        .await
+        .unwrap();
+    db.execute_unprepared("DELETE FROM cp_peers").await.unwrap();
+    db.execute_unprepared(include_str!("../src/turn_usage_peer_retention_down.sql"))
+        .await
+        .unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT peer_id FROM cp_turn_usage",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<String>("", "peer_id").unwrap(), "peer");
+    assert!(
+        db.execute_unprepared("INSERT INTO cp_turn_usage VALUES ('missing')")
+            .await
+            .is_err()
+    );
+    db.execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    db.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_pruning_peer_preserves_turn_usage_and_billing() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
+    let store = ControlStore::connect(&url).await.unwrap();
+    let user = store
+        .verified_user(
+            &format!("owner-{}@fixture.test", uuid::Uuid::new_v4()),
+            "Owner",
+        )
+        .await
+        .unwrap();
+    let session = store.new_session(&user.id).await.unwrap();
+    let auth = store
+        .authenticate(session["token"].as_str().unwrap())
+        .await
+        .unwrap();
+    let expired = peer(&store, &auth, now_ms() - 2 * 86_400_000).await;
+    let usage = TurnUsage {
+        peer_id: expired.peer_id.clone(),
+        realm: "turn.test".into(),
+        allocation_id: "pruning-fixture".into(),
+        side: TurnUsageSide::Client,
+        received_bytes: 7,
+        sent_bytes: 8,
+        collected_at: now_ms(),
+    };
+    assert!(store.record_turn_usage(&usage).await.unwrap());
+
+    // The batch limit covers all expired peers in a dedicated test database.
+    store.prune_auth_records(1_000).await.unwrap();
+    let row = store
+        .database()
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT EXISTS(SELECT 1 FROM cp_peers WHERE id=$1) AS peer_exists, EXISTS(SELECT 1 FROM cp_turn_usage WHERE peer_id=$1) AS usage_exists",
+            vec![expired.peer_id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!row.try_get::<bool>("", "peer_exists").unwrap());
+    assert!(row.try_get::<bool>("", "usage_exists").unwrap());
+    assert_eq!(totals(&store, &expired.team_id, "client").await, (1, 7, 8));
+    assert_eq!(
+        store.team_usage(&user.id, &expired.team_id).await.unwrap()["relayedBytes"],
+        "8"
+    );
+    assert!(!store.record_turn_usage(&usage).await.unwrap());
+    store.close().await.unwrap();
 }
 
 #[tokio::test]
