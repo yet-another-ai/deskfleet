@@ -95,7 +95,10 @@ async function inspect(context: string[], flags: string[], execute: Runner): Pro
   let worktreeConfig = false
   for (const scope of ["--local", "--worktree"]) {
     if (scope === "--worktree" && !worktreeConfig) continue
-    const { stdout } = await execute([...flags, ...context, "config", scope, "--no-includes", "--null", "--list"]).catch(error => {
+    // Unlike --list, querying keys accepts an absent optional config.worktree.
+    // Exit 1 means no keys; malformed or unreadable config still fails.
+    const query = scope === "--worktree" ? ["--get-regexp", "."] : ["--list"]
+    const { stdout } = await execute([...flags, ...context, "config", scope, "--no-includes", "--null", ...query], { acceptExit: scope === "--worktree" ? [1] : [] }).catch(error => {
       if (String(error.stderr).includes("--local can only be used inside a git repository")) throw new Error("not a git repository")
       throw error
     })

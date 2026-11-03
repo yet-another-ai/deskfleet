@@ -45,6 +45,24 @@ test("Git rejects common-config worktree redirection before touching a victim di
   }
 })
 
+test("Git accepts absent and empty worktree config in main and linked checkouts", async t => {
+  const { directory, root } = await fixture(t)
+  const linked = join(directory, "linked")
+  await git(root, "worktree", "add", "--detach", linked, "HEAD")
+  await git(root, "config", "extensions.worktreeConfig", "true")
+  for (const checkout of [root, linked]) {
+    const config = await git(checkout, "rev-parse", "--path-format=absolute", "--git-path", "config.worktree")
+    await assert.rejects(readFile(config), { code: "ENOENT" })
+    assert.equal((await executeGit(["-C", checkout, "status", "--porcelain"])).stdout, "")
+    await writeFile(config, "")
+    assert.equal((await executeGit(["-C", checkout, "status", "--porcelain"])).stdout, "")
+    await writeFile(config, "[invalid\n")
+    await assert.rejects(executeGit(["-C", checkout, "status", "--porcelain"]), /bad config/)
+    await rm(config)
+  }
+  assert.match((await executeGit(["--git-dir", join(root, ".git"), "worktree", "list"])).stdout, /linked/)
+})
+
 test("Git validates worktree-local redirection while retaining valid layout metadata", async t => {
   const { root, directory } = await fixture(t)
   await git(root, "config", "core.worktree", "..")
