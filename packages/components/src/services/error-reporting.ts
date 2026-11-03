@@ -1,4 +1,4 @@
-import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent } from "@sentry/vue"
+import { attachErrorHandler, browserApiErrorsIntegration, captureException, dedupeIntegration, eventFiltersIntegration, globalHandlersIntegration, init, setUser, type ErrorEvent, type Event, type EventHint } from "@sentry/vue"
 import type { App } from "vue"
 import type { AccountUser, CentralApi } from "@deskfleet/client/central"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
@@ -8,6 +8,34 @@ import { parseSentryDsn } from "@deskfleet/client/sentry-config"
 // One SDK per document, including the independently mounted MachineSurface apps.
 let client: ReturnType<typeof init>
 const installed = new WeakSet<App>()
+
+function prepareCentralRequest(event: Event, hint: EventHint): Event {
+  const error = hint.originalException
+  if (!(error instanceof CentralRequestError)) return event
+  const { method, route, rpcMethod, elapsedMs, causes } = error.diagnostics
+  const codes = [...new Set(causes.flatMap(cause => cause.code ? [cause.code] : []))].sort()
+  const failure = codes.join(",") || "network_error"
+  const transport = event.tags?.platform === "desktop" ? "node_fetch" : "browser_fetch"
+  const exception = event.exception?.values?.at(-1)
+  if (exception) {
+    // Change the report, not the Error that the UI receives.
+    exception.type = "CentralRequestError"
+    exception.value = `${method} ${route}${rpcMethod ? ` (${rpcMethod})` : ""} — ${failure}`
+  }
+  // Generated stacks differ between platform builds. Keep them as evidence,
+  // but group transport failures by the operation and cause alone.
+  event.fingerprint = ["central-request", transport, method, route, rpcMethod ?? "", failure]
+  event.tags = { ...event.tags,
+    "central.transport": transport, "central.method": method, "central.route": route,
+    ...(rpcMethod ? { "central.rpc_method": rpcMethod } : {}),
+    ...(codes[0] ? { "central.cause_code": codes[0] } : {}),
+  }
+  event.contexts = { ...event.contexts, central_request: {
+    method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs, transport,
+    causes: causes.map(cause => cause.code ? `${cause.name}: ${cause.code}` : cause.name),
+  } }
+  return event
+}
 
 function prepareError(event: ErrorEvent): ErrorEvent {
   // Authentication URLs and application state are not error-reporting context.
@@ -48,7 +76,8 @@ export function initializeErrorReporting(platform: "web" | "desktop", context?: 
     },
     // Explicit error-only integrations omit URL, DOM, console and session collection.
     defaultIntegrations: false,
-    integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(), dedupeIntegration()],
+    integrations: [eventFiltersIntegration(), browserApiErrorsIntegration(), globalHandlersIntegration(),
+      { name: "CentralRequests", processEvent: prepareCentralRequest }, dedupeIntegration()],
     dataCollection: { userInfo: false, cookies: false, httpHeaders: false, httpBodies: [], urlQueryParams: false },
     maxBreadcrumbs: 0,
     sendClientReports: false,
@@ -65,23 +94,7 @@ export function setErrorReportingUser(user?: Pick<AccountUser, "id" | "email">):
 /** Report handled transport failures while the original, bounded diagnostics still exist. */
 export function captureCentralRequestError(error: unknown): void {
   if (!client || !(error instanceof CentralRequestError)) return
-  const { method, route, rpcMethod, elapsedMs, causes } = error.diagnostics
-  const code = causes.find(cause => cause.code)?.code
-  const codes = [...new Set(causes.flatMap(cause => cause.code ? [cause.code] : []))].sort()
-  captureException(error, {
-    fingerprint: ["{{ default }}", method, route, rpcMethod ?? "", codes.join(",") || "unknown"],
-    tags: {
-      "central.method": method,
-      "central.route": route,
-      ...(rpcMethod ? { "central.rpc_method": rpcMethod } : {}),
-      ...(code ? { "central.cause_code": code } : {}),
-    },
-    // Keep causes within the SDK's normalization depth so their codes remain visible.
-    contexts: { central_request: {
-      method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs,
-      causes: causes.map(cause => cause.code ? `${cause.name}: ${cause.code}` : cause.name),
-    } },
-  })
+  captureException(error)
 }
 
 /** Attach each Vue app without starting another SDK or collecting component props. */

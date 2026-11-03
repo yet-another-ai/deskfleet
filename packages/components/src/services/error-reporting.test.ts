@@ -41,7 +41,7 @@ function requestFailure(rpcMethod = "_deskfleet/agent/configuration", code = "EN
   }), {
     method: "POST", path: "/api/teams/private-team/machines/private-machine/rpc?token=private-query", elapsedMs: 123.4,
     body: { method: rpcMethod, params: { provider: "private-provider", workspaceId: "private-workspace" } },
-  })
+  }, "Error\n    at loadConfiguration (app:///client.js:10:20)")
 }
 
 test.each([undefined, "", "  ", "invalid", "https://sentry.example.com/42"])("does not initialize or change Vue handlers with DSN %s", dsn => {
@@ -154,7 +154,7 @@ test("reports handled central transport failures with bounded diagnostics and de
   expect(events()).toHaveLength(1)
   expect(events()[0]).toMatchObject({
     user: { id: "user-1", email: "ada@example.test" },
-    exception: { values: [{ type: "TypeError", value: "fetch failed" }] },
+    exception: { values: [{ type: "CentralRequestError", value: "POST /api/teams/:teamId/machines/:machineId/rpc (_deskfleet/agent/configuration) — ENOTFOUND" }] },
     tags: { platform: "desktop", "central.method": "POST", "central.route": "/api/teams/:teamId/machines/:machineId/rpc", "central.rpc_method": "_deskfleet/agent/configuration", "central.cause_code": "ENOTFOUND" },
     contexts: { central_request: {
       method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpc_method: "_deskfleet/agent/configuration", elapsed_ms: 123,
@@ -162,6 +162,7 @@ test("reports handled central transport failures with bounded diagnostics and de
     } },
   })
   expect(events()[0]?.exception?.values?.[0]?.stacktrace?.frames?.length).toBeGreaterThan(0)
+  expect(error.message).toBe("fetch failed")
   expect(JSON.stringify(events())).not.toContain("private")
   globalThis.onunhandledrejection?.call(window, { reason: error } as PromiseRejectionEvent)
   await getClient()?.flush(1000)
@@ -190,8 +191,32 @@ test("retains consecutive failures with the same stack but distinct RPC methods 
   }
   expect(events()).toHaveLength(3)
   expect(events().map(event => event.fingerprint)).toEqual(requests.map(([method, code]) => [
-    "{{ default }}", "POST", "/api/teams/:teamId/machines/:machineId/rpc", method, code,
+    "central-request", "node_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", method, code,
   ]))
+})
+
+test("groups the same operation across generated platform stacks while retaining each stack", async () => {
+  initializeErrorReporting("desktop")
+  for (const bundle of ["client-macos", "client-windows"]) {
+    const error = requestFailure()
+    error.stack = `TypeError: fetch failed\n    at HttpCentralClient.request (app:///${bundle}.js:10:20)`
+    captureCentralRequestError(error)
+    await getClient()?.flush(1000)
+  }
+  expect(events()).toHaveLength(2)
+  expect(events()[0]?.fingerprint).toEqual(events()[1]?.fingerprint)
+  expect(events().map(event => event.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename))
+    .toEqual(["app:///client-macos.js", "app:///client-windows.js"])
+})
+
+test("enriches an unhandled central rejection with the same operation identity", async () => {
+  initializeErrorReporting("web")
+  globalThis.onunhandledrejection?.call(window, { reason: requestFailure() } as PromiseRejectionEvent)
+  await getClient()?.flush(1000)
+  expect(events()[0]?.fingerprint).toEqual([
+    "central-request", "browser_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "_deskfleet/agent/configuration", "ENOTFOUND",
+  ])
+  expect(events()[0]?.exception?.values?.[0]?.type).toBe("CentralRequestError")
 })
 
 test("captures real Vue errors from multiple apps through one client without props", async () => {

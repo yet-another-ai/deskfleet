@@ -89,8 +89,12 @@ the preload context bridge. The renderer reconstructs the diagnostic Error,
 reports it once, then rejects the caller's promise with that same Error. This
 retains diagnostics for UI-handled failures and lets the SDK avoid a second event
 if the error later reaches an unhandled rejection hook. The existing displayed
-error message is preserved. Fingerprints include the request method, route, RPC,
-and cause codes so distinct operations and failures are not deduplicated together.
+error message is preserved. Sentry titles instead identify the method, route, RPC,
+and sorted cause codes, for example `GET /api/teams/:teamId/machines — ECONNRESET`.
+Fingerprints use the transport, method, route, RPC, and sorted cause codes without
+Sentry's default stack fingerprint. Different platform bundles therefore group
+the same operation together while preserving their original stacks and OS/release
+tags. The same enrichment applies to unhandled central request errors.
 HTTP error responses retain their existing behavior;
 this reporting path does not retry requests or change proxy/network selection.
 
