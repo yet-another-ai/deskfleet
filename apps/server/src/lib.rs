@@ -3,6 +3,7 @@ mod ai_usage;
 mod api;
 pub mod auth;
 pub mod billing;
+mod cloudflare_turn;
 pub mod config;
 pub mod error;
 pub mod github_app;
@@ -39,15 +40,24 @@ pub struct AppState {
     _routing: hub::Router,
     _maintenance: maintenance::Maintenance,
     _turn_usage: Option<turn_usage::Collector>,
+    cloudflare_turn: cloudflare_turn::Service,
     _billing_worker: billing::BillingWorker,
 }
 impl AppState {
     pub async fn new(config: ServerConfig) -> Result<Self> {
+        Self::with_cloudflare_service(config, cloudflare_turn::Service::new).await
+    }
+
+    async fn with_cloudflare_service(
+        config: ServerConfig,
+        make_service: impl FnOnce(ControlStore) -> Result<cloudflare_turn::Service>,
+    ) -> Result<Self> {
         initialize_tls_provider();
         let store = ControlStore::connect(&config.database_url)
             .await?
             .with_hosted_mode(config.billing.hosted);
         turn_settings::initialize(&store, &config).await?;
+        let cloudflare_turn = make_service(store.clone())?;
         let auth = auth::AuthService::new(config.auth.clone())?;
         let billing =
             billing::BillingService::new(config.billing.clone(), config.auth.web_url.clone())?;
@@ -69,6 +79,7 @@ impl AppState {
             _routing: routing,
             _maintenance: maintenance,
             _turn_usage: turn_usage,
+            cloudflare_turn,
             _billing_worker: billing_worker,
         })
     }
@@ -104,6 +115,14 @@ pub fn configure(config: &mut ServiceConfig) {
                 web::patch().to(site::update_settings),
             )
             .route("/admin/turn-settings", web::get().to(turn_settings::read))
+            .route(
+                "/admin/cloudflare-turn-settings",
+                web::get().to(cloudflare_turn::read),
+            )
+            .route(
+                "/admin/cloudflare-turn-settings",
+                web::patch().to(cloudflare_turn::update),
+            )
             .route(
                 "/admin/turn-settings",
                 web::patch().to(turn_settings::update),

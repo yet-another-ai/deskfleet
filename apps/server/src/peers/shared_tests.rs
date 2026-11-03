@@ -7,6 +7,8 @@ use deskfleet_control_store::{PeerCandidateState, PeerOfferState, now_ms};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use tokio::sync::{mpsc, watch};
 
+#[path = "cloudflare_turn_tests.rs"]
+mod cloudflare_turn_tests;
 #[path = "local_tests.rs"]
 mod local_tests;
 #[path = "turn_settings_tests.rs"]
@@ -40,6 +42,15 @@ impl Fixture {
         turn_urls: Vec<String>,
         turn_secret: Option<&str>,
     ) -> Self {
+        Self::with_cloudflare(stun_urls, turn_urls, turn_secret, None).await
+    }
+
+    async fn with_cloudflare(
+        stun_urls: Vec<String>,
+        turn_urls: Vec<String>,
+        turn_secret: Option<&str>,
+        cloudflare_origin: Option<&str>,
+    ) -> Self {
         let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
         let admin = Database::connect(&url).await.unwrap();
         // Fault-injection triggers must not affect concurrently running cases.
@@ -63,8 +74,20 @@ impl Fixture {
             turn_secret: turn_secret.map(str::to_owned),
             turn_usage_redis_url: None,
         };
-        let a = web::Data::new(AppState::new(config.clone()).await.unwrap());
-        let b = web::Data::new(AppState::new(config).await.unwrap());
+        let service = |store| match cloudflare_origin {
+            Some(origin) => Ok(crate::cloudflare_turn::Service::with_endpoints(
+                store, origin,
+            )),
+            None => crate::cloudflare_turn::Service::new(store),
+        };
+        let a = AppState::with_cloudflare_service(config.clone(), service)
+            .await
+            .unwrap();
+        let b = AppState::with_cloudflare_service(config, service)
+            .await
+            .unwrap();
+        let a = web::Data::new(a);
+        let b = web::Data::new(b);
         let user = a
             .store
             .verified_user(

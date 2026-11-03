@@ -292,6 +292,20 @@ test("reads and writes a Team's TURN server through its Team endpoint", async ()
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ urls: settings.urls, secret: "north-secret" }) }))
 })
 
+test("manages Cloudflare TURN through its private endpoint without sending preserved tokens", async () => {
+  const f = setup()
+  const settings = { enabled: true, accountId: "account", keyId: "turn-key", apiTokenConfigured: true, analyticsTokenConfigured: true }
+  const update = { enabled: true, accountId: "account", keyId: "turn-key", apiToken: "turn-token", analyticsToken: "analytics-token" }
+  const disabled = { enabled: false, accountId: "account", keyId: "turn-key" }
+  f.responses.push(settings, settings, { ...settings, enabled: false })
+  expect(await f.client.cloudflareTurnSettings()).toEqual(settings)
+  expect(await f.client.updateCloudflareTurnSettings(update)).toEqual(settings)
+  expect(await f.client.updateCloudflareTurnSettings(disabled)).toEqual({ ...settings, enabled: false })
+  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(update) }))
+  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(disabled) }))
+})
+
 test("browser requests use cookie authentication and CSRF, with no bearer WebSocket frame", async () => {
   const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf-token", siteAdmin: false }), { status: 200 }))
   const socket = new Socket()

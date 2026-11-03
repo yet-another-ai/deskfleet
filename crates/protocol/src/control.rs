@@ -48,6 +48,32 @@ impl Default for TurnSettings {
     }
 }
 
+/// Private administrator settings. API credentials are never returned.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloudflareTurnSettings {
+    pub enabled: bool,
+    pub account_id: String,
+    pub key_id: String,
+    pub api_token_configured: bool,
+    pub analytics_token_configured: bool,
+}
+
+/// Omitted tokens preserve stored credentials; empty tokens clear them.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloudflareTurnSettingsUpdate {
+    pub enabled: bool,
+    pub account_id: String,
+    pub key_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub api_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub analytics_token: Option<String>,
+}
+
 /// Whether a Team's own TURN server is used for its new peer grants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -247,6 +273,8 @@ pub fn typescript() -> String {
         SiteSettings::decl(&config),
         NetworkConfiguration::decl(&config),
         TurnSettings::decl(&config),
+        CloudflareTurnSettings::decl(&config),
+        CloudflareTurnSettingsUpdate::decl(&config),
         TeamTurnAvailability::decl(&config),
         TeamTurnSettings::decl(&config),
         TeamTurnSettingsUpdate::decl(&config),

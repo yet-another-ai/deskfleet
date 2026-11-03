@@ -1,6 +1,7 @@
 //! PostgreSQL control-plane storage. Independent from each daemon's SQLite catalog.
 mod ai_usage;
 pub mod billing;
+mod cloudflare_turn;
 mod github_app;
 mod history;
 mod identity;
@@ -18,6 +19,7 @@ mod teams;
 mod turn_settings;
 mod turn_usage;
 
+pub use cloudflare_turn::{CloudflareTurnConfig, CloudflareTurnUsageQuery};
 pub use github_app::{GithubAppAccess, GithubAppGrant, GithubAppStatus, GithubAppTokens};
 pub use identity::normalize_email;
 pub use machines::MachineRegistration;

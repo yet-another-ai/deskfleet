@@ -5,7 +5,7 @@ use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 
-async fn create_grant(fixture: &Fixture, state: web::Data<AppState>) -> Value {
+pub(super) async fn create_grant(fixture: &Fixture, state: web::Data<AppState>) -> Value {
     peers::create(
         request(&fixture.token),
         state,
