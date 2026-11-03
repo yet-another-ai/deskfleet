@@ -75,7 +75,7 @@ function refresh(): void {
       :aria-valuenow="width"
       :aria-valuemin="minimum"
       :aria-valuemax="maximum"
-      class="app-no-drag absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize after:pointer-events-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:bg-transparent after:transition-colors after:duration-125 after:ease-out after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus/50"
+      class="app-no-drag absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize after:pointer-events-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:bg-transparent after:transition-colors after:duration-[var(--ui-duration-fast)] after:ease-[var(--ui-ease-out)] after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus/50"
       :class="resizing && 'after:!bg-ui-focus/50'"
       @pointerdown="startResize"
       @keydown="keyResize"

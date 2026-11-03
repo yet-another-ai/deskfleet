@@ -29,7 +29,7 @@ export default defineComponent({
       <button
         v-if="closable"
         type="button"
-        class="ml-1 inline-flex h-5 w-5 items-center justify-center rounded text-ui-text-muted op-0 pointer-events-none transition-opacity duration-120 ease-out hover:bg-ui-hover hover:text-ui-text group-hover:op-100 group-hover:pointer-events-auto group-focus-within:op-100 group-focus-within:pointer-events-auto"
+        class="ml-1 inline-flex h-5 w-5 items-center justify-center rounded text-ui-text-muted op-0 pointer-events-none ui-motion hover:bg-ui-hover active:scale-90 hover:text-ui-text group-hover:op-100 group-hover:pointer-events-auto group-focus-within:op-100 group-focus-within:pointer-events-auto"
         :aria-label="closeLabel"
         @click.stop="$emit('close')"
       >

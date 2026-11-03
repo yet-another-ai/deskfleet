@@ -42,11 +42,11 @@ function restoreFocus(event: Event): void {
 </template>
 
 <style scoped>
+/* Scrim color, blur, and enter/exit motion live in styles.css. */
 .ui-dialog-overlay {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgb(12 14 20 / 45%);
 }
 .ui-dialog-content {
   position: fixed;

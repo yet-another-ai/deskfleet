@@ -224,7 +224,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
 .workspace-folder-icon,
 .workspace-collapse-icon,
 .workspace-actions {
-  transition: opacity 100ms ease-out, transform 100ms ease-out;
+  transition: opacity var(--ui-duration-instant) var(--ui-ease-out), transform var(--ui-duration-instant) var(--ui-ease-out);
 }
 
 .workspace-collapse-icon,

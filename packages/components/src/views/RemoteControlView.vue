@@ -71,8 +71,8 @@ const activeTerminal = computed({
     <TabsList :aria-label="t(controlLabel)" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border" loop>
       <TabsTrigger
         v-for="tab in availableTabs" :key="tab.id" :value="tab.id"
-        class="flex h-9 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13px]"
-        :class="active === tab.id ? 'border-ui-accent text-ui-accent' : 'border-transparent text-ui-text-muted hover:text-ui-text'"
+        class="ui-tab h-9 gap-2 px-3 text-[13px]"
+        :class="active === tab.id && 'ui-tab-active'"
       ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</TabsTrigger>
     </TabsList>
     <!-- Retain visited tools and their state; desktop capture stops when its tab is hidden. -->

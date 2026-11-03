@@ -23,7 +23,7 @@ async function copy(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="text || canFork" class="-my-1 flex opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+  <div v-if="text || canFork" class="-my-1 flex opacity-0 ui-motion group-hover:opacity-100 focus-within:opacity-100">
     <IconButton v-if="text" :icon="copied ? CircleCheck : Copy" :label="t(copied ? 'agent.copied' : 'agent.copy')" @click="copy" />
     <IconButton v-if="canFork" :icon="GitFork" :label="t('agent.fork')" :disabled="forkDisabled" @click="emit('fork')" />
   </div>

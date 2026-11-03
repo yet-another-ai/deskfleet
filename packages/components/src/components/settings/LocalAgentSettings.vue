@@ -34,9 +34,9 @@ const statusLabel = computed(() => {
 })
 const statusColor = computed(() => {
   switch (state.value?.status) {
-    case "running": return "bg-ui-success"
-    case "error": return "bg-ui-danger"
-    default: return "bg-ui-text-faint"
+    case "running": return "ui-status-live text-ui-success"
+    case "error": return "text-ui-danger"
+    default: return "text-ui-text-faint"
   }
 })
 const permissions = computed(() => {
@@ -91,7 +91,7 @@ onBeforeUnmount(unsubscribe)
   <SettingsRow :label="t('settings.runLocalAgent')" label-id="local-agent-label" description-id="local-agent-description">
     <template #description>{{ t("settings.stopsTerminals") }}</template>
     <span class="flex items-center gap-1.5 text-[13px] text-ui-text-muted">
-      <span class="h-1.5 w-1.5 rounded-full" :class="statusColor" aria-hidden="true" />
+      <span class="ui-status-dot" :class="statusColor" aria-hidden="true" />
       <span role="status">{{ statusLabel }}</span>
     </span>
     <UiButton v-if="state?.status === 'error'" type="button" :disabled="busy" @click="setEnabled(state.enabled)">{{ state.enabled ? t("settings.retryStart") : t("settings.retryStop") }}</UiButton>

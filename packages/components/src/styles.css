@@ -1,7 +1,7 @@
 @import "katex/dist/katex.min.css";
 @import "./theme-tokens.css";
 
-/* presetMini has no preflight; borders and controls start unstyled. */
+/* Base reset: borders and controls start unstyled. */
 *,
 ::before,
 ::after {
@@ -85,21 +85,287 @@ textarea {
   outline-offset: -2px;
 }
 
-/* All primitive overlays use the same restrained entry motion. */
-.ui-menu[data-state="open"],
-.ui-tooltip[data-state="delayed-open"],
-.ui-tooltip[data-state="instant-open"] {
-  animation: ui-overlay-in 120ms ease-out;
+::selection { background: var(--ui-color-selection); }
+
+/*
+ * Motion. Durations and easings come from theme-tokens.css; reduced motion
+ * collapses the durations there, and loops below stop outright.
+ */
+
+/* Popper overlays grow from their anchor and slide in from the side they open on. */
+.ui-menu,
+.ui-tooltip {
+  --ui-enter-x: 0px;
+  --ui-enter-y: 0px;
   transform-origin: var(--reka-popper-transform-origin, center);
 }
+:is(.ui-menu, .ui-tooltip)[data-side="bottom"] { --ui-enter-y: -4px; }
+:is(.ui-menu, .ui-tooltip)[data-side="top"] { --ui-enter-y: 4px; }
+:is(.ui-menu, .ui-tooltip)[data-side="left"] { --ui-enter-x: 4px; }
+:is(.ui-menu, .ui-tooltip)[data-side="right"] { --ui-enter-x: -4px; }
+.ui-menu[data-state="open"],
+.ui-tooltip:is([data-state="delayed-open"], [data-state="instant-open"]) {
+  animation: ui-overlay-in var(--ui-duration-base) var(--ui-ease-out);
+}
+/* Reka keeps closing overlays mounted until their exit animation ends. */
+:is(.ui-menu, .ui-tooltip)[data-state="closed"] {
+  animation: ui-overlay-out var(--ui-duration-instant) var(--ui-ease-in) forwards;
+}
+.ui-tooltip[data-state="instant-open"] { animation-duration: var(--ui-duration-fast); }
 
 @keyframes ui-overlay-in {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; translate: var(--ui-enter-x) var(--ui-enter-y); scale: 0.96; }
+}
+@keyframes ui-overlay-out {
+  to { opacity: 0; scale: 0.97; }
+}
+
+/* Dialogs: the scrim dims and blurs the app; the panel settles forward. */
+.ui-dialog-overlay {
+  background: var(--ui-color-scrim);
+  backdrop-filter: blur(3px) saturate(120%);
+}
+.ui-dialog-overlay[data-state="open"] { animation: ui-fade-in var(--ui-duration-base) var(--ui-ease-out); }
+.ui-dialog-overlay[data-state="closed"] { animation: ui-fade-out var(--ui-duration-fast) var(--ui-ease-in) forwards; }
+.ui-dialog-content[data-state="open"] { animation: ui-dialog-in var(--ui-duration-slow) var(--ui-ease-out); }
+.ui-dialog-content[data-state="closed"] { animation: ui-dialog-out var(--ui-duration-fast) var(--ui-ease-in) forwards; }
+
+@keyframes ui-fade-in { from { opacity: 0; } }
+@keyframes ui-fade-out { to { opacity: 0; } }
+@keyframes ui-dialog-in {
+  from { opacity: 0; scale: 0.96; translate: 0 8px; }
+}
+@keyframes ui-dialog-out {
+  to { opacity: 0; scale: 0.98; }
+}
+
+/* Routed content fades up as it replaces the previous page. */
+.ui-route-stage > * {
+  animation: ui-route-in var(--ui-duration-slow) var(--ui-ease-out);
+}
+/* Title bars stay put so their drag regions never move under the pointer. */
+.ui-route-stage > header { animation-name: ui-fade-in; }
+@keyframes ui-route-in {
+  from { opacity: 0; translate: 0 6px; }
+}
+
+/* Generic entrances for content that appears while the user watches. */
+.ui-rise-in { animation: ui-rise-in var(--ui-duration-slow) var(--ui-ease-out); }
+.ui-pop-in { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
+@keyframes ui-rise-in {
+  from { opacity: 0; translate: 0 8px; scale: 0.99; }
+}
+@keyframes ui-pop-in {
+  from { opacity: 0; scale: 0.85; }
+}
+
+/* Filled buttons: a sheen and tinted shadow that deepen on hover. */
+:is(.ui-button-primary):not(:disabled) {
+  background-image: var(--ui-gloss);
+  box-shadow: var(--ui-shadow-action);
+}
+:is(.ui-button-primary):not(:disabled, [aria-disabled="true"]):hover {
+  box-shadow: var(--ui-shadow-action), 0 6px 16px -6px color-mix(in srgb, var(--ui-color-action) 55%, transparent);
+}
+
+/* Switch: the thumb springs across and stretches while held, like a native toggle. */
+.ui-switch-thumb {
+  transition-property: transform, translate, left, width;
+  transition-duration: var(--ui-duration-base);
+  transition-timing-function: var(--ui-ease-spring);
+}
+.ui-switch:enabled:active .ui-switch-thumb { width: 1.25rem; }
+.ui-switch:enabled:active .ui-switch-thumb[data-state="checked"] { left: -0.125rem; }
+
+/* Checkbox marks pop in. */
+.ui-check-indicator > svg { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
+
+/* Radios: the checked ring tints and its dot springs in. */
+[role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); }
+[data-state="checked"] > .ui-radio {
+  border-color: var(--ui-color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-color-accent) 16%, transparent);
+}
+.ui-radio-dot { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
+
+/* Status dots sit in a soft halo of their own color; live ones send out a slow ping. */
+.ui-status-dot { box-shadow: 0 0 0 2.5px color-mix(in srgb, currentColor 18%, transparent); }
+.ui-status-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: ui-status-ping 2.4s var(--ui-ease-out) infinite;
+}
+@keyframes ui-status-ping {
+  from { opacity: 0.55; scale: 1; }
+  60%, to { opacity: 0; scale: 3; }
+}
+
+/* Meters: the fill grows in from the left, eases between values, and carries a light sheen. */
+.ui-meter-fill {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 70%);
+  transform-origin: left;
+  transition: width var(--ui-duration-slow) var(--ui-ease-out), background-color var(--ui-duration-base) var(--ui-ease-out);
+  animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out);
+}
+@keyframes ui-meter-in { from { scale: 0 1; } }
+/*
+ * Progress without a known value: a segment sweeps across the track. The
+ * grow-in stays first in the list so it is not restarted when the sweep is
+ * added or removed; a changed animation list replays only new names.
+ */
+.ui-meter-fill.ui-meter-indeterminate {
+  width: 40%;
+  animation:
+    ui-meter-in var(--ui-duration-slow) var(--ui-ease-out),
+    ui-meter-sweep 1.3s var(--ui-ease-in-out) infinite;
+}
+@keyframes ui-meter-sweep {
+  from { translate: -100% 0; }
+  to { translate: 250% 0; }
+}
+
+/* Tabs: the active underline grows from its center; hovering an inactive tab hints at it. */
+.ui-tab::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ui-color-accent);
+  opacity: 0;
+  scale: 0.4 1;
+  transition:
+    scale var(--ui-duration-base) var(--ui-ease-out),
+    opacity var(--ui-duration-fast) var(--ui-ease-out),
+    background-color var(--ui-duration-fast) var(--ui-ease-out);
+}
+.ui-tab:not(.ui-tab-active):hover::after {
+  opacity: 1;
+  scale: 1;
+  background: var(--ui-color-border-strong);
+}
+.ui-tab-active::after { opacity: 1; scale: 1; }
+
+/* A selected navigation item or segment settles into place. */
+.ui-nav-active,
+.ui-segment-active { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
+@keyframes ui-nav-select {
+  from { background-color: transparent; scale: 0.97; }
+}
+
+/* An empty state's leading icon sits in a soft accent halo. */
+.ui-empty > svg:first-child {
+  box-sizing: content-box;
+  padding: 0.625rem;
+  border-radius: 9999px;
+  color: var(--ui-color-accent);
+  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--ui-color-accent) 22%, transparent), color-mix(in srgb, var(--ui-color-accent) 8%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-color-accent) 18%, transparent);
+}
+
+/*
+ * Disclosures in the conversation open and close smoothly. The animated element
+ * must stay a bare shell: under border-box sizing, its height can't shrink below
+ * its own padding and border, and its margins would jump when it unmounts. Put
+ * spacing, borders, and backgrounds on a child.
+ */
+.ui-collapsible { overflow: hidden; }
+.ui-collapsible[data-state="open"] { animation: ui-collapsible-open var(--ui-duration-base) var(--ui-ease-out); }
+/* Hold the collapsed end state until Reka unmounts the content. */
+.ui-collapsible[data-state="closed"] { animation: ui-collapsible-close var(--ui-duration-fast) var(--ui-ease-in-out) forwards; }
+@keyframes ui-collapsible-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--reka-collapsible-content-height); }
+}
+@keyframes ui-collapsible-close {
+  from { height: var(--reka-collapsible-content-height); }
+  to { height: 0; opacity: 0; }
+}
+
+/* Live status text: a band of light sweeps across while work continues. */
+.ui-shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    currentColor 0% 40%,
+    color-mix(in srgb, currentColor 15%, var(--ui-color-text)) 50%,
+    currentColor 60% 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: ui-shimmer 2.2s linear infinite;
+}
+@keyframes ui-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+
+/* Requests that need a decision ring out twice when they arrive. */
+.ui-attention {
+  animation:
+    ui-rise-in var(--ui-duration-slow) var(--ui-ease-out),
+    ui-attention 1.6s var(--ui-ease-out) var(--ui-duration-slow) 2;
+}
+@keyframes ui-attention {
+  from { box-shadow: var(--ui-shadow-card), 0 0 0 0 color-mix(in srgb, var(--ui-color-warning) 40%, transparent); }
+  to { box-shadow: var(--ui-shadow-card), 0 0 0 10px transparent; }
+}
+
+/* Ambient color behind hero content: two slow-drifting radial blooms. */
+.ui-aurora {
+  --ui-aurora-a: light-dark(color-mix(in srgb, var(--ui-color-accent) 14%, transparent), color-mix(in srgb, var(--ui-color-accent) 20%, transparent));
+  --ui-aurora-b: light-dark(color-mix(in srgb, var(--ui-color-accent-alt) 10%, transparent), color-mix(in srgb, var(--ui-color-accent-alt) 14%, transparent));
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: -1;
+}
+.ui-aurora::before,
+.ui-aurora::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(30rem, 80%);
+  aspect-ratio: 1.5;
+  filter: blur(40px);
+  animation: ui-aurora-drift 18s var(--ui-ease-in-out) infinite alternate;
+}
+.ui-aurora::before {
+  background: radial-gradient(closest-side, var(--ui-aurora-a), transparent);
+  translate: -62% -58%;
+}
+.ui-aurora::after {
+  background: radial-gradient(closest-side, var(--ui-aurora-b), transparent);
+  translate: -36% -42%;
+  animation-delay: -9s;
+  animation-direction: alternate-reverse;
+}
+@keyframes ui-aurora-drift {
+  from { transform: translate(-5%, 4%) scale(1) rotate(0deg); }
+  to { transform: translate(7%, -5%) scale(1.12) rotate(10deg); }
+}
+
+/* Headline text with a soft vertical tint. */
+.ui-gradient-text {
+  background-image: linear-gradient(180deg, var(--ui-color-text) 30%, color-mix(in srgb, var(--ui-color-text) 55%, var(--ui-color-accent)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ui-menu, .ui-tooltip { animation: none !important; }
+  .ui-shimmer-text, .ui-aurora::before, .ui-aurora::after, .ui-attention, .ui-status-live::after { animation: none !important; }
+  .ui-attention { box-shadow: var(--ui-shadow-card); }
+  .ui-status-live::after { display: none; }
+  /* Without the sweep, indeterminate progress reads as a dimmed full track. */
+  .ui-meter-fill.ui-meter-indeterminate { width: 100%; opacity: 0.6; animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out) !important; }
 }
 
 /* Agent-authored Markdown in the conversation. */

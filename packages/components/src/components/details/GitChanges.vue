@@ -121,7 +121,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
                     :title="row.path"
                     @click="toggleDirectory(directoryKey(repository.id, group.kind, row.path))"
                   >
-                    <ChevronRight :size="14" :stroke-width="1.75" class="shrink-0 transition-transform" :class="!row.collapsed && 'rotate-90'" aria-hidden="true" />
+                    <ChevronRight :size="14" :stroke-width="1.75" class="shrink-0 ui-motion" :class="!row.collapsed && 'rotate-90'" aria-hidden="true" />
                     <span class="truncate">{{ row.name }}</span>
                   </button>
                   <GitChangeFile

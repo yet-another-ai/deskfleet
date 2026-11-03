@@ -38,7 +38,7 @@ useEventListener(window, "keydown", leaveOnEscape)
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
       <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-6 sm:px-5 md:px-8 md:pt-0 lg:px-14">
-        <div class="mx-auto" :class="wide ? 'max-w-6xl' : 'max-w-3xl'">
+        <div class="ui-route-stage mx-auto" :class="wide ? 'max-w-6xl' : 'max-w-3xl'">
           <slot />
         </div>
       </div>

@@ -102,7 +102,7 @@ async function submit(): Promise<void> {
       </label>
       <p v-if="!workspaces.length" role="status" class="m-0 text-[13px] text-ui-text-muted">{{ t('schedules.noWorkspace') }}</p>
       <RadioGroupRoot :model-value="destination" name="schedule-target" :disabled="blocked" :aria-label="t('schedules.runIn')" class="grid gap-2 sm:grid-cols-3" @update:model-value="destination = $event as Destination">
-        <RadioGroupItem v-for="option in DESTINATIONS" :key="option.value" :value="option.value" class="relative flex cursor-pointer gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors" :class="[destination === option.value ? 'border-ui-accent/60 bg-ui-accent/6' : 'border-ui-border bg-ui-surface hover:border-ui-border-strong', blocked && 'cursor-default op-60']">
+        <RadioGroupItem v-for="option in DESTINATIONS" :key="option.value" :value="option.value" class="relative flex cursor-pointer gap-2.5 rounded-xl border px-3 py-2.5 text-left ui-motion" :class="[destination === option.value ? 'border-ui-accent/60 bg-ui-accent/6' : 'border-ui-border bg-ui-surface hover:border-ui-border-strong', blocked && 'cursor-default op-60']">
           <component :is="option.icon" :size="16" :stroke-width="1.75" class="mt-0.5 shrink-0" :class="destination === option.value ? 'text-ui-accent' : 'text-ui-text-muted'" aria-hidden="true" />
           <span class="min-w-0">
             <span class="block text-sm font-medium">{{ t(`schedules.destination.${option.value}`) }}</span>

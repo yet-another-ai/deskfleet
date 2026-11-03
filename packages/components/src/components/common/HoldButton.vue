@@ -53,15 +53,15 @@ onBeforeUnmount(() => clearHold(false))
     <span
       class="pointer-events-none absolute inset-y-0 left-0"
       :class="variant === 'danger' ? 'bg-ui-danger/20' : 'bg-ui-active'"
-      :style="{ width: holding ? '100%' : '0%', transition: holding ? `width ${holdDurationMs}ms linear` : 'width 200ms ease-out' }"
+      :style="{ width: holding ? '100%' : '0%', transition: holding ? `width ${holdDurationMs}ms linear` : 'width var(--ui-duration-base) var(--ui-ease-out)' }"
       aria-hidden="true"
     />
     <span
-      class="relative z-10 inline-block h-5 leading-5 overflow-hidden whitespace-nowrap align-middle transition-[width] duration-200 ease-out"
+      class="relative z-10 inline-block h-5 leading-5 overflow-hidden whitespace-nowrap align-middle transition-[width] duration-[var(--ui-duration-base)] ease-[var(--ui-ease-out)]"
       :style="labelWidth ? { width: `${labelWidth}px` } : undefined"
     >
-      <span :class="[labelWidth && 'absolute inset-0', 'transition-opacity duration-150', showingHold ? 'opacity-0' : 'opacity-100']" aria-hidden="true">{{ text }}</span>
-      <span class="absolute inset-0 transition-opacity duration-150" :class="showingHold ? 'opacity-100' : 'opacity-0'" aria-hidden="true">{{ holdLabel }}</span>
+      <span :class="[labelWidth && 'absolute inset-0', 'transition-opacity duration-[var(--ui-duration-fast)]', showingHold ? 'opacity-0' : 'opacity-100']" aria-hidden="true">{{ text }}</span>
+      <span class="absolute inset-0 transition-opacity duration-[var(--ui-duration-fast)]" :class="showingHold ? 'opacity-100' : 'opacity-0'" aria-hidden="true">{{ holdLabel }}</span>
       <span ref="textMeasure" class="pointer-events-none invisible absolute whitespace-nowrap" aria-hidden="true">{{ text }}</span>
       <span ref="holdMeasure" class="pointer-events-none invisible absolute whitespace-nowrap" aria-hidden="true">{{ holdLabel }}</span>
     </span>

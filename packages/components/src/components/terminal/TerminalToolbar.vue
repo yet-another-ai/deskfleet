@@ -88,9 +88,9 @@ defineExpose({ openSearch: () => search.value?.open(), searchOpen: computed(() =
           :aria-valuemax="100"
           class="h-1 w-16 shrink-0 overflow-hidden rounded bg-ui-hover"
         ><div
-          class="h-full rounded"
-          :class="[progress.state === 2 ? 'bg-ui-danger' : progress.state === 4 ? 'bg-ui-warning' : 'bg-ui-accent', progress.state === 3 && 'animate-pulse']"
-          :style="{ width: progress.state === 3 ? '100%' : `${progress.value}%` }"
+          class="ui-meter-fill rounded"
+          :class="[progress.state === 2 ? 'bg-ui-danger' : progress.state === 4 ? 'bg-ui-warning' : 'bg-ui-accent', progress.state === 3 && 'ui-meter-indeterminate']"
+          :style="progress.state === 3 ? undefined : { width: `${progress.value}%` }"
         /></div>
         <span class="truncate" :title="progressLabel">{{ progressLabel }}</span>
       </template>

@@ -75,7 +75,7 @@ defineExpose({ launchError })
       <div v-if="split && primaryApplication" class="app-no-drag inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-md border border-ui-border bg-transparent text-xs font-medium text-ui-text-muted">
         <button
           type="button"
-          class="inline-flex cursor-pointer items-center gap-1.5 px-2 text-ui-text-muted transition-colors enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:cursor-default disabled:op-40"
+          class="inline-flex cursor-pointer items-center gap-1.5 px-2 text-ui-text-muted ui-motion enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:cursor-default disabled:op-40"
           :disabled="disabled || launching"
           :aria-busy="launching || undefined"
           @click="launch(primaryApplication)"
@@ -85,7 +85,7 @@ defineExpose({ launchError })
           <span>{{ applicationName(primaryApplication) }}</span>
         </button>
         <DropdownMenuTrigger
-          class="inline-flex w-6 shrink-0 cursor-pointer items-center justify-center border-l border-ui-border px-1 text-ui-text-muted transition-colors enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:cursor-default disabled:op-40"
+          class="inline-flex w-6 shrink-0 cursor-pointer items-center justify-center border-l border-ui-border px-1 text-ui-text-muted ui-motion enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:cursor-default disabled:op-40"
           :disabled="disabled || launching"
           :aria-label="label"
           :title="label"

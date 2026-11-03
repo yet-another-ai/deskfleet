@@ -25,12 +25,12 @@ const name = (id: string, value: string) => id === "unknown" ? t(props.dimension
       <AiUsageChart :buckets="usage.buckets" :groups="groups" :dimension="dimension" :period="usage.period" :time-zone="usage.timeZone" />
     </div>
     <div class="border-t border-ui-border px-5 py-4 sm:px-6">
-      <div v-if="usage.totals.totalTokens > 0" class="mb-4 flex h-1.5 overflow-hidden rounded-full bg-ui-hover" aria-hidden="true">
-        <span v-for="(group, index) in groups" :key="group.id" :style="{ width: `${group.totalTokens / usage.totals.totalTokens * 100}%`, background: AI_USAGE_COLORS[index % AI_USAGE_COLORS.length] }" />
+      <div v-if="usage.totals.totalTokens > 0" class="ui-meter mb-4 flex" aria-hidden="true">
+        <span v-for="(group, index) in groups" :key="group.id" class="ui-meter-fill rounded-none" :style="{ width: `${group.totalTokens / usage.totals.totalTokens * 100}%`, backgroundColor: AI_USAGE_COLORS[index % AI_USAGE_COLORS.length] }" />
       </div>
       <ul class="flex flex-wrap gap-x-5 gap-y-3 text-xs">
         <li v-for="(group, index) in groups" :key="group.id" class="flex min-w-0 items-center gap-2">
-          <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: AI_USAGE_COLORS[index % AI_USAGE_COLORS.length] }" />
+          <span class="ui-status-dot h-2 w-2" :style="{ color: AI_USAGE_COLORS[index % AI_USAGE_COLORS.length] }" />
           <span class="break-all text-ui-text-muted">{{ name(group.id, group.name) }}</span>
           <span class="shrink-0 tabular-nums">{{ group.reportedTurnCount ? format(group.totalTokens) : "—" }}</span>
           <span v-if="group.reportedTurnCount && usage.totals.totalTokens" class="shrink-0 text-ui-text-muted tabular-nums">{{ percent(group.totalTokens) }}</span>

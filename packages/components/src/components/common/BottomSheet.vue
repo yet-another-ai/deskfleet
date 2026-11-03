@@ -21,7 +21,7 @@ function focusPanel(event: Event): void {
 <template>
   <DrawerRoot :open="open" swipe-direction="down" @update:open="!$event && emit('close')">
     <DrawerPortal>
-      <DrawerOverlay class="bottom-sheet-overlay fixed inset-0 z-50 bg-black/45" />
+      <DrawerOverlay class="bottom-sheet-overlay fixed inset-0 z-50 bg-ui-scrim backdrop-blur-[3px]" />
       <DrawerContent
         :aria-describedby="undefined"
         :final-focus="opener"

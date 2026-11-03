@@ -295,7 +295,7 @@ onBeforeUnmount(() => {
         </template>
       </template>
       <template v-else-if="location.worktree">
-        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted transition-colors hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
+        <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted ui-motion hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
           <FolderOpen v-if="location.session?.context === 'directory'" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <GitBranch v-else :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="truncate">{{ checkoutLabel }}</span>
@@ -304,7 +304,7 @@ onBeforeUnmount(() => {
       <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :disabled="submitting" @busy="preparing = $event" />
       <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
     </div>
-    <div ref="dropZoneRef" class="relative rounded-2xl border bg-ui-surface shadow-ui-card transition-colors focus-within:border-ui-accent/60" :class="isOverDropZone ? 'border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
+    <div ref="dropZoneRef" class="composer-shell relative rounded-2xl border bg-ui-surface shadow-ui-card ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
       <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
@@ -314,7 +314,7 @@ onBeforeUnmount(() => {
           :key="item.id"
           :data-preview="itemPreview(item) ? item.id : undefined"
           :data-preview-content="itemPreview(item)?.content"
-          class="inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          class="ui-pop-in inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs"
           :data-attachment-kind="item.kind"
         >
           <img
@@ -340,7 +340,7 @@ onBeforeUnmount(() => {
         </li>
       </ul>
       <ul v-if="mentions.length" class="m-0 flex list-none flex-wrap gap-2 px-3 pt-3 pb-0" :aria-label="t('composer.completions.references')" data-composer-mentions>
-        <li v-for="mention in mentions" :key="mention.id" class="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs" :data-mention-kind="mention.reference.kind">
+        <li v-for="mention in mentions" :key="mention.id" class="ui-pop-in inline-flex max-w-full items-center gap-1.5 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs" :data-mention-kind="mention.reference.kind">
           <component :is="mention.reference.kind === 'file' ? File : mention.reference.kind === 'session' ? MessageSquare : Sparkles" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="truncate text-ui-text" :title="mention.token">{{ mention.token }}</span>
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
@@ -369,8 +369,8 @@ onBeforeUnmount(() => {
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
           <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
-          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" aria-hidden="true" /></UiButton>
+          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
@@ -388,6 +388,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .session-composer { container-type: inline-size; }
+
+/* The composer lifts into focus with an accent glow, and glows while files hover over it. */
+.composer-shell:is(:focus-within, .composer-dropping) { box-shadow: var(--ui-shadow-card), var(--ui-shadow-glow); }
+
+/* Send springs forward when it becomes available; its arrow nudges up on hover. */
+.composer-send:enabled { animation: composer-send-ready var(--ui-duration-slow) var(--ui-ease-spring); }
+.composer-send-arrow { transition: translate var(--ui-duration-fast) var(--ui-ease-out); }
+.composer-send:enabled:hover .composer-send-arrow { translate: 0 -1px; }
+@keyframes composer-send-ready {
+  from { scale: 0.8; }
+}
 
 @container (max-width: 36rem) {
   .composer-context { height: auto; min-height: 2.25rem; flex-wrap: wrap; row-gap: 0.25rem; padding-block: 0.25rem; }

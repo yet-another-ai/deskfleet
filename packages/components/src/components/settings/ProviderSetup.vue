@@ -63,7 +63,7 @@ const summary = computed((): { tone: "success" | "warning" | "danger" | "muted";
     detail: found.installable && !custom.value ? t("providers.setup.missingDetail", { machine: props.machineName }) : found.installMessage,
   }
 })
-const dot = { success: "bg-ui-success", warning: "bg-ui-warning", danger: "bg-ui-danger", muted: "bg-ui-text-faint" }
+const dot = { success: "text-ui-success", warning: "text-ui-warning", danger: "text-ui-danger", muted: "text-ui-text-faint" }
 let revision = 0
 let disposed = false
 let resumeProbe = false
@@ -200,7 +200,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
         <p role="status" class="m-0 min-w-0 flex-1 text-ui-text-muted">{{ t("providers.setup.probing", { machine: machineName }) }}</p>
       </template>
       <template v-else-if="summary">
-        <span class="h-2 w-2 shrink-0 rounded-full" :class="dot[summary.tone]" aria-hidden="true" />
+        <span class="ui-status-dot h-2 w-2" :class="dot[summary.tone]" aria-hidden="true" />
         <div role="status" class="min-w-0 flex-1" :data-provider-status="probeError ? 'error' : result?.status">
           <p class="m-0 font-medium" :title="result?.binaryPath">{{ summary.title }}</p>
           <p v-if="summary.detail" class="m-0 mt-0.5 break-words text-xs text-ui-text-muted" data-provider-status-detail>{{ summary.detail }}</p>

@@ -32,7 +32,7 @@ const summary = computed(() => {
         <div class="flex items-center gap-2.5">
           <h1 class="ui-page-title truncate">{{ task.title }}</h1>
           <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 text-xs leading-5" :class="status === 'active' ? 'bg-ui-success/12 text-ui-success' : 'bg-ui-badge text-ui-text-muted'">
-            <span v-if="status === 'active'" class="h-1.5 w-1.5 rounded-full bg-ui-success" aria-hidden="true" />{{ t(`schedules.status.${status}`) }}
+            <span v-if="status === 'active'" class="ui-status-dot ui-status-live text-ui-success" aria-hidden="true" />{{ t(`schedules.status.${status}`) }}
           </span>
         </div>
         <p class="m-0 mt-1.5 text-[13px] text-ui-text-muted">{{ summary }}</p>

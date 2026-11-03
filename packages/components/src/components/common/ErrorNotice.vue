@@ -18,7 +18,7 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
 </script>
 
 <template>
-  <div role="alert" class="min-w-0 rounded-lg border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
+  <div role="alert" class="ui-rise-in min-w-0 rounded-lg border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
     <div class="flex items-start gap-2.5">
       <CircleAlert :size="17" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-danger" aria-hidden="true" />
       <div class="min-w-0 flex-1">
@@ -29,8 +29,8 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
           <slot />
         </div>
         <details v-if="detail" :key="detail" class="group mt-3 text-xs text-ui-text-muted">
-          <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm hover:text-ui-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent">
-            <ChevronRight :size="13" class="shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />{{ t("errors.details") }}
+          <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm ui-motion hover:text-ui-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent">
+            <ChevronRight :size="13" class="shrink-0 ui-motion duration-[var(--ui-duration-base)] group-open:rotate-90" aria-hidden="true" />{{ t("errors.details") }}
           </summary>
           <pre class="mb-0 mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-ui-canvas/70 p-2 font-mono text-[11px] leading-relaxed" style="overflow-wrap: anywhere">{{ detail }}</pre>
         </details>
