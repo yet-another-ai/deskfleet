@@ -11,10 +11,34 @@ use x11rb::rust_connection::RustConnection;
 
 use crate::{Capture, Error, InputConnection, display, keys};
 
+/// CI's disposable Xvfb can briefly refuse a new client between serial cases
+/// (`Connection reset by peer` / `Connection refused`) even with `-noreset`.
+/// Retry only those transient socket failures so a real X11 bug still fails.
+fn connect_display() -> RustConnection {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match display::connect() {
+            Ok(connection) => return connection,
+            Err(Error::Unavailable(message))
+                if message.contains("Connection reset")
+                    || message.contains("Connection refused")
+                    || message.contains("No such file or directory") =>
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "X11 connect kept failing transiently: {message}"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => panic!("unexpected X11 connect failure: {error}"),
+        }
+    }
+}
+
 #[test]
 #[ignore = "operates a disposable Xvfb server"]
 fn x11_capture_reads_real_window_pixels_and_stop_is_bounded() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     let window = connection.generate_id().unwrap();
     connection
@@ -76,7 +100,7 @@ fn x11_capture_reads_real_window_pixels_and_stop_is_bounded() {
 #[test]
 #[ignore = "injects events into a disposable Xvfb server"]
 fn x11_input_moves_pointer_and_releases_held_keys_and_buttons_on_drop() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     let mut input = InputConnection::new(source.id).unwrap();
     input.move_pointer(0.25, 0.75).unwrap();
@@ -161,7 +185,7 @@ impl Drop for RestoreCrtc<'_> {
 #[test]
 #[ignore = "temporarily disables an output on a disposable Xvfb server"]
 fn x11_monitor_removal_invalidates_capture_and_latches_input_failure() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     let resources = connection
         .randr_get_screen_resources_current(source.root)
@@ -229,7 +253,7 @@ fn x11_monitor_removal_invalidates_capture_and_latches_input_failure() {
 #[test]
 #[ignore = "injects scroll into a disposable Xvfb server"]
 fn x11_wheel_preserves_partial_deltas_and_emits_one_tick() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     connection
         .change_window_attributes(
@@ -273,7 +297,7 @@ impl Drop for ReleaseServer<'_> {
 #[test]
 #[ignore = "briefly grabs a disposable Xvfb server"]
 fn x11_stop_interrupts_capture_waiting_for_a_server_reply() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     let capture = Capture::new(source.id, 60.0, false).unwrap();
     capture.next_frame(Duration::from_secs(2)).unwrap().unwrap();
@@ -298,7 +322,7 @@ fn x11_stop_interrupts_capture_waiting_for_a_server_reply() {
 #[test]
 #[ignore = "briefly grabs a disposable Xvfb server"]
 fn x11_probe_cancels_stalled_handshake_and_existing_connection_queries() {
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     connection.grab_server().unwrap().check().unwrap();
     let release = ReleaseServer(&connection);
     let started = Instant::now();
@@ -329,7 +353,7 @@ fn x11_probe_cancels_stalled_handshake_and_existing_connection_queries() {
 fn x11_input_and_held_state_cleanup_stop_when_server_replies_stall() {
     use x11rb::protocol::xtest::ConnectionExt as _;
 
-    let connection = display::connect().unwrap();
+    let connection = connect_display();
     let source = display::enumerate(&connection).unwrap().remove(0);
     let mut input = InputConnection::new(source.id).unwrap();
     connection.grab_server().unwrap().check().unwrap();

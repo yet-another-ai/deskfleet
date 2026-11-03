@@ -81,7 +81,9 @@ a stable `Gate` result for branch protection.
   changes skip it alongside Build. Publish also requires it before creating the
   draft or pushing the server image. It needs no AUR credentials.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
-  and configures shared caches for the Test and Build workflows.
+  and configures shared caches for the Test and Build workflows. The locked
+  toolchain install retries once after a transient failure: hosted macOS runners
+  have SIGKILL'd rustup during the first attempt.
 
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
 server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains

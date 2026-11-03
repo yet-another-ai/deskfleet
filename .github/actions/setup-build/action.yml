@@ -38,7 +38,12 @@ runs:
       shell: bash
       run: echo 'MISE_URL_REPLACEMENTS={"https://nodejs.org/dist/":"https://cdn.npmmirror.com/binaries/node/"}' >> "$GITHUB_ENV"
 
+    # Hosted macOS runners occasionally SIGKILL rustup during the first mise
+    # install (Cluster C). Retry once before failing the job; real toolchain
+    # problems still fail on the second attempt.
     - name: Install locked toolchain
+      id: mise
+      continue-on-error: true
       uses: jdx/mise-action@v5
       with:
         version: 2026.10.25
@@ -53,6 +58,26 @@ runs:
         cache_save_retry_budget: 120s
         # An explicit empty input suppresses mise-action's automatic token default.
         github_token: ${{ inputs.github-token }}
+
+    - name: Retry locked toolchain install
+      id: mise-retry
+      if: steps.mise.outcome == 'failure'
+      uses: jdx/mise-action@v5
+      with:
+        version: 2026.10.25
+        install_args: --locked
+        cache: true
+        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
+        cache_restore_retry_budget: 120s
+        cache_save_retry_budget: 120s
+        github_token: ${{ inputs.github-token }}
+
+    - name: Require locked toolchain
+      if: steps.mise.outcome == 'failure' && steps.mise-retry.outcome != 'success'
+      shell: bash
+      run: |
+        echo "::error::Locked toolchain install failed after one retry."
+        exit 1
 
     - name: Locate LLVM for NVENC bindings
       if: runner.os == 'Windows'
