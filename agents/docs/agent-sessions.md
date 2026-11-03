@@ -503,8 +503,10 @@ and rejects watermarks beyond its journal, so a delayed acknowledgement cannot
 hide a newer completion. `_deskfleet/session/unread` lets a person mark that
 latest completion unread again by rewinding `lastReadSeq` to the sequence
 immediately before it. A conversation that already displayed the completion
-does not acknowledge it again, so the mark remains until the conversation is
-opened again or a newer completion is displayed. The acknowledgement and unread
+does not acknowledge it again. Leaving that conversation starts a new visit
+even when the next Session is still loading or has no completion, and opening
+it again acknowledges the mark. A newer completion displayed during the same
+visit is acknowledged too. The acknowledgement and unread
 mark are shared by all viewers, survive restart, and are included in
 synchronized history and central Session summaries.
 Ordinary subscriptions, history reads, and agent MCP reads do not acknowledge

@@ -3,7 +3,7 @@ import { computed, toValue, watch, type MaybeRefOrGetter } from "vue"
 import { sessionIsUnread } from "../services/agent-conversation.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 
-/** A mounted conversation acknowledges each displayed completion once, so an explicit unread mark stays until it is opened again. */
+/** A mounted conversation acknowledges each displayed completion once per visit. Leaving for another Session starts a new visit, so an explicit unread mark stays only while this conversation remains open. */
 export function useSessionRead(sessionId: MaybeRefOrGetter<string>): void {
   const agents = useAgentSessionsStore()
   const visibility = useDocumentVisibility()
@@ -17,7 +17,8 @@ export function useSessionRead(sessionId: MaybeRefOrGetter<string>): void {
   })
   let seen: { id: string; seq: string } | undefined
   watch([() => toValue(sessionId), displayedCompletion], ([id, seq]) => {
-    if (!seq || (seen?.id === id && seen.seq === seq)) return
+    if (seen?.id !== id) seen = undefined
+    if (!seq || seen?.seq === seq) return
     seen = { id, seq }
     if (!sessionIsUnread(agents.views[id]?.snapshot?.session)) return
     // Failed acknowledgements remain in the Session's existing operation retry UI.
