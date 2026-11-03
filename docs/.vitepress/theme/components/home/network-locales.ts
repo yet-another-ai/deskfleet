@@ -2,7 +2,7 @@ import type { AppLocale } from "@deskfleet/client/i18n"
 
 const enUS = {
   title: "Around the world. Within reach.",
-  lead: "Global acceleration nodes provided by yetanother.ai and Cloudflare.",
+  lead: "Worldwide TURN nodes speed up your network access.",
   ownedTitle: "Acceleration node provided by yetanother.ai",
   anycastTitle: "Acceleration node provided by Cloudflare",
   cities: { tokyo: "Tokyo", frankfurt: "Frankfurt", shanghai: "Shanghai", hongkong: "Hong Kong" },
@@ -24,7 +24,7 @@ const zhCmnHansCN: typeof enUS = {
 
 const jaJP: typeof enUS = {
   title: "世界のどこでも、すぐそばに。",
-  lead: "yetanother.ai と Cloudflare が提供するグローバル高速接続ノード。",
+  lead: "世界中の TURN ノードで、ネットワークアクセスを高速化。",
   ownedTitle: "yetanother.ai が提供する高速接続ノード",
   anycastTitle: "Cloudflare が提供する高速接続ノード",
   cities: { tokyo: "東京", frankfurt: "フランクフルト", shanghai: "上海", hongkong: "香港" },
