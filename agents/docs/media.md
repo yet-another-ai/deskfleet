@@ -477,6 +477,9 @@ encoder startup may close the peer before returning its classified failure.
 A successful RPC still surfaces any
 pending transport failure. Revocation, expiry, and explicit window closure
 remain immediate, and the existing startup deadline bounds the wait.
+The native window emits `closeRequested` before shutting down its transport.
+Electron treats this user action as immediate cancellation even after a deferred
+transport failure; the final process `closed` notification remains separate.
 
 Capture startup waits for both the native peer's connection and its explicit
 acknowledgement that the SDP answer was applied. Local ICE candidates wait for

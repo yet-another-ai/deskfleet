@@ -224,6 +224,9 @@ impl ApplicationHandler<WindowEvent> for Viewer {
         }
         match event {
             NativeEvent::CloseRequested => {
+                // User intent must reach Electron before transport shutdown emits
+                // errors/closed, which may be held for an in-flight startup RPC.
+                let _ = protocol::emit(json!({"type":"closeRequested"}));
                 let _ = self.input.send(InputEvent::ReleaseAll);
                 self.shutdown.send_replace(true);
                 event_loop.exit();

@@ -14,7 +14,7 @@ export type ViewerEvent =
   | { type: "capabilities"; codecs: VideoCodec[] }
   | { type: "offer"; sdp: string }
   | { type: "candidate"; candidate: IceCandidate }
-  | { type: "answerApplied" | "inputReady" | "videoReady" | "connected" | "disconnected" | "closed" }
+  | { type: "answerApplied" | "inputReady" | "videoReady" | "connected" | "disconnected" | "closeRequested" | "closed" }
   | { type: "error"; error: string; reason?: "decoder" }
   | { type: "stats"; decodedFrames: number; submittedFrames: number; droppedFrames: number; width: number; height: number }
 
@@ -206,6 +206,7 @@ function openAttempt(
           else transportFailed(error)
           break
         }
+        case "closeRequested": void close().catch(fail); break
         case "closed":
           if (startPending && startFailure) break
           void close().catch(fail); break

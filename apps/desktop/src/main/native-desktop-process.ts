@@ -46,7 +46,7 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
           if (typeof value.error !== "string") throw new Error("Invalid native desktop error")
           if (value.reason !== undefined && value.reason !== "decoder") throw new Error("Invalid native desktop error reason")
           break
-        case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "closed": case "stats": break
+        case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "closeRequested": case "closed": case "stats": break
         default: throw new Error("Unknown native desktop response")
       }
       receive(event as ViewerEvent)
