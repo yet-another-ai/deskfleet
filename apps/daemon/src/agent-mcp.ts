@@ -46,16 +46,21 @@ export class AgentMcp {
 
   lease(sessionId: string, workspaceId: string | undefined, actor: AgentActor): AgentMcpLease {
     // Local development fixtures have no centrally authenticated user to delegate.
-    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) return { servers: [], close() {} }
+    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) {
+      return { servers: [...this.#options.servers?.() ?? []], close() {} }
+    }
     if (!this.#endpoint) throw new Error("Agent MCP is unavailable")
     const token = randomBytes(32).toString("hex")
     this.#grants.set(token, { actor: structuredClone(actor), scope: { sessionId, ...(workspaceId ? { workspaceId } : {}) } })
     const launch = adapterProcess(DESKFLEET_MCP_ARGUMENT)
     const env = Object.entries(launch.env ?? {}).flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
     return {
-      servers: [{ name: "deskfleet", command: launch.command, args: launch.args ?? [], env: [
-        ...env, { name: "DESKFLEET_MCP_ENDPOINT", value: this.#endpoint }, { name: "DESKFLEET_MCP_TOKEN", value: token },
-      ] }, ...this.#options.servers?.() ?? []],
+      servers: [
+        { name: "deskfleet", command: launch.command, args: launch.args ?? [], env: [
+          ...env, { name: "DESKFLEET_MCP_ENDPOINT", value: this.#endpoint }, { name: "DESKFLEET_MCP_TOKEN", value: token },
+        ] },
+        ...this.#options.servers?.() ?? [],
+      ],
       close: () => { this.#grants.delete(token) },
     }
   }

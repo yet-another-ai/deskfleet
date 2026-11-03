@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { commandPath } from "./agent-command-path.ts"
 import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
@@ -242,7 +243,10 @@ export class AgentRuntime {
       this.#providerName = config.name
       this.#providerKind = provider.id
       const connection = await provider.connect(config, {
-        ...(this.#terminals ? { terminals: { sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id } } : {}),
+        ...(this.#terminals ? { terminals: {
+          sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id,
+          ...(config.commandDirectory ? { commandDirectory: config.commandDirectory, path: commandPath(config.env ?? {}) } : {}),
+        } } : {}),
         onUpdate: params => this.#update(params, run.generation),
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
         requestElicitation: (params, signal) => this.elicitations.request(params, signal, run.generation),

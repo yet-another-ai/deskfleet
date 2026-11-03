@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import { Pencil, Plug, Plus, Trash2 } from "@lucide/vue"
-import { computed, onBeforeUnmount, ref, watch } from "vue"
+import { computed, onBeforeUnmount, ref, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { mcpServersClient, type McpServerConfig, type McpServerInput } from "@deskfleet/client/mcp-servers"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -60,7 +60,7 @@ async function save(input: McpServerInput): Promise<void> {
   })
 }
 async function toggle(server: McpServerConfig): Promise<void> {
-  const { id, ...input } = server
+  const { id, ...input } = toRaw(server)
   try { await mutate(async () => {
     const updated = await api!.update(id, { ...input, enabled: !server.enabled })
     if (!disposed) replace(updated)

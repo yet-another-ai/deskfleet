@@ -10,14 +10,15 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.ts",
-    "build": "vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
+    "build": "node scripts/stage-auv.ts && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "icons": "node scripts/generate-icons.ts",
-    "package": "node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --publish never",
-    "package:dir": "node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --dir --publish never"
+    "package": "node scripts/stage-auv.ts && node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --publish never",
+    "package:dir": "node scripts/stage-auv.ts && node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --dir --publish never"
   },
   "devDependencies": {
+    "@auv-js/cli": "0.0.40",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@deskfleet/daemon": "workspace:*",

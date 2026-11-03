@@ -27,6 +27,7 @@ export async function startDaemon(port = 0, options: {
   linuxDesktopBackend?: "wayland" | "x11" | null
   agentProvider?: AgentProvider
   agentQuotas?: AgentQuotaAuthority
+  auvPath?: string
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
   allowLocalControlForTests?: boolean
@@ -85,6 +86,7 @@ export async function startDaemon(port = 0, options: {
   try {
     control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, {
       allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas,
+      ...(options.auvPath ? { auvPath: options.auvPath } : {}),
     })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), server[Symbol.asyncDispose]()])

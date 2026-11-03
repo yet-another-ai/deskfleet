@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RequestError } from "@agentclientprotocol/sdk/unstable"
+import { commandEnvironment } from "./agent-command-path.ts"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
 import { antigravityProvider } from "./agents/antigravity.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
@@ -38,15 +39,17 @@ function testFailure(error: unknown): string {
 export class AgentProviders {
   readonly #directory: string
   readonly #path: string
+  readonly #commandDirectory?: string
   readonly #providerByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #listeners = new Set<() => void>()
   #providers: AgentProviderConfig[] = []
   #revision = randomUUID()
   #queue: Promise<unknown> = Promise.resolve()
 
-  constructor(directory: string, codexOverride: AgentProvider = codexProvider) {
+  constructor(directory: string, codexOverride: AgentProvider = codexProvider, commandDirectory?: string) {
     this.#directory = directory
     this.#path = join(directory, "agent-providers.json")
+    this.#commandDirectory = commandDirectory
     this.#providerByTemplate = {
       codex: codexOverride,
       "claude-code": claudeCodeProvider,
@@ -146,7 +149,12 @@ export class AgentProviders {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
     return {
       provider: this.#providerByTemplate[record.template],
-      config: { name: record.name, binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath), env: record.env },
+      config: {
+        name: record.name,
+        binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
+        env: commandEnvironment(record.env, this.#commandDirectory),
+        ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
+      },
     }
   }
 

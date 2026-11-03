@@ -5,6 +5,7 @@ import type { AgentProcess } from "./acp.ts"
 
 /** Each bundled ACP adapter runs in a child of the embedding executable, selected by one argument. */
 export const ANTIGRAVITY_LOGIN_ARGUMENT = "--antigravity-login"
+export const AUV_MCP_ARGUMENT = "--auv-mcp"
 export const CODEX_ACP_ARGUMENT = "--codex-acp"
 export const CLAUDE_AGENT_ACP_ARGUMENT = "--claude-agent-acp"
 export const DESKFLEET_MCP_ARGUMENT = "--deskfleet-mcp"
@@ -12,6 +13,7 @@ export const PI_ACP_ARGUMENT = "--pi-acp"
 
 export type AdapterArgument =
   | typeof ANTIGRAVITY_LOGIN_ARGUMENT
+  | typeof AUV_MCP_ARGUMENT
   | typeof CODEX_ACP_ARGUMENT
   | typeof CLAUDE_AGENT_ACP_ARGUMENT
   | typeof DESKFLEET_MCP_ARGUMENT

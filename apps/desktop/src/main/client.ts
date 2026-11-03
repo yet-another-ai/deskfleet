@@ -8,6 +8,7 @@ import { installNetworkDiagnostics } from "./network-diagnostics.ts"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
+import { resolveAuvPath } from "./auv.ts"
 import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
@@ -71,7 +72,10 @@ function start(): void {
     powerMonitor.on("shutdown", () => lifecycle.quit())
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
-      createLocalAgentRuntime({ directory: desktopDaemonDirectory() }),
+      createLocalAgentRuntime({
+        directory: desktopDaemonDirectory(),
+        auvPath: resolveAuvPath({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }),
+      }),
       publishLocalAgentState,
     )
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
