@@ -6,14 +6,20 @@ a stable `Gate` result for branch protection.
 
 ## Workflow ownership
 
-- `.github/workflows/ci.yml` handles pull requests, pushes to `main`, and manual
-  runs. It classifies the changed files with the hosted runner's Node, calls
-  Test, Build, Nix, and AUR, and combines their results in `Gate`. Configure `Gate` under
+- `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
+  runs, and a daily full run at 03:17 UTC. It classifies the changed files with
+  the hosted runner's Node, calls Test, Build, Nix, and AUR, and combines their
+  results in `Gate`. Configure `Gate` under
   the `CI` workflow as the required status check in repository branch protection.
-  Successful runs on `main` then deploy the product website to GitHub Pages.
+  Successful push and manual runs on `main` then deploy the product website to
+  GitHub Pages.
 - `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
   once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
-  tests on Linux, macOS, and Windows with `mise run test`. It supports reusable
+  tests on Linux, macOS, and Windows. Linux uses `mise run test`, including the
+  renderer Vitest project. macOS and Windows use `mise run ci:test:platform`:
+  the same Rust, daemon, script, and desktop main/shared/client checks, without
+  repeating the happy-dom renderer project. Local `mise run test` still runs
+  both Vitest projects on every OS. It supports reusable
   calls and manual runs. A separate Linux job runs real PostgreSQL integration
   tests, Valkey-backed Team TURN collection tests, and the owned-account/two-daemon remote
   workflow against the same pinned PostgreSQL 18.6 and Valkey images as local
@@ -30,14 +36,21 @@ a stable `Gate` result for branch protection.
   installers and Linux desktop archives. Ordinary CI runs use
   `mise run ci:build`; tagged releases build Web and Electron separately to give
   only Electron a fixed API origin.
-  Its shared Rust task runs one napi-driven Cargo workspace build for the server
-  and native addon,
-  using the host target for both. SEA and Electron bundling consume that addon
-  without compiling it again. The server is read from
+  Its shared Rust task runs one napi-driven Cargo workspace build for the server,
+  native addon, desktop viewer, and Windows service, using the host target.
+  SEA and Electron bundling consume that addon without compiling it again.
+  CI packaging sets `DESKFLEET_NATIVE_PREBUILT=1` so staging copies the viewer
+  and service from that same workspace build instead of invoking Cargo again.
+  A missing executable fails packaging. Local packaging builds these executables
+  unless the caller explicitly selects prebuilt staging. The server is read from
   `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
   native runner's triple.
-  Pull requests use a Linux x64 smoke build; main and manual runs use the full
-  platform matrix. Packaging keeps Cargo's parallel release codegen: 16 units,
+  Pull requests and main pushes use a Linux x64 smoke build. Daily scheduled,
+  manual, and tagged release runs use the full platform matrix. Nix follows
+  Build's Linux matrix so it only downloads archives produced in the same run.
+  The daily CI, Test, Build, and Nix concurrency groups are independent of main
+  pushes, so frequent merges do not cancel full-platform validation.
+  Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Windows packaging additionally
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
   overriding rustc's `/DEBUG` default so vendored OpenSSL does not require a PDB
@@ -74,7 +87,8 @@ server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
 Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
 The Linux desktop archive names include the app version, such as
-`deskfleet-<version>-linux-x64.tar.gz`. PRs exercise packaging on Linux x64.
+`deskfleet-<version>-linux-x64.tar.gz`. PRs and main pushes exercise packaging on
+Linux x64.
 The Linux x64 job also uploads `deskfleet-web` with the static Vue application.
 Its API origin is the hosting origin, including tagged release artifacts;
 deployments with a separate API origin build with `VITE_DESKFLEET_SERVER_URL`
@@ -93,8 +107,8 @@ The static-check job uploads `docs/.vitepress/dist` as the `github-pages`
 artifact on `main`, reusing the website build from `mise run ci:check:static`.
 After `Gate` succeeds, the CI workflow deploys that artifact through the
 `github-pages` environment. Both pushes and manual CI runs on `main` publish;
-pull requests and other branches do not. Documentation-only pushes still
-publish even when release packaging is skipped.
+scheduled runs, pull requests, and other branches do not. Documentation-only
+pushes still publish even when release packaging is skipped.
 
 Only the deployment job receives `pages: write` and `id-token: write`; build
 and test jobs keep read-only repository access. Deployment failures are
@@ -414,9 +428,9 @@ The classifier checks the PR merge-base-to-head diff or the entire main push's
 before-to-after diff. Executable files, symlinks, skills, manifests, lockfiles,
 tool configuration, and workflow changes require full validation. Empty or
 unavailable diffs, malformed events, and classification errors also select the
-full tier. Manual runs use full validation. Classification uses the hosted
-runner's Node and does not install a toolchain. An older runtime or missing
-output keeps the full tier.
+full tier. Manual and scheduled runs use full validation. Classification uses
+the hosted runner's Node and does not install a toolchain. An older runtime or
+missing output keeps the full tier.
 
 `Gate` requires successful classification and Test. Skipped Build, Nix, and AUR
 workflows are accepted only for a positively classified documentation-only

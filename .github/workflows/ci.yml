@@ -4,13 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +57,7 @@ jobs:
     if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true') }}
     uses: ./.github/workflows/build.yml
     with:
-      pr_smoke_build: ${{ github.event_name == 'pull_request' }}
+      smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     permissions:
       contents: read
 
@@ -64,7 +66,7 @@ jobs:
     needs: build
     uses: ./.github/workflows/nix.yml
     with:
-      pr_smoke_build: ${{ github.event_name == 'pull_request' }}
+      smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     permissions:
       contents: read
 
@@ -105,7 +107,7 @@ jobs:
     name: Deploy website
     needs: [gate, test]
     # Documentation-only runs skip Build, so explicitly use Gate's result.
-    if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

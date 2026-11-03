@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      pr_smoke_build:
-        description: Build Linux x64 only when called for a pull request.
+      smoke_build:
+        description: Build Linux x64 only for ordinary PR and main CI runs.
         type: boolean
         required: false
         default: false
@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
+  group: build-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.pr_smoke_build && github.event_name == 'pull_request' && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"},{"platform":"macos-arm64","os":"macos-latest"},{"platform":"windows-x64","os":"windows-latest"}]') }}
+        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"},{"platform":"macos-arm64","os":"macos-latest"},{"platform":"windows-x64","os":"windows-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -119,6 +119,7 @@ jobs:
         if: ${{ runner.os != 'macOS' || !inputs.production_release }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          DESKFLEET_NATIVE_PREBUILT: "1"
         run: mise exec -- pnpm --filter @deskfleet/desktop run package
 
       - name: Prepare macOS notarization key
@@ -146,6 +147,7 @@ jobs:
       - name: Sign and notarize macOS desktop installers
         if: ${{ runner.os == 'macOS' && inputs.production_release }}
         env:
+          DESKFLEET_NATIVE_PREBUILT: "1"
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ steps.macos_credentials.outputs.key_path }}

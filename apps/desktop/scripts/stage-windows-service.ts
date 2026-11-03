@@ -7,7 +7,10 @@ import { join, resolve } from "node:path"
 if (process.platform === "win32") {
   const root = resolve(import.meta.dirname, "../../..")
   const target = execFileSync("rustc", ["--print", "host-tuple"], { cwd: root, encoding: "utf8" }).trim()
-  execFileSync("cargo", ["build", "-p", "deskfleet-desktop-service", "--release", "--locked", "--target", target], { cwd: root, stdio: "inherit" })
+  // CI's workspace release build already produced this executable.
+  if (process.env.DESKFLEET_NATIVE_PREBUILT !== "1") {
+    execFileSync("cargo", ["build", "-p", "deskfleet-desktop-service", "--release", "--locked", "--target", target], { cwd: root, stdio: "inherit" })
+  }
   const output = resolve(import.meta.dirname, "../out/windows")
   await mkdir(output, { recursive: true })
   await copyFile(join(root, "target", target, "release", "deskfleet-desktop-service.exe"), join(output, "deskfleet-desktop-service.exe"))
