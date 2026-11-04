@@ -148,6 +148,11 @@ function text(output: string): string {
 }
 
 async function identity(template: AgentProviderTemplateId, binary: string, ctx: Context): Promise<string | undefined> {
+  if (template === "antigravity" && ctx.platform === "win32"
+    && /^agy_acp_server(?:\.exe)?$/iu.test(ctx.path.basename(binary))
+    && await ctx.executable(ctx.path.join(ctx.path.dirname(binary), "localharness_external.exe"))) {
+    return "Antigravity ACP"
+  }
   const result = await ctx.run(binary, ["--version"], ctx.env, ctx.home)
   if (result.code !== 0) return undefined
   const version = text(`${result.stdout}\n${result.stderr}`)
@@ -286,7 +291,7 @@ export class ProviderSetup {
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)
     if (provider.template === "antigravity") {
-      return this.#run({ ...antigravityLoginProcess(result.binaryPath, ctx.env), cwd: ctx.home }, `${provider.name} sign in`)
+      return this.#run({ ...antigravityLoginProcess(result.binaryPath, ctx.env, ctx.platform), cwd: ctx.home }, `${provider.name} sign in`)
     }
     // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]

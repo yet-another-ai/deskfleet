@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
@@ -90,6 +90,18 @@ function choiceValues(option: acp.SessionConfigOption | undefined): string[] {
 function withModelValue(options: acp.SessionConfigOption[], modelId: string): acp.SessionConfigOption[] {
   return options.map(option => option.type === "select" && (option.category === "model" || option.id === "model")
     ? { ...option, currentValue: modelId } : option)
+}
+
+function forceKillProcess(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid !== undefined && child.exitCode === null) {
+    const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true })
+    const fallback = () => { if (child.exitCode === null) child.kill("SIGKILL") }
+    killer.once("error", fallback)
+    killer.once("exit", fallback)
+    killer.unref()
+    return
+  }
+  child.kill("SIGKILL")
 }
 
 export async function connectAcpProcess(launch: AgentProcess, client: AgentClient, options: AcpConnectOptions = {}): Promise<AgentConnection> {
@@ -218,7 +230,11 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     child.stdin!.end()
     connection.close()
     // Give adapters time to stop their own agent subprocesses after stdin EOF.
-    const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000)
+    // Windows agy_acp_server deadlocks in asyncio stdout wait_closed() after stdin EOF.
+    const shutdownMs = process.platform === "win32" && /agy_acp_server/iu.test(launch.command)
+      ? (client.signal?.aborted ? 0 : 150)
+      : 10_000
+    const timeout = setTimeout(() => forceKillProcess(child), shutdownMs)
     timeout.unref()
     closing = Promise.allSettled([exited.finally(() => clearTimeout(timeout)), terminals?.close()]).then(results => {
       for (const result of results) if (result.status === "rejected") throw result.reason
@@ -244,7 +260,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
 
   const timeout = setTimeout(() => {
     connection.close(new Error(`${launch.command} ACP initialization timed out`))
-  }, 15_000)
+  }, 30_000)
   timeout.unref()
   try {
     const initialization = await connection.agent.request(acp.methods.agent.initialize, {
