@@ -1471,6 +1471,7 @@
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "resetView": "重置缩放与位置",
+    "pickColor": "取色器",
     "locateMessage": "定位到原始消息",
     "focus": "聚焦",
     "more": "更多",

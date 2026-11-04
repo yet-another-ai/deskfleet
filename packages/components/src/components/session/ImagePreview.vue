@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { RotateCcw, ZoomIn, ZoomOut } from "@lucide/vue"
-import { inject, onBeforeUnmount, ref, watchEffect } from "vue"
+import { Pipette, RotateCcw, ZoomIn, ZoomOut } from "@lucide/vue"
+import { inject, onBeforeUnmount, ref, useTemplateRef, watchEffect } from "vue"
 import { useI18n } from "vue-i18n"
 import { registerPreviewActionsKey, type PreviewMode } from "../../services/preview.ts"
+import ColorPickerLoupe from "./ColorPickerLoupe.vue"
 
 const props = defineProps<{
   src: string
@@ -13,12 +14,14 @@ const props = defineProps<{
 const emit = defineEmits<{ focus: [] }>()
 const { t } = useI18n()
 const registerActions = inject(registerPreviewActionsKey, undefined)
+const image = useTemplateRef<HTMLImageElement>("image")
 
 const scale = ref(1)
 const panX = ref(0)
 const panY = ref(0)
 const dragging = ref(false)
 const moved = ref(false)
+const pickingColor = ref(false)
 let dragStartX = 0
 let dragStartY = 0
 
@@ -31,6 +34,7 @@ watchEffect(() => {
     { id: "zoom-in", icon: ZoomIn, label: t("mermaid.zoomIn"), onClick: zoomIn },
     { id: "zoom-out", icon: ZoomOut, label: t("mermaid.zoomOut"), onClick: zoomOut },
     { id: "reset", icon: RotateCcw, label: t("mermaid.resetView"), onClick: resetView },
+    { id: "color-picker", icon: Pipette, label: t("mermaid.pickColor"), onClick: () => { pickingColor.value = !pickingColor.value } },
   ])
 })
 
@@ -75,8 +79,8 @@ function focusImage(): void {
 <template>
   <div
     data-preview-canvas
-    class="flex min-h-44 flex-1 items-center justify-center overflow-hidden p-4 pt-11 select-none"
-    :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
+    class="relative flex min-h-44 flex-1 items-center justify-center overflow-hidden p-4 pt-11 select-none"
+    :class="pickingColor ? 'cursor-crosshair' : dragging ? 'cursor-grabbing' : 'cursor-grab'"
     @pointerdown="startDrag"
     @pointermove="moveDrag"
     @pointerup="endDrag"
@@ -89,7 +93,8 @@ function focusImage(): void {
       :class="dragging && 'transition-none!'"
       :style="{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }"
     >
-      <img :src="src" :alt="alt" draggable="false" class="max-h-full max-w-full rounded object-contain select-none" :class="mode === 'inline' && 'max-h-96 cursor-zoom-in'" @click="focusImage">
+      <img ref="image" :src="src" :alt="alt" draggable="false" class="max-h-full max-w-full rounded object-contain select-none" :class="[mode === 'inline' && 'max-h-96', mode === 'inline' && !pickingColor && 'cursor-zoom-in']" @click="focusImage">
     </div>
+    <ColorPickerLoupe v-model:open="pickingColor" :media="image" />
   </div>
 </template>

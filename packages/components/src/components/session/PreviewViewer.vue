@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Pipette } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { getActivePinia } from "pinia"
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, provide, ref, shallowRef, useTemplateRef } from "vue"
@@ -26,6 +27,7 @@ import {
   locatePreviewInMainView,
   openPreviewFromAction,
 } from "../../stores/previews.ts"
+import ColorPickerLoupe from "./ColorPickerLoupe.vue"
 import ImagePreview from "./ImagePreview.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 import PreviewToolbar from "./PreviewToolbar.vue"
@@ -52,6 +54,7 @@ const { t } = useI18n()
 const client = usePlatformClient()
 const layout = getActivePinia() ? useLayoutStore() : undefined
 const root = useTemplateRef<HTMLElement>("root")
+const video = useTemplateRef<HTMLVideoElement>("video")
 const injectedContext = inject(agentResourceContextKey, computed(() => undefined))
 const sessionId = computed(() => {
   if (props.source?.sessionId) return props.source.sessionId
@@ -74,6 +77,7 @@ const loadedBytes = shallowRef<Uint8Array>()
 const loadedMime = ref<string>()
 const loadError = ref<string>()
 const registeredActions = shallowRef<PreviewToolbarAction[]>([])
+const pickingVideoColor = ref(false)
 let loadGeneration = 0
 let disposed = false
 
@@ -83,6 +87,11 @@ provide(registerPreviewActionsKey, actions => {
 
 const kind = computed<PreviewKind>(() =>
   resolvePreviewKind(props.content, props.kind, loadedMime.value ?? props.mimeType),
+)
+const toolbarActions = computed<PreviewToolbarAction[]>(() =>
+  kind.value === "video"
+    ? [{ id: "color-picker", icon: Pipette, label: t("mermaid.pickColor"), onClick: () => { pickingVideoColor.value = !pickingVideoColor.value } }]
+    : registeredActions.value,
 )
 const url = computed(() => isLocalResource.value ? loadedUrl.value : props.content)
 const request = computed<FileResourceRequest | undefined>(() => {
@@ -216,7 +225,7 @@ onBeforeUnmount(() => {
     <div v-if="url" class="relative flex min-h-0 flex-1 flex-col">
       <PreviewToolbar
         :mode="mode"
-        :actions="registeredActions"
+        :actions="toolbarActions"
         :can-download="Boolean(request && client.files)"
         :right-tab-label="rightTabLabel"
         @focus="showFocused"
@@ -243,13 +252,14 @@ onBeforeUnmount(() => {
       <div
         v-else
         data-preview-canvas
-        class="flex flex-1 items-center justify-center overflow-hidden p-4 pt-11"
-        :class="mode === 'inline' ? 'min-h-24' : 'min-h-44'"
+        class="relative flex flex-1 items-center justify-center overflow-hidden p-4 pt-11"
+        :class="[mode === 'inline' && kind === 'audio' ? 'min-h-24' : 'min-h-44', kind === 'video' && pickingVideoColor && 'cursor-crosshair select-none']"
       >
         <div data-preview-stage class="flex h-full w-full items-center justify-center">
           <audio v-if="kind === 'audio'" :src="url" controls preload="metadata" class="w-full max-w-md" />
-          <video v-else :src="url" controls preload="metadata" playsinline class="max-h-full max-w-full rounded object-contain" :class="mode === 'inline' && 'max-h-96'" />
+          <video v-else ref="video" :src="url" controls preload="metadata" playsinline class="max-h-full max-w-full rounded object-contain" :class="[mode === 'inline' && 'max-h-96', pickingVideoColor && 'pointer-events-none']" />
         </div>
+        <ColorPickerLoupe v-if="kind === 'video'" v-model:open="pickingVideoColor" :media="video" />
       </div>
     </div>
     <div v-else class="flex items-center gap-2 p-3 text-sm text-ui-text-muted">
