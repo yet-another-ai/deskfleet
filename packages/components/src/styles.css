@@ -532,4 +532,12 @@ textarea {
 /* Mobile navigation owns gestures; the browser may scroll but must not zoom the page. */
 @media (width < 1024px) {
   :where(html, body, body *) { touch-action: pan-x pan-y; }
+  [data-mobile-viewport] { overscroll-behavior-x: none; }
+  [data-mobile-viewport] :where(*) { touch-action: pan-y; }
+  [data-mobile-viewport] :where(pre, pre *, table, table *, .ui-math-block, .ui-math-block *, .git-diff-content, .git-diff-content *, .overflow-x-auto, .overflow-x-auto *, .overflow-auto, .overflow-auto *) {
+    touch-action: pan-x pan-y;
+  }
+  [data-mobile-viewport] :where([data-mermaid-canvas], [data-mermaid-canvas] *, [data-preview-kind="image"] [data-preview-canvas], [data-preview-kind="image"] [data-preview-canvas] *, [data-preview-kind="model"] [data-preview-canvas], [data-preview-kind="model"] [data-preview-canvas] *) {
+    touch-action: none;
+  }
 }

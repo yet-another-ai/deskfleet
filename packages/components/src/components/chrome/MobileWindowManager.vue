@@ -167,10 +167,8 @@ function dismissOverview(): void {
     viewport.value?.parentElement?.querySelector<HTMLButtonElement>("[data-open-overview]")?.focus({ preventScroll: true })
   }
 }
-const left = useTemplateRef<HTMLElement>("left")
-const right = useTemplateRef<HTMLElement>("right")
 const { offset, dragging, settling } = useMobileViewportSwipe({
-  viewport, left, right,
+  viewport,
   index: () => activeIndex.value,
   count: () => views.value.length,
   enabled: () => !overviewOpen.value && !zooming.value && !layout.sidebarOpen,
@@ -208,8 +206,6 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
           </button>
         </div>
       </div>
-      <div v-show="!overviewOpen" ref="left" data-viewport-edge="left" aria-hidden="true" class="absolute inset-y-0 left-0 z-30 w-5" style="touch-action: pan-y" />
-      <div v-show="!overviewOpen" ref="right" data-viewport-edge="right" aria-hidden="true" class="absolute inset-y-0 right-0 z-30 w-5" style="touch-action: pan-y" />
     </div>
   </main>
 </template>

@@ -1,11 +1,11 @@
 import { useEventListener, usePointerSwipe, useRafFn } from "@vueuse/core"
 import { ref, watch, type Ref } from "vue"
 
-/** Only the content's edge strips own navigation; its body keeps native scrolling. */
+const PANNABLE_SELECTOR = "[data-mermaid-canvas], [data-preview-kind=\"image\"] [data-preview-canvas], [data-preview-kind=\"model\"] [data-preview-canvas]"
+
+/** Content-area horizontal swipes navigate between views while yielding to pannable canvases. */
 export function useMobileViewportSwipe(options: {
   viewport: Ref<HTMLElement | null>
-  left: Ref<HTMLElement | null>
-  right: Ref<HTMLElement | null>
   index: () => number
   count: () => number
   enabled: () => boolean
@@ -60,70 +60,70 @@ export function useMobileViewportSwipe(options: {
     if (dragging.value) settle(0)
   }
 
-  for (const [target, step] of [[options.left, -1], [options.right, 1]] as const) {
-    // Safari's history swipe must be canceled at touchstart; touch-action alone
-    // does not reserve these edge strips for the application's navigation.
-    useEventListener(target, "touchstart", event => {
-      if (options.enabled() && event.touches.length === 1 && event.cancelable) event.preventDefault()
-    }, { passive: false })
-
-    const swipe = usePointerSwipe(target, {
-      threshold: 6,
-      pointerTypes: ["touch"],
-      onSwipeStart(event) {
-        canceled = !options.enabled() || !event.isPrimary
-        if (canceled) return
-        pause()
-        settling.value = false
-        dragging.value = true
-        axis = undefined
-        startOffset = lastOffset = offset.value
-        lastTime = event.timeStamp
-        velocity = 0
-      },
-      onSwipe(event) {
-        if (canceled) return
-        const dx = -swipe.distanceX.value
-        const dy = swipe.distanceY.value
-        axis ??= Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y"
-        if (axis !== "x") return
-        const width = options.viewport.value?.clientWidth ?? 0
-        if (!width) return
-        const next = options.index() + step
-        const available = dx * step < 0 && next >= 0 && next < options.count()
-        if (available) options.reveal(next)
-        // Boundary resistance grows with distance instead of a fixed drag ratio.
-        const distance = available ? Math.max(-width, Math.min(width, dx))
-          : dx * 0.5 / (1 + Math.abs(dx) / (width * 0.3))
-        offset.value = startOffset + distance
-        const elapsed = event.timeStamp - lastTime
-        if (elapsed > 0) velocity = 0.7 * (offset.value - lastOffset) / elapsed + 0.3 * velocity
-        lastOffset = offset.value
-        lastTime = event.timeStamp
-      },
-      onSwipeEnd(event) {
-        if (canceled) return
-        const width = options.viewport.value?.clientWidth ?? 0
-        const distance = Math.abs(offset.value - startOffset)
-        const releaseVelocity = event.timeStamp - lastTime > 80 ? 0 : Math.max(-3, Math.min(3, velocity))
-        const next = options.index() + step
-        const commit = event.type !== "pointercancel" && axis === "x"
-          && (offset.value - startOffset) * step < 0 && next >= 0 && next < options.count()
-          && (distance >= Math.min(96, width * 0.25) || (distance >= 24 && releaseVelocity * step < -0.5))
-        canceled = true
-        if (commit) {
-          // Rebase onto the selected view without changing its screen position.
-          selecting = true
-          options.select(next)
-          selecting = false
-          offset.value += step * width
-        }
-        settle(event.type === "pointercancel" ? 0 : releaseVelocity)
-      },
-    })
-    // pointerup also releases capture; it must not erase the settling animation.
-    useEventListener(target, "lostpointercapture", cancelGesture)
-  }
+  const swipe = usePointerSwipe(options.viewport, {
+    threshold: 6,
+    pointerTypes: ["touch"],
+    onSwipeStart(event) {
+      const pannable = event.target instanceof Element ? event.target.closest<HTMLElement>(PANNABLE_SELECTOR) : null
+      pannable?.setPointerCapture?.(event.pointerId)
+      canceled = !options.enabled() || !event.isPrimary || !!pannable
+      if (canceled) return
+      pause()
+      settling.value = false
+      dragging.value = true
+      axis = undefined
+      startOffset = lastOffset = offset.value
+      lastTime = event.timeStamp
+      velocity = 0
+    },
+    onSwipe(event) {
+      if (canceled) return
+      const dx = -swipe.distanceX.value
+      const dy = swipe.distanceY.value
+      axis ??= Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y"
+      if (axis !== "x") return
+      const width = options.viewport.value?.clientWidth ?? 0
+      if (!width) return
+      const step = dx < 0 ? 1 : -1
+      const next = options.index() + step
+      const available = dx * step < 0 && next >= 0 && next < options.count()
+      if (available) options.reveal(next)
+      // Boundary resistance grows with distance instead of a fixed drag ratio.
+      const distance = available ? Math.max(-width, Math.min(width, dx))
+        : dx * 0.5 / (1 + Math.abs(dx) / (width * 0.3))
+      offset.value = startOffset + distance
+      const elapsed = event.timeStamp - lastTime
+      if (elapsed > 0) velocity = 0.7 * (offset.value - lastOffset) / elapsed + 0.3 * velocity
+      lastOffset = offset.value
+      lastTime = event.timeStamp
+    },
+    onSwipeEnd(event) {
+      if (canceled) return
+      const width = options.viewport.value?.clientWidth ?? 0
+      const delta = offset.value - startOffset
+      const distance = Math.abs(delta)
+      const releaseVelocity = event.timeStamp - lastTime > 80 ? 0 : Math.max(-3, Math.min(3, velocity))
+      const step = delta < 0 ? 1 : -1
+      const next = options.index() + step
+      const commit = event.type !== "pointercancel" && axis === "x"
+        && delta * step < 0 && next >= 0 && next < options.count()
+        && (distance >= Math.min(96, width * 0.25) || (distance >= 24 && releaseVelocity * step < -0.5))
+      canceled = true
+      if (commit) {
+        // Rebase onto the selected view without changing its screen position.
+        selecting = true
+        options.select(next)
+        selecting = false
+        offset.value += step * width
+      }
+      settle(event.type === "pointercancel" ? 0 : releaseVelocity)
+    },
+  })
+  useEventListener(options.viewport, "touchmove", event => {
+    if (!canceled && axis === "x" && event.cancelable) event.preventDefault()
+  }, { passive: false })
+  // pointerup also releases capture; it must not erase the settling animation.
+  useEventListener(options.viewport, "lostpointercapture", cancelGesture)
 
   useEventListener(document, "pointerdown", event => {
     if (event.pointerType === "touch" && !event.isPrimary) cancelGesture()
