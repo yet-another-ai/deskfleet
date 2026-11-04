@@ -1861,7 +1861,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-capture"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "block2 0.6.2",
  "deskfleet-linux-desktop",
@@ -1885,7 +1885,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-control-store"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "chrono",
  "deskfleet-protocol",
@@ -1901,7 +1901,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-desktop-service"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-native",
  "deskfleet-windows-desktop",
@@ -1909,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-desktop-viewer"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "bytes",
  "deskfleet-input",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-encoder"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-capture",
  "deskfleet-linux-media",
@@ -1956,7 +1956,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-input"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-linux-desktop",
  "deskfleet-wayland",
@@ -1973,11 +1973,11 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-linux-desktop"
-version = "0.7.3"
+version = "0.7.4"
 
 [[package]]
 name = "deskfleet-linux-media"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "libloading 0.9.0",
  "thiserror 2.0.21",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-migration"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "sea-orm-migration",
  "tokio",
@@ -1994,7 +1994,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-model"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-native"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-node"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-model",
  "deskfleet-native",
@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-nvenc"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-nvenc-sys",
  "tracing",
@@ -2056,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-nvenc-sys"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "bindgen",
  "libloading 0.9.0",
@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-protocol"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-model",
  "serde",
@@ -2074,7 +2074,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-server"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-store"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "deskfleet-migration",
  "deskfleet-model",
@@ -2125,7 +2125,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-wayland"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "futures-util",
  "reis",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-windows-desktop"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "rand 0.10.3",
  "serde",
@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "deskfleet-x11"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "socket2",
  "thiserror 2.0.21",
