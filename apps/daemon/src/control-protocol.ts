@@ -49,6 +49,9 @@ export interface DesktopStart {
   control?: boolean
   fps?: number
   bitrateBps?: number
+  /** Bound encoded video dimensions while preserving the display aspect ratio. */
+  maxWidth?: number
+  maxHeight?: number
 }
 
 /** Omitted by older daemons. Only `"encoder"` may open another peer. */

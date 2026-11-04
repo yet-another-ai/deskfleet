@@ -202,10 +202,10 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         }
       },
       capabilities: () => rpc("capabilities"),
-      start: (options: DesktopStart) => {
-        const peer = peers.get(options.sessionId)
+      start: ({ sessionId, ...options }: DesktopStart) => {
+        const peer = peers.get(sessionId)
         if (!peer) return Promise.reject(new Error("Peer authorization is missing"))
-        return central.startPeer(peer.id, { displayId: options.displayId, ...(options.control ? { control: true } : {}) })
+        return central.startPeer(peer.id, options)
       },
     },
   }

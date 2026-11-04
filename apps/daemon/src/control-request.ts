@@ -24,6 +24,12 @@ function desktopOptions(params: Record<string, unknown>): void {
   if (params.control !== undefined && typeof params.control !== "boolean") throw new Error("Invalid desktop control setting")
   if (params.fps !== undefined) uint(params.fps, "frame rate", true)
   if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
+  if (params.maxWidth !== undefined || params.maxHeight !== undefined) {
+    for (const key of ["maxWidth", "maxHeight"]) {
+      uint(params[key], "desktop preview dimensions", true)
+      if ((params[key] as number) < 2) throw new Error("Invalid desktop preview dimensions")
+    }
+  }
 }
 
 /**
@@ -33,6 +39,8 @@ function desktopOptions(params: Record<string, unknown>): void {
 export function validateRelayedDesktopStart(value: unknown): Omit<DesktopStart, "sessionId"> {
   const params = object(value)
   const options = { displayId: params.displayId, fps: params.fps ?? undefined, bitrateBps: params.bitrateBps ?? undefined,
+    ...(params.maxWidth == null ? {} : { maxWidth: params.maxWidth }),
+    ...(params.maxHeight == null ? {} : { maxHeight: params.maxHeight }),
     ...(params.control === undefined || params.control === null ? {} : { control: params.control }) }
   desktopOptions(options)
   return options as Omit<DesktopStart, "sessionId">

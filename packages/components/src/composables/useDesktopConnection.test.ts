@@ -73,6 +73,26 @@ test("queues early trickle candidates in both directions and translates m-line s
   expect(peer.setRemoteDescription.mock.invocationCallOrder[0]).toBeLessThan(peer.addIceCandidate.mock.invocationCallOrder[0]!)
 })
 
+test("preview capture limits survive encoder fallback without creating audio or input channels", async () => {
+  const { connection, api, emit } = setup()
+  const limits = { fps: 1, bitrateBps: 150_000, maxWidth: 320, maxHeight: 180 }
+  await connection.connect({ ...options, ...limits, control: false })
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  emit({ sessionId: api.offer.mock.calls[0]![0].sessionId, kind: "error", error: "encoder unavailable", reason: "encoder" })
+  await flushPromises()
+  TestPeer.instances[1]!.changeState("connected")
+  await flushPromises()
+  expect(api.start).toHaveBeenCalledTimes(2)
+  for (const [start] of api.start.mock.calls) {
+    expect(start).toEqual({ sessionId: expect.any(String), displayId: 2, ...limits })
+  }
+  for (const peer of TestPeer.instances) {
+    expect(peer.addTransceiver).toHaveBeenCalledExactlyOnceWith("video", { direction: "recvonly" })
+    expect(peer.createDataChannel).not.toHaveBeenCalled()
+  }
+})
+
 test("collects audio/video tracks in one stream and releases all resources on scope disposal", async () => {
   const { connection, api, listeners, scope } = setup()
   await connection.connect({ ...options, audio: true })

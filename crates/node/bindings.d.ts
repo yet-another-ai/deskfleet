@@ -127,6 +127,8 @@ export interface DesktopConfig {
   fps?: number
   bitrateBps?: number
   maxBitrateBps?: number
+  maxWidth?: number
+  maxHeight?: number
 }
 
 /** Probe native desktop support without opening an authorization dialog. */

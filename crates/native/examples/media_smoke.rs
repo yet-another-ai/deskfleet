@@ -199,11 +199,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         controller.stop().await
                             .map_err(|error| deskfleet_capture::CaptureError::Platform(format!("input smoke detach failed: {error}")))?;
                     }
+                    let preview = std::env::var("DESKFLEET_SMOKE_PREVIEW").is_ok_and(|value| value == "1");
                     DesktopStream::start(peer, DesktopConfig {
                         display_id: display.id,
-                        fps: 30.0,
-                        bitrate_bps: 8_000_000,
+                        fps: if preview { 1.0 } else { 30.0 },
+                        bitrate_bps: if preview { 150_000 } else { 8_000_000 },
                         max_bitrate_bps: 0,
+                        max_width: preview.then_some(320),
+                        max_height: preview.then_some(180),
                     }).await
                 }));
             }

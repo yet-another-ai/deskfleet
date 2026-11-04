@@ -393,6 +393,18 @@ test("relayed desktop starts treat JSON null as an omitted option and validate t
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, bitrateBps: "fast" }), /bitrate/)
 })
 
+test("preview dimensions survive relay and local validation and require paired positive bounds", () => {
+  const options = { displayId: 2, fps: 1, bitrateBps: 150_000, maxWidth: 320, maxHeight: 180, control: false }
+  assert.deepEqual(validateRelayedDesktopStart({ peerId: "peer", ...options }), options)
+  assert.deepEqual(validateControlParams("start", { sessionId: "preview", ...options }), { sessionId: "preview", ...options })
+  assert.deepEqual(validateRelayedDesktopStart({ displayId: 2, maxWidth: null, maxHeight: null }), { displayId: 2, fps: undefined, bitrateBps: undefined })
+  for (const bounds of [{ maxWidth: 320 }, { maxHeight: 180 }, { maxWidth: 0, maxHeight: 180 },
+    { maxWidth: 320, maxHeight: 1 }, { maxWidth: "320", maxHeight: 180 }, { maxWidth: 320, maxHeight: 1.5 }]) {
+    assert.throws(() => validateRelayedDesktopStart({ displayId: 2, ...bounds }), /preview dimensions/)
+    assert.throws(() => validateControlParams("start", { sessionId: "preview", displayId: 2, ...bounds }), /preview dimensions/)
+  }
+})
+
 test("directory browsing requires authentication and uses the daemon filesystem without a peer", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-folder-control-"))
   const folders = join(directory, "folders")

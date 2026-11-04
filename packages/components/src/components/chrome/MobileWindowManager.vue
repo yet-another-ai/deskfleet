@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Grid3x3, Plus, SquareTerminal, X } from "@lucide/vue"
+import { Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
 import { useElementSize, usePreferredReducedMotion } from "@vueuse/core"
 import { computed, defineAsyncComponent, nextTick, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -13,13 +13,14 @@ import { useTerminalsStore } from "../../stores/terminals.ts"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import IconButton from "../common/IconButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
+import SessionDesktopPanel from "../desktop/SessionDesktopPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import WindowToolbar from "./WindowToolbar.vue"
 import MobileViewFrame from "./MobileViewFrame.vue"
 import { windowHeaderActionsId, windowHeaderActionsTarget, windowHeaderActionsTargetKey } from "./windowHeaderActions.ts"
 
 type MobileView =
-  | { id: string; title: string; kind: "chat" | "changes" }
+  | { id: string; title: string; kind: "chat" | "changes" | "desktops" }
   | { id: string; title: string; kind: "terminal"; terminalId: string }
   | { id: string; title: string; kind: "preview"; request: SessionWindowRequest }
 
@@ -45,6 +46,7 @@ provide(windowHeaderActionsTargetKey, computed(() => windowHeaderActionsTarget(`
 const views = computed<MobileView[]>(() => [
   { id: "chat", kind: "chat", title: location.value ? sessionLabel(location.value.session) : t("panel.chat") },
   { id: "changes", kind: "changes", title: t("panel.changes") },
+  { id: "desktops", kind: "desktops", title: t("desktopOverview.title") },
   ...terminals.sessions.filter(shell => worktree.value && shell.worktreeId === worktree.value.id && shell.kind !== "acp").map((shell, index) => ({
     id: `terminal:${shell.id}`, kind: "terminal" as const, terminalId: shell.id,
     title: terminals.titles[shell.id]?.trim() || shell.title.trim() || t("terminal.tab", { number: index + 1 }),
@@ -56,8 +58,8 @@ const activeView = computed(() => views.value[activeIndex.value]!)
 
 function reveal(index: number): void {
   const view = views.value[index]
-  // Peeking at a terminal must not initialize its renderer or attach to its shell.
-  if (view && view.kind !== "terminal") visited.value.add(view.id)
+  // A peek or overview must not start a terminal or a remote desktop connection.
+  if (view && view.kind !== "terminal" && view.kind !== "desktops") visited.value.add(view.id)
 }
 function select(index: number): void {
   const view = views.value[index]
@@ -194,12 +196,17 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />
+              <SessionDesktopPanel v-else-if="view.kind === 'desktops'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" class="h-full" />
               <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = truncateGeneratedTitle($event)" />
               <SessionPreviewWindow v-else-if="view.kind === 'preview'" :request="view.request" />
             </template>
             <div v-else-if="view.kind === 'terminal'" data-unopened-terminal class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">
               <SquareTerminal :size="80" :stroke-width="1.25" aria-hidden="true" />
               <span class="text-4xl">{{ t('mobileViews.openTerminal') }}</span>
+            </div>
+            <div v-else-if="view.kind === 'desktops'" data-unopened-desktops class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">
+              <MonitorPlay :size="80" :stroke-width="1.25" aria-hidden="true" />
+              <span class="text-4xl">{{ t('desktopOverview.title') }}</span>
             </div>
           </MobileViewFrame>
           <button v-if="overviewOpen && worktree" type="button" :disabled="busy" class="absolute inset-x-4 flex h-11 items-center justify-center gap-2 rounded-xl border border-ui-border text-sm text-ui-text-muted hover:bg-ui-hover disabled:op-40" :style="{ top: `${gridHeight}px` }" @click="newTerminal">

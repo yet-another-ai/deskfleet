@@ -38,6 +38,10 @@ type Tool = typeof tabs[number]["id"]
 const availableTabs = computed(() => tabs.filter(tab => tab.id !== "desktop" || !machine.value?.local))
 const active = computed<Tool>(() => availableTabs.value.find(tab => tab.id === route.query.tab)?.id
   ?? (machine.value?.desktop && !machine.value.local ? "desktop" : "terminal"))
+const desktopDisplay = computed(() => {
+  const value = typeof route.query.display === "string" ? Number(route.query.display) : NaN
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined
+})
 const visited = ref(new Set<Tool>())
 watchImmediate(() => [machine.value?.id, active.value] as const, ([id, tool], previous) => {
   if (id !== previous?.[0]) visited.value = new Set()
@@ -81,7 +85,7 @@ const activeTerminal = computed({
       <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('terminal.unavailable') }}</p>
     </TabsContent>
     <TabsContent v-if="!machine.local && visited.has('desktop')" v-show="active === 'desktop'" value="desktop" force-mount class="flex min-h-0 flex-1 flex-col">
-      <DesktopView :machine-id="machineId" :visible="active === 'desktop'" />
+      <DesktopView :machine-id="machineId" :visible="active === 'desktop'" :initial-display-id="desktopDisplay" :auto-connect="route.query.connect === '1'" />
     </TabsContent>
     <TabsContent v-if="visited.has('files')" v-show="active === 'files'" value="files" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">
       <FileTransferPanel v-if="files && target && currentTarget" :key="target.kind === 'machine' ? `${target.teamId}:${target.machineId}` : 'local'" :api="files" :target="target" :machine-name="machine.name" />

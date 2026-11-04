@@ -138,6 +138,8 @@ pub struct DesktopConfig {
     pub fps: f64,
     pub bitrate_bps: u32,
     pub max_bitrate_bps: u32,
+    pub max_width: Option<u32>,
+    pub max_height: Option<u32>,
 }
 
 impl DesktopConfig {
@@ -152,7 +154,33 @@ impl DesktopConfig {
                 "bitrate must be positive and no greater than the nonzero maximum",
             ));
         }
+        match (self.max_width, self.max_height) {
+            (None, None) | (Some(2..), Some(2..)) => {}
+            _ => {
+                return Err(MediaError::InvalidConfig(
+                    "both video bounds must be at least 2",
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// Fit within the requested box without upscaling; hardware codecs use even dimensions.
+    pub(crate) fn output_dimensions(&self, width: u32, height: u32) -> (u32, u32) {
+        let (Some(max_width), Some(max_height)) = (self.max_width, self.max_height) else {
+            return (width, height);
+        };
+        let width = u64::from(width.max(2));
+        let height = u64::from(height.max(2));
+        let max_width = u64::from(max_width).min(width);
+        let max_height = u64::from(max_height).min(height);
+        let (width, height) = if max_width * height <= max_height * width {
+            (max_width, height * max_width / width)
+        } else {
+            (width * max_height / height, max_height)
+        };
+        // Each result is bounded by its original u32 input.
+        (((width as u32) & !1).max(2), ((height as u32) & !1).max(2))
     }
 }
 
@@ -439,6 +467,8 @@ mod tests {
             fps: 60.0,
             bitrate_bps: 8_000_000,
             max_bitrate_bps: 0,
+            max_width: None,
+            max_height: None,
         };
         for fps in [f64::NAN, f64::INFINITY, 0.0, -1.0, 241.0] {
             config.fps = fps;
@@ -449,6 +479,30 @@ mod tests {
         assert!(config.validate().is_err());
         config.max_bitrate_bps = 0;
         assert!(config.validate().is_ok());
+        config.max_width = Some(320);
+        assert!(config.validate().is_err());
+        config.max_height = Some(1);
+        assert!(config.validate().is_err());
+        config.max_height = Some(180);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn preview_dimensions_fit_landscape_portrait_and_small_displays() {
+        let config = DesktopConfig {
+            display_id: 0,
+            fps: 1.0,
+            bitrate_bps: 150_000,
+            max_bitrate_bps: 0,
+            max_width: Some(320),
+            max_height: Some(180),
+        };
+        assert_eq!(config.output_dimensions(3840, 2160), (320, 180));
+        assert_eq!(config.output_dimensions(1920, 1200), (288, 180));
+        assert_eq!(config.output_dimensions(1080, 1920), (100, 180));
+        assert_eq!(config.output_dimensions(101, 77), (100, 76));
+        assert_eq!(config.output_dimensions(6400, 1080), (320, 54));
+        assert_eq!(config.output_dimensions(u32::MAX, u32::MAX), (180, 180));
     }
 
     #[test]

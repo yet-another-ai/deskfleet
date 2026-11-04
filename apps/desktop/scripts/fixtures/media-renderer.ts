@@ -98,6 +98,7 @@ async function run(): Promise<void> {
 
   let deadline = Date.now() + Number(document.documentElement.dataset.consentTimeout ?? "20000")
   let captureStartedAt: number | undefined
+  let captureStartedFrames = 0
   let lastProgress = 0
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -127,6 +128,7 @@ async function run(): Promise<void> {
     if (captureDuration > 0) {
       if (captureStartedAt === undefined) {
         captureStartedAt = now
+        captureStartedFrames = receivedVideo.framesDecoded ?? 0
         deadline = now + captureDuration + 1000
         progress()
       }
@@ -153,7 +155,7 @@ async function run(): Promise<void> {
       connection: peer.connectionState,
       framesDecoded: receivedVideo.framesDecoded,
       ...(capture ? { keyFramesDecoded: receivedVideo.keyFramesDecoded } : {}),
-      ...(captureStartedAt === undefined ? {} : { observedMs: now - captureStartedAt }),
+      ...(captureStartedAt === undefined ? {} : { observedMs: now - captureStartedAt, observedFrames: (receivedVideo.framesDecoded ?? 0) - captureStartedFrames }),
       ...(audio ? { audioPackets: receivedAudio?.packetsReceived } : {}),
       ...(capture ? {} : { pixel }),
       width: video.videoWidth,

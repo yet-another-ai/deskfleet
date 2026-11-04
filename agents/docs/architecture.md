@@ -1173,6 +1173,17 @@ Its Local control page omits Desktop and defaults to Terminal, retaining File
 transfer and System status. Locality is client-relative; the machine's advertised
 desktop capability remains available to other clients. Web clients have no local
 daemon, so their machine controls remain remote.
+Each Session's right-hand window group includes a Desktops tab beside Changes.
+Its default scope comes from that Session's owning machine, independently of
+account navigation or the new-session workspace selection. Users can switch to
+all remote machines in the current Team. It discovers their displays and opens
+independent, read-only preview peers at up to 320 x 180 and 1 fps. Panel-owned
+adapters retain explicit Team and Machine scope without opening workspace
+catalogs. Inactive or hidden tabs and paused previews stop their streams; closing
+the Session releases its adapters. Changing Sessions resets the scope. The compact
+Session view exposes the same panel and only streams while it is selected.
+Opening a preview selects that machine and display in Remote control, where
+the full desktop connects and input control remains an explicit choice.
 Tools mount when first visited and retain their connections while switching tabs.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, and machine details from

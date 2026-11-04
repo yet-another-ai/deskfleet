@@ -364,6 +364,23 @@ has not changed. Dropping a stream also cancels its work.
 
 Desktop options select a display, frame rate, average bitrate, and optional
 maximum bitrate. Frame rate is capped at the display's refresh rate when known.
+Optional `maxWidth` and `maxHeight` bounds must be supplied together. The native
+pipeline preserves the display's aspect ratio, rounds down to even encoder
+dimensions, and never upscales. Windows resizes BGRA surfaces on the GPU before
+encoding, macOS requests smaller ScreenCaptureKit surfaces, and Linux downsamples
+the captured BGRA buffer. Capture acquisition is paced at the selected frame rate;
+keyframe requests coalesce until the next video tick.
+
+The Session's right-hand Desktops tab requests one silent, read-only stream per display
+with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
+It initially shows the Session's owning machine. Users can switch to all
+remote machines in the current Team; narrowing the scope closes the other peers.
+Offline machines, unavailable capture, and individual connection failures remain
+visible in the panel. Pausing, selecting another tab, or hiding the page closes
+its preview peers; returning resumes them. Leaving the Session disposes its
+machine adapters. Changing Sessions restores the Session-machine scope. Selecting
+a preview opens that display in the normal viewer without preview limits. Input
+control still requires the viewer's explicit control selection.
 Codec and audio are chosen when creating the peer. Stop the stream before
 restarting with changed desktop settings; create a new peer to change codecs.
 
@@ -896,3 +913,19 @@ pass alone does not establish that every transition produced a fresh frame.
 Run a separate service-required smoke while the host is already locked to check
 fresh display discovery, capture startup, and input-controller attach/detach.
 Remove `Env:DESKFLEET_SMOKE_CAPTURE_SECONDS` afterward to restore the quick check.
+
+To verify preview scaling and frame pacing against a real desktop on Windows:
+
+```powershell
+$env:DESKFLEET_SMOKE_CAPTURE = "1"
+$env:DESKFLEET_SMOKE_PREVIEW = "1"
+$env:DESKFLEET_SMOKE_CAPTURE_SECONDS = "5"
+mise run desktop:smoke-media
+Remove-Item Env:DESKFLEET_SMOKE_CAPTURE
+Remove-Item Env:DESKFLEET_SMOKE_PREVIEW
+Remove-Item Env:DESKFLEET_SMOKE_CAPTURE_SECONDS
+```
+
+This checks decoded dimensions within 320 x 180 and at most one new frame per
+second over the observation period, allowing one in-flight frame. The desktop
+pixels are not saved. An unchanged desktop can produce fewer frames.

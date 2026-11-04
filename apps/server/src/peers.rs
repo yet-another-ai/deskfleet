@@ -241,6 +241,8 @@ pub struct Start {
     display_id: Value,
     fps: Option<u32>,
     bitrate_bps: Option<u32>,
+    max_width: Option<u32>,
+    max_height: Option<u32>,
     #[serde(default)]
     control: bool,
 }
@@ -264,7 +266,7 @@ pub async fn start(
     {
         return Err(ApiError::forbidden());
     }
-    Ok(web::Json(s.hub.request(&registration(&s, &authorization).await?,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"control":b.control}),None).await?))
+    Ok(web::Json(s.hub.request(&registration(&s, &authorization).await?,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"maxWidth":b.max_width,"maxHeight":b.max_height,"control":b.control}),None).await?))
 }
 pub async fn close(
     req: HttpRequest,
@@ -544,6 +546,18 @@ pub(crate) mod tests {
         assert!(
             serde_json::from_value::<Start>(json!({"displayId": 1, "control": "true"})).is_err()
         );
+    }
+    #[test]
+    fn desktop_preview_accepts_video_bounds_without_enabling_control() {
+        let preview: Start = serde_json::from_value(json!({
+            "displayId": 1, "fps": 1, "bitrateBps": 150_000,
+            "maxWidth": 320, "maxHeight": 180,
+        }))
+        .unwrap();
+        assert_eq!(preview.max_width, Some(320));
+        assert_eq!(preview.max_height, Some(180));
+        assert_eq!(preview.fps, Some(1));
+        assert!(!preview.control);
     }
     pub(crate) fn sdp() -> String {
         format!(

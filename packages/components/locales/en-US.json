@@ -772,6 +772,28 @@
     "duration": "{days}d {hours}h {minutes}m",
     "unknown": "Unknown"
   },
+  "desktopOverview": {
+    "title": "Desktops",
+    "description": "Keep an eye on remote displays. Open a preview to connect at full resolution and take control when needed.",
+    "scope": "Machines to preview",
+    "sessionMachine": "Session machine",
+    "allMachines": "All machines",
+    "sessionEmpty": "No remote desktop for this session",
+    "sessionEmptyHint": "Switch to All machines to see other remote desktops in this team.",
+    "pause": "Pause previews",
+    "resume": "Resume previews",
+    "paused": "Previews paused",
+    "empty": "No remote machines yet",
+    "emptyHint": "Connect another machine to this team to see its desktops here.",
+    "offline": "Offline",
+    "offlineHint": "Previews resume when this machine comes online.",
+    "unavailable": "Desktop capture is unavailable on this machine.",
+    "noDisplays": "No displays found.",
+    "displayCount": "{count} displays",
+    "display": "Display {id}",
+    "openDisplay": "Open {machine}, display {display}",
+    "connecting": "Connecting preview…"
+  },
   "desktop": {
     "openNative": "Open in native window",
     "nativeOpening": "Opening native desktop window…",

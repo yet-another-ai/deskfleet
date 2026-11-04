@@ -77,6 +77,19 @@ test("native desktop opens the adapter's authorized machine and outlives rendere
   await expect(f.remote.api.desktop.openNative!({ displayId: 4, control: false })).rejects.toThrow("closed")
   expect(open).toHaveBeenCalledOnce()
 })
+
+test("desktop preview settings reach the authorized peer HTTP start without the local session ID", async () => {
+  const f = offerHttpFixture()
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch: f.fetch })
+  disposers.push(() => client.dispose())
+  f.central.startPeer = client.startPeer.bind(client)
+  const settings = { displayId: 4, fps: 1, bitrateBps: 150_000, maxWidth: 320, maxHeight: 180 }
+  await f.remote.api.desktop.prepare!("preview")
+  await f.remote.api.desktop.start({ sessionId: "preview", ...settings })
+  expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", "desktop")
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/start", expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual(settings)
+})
 test("a refreshed machine reconciles missed presence without replacing its peer", async () => {
   const f = fixture()
   const changed = vi.fn()

@@ -1,10 +1,10 @@
 <script lang="ts">
-import { MessageSquare, SquareTerminal, X } from "@lucide/vue"
+import { MessageSquare, MonitorPlay, SquareTerminal, X } from "@lucide/vue"
 import { defineComponent } from "vue"
 import UiTooltip from "../common/UiTooltip.vue"
 
 export default defineComponent({
-  components: { MessageSquare, SquareTerminal, UiTooltip, X },
+  components: { MessageSquare, MonitorPlay, SquareTerminal, UiTooltip, X },
   props: {
     tabId: { type: String, required: true },
     title: { type: String, required: true },
@@ -23,6 +23,7 @@ export default defineComponent({
       :data-window-tab-id="tabId"
     >
       <MessageSquare v-if="tabId === 'chat'" :size="14" aria-hidden="true" />
+      <MonitorPlay v-else-if="tabId === 'desktops'" :size="14" aria-hidden="true" />
       <SquareTerminal v-else-if="tabId.startsWith('terminal:')" :size="14" aria-hidden="true" />
       <span v-else class="text-xs font-semibold" aria-hidden="true">±</span>
       <span class="truncate">{{ title }}</span>

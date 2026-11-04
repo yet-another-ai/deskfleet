@@ -79,12 +79,10 @@ export function desktopCodecLabel(codec: VideoCodec): string {
   return "AV1"
 }
 
-export interface DesktopConnectOptions {
+export interface DesktopConnectOptions extends Omit<DesktopStart, "sessionId"> {
   /** Common codecs in preference order. The connection tries the next one only after an encoder failure. */
   codecs: readonly VideoCodec[]
-  displayId: number
   audio: boolean
-  control?: boolean
 }
 
 /** Chromium receives and decodes media; the bridge carries signaling only. */
@@ -277,7 +275,14 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         timeout: setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, PEER_SETUP_TIMEOUT_MS),
         offered: false, remoteReady: false, startRequested: false, startSettled: false,
         localCandidates: [], remoteCandidates: [], localSending: Promise.resolve(), remoteAdding: Promise.resolve(),
-        start: { sessionId: id, displayId: options.displayId, ...(options.control ? { control: true } : {}) },
+        start: {
+          sessionId: id, displayId: options.displayId,
+          ...(options.control ? { control: true } : {}),
+          ...(options.fps === undefined ? {} : { fps: options.fps }),
+          ...(options.bitrateBps === undefined ? {} : { bitrateBps: options.bitrateBps }),
+          ...(options.maxWidth === undefined ? {} : { maxWidth: options.maxWidth }),
+          ...(options.maxHeight === undefined ? {} : { maxHeight: options.maxHeight }),
+        },
         options, replaced: false,
         input: null, inputReady: false, inputFailure: null,
         disconnects: createPeerDisconnectGuard(() => { if (session) fail(session, { kind: "connection", detail: "Desktop connection lost" }) }),

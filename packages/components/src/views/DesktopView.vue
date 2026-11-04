@@ -24,7 +24,7 @@ const platformClient = usePlatformClient()
 const nativePresenterEnabled = useFeatureGate("native_presentor")
 const showNative = computed(() => !!platformClient.desktop.openNative && nativePresenterEnabled.value)
 
-const props = withDefaults(defineProps<{ machineId: string; visible?: boolean }>(), { visible: true })
+const props = withDefaults(defineProps<{ machineId: string; visible?: boolean; initialDisplayId?: number; autoConnect?: boolean }>(), { visible: true, autoConnect: false })
 const { t } = useI18n()
 const fleet = useFleetStore()
 const connection = useDesktopConnection(platformClient.desktop)
@@ -53,6 +53,7 @@ const settingsOpen = ref(false)
 const stage = useTemplateRef<HTMLElement>("stage")
 const toolbar = useTemplateRef<HTMLElement>("toolbar")
 let discoveryGeneration = 0
+let autoConnectPending = props.autoConnect
 
 // The toolbar can cover any part of the remote screen, so the viewer can move it.
 const { position: toolbarPosition, startDrag, moveDrag, endDrag, nudge: nudgeToolbar, panelSide: settingsSide } = useFloatingToolbar(stage, toolbar)
@@ -84,19 +85,26 @@ async function refresh(): Promise<void> {
     const available = await platformClient.desktop.capabilities()
     if (generation !== discoveryGeneration || !local.value) return
     capabilities.value = available
-    displayId.value = available.displays[0]?.id ?? null
+    displayId.value = available.displays.find(display => display.id === props.initialDisplayId)?.id ?? available.displays[0]?.id ?? null
     if (!available.audio) audio.value = false
   } catch (error) {
     if (generation === discoveryGeneration) {
       discoveryError.value = error
     }
   } finally {
-    if (generation === discoveryGeneration) loading.value = false
+    if (generation === discoveryGeneration) {
+      loading.value = false
+      if (autoConnectPending && canConnect.value && (props.initialDisplayId === undefined || displayId.value === props.initialDisplayId)) {
+        autoConnectPending = false
+        connect()
+      }
+    }
   }
 }
 
 watchImmediate(() => props.machineId, () => {
   ++discoveryGeneration
+  autoConnectPending = props.autoConnect
   void connection.disconnect()
   capabilities.value = null
   loading.value = false
