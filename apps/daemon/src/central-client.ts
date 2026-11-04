@@ -1,6 +1,8 @@
 import { chmod, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { join } from "node:path"
+import type { RemoteMcpRequest } from "../../../crates/protocol/control.ts"
+import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
 import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
@@ -54,7 +56,10 @@ export class CentralClient {
   #enrolling = false
   #revocation: Promise<void> | undefined
 
-  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000) {
+  readonly #remoteMcp?: RemoteMcp
+
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp) {
+    this.#remoteMcp = remoteMcp
     this.#shutdownTimeoutMs = shutdownTimeoutMs
     this.#path = join(directory, "central.json")
     this.#operations = operations
@@ -117,6 +122,23 @@ export class CentralClient {
     const result = await response.json() as { authorized?: boolean }
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
     return structuredClone(actor)
+  }
+
+  /** The credential fixes the source registration; the backend authorizes the target in that Team. */
+  async remoteMcp(request: RemoteMcpRequest): Promise<unknown> {
+    const credentials = this.#credentials
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Remote Agent delegation is unavailable")
+    const response = await fetch(`${credentials.serverUrl}/api/daemon/mcp`, {
+      method: "POST", redirect: "error",
+      headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(55_000), this.#httpClosing.signal]),
+    })
+    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
+    if (!response.ok) {
+      const error = await response.json().catch(() => null) as { error?: { message?: string } } | null
+      throw new Error(error?.error?.message ?? `Remote MCP request failed (${response.status})`)
+    }
+    return response.json()
   }
 
   /** Machine credentials authorize fresh quota decisions independently of peer lifetime. */
@@ -292,6 +314,10 @@ export class CentralClient {
   async #request(method: string, value: unknown, actor?: AgentActor): Promise<unknown> {
     const params = value as Record<string, unknown>
     switch (method) {
+      case "remoteMcpDiscover":
+      case "remoteMcp":
+        if (!this.#credentials || !this.#remoteMcp) throw new Error("Remote MCP is unavailable")
+        return this.#remoteMcp.handle(method, value, actor, this.#credentials)
       case "peer.offer": return this.#peers.offer(value as PeerOffer)
       case "peer.local": this.#peers.prepareLocal(value as LocalPeerGrant); return null
       case "peer.candidate": await this.#peers.candidate(params.peerId as string, params.candidate as IceCandidate); return null

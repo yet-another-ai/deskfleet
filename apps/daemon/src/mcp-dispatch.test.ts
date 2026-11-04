@@ -92,3 +92,15 @@ test("an archived issuing Session cannot use a retained MCP grant", async () => 
   await assert.rejects(dispatchMcp(operations, "scheduleRun", { scheduleId: "a" }, actor, scope), /archived/)
   assert.deepEqual(calls, [])
 })
+
+test("cross-machine tools bind the initiating Session and actor while the target is explicit", async () => {
+  const { operations } = fixture()
+  const requests: unknown[] = []
+  const remote = async (request: unknown) => { requests.push(request); return "remote" }
+  assert.equal(await dispatchMcp(operations, "remoteMcp/session", { machineId: "target", sessionId: "remote-session" }, actor, scope, remote), "remote")
+  assert.deepEqual(requests, [{ userId: "creator", deviceId: "login", sessionId: "1", operation: "session", machineId: "target", arguments: { sessionId: "remote-session" } }])
+  await assert.rejects(dispatchMcp(operations, "remoteMcp/session", { sessionId: "remote-session" }, actor, scope, remote), /target machine/)
+  operations.agents.requireActive = async () => { throw new Error("Session is archived") }
+  await assert.rejects(dispatchMcp(operations, "remoteMcp/machines", {}, actor, scope, remote), /archived/)
+  assert.equal(requests.length, 1)
+})

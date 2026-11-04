@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { DESKFLEET_TOOLS } from "./tools.ts"
 
 export type ToolInvoker = (name: string, args: Record<string, unknown>) => Promise<unknown>
@@ -14,6 +14,7 @@ export function createMcpServer(invoke: ToolInvoker): Server {
     try {
       if (!DESKFLEET_TOOLS.some(tool => tool.name === request.params.name)) throw new Error("Unknown DeskFleet tool")
       const value = await invoke(request.params.name, request.params.arguments ?? {})
+      if (request.params.name === "deskfleet_remote_mcp_call") return CallToolResultSchema.parse(value)
       return { content: [{ type: "text", text: JSON.stringify(value ?? null) }] }
     } catch (error) {
       return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] }

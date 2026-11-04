@@ -6,6 +6,7 @@ import { AgentSessions } from "./agent-sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { AgentMcp } from "./agent-mcp.ts"
 import { dispatchMcp } from "./mcp-dispatch.ts"
+import { RemoteMcp } from "./remote-mcp.ts"
 import { ScheduledTasks } from "./scheduled-tasks.ts"
 import { McpServers } from "./mcp-servers.ts"
 import type { AgentProvider } from "./agents/acp.ts"
@@ -41,9 +42,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let central: CentralClient | undefined
   let schedules: ScheduledTasks | undefined
   let mcp: AgentMcp | undefined
+  let remoteMcp: RemoteMcp | undefined
   let stopping: Promise<void> | undefined
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
     const results = await Promise.allSettled([schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
@@ -71,7 +74,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     mcp = new AgentMcp({
       servers: () => mcpServers.resolve(),
       authorize: async actor => { await authorize(actor) },
-      dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope),
+      dispatch: (method, params, actor, scope) => dispatchMcp(operations, method, params, actor, scope, request => central!.remoteMcp(request)),
     })
     await mcp.init()
     const quotas = options.agentQuotas ?? new CentralAgentQuotas((method, path, body) => {
@@ -85,7 +88,8 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     schedules = new ScheduledTasks(directory, { agents, catalog, providers, authorize })
     await schedules.init()
     operations = new MachineOperations({ agents, catalog, providers, terminals, setup, schedules, mcpServers, capabilities: options.capabilities })
-    central = new CentralClient(directory, operations, options.peers)
+    remoteMcp = new RemoteMcp(hostDirectory, operations)
+    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp)
     await central.init()
     schedules.start()
     return { directory, catalog, providers, mcpServers, setup, agents, terminals, central, schedules, mcp, operations, stop, close }

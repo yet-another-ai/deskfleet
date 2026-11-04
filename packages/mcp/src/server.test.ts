@@ -68,3 +68,16 @@ test("the bridge refuses non-loopback credential destinations and redirects", as
   })
   await assert.rejects(invoke("deskfleet_context", {}), /Access revoked/)
 })
+
+test("remote tools are discoverable and retain the remote MCP result, including isError", async t => {
+  const result = { isError: true, content: [{ type: "text" as const, text: "remote failure" }], structuredContent: { code: "denied" } }
+  const server = createMcpServer(async () => result)
+  const client = new Client({ name: "agent", version: "1" })
+  const [a, b] = InMemoryTransport.createLinkedPair()
+  await Promise.all([server.connect(a), client.connect(b)])
+  t.after(async () => { await client.close(); await server.close() })
+  const tools = (await client.listTools()).tools.map(tool => tool.name)
+  assert.ok(tools.includes("deskfleet_remote_machines"))
+  assert.ok(tools.includes("deskfleet_remote_session_history"))
+  assert.deepEqual(await client.callTool({ name: "deskfleet_remote_mcp_call", arguments: { machineId: "target", serverId: "server", name: "tool", arguments: {} } }), result)
+})

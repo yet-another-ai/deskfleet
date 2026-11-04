@@ -1,4 +1,6 @@
 import type { LocalAgentSettingsApi } from "./local-agent.ts"
+import type { RemoteAgentSettings } from "../../../apps/daemon/src/remote-agent-settings.ts"
+export type { RemoteAgentSettings } from "../../../apps/daemon/src/remote-agent-settings.ts"
 
 export const SETTINGS_CHANNEL = "deskfleet:settings"
 export const SETTINGS_CHANGED_EVENT = "deskfleet:settings-changed"
@@ -40,6 +42,8 @@ export function validateNotificationSettings(value: unknown): NotificationSettin
 export type SettingsResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 export interface SettingsApi extends LocalAgentSettingsApi {
+  getRemoteAgentSettings(): Promise<RemoteAgentSettings>
+  setRemoteAgentSettings(settings: RemoteAgentSettings): Promise<RemoteAgentSettings>
   getLaunchAtStartup(): Promise<LaunchAtStartupState>
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
   getKeepAwake(): Promise<KeepAwakeState>

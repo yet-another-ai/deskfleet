@@ -6,7 +6,8 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/server.ts",
-    "./tools": "./src/tools.ts"
+    "./tools": "./src/tools.ts",
+    "./client": "./src/client.ts"
   },
   "bin": { "deskfleet-mcp": "./src/main.ts" },
   "dependencies": { "@modelcontextprotocol/sdk": "1.32.2" }

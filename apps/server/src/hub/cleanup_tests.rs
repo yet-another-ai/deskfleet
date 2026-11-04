@@ -3,6 +3,36 @@ use super::*;
 use serde_json::json;
 
 #[tokio::test]
+async fn request_deadline_bounds_delivery_and_response_and_retires_pending_rpc() {
+    for block_delivery in [false, true] {
+        let hub = Hub::default();
+        let (send, mut messages) = mpsc::channel(8);
+        let (shutdown, _stopped) = watch::channel(None);
+        hub.add_daemon("registration", "team", "machine", "socket", send, shutdown)
+            .await
+            .unwrap();
+        let _delivery_gate = if block_delivery {
+            Some(hub.registration.lock().await)
+        } else {
+            None
+        };
+        let error = hub
+            .request_with_timeout(
+                "registration",
+                "remoteMcpDiscover",
+                json!({}),
+                None,
+                Duration::from_millis(25),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "daemon_timeout");
+        assert!(hub.inner.lock().await.pending.is_empty());
+        assert_eq!(messages.try_recv().is_ok(), !block_delivery);
+    }
+}
+
+#[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn postgres_socket_cleanup_releases_route_after_local_failure() {
     let store =

@@ -5,6 +5,7 @@ import type { LocalAgentController } from "./local-agent-controller.ts"
 import type { KeepAwakeController } from "./keep-awake.ts"
 import type { NotificationSettingsController } from "./notification-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
+import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 
 const { handle, showOpenDialog, fromWebContents } = vi.hoisted(() => ({ handle: vi.fn(), showOpenDialog: vi.fn(), fromWebContents: vi.fn() }))
 vi.mock("electron", () => ({ ipcMain: { handle }, dialog: { showOpenDialog }, BrowserWindow: { fromWebContents } }))
@@ -14,6 +15,26 @@ import { attachSettings, installSettings } from "./settings.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 beforeEach(() => vi.clearAllMocks())
+
+test("remote Agent consent uses main-renderer IPC and rejects malformed permissions", async () => {
+  const value = { allowRead: true, allowOperate: false }
+  const remote = { get: vi.fn(async () => value), set: vi.fn(async () => value) }
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController, undefined, remote as unknown as RemoteAgentSettingsController)
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  await expect(invoke(event, "setRemoteAgentSettings", value)).rejects.toThrow("restricted")
+  attachSettings({ webContents: sender } as unknown as BrowserWindow)
+  for (const invalid of [null, true, {}, { allowRead: true }, { ...value, allowOperate: "true" }, { ...value, teamId: "other" }]) {
+    expect(await invoke(event, "setRemoteAgentSettings", invalid)).toMatchObject({ ok: false })
+  }
+  expect(remote.set).not.toHaveBeenCalled()
+  expect(await invoke(event, "getRemoteAgentSettings")).toEqual({ ok: true, value })
+  expect(await invoke(event, "setRemoteAgentSettings", value)).toEqual({ ok: true, value })
+  expect(remote.set).toHaveBeenCalledExactlyOnceWith(value)
+  sender.emit("destroyed")
+})
 
 test("worktree root settings restrict callers, validate paths, and use a local folder chooser", async () => {
   const state = { root: null, defaultRoot: "/home/user/.deskfleet/machine/session-worktrees" }

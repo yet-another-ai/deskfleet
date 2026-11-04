@@ -83,7 +83,7 @@ async function setup(context: TestContext, rejection: Rejection) {
   }
 }
 
-for (const operation of ["sync", "delegation", "quota"] as const) {
+for (const operation of ["sync", "delegation", "quota", "remoteMcp"] as const) {
   test(`${operation} only retires a machine after an explicit credential rejection`, async context => {
     for (const response of responses) {
       await context.test(response.name, async context => {
@@ -96,6 +96,11 @@ for (const operation of ["sync", "delegation", "quota"] as const) {
         } else if (operation === "delegation") {
           await assert.rejects(central.authorizeDelegation({ kind: "user", userId: "user", deviceId: "device" }), new RegExp(`\\(${response.status}\\)`))
           assert.deepEqual(requests, ["/api/daemon/authorize-delegation"])
+        } else if (operation === "remoteMcp") {
+          await assert.rejects(central.remoteMcp({ userId: "user", deviceId: "device", sessionId: "session", operation: "machines", arguments: {} }), {
+            message: response.quotaMessage ?? `Remote MCP request failed (${response.status})`,
+          })
+          assert.deepEqual(requests, ["/api/daemon/mcp"])
         } else {
           await assert.rejects(central.quotaRequest("GET", "/api/daemon/entitlements"), {
             message: response.quotaMessage ?? `Team allowance request failed (${response.status})`,

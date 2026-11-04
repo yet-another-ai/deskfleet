@@ -1202,10 +1202,16 @@ contents automatically.
 
 The independent `@deskfleet/mcp` stdio server is injected into managed ACP
 Sessions. Its built-in tools share the same operations as human clients, with a
-delegation restricted to the issuing Session's Workspace and current Team
-membership checked on every call. Settings configures additional MCP servers
-separately; the built-in server is always injected. Cross-machine delegation
-remains subsequent work. The [Scheduled Tasks and MCP guide](scheduled-tasks.md)
+local delegation restricted to the issuing Session's Workspace and current Team
+membership checked on every call. Separate remote tools discover other online
+machines in that same Team, read their catalogs and Agent history, and invoke
+their configured MCP tools. Host-wide Preferences independently opt into remote
+Agent reads and operations; both default off. The target daemon reads this
+consent on every request. These tools use the authenticated backend management
+RPC route with the source Machine, Team, user, and Session bound by the issuing
+daemon. Settings configures additional MCP servers separately; the built-in
+server is always injected. Cross-machine Agent messaging remains subsequent
+work. The [Scheduled Tasks and MCP guide](scheduled-tasks.md)
 owns timing, persistence, authorization, and provider injection details.
 
 ## History and authorization

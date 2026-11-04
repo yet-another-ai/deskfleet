@@ -6,6 +6,7 @@ import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
 import WorktreeRootSettings from "./WorktreeRootSettings.vue"
+import RemoteAgentSettings from "./RemoteAgentSettings.vue"
 
 const client = usePlatformClient()
 
@@ -21,6 +22,7 @@ const { t } = useI18n()
       <KeepAwakeSettings />
       <AutoDownloadUpdatesSettings />
       <WorktreeRootSettings />
+      <RemoteAgentSettings />
       <LocalAgentSettings />
     </div>
   </section>

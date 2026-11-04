@@ -516,6 +516,12 @@
     "notificationTaskCompletedDescription": "Notify me when an agent finishes a task.",
     "notificationTaskNeedsInput": "Task needs input",
     "notificationTaskNeedsInputDescription": "Notify me when an agent pauses for a question or approval.",
+    "remoteAgents": {
+      "allowRead": "Allow Agents on other machines to read this computer",
+      "allowReadDescription": "Agents in the same team can view this computer's Workspaces, Agent sessions and conversation history, and discover its MCP tools.",
+      "allowOperate": "Allow Agents on other machines to operate this computer",
+      "allowOperateDescription": "Agents in the same team can discover and run this computer's configured MCP tools. Applies to all teams registered on this computer; reading conversations is controlled separately."
+    },
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",
     "launchAtStartupDescription": "Open DeskFleet automatically when you log in.",

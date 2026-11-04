@@ -11,6 +11,7 @@ mod hub;
 mod maintenance;
 mod network_configuration;
 mod peers;
+mod remote_mcp;
 mod search;
 mod site;
 mod turn_settings;
@@ -204,6 +205,7 @@ pub fn configure(config: &mut ServiceConfig) {
                 web::get().to(api::command),
             )
             .route("/daemon/me", web::get().to(api::daemon_me))
+            .route("/daemon/mcp", web::post().to(remote_mcp::call))
             .route(
                 "/daemon/authorize-delegation",
                 web::post().to(api::authorize_delegation),

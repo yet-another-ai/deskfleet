@@ -516,6 +516,12 @@
     "notificationTaskCompletedDescription": "智能体完成任务时通知我。",
     "notificationTaskNeedsInput": "任务需要回应",
     "notificationTaskNeedsInputDescription": "智能体因等待问题回答或操作批准而暂停时通知我。",
+    "remoteAgents": {
+      "allowRead": "允许其它机器上的 Agent 读取本机",
+      "allowReadDescription": "同一团队中的 Agent 可以查看本机的工作区、Agent 会话和对话历史，以及发现 MCP 工具。",
+      "allowOperate": "允许其它机器上的 Agent 操作本机",
+      "allowOperateDescription": "同一团队中的 Agent 可以发现并调用本机已配置的 MCP 工具。设置适用于本机注册的所有团队；读取对话由独立开关控制。"
+    },
     "thisComputer": "本机",
     "launchAtStartup": "开机自启",
     "launchAtStartupDescription": "登录系统时自动打开 DeskFleet。",
