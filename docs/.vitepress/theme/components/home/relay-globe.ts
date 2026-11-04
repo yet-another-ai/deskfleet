@@ -46,7 +46,8 @@ export function createRelayGlobe(element: HTMLElement, labels: Labels, moving: b
         globeOuterRadius: 100,
         shading: "lambert",
         environment: "none",
-        light: { main: { intensity: 0.25, alpha: 35, beta: 160 }, ambient: { intensity: 0.9 } },
+        // ECharts GL derives the sun direction and seasonal tilt from this UTC instant.
+        light: { main: { intensity: 0.9, time: Date.now() }, ambient: { intensity: 0.35 } },
         atmosphere: { show: true, color: palette.accent, offset: 3, glowPower: 9, innerGlowPower: 12 },
         viewControl: {
           distance: 255, minDistance: 255, maxDistance: 255,
@@ -94,6 +95,9 @@ export function createRelayGlobe(element: HTMLElement, labels: Labels, moving: b
 
   return {
     resize: () => chart.resize(),
+    updateLighting: () => chart.setOption({
+      globe: { light: { main: { time: Date.now() } } },
+    }),
     setTheme: () => {
       const next = relayPalette(element)
       chart.setOption({
