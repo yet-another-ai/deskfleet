@@ -64,11 +64,6 @@ export async function fileRoots(): Promise<FileListing["roots"]> {
   return roots.filter((root): root is { name: string; path: string } => root !== null)
 }
 
-export function normalizeResourcePath(path: string, platform: NodeJS.Platform = process.platform): string {
-  // Some Markdown links use the pathname form of a Windows file URL without its scheme.
-  return platform === "win32" && /^\/[a-z]:[\\/]/iu.test(path) ? path.slice(1) : path
-}
-
 export async function sessionResourcePath(sessionId: unknown, value: unknown, sessionDirectory?: (sessionId: string) => Promise<string>): Promise<string> {
   const id = text(sessionId, "Session ID")
   if (!sessionDirectory) throw fileError("Session resources are unavailable", "unsupported")
@@ -78,11 +73,17 @@ export async function sessionResourcePath(sessionId: unknown, value: unknown, se
   // An absolute Windows drive path keeps its drive colon; only its final location is removed.
   const reference = text(value, "resource URI").split("#", 1)[0]!
   const uri = /^[a-z]:\d+(?::\d+)?$/iu.test(reference) ? reference : reference.replace(/:[1-9]\d*(?::[1-9]\d*)?$/u, "")
-  if (/^file:/iu.test(uri)) return absolutePath(fileURLToPath(uri))
+  // file: URIs and scheme-less Windows pathnames (`/E:/...` from file URL pathnames) share Node's converter.
+  const fileUrl = /^file:/iu.test(uri)
+    ? uri
+    : process.platform === "win32" && /^\/[a-z]:[\\/]/iu.test(uri)
+      ? `file://${uri}`
+      : null
+  if (fileUrl !== null) return absolutePath(fileURLToPath(fileUrl, { windows: process.platform === "win32" }))
   if (!isAbsolute(uri) && /^[a-z][a-z0-9+.-]*:/iu.test(uri)) throw fileError("Only file references are supported", "unsupported")
   let path: string
   try { path = decodeURIComponent(uri) } catch { throw fileError("Invalid resource URI", "invalid") }
-  return resolve(absolutePath(cwd), normalizeResourcePath(text(path, "resource path")))
+  return resolve(absolutePath(cwd), text(path, "resource path"))
 }
 
 export const defaultDirectory = homedir

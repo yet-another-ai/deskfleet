@@ -4,17 +4,18 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import test, { type TestContext } from "node:test"
 import { FILE_CHUNK_BYTES } from "./files-protocol.ts"
-import { normalizeResourcePath } from "./files-paths.ts"
 import { FilesService } from "./files-service.ts"
 
-test("Windows resource pathnames retain their drive without duplicating it", () => {
-  assert.equal(normalizeResourcePath("/E:/projects/a%20b.png", "win32"), "E:/projects/a%20b.png")
-  assert.equal(normalizeResourcePath("/E:/projects/a b.png", "linux"), "/E:/projects/a b.png")
-  assert.equal(normalizeResourcePath("E:/projects/a b.png", "win32"), "E:/projects/a b.png")
-  assert.equal(normalizeResourcePath("/projects/a b.png", "win32"), "/projects/a b.png")
+test("scheme-less Windows drive pathnames convert through fileURLToPath", () => {
+  // sessionResourcePath wraps matching pathnames as `file://${uri}` on win32; Node must keep the drive once.
+  assert.equal(fileURLToPath("file:///E:/projects/a%20b.png", { windows: true }), String.raw`E:\projects\a b.png`)
+  assert.equal(fileURLToPath("file:///E:/projects/image.png", { windows: true }), String.raw`E:\projects\image.png`)
+  assert.match("/E:/projects/image.png", /^\/[a-z]:[\\/]/iu)
+  assert.doesNotMatch("E:/projects/image.png", /^\/[a-z]:[\\/]/iu)
+  assert.doesNotMatch("/projects/image.png", /^\/[a-z]:[\\/]/iu)
 })
 
 async function fixture(context: TestContext) {
@@ -41,7 +42,7 @@ test("Session resources use captured cwd and return bounded binary reads", async
     assert.equal(result.value.path, path)
   }
   if (process.platform === "win32") {
-    assert.equal((await service.call("resolve", { sessionId: "12", uri: `/${path.replaceAll("\\", "/").replace(" ", "%20")}#L12` })).value.path, path)
+    assert.equal((await service.call("resolve", { sessionId: "12", uri: `${pathToFileURL(path).pathname}#L12` })).value.path, path)
   }
   const info = (await service.call("stat", { path })).value
   const read = await service.call("read", { path, offset: 1, length: 2, modifiedAt: info.modifiedAt })
