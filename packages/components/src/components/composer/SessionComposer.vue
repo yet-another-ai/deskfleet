@@ -28,6 +28,7 @@ import { previewKindFromMime, previewKindFromUri, type PreviewDescriptor } from 
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
+import { useLayoutStore } from "../../stores/layout.ts"
 import { focusPreview } from "../../stores/previews.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
 import AgentUsage from "./AgentUsage.vue"
@@ -66,6 +67,7 @@ const branchLabel = computed(() => preparedBranches.value.length
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: [] }>()
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
+const layout = useLayoutStore()
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
@@ -302,7 +304,7 @@ onBeforeUnmount(() => {
         </RouterLink>
       </template>
       <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :disabled="submitting" @busy="preparing = $event" />
-      <span v-if="changes.additions || changes.deletions" class="ml-auto shrink-0 rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></span>
+      <button v-if="changes.additions || changes.deletions" type="button" class="ml-auto shrink-0 cursor-pointer rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5 ui-motion hover:bg-ui-hover" :title="t('panel.changes')" data-composer-changes @click="layout.requestDetailsOpen()"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></button>
     </div>
     <div ref="dropZoneRef" class="composer-shell relative rounded-2xl border bg-ui-surface shadow-ui-card ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
       <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />

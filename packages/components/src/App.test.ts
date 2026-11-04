@@ -454,6 +454,11 @@ test("returning focus to the window refreshes the local machine", async () => {
 test("fixed sidebar and tiled window controls retain their layout behavior", async () => {
   const pinia = createPinia()
   hydrateSession(pinia)
+  vi.spyOn(useAgentSessionsStore(pinia), "watchGit").mockResolvedValue(() => {})
+  vi.spyOn(useAgentSessionsStore(pinia), "gitStatus").mockResolvedValue({
+    sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
+    repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [{ path: "src/index.ts", kind: "unstaged", status: "modified", additions: 12, deletions: 3 }] }],
+  })
   // Tab moves rely on Dockview's actual portal ownership; flattening teleports
   // reparents a moved group's menu into its old Vue subtree.
   const wrapper = await mountApp(`/sessions/${sessionId}`, pinia, true)
@@ -500,6 +505,15 @@ test("fixed sidebar and tiled window controls retain their layout behavior", asy
   await menu.get('[data-window-type="changes"]').trigger("click")
   await flushPromises()
   expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
+  await wrapper.get('[aria-label="Close Changes"]').trigger("click")
+  await flushPromises()
+  const changesButton = wrapper.get("button[data-composer-changes]")
+  expect(changesButton.text()).toBe("+12 −3")
+  await changesButton.trigger("click")
+  await flushPromises()
+  await wrapper.get('[aria-label="Add window"]').trigger("click")
+  await flushPromises()
+  expect(menu.get('[data-window-type="changes"]').attributes("data-disabled")).toBeDefined()
 })
 
 test("window headers prevent group drags while individual tabs remain draggable", async () => {

@@ -59,13 +59,19 @@ async function mountApp(path = "/") {
 test("compact drawers preserve desktop sidebar state across viewport changes", async () => {
   window.localStorage.setItem("deskfleet.sidebar-open", "false")
   window.localStorage.setItem("deskfleet.sidebar-width", "420")
+  const agents = useAgentSessionsStore(pinia)
+  vi.spyOn(agents, "watchGit").mockResolvedValue(() => {})
+  vi.spyOn(agents, "gitStatus").mockResolvedValue({
+    sessionId, directories: [{ path: "/worktrees/api/session", repositoryId: "checkout" }],
+    repositories: [{ id: "checkout", root: "/worktrees/api/session", branch: "session-branch", head: "abc123", changes: [{ path: "src/index.ts", kind: "unstaged", status: "modified", additions: 5, deletions: 1 }] }],
+  })
   const view = await mountApp(`/sessions/${sessionId}`)
   const layout = useLayoutStore(pinia)
   expect(view.find("aside").exists()).toBe(false)
   await view.get('main [aria-label="Show sidebar"]').trigger("click")
   expect(view.get<HTMLElement>('[role="dialog"] aside').element.style.width).toBe("100%")
   expect(view.find('[role="separator"]').exists()).toBe(false)
-  layout.toggleDetails()
+  await view.get("button[data-composer-changes]").trigger("click")
   await flushPromises()
   expect(view.find('[role="dialog"]').exists()).toBe(false)
   expect(view.get('[data-mobile-view="changes"]').attributes("aria-hidden")).toBe("false")
