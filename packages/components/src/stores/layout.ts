@@ -86,6 +86,7 @@ export const useLayoutStore = defineStore("layout", () => {
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
   const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
   const compactPanel = ref<"sidebar" | "details" | null>(null)
+  const detailsOpenRequest = ref(0)
   const sessionWindowRequest = shallowRef<SessionWindowRequest>()
   const sessionWindowsAvailable = computed(() => router.currentRoute.value.name === "session")
   const sidebarOpen = computed({
@@ -112,6 +113,10 @@ export const useLayoutStore = defineStore("layout", () => {
   function toggleDetails(): void {
     compactPanel.value = detailsOpen.value ? null : "details"
   }
+  function requestDetailsOpen(): void {
+    if (compact.value) compactPanel.value = "details"
+    else detailsOpenRequest.value++
+  }
   function requestSessionWindow(request: NewSessionWindowRequest): boolean {
     if (!sessionWindowsAvailable.value) return false
     const routeSessionId = router.currentRoute.value.params.sessionId
@@ -129,6 +134,7 @@ export const useLayoutStore = defineStore("layout", () => {
     sidebarOpen,
     sidebarWidth,
     detailsOpen,
+    detailsOpenRequest,
     sessionWindowsAvailable,
     sessionWindowRequest,
     conversationPath,
@@ -137,6 +143,7 @@ export const useLayoutStore = defineStore("layout", () => {
     terminalPanelHeight,
     toggleSidebar,
     toggleDetails,
+    requestDetailsOpen,
     requestSessionWindow,
   }
 })

@@ -407,6 +407,7 @@ function openToolPanel(id: "changes" | "desktops", group?: DockviewGroupPanel): 
 }
 
 watch([sessionShellIds, () => terminals.loaded, sessionWorktreeId], scheduleTerminalReconcile)
+watch(() => layout.detailsOpenRequest, () => openToolPanel("changes"))
 watch(() => layout.sessionWindowRequest?.id, () => {
   const request = layout.sessionWindowRequest
   if (request) openSessionWindow(request)
