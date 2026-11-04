@@ -200,7 +200,7 @@ async fn postgres_remote_rpc_preserves_actor_success_and_structured_failure() {
         };
         let response = if failing {
             let mut error = ApiError::new(
-                StatusCode::BAD_GATEWAY,
+                StatusCode::UNPROCESSABLE_ENTITY,
                 "daemon_error",
                 "encoder rejected the display",
             );
@@ -219,7 +219,7 @@ async fn postgres_remote_rpc_preserves_actor_success_and_structured_failure() {
             .expect("response reaches requesting instance");
         if failing {
             let error = result.unwrap_err();
-            assert_eq!(error.status, StatusCode::BAD_GATEWAY);
+            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
             assert_eq!(error.code, "daemon_error");
             assert_eq!(error.message, "encoder rejected the display");
             assert_eq!(error.reason.as_deref(), Some("encoder"));

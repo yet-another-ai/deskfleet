@@ -107,7 +107,7 @@ export class CentralClient {
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Machine delegation is unavailable")
     const response = await fetch(`${credentials.serverUrl}/api/daemon/authorize-delegation`, {
-      method: "POST", headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      method: "POST", headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
       body: JSON.stringify({ userId: actor.userId }),
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
@@ -124,7 +124,7 @@ export class CentralClient {
     const credentials = this.#credentials
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Team allowance is unavailable")
     const response = await fetch(`${credentials.serverUrl}${path}`, {
-      method, headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      method, headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
     })
@@ -152,7 +152,7 @@ export class CentralClient {
     try {
       await this.#revocation
       const serverUrl = centralUrl(value.serverUrl)
-      const response = await fetch(`${serverUrl}/api/daemon/me`, { headers: { authorization: `Bearer ${value.token}` }, signal: AbortSignal.timeout(15_000) })
+      const response = await fetch(`${serverUrl}/api/daemon/me`, { headers: { accept: "application/json", authorization: `Bearer ${value.token}` }, signal: AbortSignal.timeout(15_000) })
       if (!response.ok) throw new Error(`Machine enrollment verification failed (${response.status})`)
       const verified = await response.json() as {
         serverId: string; machine: { id: string; teamId: string; originId: string; localMachineId: string }
@@ -185,7 +185,7 @@ export class CentralClient {
     const credentials = this.#credentials
     if (!credentials || this.#closed) throw new Error("Machine is not connected to a team")
     const response = await fetch(`${credentials.serverUrl}${path}`, {
-      method: "POST", headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      method: "POST", headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
       body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.#httpClosing.signal]),
     })
     if (!response.ok) {

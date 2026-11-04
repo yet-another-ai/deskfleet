@@ -118,7 +118,7 @@ export class AuthorizedPeers {
     if (!bound || grant.serverId !== bound.serverId || grant.teamId !== bound.teamId || target.id !== bound.machineId ||
       target.originId !== this.#identity.originId || target.localMachineId !== this.#identity.machineId) throw new Error("Peer grant targets another machine or authority")
     if (grant.actor.kind !== "user" || !grant.actor.userId || !grant.actor.deviceId) throw new Error("Peer grant requires an authenticated user")
-    if (!Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.#now() + 60_000 || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
+    if (!Number.isFinite(issued) || !Number.isFinite(expires) || expires <= this.#now() || expires <= issued || expires - issued > DAY_MS) {
       throw new Error("Peer authorization is expired or exceeds 24 hours")
     }
     if (!["agent", "terminal", "desktop", "files", "ports", "mux"].includes(grant.purpose)) throw new Error("Unsupported peer purpose")
