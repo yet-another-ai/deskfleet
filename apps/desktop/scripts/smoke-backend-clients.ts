@@ -122,7 +122,11 @@ try {
   // Both client bundles receive the fixture backend at compile time, as shipped clients do.
   const define = { "import.meta.env.VITE_DESKFLEET_SERVER_URL": JSON.stringify(fixture.backend) }
   await buildWeb({ root: join(root, "apps/web"), configFile: join(root, "apps/web/vite.config.ts"), define, build: { outDir: webDirectory, emptyOutDir: true } })
-  await build({ entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define })
+  await build({
+    entryPoints: [join(import.meta.dirname, "fixtures/backend-clients-main.ts")], outfile: join(directory, "client.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24", define,
+    // The daemon's MCP stdio client includes CommonJS dependencies that require Node built-ins.
+    banner: { js: "import { createRequire as createNodeRequire } from 'node:module'; const require = createNodeRequire(import.meta.url);" },
+  })
   // The bundled native Mux loader resolves its addon beside the fixture entry.
   await copyFile(join(root, "crates/node/deskfleet.node"), join(directory, "deskfleet.node"))
   await build({ entryPoints: [join(import.meta.dirname, "fixtures/local-channels-renderer.ts")], outfile: join(directory, "local-probe.js"), bundle: true, platform: "browser", format: "iife", globalName: "localChannelSmoke", target: "chrome140" })

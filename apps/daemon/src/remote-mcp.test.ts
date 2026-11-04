@@ -67,7 +67,10 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   assert.deepEqual(await f.call("mcpCall", { serverId: f.config.id, name: "record", arguments: { text: "from source" } }), {
     content: [{ type: "text", text: "recorded" }], structuredContent: { recorded: true },
   })
-  assert.deepEqual(JSON.parse(await readFile(f.output, "utf8")), { arguments: { text: "from source" }, cwd: await realpath(f.directory) })
+  const recorded = JSON.parse(await readFile(f.output, "utf8"))
+  assert.deepEqual(recorded.arguments, { text: "from source" })
+  // Windows may report the inherited temporary directory using its short path.
+  assert.equal(await realpath(recorded.cwd), await realpath(f.directory))
   assert.equal((await f.call("mcpCall", { serverId: f.config.id, name: "fail", arguments: {} }) as { isError: boolean }).isError, true)
   const { id, ...input } = f.config
   await f.servers.update(id, { ...input, enabled: false })

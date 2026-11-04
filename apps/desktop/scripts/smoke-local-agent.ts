@@ -88,7 +88,11 @@ try {
   await Promise.all([stat(join(rendererDirectory, "index.html")), stat(preloadPath), stat(mainEntry)])
   await Promise.all([mkdir(checkoutPath), mkdir(profileDirectory)])
   await Promise.all([
-    build({ entryPoints: [join(import.meta.dirname, "fixtures/local-agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24" }),
+    build({
+      entryPoints: [join(import.meta.dirname, "fixtures/local-agent-main.ts")], outfile: join(directory, "main.mjs"), bundle: true, platform: "node", format: "esm", external: ["electron"], target: "node24",
+      // Match the shipped bundle's support for CommonJS dependencies in the hosted daemon.
+      banner: { js: "import { createRequire as createNodeRequire } from 'node:module'; const require = createNodeRequire(import.meta.url);" },
+    }),
     // The bundled native loader resolves the addon beside its JavaScript entry.
     copyFile(join(appPath, "out/main/deskfleet.node"), join(directory, "deskfleet.node")),
   ])
