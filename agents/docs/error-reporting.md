@@ -133,8 +133,9 @@ alone does not establish that a request runs in the background.
 Only handled background network/timeouts, HTTP 429, and HTTP 5xx are collapsed.
 The first error is sent immediately. Matching failures within the next minute
 increment a counter; a timer sends their summary even if the burst has stopped.
-The key is the same bounded operation/cause fingerprint used for issue grouping,
-without machine, team, or session IDs. Each renderer owns at most 128 active
+The key uses the bounded operation/cause fingerprint and visibility state,
+without machine, team, or session IDs. This keeps hidden and visible failures in
+separate summaries even though they belong to the same Sentry issue. Each renderer owns at most 128 active
 buckets; eviction, `pagehide`, and SDK shutdown flush pending counts. Account
 identity changes flush pending summaries before binding the new identity. No request
 retry or UI error is suppressed. Browser termination and network loss can still
@@ -153,6 +154,16 @@ reported again by its global handler.
 The renderer samples the browser's online boolean and visible/hidden state when
 the operation fails; these are hints, not proof of server reachability. No IP,
 hostname, proxy URL, network name, or raw socket data is collected.
+
+Handled background network failures and timeouts observed while hidden are sent
+at warning level, including their summaries. Other failures, including HTTP 5xx,
+user-initiated and unknown-trigger requests, stay at error level. Configure Sentry
+alerts to match event level `error` for the primary alert and inspect warnings
+separately. Filter events by `central.trigger:background` and
+`central.visibility:hidden` when investigating background noise; a shared issue
+can contain both warning and error events. This changes reporting only, not UI
+errors, retries, or request execution. A hidden state does not prove that a
+failure was caused by backgrounding.
 
 The integration does not enable tracing, profiling, session replay, or log
 capture. It does not attach component props, breadcrumbs, other profile fields, or

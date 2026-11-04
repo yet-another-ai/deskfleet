@@ -280,6 +280,7 @@ test("background summaries reach the real SDK and user requests keep every occur
     await flushSdk()
     expect(events()).toHaveLength(1)
     expect(events()[0]?.contexts?.central_request).toMatchObject({ trigger: "background", online: false, visibility: "hidden" })
+    expect(events()[0]?.level).toBe("warning")
     await vi.advanceTimersByTimeAsync(60_000)
     await flushSdk()
     expect(events()).toHaveLength(2)
@@ -289,6 +290,31 @@ test("background summaries reach the real SDK and user requests keep every occur
     await flushSdk()
     expect(events().filter(event => event.tags?.["central.trigger"] === "user")).toHaveLength(2)
   } finally { (adapter.central as HttpCentralClient).dispose() }
+})
+
+test("hidden background network failures do not hide visible, user, or HTTP failures", async () => {
+  vi.useFakeTimers()
+  initializeErrorReporting("web")
+  const capture = (trigger: "background" | "user" | "unknown", visibility: "visible" | "hidden", kind: "network" | "timeout" | "http") => {
+    const error = requestFailure()
+    Object.assign(error.diagnostics, { trigger, visibility, kind, ...(kind === "http" ? { status: 503 } : {}) })
+    captureCentralRequestError(error)
+  }
+  capture("background", "hidden", "network")
+  capture("background", "hidden", "network")
+  capture("background", "visible", "network")
+  capture("background", "visible", "network")
+  capture("background", "hidden", "timeout")
+  capture("background", "hidden", "http")
+  capture("user", "hidden", "network")
+  capture("unknown", "hidden", "network")
+  await vi.advanceTimersByTimeAsync(60_000)
+  await flushSdk()
+  const reports = events()
+  expect(reports.filter(event => event.level === "warning")).toHaveLength(3)
+  expect(reports.filter(event => event.level === "error")).toHaveLength(5)
+  expect(reports.filter(event => event.tags?.["central.report_type"] === "summary")
+    .map(event => [event.tags?.["central.visibility"], event.level])).toEqual([["hidden", "warning"], ["visible", "error"]])
 })
 
 test.each(["pagehide", "shutdown"])("flushes background occurrence counts on %s", async lifecycle => {

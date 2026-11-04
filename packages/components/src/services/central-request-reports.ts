@@ -20,7 +20,9 @@ export class CentralRequestReports {
     const { trigger, kind, status } = error.diagnostics
     const background = trigger === "background" && (kind === "network" || kind === "timeout" || kind === "http" && (status === 429 || status! >= 500))
     if (!background) { this.emit(error, { occurrences: 1, window_ms: 0, summary: false }); return }
-    const key = JSON.stringify(centralRequestFingerprint(error.diagnostics))
+    // Hidden network failures have a lower reporting severity. Keep their
+    // summaries separate from visible failures of the same operation.
+    const key = JSON.stringify([...centralRequestFingerprint(error.diagnostics), error.diagnostics.visibility ?? "unknown"])
     const existing = this.buckets.get(key)
     if (existing) { existing.latest = error; existing.suppressed++; return }
     if (this.buckets.size >= maxBuckets) this.finish(this.buckets.keys().next().value!)
