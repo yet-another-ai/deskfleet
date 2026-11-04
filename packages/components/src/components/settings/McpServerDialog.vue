@@ -25,8 +25,9 @@ const headers = ref<Pair[]>(props.initial && props.initial.transport !== "stdio"
 const entries = computed(() => transport.value === "stdio" ? env.value : headers.value)
 const saving = ref(false)
 const error = ref<string>()
-const blocked = computed(() => saving.value || props.disabled)
-const valid = computed(() => name.value.trim() && name.value.trim().toLowerCase() !== "deskfleet"
+const readOnly = computed(() => !!props.initial?.builtIn)
+const blocked = computed(() => saving.value || props.disabled || readOnly.value)
+const valid = computed(() => !readOnly.value && name.value.trim() && !["deskfleet", "auv"].includes(name.value.trim().toLowerCase())
   && (transport.value === "stdio" ? command.value.trim() : url.value.trim())
   && entries.value.every(entry => entry.key.trim()))
 let disposed = false
@@ -83,7 +84,7 @@ async function submit(): Promise<void> {
       <label class="flex items-center gap-2 text-sm"><UiCheckbox v-model="enabled" name="mcp-enabled" :disabled="blocked" />{{ t('mcpServers.enabled') }}</label>
       <p class="m-0 text-xs leading-5 text-ui-text-muted">{{ t('mcpServers.appliesNext') }}</p>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
-      <div class="ui-dialog-actions mt-1"><UiButton type="button" :disabled="saving" @click="close">{{ t('catalog.cancel') }}</UiButton><UiButton variant="primary" type="submit" :loading="saving" data-mcp-save  :disabled="blocked || !valid">{{ t(saving ? 'catalog.saving' : 'catalog.save') }}</UiButton></div>
+      <div class="ui-dialog-actions mt-1"><UiButton type="button" :disabled="saving" @click="close">{{ t(readOnly ? 'common.close' : 'catalog.cancel') }}</UiButton><UiButton v-if="!readOnly" variant="primary" type="submit" :loading="saving" data-mcp-save  :disabled="blocked || !valid">{{ t(saving ? 'catalog.saving' : 'catalog.save') }}</UiButton></div>
     </form>
   </UiDialog>
 </template>

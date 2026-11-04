@@ -77,6 +77,8 @@
   },
   "developerSettings": {
     "title": "开发者设置",
+    "mode": "开发者模式",
+    "modeDescription": "显示内置 MCP 服务器的只读配置详情。",
     "natTitle": "NAT 网络类型",
     "description": "使用当前 DeskFleet 服务配置的 STUN 服务，检测本机的 IPv4 UDP 网络。",
     "desktopRequired": "请在桌面应用的开发者设置中检测本机 NAT 类型。浏览器无法执行所需的 UDP 探测。",
@@ -276,6 +278,7 @@
     "duplicateKey": "每个环境变量或请求头的名称必须唯一。",
     "enabled": "已启用",
     "disabled": "已禁用",
+    "builtIn": "内置",
     "enableNamed": "启用 {name}",
     "disableNamed": "禁用 {name}",
     "editNamed": "编辑 {name}",

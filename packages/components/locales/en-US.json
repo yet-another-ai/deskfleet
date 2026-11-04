@@ -77,6 +77,8 @@
   },
   "developerSettings": {
     "title": "Developer settings",
+    "mode": "Developer mode",
+    "modeDescription": "Show read-only configuration details for built-in MCP servers.",
     "natTitle": "NAT network type",
     "description": "Test this computer's IPv4 UDP network using the STUN service configured for this DeskFleet installation.",
     "desktopRequired": "Open Developer settings in the desktop app to test this computer's NAT type. Browsers cannot perform the required UDP probes.",
@@ -276,6 +278,7 @@
     "duplicateKey": "Each environment variable or header name must be unique.",
     "enabled": "Enabled",
     "disabled": "Disabled",
+    "builtIn": "Built-in",
     "enableNamed": "Enable {name}",
     "disableNamed": "Disable {name}",
     "editNamed": "Edit {name}",

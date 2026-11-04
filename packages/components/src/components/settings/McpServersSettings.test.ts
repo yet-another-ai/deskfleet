@@ -109,13 +109,25 @@ test("edits HTTP settings, preserving headers when switching to SSE and rejectin
   } })
 })
 
-test("disable sends the complete config without its ID", async () => {
-  const { wrapper, rpc } = await setup([server])
-  await wrapper.get("[data-mcp-toggle]").trigger("click")
+test("disable sends the complete config without its ID and built-in servers only show read-only details in developer mode", async () => {
+  localStorage.removeItem("deskfleet.developer-mode")
+  const builtInAuv: McpServerConfig = { id: "builtin-auv", builtIn: true, name: "auv", enabled: true, transport: "stdio", command: "/opt/auv/auv", args: ["mcp", "serve"], env: {} }
+  const { wrapper, rpc } = await setup([builtInAuv, server])
+  const auvCard = wrapper.get('[data-mcp-server="builtin-auv"]')
+  expect(auvCard.find("[data-mcp-remove]").exists()).toBe(false)
+  expect(auvCard.find("[data-mcp-edit]").exists()).toBe(false)
+  await wrapper.get('[data-mcp-server="server-1"] [data-mcp-toggle]').trigger("click")
   await flushPromises()
   const { id, ...input } = server
   expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerUpdate", { serverId: id, changes: { ...input, enabled: false } })
-  expect(wrapper.get("[data-mcp-toggle]").text()).toBe("Disabled")
+  expect(wrapper.get('[data-mcp-server="server-1"] [data-mcp-toggle]').attributes("aria-checked")).toBe("false")
+  localStorage.setItem("deskfleet.developer-mode", "true")
+  window.dispatchEvent(new StorageEvent("storage", { key: "deskfleet.developer-mode", newValue: "true", storageArea: localStorage }))
+  await flushPromises()
+  await auvCard.get("[data-mcp-edit]").trigger("click")
+  expect(wrapper.find("[data-mcp-save]").exists()).toBe(false)
+  expect(wrapper.get('[name="mcp-command"]').attributes("disabled")).toBeDefined()
+  localStorage.removeItem("deskfleet.developer-mode")
 })
 
 test("removal failures stay in the confirmation dialog and a successful retry removes only the extra server", async () => {

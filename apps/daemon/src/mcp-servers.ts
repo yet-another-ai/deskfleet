@@ -5,6 +5,8 @@ import type { McpServer } from "@agentclientprotocol/sdk/unstable"
 import { adapterProcess, AUV_MCP_ARGUMENT } from "./agents/adapter-host.ts"
 import { mcpServerInput, validateMcpServerId, type McpServerConfig, type McpServerInput, type McpServerSnapshot } from "./mcp-server-protocol.ts"
 
+const BUILTIN_AUV_ID = "builtin-auv"
+
 /** Additional MCP settings are machine-local; credentials never enter catalog or conversation replication. */
 export class McpServers {
   readonly #directory: string
@@ -12,7 +14,6 @@ export class McpServers {
   readonly #auvPath?: string
   readonly #listeners = new Set<() => void>()
   #servers: McpServerConfig[] = []
-  #auvSeeded = false
   #revision = randomUUID()
   #queue: Promise<unknown> = Promise.resolve()
 
@@ -22,11 +23,12 @@ export class McpServers {
     this.#auvPath = auvPath
   }
 
-  #defaultAuv(): McpServerConfig {
+  #builtInAuv(enabled = true): McpServerConfig {
     return {
-      id: randomUUID(),
+      id: BUILTIN_AUV_ID,
+      builtIn: true,
       name: "auv",
-      enabled: true,
+      enabled,
       transport: "stdio",
       command: this.#auvPath!,
       args: ["mcp", "serve"],
@@ -40,36 +42,36 @@ export class McpServers {
     try { data = await readFile(this.#path, "utf8") }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-      if (this.#auvPath) {
-        this.#auvSeeded = true
-        this.#servers = [this.#defaultAuv()]
-      }
+      this.#servers = this.#auvPath ? [this.#builtInAuv()] : []
       await this.#save(this.#servers)
       return
     }
     const value: unknown = JSON.parse(data)
     if (!value || typeof value !== "object" || !("servers" in value) || !Array.isArray(value.servers)) throw new Error("Invalid MCP server configuration")
-    this.#auvSeeded = "auvSeeded" in value && value.auvSeeded === true
     const ids = new Set<string>()
     const names = new Set<string>()
-    this.#servers = value.servers.map((entry: unknown) => {
+    const loaded: McpServerConfig[] = []
+    for (const entry of value.servers as unknown[]) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Invalid MCP server configuration")
-      const { id, ...input } = entry as Record<string, unknown>
+      const { id, builtIn: _builtIn, ...input } = entry as Record<string, unknown>
       validateMcpServerId(id)
-      const server = mcpServerInput(input)
+      const isAuv = typeof input.name === "string" && input.name.trim().toLowerCase() === "auv"
+      const server = mcpServerInput(input, isAuv)
+      if (isAuv) {
+        if (!this.#auvPath || names.has("auv")) continue
+        ids.add(BUILTIN_AUV_ID); names.add("auv")
+        loaded.push(this.#builtInAuv(server.enabled))
+        continue
+      }
       if (ids.has(id) || names.has(server.name.toLowerCase())) throw new Error("Duplicate MCP server")
       ids.add(id); names.add(server.name.toLowerCase())
-      if (this.#auvPath && server.transport === "stdio" && server.name.toLowerCase() === "auv"
-        && server.args.length === 2 && server.args[0] === "mcp" && server.args[1] === "serve") {
-        return { id, ...server, command: this.#auvPath }
-      }
-      return { id, ...server }
-    })
-    if (this.#auvPath && !this.#auvSeeded) {
-      this.#auvSeeded = true
-      if (!names.has("auv")) this.#servers.unshift(this.#defaultAuv())
-      await this.#save(this.#servers)
+      loaded.push({ id, ...server })
     }
+    if (this.#auvPath && !names.has("auv")) {
+      loaded.unshift(this.#builtInAuv())
+      await this.#save(loaded)
+    }
+    this.#servers = loaded
     this.#revision = randomUUID()
   }
 
@@ -80,9 +82,9 @@ export class McpServers {
       if (server.transport !== "stdio") {
         return { name: server.name, type: server.transport, url: server.url, headers: Object.entries(server.headers).map(([name, value]) => ({ name, value })) }
       }
-      if (this.#auvPath && server.name.toLowerCase() === "auv" && server.args.length === 2 && server.args[0] === "mcp" && server.args[1] === "serve") {
+      if (server.builtIn && this.#auvPath) {
         const launch = adapterProcess(AUV_MCP_ARGUMENT)
-        const env = Object.entries({ ...launch.env, ...server.env, DESKFLEET_AUV_PATH: this.#auvPath })
+        const env = Object.entries({ ...launch.env, DESKFLEET_AUV_PATH: this.#auvPath })
           .flatMap(([name, value]) => value === undefined ? [] : [{ name, value }])
         return { name: server.name, command: launch.command, args: [...launch.args ?? []], env }
       }
@@ -103,9 +105,15 @@ export class McpServers {
   }
 
   update(id: string, value: McpServerInput): Promise<McpServerConfig> {
-    const input = mcpServerInput(value)
+    const input = mcpServerInput(value, id === BUILTIN_AUV_ID)
     return this.#mutate(async () => {
-      this.#get(id); this.#uniqueName(input.name, id)
+      const existing = this.#get(id)
+      if (existing.builtIn) {
+        const server = this.#builtInAuv(input.enabled)
+        await this.#commit(this.#servers.map(previous => previous.id === id ? server : previous))
+        return structuredClone(server)
+      }
+      this.#uniqueName(input.name, id)
       const server = { id, ...input }
       await this.#commit(this.#servers.map(previous => previous.id === id ? server : previous))
       return structuredClone(server)
@@ -114,7 +122,7 @@ export class McpServers {
 
   remove(id: string): Promise<void> {
     return this.#mutate(async () => {
-      this.#get(id)
+      if (this.#get(id).builtIn) throw new Error("Built-in MCP servers cannot be removed")
       await this.#commit(this.#servers.filter(server => server.id !== id))
     })
   }
@@ -142,7 +150,7 @@ export class McpServers {
   async #save(servers: McpServerConfig[]): Promise<void> {
     const temporary = `${this.#path}.${randomUUID()}.tmp`
     try {
-      await writeFile(temporary, JSON.stringify({ servers, ...(this.#auvSeeded ? { auvSeeded: true } : {}) }, null, 2) + "\n", { mode: 0o600, flag: "wx" })
+      await writeFile(temporary, JSON.stringify({ servers }, null, 2) + "\n", { mode: 0o600, flag: "wx" })
       await rename(temporary, this.#path)
     } finally { await rm(temporary, { force: true }) }
   }

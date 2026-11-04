@@ -77,6 +77,8 @@
   },
   "developerSettings": {
     "title": "開発者設定",
+    "mode": "開発者モード",
+    "modeDescription": "組み込み MCP サーバーの読み取り専用設定の詳細を表示します。",
     "natTitle": "NAT ネットワークタイプ",
     "description": "この DeskFleet サービスに設定された STUN サービスを使用して、このコンピューターの IPv4 UDP ネットワークをテストします。",
     "desktopRequired": "このコンピューターの NAT タイプを調べるには、デスクトップアプリの開発者設定を開いてください。ブラウザーでは必要な UDP プローブを実行できません。",
@@ -231,7 +233,7 @@
     "key": "名前", "value": "値",
     "keyNumber": "項目 {n} の名前", "valueNumber": "項目 {n} の値",
     "removeEntry": "項目 {n} を削除", "duplicateKey": "環境変数名またはヘッダー名を重複させることはできません。",
-    "enabled": "有効", "disabled": "無効",
+    "enabled": "有効", "disabled": "無効", "builtIn": "組み込み",
     "enableNamed": "{name} を有効化", "disableNamed": "{name} を無効化",
     "editNamed": "{name} を編集", "removeNamed": "{name} を削除",
     "remove": "サーバーを削除", "removeTitle": "{name} を削除しますか？",

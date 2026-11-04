@@ -126,7 +126,7 @@ test("MCP tabs isolate drafts and target server operations at the selected machi
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerUpdate", { serverId: "shared-server", changes: expect.objectContaining({ enabled: false }) })
   expect(tabs().findAll("button").every(button => button.attributes("disabled") !== undefined)).toBe(true)
   finishToggle()
-  await settled(() => expect(page().get("[data-mcp-toggle]").text()).toBe("Disabled"))
+  await settled(() => expect(page().get("[data-mcp-toggle]").attributes("aria-checked")).toBe("false"))
   expect(tab("First machine").attributes("disabled")).toBeUndefined()
 
   await page().get("[data-mcp-add]").trigger("click")
