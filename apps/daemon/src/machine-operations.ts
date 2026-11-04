@@ -71,7 +71,7 @@ export class MachineOperations {
       if (method === "mcpServerList") return this.mcpServers.snapshot()
       if (method === "mcpServerCreate") return this.mcpServers.create(mcpServerInput(input.server))
       validateMcpServerId(input.serverId)
-      if (method === "mcpServerUpdate") return this.mcpServers.update(input.serverId, mcpServerInput(input.changes))
+      if (method === "mcpServerUpdate") return this.mcpServers.update(input.serverId, mcpServerInput(input.changes, true))
       await this.mcpServers.remove(input.serverId)
       return null
     }

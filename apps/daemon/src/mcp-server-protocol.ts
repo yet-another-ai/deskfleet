@@ -5,7 +5,7 @@ export type McpServerInput = McpServerSettings & (
   | { transport: "stdio"; command: string; args: string[]; env: Record<string, string> }
   | { transport: "http" | "sse"; url: string; headers: Record<string, string> }
 )
-export type McpServerConfig = McpServerInput & { id: string }
+export type McpServerConfig = McpServerInput & { id: string; builtIn?: boolean }
 export interface McpServerSnapshot { revision: string; servers: McpServerConfig[] }
 export interface McpServerMethods {
   mcpServerList: { params: Record<string, never>; result: McpServerSnapshot }
@@ -34,11 +34,12 @@ export function validateMcpServerId(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(value)) throw new Error("Invalid MCP server ID")
 }
 
-export function mcpServerInput(value: unknown): McpServerInput {
+export function mcpServerInput(value: unknown, allowBuiltIn = false): McpServerInput {
   const input = object(value)
   const name = text(input.name, "server name")
   if (name.length > 128) throw new Error("MCP server names must have at most 128 characters")
   if (name.toLowerCase() === "deskfleet") throw new Error("The built-in DeskFleet MCP server is always enabled and cannot be replaced")
+  if (!allowBuiltIn && name.toLowerCase() === "auv") throw new Error("The built-in AUV MCP server cannot be replaced")
   if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw new Error("Invalid MCP enabled setting")
   const enabled = input.enabled !== false
   if (input.transport === "stdio") {

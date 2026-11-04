@@ -9,7 +9,7 @@ import { mcpServerInput, type McpServerInput } from "./mcp-server-protocol.ts"
 
 const stdio: McpServerInput = { name: "filesystem", enabled: true, transport: "stdio", command: process.execPath, args: ["server.mjs"], env: { API_KEY: "private" } }
 
-test("additional MCP servers persist independently, seed bundled AUV once, and allow toggling or removing it", async t => {
+test("additional MCP servers persist independently and bundled AUV is built-in and toggleable", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-settings-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const servers = new McpServers(directory, "/opt/auv/auv")
@@ -17,6 +17,7 @@ test("additional MCP servers persist independently, seed bundled AUV once, and a
   const seeded = servers.snapshot().servers
   assert.equal(seeded.length, 1)
   assert.equal(seeded[0]?.name, "auv")
+  assert.equal(seeded[0]?.builtIn, true)
   assert.equal(seeded[0]?.enabled, true)
   const resolvedAuv = servers.resolve()[0]
   assert.ok(resolvedAuv && !("type" in resolvedAuv))
@@ -25,7 +26,7 @@ test("additional MCP servers persist independently, seed bundled AUV once, and a
   const first = await servers.create(stdio)
   const http = await servers.create({ name: "search", enabled: true, transport: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer private" } })
   await servers.create({ name: "legacy", enabled: false, transport: "sse", url: "http://localhost:8123/sse", headers: {} })
-  const { id: auvId, ...auvInput } = seeded[0]!
+  const { id: auvId, builtIn: _, ...auvInput } = seeded[0]!
   await servers.update(auvId, { ...auvInput, enabled: false })
   assert.deepEqual(servers.resolve(), [
     { name: "filesystem", command: process.execPath, args: ["server.mjs"], env: [{ name: "API_KEY", value: "private" }] },
@@ -33,19 +34,19 @@ test("additional MCP servers persist independently, seed bundled AUV once, and a
   ])
   await servers.update(first.id, { ...stdio, enabled: false })
   assert.equal(servers.resolve().length, 1)
-  await servers.remove(auvId)
+  await assert.rejects(servers.remove(auvId), /cannot be removed/)
   const reloaded = new McpServers(directory, "/opt/auv/auv")
   await reloaded.init()
   assert.deepEqual(reloaded.snapshot().servers, servers.snapshot().servers)
   await reloaded.remove(http.id)
   assert.deepEqual(reloaded.resolve(), [])
   const saved = JSON.parse(await readFile(join(directory, "mcp-servers.json"), "utf8")) as { servers: unknown[] }
-  assert.equal(saved.servers.length, 2)
+  assert.equal(saved.servers.length, 3)
 })
 
-test("built-in deskfleet MCP server cannot be replaced or disabled by additional-server settings", async t => {
-  for (const name of ["deskfleet", " Deskfleet ", "DESKFLEET"]) {
-    assert.throws(() => mcpServerInput({ ...stdio, name }), /always enabled/)
+test("built-in deskfleet and auv MCP servers cannot be replaced by additional-server settings", async t => {
+  for (const name of ["deskfleet", " Deskfleet ", "DESKFLEET", "auv", " AUV "]) {
+    assert.throws(() => mcpServerInput({ ...stdio, name }), /always enabled|built-in/)
   }
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-built-in-"))
   const servers = new McpServers(directory)

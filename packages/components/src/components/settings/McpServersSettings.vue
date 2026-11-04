@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { Pencil, Plug, Plus, Trash2 } from "@lucide/vue"
+import { useLocalStorage } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { mcpServersClient, type McpServerConfig, type McpServerInput } from "@deskfleet/client/mcp-servers"
@@ -11,6 +13,7 @@ import ConfirmDialog from "../common/ConfirmDialog.vue"
 import McpServerDialog from "./McpServerDialog.vue"
 
 const { t } = useI18n()
+const developerMode = useLocalStorage("deskfleet.developer-mode", false)
 const account = useAccountSession()
 const fleet = useFleetStore()
 const api = account && mcpServersClient(account.central, account.teamId.value!, fleet.targetId)
@@ -60,7 +63,7 @@ async function save(input: McpServerInput): Promise<void> {
   })
 }
 async function toggle(server: McpServerConfig): Promise<void> {
-  const { id, ...input } = toRaw(server)
+  const { id, builtIn: _builtIn, ...input } = toRaw(server)
   try { await mutate(async () => {
     const updated = await api!.update(id, { ...input, enabled: !server.enabled })
     if (!disposed) replace(updated)
@@ -95,10 +98,22 @@ onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener(
     <ul v-else class="ui-card">
       <li v-for="server in servers" :key="server.id" :data-mcp-server="server.id" class="flex flex-wrap items-center gap-3 px-4 py-3">
         <Plug :size="18" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-        <div class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">{{ server.name }}</span><span class="text-xs text-ui-text-muted">{{ server.transport === 'http' ? 'Streamable HTTP' : server.transport }}</span></div>
-        <UiButton variant="ghost" size="sm" type="button" data-mcp-toggle class="cursor-pointer hover:bg-ui-hover disabled:op-50" :aria-label="t(server.enabled ? 'mcpServers.disableNamed' : 'mcpServers.enableNamed', { name: server.name })" :disabled="!online || pending" @click="toggle(server)">{{ t(server.enabled ? 'mcpServers.enabled' : 'mcpServers.disabled') }}</UiButton>
-        <UiButton type="button" data-mcp-edit class="px-2" :aria-label="t('mcpServers.editNamed', { name: server.name })" :disabled="!online || pending" @click="editor = { initial: server }"><Pencil :size="14" aria-hidden="true" /></UiButton>
-        <UiButton type="button" data-mcp-remove class="px-2" :aria-label="t('mcpServers.removeNamed', { name: server.name })" :disabled="!online || pending" @click="removing = server"><Trash2 :size="14" aria-hidden="true" /></UiButton>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="truncate text-sm font-medium">{{ server.name }}</span>
+            <span v-if="server.builtIn" class="ui-badge shrink-0">{{ t('mcpServers.builtIn') }}</span>
+          </div>
+          <span class="text-xs text-ui-text-muted">{{ server.transport === 'http' ? 'Streamable HTTP' : server.transport }}</span>
+        </div>
+        <UiSwitch
+          data-mcp-toggle
+          :model-value="server.enabled"
+          :aria-label="t(server.enabled ? 'mcpServers.disableNamed' : 'mcpServers.enableNamed', { name: server.name })"
+          :disabled="!online || pending"
+          @update:model-value="toggle(server)"
+        />
+        <UiButton v-if="!server.builtIn || developerMode" type="button" data-mcp-edit class="px-2" :aria-label="t('mcpServers.editNamed', { name: server.name })" :disabled="!online || pending" @click="editor = { initial: server }"><Pencil :size="14" aria-hidden="true" /></UiButton>
+        <UiButton v-if="!server.builtIn" type="button" data-mcp-remove class="px-2" :aria-label="t('mcpServers.removeNamed', { name: server.name })" :disabled="!online || pending" @click="removing = server"><Trash2 :size="14" aria-hidden="true" /></UiButton>
       </li>
     </ul>
     <p class="m-0 mt-4 text-xs leading-5 text-ui-text-muted">{{ t('mcpServers.appliesNext') }}</p>
