@@ -306,8 +306,9 @@ and Linux or `agy_acp_server.exe` on Windows. Linux launches add `--uid=`.
 Settings downloads the pinned runtime and matching `localharness_external`
 from Google, verifies the package's SHA-256, and saves the resolved executable
 path. For CLI use, pass that path with `--binary-path` and keep the matching
-harness beside it. The runtime has no CLI login command: authenticate through
-an ACP client on the same machine first. Its default profile settings are at
+harness beside it. Settings offers **Log in** through Antigravity's ACP `authenticate` flow; for
+standalone CLI use without Settings, authenticate through an ACP client on the
+same machine first. Its default profile settings are at
 `~/.gemini/antigravity-acp/settings.json`, with `GEMINI_HOME` selecting the profile
 root. Discovery leaves authentication unknown; **Test Connection** opens a
 session using existing credentials. See

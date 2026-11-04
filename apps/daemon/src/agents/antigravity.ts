@@ -16,9 +16,36 @@ export function antigravityProcess(config: AgentConfig, platform: NodeJS.Platfor
   return launchProviderCommand(binary, platform === "linux" ? ["--uid="] : [], { ...harness, ...config.env }, platform)
 }
 
-export function antigravityLoginProcess(binaryPath: string, env?: NodeJS.ProcessEnv): AgentProcess {
+export function antigravityLoginProcess(
+  binaryPath: string,
+  env?: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): AgentProcess {
   const host = adapterProcess(ANTIGRAVITY_LOGIN_ARGUMENT)
-  return { ...host, env: { ...env, ...host.env, DESKFLEET_ANTIGRAVITY_BINARY: binaryPath } }
+  const merged: NodeJS.ProcessEnv = { ...env, ...host.env, DESKFLEET_ANTIGRAVITY_BINARY: binaryPath }
+  // Windows ConPTY does not attach console stdio handles to a /SUBSYSTEM:WINDOWS Electron binary.
+  if (platform !== "win32" || !host.env?.ELECTRON_RUN_AS_NODE) return { ...host, env: merged }
+  const args = (host.args ?? []).map(arg => `"${arg.replaceAll('"', '\\"')}"`).join(" ").replaceAll("'", "''")
+  const script = `$psi = [Diagnostics.ProcessStartInfo]::new($env:DESKFLEET_LOGIN_HOST, '${args}')
+$psi.UseShellExecute = $false
+$psi.RedirectStandardInput = $psi.RedirectStandardOutput = $psi.RedirectStandardError = $true
+$p = [Diagnostics.Process]::Start($psi)
+$out = $p.StandardOutput.BaseStream.CopyToAsync([Console]::OpenStandardOutput())
+$err = $p.StandardError.BaseStream.CopyToAsync([Console]::OpenStandardError())
+$in = [Console]::OpenStandardInput(); $buf = [byte[]]::new(256); $read = $null
+while (-not $p.WaitForExit(50)) {
+  if (-not $read) { $read = $in.ReadAsync($buf, 0, $buf.Length) }
+  if ($read.IsCompleted) {
+    if (($n = $read.GetAwaiter().GetResult()) -le 0) { $p.StandardInput.Close(); break }
+    $p.StandardInput.BaseStream.Write($buf, 0, $n); $p.StandardInput.BaseStream.Flush(); $read = $null
+  }
+}
+[void]$out.Wait(1000); [void]$err.Wait(1000); [Environment]::Exit($p.ExitCode)`
+  return {
+    command: win32.join(merged.SYSTEMROOT ?? process.env.SYSTEMROOT ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    args: ["-NoLogo", "-NoProfile", "-Command", script],
+    env: { ...merged, DESKFLEET_LOGIN_HOST: host.command },
+  }
 }
 
 async function selectLoginMethod(methods: readonly acp.AuthMethod[], signal: AbortSignal): Promise<acp.AuthMethod> {
@@ -58,6 +85,8 @@ export async function runAntigravityLogin(): Promise<void> {
     )
     try {
       const method = await selectLoginMethod(connection.initialization.authMethods ?? [], controller.signal)
+      process.stdin.once("end", abort)
+      process.stdin.resume()
       // Clearing saved auth.type and cached OAuth tokens forces a fresh browser sign-in for re-login or account switches.
       if (connection.initialization.agentCapabilities?.auth?.logout) {
         await agent.request(acp.methods.agent.logout, {})
@@ -70,6 +99,8 @@ export async function runAntigravityLogin(): Promise<void> {
     console.error(error instanceof Error ? error.message : String(error))
     process.exitCode = 1
   } finally {
+    process.stdin.off("end", abort)
+    process.stdin.pause()
     process.off("SIGINT", abort)
     process.off("SIGTERM", abort)
   }

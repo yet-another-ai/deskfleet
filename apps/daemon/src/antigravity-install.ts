@@ -38,12 +38,15 @@ export function antigravityInstaller(
   if (ctx.platform === "win32") {
     const quote = (value: string) => `'${value.replaceAll("'", "''")}'`
     const script = `$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$env:PSModulePath = (Join-Path $PSHOME 'Modules') + ';' + $env:PSModulePath
 $destination = ${quote(destination)}
 $work = Join-Path ([IO.Path]::GetTempPath()) ('deskfleet-antigravity-' + [Guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
   $archive = Join-Path $work 'antigravity.zip'
-  Invoke-WebRequest -Uri ${quote(url)} -OutFile $archive -UseBasicParsing
+  curl.exe -fL --output $archive ${quote(url)}
+  if ($LASTEXITCODE) { exit $LASTEXITCODE }
   if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne ${quote(checksum)}) { throw 'Antigravity download checksum mismatch.' }
   $extracted = Join-Path $work 'extracted'
   Expand-Archive -LiteralPath $archive -DestinationPath $extracted
@@ -51,6 +54,7 @@ try {
     if (!(Test-Path -LiteralPath (Join-Path $extracted $file) -PathType Leaf)) { throw ('Antigravity archive is missing ' + $file) }
   }
   New-Item -ItemType Directory -Path $destination -Force | Out-Null
+  Get-Process -Name 'agy_acp_server', 'localharness_external' -ErrorAction SilentlyContinue | Stop-Process -Force -PassThru -ErrorAction SilentlyContinue | Wait-Process -Timeout 5 -ErrorAction SilentlyContinue
   Get-ChildItem -LiteralPath $extracted -Force | Copy-Item -Destination $destination -Recurse -Force
   Write-Output ('Antigravity installed at ' + $destination)
 } finally {
