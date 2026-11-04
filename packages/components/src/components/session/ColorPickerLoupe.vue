@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { Check, Copy } from "@lucide/vue"
-import { onClickOutside, onKeyStroke, useClipboard, useEventListener } from "@vueuse/core"
+import { onClickOutside, onKeyStroke, useEventListener, useTimeoutFn } from "@vueuse/core"
 import { computed, ref, shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 
 const props = defineProps<{ media: HTMLImageElement | HTMLVideoElement | null }>()
 const open = defineModel<boolean>("open", { default: false })
 const { t } = useI18n()
-const { copy, copied } = useClipboard()
 
 interface ColorSample { hex: string; grid: string[]; x: number; y: number }
 
 const pinned = ref(false)
+const copied = ref(false)
 const sample = shallowRef<ColorSample>()
 const canvas = computed(() => props.media?.closest<HTMLElement>("[data-preview-canvas]") ?? null)
+const { start: resetCopied, stop: stopCopied } = useTimeoutFn(() => { copied.value = false }, 1500, { immediate: false })
 let scratch: HTMLCanvasElement | undefined
 let lastPointer: { x: number; y: number } | undefined
 
@@ -65,9 +66,18 @@ function sampleAt(clientX: number, clientY: number): ColorSample | undefined {
   }
 }
 
+async function copyColor(): Promise<void> {
+  if (!sample.value) return
+  try { await navigator.clipboard.writeText(sample.value.hex) } catch { return }
+  copied.value = true
+  resetCopied()
+}
+
 function close(): void {
   open.value = false
   pinned.value = false
+  copied.value = false
+  stopCopied()
   sample.value = undefined
   lastPointer = undefined
 }
@@ -151,7 +161,7 @@ onKeyStroke("Escape", event => {
         :aria-label="t(copied ? 'common.copied' : 'common.copyLabel', { label: sample.hex })"
         :title="t(copied ? 'common.copied' : 'common.copyLabel', { label: sample.hex })"
         class="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text active:scale-[0.95]"
-        @click.stop="copy(sample.hex)"
+        @click.stop="copyColor"
       >
         <Check v-if="copied" :size="12" aria-hidden="true" />
         <Copy v-else :size="12" aria-hidden="true" />
