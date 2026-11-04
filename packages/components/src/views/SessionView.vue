@@ -310,7 +310,7 @@ async function checkOperation(operationId: string): Promise<void> {
       class="pointer-events-none absolute inset-x-0 top-0 z-10 mx-auto h-6 w-full max-w-3xl [background:linear-gradient(to_top,transparent,var(--ui-color-canvas))]"
     />
     <ScrollAreaRoot type="auto" class="min-h-0 min-w-0 flex-1 overflow-hidden" data-session-scroll-area>
-      <ScrollAreaViewport ref="scrollViewport" class="h-full w-full" data-session-scroll-viewport>
+      <ScrollAreaViewport ref="scrollViewport" class="h-full w-full outline-none" data-session-scroll-viewport>
         <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
           <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
           <template v-else-if="snapshot">
