@@ -17,6 +17,8 @@ vi.mock("../../router/index.ts", async () => {
   return { router: createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: { render: () => null } },
     { path: "/search", name: "search", component: { render: () => null } },
+    { path: "/desktops", name: "desktop-overview", component: { render: () => null } },
+    { path: "/machines/:machineId/control", name: "machine-control", component: { render: () => null } },
     { path: "/sessions/:sessionId", name: "session", component: { render: () => null } },
     { path: "/schedules/:scheduleId?", name: "schedules", component: { render: () => null } },
   ] }) }
@@ -79,6 +81,21 @@ test.each(["/sessions/30?entry=message-8", "/schedules/task-1"])("Back returns t
   await flushPromises()
 
   expect(router.currentRoute.value.fullPath).toBe(searchPath)
+})
+
+test("keeps the desktop overview when selecting another machine", async () => {
+  const current = await fixture(undefined, "/desktops")
+  expect(router.currentRoute.value.fullPath).toBe("/desktops")
+  expect(current.mountRuntime).toHaveBeenCalledExactlyOnceWith(App, current.view.element)
+})
+
+test("Back returns to the overview after opening a remote display", async () => {
+  const destination = "/machines/m1/control?tab=desktop&display=2&connect=1"
+  await fixture(destination, "/desktops")
+  expect(router.currentRoute.value.fullPath).toBe(destination)
+  router.back()
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe("/desktops")
 })
 
 test.each(["team", "account", "roster"] as const)("does not mount a runtime released by the %s while navigation is pending", async reason => {

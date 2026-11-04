@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarClock, MessagesSquare, Search, SquarePen } from "@lucide/vue"
+import { CalendarClock, MessagesSquare, MonitorPlay, Search, SquarePen } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -17,6 +17,7 @@ const searchPath = useAccountSession()?.searchPath ?? ref("/search")
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
   { routeName: "schedules", label: "schedules.title", icon: CalendarClock },
+  { routeName: "desktop-overview", label: "desktopOverview.title", icon: MonitorPlay },
   { routeName: "search", label: "search.title", icon: Search },
 ] as const
 type Section = typeof sections[number]

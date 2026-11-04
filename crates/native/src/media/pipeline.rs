@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use deskfleet_capture::{CaptureConfig, CaptureStream, Frame};
+use deskfleet_capture::{CaptureConfig, CaptureStream, Frame, FrameScaler};
 use deskfleet_encoder::{
     Codec, EncodedPacket, Encoder, EncoderConfig, H264Profile, OpusEncoder, OpusEncoderConfig,
 };
@@ -18,6 +18,7 @@ pub(crate) struct CaptureBatch {
 pub(crate) struct CapturePipeline {
     encoder: Option<Encoder>,
     retained: RetainedVideoFrame<Frame>,
+    scaler: FrameScaler,
     capture: Option<CaptureStream>,
     opus: Option<OpusEncoder>,
     config: DesktopConfig,
@@ -25,6 +26,7 @@ pub(crate) struct CapturePipeline {
     fps: f64,
     dimensions: (u32, u32),
     generation: u64,
+    cadence: VideoCadence,
 }
 
 impl CapturePipeline {
@@ -48,6 +50,15 @@ impl CapturePipeline {
             &CaptureConfig {
                 fps,
                 capture_audio: audio,
+                // ScreenCaptureKit can resize before publishing its surfaces.
+                #[cfg(target_os = "macos")]
+                width: config
+                    .max_width
+                    .map(|_| config.output_dimensions(display.width, display.height).0),
+                #[cfg(target_os = "macos")]
+                height: config
+                    .max_height
+                    .map(|_| config.output_dimensions(display.width, display.height).1),
                 ..CaptureConfig::default()
             },
         )?;
@@ -55,6 +66,7 @@ impl CapturePipeline {
         Ok(Self {
             encoder: None,
             retained: RetainedVideoFrame::new(),
+            scaler: FrameScaler::default(),
             capture: Some(capture),
             opus: audio
                 .then(|| OpusEncoder::new(&OpusEncoderConfig::default()))
@@ -64,12 +76,22 @@ impl CapturePipeline {
             fps,
             dimensions: (0, 0),
             generation,
+            cadence: VideoCadence::new(fps),
         })
     }
 
     pub(crate) fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
         let capture = self.capture.as_ref().ok_or(MediaError::Startup)?;
-        let captured = capture.poll_frame()?;
+        let now = Instant::now();
+        let (capture_due, keyframe) = self.cadence.poll(now, keyframe);
+        let captured = if capture_due {
+            capture.poll_frame()?
+        } else {
+            // Keep draining asynchronous encoder/audio output without busy-polling
+            // or acquiring full-size desktop surfaces between preview frames.
+            std::thread::sleep(self.cadence.wait(now).min(Duration::from_millis(5)));
+            None
+        };
         let generation = capture.desktop_generation();
         if generation != self.generation {
             // Never answer a PLI with pixels from the desktop we just left.
@@ -79,6 +101,12 @@ impl CapturePipeline {
             self.dimensions = (0, 0);
             self.generation = generation;
         }
+        let captured = captured
+            .map(|frame| {
+                let (width, height) = self.config.output_dimensions(frame.width, frame.height);
+                self.scaler.resize(frame, width, height)
+            })
+            .transpose()?;
         if let Some(frame) = captured.as_ref()
             && self.dimensions != (frame.width, frame.height)
         {
@@ -148,10 +176,43 @@ impl CapturePipeline {
         // Encoder registrations and retained surfaces must go before capture.
         self.encoder = None;
         self.retained.clear();
+        self.scaler = FrameScaler::default();
         if let Some(capture) = self.capture.take() {
             capture.stop()?;
         }
         Ok(())
+    }
+}
+
+/// DXGI's acquisition timeout does not limit the rate of changing desktops.
+/// Bound acquisition itself and retain PLI requests until the next video tick.
+struct VideoCadence {
+    period: Duration,
+    next: Option<Instant>,
+    keyframe: bool,
+}
+
+impl VideoCadence {
+    fn new(fps: f64) -> Self {
+        Self {
+            period: Duration::from_secs_f64(1.0 / fps),
+            next: None,
+            keyframe: false,
+        }
+    }
+
+    fn wait(&self, now: Instant) -> Duration {
+        self.next
+            .map_or(Duration::ZERO, |next| next.saturating_duration_since(now))
+    }
+
+    fn poll(&mut self, now: Instant, keyframe: bool) -> (bool, bool) {
+        self.keyframe |= keyframe;
+        if self.wait(now) != Duration::ZERO {
+            return (false, false);
+        }
+        self.next = Some(now + self.period);
+        (true, std::mem::take(&mut self.keyframe))
     }
 }
 
@@ -232,6 +293,74 @@ impl<T> RetainedVideoFrame<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires an interactive desktop and hardware H.264 encoder"]
+    fn preview_capture_encodes_bounded_frames() {
+        let display = deskfleet_capture::displays()
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        let mut pipeline = CapturePipeline::new(
+            DesktopConfig {
+                display_id: display.id,
+                fps: 1.0,
+                bitrate_bps: 150_000,
+                max_bitrate_bps: 0,
+                max_width: Some(320),
+                max_height: Some(180),
+            },
+            Codec::H264,
+            false,
+        )
+        .unwrap();
+        let started = Instant::now();
+        let mut frames = 0;
+        while started.elapsed() < Duration::from_secs(3) {
+            // Repeated feedback also exercises an idle desktop without relying on
+            // user activity. No captured image or encoded packet is saved.
+            let batch = pipeline.poll(true).unwrap();
+            frames += batch
+                .packets
+                .iter()
+                .filter(|packet| matches!(packet, Packet::Video(..)))
+                .count();
+        }
+        assert!(frames > 0, "the local preview encoder must produce video");
+        assert!(
+            frames <= 4,
+            "preview emitted {frames} frames in three seconds"
+        );
+        assert!(pipeline.dimensions.0 > 0 && pipeline.dimensions.0 <= 320);
+        assert!(pipeline.dimensions.1 > 0 && pipeline.dimensions.1 <= 180);
+        eprintln!(
+            "local preview: {}x{}, {frames} H.264 frames in {:?}",
+            pipeline.dimensions.0,
+            pipeline.dimensions.1,
+            started.elapsed()
+        );
+        pipeline.stop().unwrap();
+    }
+    #[test]
+    fn preview_cadence_limits_capture_and_coalesces_keyframe_requests() {
+        let now = Instant::now();
+        let mut cadence = VideoCadence::new(1.0);
+        assert_eq!(cadence.poll(now, false), (true, false));
+        for millis in [1, 200, 500, 999] {
+            assert_eq!(
+                cadence.poll(now + Duration::from_millis(millis), true),
+                (false, false)
+            );
+        }
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(1), false),
+            (true, true)
+        );
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(2), false),
+            (true, false)
+        );
+    }
     #[test]
     fn desktop_change_discards_old_pixels_even_when_a_keyframe_is_requested() {
         let now = Instant::now();

@@ -1173,6 +1173,14 @@ Its Local control page omits Desktop and defaults to Terminal, retaining File
 transfer and System status. Locality is client-relative; the machine's advertised
 desktop capability remains available to other clients. Web clients have no local
 daemon, so their machine controls remain remote.
+The sidebar's Desktop overview is scoped to the current account and Team. It
+defaults to the current workspace's machine, with an option to show all remote
+machines in the Team. It discovers their displays and opens independent, read-only
+preview peers at up to 320 x 180 and 1 fps. Page-owned adapters retain their
+explicit Team and Machine scope without opening workspace catalogs. Pausing or
+hiding the page stops preview streams; leaving the page releases the adapters.
+Opening a preview selects that machine and display in Remote control, where
+the full desktop connects and input control remains an explicit choice.
 Tools mount when first visited and retain their connections while switching tabs.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, and machine details from

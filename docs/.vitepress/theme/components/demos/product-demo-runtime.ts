@@ -38,6 +38,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   app.config.errorHandler = (error, _instance, info) => console.error(`[product demo: ${options.kind}] ${info}`, error)
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: () => import("@deskfleet/components/views/NewSessionView.vue") },
+    { path: "/desktops", name: "desktop-overview", component: () => import("@deskfleet/components/views/DesktopOverviewView.vue") },
     { path: "/schedules", name: "schedules", component: () => import("@deskfleet/components/views/ScheduledTasksView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/archived", name: "archived-sessions", component: () => import("@deskfleet/components/views/ArchivedSessionsView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/:sessionId", name: "session", component: () => import("@deskfleet/components/views/SessionView.vue"), props: true },

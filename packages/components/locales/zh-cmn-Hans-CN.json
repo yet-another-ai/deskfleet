@@ -766,6 +766,28 @@
     "duration": "{days} 天 {hours} 小时 {minutes} 分钟",
     "unknown": "未知"
   },
+  "desktopOverview": {
+    "title": "桌面总览",
+    "description": "随时查看远程屏幕。点击预览以完整分辨率连接，并在需要时接管操作。",
+    "scope": "预览范围",
+    "currentMachine": "当前机器",
+    "allMachines": "所有机器",
+    "currentEmpty": "当前机器没有远程桌面预览",
+    "currentEmptyHint": "切换到「所有机器」，查看当前团队的其他远程桌面。",
+    "pause": "暂停预览",
+    "resume": "恢复预览",
+    "paused": "预览已暂停",
+    "empty": "暂无远程机器",
+    "emptyHint": "将其他机器连接到当前团队，即可在此查看它们的桌面。",
+    "offline": "离线",
+    "offlineHint": "机器上线后将恢复预览。",
+    "unavailable": "此机器暂时无法捕获桌面。",
+    "noDisplays": "未找到显示器。",
+    "displayCount": "{count} 个显示器",
+    "display": "显示器 {id}",
+    "openDisplay": "打开 {machine} 的显示器 {display}",
+    "connecting": "正在连接预览…"
+  },
   "desktop": {
     "openNative": "在原生窗口中打开",
     "nativeOpening": "正在打开原生桌面窗口…",

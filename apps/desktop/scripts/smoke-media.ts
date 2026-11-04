@@ -13,6 +13,7 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 // streams a real display into the hidden test window without saving a recording.
 // DESKFLEET_SMOKE_CAPTURE_SECONDS=1..300 keeps that peer open after its first frame
 // and prints decoder counters for interactive desktop-transition acceptance.
+// DESKFLEET_SMOKE_PREVIEW=1 verifies real capture at <=320x180 and at most 1fps.
 // DESKFLEET_SMOKE_HARDWARE=1 encodes generated red pixels using Linux hardware;
 // DESKFLEET_SMOKE_CODEC selects h264 (default), h265 or av1 for that mode.
 // Recreate the 663-byte red-frame fixture with FFmpeg if changing its dimensions or profile:
@@ -21,6 +22,8 @@ import { rendererContentSecurityPolicy } from "../src/shared/renderer-csp.ts"
 //   -x264-params keyint=1:min-keyint=1:scenecut=0 -f h264 red-64x64.h264
 const root = resolve(import.meta.dirname, "../../..")
 const capture = process.env.DESKFLEET_SMOKE_CAPTURE === "1"
+const preview = process.env.DESKFLEET_SMOKE_PREVIEW === "1"
+assert.ok(!preview || capture, "DESKFLEET_SMOKE_PREVIEW requires capture mode")
 const captureSecondsValue = process.env.DESKFLEET_SMOKE_CAPTURE_SECONDS
 const captureSeconds = Number(captureSecondsValue ?? "0")
 assert.ok(captureSecondsValue === undefined || (capture && Number.isInteger(captureSeconds) && captureSeconds >= 1 && captureSeconds <= 300),
@@ -114,6 +117,12 @@ try {
       assert.ok(typeof result.framesDecoded === "number" && result.framesDecoded >= 1)
       assert.ok(typeof result.width === "number" && result.width > 0)
       assert.ok(typeof result.height === "number" && result.height > 0)
+      if (preview) {
+        assert.ok(result.width <= 320 && result.height <= 180, "preview dimensions must stay within 320x180")
+        if (typeof result.observedMs === "number" && typeof result.observedFrames === "number") {
+          assert.ok(result.observedFrames <= Math.ceil(result.observedMs / 1000) + 1, "preview must not exceed 1fps, allowing one in-flight frame")
+        }
+      }
       console.log("Electron/native WebRTC: real desktop H.264 decode, video srcObject, trickle ICE, and DataChannel echo passed", result)
     } else if (hardware) {
       assert.equal(result.width, 320)

@@ -44,6 +44,8 @@ pub struct DesktopConfig {
     pub fps: Option<f64>,
     pub bitrate_bps: Option<u32>,
     pub max_bitrate_bps: Option<u32>,
+    pub max_width: Option<u32>,
+    pub max_height: Option<u32>,
 }
 
 impl From<DesktopConfig> for media::DesktopConfig {
@@ -53,6 +55,8 @@ impl From<DesktopConfig> for media::DesktopConfig {
             fps: config.fps.unwrap_or(60.0),
             bitrate_bps: config.bitrate_bps.unwrap_or(8_000_000),
             max_bitrate_bps: config.max_bitrate_bps.unwrap_or(0),
+            max_width: config.max_width,
+            max_height: config.max_height,
         }
     }
 }

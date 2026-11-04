@@ -7,6 +7,7 @@ mod audio;
 mod backend;
 mod error;
 mod frame;
+mod scale;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -19,6 +20,7 @@ mod windows;
 pub use audio::AudioFrame;
 pub use error::CaptureError;
 pub use frame::{Frame, PixelFormat};
+pub use scale::FrameScaler;
 pub use surface::NativeSurface;
 pub use types::{CaptureConfig, Display};
 

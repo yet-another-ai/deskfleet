@@ -1075,6 +1075,7 @@ export function createStorybookRouter() {
     routes: [
       { path: "/", name: "new-session", component: { template: "<div />" } },
       { path: "/search", name: "search", component: { template: "<div />" } },
+      { path: "/desktops", name: "desktop-overview", component: { template: "<div />" } },
       { path: "/admin", name: "site-admin", component: { template: "<div />" } },
       { path: "/schedules/:scheduleId?", name: "schedules", component: { template: "<div />" }, props: true },
       { path: "/worktrees/:worktreeId", name: "worktree", component: { template: "<div />" }, props: true },

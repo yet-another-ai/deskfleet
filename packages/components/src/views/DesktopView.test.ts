@@ -37,9 +37,9 @@ const originalApi = platformClient.desktop
 let mock: ReturnType<typeof mockDesktopApi>
 const wrappers: VueWrapper[] = []
 const fullscreenCleanups: (() => void)[] = []
-async function mountDesktop(machineId = "local-daemon", openSettings?: (section: string) => void) {
+async function mountDesktop(machineId = "local-daemon", openSettings?: (section: string) => void, props: { initialDisplayId?: number; autoConnect?: boolean } = {}) {
   const wrapper = mount(DesktopView, {
-    props: { machineId },
+    props: { machineId, ...props },
     attachTo: document.body,
     global: { plugins: [createPinia(), router, i18n], provide: openSettings ? { [accountSessionKey as symbol]: { openSettings, localMachineId: ref("local-daemon") } } : {} },
   })
@@ -105,6 +105,21 @@ afterEach(async () => {
   platformClient.desktop = originalApi
   vi.unstubAllGlobals()
   await shutdownAnalytics()
+})
+
+test("opening an overview preview connects the selected display without requesting control", async () => {
+  await mountDesktop("local-daemon", undefined, { initialDisplayId: 2, autoConnect: true })
+  const peer = TestPeer.instances[0]!
+  expect(peer).toBeDefined()
+  expect(peer.createDataChannel).not.toHaveBeenCalled()
+  peer.changeState("connected")
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenCalledExactlyOnceWith({ sessionId: expect.any(String), displayId: 2 })
+})
+
+test("does not automatically connect a different display if the overview display disappeared", async () => {
+  await mountDesktop("local-daemon", undefined, { initialDisplayId: 99, autoConnect: true })
+  expect(TestPeer.instances).toHaveLength(0)
 })
 
 test("opens the selected display in an independent native window without a browser peer", async () => {
