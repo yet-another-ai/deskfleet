@@ -12,4 +12,6 @@ api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: fals
 api.settings.getKeepAwake = async () => ({ enabled: false })
 api.settings.getAutoDownloadUpdates = async () => ({ enabled: true })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/smoke/worktrees" })
+api.settings.getRemoteAgentSettings = async () => ({ allowRead: false, allowOperate: false })
+api.settings.setRemoteAgentSettings = async (settings) => settings
 if (isMainRendererUrl(globalThis.location.href)) contextBridge.exposeInMainWorld("deskfleet", api)

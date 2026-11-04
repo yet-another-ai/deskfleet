@@ -100,8 +100,62 @@ Provider shutdown, failed startup, archive, and daemon shutdown retire the
 grant. Tools expose the scoped catalog, public provider identities, Session
 state/history, and schedule list/create/update/delete/run operations. Generated
 arguments cannot replace the actor, select a different Workspace, or retrieve
-provider launch secrets. Cross-machine MCP delegation is not implemented by
-this Session-scoped grant.
+provider launch secrets. The separate remote tools below extend discovery to
+other machines without expanding the local Workspace delegation.
+
+## Cross-machine Agent access
+
+Desktop **Preferences → This computer** has two independent switches, both off
+by default: allow Agents on other machines to read this computer, and allow
+them to operate it. Consent is stored in `<host directory>/remote-agent-settings.json`
+as `{"allowRead": false, "allowOperate": false}`. A headless operator can set the
+same file. The preference applies across this host's registrations; every call
+still stays inside the source registration's Team and backend. A caller cannot
+choose another Team. Reading conversations and operating MCP tools are separate
+permissions; enabling operations does not grant conversation access.
+
+The issuing daemon checks the active Session and its user's current membership,
+then calls `/api/daemon/mcp` with its own machine credential. The backend repeats
+membership checks for source and target, resolves the target's Team registration,
+and forwards a dedicated management RPC with the verified source Machine and
+Session. The target validates this context and reads the current host preference.
+These internal RPCs are absent from the public management method allowlist.
+Machine discovery asks online targets for live consent and omits offline or
+denying machines. No synchronized history is returned without a live target
+permission check. Calls cannot replace the originating user or pass an arbitrary
+management method, executable, endpoint, or credential.
+
+| Tool | Target permission | Result |
+| --- | --- | --- |
+| `deskfleet_remote_machines` | Read or operate | Other online machines in the same Team and their current permissions |
+| `deskfleet_remote_machine` | Read | Catalog, Workspaces, directories, and public provider identities |
+| `deskfleet_remote_sessions` | Read | Sessions, optionally filtered by Workspace |
+| `deskfleet_remote_session` | Read | Session state and conversation snapshot |
+| `deskfleet_remote_session_history` | Read | Recorded event pages, using `afterSeq` and a limit of 1–200 |
+| `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
+| `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
+| `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |
+
+Tool discovery and execution create a request-owned MCP connection on the target
+using its saved stdio, Streamable HTTP, or SSE settings. Stdio starts in the host
+directory. Launch environment and HTTP headers stay on that target. Every tool
+call requires operate permission, regardless of the server's `readOnlyHint`.
+Consent and server configuration are rechecked after initialization; closing the
+daemon cancels pending remote MCP requests. Connections close when requests finish.
+An in-progress tool can already have side effects when a deadline expires or
+permission changes; no automatic retry is performed.
+
+Remote tools cannot invoke the built-in DeskFleet server, its schedule mutations,
+Agent prompts, steering, or approvals. Direct cross-machine Agent messaging is
+reserved for later work. Configured third-party MCP tools execute with the
+target OS user's existing authority when operate permission is enabled.
+
+Requests and results pass through the existing backend management transport and
+its transient cross-instance inbox, within that transport's size and time limits.
+The central backend therefore remains inside their trust boundary. The request
+retains the initiating user, source Machine and Session; the source Agent's MCP
+tool activity uses its existing conversation recording. Connection configuration
+and saved secrets are never included in server discovery responses.
 
 ## Additional MCP servers
 
@@ -125,8 +179,10 @@ the built-in Agent tools cannot edit MCP server credentials.
 Scheduler tests exercise calendar/time-zone boundaries, persistence, missed
 deadlines, concurrent claims, overlapping inputs, journal completion, and crash
 recovery. MCP tests use a real stdio MCP client and cover scoped authority and
-lease retirement. UI tests cover schedule editing and machine settings. The
-central delegation HTTP tests require a real PostgreSQL `TEST_DATABASE_URL`.
+lease retirement. Remote MCP tests also exercise HTTP/SSE credentials, cursor
+pagination, permission changes, and tool-error forwarding. UI tests cover
+schedule editing and machine settings. Central delegation and cross-machine
+Team-isolation HTTP tests require a real PostgreSQL `TEST_DATABASE_URL`.
 
 ACP references: [MCP integration](https://agentclientprotocol.com/protocol/session-setup)
 and [capability negotiation](https://agentclientprotocol.com/protocol/initialization).

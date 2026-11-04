@@ -8,6 +8,8 @@ import type { LocalAgentController } from "./local-agent-controller.ts"
 import { validateNotificationSettings, type NotificationSettingsController } from "./notification-settings.ts"
 import type { UpdateSettingsController } from "./update-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
+import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
+import { remoteAgentSettings } from "../../../daemon/src/remote-agent-settings.ts"
 import { t } from "./i18n.ts"
 
 const renderers = new Set<WebContents>()
@@ -30,6 +32,7 @@ export function installSettings(
   notifications: NotificationSettingsController,
   worktrees: WorktreeRootSettingsController,
   updates?: Pick<UpdateSettingsController, "get" | "setEnabled">,
+  remoteAgents?: RemoteAgentSettingsController,
 ): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
     if (!renderers.has(event.sender) || !isDesktopMediaSender(event)) {
@@ -37,6 +40,12 @@ export function installSettings(
     }
     try {
       switch (method) {
+        case "getRemoteAgentSettings":
+          if (!remoteAgents) throw new Error("Remote Agent settings are unavailable")
+          return { ok: true, value: await remoteAgents.get() }
+        case "setRemoteAgentSettings":
+          if (!remoteAgents) throw new Error("Remote Agent settings are unavailable")
+          return { ok: true, value: await remoteAgents.set(remoteAgentSettings(enabled)) }
         case "get": return { ok: true, value: controller.state }
         case "setLocalAgentEnabled":
           if (typeof enabled !== "boolean") throw new Error("Local Agent setting must be a boolean")

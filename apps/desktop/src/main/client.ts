@@ -26,6 +26,7 @@ import { DesktopNotifications } from "./notifications.ts"
 import { TaskNotificationMonitor } from "@deskfleet/client/task-notification-monitor"
 import { installSettings, publishLocalAgentState } from "./settings.ts"
 import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
+import { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 import { configureApplicationDisplay } from "./application-display.ts"
 import {
   installRendererPermissions,
@@ -109,7 +110,7 @@ function start(): void {
     }
     const updates = await installUpdates(lifecycle, closeServices)
     const updateSettings = new UpdateSettingsController(join(userData, "updates.json"), enabled => updates.setAutoDownload(enabled))
-    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings)
+    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings, new RemoteAgentSettingsController(desktopDaemonDirectory()))
     app.on("will-quit", (event) => {
       updates.close()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier

@@ -26,6 +26,7 @@ export async function browserClient(configuredServerUrl: string, report: Central
       getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
       getAutoDownloadUpdates: async () => ({ enabled: false }), setAutoDownloadUpdates: unavailable,
       getWorktreeRoot: unavailable, setWorktreeRoot: unavailable, chooseWorktreeRoot: unavailable,
+      getRemoteAgentSettings: unavailable, setRemoteAgentSettings: unavailable,
       ...createBrowserNotificationSettings(localStorage),
       onChanged: subscribe,
     },

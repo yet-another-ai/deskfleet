@@ -21,6 +21,8 @@ api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: fals
 api.settings.getKeepAwake = async () => ({ enabled: false })
 api.settings.getAutoDownloadUpdates = async () => ({ enabled: true })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/projects/worktrees" })
+api.settings.getRemoteAgentSettings = async () => ({ allowRead: false, allowOperate: false })
+api.settings.setRemoteAgentSettings = async (settings) => settings
 if (process.argv.includes("--updates-account")) {
   const methods: Record<string, () => Promise<unknown>> = {
     status: async () => ({ serverUrl: "https://fleet.example", siteAdmin: false, user: { id: "user-1", name: "Ada", email: "ada@example.test" } }),

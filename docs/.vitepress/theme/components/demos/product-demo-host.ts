@@ -32,6 +32,8 @@ const host: DeskfleetDesktopApi = {
     onChanged: subscribe,
   },
   settings: {
+    getRemoteAgentSettings: async () => ({ allowRead: false, allowOperate: false }),
+    setRemoteAgentSettings: async (settings) => settings,
     get: async () => ({ enabled: true, status: "running" }),
     setLocalAgentEnabled: async enabled => ({ enabled, status: enabled ? "running" : "stopped" }),
     getLaunchAtStartup: async () => ({ available: false, enabled: false }),

@@ -1,6 +1,7 @@
 import type { AgentActor } from "./agent-protocol.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
+import type { RemoteMcpOperation, RemoteMcpRequest } from "../../../crates/protocol/control.ts"
 
 export interface McpScope { sessionId: string; workspaceId?: string }
 
@@ -15,13 +16,24 @@ function sameDelegation(session: { id: string; workspaceId?: string }, scope: Mc
   return session.id === scope.sessionId && session.workspaceId === undefined
 }
 
-/** A generated argument can select resources only inside the issuing Session's delegation. */
+/** Local resources stay within the Session's delegation; remote tools use a separately authorized route. */
 export async function dispatchMcp(
   operations: MachineOperations, method: string, value: unknown, actor: AgentActor, scope: McpScope,
+  remote?: (request: RemoteMcpRequest) => Promise<unknown>,
 ): Promise<unknown> {
   const params = object(value)
   const source = await operations.agents.requireActive(scope.sessionId)
   if (source.session.workspaceId !== scope.workspaceId) throw new Error("MCP delegation scope no longer exists")
+  if (method.startsWith("remoteMcp/")) {
+    const operation = method.slice("remoteMcp/".length) as RemoteMcpOperation
+    if (!["machines", "machine", "sessions", "session", "history", "mcpServers", "mcpTools", "mcpCall"].includes(operation)) throw new Error("Unsupported remote MCP operation")
+    if (!remote || actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("Remote Agent delegation is unavailable")
+    const { machineId, ...args } = params
+    if (operation !== "machines" && (typeof machineId !== "string" || !machineId)) throw new Error("A target machine is required")
+    if (operation === "machines" && machineId !== undefined) throw new Error("Machine discovery takes no target")
+    return remote({ userId: actor.userId, deviceId: actor.deviceId, sessionId: scope.sessionId, operation,
+      ...(typeof machineId === "string" ? { machineId } : {}), arguments: args })
+  }
   if (method === "catalogList") {
     const catalog = await operations.catalog.native.snapshot()
     return {
