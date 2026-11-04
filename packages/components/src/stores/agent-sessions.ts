@@ -1,6 +1,6 @@
 import { snapshotIsWorking } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
-import { useLocalStorage, useTimeoutFn } from "@vueuse/core"
+import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { markRaw, onScopeDispose, ref, watch } from "vue"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -369,18 +369,19 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     return initialized
   }
   async function call<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> {
-    const controlled = api.control?.(method, params)
+    const requestParams = cloneFnJSON(params)
+    const controlled = api.control?.(method, requestParams)
     if (controlled) return controlled
     const history = api.history
     if (history && !history.available() && state.value !== "connected") {
-      const values = params as { sessionId?: string; afterSeq?: string; limit?: number }
+      const values = requestParams as { sessionId?: string; afterSeq?: string; limit?: number }
       if (method === "_deskfleet/session/list") return await history.list() as AgentMethods[M]["result"]
       if (method === "_deskfleet/session/subscribe") return await history.snapshot(values.sessionId!) as AgentMethods[M]["result"]
       if (method === "_deskfleet/session/history") return await history.events(values.sessionId!, values.afterSeq!, values.limit ?? 100) as AgentMethods[M]["result"]
       throw new Error("The machine is offline")
     }
     await initialize()
-    return client.call<AgentMethods[M]["result"]>(method, params)
+    return client.call<AgentMethods[M]["result"]>(method, requestParams)
   }
   function refresh(sessionId?: string): Promise<void> {
     refreshPending = true
@@ -522,15 +523,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     method: M, params: Omit<AgentMethods[M]["params"], "operationId">, text?: string, submittedDraft?: SubmittedAgentDraft,
   ): Promise<AgentMethods[M]["result"]> {
     const operationId = crypto.randomUUID()
-    const sessionId = "sessionId" in params ? params.sessionId as string : undefined
+    const requestParams = markRaw(cloneFnJSON({ ...params, operationId }))
+    const sessionId = "sessionId" in requestParams ? requestParams.sessionId as string : undefined
     operations.value[operationId] = { operationId, sessionId, method, text,
       ...(text !== undefined && sessionId ? {
         attachmentIds: submittedDraft ? [...submittedDraft.attachmentIds] : (draftAttachments.value[sessionId] ?? []).map(item => item.id),
         mentionSnapshot: JSON.stringify(submittedDraft?.mentions ?? draftMentions.value[sessionId] ?? []),
       } : {}),
-      workspaceId: "workspaceId" in params ? params.workspaceId as string : undefined, params: { ...params, operationId } }
+      workspaceId: "workspaceId" in requestParams ? requestParams.workspaceId as string : undefined, params: requestParams }
     try {
-      const result = await call(method, { ...params, operationId } as AgentMethods[M]["params"])
+      const result = await call(method, requestParams as AgentMethods[M]["params"])
       completeOperation(operationId)
       return result
     } catch (reason) {
@@ -652,11 +654,26 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
     const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
-    const revisions = workspaceId && context === "worktree" ? baseRevisions : undefined
+    const revisions = workspaceId && context === "worktree" && baseRevisions ? cloneFnJSON(baseRevisions) : undefined
     const branch = !revisions && workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
-    const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/create", {
+    const params: Omit<AgentMethods["_deskfleet/session/create"]["params"], "operationId"> = {
       ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode,
-    }), track)
+    }
+    const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
+      if (pending) {
+        const command = await call("_deskfleet/command/get", { operationId: pending.operationId })
+        if (command?.status === "completed") { commandReceived(command); return command.result as AgentSnapshot }
+        if (command?.status === "accepted" || !command && JSON.stringify({ ...params, operationId: pending.operationId }) === JSON.stringify(pending.params)) {
+          try {
+            const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"]) as AgentSnapshot
+            completeOperation(pending.operationId)
+            return result
+          } catch (reason) { pending.error = messageOf(reason); throw reason }
+        }
+        delete operations.value[pending.operationId]
+      }
+      return mutation("_deskfleet/session/create", params)
+    }, track)
     snapshotReceived(snapshot)
     track("session_created", { context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
     return snapshot
