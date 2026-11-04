@@ -940,6 +940,10 @@ test("draft choices accompany session creation and live changes use an idempoten
 
 test("a confirmed Agent switch sends one audited operation and applies the replacement snapshot", async () => {
   const store = useAgentSessionsStore(); await store.open("30")
+  store.configurations["30"] = {
+    provider: { id: "codex", name: "Codex" }, models: null, reasoningEfforts: null, modes: null,
+    commands: [{ name: "old-command", description: "Old" }], skills: [],
+  }
   const switched = agentSnapshot()
   switched.session.provider = "claude"
   const normal = mock.call.getMockImplementation()!
@@ -950,6 +954,7 @@ test("a confirmed Agent switch sends one audited operation and applies the repla
   })
   expect(store.sessions["30"]?.provider).toBe("claude")
   expect(store.views["30"]?.snapshot?.session.provider).toBe("claude")
+  expect(store.configurations["30"]).toBeUndefined()
 })
 
 test("live configuration events update the UI without extra reads and outrank stale responses or history", async () => {

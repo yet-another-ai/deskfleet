@@ -608,6 +608,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   /** Replace a stopped Session's Agent; its previous conversation context is not transferred. */
   async function switchAgent(sessionId: string, provider: string): Promise<void> {
     snapshotReceived(await mutation("_deskfleet/session/switch-agent", { sessionId, provider }))
+    // The previous Agent's catalog and command list do not describe the replacement.
+    // Keep values already projected from the new provider's live events.
+    if (configurations.value[sessionId]?.provider.id !== provider) {
+      delete configurations.value[sessionId]
+      configurationSequences.delete(sessionId)
+      commandSequences.delete(sessionId)
+      unclassifiedCommands.delete(sessionId)
+    }
   }
   async function capacityAction(action: "create" | "fork" | "restore", details: SessionCapacityDetails, run: () => Promise<AgentSnapshot>, track: ReturnType<typeof captureAnalyticsContext>): Promise<AgentSnapshot> {
     track("session_capacity_action", { action, outcome: "attempt", ...details })
