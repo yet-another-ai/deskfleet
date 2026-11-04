@@ -82,6 +82,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const relayDeniedReason = ref<RelayDeniedReason>()
   const operations = ref<Record<string, PendingAgentOperation>>({})
   const sessionPresence = ref<Record<string, string[]>>({})
+  const retainedDisplays = new Set<string>()
   const journals = new Map<string, Map<string, AgentEvent>>()
   const journalTails = new Map<string, string>()
   const previews = new AgentPreviews()
@@ -254,10 +255,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         return follows
       })
       // Live notifications normally extend the journal; only late history needs a full merge.
-      if (ordered) current.events.push(...appended)
+      if (ordered && !retainedDisplays.has(id)) current.events.push(...appended)
       else {
         current.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
         visiblePreviews.delete(id)
+        retainedDisplays.delete(id)
       }
       advance(id)
       previews.committed(id, current.historySeq)
@@ -470,12 +472,39 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (showLoading) current.loading = true
     current.error = null
     current.relayDeniedReason = undefined
+    let liveSnapshot = false
+    const history = api.history
+    // Retained data is a display projection only: it must not advance the
+    // daemon cursor or win duplicate sequence numbers against its journal.
+    const retained = history?.parallel?.() && history.available() ? (async () => {
+      const snapshot = await history.snapshot(id)
+      const events: AgentEvent[] = []
+      let after = "0"
+      while (!disposed && !deletedSessions.has(id) && !liveSnapshot) {
+        const page = await history.events(id, after, 100)
+        if (disposed || deletedSessions.has(id) || liveSnapshot) return
+        events.push(...page)
+        if (journal(id).size === 0) {
+          current.snapshot = snapshot
+          current.events = [...events]
+          retainedDisplays.add(id)
+          current.loading = false
+        }
+        const next = page.at(-1)?.seq
+        if (!next || sequenceCompare(next, after) <= 0 || sequenceCompare(next, snapshot.session.lastEventSeq) >= 0) return
+        after = next
+      }
+    })().catch(() => {}) : undefined
     const loading = (async () => {
-      snapshotReceived(await call("_deskfleet/session/subscribe", { sessionId: id }))
-      if (deletedSessions.has(id)) return
+      const snapshot = await call("_deskfleet/session/subscribe", { sessionId: id })
+      if (disposed || deletedSessions.has(id)) return
+      liveSnapshot = true
+      snapshotReceived(snapshot)
       await readHistory(id)
+      if (retainedDisplays.delete(id)) current.events = [...journal(id).values()].sort((a, b) => sequenceCompare(a.seq, b.seq))
       await reconcileOperations(id)
-    })().catch(reason => {
+    })().catch(async reason => {
+      await retained
       current.error = messageOf(reason)
       current.relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
     }).finally(() => { current.loading = false; loads.delete(id) })

@@ -1175,3 +1175,16 @@ content and content-bearing audit parameters/results, retain metadata-only audit
 and prevent stale uploads from restoring that content. Local durable receipts
 continue to serve the existing idempotency contract. See the
 [backend implementation scope](backend.md) for the delivery plan.
+
+### Remote history display
+
+Remote clients request retained central history while attaching to the daemon.
+The retained snapshot and event pages can populate the conversation before the
+peer connects, but do not advance the daemon journal cursor. Daemon history and
+live events replace this temporary display and remain authoritative, including
+for identical sequence numbers. Late retained responses cannot overwrite a
+received daemon snapshot or journal. A retained-history failure does not block
+attachment; a failed attachment leaves already displayed history available.
+Local message channels and offline retained-history reads keep their existing
+single-source path. Source selection and catch-up state are internal; there is
+no additional user-facing status.

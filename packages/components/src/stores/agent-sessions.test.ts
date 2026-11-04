@@ -1400,3 +1400,48 @@ test("session creation unwraps reactive parameters for structuredClone and recov
   expect(store.operations).toEqual({})
 })
 
+
+test.each([false, true])("remote retained history renders before attachment and daemon replaces it (local: %s)", async local => {
+  const previous = platformClient.agent.history
+  const attached = deferred<ReturnType<typeof agentSnapshot>>()
+  const snapshot = agentSnapshot()
+  snapshot.session.lastEventSeq = "1"
+  const cached = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "cached" }] }))
+  const authoritative = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "daemon" }] }))
+  const events = vi.fn(async () => [cached])
+  platformClient.agent.history = { parallel: () => !local, available: () => true, list: async () => [], snapshot: async () => snapshot, events }
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? attached.promise : method === "_deskfleet/session/history" ? [authoritative] : null)
+  try {
+    const store = useAgentSessionsStore()
+    const opening = store.open("30")
+    await flushPromises()
+    expect(events).toHaveBeenCalledTimes(local ? 0 : 1)
+    expect(store.views["30"]!.events).toEqual(local ? [] : [cached])
+    expect(store.views["30"]!.historySeq).toBe("0")
+    attached.resolve(snapshot)
+    await opening
+    expect(store.views["30"]!.events).toEqual([authoritative])
+    expect(store.views["30"]!.historySeq).toBe("1")
+  } finally { platformClient.agent.history = previous }
+})
+
+test("late retained history cannot replace daemon events", async () => {
+  const previous = platformClient.agent.history
+  const retained = deferred<AgentEvent[]>()
+  const attached = deferred<ReturnType<typeof agentSnapshot>>()
+  const snapshot = agentSnapshot()
+  snapshot.session.lastEventSeq = "1"
+  const event = agentEvent(1, "input", agentInput())
+  platformClient.agent.history = { parallel: () => true, available: () => true, list: async () => [], snapshot: async () => snapshot, events: () => retained.promise }
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? attached.promise : method === "_deskfleet/session/history" ? [event] : null)
+  try {
+    const store = useAgentSessionsStore()
+    const opening = store.open("30")
+    await flushPromises()
+    attached.resolve(snapshot)
+    await opening
+    retained.resolve([agentEvent(1, "input", agentInput({ id: "stale" }))])
+    await flushPromises()
+    expect(store.views["30"]!.events).toEqual([event])
+  } finally { platformClient.agent.history = previous }
+})
