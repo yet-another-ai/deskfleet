@@ -85,7 +85,8 @@ const selectUsage = createAgentUsageSelector()
 const usage = computed(() => selectUsage(view.value?.events ?? []))
 const run = computed(() => snapshot.value?.runs.at(-1))
 const activeTurn = computed(() => snapshot.value?.turns.find(turn => liveTurnStates.includes(turn.state)))
-const active = computed(() => !snapshot.value || snapshot.value.session.archiveState === "active")
+const archiveState = computed(() => snapshot.value?.session.archiveState ?? location.value?.session.archiveState)
+const active = computed(() => !archiveState.value || archiveState.value === "active")
 const connected = computed(() => agents.state === "connected")
 // A suspended PWA can lose its peer without unmounting this view. Retry a
 // bounded number of times, then wait for a resume or network change.
@@ -339,7 +340,7 @@ async function checkOperation(operationId: string): Promise<void> {
           aria-hidden="true"
           class="pointer-events-none absolute inset-x-0 -top-6 h-6 [background:linear-gradient(to_bottom,transparent,var(--ui-color-canvas))]"
         />
-        <div class="flex w-full shrink-0 flex-col gap-2 px-6 pb-2 empty:hidden">
+        <div class="flex w-full shrink-0 flex-col gap-2 px-6 empty:hidden" :class="active ? 'pb-2' : 'pb-5'">
           <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.error ? agents.relayDeniedReason : undefined">
             <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
           </ErrorNotice>
@@ -348,7 +349,9 @@ async function checkOperation(operationId: string): Promise<void> {
           </ErrorNotice>
           <ErrorNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" :error="draftError" />
           <template v-if="snapshot">
-            <AgentNotice v-if="!active" :text="t(snapshot.session.archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')" />
+            <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
+              <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
+            </AgentNotice>
             <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
             <AgentNotice v-else-if="snapshot.session.lifecycle !== 'ready'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
             <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
@@ -360,7 +363,7 @@ async function checkOperation(operationId: string): Promise<void> {
             <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
           </template>
         </div>
-        <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!active || !connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+        <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
       </div>
     </div>
   </div>

@@ -355,7 +355,7 @@ test("a new Session keeps its moved draft and references when resolution fails a
   expect(agents.draftErrors["30"]).toBeUndefined()
 })
 
-test.each(["archiving", "archived"] as const)("questions remain visible but cannot be answered while a Session is %s", async archiveState => {
+test.each(["archiving", "archived"] as const)("questions remain visible but cannot be answered and the composer is hidden while a Session is %s", async archiveState => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
@@ -364,6 +364,7 @@ test.each(["archiving", "archived"] as const)("questions remain visible but cann
   expect(wrapper.get('[data-testid="elicitation-submit"]').attributes("disabled")).toBeUndefined()
   emit("session", { ...snapshot.session, archiveState })
   await flushPromises()
+  expect(wrapper.find("textarea").exists()).toBe(false)
   expect(wrapper.get('[data-testid="elicitation-submit"]').attributes("disabled")).toBeDefined()
   await wrapper.get('[data-testid="elicitation-decline"]').trigger("click")
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/elicitation/respond")).toBe(false)
