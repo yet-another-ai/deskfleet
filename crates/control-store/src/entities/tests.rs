@@ -250,6 +250,11 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_turn_usage_minutes mapping");
+    cp_turn_usage_archive::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_turn_usage_archive mapping");
     cp_users::Entity::find()
         .limit(0)
         .all(db)

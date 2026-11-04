@@ -147,6 +147,7 @@ pub(super) fn search(
             Cond::any()
                 .add(
                     chat.and(session_field("{session,archiveState}").eq("active"))
+                        .and(Expr::col((sessions::Entity, sessions::Column::DeletedAt)).is_null())
                         .and(
                             Expr::col((catalogs::Entity, catalogs::Column::Snapshot))
                                 .get_json_field(Expr::Constant("sessionIds".into()))

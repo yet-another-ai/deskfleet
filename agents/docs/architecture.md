@@ -150,6 +150,11 @@ Expiry maintenance runs independently of the routing poll and authentication
 requests. A database claim permits one pass across API replicas every 30 seconds;
 the server allows 20 seconds for a pass. Each identity table and the routing inbox
 use deletion batches of at most 1,000 eligible rows, skipping locked rows.
+Identity, realtime, and TURN retention run independently under that shared
+deadline. A failed or stalled category cannot skip the others; diagnostics name
+the category and include safe database error fields. TURN retention atomically
+compacts up to 10,000 raw notifications older than seven days per pass, keeping
+exact billing counters in Team/minute archives.
 Expired API-node deletion locks the parent before cascading to its routes and
 messages, matching lease renewal's lock order. Login sessions and durable history
 remain available to their existing consumers. Peer grants retain a 24-hour cleanup
@@ -1256,6 +1261,19 @@ Ordinary events retain only their existing JSONB record. The daemon journal and
 wire event format are unchanged, and failed uploads can replay their original
 events after the server is upgraded.
 
+Commands that return a Session snapshot persist only a `session_snapshot`
+reference in their receipt and command events. Retrying the same operation reads
+that Session's current snapshot without repeating the mutation. Central ingestion
+and duplicate-event comparison apply the same projection to older receipts, so
+they cannot restore full conversation copies into new command rows. Already
+stored copies are not bulk-rewritten during deployment.
+
+Only explicitly inline media content (image/audio data or embedded resource
+blobs) belongs in synchronized history. File and HTTP resource links retain
+their URI and metadata; the central service never downloads or materializes
+their media bytes. File previews, file transfer, and remote desktop media stay
+on their existing daemon/peer paths.
+
 Search spans the selected Team's Machines using central synchronized data. It
 matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
 Task titles and prompts. Results retain their owning Machine and Workspace;
@@ -1321,11 +1339,20 @@ The archived Sessions page exposes daemon-side deletion of local records and
 owned resources. Catalog snapshots carry the daemon journal's complete Session ID
 inventory, including archived and unprovisioned Sessions. Central lists and summaries
 only expose IDs in that inventory, so retained history cannot make deleted Sessions
-reappear. Immutable local command receipts remain. Central content erasure
-is separate work: it must remove conversation/tool content, including raw content
-in audit parameters and results, retain only audit metadata, and prevent stale
-uploads from restoring removed content. Keep machine private keys and
-application credentials out of history and logs. Electron renderers stay
+reappear. Before capturing each catalog, the daemon allocates a durable monotonic
+revision; central accepts only newer inventory and provider snapshots for that
+registration. Accepted complete inventories set `cp_sessions.deleted_at` for
+removed Sessions. Catalog
+replacement and history ingestion share a registration lock. Tombstoned Sessions
+reject history uploads and disappear from direct history, receipt, and search
+reads even if a later catalog includes their ID. Archive/restore keep their IDs
+in the inventory and do not soft-delete them. Migration 28 waits for a versioned
+inventory rather than guessing deletions from an old unordered catalog.
+
+Immutable local command receipts remain. Central soft deletion retains content
+for a future periodic purge; this release does not physically erase conversation,
+tool, or audit rows. Usage and billing history remain durable. Keep machine
+private keys and application credentials out of history and logs. Electron renderers stay
 sandboxed, with narrow preload interfaces; agent output and repository content
 are untrusted display data.
 

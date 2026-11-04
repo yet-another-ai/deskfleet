@@ -5,11 +5,15 @@ use sea_orm::{
 };
 use serde_json::{Value, json};
 
+#[path = "history_performance/retention.rs"]
+mod retention;
+
 struct Fixture {
     store: ControlStore,
     database: DatabaseConnection,
     schema: String,
     machine: String,
+    catalog_revision: std::sync::atomic::AtomicI64,
 }
 
 impl Fixture {
@@ -50,6 +54,7 @@ impl Fixture {
             database,
             schema,
             machine,
+            catalog_revision: std::sync::atomic::AtomicI64::new(1),
         }
     }
 
@@ -66,6 +71,10 @@ impl Fixture {
         self.store
             .save_catalog(
                 &self.machine,
+                &self
+                    .catalog_revision
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    .to_string(),
                 json!({"machineId":"1","workspaces":[],"sessions":[],"sessionIds":session_ids}),
                 json!({"providers":[]}),
             )
@@ -813,7 +822,7 @@ async fn deleted_sessions_stay_out_of_catalog_reads_when_old_history_is_uploaded
     fixture.catalog(&["2", "3", "4"]).await;
     for replay_old_history in [false, true] {
         if replay_old_history {
-            store
+            let replay = store
                 .sync_history(
                     machine,
                     "1",
@@ -821,8 +830,8 @@ async fn deleted_sessions_stay_out_of_catalog_reads_when_old_history_is_uploaded
                     vec![event("1")],
                     vec![command("10", "completed")],
                 )
-                .await
-                .unwrap();
+                .await;
+            assert!(matches!(replay, Err(Error::NotFound)));
         }
         let page = store.sessions(machine, 0, 2, "all").await.unwrap();
         assert_eq!(page["sessions"][0]["session"]["id"], "2");
@@ -843,18 +852,33 @@ async fn deleted_sessions_stay_out_of_catalog_reads_when_old_history_is_uploaded
             "provision_failed"
         );
     }
-    // Catalog removal does not perform the separately scoped content erasure.
+    // Soft deletion hides content without physically erasing the retained rows.
+    assert!(matches!(
+        store.session_snapshot(machine, "1").await,
+        Err(Error::NotFound)
+    ));
+    assert!(matches!(
+        store.events(machine, "1", 0, 10).await,
+        Err(Error::NotFound)
+    ));
+    assert!(matches!(
+        store.command_by_operation(machine, "op-10").await,
+        Err(Error::NotFound)
+    ));
     assert_eq!(
-        store.session_snapshot(machine, "1").await.unwrap()["snapshot"],
-        deleted
+        store.commands(machine, "1", 0, 10).await.unwrap()["commands"],
+        json!([])
     );
-    assert_eq!(
-        store.events(machine, "1", 0, 10).await.unwrap()["events"],
-        json!([event("1")])
-    );
-    assert_eq!(
-        store.command_by_operation(machine, "op-10").await.unwrap(),
-        command("10", "completed")
+    let retained = store.database().query_one_raw(Statement::from_string(DbBackend::Postgres,
+        "SELECT (SELECT count(*) FROM cp_events WHERE session_id='1') AS events, (SELECT count(*) FROM cp_commands) AS commands, deleted_at FROM cp_sessions WHERE session_id='1'"))
+        .await.unwrap().unwrap();
+    assert_eq!(retained.try_get::<i64>("", "events").unwrap(), 1);
+    assert_eq!(retained.try_get::<i64>("", "commands").unwrap(), 1);
+    assert!(
+        retained
+            .try_get::<Option<i64>>("", "deleted_at")
+            .unwrap()
+            .is_some()
     );
     fixture.catalog(&[]).await;
     assert_eq!(

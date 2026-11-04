@@ -9,6 +9,7 @@ pub struct Model {
     pub snapshot: Json,
     pub providers: Json,
     pub observed_at: i64,
+    pub inventory_revision: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

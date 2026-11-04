@@ -10,6 +10,11 @@ import { CentralClient } from "./central-client.ts"
 import type { ControlPeers } from "./control-server.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 
+function journalIds() {
+  let id = 0n
+  return async () => String(++id)
+}
+
 interface Rejection {
   name: string
   status: number
@@ -60,7 +65,7 @@ async function setup(context: TestContext, rejection: Rejection) {
   await writeFile(path, JSON.stringify(credentials))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "same-origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { journal: { id: journalIds(), identity: { originId: "same-origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe },
     terminals: { onChange: unsubscribe },

@@ -1,3 +1,5 @@
+mod retention;
+
 use crate::entities::{
     cp_peers as peers, cp_turn_collector as collector, cp_turn_usage as usage_rows,
 };
@@ -37,7 +39,8 @@ pub struct TurnUsage {
 impl ControlStore {
     /// Record a usage event against the Team stored in its peer authorization.
     ///
-    /// Returns false for an unknown peer. Each notification counts separately;
+    /// Returns false for an unknown peer or a zero-byte notification. Each
+    /// nonzero notification counts separately;
     /// expired and revoked peers retain their original Team attribution.
     ///
     /// # Errors
@@ -60,6 +63,9 @@ impl ControlStore {
             || usage.collected_at < 0
         {
             return Err(Error::Invalid("invalid TURN usage event"));
+        }
+        if usage.received_bytes == 0 && usage.sent_bytes == 0 {
+            return Ok(false);
         }
         let lease = Query::select()
             .expr(Expr::val(1))

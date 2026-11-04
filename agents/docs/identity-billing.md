@@ -351,13 +351,27 @@ and peer-facing sockets, attributed to the Team on the saved peer grant. Do not
 add received bytes to this sum. It measures relay protocol traffic, not file
 payload size. Period totals remain exact decimal integer strings in the API.
 
-PostgreSQL retains raw deltas and maintains Team/minute sent-byte aggregates in
-the same transaction through an insert trigger. Migration backfills existing
+PostgreSQL retains recent raw deltas and maintains Team/minute sent-byte
+aggregates in the same transaction through an insert trigger. Migration backfills existing
 events while excluding concurrent writes. Full minutes use these aggregates;
-each partial boundary reads only its raw timestamp range. This preserves exact
-millisecond anchors, short intervals, month-end boundaries, and late deltas
+each partial boundary reads its raw timestamp range plus compacted counters.
+This preserves exact millisecond anchors, short intervals, month-end boundaries, and late deltas
 without repeatedly summing every event in the billing month. Aggregate totals
 use PostgreSQL numeric values so summed bytes can exceed a single bigint.
+
+Raw allocation diagnostics have a seven-day retention window plus any maintenance
+backlog. Every 30 seconds the shared expiry worker atomically moves up to 10,000
+eligible rows into Team/minute archives and deletes the raw rows. Archives sum
+sent bytes at exact millisecond offsets, with at most 60,000 offsets per minute;
+late notifications merge into the same archive. Existing minute totals are not
+incremented again. Zero-byte notifications in both directions are not stored.
+Exact billing history still grows with active minutes, while per-notification
+allocation metadata and indexes no longer remain indefinitely.
+
+Migration 29 creates an expiry index on raw notifications; index construction
+can temporarily block writes and should be scheduled accordingly on a large
+database. Its rollback restores synthetic raw billing counters without double
+counting minute totals, but cannot recreate expired allocation diagnostics.
 
 Current coturn Redis Pub/Sub collection cannot replay missing events and
 accumulates each notification independently. Production quota collection needs

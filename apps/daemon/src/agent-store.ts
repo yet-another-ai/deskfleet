@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { compactCommandEvent, compactCommandResult } from "./agent-command-results.ts"
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
   AgentPreview, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
@@ -60,13 +61,15 @@ export class AgentJournal {
     return snapshot
   }
   async command(operationId: string): Promise<AgentCommand | null> {
-    return JSON.parse(await this.native.agentCommand(operationId))
+    const command = JSON.parse(await this.native.agentCommand(operationId)) as AgentCommand | null
+    return command && compactCommandResult(command)
   }
   async commands(sessionId: string): Promise<AgentCommand[]> {
-    return JSON.parse(await this.native.agentCommands(sessionId))
+    return (JSON.parse(await this.native.agentCommands(sessionId)) as AgentCommand[]).map(compactCommandResult)
   }
   async commandsSince(sessionId: string, afterRevision: string): Promise<{ commands: AgentCommand[]; revision: string }> {
-    return JSON.parse(await this.native.agentCommandsSince(sessionId, afterRevision))
+    const changes = JSON.parse(await this.native.agentCommandsSince(sessionId, afterRevision)) as { commands: AgentCommand[]; revision: string }
+    return { ...changes, commands: changes.commands.map(compactCommandResult) }
   }
   /** Publish receipt changes so synchronization observes outcomes after domain events. */
   async saveCommand(command: AgentCommand): Promise<void> {
@@ -81,7 +84,7 @@ export class AgentJournal {
     })
   }
   async history(id: string, afterSeq: string, limit = 100): Promise<AgentEvent[]> {
-    return JSON.parse(await this.native.agentHistory(id, afterSeq, Math.max(1, Math.min(limit, 200))))
+    return (JSON.parse(await this.native.agentHistory(id, afterSeq, Math.max(1, Math.min(limit, 200)))) as AgentEvent[]).map(compactCommandEvent)
   }
   serial<T>(id: string, action: () => Promise<T>, options: { flushStreaming?: boolean } = {}): Promise<T> {
     const running = (this.#queues.get(id) ?? Promise.resolve()).then(async () => {
@@ -163,7 +166,10 @@ export class AgentJournal {
       sessionId: session.id, expectedSeq: session.lastEventSeq,
       ...changes,
     } : changes
-    const result = JSON.parse(await this.native.agentCommit(JSON.stringify(transaction))) as { events: AgentEvent[] }
+    const result = JSON.parse(await this.native.agentCommit(JSON.stringify({ ...transaction,
+      ...(transaction.command ? { command: compactCommandResult(transaction.command) } : {}),
+      ...(transaction.events ? { events: transaction.events.map(compactCommandEvent) } : {}),
+    }))) as { events: AgentEvent[] }
     for (const event of result.events) {
       for (const listener of this.#listeners) listener(event)
     }

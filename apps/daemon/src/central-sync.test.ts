@@ -6,9 +6,14 @@ import type { DaemonCatalog } from "./catalog.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
 
+function journalIds() {
+  let id = 0n
+  return async () => String(++id)
+}
+
 test("catalog publication reports runtime desktop support and updates after authorization changes", async t => {
   let desktop = false
-  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const agents = { onEvent: () => () => {}, journal: { id: journalIds(), list: async () => [] } } as unknown as AgentSessions
   const githubBranches = [{ sessionId: "1", repositories: [{ repository: "owner/repo", headRepository: "owner/repo", branch: "feature" }] }]
   const catalog = { snapshot: async () => ({ githubBranches }), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
@@ -28,12 +33,46 @@ test("catalog publication reports runtime desktop support and updates after auth
   assert.deepEqual(published, [false, true])
 })
 
+test("catalog revisions are allocated before capture and advance through retries and synchronization restart", async t => {
+  let allocated = 0n
+  const steps: string[] = []
+  const agents = { onEvent: () => () => {}, journal: {
+    list: async () => [],
+    id: async () => { await Promise.resolve(); steps.push(`allocate:${++allocated}`); return String(allocated) },
+  } } as unknown as AgentSessions
+  const catalog = { onChange: () => () => {}, snapshot: async () => {
+    assert.equal(steps.at(-1), `allocate:${allocated}`)
+    steps.push(`capture:${allocated}`)
+    return { sessionIds: [] }
+  } } as unknown as DaemonCatalog
+  const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
+  const revisions: string[] = []
+  const post = async (_path: string, body: unknown) => {
+    const { revision } = body as { revision: string }
+    revisions.push(revision)
+    steps.push(`upload:${revision}`)
+    if (revisions.length === 1) throw new Error("catalog response lost")
+  }
+  const sync = new CentralSync(agents, catalog, providers, post, async () => false)
+  t.after(() => sync.close())
+  sync.enable()
+  await assert.rejects(sync.flush(), /catalog response lost/)
+  await sync.flush()
+  await sync.close()
+  const restarted = new CentralSync(agents, catalog, providers, post, async () => false)
+  t.after(() => restarted.close())
+  restarted.enable(); await restarted.flush()
+  assert.deepEqual(revisions, ["1", "2", "3"])
+  assert.deepEqual(steps, revisions.flatMap(revision => [`allocate:${revision}`, `capture:${revision}`, `upload:${revision}`]))
+})
+
 test("history retries replay durable events while snapshot and audit may lead the contiguous ACK", async context => {
   let lastEventSeq = "251", acknowledged = 0, failNext = true
   const snapshot = () => ({ session: { id: "session", lastEventSeq } })
   const agents = {
     onEvent: () => () => {},
     journal: {
+      id: journalIds(),
       list: async () => [snapshot().session], read: async () => snapshot(),
       commandsSince: async (_id: string, after: string) => ({ commands: after === "-1" ? [{ id: "1", operationId: "command", status: "completed" }] : [], revision: "1" }),
       serial: async (_id: string, action: () => Promise<unknown>) => action(),
@@ -92,6 +131,7 @@ test("shutdown flush reads final producer state even after live synchronization 
   const agents = {
     onEvent: () => () => { subscribed = false },
     journal: {
+      id: journalIds(),
       list: async () => [snapshot().session], read: async () => snapshot(),
       commandsSince: async () => ({ commands: [{ status: state }], revision: String(seq) }), serial: async (_id: string, action: () => Promise<unknown>) => action(),
       history: async (_id: string, after: string) => Array.from({ length: seq - Number(after) }, (_, index) => ({ seq: String(Number(after) + index + 1) })),
@@ -122,6 +162,7 @@ test("a failed Session does not block later summaries and retries from its ackno
   const agents = {
     onEvent: () => () => {},
     journal: {
+      id: journalIds(),
       list: async () => records, read: async (id: string) => snapshots.get(id),
       commandsSince: async () => ({ commands: [], revision: "0" }),
       serial: async (_id: string, action: () => Promise<unknown>) => action(),
@@ -170,6 +211,7 @@ test("receipt-only changes paginate independently and survive a lost response af
   const agents = {
     onEvent: () => () => {},
     journal: {
+      id: journalIds(),
       list: async () => [snapshot.session], read: async () => snapshot, history: async () => [],
       serial: async (_id: string, action: () => Promise<unknown>) => action(),
       commandsSince: async (_id: string, after: string) => {
@@ -218,7 +260,7 @@ function scheduleSource() {
 }
 
 test("schedule snapshots replace the inventory on changes and reconnect, independently of chat streaming", async context => {
-  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const agents = { onEvent: () => () => {}, journal: { id: journalIds(), list: async () => [] } } as unknown as AgentSessions
   const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
   const schedules = scheduleSource()
@@ -252,7 +294,7 @@ test("schedule snapshots replace the inventory on changes and reconnect, indepen
 })
 
 test("schedule publication retries the latest state and retains changes made during an upload", async context => {
-  const agents = { onEvent: () => () => {}, journal: { list: async () => [] } } as unknown as AgentSessions
+  const agents = { onEvent: () => () => {}, journal: { id: journalIds(), list: async () => [] } } as unknown as AgentSessions
   const catalog = { snapshot: async () => ({}), onChange: () => () => {} } as unknown as DaemonCatalog
   const providers = { metadata: () => ({}), onChanged: () => () => {} } as unknown as AgentProviders
   const schedules = scheduleSource()

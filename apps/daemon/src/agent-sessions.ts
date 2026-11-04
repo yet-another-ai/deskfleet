@@ -14,6 +14,7 @@ import { AgentRuntime, type ResolveAgentProvider } from "./agent-runtime.ts"
 import { consumedTurns, SessionAdmissions, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { copyForkHistory } from "./agent-fork-history.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
+import { isSnapshotReference } from "./agent-command-results.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { AgentMcp } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
@@ -410,7 +411,7 @@ export class AgentSessions {
         })
         throw new Error("Operation ID was reused with different parameters or identity")
       }
-      if (existing.status === "completed") return existing.result
+      if (existing.status === "completed") return isSnapshotReference(existing.result) ? this.journal.read(existing.result.sessionId) : existing.result
       if (existing.sessionId && (method === "_deskfleet/session/create"
         || method === "_deskfleet/session/fork" && existing.sessionId !== existing.params.sessionId)) return this.journal.read(existing.sessionId)
       if ((method === "_deskfleet/session/archive" || method === "_deskfleet/session/restore") && existing.status === "accepted" && existing.sessionId) return this.#transition(existing)

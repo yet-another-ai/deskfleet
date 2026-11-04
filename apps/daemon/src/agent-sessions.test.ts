@@ -349,6 +349,9 @@ test("finished turns stay unread until a person acknowledges them, shared across
   const params = { sessionId: f.sessionId, operationId: randomUUID(), throughSeq: archived.session.lastEventSeq }
   const read = await f.service.handle("_deskfleet/session/read", params, f.bob) as AgentSnapshot
   assert.equal(read.session.archiveState, "archived")
+  const recorded = await f.service.handle("_deskfleet/command/get", { operationId: params.operationId }, f.bob) as AgentCommand
+  assert.deepEqual(recorded.result, { kind: "session_snapshot", sessionId: f.sessionId })
+  assert.deepEqual(JSON.parse(await f.catalog.native.agentCommand(params.operationId)).result, recorded.result)
   assert.deepEqual(await f.service.handle("_deskfleet/session/read", params, f.bob), read, "lost acknowledgements can be retried")
   await f.service.close()
   const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
@@ -357,6 +360,8 @@ test("finished turns stay unread until a person acknowledges them, shared across
     const session = await restored.journal.session(f.sessionId)
     assert.equal(session.lastCompletedSeq, read.session.lastCompletedSeq)
     assert.equal(session.lastReadSeq, read.session.lastReadSeq)
+    assert.deepEqual(await restored.handle("_deskfleet/session/read", params, f.bob), await restored.journal.read(f.sessionId))
+    assert.equal((await restored.journal.session(f.sessionId)).lastEventSeq, session.lastEventSeq, "retry after restart never repeats the mutation")
   } finally { await restored.close() }
 })
 
@@ -542,13 +547,17 @@ test("rename preserves running work, synchronizes its audited title, and takes p
   const receipt = upload.commands.find(command => command.operationId === params.operationId)!
   assert.equal(receipt.actor.userId, "bob")
   assert.equal(receipt.status, "completed")
-  assert.deepEqual(receipt.result, renamed)
+  assert.deepEqual(receipt.result, { kind: "session_snapshot", sessionId: f.sessionId })
+  assert.deepEqual(JSON.parse(await f.catalog.native.agentCommand(params.operationId)).result, receipt.result)
   assert.deepEqual(upload.events.filter(event => event.commandId === receipt.id).map(event => event.kind), ["session"], "rename has no separately accepted intermediate command")
   assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), renamed)
   assert.deepEqual(await f.read(), renamed, "a retry does not emit another event")
+  const latest = await f.service.handle("_deskfleet/session/rename", { ...params, operationId: randomUUID(), title: "Latest title" }, f.bob) as AgentSnapshot
+  assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), latest, "retry resolves current state without repeating the old rename")
+  assert.deepEqual(await f.read(), latest)
   await assert.rejects(f.service.handle("_deskfleet/session/rename", params, f.actor), /reused/u)
   await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Later provider title" } })
-  assert.equal((await f.read()).session.title, renamed.session.title)
+  assert.equal((await f.read()).session.title, latest.session.title)
   assert.equal(f.provider.clients.length, 1)
   assert.equal(f.provider.cancelCount, 0)
 })
@@ -643,7 +652,9 @@ test("archive removes generated files but retains history, and restore recreates
   assert.ok(archived.runs.every(run => run.state === "stopped"))
   await assert.rejects(readdir(cwd), { code: "ENOENT" })
   assert.deepEqual(await f.catalog.sessionWorktree(f.sessionId), worktree)
-  assert.deepEqual(await f.service.handle("_deskfleet/session/archive", archive, browser), archived)
+  const afterArchive = await f.read()
+  assert.deepEqual(await f.service.handle("_deskfleet/session/archive", archive, browser), afterArchive)
+  assert.deepEqual(await f.read(), afterArchive, "an archive retry only reads the recorded target")
   const calls = [
     ["_deskfleet/session/resume", {}],
     ["_deskfleet/session/configure", { model: "second" }],

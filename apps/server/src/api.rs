@@ -497,6 +497,7 @@ pub async fn authorize_delegation(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
+    revision: String,
     snapshot: Value,
     capabilities: Option<Value>,
     #[serde(default)]
@@ -513,7 +514,12 @@ pub async fn sync_catalog(
     }
     let b = b.into_inner();
     s.store
-        .save_catalog(&m.machine.id, b.snapshot, safe_providers(&b.providers))
+        .save_catalog(
+            &m.machine.id,
+            &b.revision,
+            b.snapshot,
+            safe_providers(&b.providers),
+        )
         .await?;
     if let Some(capabilities) = b.capabilities {
         s.store

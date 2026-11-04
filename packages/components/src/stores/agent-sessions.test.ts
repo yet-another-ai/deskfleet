@@ -319,7 +319,8 @@ test.each([false, true])("retrying a lost rename response reuses its operation a
   snapshot.session = { ...snapshot.session, title: "Payment investigation", titleCustomized: true, lastEventSeq: "1" }
   if (completed) {
     mock.call.mockResolvedValueOnce({ id: "50", operationId: operation.operationId, actor, sessionId: "30",
-      method: operation.method, params: operation.params, isCanonical: true, status: "completed", result: snapshot, receivedAt: "now" } satisfies AgentCommand)
+      method: operation.method, params: operation.params, isCanonical: true, status: "completed", result: { kind: "session_snapshot", sessionId: "30" }, receivedAt: "now" } satisfies AgentCommand)
+      .mockResolvedValueOnce(snapshot)
   } else mock.call.mockResolvedValueOnce(null).mockResolvedValueOnce(snapshot)
   expect(store.state).toBe("idle")
   await store.rename("30", "Payment investigation")
@@ -504,13 +505,15 @@ test.each([false, true])("a completed fork event survives a lost response withou
   const store = useAgentSessionsStore(); await store.open("30")
   const response = deferred<ReturnType<typeof agentSnapshot>>()
   const forked = agentSnapshot(); forked.session.id = "31"
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: { sessionId?: string }) => method === "_deskfleet/session/subscribe" && params.sessionId === "31" ? forked : normal(method, params))
   mock.call.mockReturnValueOnce(response.promise)
   const forking = store.fork("30", "worktree")
   await flushPromises()
   const operation = Object.values(store.operations)[0]!
   const complete = () => receive(agentEvent(1, "command", {
     id: "50", operationId: operation.operationId, actor, sessionId: "30", method: operation.method,
-    params: operation.params, isCanonical: true, status: "completed", result: forked, receivedAt: "now",
+    params: operation.params, isCanonical: true, status: "completed", result: { kind: "session_snapshot", sessionId: "31" }, receivedAt: "now",
   }))
   if (eventFirst) complete()
   response.reject(new Error("Lost fork response"))
@@ -522,6 +525,76 @@ test.each([false, true])("a completed fork event survives a lost response withou
   }
   expect(store.views["31"]?.snapshot).toEqual(forked)
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
+  expect(store.operations).toEqual({})
+})
+
+test("a completed fork receipt survives a failed snapshot read and recovers the same target", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockRejectedValueOnce(new Error("Lost fork response"))
+  await expect(store.fork("30", "directory")).rejects.toThrow("Lost fork response")
+  const operation = Object.values(store.operations)[0]!
+  mock.call.mockResolvedValueOnce({ id: "50", operationId: operation.operationId, actor, sessionId: "31",
+    method: operation.method, params: operation.params, isCanonical: true, status: "completed",
+    result: { kind: "session_snapshot", sessionId: "31" }, receivedAt: "now" } satisfies AgentCommand)
+    .mockRejectedValueOnce(new Error("Snapshot temporarily unavailable"))
+  await expect(store.checkOperation(operation.operationId)).rejects.toThrow("Snapshot temporarily unavailable")
+  expect(store.operations[operation.operationId]?.result).toEqual({ kind: "session_snapshot", sessionId: "31" })
+  const forked = agentSnapshot(); forked.session.id = "31"
+  mock.call.mockResolvedValueOnce(forked)
+  await expect(store.checkOperation(operation.operationId)).resolves.toEqual(forked)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/fork")).toHaveLength(1)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/command/get")).toHaveLength(1)
+  expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31")).toHaveLength(2)
+  expect(store.operations).toEqual({})
+})
+
+test.each([false, true])("a completed create event survives a lost response without creating another Session (event first: %s)", async eventFirst => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const response = deferred<ReturnType<typeof agentSnapshot>>()
+  const created = agentSnapshot()
+  created.session = { ...created.session, id: "31", workspaceId: "20", context: "directory" }
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: { sessionId?: string }) => method === "_deskfleet/session/subscribe" && params.sessionId === "31" ? created : normal(method, params))
+  mock.call.mockReturnValueOnce(response.promise)
+  const creating = store.create("20", "First attempt", "directory", "codex")
+  await flushPromises()
+  const operation = Object.values(store.operations)[0]!
+  const complete = () => receive(agentEvent(1, "command", {
+    id: "50", operationId: operation.operationId, actor, sessionId: "31", method: operation.method,
+    params: operation.params, isCanonical: true, status: "completed", result: { kind: "session_snapshot", sessionId: "31" }, receivedAt: "now",
+  }))
+  if (eventFirst) complete()
+  response.reject(new Error("Lost create response"))
+  if (eventFirst) await expect(creating).resolves.toEqual(created)
+  else {
+    await expect(creating).rejects.toThrow("Lost create response")
+    complete()
+    await expect(store.create("20", "Retry title ignored", "directory", "codex")).resolves.toEqual(created)
+  }
+  expect(store.views["31"]?.snapshot).toEqual(created)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
+  expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31").length).toBeGreaterThan(0)
+  expect(tracked("session_created")).toEqual([{ context: "directory", scope: "workspace" }])
+  expect(store.operations).toEqual({})
+})
+
+test("a completed create receipt resolves its session snapshot without creating another Session", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockRejectedValueOnce(new Error("Lost create response"))
+  await expect(store.create("20", "First attempt", "directory", "codex")).rejects.toThrow("Lost create response")
+  const operation = Object.values(store.operations)[0]!
+  const created = agentSnapshot()
+  created.session = { ...created.session, id: "31", workspaceId: "20", context: "directory" }
+  mock.call.mockResolvedValueOnce({ id: "50", operationId: operation.operationId, actor, sessionId: "31",
+    method: operation.method, params: operation.params, isCanonical: true, status: "completed",
+    result: { kind: "session_snapshot", sessionId: "31" }, receivedAt: "now" } satisfies AgentCommand)
+    .mockResolvedValueOnce(created)
+  await expect(store.create("20", "Retry title ignored", "directory", "codex")).resolves.toEqual(created)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
+  expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/command/get")).toHaveLength(1)
+  expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31")).toHaveLength(1)
+  expect(store.views["31"]?.snapshot).toEqual(created)
+  expect(tracked("session_created")).toEqual([{ context: "directory", scope: "workspace" }])
   expect(store.operations).toEqual({})
 })
 

@@ -87,7 +87,7 @@ impl From<deskfleet_control_store::Error> for ApiError {
     }
 }
 
-fn log_database_error(error: &DbErr) {
+pub(crate) fn log_database_error(error: &DbErr) {
     let (phase, runtime) = match error {
         DbErr::Conn(runtime) => ("connection", Some(runtime)),
         DbErr::Exec(runtime) => ("execution", Some(runtime)),
@@ -131,7 +131,7 @@ fn log_database_error(error: &DbErr) {
     );
 }
 
-fn log_json_error(error: &serde_json::Error) {
+pub(crate) fn log_json_error(error: &serde_json::Error) {
     // Serde's generic message can echo stored values. A missing field names the schema.
     let message = error.to_string();
     let missing_field = message

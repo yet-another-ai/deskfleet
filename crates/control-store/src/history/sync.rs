@@ -11,7 +11,7 @@ use sea_orm::{
 };
 use serde_json::{Value, json};
 
-use super::event_storage;
+use super::{command_storage, event_storage, lifecycle};
 
 fn sequence(value: &Value) -> Result<i64> {
     value
@@ -77,6 +77,8 @@ impl ControlStore {
         }
         let machine = resource_id(machine_id)?;
         let tx = self.db.begin().await?;
+        lifecycle::lock_registration(&tx, machine).await?;
+        lifecycle::require_inventory(&tx, machine, session_id).await?;
         if let Some(snapshot) = &snapshot {
             sessions::Entity::insert(sessions::ActiveModel {
                 registration_id: Set(machine),
@@ -104,6 +106,7 @@ impl ControlStore {
                 .from(sessions::Entity)
                 .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
                 .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                .and_where(Expr::col(sessions::Column::DeletedAt).is_null())
                 .lock_exclusive(),
         )
         .await?;
@@ -146,14 +149,15 @@ impl ControlStore {
                 )
                 .await?
             {
-                previous.insert(
-                    row.try_get::<i64>("", "seq")?,
-                    serde_json::from_str::<Value>(&row.try_get::<String>("", "record")?)?,
-                );
+                let mut event =
+                    serde_json::from_str::<Value>(&row.try_get::<String>("", "record")?)?;
+                command_storage::compact_event(&mut event);
+                previous.insert(row.try_get::<i64>("", "seq")?, event);
             }
         }
         let mut insertions = Vec::new();
-        for (seq, event) in event_sequences.into_iter().zip(events) {
+        for (seq, mut event) in event_sequences.into_iter().zip(events) {
+            command_storage::compact_event(&mut event);
             if let Some(existing) = previous.get(&seq) {
                 if *existing != event {
                     return Err(Error::Conflict(
@@ -212,7 +216,8 @@ impl ControlStore {
         }
         if bound >= current_snapshot_seq && !commands.is_empty() {
             let mut unique = BTreeMap::new();
-            for command in commands {
+            for mut command in commands {
+                command_storage::compact(&mut command);
                 let id = command["id"]
                     .as_str()
                     .ok_or(Error::Invalid("command id missing"))?;
