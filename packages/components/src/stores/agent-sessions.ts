@@ -10,6 +10,7 @@ import type { ComposerAttachment } from "../services/composer-attachments.ts"
 import type { ComposerMention } from "../services/composer-mentions.ts"
 import type { ComposerReference, ComposerReferenceSearch } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
 import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
+import { isSnapshotReference } from "../../../../apps/daemon/src/agent-command-results.ts"
 import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
 import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
@@ -538,36 +539,41 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     } catch (reason) {
       const pending = operations.value[operationId]
       if (pending?.method === "_deskfleet/session/fork" && pending.result) {
+        const result = await resolveCommandResult(pending.result)
         completeOperation(operationId)
-        return pending.result as AgentMethods[M]["result"]
+        return result as AgentMethods[M]["result"]
       }
       if (pending) pending.error = messageOf(reason)
       throw reason
     }
   }
+  async function resolveCommandResult(result: unknown): Promise<unknown> {
+    return isSnapshotReference(result) ? call("_deskfleet/session/subscribe", { sessionId: result.sessionId }) : result
+  }
   async function checkOperation(operationId: string): Promise<unknown> {
     const pending = operations.value[operationId]
     if (!pending) return
-    const received = (result: unknown): unknown => {
-      if (pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read" || pending.method === "_deskfleet/session/unread") snapshotReceived(result as AgentSnapshot)
+    const received = async (result: unknown): Promise<unknown> => {
+      const resolved = await resolveCommandResult(result)
+      if (isSnapshotReference(result) || pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read" || pending.method === "_deskfleet/session/unread") snapshotReceived(resolved as AgentSnapshot)
       completeOperation(operationId)
-      return result
+      return resolved
     }
     try {
-      if (pending.result) return received(pending.result)
+      if (pending.result) return await received(pending.result)
       const command = await call("_deskfleet/command/get", { operationId })
       if (command && ["failed", "rejected", "uncertain"].includes(command.status)) {
         delete operations.value[operationId]
         throw new Error(command.error ?? command.status)
       }
       if (command?.status === "completed") {
-        commandReceived(command)
-        return received(command.result)
+        pending.result = command.result
+        return await received(command.result)
       }
       // Reuse the exact request identity when the first response was lost. The
       // daemon serializes duplicates, including a request still being accepted.
       const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"])
-      return received(result)
+      return await received(result)
     } finally {
       if (pending.sessionId && state.value === "connected") await open(pending.sessionId)
     }

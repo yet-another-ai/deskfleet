@@ -72,10 +72,14 @@ export class CentralSync {
     try {
       if (this.#catalogDirty) {
         this.#catalogDirty = false
-        try { await this.#post("/api/daemon/catalog", {
-          snapshot: await this.#catalog.snapshot(), providers: this.#providers.metadata(),
-          capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true, mux: MUX_PROFILE },
-        }) }
+        try {
+          // Allocate before capture so a delayed older upload cannot remove newer Sessions.
+          const revision = await this.#agents.journal.id()
+          await this.#post("/api/daemon/catalog", {
+            revision, snapshot: await this.#catalog.snapshot(), providers: this.#providers.metadata(),
+            capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true, mux: MUX_PROFILE },
+          })
+        }
         catch (error) { this.#catalogDirty = true; throw error }
       }
       if (this.#schedules && this.#schedulesDirty) {

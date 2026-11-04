@@ -248,7 +248,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
             post,
             "/api/daemon/catalog",
             token,
-            &json!({"snapshot":{"machineId":"1"}})
+            &json!({"revision":"1","snapshot":{"machineId":"1"}})
         )
         .status(),
         StatusCode::UNAUTHORIZED
@@ -258,12 +258,12 @@ async fn postgres_http_permissions_replication_and_signaling() {
             post,
             "/api/daemon/catalog",
             machine_token,
-            &json!({"snapshot":{"machineId":"2"}})
+            &json!({"revision":"1","snapshot":{"machineId":"2"}})
         )
         .status(),
         StatusCode::BAD_REQUEST
     );
-    assert_eq!(call!(post,"/api/daemon/catalog",machine_token,&json!({"snapshot":{"machineId":"1","workspaces":[]},"providers":{"templates":[{"id":"x","name":"X","binaryPath":"hidden"}],"providers":[{"id":"1","template":"x","name":"X","env":{"SECRET":"hidden"}}]}})).status(),StatusCode::OK);
+    assert_eq!(call!(post,"/api/daemon/catalog",machine_token,&json!({"revision":"1","snapshot":{"machineId":"1","workspaces":[]},"providers":{"templates":[{"id":"x","name":"X","binaryPath":"hidden"}],"providers":[{"id":"1","template":"x","name":"X","env":{"SECRET":"hidden"}}]}})).status(),StatusCode::OK);
     let catalog: Value = test::read_body_json(call!(
         get,
         &format!("/api/teams/{team_id}/machines/{machine_id}/catalog"),

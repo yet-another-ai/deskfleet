@@ -438,6 +438,13 @@ with different parameters or identity appends a rejected noncanonical command
 linked to the original. It never replaces the original audit. JSON-RPC IDs can
 coincide between clients without referring to the same operation.
 
+Snapshot-returning commands store `{kind:"session_snapshot",sessionId}` as their
+result, including in command events. The immediate response still carries the
+full snapshot. A repeated completed operation or recovered response loads the
+same target Session's current snapshot; it never re-executes the mutation or
+restores the old conversation state. This keeps automatic read acknowledgements
+and other metadata operations from repeatedly retaining all prior inputs.
+
 Commands retain actor, target, parameters, received/completed timestamps, status,
 result, and error. Deleting a Session clears live foreign keys while retaining
 immutable target IDs and audit JSON, including the delete receipt. A retry of an
@@ -476,11 +483,18 @@ start at revision zero and the first read starts at minus one.
 
 Central history uploads carry at most 200 events and 200 changed receipts per
 request. The first page carries the captured snapshot; later pages carry its
-`snapshotSeq` watermark. PostgreSQL locks the Session row, compares existing
-events in one query, rejects gaps or conflicting duplicates, and inserts the new
+`snapshotSeq` watermark. PostgreSQL locks the registration and Session rows,
+compares existing events in one query, rejects gaps or conflicting duplicates, and inserts the new
 events and receipts in batches. The daemon advances its receipt cursor only after
 all pages succeed, so a lost response replays unacknowledged changes. Identical
 replays do not rewrite the stored snapshot or command JSON.
+
+Catalog uploads carry a `revision` allocated by the durable local ID allocator
+before snapshot capture. Central ignores older or repeated inventory and provider
+snapshots. A newer complete Session inventory marks absent central Sessions with a deletion
+timestamp. Those tombstones survive stale history and catalog replay; physical
+history cleanup is deferred. Session creation can retry history synchronization
+after its ID has reached the central catalog.
 
 Central Session lists return a persisted summary: Session metadata, completed
 turn identifiers/state/end times, and permission/question identifiers and state

@@ -202,6 +202,11 @@ async fn postgres_turn_usage_attributes_teams_and_counts_each_delta() {
     // Separate notifications can carry identical interval deltas.
     assert!(store.record_turn_usage(&event).await.unwrap());
     assert_eq!(totals(&store, &first.team_id, "client").await, (2, 20, 40));
+    let mut empty = event.clone();
+    empty.received_bytes = 0;
+    empty.sent_bytes = 0;
+    assert!(!store.record_turn_usage(&empty).await.unwrap());
+    assert_eq!(totals(&store, &first.team_id, "client").await, (2, 20, 40));
     assert_eq!(
         store.team_usage(&user.id, &first.team_id).await.unwrap()["relayedBytes"],
         "40"

@@ -60,6 +60,7 @@ async fn postgres_http_search_and_schedule_snapshots_are_authorized() {
         .store
         .save_catalog(
             &machine.id,
+            "1",
             json!({"machineId":"1","workspaces":[{"id":"1","name":"Workspace"}],"sessionIds":[]}),
             json!({}),
         )

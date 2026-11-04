@@ -17,6 +17,11 @@ import type { MachineOperations } from "./machine-operations.ts"
 import type { ControlPeers } from "./control-server.ts"
 import { centralUrl } from "./central-protocol.ts"
 
+function journalIds() {
+  let id = 0n
+  return async () => String(++id)
+}
+
 test("local discovery grants only host setup and never imports development resources", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-central-auth-"))
   const development = await startDaemon(0, { controlDirectory: directory, agentQuotas: new TestAgentQuotas(), allowLocalControlForTests: true, permissionPlatform: "darwin" as const, requestScreenCaptureAccess: async () => null, requestAccessibilityAccess: async () => null, requestFullDiskAccess: async () => null })
@@ -146,6 +151,7 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
     agents: { reconcileAdmissions: async () => {},
       onEvent: (listener: typeof agentChanged) => { agentChanged = listener; return () => {} },
       journal: {
+        id: journalIds(),
         identity: { originId: "origin", machineId: "local" },
         list: async () => hasSession ? [snapshot().session] : [], read: async () => snapshot(),
         commandsSince: async () => ({ commands: [], revision: "-1" }), serial: async (_id: string, action: () => Promise<unknown>) => action(),
@@ -211,7 +217,7 @@ test("final synchronization has a shared deadline when the backend stops respond
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe },
     terminals: { onChange: unsubscribe },
@@ -244,7 +250,7 @@ test("explicit credential rejection persists logout without treating transport l
   }))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { reconcileAdmissions: async () => {}, journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { reconcileAdmissions: async () => {}, journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -329,7 +335,7 @@ test("network drop mid-hello reconnects with the same machine credentials instea
   await writeFile(path, JSON.stringify(credentials))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -362,7 +368,7 @@ test("credential rejection close still persists local revocation", { timeout: 5_
   await writeFile(path, JSON.stringify(credentials))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -444,7 +450,7 @@ test("real Node WebSocket closes malformed control traffic without unhandled fai
   await writeFile(path, JSON.stringify(credentials))
   const unsubscribe = () => () => {}
   const operations = {
-    agents: { journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
+    agents: { journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] }, onEvent: unsubscribe },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },
     providers: { metadata: () => ({}), onChanged: unsubscribe }, terminals: { onChange: unsubscribe },
   } as unknown as MachineOperations
@@ -490,7 +496,7 @@ function linkOperations(): MachineOperations {
   return {
     agents: {
       reconcileAdmissions: async () => {},
-      journal: { identity: { originId: "origin", machineId: "local" }, list: async () => [] },
+      journal: { id: journalIds(), identity: { originId: "origin", machineId: "local" }, list: async () => [] },
       onEvent: unsubscribe,
     },
     catalog: { snapshot: async () => ({}), onChange: unsubscribe },

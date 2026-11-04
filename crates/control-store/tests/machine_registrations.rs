@@ -68,6 +68,7 @@ async fn history(store: &ControlStore, registration: &str, title: &str) {
     store
         .save_catalog(
             registration,
+            "1",
             json!({"machineId":"1","workspaces":[],"sessionIds":["1"]}),
             json!({"providers":[]}),
         )

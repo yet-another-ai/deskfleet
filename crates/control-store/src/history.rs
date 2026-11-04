@@ -4,14 +4,16 @@ use crate::entities::{
 };
 use crate::{ControlStore, Error, Result, json_query, now_ms, one_query, resource_id, timestamp};
 use sea_orm::{
-    EntityTrait, Set,
+    ConnectionTrait, EntityTrait, Set, TransactionTrait,
     sea_query::{
         Alias, BinOper, Expr, ExprTrait, Func, JoinType, OnConflict, Order, Query, SelectStatement,
         extension::postgres::PgExpr,
     },
 };
 
+mod command_storage;
 mod event_storage;
+mod lifecycle;
 mod sync;
 use serde_json::{Value, json};
 
@@ -19,14 +21,34 @@ impl ControlStore {
     pub async fn save_catalog(
         &self,
         machine_id: &str,
+        revision: &str,
         snapshot: Value,
         providers: Value,
     ) -> Result<()> {
+        let registration = resource_id(machine_id)?;
+        let revision = resource_id(revision)?;
+        let tx = self.db.begin().await?;
+        lifecycle::lock_registration(&tx, registration).await?;
+        if let Some(previous) = tx
+            .query_one(
+                Query::select()
+                    .column(catalogs::Column::InventoryRevision)
+                    .from(catalogs::Entity)
+                    .and_where(Expr::col(catalogs::Column::RegistrationId).eq(registration)),
+            )
+            .await?
+            && previous.try_get::<i64>("", "inventory_revision")? >= revision
+        {
+            tx.commit().await?;
+            return Ok(());
+        }
+        lifecycle::mark_removed(&tx, registration, &snapshot).await?;
         catalogs::Entity::insert(catalogs::ActiveModel {
-            registration_id: Set(resource_id(machine_id)?),
+            registration_id: Set(registration),
             snapshot: Set(snapshot),
             providers: Set(providers),
             observed_at: Set(now_ms()),
+            inventory_revision: Set(revision),
         })
         .on_conflict(
             OnConflict::column(catalogs::Column::RegistrationId)
@@ -34,11 +56,13 @@ impl ControlStore {
                     catalogs::Column::Snapshot,
                     catalogs::Column::Providers,
                     catalogs::Column::ObservedAt,
+                    catalogs::Column::InventoryRevision,
                 ])
                 .to_owned(),
         )
-        .exec_without_returning(&self.db)
+        .exec_without_returning(&tx)
         .await?;
+        tx.commit().await?;
         Ok(())
     }
     pub async fn catalog(&self, machine_id: &str) -> Result<Value> {
@@ -128,7 +152,8 @@ impl ControlStore {
                 ])
                 .from(sessions::Entity)
                 .and_where(Expr::col(sessions::Column::RegistrationId).eq(resource_id(machine_id)?))
-                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id)),
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                .and_where(Expr::col(sessions::Column::DeletedAt).is_null()),
         )
         .await?;
         Ok(
@@ -186,11 +211,15 @@ impl ControlStore {
                 )
                 .from(sessions::Entity)
                 .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
-                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id)),
+                .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
+                .and_where(Expr::col(sessions::Column::DeletedAt).is_null()),
         )
         .await?;
         let watermark: i64 = row.try_get("", "event_seq")?;
-        let events: Value = row.try_get("", "events")?;
+        let mut events: Value = row.try_get("", "events")?;
+        if let Some(events) = events.as_array_mut() {
+            events.iter_mut().for_each(command_storage::compact_event);
+        }
         Ok(json!({"events":events,"lastEventSeq":watermark.to_string()}))
     }
     pub async fn commands(
@@ -201,12 +230,16 @@ impl ControlStore {
         limit: u32,
     ) -> Result<Value> {
         validate_page(after, limit)?;
-        let rows = json_query(
+        let mut rows = json_query(
             &self.db,
             Query::select()
                 .column(commands::Column::Record)
                 .from(commands::Entity)
                 .and_where(Expr::col(commands::Column::RegistrationId).eq(resource_id(machine_id)?))
+                .and_where(Expr::exists(lifecycle::active_session(
+                    resource_id(machine_id)?,
+                    Expr::val(session_id),
+                )))
                 .and_where(
                     Expr::col(commands::Column::Record)
                         .cast_json_field(Expr::Constant("sessionId".into()))
@@ -224,6 +257,7 @@ impl ControlStore {
                 .limit(u64::from(limit + 1)),
         )
         .await?;
+        rows.iter_mut().for_each(command_storage::compact);
         Ok(page(rows, limit, "commands", "/id"))
     }
     pub async fn command_by_operation(&self, machine_id: &str, operation: &str) -> Result<Value> {
@@ -233,6 +267,11 @@ impl ControlStore {
                 .column(commands::Column::Record)
                 .from(commands::Entity)
                 .and_where(Expr::col(commands::Column::RegistrationId).eq(resource_id(machine_id)?))
+                .and_where(Expr::exists(lifecycle::active_session(
+                    resource_id(machine_id)?,
+                    Expr::col((commands::Entity, commands::Column::Record))
+                        .cast_json_field(Expr::Constant("sessionId".into())),
+                )))
                 .and_where(
                     Expr::col(commands::Column::Record)
                         .cast_json_field(Expr::Constant("operationId".into()))
@@ -246,7 +285,9 @@ impl ControlStore {
                 .limit(1),
         )
         .await?;
-        Ok(row.try_get("", "record")?)
+        let mut command: Value = row.try_get("", "record")?;
+        command_storage::compact(&mut command);
+        Ok(command)
     }
 }
 
@@ -263,6 +304,7 @@ fn session_summaries(machine: i64) -> SelectStatement {
         .expr_as(Expr::col(sessions::Column::Summary), Alias::new("record"))
         .from(sessions::Entity)
         .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
+        .and_where(Expr::col(sessions::Column::DeletedAt).is_null())
         // PostgreSQL's JSONB key-existence operator is not exposed by PgBinOper.
         .and_where(
             Expr::from(inventory)

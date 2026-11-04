@@ -98,7 +98,7 @@ async fn team_members_rename_machines_and_catalogs_use_the_team_name() {
             post,
             "/api/daemon/catalog",
             machine_token,
-            &json!({"snapshot":{"teamId":"1","machineId":"1","machineName":"ip-10-0-0-12","workspaces":[]}})
+            &json!({"revision":"1","snapshot":{"teamId":"1","machineId":"1","machineName":"ip-10-0-0-12","workspaces":[]}})
         )
         .status(),
         StatusCode::OK

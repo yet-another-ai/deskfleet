@@ -10,6 +10,7 @@ struct Fixture {
     user: String,
     team: String,
     machine: String,
+    catalog_revision: std::sync::atomic::AtomicI64,
 }
 
 impl Fixture {
@@ -52,13 +53,14 @@ impl Fixture {
             user: user.id,
             team: team.id,
             machine,
+            catalog_revision: std::sync::atomic::AtomicI64::new(1),
         };
         fixture.catalog(&["1", "2", "3"]).await;
         fixture
     }
 
     async fn catalog(&self, ids: &[&str]) {
-        self.store.save_catalog(&self.machine,json!({"machineId":"1","workspaces":[{"id":"1","name":"Workspace"}],"sessionIds":ids}),json!({})).await.unwrap();
+        self.store.save_catalog(&self.machine,&self.catalog_revision.fetch_add(1,std::sync::atomic::Ordering::Relaxed).to_string(),json!({"machineId":"1","workspaces":[{"id":"1","name":"Workspace"}],"sessionIds":ids}),json!({})).await.unwrap();
     }
 
     async fn search(&self, q: &str) -> Value {

@@ -47,6 +47,9 @@ pub(crate) mod cp_teams;
 pub(crate) mod cp_turn_collector;
 pub(crate) mod cp_turn_settings;
 pub(crate) mod cp_turn_usage;
+// Written by the atomic compaction function; validated with the other mappings.
+#[allow(dead_code)]
+pub(crate) mod cp_turn_usage_archive;
 // Written by database triggers; the mapping is validated with the rest of the schema.
 #[allow(dead_code)]
 pub(crate) mod cp_turn_usage_minutes;

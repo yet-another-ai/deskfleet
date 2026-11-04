@@ -113,6 +113,7 @@ async fn one_machine_keeps_team_history_routes_and_revocation_isolated() {
                 "/api/daemon/catalog",
                 credential,
                 &json!({
+                    "revision":"1",
                     "snapshot":{"machineId":"1", "workspaces":[], "sessionIds":["1"]}
                 })
             )

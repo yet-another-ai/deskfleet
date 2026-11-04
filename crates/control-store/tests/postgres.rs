@@ -109,6 +109,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
     store
         .save_catalog(
             &machine.id,
+            "1",
             json!({"machineId":"1","workspaces":[],"sessions":[],"sessionIds":["1","2","10"]}),
             json!({"providers":[]}),
         )
@@ -215,6 +216,15 @@ async fn postgres_roles_tokens_replication_and_revocation() {
     let question_event = json!({
         "sessionId": "20", "seq": "1", "kind": "elicitation", "payload": question
     });
+    store
+        .save_catalog(
+            &machine.id,
+            "2",
+            json!({"machineId":"1","workspaces":[],"sessions":[],"sessionIds":["1","2","10","20"]}),
+            json!({"providers":[]}),
+        )
+        .await
+        .unwrap();
     store
         .sync_history(
             &machine.id,
