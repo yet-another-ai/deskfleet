@@ -4,7 +4,7 @@ import { commandPath } from "./agent-command-path.ts"
 import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
-import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
+import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSessionRecord, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
@@ -45,6 +45,8 @@ export class AgentRuntime {
   #configurationEpoch = 0
   #configuring = false
   #forking = false
+  #switching = false
+  #switch?: Promise<void>
   #connection?: AgentConnection
   #run?: AgentRun
   #active?: { turn: AgentTurn; completion: Promise<void> }
@@ -79,7 +81,7 @@ export class AgentRuntime {
 
   /** Capture a quiet conversation while new inputs remain in the backlog. */
   async withFork<T>(action: (snapshot: AgentSnapshot) => Promise<T>): Promise<T> {
-    if (this.#forking || this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current Agent operation before forking")
+    if (this.#forking || this.#configuring || this.#switching || this.#active || this.#dispatching) throw new Error("Wait for the current Agent operation before forking")
     this.#forking = true
     try {
       await this.#starting
@@ -153,7 +155,7 @@ export class AgentRuntime {
 
   async configure(selection: AgentConfigurationSelection): Promise<AgentConfiguration> {
     requireActiveSession(await this.journal.session(this.sessionId))
-    if (this.#forking || this.#configuring || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
+    if (this.#forking || this.#configuring || this.#switching || this.#active || this.#dispatching) throw new Error("Wait for the current turn before changing the Agent configuration")
     // Pause backlog dispatch through startup and every provider configuration call.
     this.#configuring = true
     this.#configurationEpoch++
@@ -175,6 +177,49 @@ export class AgentRuntime {
     }
   }
 
+  /** Replace the provider conversation with a new Agent, keeping history and the execution context. */
+  switchAgent(providerId: string): Promise<void> {
+    if (this.#switching) return Promise.reject(new Error("Another Agent switch is in progress"))
+    if (this.#forking || this.#configuring || this.#active || this.#dispatching) {
+      return Promise.reject(new Error("Wait for the current turn before switching Agents"))
+    }
+    this.#switching = true
+    const action = this.#switchAgent(providerId).finally(() => {
+      this.#switch = undefined
+      this.#switching = false
+    })
+    this.#switch = action
+    return action
+  }
+
+  async #switchAgent(providerId: string): Promise<void> {
+    const session = await this.journal.session(this.sessionId)
+    requireActiveSession(session)
+    if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+    // Retrying an accepted switch after a lost response must not replace it again.
+    if (session.provider === providerId) return
+    // Reject an unavailable provider before stopping the current Agent.
+    this.#resolveProvider(providerId)
+    await this.stop()
+    await this.journal.serial(this.sessionId, async () => {
+      const current = await this.journal.session(this.sessionId)
+      requireActiveSession(current)
+      if (current.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+      if (current.provider === providerId) return
+      const switched: AgentSessionRecord = {
+        ...current, provider: providerId, providerSessionId: undefined, capabilities: undefined, error: undefined,
+        // Older configuration and command catalogs belong to the replaced Agent.
+        configurationSinceSeq: String(BigInt(current.lastEventSeq) + 1n), updatedAt: timestamp(),
+      }
+      await this.journal.commit(current, { session: switched, events: [this.journal.event(this.sessionId, "session", switched)] })
+    })
+    this.#configuration = undefined
+    this.#availableConfiguration = undefined
+    this.#commands = undefined
+    this.#providerName = undefined
+    this.#providerKind = undefined
+  }
+
   async #recordConfiguration(sessionId: string, options: acp.SessionConfigOption[]): Promise<void> {
     const notification: acp.SessionNotification = { sessionId, update: { sessionUpdate: "config_option_update", configOptions: options } }
     await this.journal.serial(this.sessionId, async () => {
@@ -187,6 +232,11 @@ export class AgentRuntime {
 
   async start(selection?: AgentConfigurationSelection, forkSource?: string): Promise<void> {
     requireActiveSession(await this.journal.session(this.sessionId))
+    // A concurrent submission must not restart the Agent being replaced.
+    if (this.#switch) {
+      await this.#switch.catch(() => {})
+      return this.start(selection, forkSource)
+    }
     if (this.#stopping && this.#stop) {
       const stopping = this.#stop
       return stopping.then(() => {

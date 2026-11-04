@@ -672,6 +672,11 @@
     "mode": "模式",
     "configuration": "Agent 配置",
     "configureAgent": "配置 Agent：{selection}",
+    "switchAgent": {
+      "title": "切换 Agent？",
+      "description": "当前会话正在使用 {from}。切换到 {to} 会在新 Agent 中开启新的对话：它无法复用当前的提示缓存，之前的上下文可能会丢失。DeskFleet 会保留已有历史。",
+      "confirm": "切换 Agent"
+    },
     "collapseConfiguration": "收起 Agent 配置",
     "loading": "正在加载…",
     "unavailable": "不可用",

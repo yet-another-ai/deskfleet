@@ -504,6 +504,11 @@
     "model": "モデル", "reasoningEffort": "推論",
     "mode": "モード", "configuration": "エージェント設定",
     "configureAgent": "エージェントを設定: {selection}", "collapseConfiguration": "エージェント設定を折りたたむ",
+    "switchAgent": {
+      "title": "エージェントを切り替えますか？",
+      "description": "{from} を使用中のセッションです。{to} に切り替えると新しい会話が開始されます。プロンプトキャッシュは再利用できず、以前のコンテキストが失われる可能性があります。DeskFleet の履歴は保持されます。",
+      "confirm": "エージェントを切り替える"
+    },
     "loading": "読み込み中…", "unavailable": "利用できません",
     "loadingConfiguration": "エージェントから設定を読み込み中…", "reloadConfiguration": "エージェントから再読み込み",
     "efforts": {

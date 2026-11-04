@@ -928,7 +928,9 @@ same ACP facade. Draft discovery uses a temporary provider session in
 the Workspace's default directory without creating a managed Session or Worktree.
 Session creation applies the selected configuration before delivering prompts;
 existing Session controls change these choices between turns on that Session's
-provider connection. A Session's provider identity cannot be changed.
+provider connection. A Session's provider identity changes only through an
+explicit Agent switch between turns, which starts a fresh provider conversation
+without transferring prior context; clients warn about the lost prompt cache.
 Configuration options and confirmed changes use the existing ACP event journal
 so attached viewers can follow them.
 

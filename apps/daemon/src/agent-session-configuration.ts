@@ -8,6 +8,8 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
   options: SessionConfigOption[]; selection: AgentConfigurationSelection; commands?: AvailableCommand[]
 }> {
   const snapshot = await journal.read(sessionId)
+  // Configuration before a provider switch describes an Agent that no longer owns this Session.
+  const since = snapshot.session.configurationSinceSeq === undefined ? 0n : BigInt(snapshot.session.configurationSinceSeq)
   const generation = Math.max(0, ...snapshot.runs.map(run => run.generation))
   let end = BigInt(snapshot.session.lastEventSeq)
   let configuration: { options: SessionConfigOption[]; selection: AgentConfigurationSelection } | undefined
@@ -18,6 +20,7 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
     const events = await journal.history(sessionId, String(start), 200)
     for (const event of events.reverse()) {
       if (BigInt(event.seq) > end) continue
+      if (BigInt(event.seq) < since) return { ...(configuration ?? { options: [], selection: {} }), ...(commands ? { commands } : {}) }
       if (event.kind === "acp") {
         const update = (event.payload as SessionNotification).update
         if (update.sessionUpdate === "available_commands_update" && !commandsResolved && event.runGeneration === generation) {

@@ -672,6 +672,11 @@
     "mode": "Mode",
     "configuration": "Agent configuration",
     "configureAgent": "Configure agent: {selection}",
+    "switchAgent": {
+      "title": "Switch Agent?",
+      "description": "This Session is using {from}. Switching to {to} starts a new conversation there: its prompt cache cannot be reused, and earlier context may be lost. DeskFleet keeps the existing history.",
+      "confirm": "Switch Agent"
+    },
     "collapseConfiguration": "Collapse agent configuration",
     "loading": "Loading…",
     "unavailable": "Unavailable",

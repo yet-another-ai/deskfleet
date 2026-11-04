@@ -191,6 +191,10 @@ pub struct AgentSessionRecord {
     /// Shared history watermark acknowledged by a person opening this Session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_read_seq: Option<AgentSequence>,
+    /// Journal sequence where the current provider's configuration began.
+    /// Earlier configuration and commands belong to a previous Agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration_since_seq: Option<AgentSequence>,
     /// People who have opened this Session. Absent until the first authenticated visit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub viewers: Vec<SessionViewer>,

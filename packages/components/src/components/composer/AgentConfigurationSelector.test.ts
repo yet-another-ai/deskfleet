@@ -365,7 +365,7 @@ test("a live Session retains its known provider name after registry removal and 
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
 })
 
-test("changes model and mode in the same Session while its Agent stays fixed", async () => {
+test("changes model and mode in the same Session without replacing its Agent", async () => {
   const providers = useProvidersStore()
   providers.providers.push({ id: "other-agent", name: "Other agent", template: "acp" })
   agents.draftConfiguration = { provider: "other-agent", mode: "draft-mode" }; await flushPromises()
@@ -382,9 +382,7 @@ test("changes model and mode in the same Session while its Agent stays fixed", a
   })
   const view = render(); await view.setProps({ sessionId: "30" })
   await trigger(view).trigger("click"); await flushPromises()
-  expect(row(view, "agent").attributes("data-disabled")).toBeDefined()
-  await row(view, "agent").trigger("click")
-  expect(options(view)).toHaveLength(0)
+  expect(row(view, "agent").attributes("data-disabled")).toBeUndefined()
   expect(row(view, "model").attributes("data-disabled")).toBeUndefined()
   await choose(view, "model", "orbit")
   expect(configure).toHaveBeenLastCalledWith("30", { model: "orbit" })
@@ -397,6 +395,7 @@ test("changes model and mode in the same Session while its Agent stays fixed", a
   expect(window.localStorage.getItem(storageKey)).toBe(saved)
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
   await view.setProps({ disabled: true })
+  expect(row(view, "agent").attributes("data-disabled")).toBeDefined()
   expect(row(view, "model").attributes("data-disabled")).toBeDefined()
   expect(row(view, "mode").attributes("data-disabled")).toBeDefined()
 })
@@ -674,6 +673,30 @@ test("live completion discovery uses its existing Session and requests composer 
   await view.vm.discover()
   expect(read).toHaveBeenCalledExactlyOnceWith("30", true)
   expect(agents.agentConfiguration).not.toHaveBeenCalled()
+})
+
+test("switching a live Session's Agent requires confirmation and warns about lost context", async () => {
+  const providers = useProvidersStore()
+  providers.providers = [
+    { id: "codex", name: "Codex", template: "codex" },
+    { id: "claude", name: "Claude", template: "claude-code" },
+  ]
+  vi.spyOn(agents, "sessionConfiguration").mockResolvedValue(configuration())
+  const switchAgent = vi.spyOn(agents, "switchAgent").mockResolvedValue()
+  const view = mount(AgentConfigurationSelector, { props: { workspaceId: "11", sessionId: "30" }, attachTo: document.body, global: { plugins: [i18n, pinia] } })
+  wrappers.push(view)
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(row(view, "agent").attributes("data-disabled")).toBeUndefined()
+  await row(view, "agent").trigger("click")
+  await content(view).get('[role="menuitemradio"][data-value="claude"]').trigger("click")
+  await flushPromises()
+  expect(switchAgent).not.toHaveBeenCalled()
+  const dialog = new DOMWrapper(document.body).get('[role="dialog"]')
+  expect(dialog.text()).toContain(i18n.global.t("composer.switchAgent.title"))
+  expect(dialog.text()).toContain(i18n.global.t("composer.switchAgent.description", { from: "Codex", to: "Claude" }))
+  await dialog.findAll("button").find(button => button.text() === i18n.global.t("composer.switchAgent.confirm"))!.trigger("click")
+  await flushPromises()
+  expect(switchAgent).toHaveBeenCalledExactlyOnceWith("30", "claude")
 })
 
 test("explicit draft edits carry confirmed restoration choices separately from their delta", async () => {

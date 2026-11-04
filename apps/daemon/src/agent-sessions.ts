@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { validateProviderId } from "./provider-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
 import { codexProvider } from "./agents/codex.ts"
 import type { AgentProvider } from "./agents/acp.ts"
@@ -447,6 +448,17 @@ export class AgentSessions {
         const result = await this.#runtime(sessionId).configure(params as AgentConfigurationSelection)
         await this.#complete(command, result)
         return result
+      }
+      if (method === "_deskfleet/session/switch-agent") {
+        const provider = string(params.provider, "Agent provider")
+        validateProviderId(provider)
+        const runtime = this.#runtime(sessionId)
+        await runtime.switchAgent(provider)
+        // Start the replacement so its configuration replaces the previous Agent's catalog.
+        if (!this.#closed) await runtime.start().catch(() => {})
+        const snapshot = await this.journal.read(sessionId)
+        await this.#complete(command, snapshot)
+        return snapshot
       }
       if (method === "_deskfleet/input/submit") return await this.#submit(command)
       if (method === "_deskfleet/input/steer" || method === "_deskfleet/input/withdraw" || method === "_deskfleet/input/retry") return await this.#inputAction(command)

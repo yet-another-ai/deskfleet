@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n"
 import type { AgentChoice, AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 
@@ -23,6 +24,11 @@ const draftSelection = computed({
 })
 const providerId = computed(() => props.sessionId ? agents.sessions[props.sessionId]?.provider ?? agents.configurations[props.sessionId]?.provider.id : props.providerId ?? providers.selectedId)
 const selectedProvider = computed(() => providers.providers.find(provider => provider.id === providerId.value))
+const session = computed(() => props.sessionId ? agents.sessions[props.sessionId] : undefined)
+const sessionReady = computed(() => session.value?.lifecycle === undefined || session.value.lifecycle === "ready")
+const pendingProvider = ref<string>()
+const pendingProviderName = computed(() => providers.providers.find(provider => provider.id === pendingProvider.value)?.name ?? pendingProvider.value)
+const currentProviderName = computed(() => selectedProvider.value?.name ?? providerId.value ?? "")
 const providerUnavailable = computed(() => !!(props.sessionId || props.providerId) && providers.loaded && !selectedProvider.value)
 const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
@@ -41,7 +47,7 @@ const effortLabel = computed(() => reasoningEffort.value && effortName(reasoning
 const providerName = computed(() => selectedProvider.value?.name ?? configuration.value?.provider.name ?? t(providerUnavailable.value ? "providers.unavailable" : "composer.provider"))
 const summary = computed(() => [providerName.value, modelName.value, effortLabel.value, modeName.value].filter(Boolean).join(" · "))
 const controls = computed<ConfigurationControl[]>(() => [
-  { id: "agent" as const, label: t("composer.provider"), value: providerId.value, name: providerName.value, options: providers.providers, disabled: props.disabled || !!props.sessionId || !providers.ready || !providers.providers.length },
+  { id: "agent" as const, label: t("composer.provider"), value: providerId.value, name: providerName.value, options: providers.providers, disabled: props.disabled || !sessionReady.value || !providers.ready || !providers.providers.length },
   { id: "model" as const, label: t("composer.model"), value: modelValue.value, name: modelName.value, options: configuration.value?.models?.options ?? [], disabled: props.disabled || loading.value && !requestedModel.value || !configuration.value?.models?.options.length },
   { id: "reasoning" as const, label: t("composer.reasoningEffort"), value: configuration.value?.reasoningEfforts?.currentValue, name: effortLabel.value, options: configuration.value?.reasoningEfforts?.options.map(option => ({ ...option, name: effortName(option.id, option.name) })) ?? [], disabled: props.disabled || loading.value || !configuration.value?.reasoningEfforts?.options.length },
   { id: "mode" as const, label: t("composer.mode"), value: configuration.value?.modes?.currentValue, name: modeName.value, options: configuration.value?.modes?.options ?? [], disabled: props.disabled || loading.value || !configuration.value?.modes?.options.length },
@@ -58,13 +64,22 @@ async function closeOptions(control: Control): Promise<void> {
 }
 function choose(control: Control, value: string): void {
   void closeOptions(control)
-  if (control === "agent" && !props.sessionId) {
+  if (control === "agent" && props.sessionId) {
+    if (value !== providerId.value) pendingProvider.value = value
+    return
+  }
+  if (control === "agent") {
     if (props.providerId === undefined) providers.selectedId = value
     else emit("update:providerId", value)
   }
   if (control === "model") void changeModel(value)
   if (control === "reasoning") void changeReasoningEffort(value)
   if (control === "mode") void changeMode(value)
+}
+async function confirmSwitch(): Promise<void> {
+  const provider = pendingProvider.value
+  if (!provider || !props.sessionId) return
+  await agents.switchAgent(props.sessionId, provider)
 }
 </script>
 
@@ -110,5 +125,14 @@ function choose(control: Control, value: string): void {
         </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
+    <ConfirmDialog
+      v-if="pendingProvider"
+      :title="t('composer.switchAgent.title')"
+      :description="t('composer.switchAgent.description', { from: currentProviderName, to: pendingProviderName })"
+      :confirm-label="t('composer.switchAgent.confirm')"
+      tone="primary"
+      :confirm="confirmSwitch"
+      @close="pendingProvider = undefined"
+    />
   </div>
 </template>

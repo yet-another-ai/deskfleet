@@ -51,15 +51,21 @@ impl LocalCatalog {
                     });
                 }
                 if let Some(next) = changes.session {
+                    // A stopped Session may switch Agents; ownership and the
+                    // execution context remain immutable.
+                    if next.provider != current.provider && next.provider_session_id.is_some() {
+                        return Err(StoreError::InvalidAgent(
+                            "switching the Agent requires a new provider session",
+                        ));
+                    }
                     if next.id != current.id
                         || next.workspace_id != current.workspace_id
-                        || next.provider != current.provider
                         || next.context != current.context
                         || next.created_at != current.created_at
                         || next.inherited_turn_count != current.inherited_turn_count
                     {
                         return Err(StoreError::InvalidAgent(
-                            "session ownership, provider, and context are immutable",
+                            "session ownership and context are immutable",
                         ));
                     }
                     Some(AgentSessionRecord {
