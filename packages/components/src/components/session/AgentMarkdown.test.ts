@@ -10,6 +10,7 @@ import { agentResourceContextKey, type AgentResourceContext } from "../../servic
 import * as mermaidService from "../../services/mermaid.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
+import { performPreviewLocateDom } from "../../stores/previews.ts"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 
@@ -374,3 +375,57 @@ test("streamed file links in HTML details retain their destinations after comple
     "file://server/share/report.md", "file:relative.md",
   ])
 })
+
+test("opens all resource links in a right-side preview tab first and locates the link", async () => {
+  await router.push("/sessions/12")
+  const resolveResource = vi.fn()
+  const view = render({ resolveResource }, "[Fox Cookie](file:///work/fox.3mf) and [Logo](./deskfleet.svg#L2-L2)")
+  await flushPromises()
+
+  const links = view.findAll("a[data-resource-link]")
+  expect(links).toHaveLength(2)
+  await links[0]!.trigger("click")
+  await flushPromises()
+
+  expect(resolveResource).not.toHaveBeenCalled()
+  expect(useLayoutStore().sessionWindowRequest).toMatchObject({
+    kind: "resource",
+    item: {
+      request: {
+        target: { kind: "machine", machineId: "42", teamId: "7" },
+        sessionId: "12",
+        uri: "file:///work/fox.3mf",
+      },
+      title: "Fox Cookie",
+      source: { sessionId: "12" },
+    },
+  })
+
+  await links[1]!.trigger("click")
+  await flushPromises()
+  expect(useLayoutStore().sessionWindowRequest).toMatchObject({
+    kind: "resource",
+    item: {
+      request: {
+        target: { kind: "machine", machineId: "42", teamId: "7" },
+        sessionId: "12",
+        uri: "./deskfleet.svg#L2-L2",
+      },
+      title: "Logo",
+      source: { sessionId: "12" },
+    },
+  })
+
+  const linkElement = links[0]!.element as HTMLElement
+  const scrollIntoView = vi.fn()
+  linkElement.scrollIntoView = scrollIntoView
+  expect(performPreviewLocateDom({
+    id: 1,
+    content: "blob:fox",
+    sessionId: "12",
+    itemId: "file:///work/fox.3mf",
+  })).toBe(true)
+  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
+  expect(linkElement.dataset.previewLocated).toBe("true")
+})
+

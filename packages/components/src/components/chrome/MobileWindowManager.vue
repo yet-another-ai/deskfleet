@@ -78,6 +78,7 @@ watch(() => layout.detailsOpen, open => {
 watch(() => layout.sessionWindowRequest, request => {
   if (!request) return
   const title = request.kind === "mermaid" ? t("mermaid.title")
+    : request.kind === "resource" ? (request.item.title || request.item.request.uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1) || request.item.request.uri)
     : request.item.title || (request.item.kind === "image" ? t("agent.image") : t("agent.contentType", { type: request.item.kind }))
   const id = `preview:${request.id}`
   previews.value.push({ id, kind: "preview", title, request })

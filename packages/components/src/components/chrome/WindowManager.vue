@@ -135,11 +135,20 @@ function rightWindowGroup(current: DockviewApi): DockviewGroupPanel | undefined 
   return openPreview?.api.group ?? current.getPanel("changes")?.api.group
 }
 
+function resourceWindowTitle(request: Extract<SessionWindowRequest, { kind: "resource" }>): string {
+  if (request.item.title) return request.item.title
+  const rawName = request.item.request.uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1)
+  if (rawName) {
+    try { return decodeURIComponent(rawName) } catch { return rawName }
+  }
+  return request.item.request.uri
+}
+
 function openSessionWindow(request: SessionWindowRequest): void {
   const current = api.value
   if (!current) return
   const contentRequest = structuredClone(toRaw(request))
-  const windowId = `${contentRequest.kind === "preview" ? "preview" : "mermaid-preview"}:${crypto.randomUUID()}`
+  const windowId = `${contentRequest.kind === "mermaid" ? "mermaid-preview" : "preview"}:${crypto.randomUUID()}`
   const group = rightWindowGroup(current)
 
   current.addPanel({
@@ -147,7 +156,9 @@ function openSessionWindow(request: SessionWindowRequest): void {
     component: "sessionPreview",
     title: contentRequest.kind === "preview"
       ? contentRequest.item.title || (contentRequest.item.kind === "image" ? t("agent.image") : t("agent.contentType", { type: contentRequest.item.kind }))
-      : t("mermaid.title"),
+      : contentRequest.kind === "resource"
+        ? resourceWindowTitle(contentRequest)
+        : t("mermaid.title"),
     params: { request: contentRequest },
     position: group
       ? { referenceGroup: group, direction: "within" }

@@ -2,18 +2,26 @@ import { useBreakpoints, useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { FileResourceRequest } from "../../../client/src/files.ts"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
-import type { PreviewDescriptor } from "../services/preview.ts"
+import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
+export interface ResourceWindowItem {
+  request: FileResourceRequest
+  title?: string
+  source?: PreviewSource
+}
 export type SessionWindowRequest =
   | { id: number; kind: "preview"; item: PreviewDescriptor }
   | { id: number; kind: "mermaid"; code: string; source?: MermaidSource }
+  | { id: number; kind: "resource"; item: ResourceWindowItem }
 type NewSessionWindowRequest =
   | { kind: "preview"; item: PreviewDescriptor }
   | { kind: "mermaid"; code: string; source?: MermaidSource }
+  | { kind: "resource"; item: ResourceWindowItem }
 
 export const pendingMermaidLocate = ref<MermaidLocateRequest | null>(null)
 const MERMAID_LOCATE_CHANNEL = "deskfleet.mermaid-locate"
@@ -107,7 +115,9 @@ export const useLayoutStore = defineStore("layout", () => {
   function requestSessionWindow(request: NewSessionWindowRequest): boolean {
     if (!sessionWindowsAvailable.value) return false
     const routeSessionId = router.currentRoute.value.params.sessionId
-    const sourceSessionId = request.kind === "preview" ? request.item.source?.sessionId : request.source?.sessionId
+    const sourceSessionId = request.kind === "mermaid"
+      ? request.source?.sessionId
+      : (request.item.source?.sessionId ?? (request.kind === "resource" ? request.item.request.sessionId : undefined))
     if (sourceSessionId && sourceSessionId !== routeSessionId) return false
     sessionWindowRequest.value = { id: nextWindowRequestId++, ...request } as SessionWindowRequest
     return true

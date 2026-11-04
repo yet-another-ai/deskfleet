@@ -30,6 +30,7 @@ import { useI18n } from "vue-i18n"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 import { agentMarkdownParseOptions, createAgentMarkdownParser } from "../../services/agent-markdown.ts"
 import { previewKindFromMime } from "../../services/preview.ts"
+import { openResourceFromAction } from "../../stores/previews.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 import type { FileResourceRequest } from "../../../../client/src/files.ts"
@@ -149,7 +150,24 @@ async function click(event: MouseEvent): Promise<void> {
   event.preventDefault()
   if (!files || !context.value) { error.value = t("files.resourceUnavailable"); return }
   error.value = undefined
-  resource.value = { ...context.value, uri: link.dataset.resourceLink! }
+  const uri = link.dataset.resourceLink!
+  const entryId = link.closest<HTMLElement>("[data-conversation-entry]")?.dataset.conversationEntry
+  const nextResource: FileResourceRequest = { ...context.value, uri }
+  const rawName = uri.replace(/[?#].*$/u, "").split(/[\\/]/u).filter(Boolean).at(-1)
+  let fileName = rawName
+  if (rawName) {
+    try { fileName = decodeURIComponent(rawName) } catch { fileName = rawName }
+  }
+  const title = link.getAttribute("title") || link.textContent?.trim() || fileName || undefined
+  if (openResourceFromAction({
+    request: nextResource,
+    ...(title ? { title } : {}),
+    source: {
+      sessionId: context.value.sessionId,
+      ...(entryId ? { entryId } : {}),
+    },
+  })) return
+  resource.value = nextResource
 }
 
 onBeforeUnmount(() => {
