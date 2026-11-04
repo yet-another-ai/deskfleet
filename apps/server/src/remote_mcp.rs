@@ -7,6 +7,9 @@ use actix_web::{HttpRequest, web};
 use deskfleet_control_store::policies::MachineAction;
 use deskfleet_protocol::control::{PeerActor, RemoteMcpOperation, RemoteMcpRequest};
 use serde_json::{Value, json};
+use std::time::Duration;
+
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[cfg(test)]
 mod tests;
@@ -60,11 +63,12 @@ pub async fn call(
             pending.spawn(async move {
                 let access = state
                     .hub
-                    .request(
+                    .request_with_timeout(
                         &machine.id,
                         "remoteMcpDiscover",
                         source_context,
                         Some(actor),
+                        DISCOVERY_TIMEOUT,
                     )
                     .await
                     .ok()?;

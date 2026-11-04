@@ -65,3 +65,43 @@ for (const kind of ["http", "sse"] as const) test(`remote ${kind} uses saved hea
   assert.ok(credentials.length >= 6)
   assert.ok(credentials.every(header => header === "Bearer saved-secret"))
 })
+
+for (const cleanup of ["acknowledge", "hang"] as const) test(`aborted HTTP calls delete their session with bounded cleanup (${cleanup})`, { timeout: 15_000 }, async t => {
+  const controller = new AbortController()
+  let markInvoked!: () => void
+  const invoked = new Promise<void>(resolve => { markInvoked = resolve })
+  const sessionId = randomUUID()
+  const deleted: { sessionId: string | string[] | undefined; authorization: string | undefined }[] = []
+  const cleanupErrors = t.mock.method(console, "error", () => {})
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => sessionId })
+  const server = new Server({ name: "abort-fixture", version: "1" }, { capabilities: { tools: {} } })
+  server.setRequestHandler(CallToolRequestSchema, async (_request, { signal }) => {
+    markInvoked()
+    await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }))
+    return { content: [] }
+  })
+  await server.connect(transport)
+  const http = createServer((req, res) => {
+    if (req.method === "DELETE") {
+      deleted.push({ sessionId: req.headers["mcp-session-id"], authorization: req.headers.authorization })
+      if (cleanup === "hang") return
+    }
+    void transport.handleRequest(req, res).catch(error => res.writeHead(500).end(String(error)))
+  })
+  http.listen(0, "127.0.0.1"); await once(http, "listening")
+  t.after(async () => {
+    await server.close()
+    http.closeAllConnections()
+    await http[Symbol.asyncDispose]()
+  })
+  const invocation = invokeMcp({
+    transport: "http", url: `http://127.0.0.1:${(http.address() as AddressInfo).port}/mcp`, headers: { Authorization: "Bearer saved-secret" },
+  }, { kind: "call", name: "pending", arguments: {} }, controller.signal, async () => {})
+  const rejected = assert.rejects(invocation, /daemon is stopping/)
+  await invoked
+  controller.abort(new Error("daemon is stopping"))
+  // A non-responsive DELETE must still let the original call settle and close locally.
+  await rejected
+  assert.deepEqual(deleted, [{ sessionId, authorization: "Bearer saved-secret" }])
+  assert.equal(cleanupErrors.mock.callCount(), cleanup === "hang" ? 1 : 0)
+})

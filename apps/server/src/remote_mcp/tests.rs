@@ -120,6 +120,21 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
     let (only_b, _) = enroll(&state, &owner.id, &b.id, &secret()).await;
     let (denied, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (offline, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
+    let (stalled, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
+    let (send, mut stalled_requests) = tokio::sync::mpsc::channel(8);
+    let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
+    state
+        .hub
+        .add_daemon(
+            &stalled.id,
+            &stalled.team_id,
+            &stalled.machine_id,
+            "stalled",
+            send,
+            shutdown,
+        )
+        .await
+        .unwrap();
     assert_eq!(target_a.machine_id, target_b.machine_id);
     let consent = Arc::new(AtomicBool::new(true));
     let worker_a = responder(&state, &target_a, consent.clone()).await;
@@ -144,12 +159,21 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
         call!(login["token"].as_str().unwrap(), &request).status(),
         StatusCode::UNAUTHORIZED
     );
-    let response = call!(&credential, &request);
+    // One routed daemon that never replies must not hide the responsive machine.
+    let response = tokio::time::timeout(
+        super::DISCOVERY_TIMEOUT + std::time::Duration::from_secs(5),
+        async { call!(&credential, &request) },
+    )
+    .await
+    .expect("discovery must finish before the source's 55-second HTTP timeout");
     assert_eq!(response.status(), StatusCode::OK);
     let listed: Value = test::read_body_json(response).await;
     assert_eq!(listed["teamId"], a.id);
     assert_eq!(listed["machines"].as_array().unwrap().len(), 1);
     assert_eq!(listed["machines"][0]["machine"]["id"], target_a.machine_id);
+    assert!(
+        matches!(stalled_requests.try_recv(), Ok(ControlMessage::Request { method, .. }) if method == "remoteMcpDiscover")
+    );
 
     request["operation"] = json!("session");
     request["machineId"] = json!(target_a.machine_id);

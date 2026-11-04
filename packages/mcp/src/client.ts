@@ -16,7 +16,10 @@ export async function invokeMcp(
   signal.throwIfAborted()
   const client = new Client({ name: "deskfleet-remote", version: "0.7.4" })
   const networkFetch: typeof fetch = (input, init) => fetch(input, {
-    ...init, signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),
+    ...init,
+    // Session deletion must still reach the server after the call or transport was aborted.
+    signal: init?.method === "DELETE" ? AbortSignal.timeout(5_000)
+      : AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]),
   })
   const transport = connection.transport === "stdio"
     ? new StdioClientTransport({ ...connection, stderr: "ignore" })
@@ -36,7 +39,10 @@ export async function invokeMcp(
       : await client.callTool({ name: request.name, arguments: request.arguments }, undefined, options)
   } finally {
     try {
-      if (transport instanceof StreamableHTTPClientTransport && transport.sessionId && !signal.aborted) await transport.terminateSession()
+      if (transport instanceof StreamableHTTPClientTransport && transport.sessionId) await transport.terminateSession()
+    } catch (error) {
+      // Cleanup failure must not replace the tool outcome and invite a duplicate execution.
+      console.error("Remote MCP session cleanup failed:", error)
     } finally { await client.close() }
   }
 }

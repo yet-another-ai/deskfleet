@@ -260,62 +260,75 @@ impl Hub {
         params: Value,
         actor: Option<PeerActor>,
     ) -> Result<Value> {
-        let route = self
-            .route(registration_id)
-            .await?
-            .ok_or_else(ApiError::unavailable)?;
-        let id = uuid::Uuid::new_v4().to_string();
-        let (send, receive) = oneshot::channel();
-        self.inner.lock().await.pending.insert(
-            id.clone(),
-            Pending {
-                registration_id: registration_id.into(),
-                connection_id: route.connection_id.clone(),
-                response: send,
-            },
-        );
-        let message = ControlMessage::Request {
-            id: id.clone(),
-            method: method.into(),
+        self.request_with_timeout(
+            registration_id,
+            method,
             params,
             actor,
-        };
-        let sent = if let Some(cluster) = &self.cluster
-            && route.node_id != cluster.id
-        {
-            self.publish(
-                &route.node_id,
-                &Envelope::Request {
-                    source: cluster.id.clone(),
+            Duration::from_secs(60),
+        )
+        .await
+    }
+    pub(crate) async fn request_with_timeout(
+        &self,
+        registration_id: &str,
+        method: &str,
+        params: Value,
+        actor: Option<PeerActor>,
+        timeout: Duration,
+    ) -> Result<Value> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let result = tokio::time::timeout(timeout, async {
+            let expires_at = deskfleet_control_store::now_ms().saturating_add(
+                i64::try_from(timeout.as_millis()).map_err(|_| ApiError::internal())?,
+            );
+            let route = self
+                .route(registration_id)
+                .await?
+                .ok_or_else(ApiError::unavailable)?;
+            let (send, receive) = oneshot::channel();
+            self.inner.lock().await.pending.insert(
+                id.clone(),
+                Pending {
                     registration_id: registration_id.into(),
-                    connection_id: route.connection_id,
-                    expires_at: deskfleet_control_store::now_ms() + 60_000,
-                    message,
+                    connection_id: route.connection_id.clone(),
+                    response: send,
                 },
-            )
-            .await
-            .and_then(|sent| {
-                if sent {
-                    Ok(())
-                } else {
-                    Err(ApiError::unavailable())
+            );
+            let message = ControlMessage::Request {
+                id: id.clone(),
+                method: method.into(),
+                params,
+                actor,
+            };
+            if let Some(cluster) = &self.cluster
+                && route.node_id != cluster.id
+            {
+                if !self
+                    .publish(
+                        &route.node_id,
+                        &Envelope::Request {
+                            source: cluster.id.clone(),
+                            registration_id: registration_id.into(),
+                            connection_id: route.connection_id,
+                            expires_at,
+                            message,
+                        },
+                    )
+                    .await?
+                {
+                    return Err(ApiError::unavailable());
                 }
-            })
-        } else {
-            self.send_request(registration_id, &route.connection_id, message)
-                .await
-        };
-        if let Err(error) = sent {
-            self.inner.lock().await.pending.remove(&id);
-            return Err(error);
-        }
-        let result = tokio::time::timeout(Duration::from_secs(60), receive).await;
+            } else {
+                self.send_request(registration_id, &route.connection_id, message)
+                    .await?;
+            }
+            receive.await.map_err(|_| ApiError::unavailable())?
+        })
+        .await;
+        // Keep cleanup outside the timed future so discovery timeouts retire pending RPCs.
         self.inner.lock().await.pending.remove(&id);
-        match result {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(ApiError::unavailable()),
-            Err(_) => Err(timeout_error()),
-        }
+        result.map_err(|_| timeout_error())?
     }
     pub(crate) async fn response(
         &self,

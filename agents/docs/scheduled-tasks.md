@@ -120,10 +120,12 @@ membership checks for source and target, resolves the target's Team registration
 and forwards a dedicated management RPC with the verified source Machine and
 Session. The target validates this context and reads the current host preference.
 These internal RPCs are absent from the public management method allowlist.
-Machine discovery asks online targets for live consent and omits offline or
-denying machines. No synchronized history is returned without a live target
-permission check. Calls cannot replace the originating user or pass an arbitrary
-management method, executable, endpoint, or credential.
+Machine discovery asks online targets for live consent with a five-second
+deadline per target and omits offline, denying, or unresponsive machines. A slow
+target does not discard other machines' responses. No synchronized history is
+returned without a live target permission check. Calls cannot replace the
+originating user or pass an arbitrary management method, executable, endpoint,
+or credential.
 
 | Tool | Target permission | Result |
 | --- | --- | --- |
@@ -142,6 +144,9 @@ directory. Launch environment and HTTP headers stay on that target. Every tool
 call requires operate permission, regardless of the server's `readOnlyHint`.
 Consent and server configuration are rechecked after initialization; closing the
 daemon cancels pending remote MCP requests. Connections close when requests finish.
+Streamable HTTP sessions receive a best-effort DELETE even after cancellation,
+using a separate five-second cleanup deadline. Cleanup failure is logged without
+replacing the tool's result or original error.
 An in-progress tool can already have side effects when a deadline expires or
 permission changes; no automatic retry is performed.
 
