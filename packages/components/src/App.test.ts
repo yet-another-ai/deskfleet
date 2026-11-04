@@ -296,10 +296,15 @@ test.each(["worktree", "directory"] as const)("archiving a %s Session stops Git 
   expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(true)
   expect(watch).toHaveBeenCalledTimes(2)
 
+  const restore = vi.spyOn(agents, "restore").mockImplementation(async () => {
+    agents.sessions[sessionId]!.archiveState = "active"
+  })
   for (const archiveState of ["archiving", "archived"] as const) {
     agents.sessions[sessionId]!.archiveState = archiveState
     await flushPromises()
     expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(context === "directory")
+    expect(wrapper.find("textarea").exists()).toBe(false)
+    expect(wrapper.find(".ui-notice button").exists()).toBe(archiveState === "archived")
     expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("Retained conversation")
     expect(watch).toHaveBeenCalledTimes(2)
     expect(stop).toHaveBeenCalledTimes(2)
@@ -308,9 +313,11 @@ test.each(["worktree", "directory"] as const)("archiving a %s Session stops Git 
   await router.push(`/worktrees/${sessionWorktreeId}`); await flushPromises()
   expect(wrapper.get('button[aria-label="Open terminal in /worktrees/api/session"]').attributes("disabled")).toBeDefined()
   expect(wrapper.get("main").text()).toContain("This session is archived")
-  agents.sessions[sessionId]!.archiveState = "active"
   await router.push(`/sessions/${sessionId}`); await flushPromises()
+  await wrapper.get(".ui-notice button").trigger("click"); await flushPromises()
+  expect(restore).toHaveBeenCalledExactlyOnceWith(sessionId)
   expect(wrapper.findComponent(OpenWithMenu).exists()).toBe(true)
+  expect(wrapper.find("textarea").exists()).toBe(true)
   expect(watch).toHaveBeenCalledTimes(4)
 })
 
