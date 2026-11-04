@@ -112,10 +112,12 @@ test("ImagePreview registers toolbar actions and handles zoom/reset gestures, wh
   expect(stage.attributes("style")).toContain("scale(1.25)")
   await wrapper.get('[data-preview-action="reset"]').trigger("click")
   expect(stage.attributes("style")).toContain("translate(0px, 0px) scale(1)")
+  expect(wrapper.find('[data-preview-action="color-picker"]').exists()).toBe(true)
 
   await wrapper.setProps({ kind: "audio", content: "data:audio/wav;base64,AA==" })
   await flushPromises()
   expect(wrapper.find('[data-preview-action="zoom-in"]').exists()).toBe(false)
+  expect(wrapper.find('[data-preview-action="color-picker"]').exists()).toBe(false)
   expect(wrapper.find("audio").exists()).toBe(true)
 
   const asciiStl = btoa("solid s\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid s")
@@ -128,5 +130,74 @@ test("ImagePreview registers toolbar actions and handles zoom/reset gestures, wh
   await flushPromises()
   await vi.waitFor(() => expect(wrapper!.find("[data-tres-canvas]").exists()).toBe(true))
   expect(wrapper.find('[data-preview-action="zoom-in"]').exists()).toBe(true)
+  expect(wrapper.find('[data-preview-action="color-picker"]').exists()).toBe(false)
   expect(wrapper.attributes("data-preview-kind")).toBe("model")
+})
+
+test("picks colors from image and video previews, pins loupe on click, copies HEX, and closes on outside click", async () => {
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  const drawImage = vi.fn()
+  const getImageData = vi.fn((x: number, y: number, w: number, h: number) => {
+    const data = new Uint8ClampedArray(w * h * 4)
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const i = (row * w + col) * 4
+        data[i] = ((x + col) * 10) & 0xff
+        data[i + 1] = ((y + row) * 20) & 0xff
+        data[i + 2] = 0xf6
+        data[i + 3] = 255
+      }
+    }
+    return { data } as ImageData
+  })
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => ({
+    clearRect: vi.fn(),
+    drawImage,
+    getImageData,
+  })) as unknown as typeof HTMLCanvasElement.prototype.getContext)
+
+  const pinia = createPinia()
+  stores.push(pinia)
+  await router.push("/sessions/30")
+  wrapper = mount(PreviewViewer, {
+    attachTo: document.body,
+    props: { kind: "image", content: "data:image/png;base64,AA==", mode: "inline" },
+    global: { plugins: [pinia, i18n, router], stubs: { Teleport: { inheritAttrs: false, template: "<slot />" } } },
+  })
+  await flushPromises()
+
+  const img = wrapper.get("img").element as HTMLImageElement
+  Object.defineProperties(img, { naturalWidth: { value: 100, configurable: true }, naturalHeight: { value: 50, configurable: true } })
+  vi.spyOn(img, "getBoundingClientRect").mockReturnValue(new DOMRect(10, 20, 200, 100))
+
+  await wrapper.get('[data-preview-action="color-picker"]').trigger("click")
+  await wrapper.get("[data-preview-canvas]").trigger("pointermove", { clientX: 50, clientY: 40 })
+  expect(wrapper.get("[data-color-picker-loupe]").attributes("data-color-picker-hex")).toBe("#C8C8F6")
+  expect(wrapper.findAll("[data-color-picker-grid] > span")).toHaveLength(49)
+
+  await wrapper.get("img").trigger("click", { clientX: 70, clientY: 60 })
+  expect(wrapper.get("[data-color-picker-loupe]").attributes("data-pinned")).toBe("true")
+  expect(wrapper.get("[data-color-picker-loupe]").attributes("data-color-picker-hex")).toBe("#2C90F6")
+  await wrapper.get("[data-preview-canvas]").trigger("pointermove", { clientX: 50, clientY: 40 })
+  expect(wrapper.get("[data-color-picker-loupe]").attributes("data-color-picker-hex")).toBe("#2C90F6")
+
+  await wrapper.get("[data-color-picker-copy]").trigger("click")
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledWith("#2C90F6")
+  expect(wrapper.get("[data-color-picker-copy]").attributes("data-copied")).toBe("true")
+
+  await wrapper.get("[data-preview-canvas]").trigger("click", { clientX: 90, clientY: 70 })
+  expect(wrapper.find("[data-color-picker-loupe]").exists()).toBe(false)
+  expect(router.currentRoute.value.query.preview).toBeUndefined()
+
+  await wrapper.setProps({ kind: "video", content: "blob:http://localhost/clip.mp4" })
+  await flushPromises()
+  const video = wrapper.get("video").element as HTMLVideoElement
+  Object.defineProperties(video, { videoWidth: { value: 80, configurable: true }, videoHeight: { value: 40, configurable: true } })
+  vi.spyOn(video, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 160, 80))
+
+  await wrapper.get('[data-preview-action="color-picker"]').trigger("click")
+  await wrapper.get("[data-preview-canvas]").trigger("click", { clientX: 20, clientY: 10 })
+  expect(drawImage).toHaveBeenLastCalledWith(video, 0, 0, 80, 40)
+  expect(wrapper.get("[data-color-picker-loupe]").attributes("data-color-picker-hex")).toBe("#6464F6")
 })

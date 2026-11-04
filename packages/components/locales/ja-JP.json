@@ -972,7 +972,7 @@
   },
   "mermaid": {
     "title": "Mermaid 図", "zoomIn": "拡大",
-    "zoomOut": "縮小", "resetView": "ズームと位置をリセット",
+    "zoomOut": "縮小", "resetView": "ズームと位置をリセット", "pickColor": "スポイト",
     "locateMessage": "元のメッセージへ移動", "focus": "フォーカス",
     "more": "その他", "showInRightTab": "右側の新しいタブに表示",
     "showInNewWindow": "新しいウィンドウに表示", "closeTab": "{title} を閉じる"
