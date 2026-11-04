@@ -86,8 +86,11 @@ land texture, colored from the shared theme tokens. City and provider details
 appear in node tooltips; the section itself shows a short provider introduction.
 ECharts GL 2 requires ECharts 5, so the website pins that compatible pair
 independently of the application's charts. Rotation and trails run automatically,
-pausing off screen, in a hidden tab, or under reduced-motion preferences. The four
-yetanother.ai relay cities and representative Cloudflare Anycast locations live in
+pausing off screen, in a hidden tab, or under reduced-motion preferences. Sunlight
+uses ECharts GL's solar model with the browser's current timestamp, reflecting
+daily and seasonal changes. It refreshes every minute while visible and immediately
+on return to view. Ambient fill keeps the night side readable. The four yetanother.ai
+relay cities and representative Cloudflare Anycast locations live in
 `relay-network.ts`; its source links document coverage, including the exclusion
 of mainland China from Cloudflare TURN. Pairwise arcs illustrate connectivity,
 not measured traffic or routes between relays.

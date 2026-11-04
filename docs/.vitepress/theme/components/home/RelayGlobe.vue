@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AppLocale } from "@deskfleet/client/i18n"
-import { useDocumentVisibility, useElementVisibility, usePreferredReducedMotion, useResizeObserver } from "@vueuse/core"
+import { useDocumentVisibility, useElementVisibility, useIntervalFn, usePreferredReducedMotion, useResizeObserver } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useData } from "vitepress"
 import { networkCopy } from "./network-locales.ts"
@@ -19,6 +19,13 @@ const t = computed(() => networkCopy[props.locale])
 const status = ref<"loading" | "ready" | "unavailable">("loading")
 let globe: ReturnType<typeof createRelayGlobe> | undefined
 let disposed = false
+
+// Refresh sunlight while the globe is visible, and immediately on return.
+const lightingActive = computed(() => status.value === "ready" && visible.value && documentVisibility.value === "visible")
+const { pause, resume } = useIntervalFn(() => globe?.updateLighting(), 60_000, {
+  immediate: false, immediateCallback: true,
+})
+watch(lightingActive, active => active ? resume() : pause())
 
 watch(nearby, async () => {
   try {
