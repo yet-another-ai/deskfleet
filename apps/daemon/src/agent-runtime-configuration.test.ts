@@ -12,6 +12,7 @@ import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.t
 import type { AgentConfiguration, AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 import { AgentSessions } from "./agent-sessions.ts"
+import type { AgentProviders } from "./agent-providers.ts"
 import { DaemonCatalog } from "./catalog.ts"
 
 function options(model: string, effort: string, mode = "manual"): acp.SessionConfigOption[] {
@@ -119,7 +120,7 @@ async function until<T>(read: () => Promise<T>, predicate: (value: T) => boolean
   throw new Error("Timed out waiting for session configuration")
 }
 
-async function setup(t: TestContext, provider: ConfigurationProvider, selection: AgentConfigurationSelection = {}, beforeCreate?: (service: AgentSessions) => void) {
+async function setup(t: TestContext, provider: ConfigurationProvider, selection: AgentConfigurationSelection = {}, beforeCreate?: (service: AgentSessions) => void, providers?: AgentProviders) {
   const directory = await mkdtemp(join(tmpdir(), "df-runtime-configuration-"))
   const workspaceDirectory = join(directory, "workspace")
   await mkdir(workspaceDirectory)
@@ -128,7 +129,7 @@ async function setup(t: TestContext, provider: ConfigurationProvider, selection:
   const catalog = new DaemonCatalog(daemonDirectory)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Configuration fixture", [{ path: workspaceDirectory }])
-  const service = new AgentSessions(catalog, catalog.native, provider, undefined, undefined, undefined, new TestAgentQuotas())
+  const service = new AgentSessions(catalog, catalog.native, provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   t.after(async () => {
     try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) }
@@ -546,3 +547,83 @@ for (const response of ["missing", "empty"] as const) {
     }
   })
 }
+
+function registry(codex: ConfigurationProvider, claude: ConfigurationProvider): AgentProviders {
+  return {
+    resolve: (id: string) => {
+      if (id === "codex") return { provider: codex, config: { name: "Codex" } }
+      if (id === "claude") return { provider: claude, config: { name: "Claude" } }
+      throw new Error("Agent provider is unavailable")
+    },
+    onChanged: () => () => {},
+  } as unknown as AgentProviders
+}
+
+test("a ready Session switches Agents without reusing the previous conversation or its configuration", async t => {
+  const codex = new ConfigurationProvider()
+  const claude = new ConfigurationProvider()
+  claude.id = "claude"
+  const providers = registry(codex, claude)
+  const f = await setup(t, codex, { model: "second", reasoningEffort: "low" }, undefined, providers)
+  await f.submit()
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  assert.equal((await f.configuration()).models?.currentValue, "second")
+  const switched = await f.service.handle("_deskfleet/session/switch-agent", {
+    sessionId: f.sessionId, operationId: randomUUID(), provider: "claude",
+  }, f.service.actor()) as AgentSnapshot
+  assert.equal(switched.session.provider, "claude")
+  assert.equal(switched.session.providerSessionId, "conversation")
+  assert.equal(switched.turns.length, 1, "conversation history remains available")
+  assert.equal(codex.closes, 1)
+  assert.equal(claude.connections, 1)
+  const configuration = await f.configuration()
+  assert.equal(configuration.provider.id, "claude")
+  assert.equal(configuration.models?.currentValue, "first", "the replacement Agent starts from its own defaults")
+  assert.equal(configuration.reasoningEfforts?.currentValue, "high")
+  await f.submit()
+  const completed = await until(f.read, state => state.turns.filter(turn => turn.state === "completed").length === 2)
+  assert.equal(completed.session.provider, "claude")
+  assert.deepEqual(codex.prompts, [{ model: "second", effort: "low" }])
+  assert.deepEqual(claude.prompts, [{ model: "first", effort: "high" }])
+  await assert.rejects(f.service.handle("_deskfleet/session/switch-agent", {
+    sessionId: f.sessionId, operationId: randomUUID(), provider: "missing",
+  }, f.service.actor()), /unavailable/)
+  assert.equal((await f.read()).session.provider, "claude")
+  // Repeating a switch to the current Agent is a no-op, so a retried request cannot stop it again.
+  const repeated = await f.service.handle("_deskfleet/session/switch-agent", {
+    sessionId: f.sessionId, operationId: randomUUID(), provider: "claude",
+  }, f.service.actor()) as AgentSnapshot
+  assert.equal(repeated.session.provider, "claude")
+  assert.equal(codex.closes, 1)
+  assert.equal(claude.connections, 1)
+  await f.service.close()
+  // The provider boundary survives restart; the previous Agent's choices are not reapplied.
+  const restarted = new AgentSessions(f.catalog, f.catalog.native, codex, providers, undefined, undefined, new TestAgentQuotas())
+  try {
+    await restarted.init()
+    const saved = await restarted.handle("_deskfleet/session/configuration", { sessionId: f.sessionId }, restarted.actor()) as AgentConfiguration
+    assert.equal(saved.provider.id, "claude")
+    assert.equal(saved.models?.currentValue, "first")
+    assert.equal(saved.reasoningEfforts?.currentValue, "high")
+  } finally { await restarted.close() }
+})
+
+test("a running turn blocks an Agent switch", async t => {
+  const codex = new ConfigurationProvider()
+  const claude = new ConfigurationProvider()
+  claude.id = "claude"
+  const providers = registry(codex, claude)
+  const f = await setup(t, codex, {}, undefined, providers)
+  let release!: () => void
+  codex.promptWait = new Promise<void>(resolve => { release = resolve })
+  try {
+    await f.submit()
+    await until(f.read, () => codex.prompts.length === 1)
+    await assert.rejects(f.service.handle("_deskfleet/session/switch-agent", {
+      sessionId: f.sessionId, operationId: randomUUID(), provider: "claude",
+    }, f.service.actor()), /Wait for the current turn/)
+    assert.equal((await f.read()).session.provider, "codex")
+    assert.equal(claude.connections, 0)
+  } finally { release() }
+  await until(f.read, state => state.turns[0]?.state === "completed")
+})

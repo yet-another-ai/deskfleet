@@ -308,6 +308,7 @@ const MANAGEMENT: &[&str] = &[
     "_deskfleet/session/delete",
     "_deskfleet/session/configuration",
     "_deskfleet/session/configure",
+    "_deskfleet/session/switch-agent",
     "_deskfleet/agent/configuration",
     "_deskfleet/command/get",
     "_deskfleet/git/branches",

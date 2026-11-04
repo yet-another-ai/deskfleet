@@ -938,6 +938,20 @@ test("draft choices accompany session creation and live changes use an idempoten
   window.localStorage.removeItem("deskfleet.agent-configuration")
 })
 
+test("a confirmed Agent switch sends one audited operation and applies the replacement snapshot", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const switched = agentSnapshot()
+  switched.session.provider = "claude"
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => method === "_deskfleet/session/switch-agent" ? switched : normal(method, params))
+  await store.switchAgent("30", "claude")
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/switch-agent", {
+    sessionId: "30", provider: "claude", operationId: expect.any(String),
+  })
+  expect(store.sessions["30"]?.provider).toBe("claude")
+  expect(store.views["30"]?.snapshot?.session.provider).toBe("claude")
+})
+
 test("live configuration events update the UI without extra reads and outrank stale responses or history", async () => {
   const store = useAgentSessionsStore()
   const pending = deferred<{ provider: { id: string; name: string }; models: null; reasoningEfforts: null; modes: null }>()

@@ -605,6 +605,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
     return mergeConfiguration(sessionId, result, sequence, commands)
   }
+  /** Replace a stopped Session's Agent; its previous conversation context is not transferred. */
+  async function switchAgent(sessionId: string, provider: string): Promise<void> {
+    snapshotReceived(await mutation("_deskfleet/session/switch-agent", { sessionId, provider }))
+  }
   async function capacityAction(action: "create" | "fork" | "restore", details: SessionCapacityDetails, run: () => Promise<AgentSnapshot>, track: ReturnType<typeof captureAnalyticsContext>): Promise<AgentSnapshot> {
     track("session_capacity_action", { action, outcome: "attempt", ...details })
     try {
@@ -768,5 +772,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

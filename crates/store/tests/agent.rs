@@ -610,6 +610,42 @@ async fn concurrent_permission_decisions_commit_only_the_first_and_preserve_audi
 }
 
 #[tokio::test]
+async fn a_stopped_session_can_switch_agents_only_with_a_new_provider_session() {
+    let local = LocalCatalog::open_in_memory("host").await.unwrap();
+    let created = create(&local).await;
+
+    let stale = AgentSessionRecord {
+        provider: "claude".into(),
+        provider_session_id: Some("codex-conversation".into()),
+        ..created.session.clone()
+    };
+    let mut rejected = transaction(&created.session);
+    rejected.session = Some(stale.clone());
+    rejected.events = vec![event(created.session.id, EventKind::Session, &stale)];
+    assert!(local.agent_commit(rejected).await.is_err());
+
+    let switched = AgentSessionRecord {
+        provider: "claude".into(),
+        provider_session_id: None,
+        configuration_since_seq: Some(1.into()),
+        ..created.session.clone()
+    };
+    let mut commit = transaction(&created.session);
+    commit.session = Some(switched.clone());
+    commit.events = vec![event(created.session.id, EventKind::Session, &switched)];
+    let stored = local.agent_commit(commit).await.unwrap().session.unwrap();
+    assert_eq!(stored.provider, "claude");
+    assert_eq!(stored.provider_session_id, None);
+    assert_eq!(
+        stored.configuration_since_seq.map(|seq| seq.as_i64()),
+        Some(1)
+    );
+    assert_eq!(stored.workspace_id, created.session.workspace_id);
+    assert_eq!(stored.context, created.session.context);
+    local.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn session_context_is_recorded_at_creation_and_immutable() {
     let local = LocalCatalog::open_in_memory("host").await.unwrap();
     let created = create(&local).await;

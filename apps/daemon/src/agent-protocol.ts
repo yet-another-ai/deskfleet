@@ -41,6 +41,8 @@ export interface AgentSessionRecord {
   lastCompletedSeq?: string
   /** Shared watermark acknowledged by a person. An unread mark may rewind it to just before `lastCompletedSeq`. */
   lastReadSeq?: string
+  /** Journal sequence that began the current provider's configuration; earlier choices and commands belong to a previous Agent. */
+  configurationSinceSeq?: string
   /** People who have opened this Session. */
   viewers?: { userId: string; seenAt: string }[]
   createdAt: string
@@ -198,6 +200,7 @@ export interface AgentMethods {
   "_deskfleet/composer/references": { params: ComposerReferenceSearch; result: ComposerReferenceResult }
   "_deskfleet/composer/resolve": { params: ComposerReferenceResolve; result: ContentBlock[] }
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
+  "_deskfleet/session/switch-agent": { params: AgentMutation & { provider: string }; result: AgentSnapshot }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
   "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; baseBranch?: string; baseRevisions?: GitPreparedRevision[] } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }

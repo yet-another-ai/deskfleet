@@ -875,6 +875,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed configuration and advertised commands/skills |
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
+| `_deskfleet/session/switch-agent` | Audit and replace a ready, idle Session's Agent, clear its provider conversation, and start the replacement; clients confirm the cache/context loss first |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
 | `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
 | `_deskfleet/session/read` | A person acknowledges shared history through an observed `throughSeq`, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
@@ -914,7 +915,8 @@ reported explicitly. Checkout errors do not hide healthy checkout results.
 
 The composer's menu has Agent, Model, Reasoning, and Mode submenus. A draft can select
 any provider configured on its machine; an existing Session keeps its saved
-provider identity. Users can change the model between turns in the same Session;
+provider identity until a user confirms an Agent switch. Users can change the
+model between turns in the same Session;
 the conversation and provider identity remain unchanged. Available models,
 efforts, and modes come from that provider's ACP select options, including
 grouped options. Mode names and descriptions retain the provider's wording:
@@ -927,6 +929,16 @@ The composer supplies a random `probeId` to reuse that connection for successive
 choices. The daemon scopes it to the verified user and login session, and checks
 the provider, Workspace directory, and launch settings on each request. Requests
 without a probe ID remain one-shot discoveries.
+
+An existing Session switches Agents only when a user confirms the change. The
+composer warns that the replacement Agent starts a new conversation: its prompt
+cache cannot be reused and earlier context is not transferred, while DeskFleet
+keeps the existing transcript for display. A switch requires a ready Session
+between turns with no pending approvals or questions. The daemon stops the
+current provider, clears `providerSessionId` and capabilities, records
+`configurationSinceSeq`, and starts the replacement. Model, reasoning, mode,
+and command choices recorded before that sequence belong to the previous Agent
+and are not reapplied.
 
 Public provider metadata includes a random registry revision that changes only
 when settings change or the daemon reloads them. The UI uses that revision for
