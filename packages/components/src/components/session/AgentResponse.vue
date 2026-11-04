@@ -6,6 +6,7 @@ import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse, ConversationStep } from "../../services/agent-conversation.ts"
 import { groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
+import { isRemoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import { elapsed, formatDuration } from "../../services/agent-format.ts"
 import { pendingMermaidLocate, type MermaidLocateRequest } from "../../stores/layout.ts"
 import { pendingPreviewLocate, type PreviewLocateRequest } from "../../stores/previews.ts"
@@ -42,7 +43,8 @@ const endingToolId = computed(() => {
 const activities = reactive(new Map<string, boolean>())
 const toggled = ref<boolean | null>(null)
 watch(() => props.response.live, () => { toggled.value = null })
-const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? !answer.value))
+const hasRemoteCall = computed(() => props.response.steps.some(step => step.kind === "tool" && isRemoteMcpTool(step.tool)))
+const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? (!answer.value || hasRemoteCall.value)))
 const summary = computed(() => props.response.live ? [] : summarizeTools(props.response.steps).map(({ kind, count }) => t(`agent.summary.${kind}`, { n: count }, count)))
 const outcome = computed(() => props.response.last && props.response.turn && ["cancelled", "interrupted", "failed"].includes(props.response.turn.state) ? props.response.turn : undefined)
 const thoughts = reactive(new Set<string>())

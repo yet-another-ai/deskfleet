@@ -264,3 +264,33 @@ test("only the last response step remains streaming, including thoughts at group
   expect(view.get('[data-conversation-entry="body"] [data-content]').attributes("data-final")).toBe("true")
   expect(view.get('[data-conversation-entry="last-thought"] [data-content]').attributes("data-final")).toBe("false")
 })
+
+test.each([false, true])("remote operations remain visible between folded activities and after the final answer (initially live: %s)", async initiallyLive => {
+  const remote = tool("remote", {
+    title: "mcp.deskfleet.deskfleet_remote_mcp_call",
+    rawInput: { server: "deskfleet", tool: "deskfleet_remote_mcp_call", arguments: { machineId: "target", serverId: "auv", name: "invoke", arguments: { command_id: "input.click", inputs: { x: 20, y: 30 } } } },
+  })
+  const steps = [
+    tool("read-before"), message("thought-before", "thought"),
+    remote,
+    tool("read-after"), message("thought-after", "thought"),
+  ]
+  const completed = response([...steps, message("answer", "assistant", "The remote operation finished.")], false)
+  const view = render(initiallyLive ? response(steps) : completed)
+  await flushPromises()
+
+  expect(view.get('[data-conversation-entry="remote"] [data-remote-mcp-card]').text()).toContain("input.click")
+  expect(view.findAll("[data-activity-group]").map(group => group.attributes("data-activity-group"))).toEqual(["read-before", "read-after"])
+  expect(view.findAll("[data-activity-trigger]").every(trigger => trigger.attributes("aria-expanded") === "false")).toBe(true)
+
+  if (initiallyLive) await view.setProps({ response: completed })
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("true")
+  expect(view.find('[data-conversation-entry="remote"] [data-remote-mcp-card]').exists()).toBe(true)
+  expect(view.get('[data-conversation-entry="answer"]').text()).toBe("The remote operation finished.")
+
+  await view.get("[data-turn-work]").trigger("click")
+  await view.setProps({ response: { ...completed, endedAt: "2026-10-30T12:01:00Z" } })
+  expect(view.get("[data-turn-work]").attributes("aria-expanded")).toBe("false")
+  expect(view.find("[data-remote-mcp-card]").exists()).toBe(false)
+  expect(view.get('[data-conversation-entry="answer"]').text()).toBe("The remote operation finished.")
+})

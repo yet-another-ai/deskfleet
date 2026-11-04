@@ -1,4 +1,5 @@
 import { createConversationProjector } from "./conversation-projector.ts"
+import { isRemoteMcpTool } from "./remote-mcp-tool.ts"
 import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 
 /** A completion remains unread until any viewer acknowledges it on the owning daemon. */
@@ -37,12 +38,12 @@ export interface ConversationActivity {
   steps: ConversationActivityStep[]
 }
 
-/** Fold adjacent tool calls and thoughts without hiding messages or interactive steps. */
+/** Fold adjacent tools and thoughts, keeping remote operation cards directly visible. */
 export function groupResponseActivity(steps: ConversationStep[]): (ConversationStep | ConversationActivity)[] {
   const groups: (ConversationStep | ConversationActivity)[] = []
   let activity: ConversationActivity | undefined
   for (const step of steps) {
-    if (step.kind === "tool" || (step.kind === "message" && step.role === "thought")) {
+    if ((step.kind === "tool" && !isRemoteMcpTool(step.tool)) || (step.kind === "message" && step.role === "thought")) {
       if (!activity) {
         activity = { id: step.id, kind: "activity", steps: [] }
         groups.push(activity)

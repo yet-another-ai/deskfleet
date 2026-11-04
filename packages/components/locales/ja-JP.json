@@ -699,6 +699,10 @@
     "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
     "expandText": "すべて表示", "collapseText": "折りたたむ",
     "contentType": "{type} のコンテンツ", "tool": "ツール呼び出し",
+    "remoteMcp": {
+      "details": "呼び出しの詳細",
+      "screenshot": "{machine} · {action}"
+    },
     "thinking": "思考中", "plan": "計画",
     "activity": {
       "tools": "{n} 件のツール呼び出し",

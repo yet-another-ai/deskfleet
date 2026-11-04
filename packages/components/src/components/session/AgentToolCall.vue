@@ -5,12 +5,13 @@ import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { ConversationTool } from "../../services/agent-conversation.ts"
-import { readableValue } from "../../services/agent-conversation.ts"
+import { remoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import AgentActor from "./AgentActor.vue"
-import AgentContent from "./AgentContent.vue"
-import AgentTerminal from "./AgentTerminal.vue"
+import AgentRemoteMcpCall from "./AgentRemoteMcpCall.vue"
+import AgentToolDetails from "./AgentToolDetails.vue"
 const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean; defaultOpen?: boolean }>()
 const { t } = useI18n()
+const remote = computed(() => remoteMcpTool(props.tool))
 const toggled = ref<boolean | null>(null)
 const icons: Record<string, Component> = { read: FileText, edit: FilePen, delete: Trash2, move: ArrowRightLeft, search: Search, execute: SquareTerminal, think: Brain, fetch: Globe, switch_mode: Repeat }
 const icon = computed(() => props.tool.content?.some(block => block.type === "terminal") ? Bot : icons[props.tool.kind ?? ""] ?? Wrench)
@@ -22,7 +23,8 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
 </script>
 
 <template>
-  <CollapsibleRoot :open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id" @update:open="toggled = $event">
+  <AgentRemoteMcpCall v-if="remote" :tool="tool" :remote="remote" :permission="permission" :live="live" />
+  <CollapsibleRoot v-else :open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id" @update:open="toggled = $event">
     <CollapsibleTrigger type="button" class="group/tool -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui-text-muted" :class="hasDetails ? 'cursor-pointer hover:bg-ui-hover hover:text-ui-text' : 'cursor-default'">
       <component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       <span class="min-w-0 flex-1 truncate">{{ tool.title || t('agent.tool') }}</span>
@@ -33,23 +35,7 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
       <ChevronRight v-if="hasDetails" :size="14" :stroke-width="2" class="shrink-0 opacity-0 ui-motion group-hover/tool:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
     </CollapsibleTrigger>
     <CollapsibleContent class="ui-collapsible">
-      <div class="mt-1 mb-2 ml-6 flex flex-col gap-2 rounded-lg border border-ui-border bg-ui-surface p-3 text-xs">
-        <div v-if="tool.locations?.length" class="font-mono text-ui-text-muted select-text"><div v-for="location in tool.locations" :key="`${location.path}:${location.line}`" class="truncate">{{ location.path }}{{ location.line ? `:${location.line}` : '' }}</div></div>
-        <pre v-if="tool.rawInput != null" class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(tool.rawInput) }}</pre>
-        <template v-for="(block, index) in tool.content" :key="index">
-          <AgentContent v-if="block.type === 'content'" :content="[block.content]" class="text-xs" />
-          <AgentTerminal v-else-if="block.type === 'terminal'" :key="block.terminalId" :terminal-id="block.terminalId" :output="tool.terminals?.[block.terminalId]" :live="live" />
-          <div v-else-if="block.type === 'diff'" class="overflow-hidden rounded-md border border-ui-border font-mono select-text">
-            <div class="truncate border-b border-ui-border px-2 py-1 text-ui-text-muted">{{ block.path }}</div>
-            <div class="max-h-80 overflow-auto">
-              <pre v-if="block.oldText" class="m-0 whitespace-pre-wrap bg-ui-danger/8 px-2 py-1">{{ block.oldText }}</pre>
-              <pre class="m-0 whitespace-pre-wrap bg-ui-success/8 px-2 py-1">{{ block.newText }}</pre>
-            </div>
-          </div>
-          <pre v-else class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(block) }}</pre>
-        </template>
-        <pre v-if="tool.rawOutput != null && !tool.content?.length" class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-ui-border pt-2 font-mono text-ui-text-muted select-text">{{ readableValue(tool.rawOutput) }}</pre>
-      </div>
+      <AgentToolDetails :tool="tool" :live="live" class="mt-1 mb-2 ml-6 rounded-lg border border-ui-border bg-ui-surface p-3" />
     </CollapsibleContent>
   </CollapsibleRoot>
 </template>

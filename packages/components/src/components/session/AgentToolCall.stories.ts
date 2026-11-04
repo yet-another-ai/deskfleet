@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { storybookPermission } from "../../../.storybook/storybook-fixtures.ts"
 import AgentToolCall from "./AgentToolCall.vue"
+import desktopScreenshot from "../../../../../docs/content/public/demo-desktop-light.png?inline"
 
 const meta = {
   title: "Interactive & Collapsible/Collapsible Panels/AgentToolCall",
@@ -63,6 +64,36 @@ export const FailedToolCall: Story = {
       status: "failed",
       rawInput: { url: "https://internal.example/api/schema" },
       rawOutput: "Error: connect ECONNREFUSED 127.0.0.1:8443",
+    },
+  },
+}
+
+export const RemoteScreenshot: Story = {
+  args: {
+    tool: {
+      toolCallId: "remote-screenshot", title: "mcp.deskfleet.deskfleet_remote_mcp_call", status: "completed",
+      rawInput: { server: "deskfleet", tool: "deskfleet_remote_mcp_call", arguments: { machineId: "machine-1", serverId: "auv", name: "artifact_read_image", arguments: { run_id: "capture-run", artifact_id: "screenshot" } } },
+      rawOutput: { result: { content: [{ type: "image", mimeType: "image/png", data: desktopScreenshot.split(",")[1]! }] }, error: null },
+    },
+  },
+}
+
+export const RemoteOperation: Story = {
+  args: {
+    live: true,
+    tool: {
+      toolCallId: "remote-click", title: "mcp__deskfleet__deskfleet_remote_mcp_call", status: "in_progress",
+      rawInput: { machineId: "machine-3", serverId: "auv", name: "invoke", arguments: { command_id: "input.click", inputs: { x: "420", y: "260" } } },
+    },
+  },
+}
+
+export const RemoteFailed: Story = {
+  args: {
+    tool: {
+      toolCallId: "remote-failed", title: "deskfleet_remote_mcp_call", status: "failed",
+      rawInput: { machineId: "machine-3", serverId: "auv", name: "invoke", arguments: { command_id: "display.capture", inputs: {} } },
+      rawOutput: { content: [{ type: "text", text: "Screen recording permission is required." }], isError: true },
     },
   },
 }
