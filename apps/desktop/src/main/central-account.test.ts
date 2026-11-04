@@ -78,7 +78,7 @@ test("restores an encrypted account using the async decryption result", async ()
   const client = await f.install()
   expect(await client.status()).toEqual({ serverUrl, user, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).toHaveBeenCalledExactlyOnceWith(encrypted)
-  expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Authorization: "Bearer restored-token" } }))
+  expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Accept: "application/json", Authorization: "Bearer restored-token" } }))
 })
 
 test("the desktop account bridge forwards ownership transfer to the selected Team", async () => {
@@ -105,7 +105,7 @@ test("a saved backend cannot override the compiled address or supply its credent
   expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
   await client.site()
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: {} }))
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: { Accept: "application/json" } }))
 })
 
 test("desktop IPC reads public site settings but rejects administration even for a site administrator", async () => {
