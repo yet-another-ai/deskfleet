@@ -7,11 +7,11 @@ mod audio;
 mod backend;
 mod error;
 mod frame;
-mod scale;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+mod scale;
 pub mod surface;
 mod types;
 #[cfg(target_os = "windows")]

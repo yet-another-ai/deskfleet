@@ -32,11 +32,6 @@ export const router = createRouter({
       component: () => import("../views/SearchView.vue"),
     },
     {
-      path: "/desktops",
-      name: "desktop-overview",
-      component: () => import("../views/DesktopOverviewView.vue"),
-    },
-    {
       path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),

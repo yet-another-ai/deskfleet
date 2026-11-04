@@ -19,7 +19,6 @@ async function setup(path = "/") {
     routes: [
       { path: "/", name: "new-session", component: {} },
       { path: "/search", name: "search", component: {} },
-      { path: "/desktops", name: "desktop-overview", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
       { path: "/sessions/archived", name: "archived-sessions", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
@@ -124,7 +123,6 @@ test.each([
   { path: "/sessions/session-42?tab=changes", section: "Conversations" },
   { path: "/schedules/new", section: "Schedules" },
   { path: "/search?q=hello&kind=chat", section: "Search" },
-  { path: "/desktops", section: "Desktops" },
 ])("selecting the active $section section keeps $path", async ({ path, section }) => {
   const router = await setup(path)
   expect(sectionLink(section).attributes("href")).toBe(path)

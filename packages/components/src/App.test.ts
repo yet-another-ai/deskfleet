@@ -1,5 +1,5 @@
 import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
-import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
@@ -14,11 +14,11 @@ import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
 
 const mounted: { wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }[] = []
 const host = getClient()
-async function mountApp(path = "/", pinia = createPinia()) {
+async function mountApp(path = "/", pinia = createPinia(), realPortals = false) {
   await router.push(path)
   const wrapper = mount(App, {
     attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: { Teleport: { inheritAttrs: false, template: "<slot />" }, LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
+    global: { plugins: [pinia, router, i18n], stubs: { ...(realPortals ? {} : { Teleport: { inheritAttrs: false, template: "<slot />" } }), LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
   })
   mounted.push({ wrapper, pinia })
   await flushPromises()
@@ -454,7 +454,9 @@ test("returning focus to the window refreshes the local machine", async () => {
 test("fixed sidebar and tiled window controls retain their layout behavior", async () => {
   const pinia = createPinia()
   hydrateSession(pinia)
-  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+  // Tab moves rely on Dockview's actual portal ownership; flattening teleports
+  // reparents a moved group's menu into its old Vue subtree.
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia, true)
   const sidebar = () => wrapper.get<HTMLElement>("aside:not([aria-label])")
   const separator = () => wrapper.get<HTMLElement>('[role="separator"][aria-label="Resize sidebar"]')
   expect(sidebar().element.style.width).toBe("260px")
@@ -493,8 +495,9 @@ test("fixed sidebar and tiled window controls retain their layout behavior", asy
   await flushPromises()
   await wrapper.get('[aria-label="Add window"]').trigger("click")
   await flushPromises()
-  expect(wrapper.get('[data-window-type="changes"]').attributes("data-disabled")).toBeUndefined()
-  await wrapper.get('[data-window-type="changes"]').trigger("click")
+  const menu = new DOMWrapper(document.body)
+  expect(menu.get('[data-window-type="changes"]').attributes("data-disabled")).toBeUndefined()
+  await menu.get('[data-window-type="changes"]').trigger("click")
   await flushPromises()
   expect(panel(wrapper).attributes("aria-label")).toBe("Changes")
 })
@@ -543,12 +546,12 @@ test("only a selected Session uses tiled windows and offers new window tabs", as
 test("each Session restores its own tiled window layout", async () => {
   const pinia = createPinia()
   hydrateSession(pinia)
-  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia)
+  const wrapper = await mountApp(`/sessions/${sessionId}`, pinia, true)
 
   async function expectChangesMenuDisabled(disabled: boolean): Promise<void> {
     await wrapper.get('[aria-label="Add window"]').trigger("click")
     await flushPromises()
-    expect(wrapper.get('[data-window-type="changes"]').attributes("data-disabled") !== undefined).toBe(disabled)
+    expect(new DOMWrapper(document.body).get('[data-window-type="changes"]').attributes("data-disabled") !== undefined).toBe(disabled)
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
     await flushPromises()
   }

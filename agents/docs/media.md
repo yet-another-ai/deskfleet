@@ -371,13 +371,14 @@ encoding, macOS requests smaller ScreenCaptureKit surfaces, and Linux downsample
 the captured BGRA buffer. Capture acquisition is paced at the selected frame rate;
 keyframe requests coalesce until the next video tick.
 
-The sidebar Desktop overview requests one silent, read-only stream per display
+The Session's right-hand Desktops tab requests one silent, read-only stream per display
 with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
-It initially shows the selected workspace's machine. Users can switch to all
+It initially shows the Session's owning machine. Users can switch to all
 remote machines in the current Team; narrowing the scope closes the other peers.
 Offline machines, unavailable capture, and individual connection failures remain
-visible in the overview. Pausing or hiding the page closes its preview peers;
-returning resumes them. Leaving the page disposes its machine adapters. Selecting
+visible in the panel. Pausing, selecting another tab, or hiding the page closes
+its preview peers; returning resumes them. Leaving the Session disposes its
+machine adapters. Changing Sessions restores the Session-machine scope. Selecting
 a preview opens that display in the normal viewer without preview limits. Input
 control still requires the viewer's explicit control selection.
 Codec and audio are chosen when creating the peer. Stop the stream before

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import "dockview-vue/dist/styles/dockview.css"
-import { Plus, SquareTerminal } from "@lucide/vue"
+import { MonitorPlay, Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { computed, defineAsyncComponent, onScopeDispose, provide, shallowRef, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -31,11 +31,12 @@ import IconButton from "../common/IconButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
+import SessionDesktopWindow from "./SessionDesktopWindow.vue"
 import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
 import { newTerminalWindowKey, windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
 
-type WorkspaceWindowId = "changes" | "terminal"
+type WorkspaceWindowId = "changes" | "desktops" | "terminal"
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
@@ -50,6 +51,7 @@ const stored = useLocalStorage<SerializedDockview | null>(() => `deskfleet.windo
 const api = shallowRef<DockviewApi>()
 const topLeftGroupId = shallowRef<string>()
 const changesOpen = shallowRef(false)
+const desktopsOpen = shallowRef(false)
 const closingTerminals = new Set<string>()
 let syncing = false
 const disposables: { dispose(): void }[] = []
@@ -126,13 +128,33 @@ function addTerminalPanel(terminalId: string, title: string, group: DockviewGrou
   })
 }
 
+function addDesktopsPanel(group?: DockviewGroupPanel): void {
+  const current = api.value
+  if (!current || current.getPanel("desktops")) return
+  const target = group ?? rightWindowGroup(current)
+  const panel = current.addPanel({
+    id: "desktops",
+    component: "desktops",
+    title: t("desktopOverview.title"),
+    position: target ? { referenceGroup: target, direction: "within" } : { referencePanel: "chat", direction: "right" },
+    inactive: true,
+    initialWidth: target ? undefined : 336,
+    minimumWidth: 220,
+  })
+  // A restored Chat-only layout has no selected neighboring tab. Keep the new
+  // group hidden until the user explicitly opens desktop previews from +.
+  if (!target) panel.api.group.api.setVisible(false)
+  desktopsOpen.value = !!target?.api.isVisible
+}
+
 function isPreviewPanel(panelId: string): boolean {
   return panelId.startsWith("preview:") || panelId.startsWith("mermaid-preview:")
 }
 
 function rightWindowGroup(current: DockviewApi): DockviewGroupPanel | undefined {
   const openPreview = current.panels.find(panel => isPreviewPanel(panel.id))
-  return openPreview?.api.group ?? current.getPanel("changes")?.api.group
+  const tools = [current.getPanel("changes"), current.getPanel("desktops")]
+  return openPreview?.api.group ?? tools.find(panel => panel?.api.group.api.isVisible)?.api.group ?? tools.find(Boolean)?.api.group
 }
 
 function resourceWindowTitle(request: Extract<SessionWindowRequest, { kind: "resource" }>): string {
@@ -171,11 +193,11 @@ function openSessionWindow(request: SessionWindowRequest): void {
   saveLayout()
 }
 
-function setChangesVisible(visible: boolean): void {
+function setToolVisible(id: "changes" | "desktops", visible: boolean): void {
   const current = api.value
   if (!current) return
-  if (visible) addChangesPanel()
-  const panel = current.getPanel("changes")
+  if (visible) { if (id === "changes") addChangesPanel(); else addDesktopsPanel() }
+  const panel = current.getPanel(id)
   if (!panel) return
   if (visible) {
     panel.api.group.api.setVisible(true)
@@ -188,7 +210,8 @@ function setChangesVisible(visible: boolean): void {
     }
     panel.api.group.api.setVisible(false)
   }
-  changesOpen.value = visible
+  if (id === "changes") changesOpen.value = visible
+  else desktopsOpen.value = visible
 }
 
 function saveLayout(): void {
@@ -220,6 +243,7 @@ function seed(current: DockviewApi): void {
   current.clear()
   addChatPanel(current)
   addChangesPanel()
+  addDesktopsPanel(current.getPanel("changes")?.api.group)
 }
 
 function reconcileTerminalPanels(): void {
@@ -268,8 +292,12 @@ function onReady(event: DockviewReadyEvent): void {
   const chat = event.api.getPanel("chat")
   if (chat) chat.api.setTitle(chatTitle.value)
   else seed(event.api)
+  // Existing Session layouts gain the tab without activating capture. A closed
+  // desktop tab persists as a hidden panel, so it stays closed on later visits.
+  if (!event.api.getPanel("desktops")) addDesktopsPanel()
   const changes = event.api.getPanel("changes")
   changesOpen.value = !!changes?.api.group.api.isVisible
+  desktopsOpen.value = !!event.api.getPanel("desktops")?.api.group.api.isVisible
   updateTopLeftGroup()
   disposables.push(
     // Only individual tabs move between groups; header space moves the app window.
@@ -284,6 +312,7 @@ function onReady(event: DockviewReadyEvent): void {
         saveLayout()
       })
       if (panel.id === "changes") changesOpen.value = false
+      if (panel.id === "desktops") desktopsOpen.value = false
     }),
   )
   scheduleTerminalReconcile()
@@ -309,10 +338,14 @@ function closeTab(params: IDockviewPanelHeaderProps): void {
     return
   }
 
-  if (params.api.id === "changes") {
-    syncing = true
-    setChangesVisible(false)
-    queueMicrotask(() => { syncing = false; saveLayout() })
+  if (params.api.id === "changes" || params.api.id === "desktops") {
+    const id = params.api.id
+    queueMicrotask(() => {
+      syncing = true
+      setToolVisible(id, false)
+      syncing = false
+      saveLayout()
+    })
     return
   }
 
@@ -351,20 +384,25 @@ function openWindowTab(id: WorkspaceWindowId, group: DockviewGroupPanel): void {
     void openTerminalTab(group)
     return
   }
-  openChangesPanel(group)
+  openToolPanel(id, group)
 }
 
-function openChangesPanel(group?: DockviewGroupPanel): void {
+function openToolPanel(id: "changes" | "desktops", group?: DockviewGroupPanel): void {
   const current = api.value
   if (!current) return
   syncing = true
-  const existing = current.getPanel("changes")
-  if (existing) setChangesVisible(true)
-  else {
-    addChangesPanel(group)
-    current.getPanel("changes")?.api.setActive()
+  const existing = current.getPanel(id)
+  if (existing) {
+    if (id === "desktops" && group && existing.api.group !== group) existing.api.moveTo({ group, index: group.panels.length })
+    setToolVisible(id, true)
   }
-  changesOpen.value = true
+  else {
+    if (id === "changes") addChangesPanel(group)
+    else addDesktopsPanel(group)
+    current.getPanel(id)?.api.setActive()
+  }
+  if (id === "changes") changesOpen.value = true
+  else desktopsOpen.value = true
   queueMicrotask(() => { syncing = false; saveLayout() })
 }
 
@@ -393,6 +431,9 @@ onScopeDispose(() => {
       </template>
       <template #panel-changes>
         <ChangesPanel windowed class="h-full" />
+      </template>
+      <template #panel-desktops="{ api: panelApi }">
+        <SessionDesktopWindow :session-id="sessionId" :panel-api="panelApi" />
       </template>
       <template #panel-terminal="{ api: panelApi, params }">
         <TerminalShellWindow
@@ -428,6 +469,9 @@ onScopeDispose(() => {
             <DropdownMenuContent align="start" :side-offset="4" :collision-padding="8" :aria-label="t('toolbar.addWindow')" class="app-no-drag ui-menu z-50 flex w-44 flex-col" loop>
               <DropdownMenuItem as="button" type="button" data-window-type="changes" class="ui-menu-item" :disabled="changesOpen" @select="openWindowTab('changes', group)">
                 <span class="text-xs font-semibold" aria-hidden="true">±</span>{{ t("panel.changes") }}
+              </DropdownMenuItem>
+              <DropdownMenuItem as="button" type="button" data-window-type="desktops" class="ui-menu-item" :disabled="desktopsOpen" @select="openWindowTab('desktops', group)">
+                <MonitorPlay :size="14" aria-hidden="true" />{{ t("desktopOverview.title") }}
               </DropdownMenuItem>
               <DropdownMenuItem as="button" type="button" data-window-type="terminal" class="ui-menu-item" :disabled="!sessionWorktreeId" @select="openWindowTab('terminal', group)">
                 <SquareTerminal :size="14" aria-hidden="true" />{{ t("terminal.new") }}

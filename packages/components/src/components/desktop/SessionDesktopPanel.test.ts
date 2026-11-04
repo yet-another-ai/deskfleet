@@ -4,12 +4,13 @@ import { remoteMachineClient } from "@deskfleet/client/remote"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { accountSessionKey, createAccountSession } from "../composables/useAccountSession.ts"
-import { i18n } from "../i18n/index.ts"
-import { router } from "../router/index.ts"
-import { fakeCentral, machineFixture } from "../test/central.ts"
-import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
-import DesktopOverviewView from "./DesktopOverviewView.vue"
+import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
+import { i18n } from "../../i18n/index.ts"
+import { router } from "../../router/index.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
+import { fakeCentral, machineFixture } from "../../test/central.ts"
+import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../../test/desktop-media.ts"
+import SessionDesktopPanel from "./SessionDesktopPanel.vue"
 
 vi.mock("@deskfleet/client/remote", () => ({ remoteMachineClient: vi.fn() }))
 
@@ -35,7 +36,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function setup(machines = [desktopMachine("local"), desktopMachine("remote"), desktopMachine("offline", false)]) {
+async function setup(machines = [desktopMachine("local"), desktopMachine("remote"), desktopMachine("offline", false)], active = true) {
   const fake = fakeCentral({ machines, enrollment: { configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", machineId: "local", teamId: "team-1", identity: { originId: "origin-local", machineId: "1" }, machineName: "local" } })
   const account = createAccountSession(fake.central)
   await flushPromises()
@@ -47,15 +48,21 @@ async function setup(machines = [desktopMachine("local"), desktopMachine("remote
     return { api: { ...platformClient, desktop: mock.api }, dispose: mock.dispose, updateMachine: vi.fn(), refreshCatalog: vi.fn(), setLocal: vi.fn() }
   })
   const pinia = createPinia()
+  const fleet = useFleetStore(pinia)
+  vi.spyOn(fleet, "findSession").mockImplementation(id => {
+    const machine = machines.find(machine => id === `session-${machine.id}`)
+    return machine ? { machine: { id: machine.id, name: machine.name, local: machine.id === "local", online: machine.online, desktop: true, sessions: [], workspaces: [], terminals: [] }, session: { id } } : null
+  })
   cleanups.push(() => { account.dispose(); disposePinia(pinia) })
   const open = vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
   vi.spyOn(account, "refreshMachines").mockResolvedValue()
-  wrapper = mount(DesktopOverviewView, { global: { plugins: [pinia, router, i18n], provide: { [accountSessionKey as symbol]: account } } })
+  const sessionId = `session-${machines.find(machine => machine.id !== "local")?.id ?? "local"}`
+  wrapper = mount(SessionDesktopPanel, { props: { sessionId, active }, global: { plugins: [pinia, router, i18n], provide: { [accountSessionKey as symbol]: account } } })
   await flushPromises()
-  return { ...fake, account, adapters, open }
+  return { ...fake, account, adapters, open, fleet }
 }
 
-test("defaults to every display on the current workspace's machine with bounded, silent, read-only streams", async () => {
+test("defaults to every display on the Session's machine with bounded, silent, read-only streams", async () => {
   const current = await setup()
   expect(wrapper!.find('[data-preview-machine="local"]').exists()).toBe(false)
   expect(wrapper!.findAll("[data-preview-display]")).toHaveLength(2)
@@ -79,7 +86,7 @@ test("defaults to every display on the current workspace's machine with bounded,
 test("switching to all machines adds previews and switching back releases only the other machines", async () => {
   const current = await setup([desktopMachine("local"), desktopMachine("remote"), desktopMachine("other"), desktopMachine("offline", false)])
   const originalPeers = [...TestPeer.instances]
-  const currentButton = () => wrapper!.findAll("button").find(button => button.text() === "Current machine")!
+  const currentButton = () => wrapper!.findAll("button").find(button => button.text() === "Session machine")!
   const allButton = () => wrapper!.findAll("button").find(button => button.text() === "All machines")!
   expect(currentButton().attributes("aria-pressed")).toBe("true")
   await allButton().trigger("click")
@@ -101,18 +108,57 @@ test("switching to all machines adds previews and switching back releases only t
   for (const peer of originalPeers) expect(peer.close).not.toHaveBeenCalled()
 })
 
-test("current scope follows machine selection and never falls back to another machine for a local workspace", async () => {
+test("the Session owns the default scope independently of account navigation and new-session workspace selection", async () => {
   const current = await setup([desktopMachine("remote"), desktopMachine("other"), desktopMachine("local")])
   current.account.selectMachine("other")
+  current.fleet.targetWorkspaceId = "unrelated-new-session-workspace"
+  await flushPromises()
+  expect(current.adapters).toHaveLength(1)
+  expect(wrapper!.find('[data-preview-machine="remote"]').exists()).toBe(true)
+  await wrapper!.setProps({ sessionId: "session-other" })
   await flushPromises()
   expect(current.adapters[0]!.dispose).toHaveBeenCalledOnce()
   expect(wrapper!.find('[data-preview-machine="other"]').exists()).toBe(true)
-  current.account.selectMachine("local")
+  await wrapper!.setProps({ sessionId: "session-local" })
   await flushPromises()
   expect(wrapper!.findAll("[data-preview-machine]")).toHaveLength(0)
-  expect(wrapper!.text()).toContain("No remote desktop for the current machine")
+  expect(wrapper!.text()).toContain("No remote desktop for this session")
   expect(current.adapters).toHaveLength(2)
   expect(current.adapters[1]!.dispose).toHaveBeenCalledOnce()
+})
+
+test("changing Sessions resets All machines and releases the previous previews", async () => {
+  const current = await setup([desktopMachine("remote"), desktopMachine("other")])
+  await wrapper!.findAll("button").find(button => button.text() === "All machines")!.trigger("click")
+  await flushPromises()
+  await wrapper!.setProps({ sessionId: "session-other" })
+  await flushPromises()
+  expect(wrapper!.findAll("[data-preview-machine]")).toHaveLength(1)
+  expect(wrapper!.find('[data-preview-machine="other"]').exists()).toBe(true)
+  expect(current.adapters[0]!.dispose).toHaveBeenCalledOnce()
+  expect(current.adapters[1]!.dispose).toHaveBeenCalledOnce()
+})
+
+test("an unresolved Session never falls back to the account's selected machine", async () => {
+  await setup([desktopMachine("remote")])
+  await wrapper!.setProps({ sessionId: "missing-session" })
+  await flushPromises()
+  expect(wrapper!.findAll("[data-preview-machine]")).toHaveLength(0)
+})
+
+test("inactive tabs do not start previews, and hiding a visited tab closes its peers", async () => {
+  const current = await setup([desktopMachine("remote")], false)
+  expect(current.adapters[0]!.api.capabilities).not.toHaveBeenCalled()
+  expect(TestPeer.instances).toHaveLength(0)
+  await wrapper!.setProps({ active: true })
+  await flushPromises()
+  expect(TestPeer.instances).toHaveLength(2)
+  await wrapper!.setProps({ active: false })
+  await flushPromises()
+  for (const peer of TestPeer.instances) expect(peer.close).toHaveBeenCalledOnce()
+  await wrapper!.setProps({ active: true })
+  await flushPromises()
+  expect(TestPeer.instances).toHaveLength(4)
 })
 
 test("hidden pages release all preview peers and resume when visible", async () => {
@@ -136,7 +182,7 @@ test("hidden pages release all preview peers and resume when visible", async () 
 
 test("manual pause stays paused across visibility changes", async () => {
   await setup([desktopMachine("remote")])
-  await wrapper!.findAll("button").find(button => button.text() === "Pause previews")!.trigger("click")
+  await wrapper!.get('button[aria-label="Pause previews"]').trigger("click")
   await flushPromises()
   visibility = "hidden"
   document.dispatchEvent(new Event("visibilitychange"))
@@ -144,7 +190,7 @@ test("manual pause stays paused across visibility changes", async () => {
   document.dispatchEvent(new Event("visibilitychange"))
   await flushPromises()
   expect(TestPeer.instances).toHaveLength(2)
-  await wrapper!.findAll("button").find(button => button.text() === "Resume previews")!.trigger("click")
+  await wrapper!.get('button[aria-label="Resume previews"]').trigger("click")
   await flushPromises()
   expect(TestPeer.instances).toHaveLength(4)
 })
@@ -153,7 +199,7 @@ test("switching teams releases adapters and ignores late display discovery", asy
   const current = await setup([desktopMachine("remote")])
   const pending = deferred<DesktopCapabilities>()
   current.adapters[0]!.api.capabilities.mockReturnValueOnce(pending.promise)
-  await wrapper!.findAll("button").find(button => button.text() === "Refresh displays")!.trigger("click")
+  await wrapper!.get('button[aria-label="Refresh displays"]').trigger("click")
   current.account.teamId.value = "team-2"
   current.account.machines.value = [{ ...desktopMachine("remote"), teamId: "team-2", name: "Other team desktop" }]
   await flushPromises()

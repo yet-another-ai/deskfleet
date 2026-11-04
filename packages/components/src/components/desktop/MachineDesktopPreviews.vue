@@ -15,7 +15,7 @@ const props = defineProps<{ machine: Machine; active: boolean; revision: number 
 defineEmits<{ open: [displayId: number] }>()
 const { t } = useI18n()
 const account = useAccountSession()!
-// Preview adapters live only as long as this page; they never open machine catalogs.
+// Preview adapters belong to the Session panel; they never open machine catalogs.
 const remote = remoteMachineClient(usePlatformClient(), account.central, props.machine)
 const capabilities = shallowRef<DesktopCapabilities | null>(null)
 const width = computed(() => `${Math.max(1, capabilities.value?.displays.length ?? 0) * 336 - 16}px`)
@@ -57,9 +57,9 @@ onBeforeUnmount(() => { ++generation; remote.dispose() })
       <h2 class="m-0 truncate text-sm font-semibold">{{ machine.name }}</h2>
       <span class="ui-status-dot shrink-0" :class="machine.online ? 'text-ui-success' : 'text-ui-text-faint'" aria-hidden="true" />
       <span v-if="!machine.online" class="text-xs text-ui-text-muted">{{ t('desktopOverview.offline') }}</span>
-      <span v-else-if="capabilities?.displays.length" class="text-xs text-ui-text-faint">{{ t('desktopOverview.displayCount', { count: capabilities.displays.length }) }}</span>
+      <span v-else-if="capabilities?.displays.length" class="shrink-0 whitespace-nowrap text-xs text-ui-text-faint">{{ t('desktopOverview.displayCount', { count: capabilities.displays.length }) }}</span>
     </header>
-    <div v-if="capabilities?.displays.length" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),320px))] gap-4">
+    <div v-if="capabilities?.displays.length" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-4">
       <DesktopPreviewCard v-for="display in capabilities.displays" :key="`${revision}:${display.id}`" :api="remote.api.desktop" :display="display" :machine-name="machine.name" :active="active && machine.online" @open="$emit('open', display.id)" />
     </div>
     <div v-else class="flex min-h-28 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-5 py-4 text-sm text-ui-text-muted">
