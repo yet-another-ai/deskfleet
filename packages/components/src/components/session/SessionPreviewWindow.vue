@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SessionWindowRequest } from "../../stores/layout.ts"
+import AgentResourceViewer from "./AgentResourceViewer.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 import PreviewViewer from "./PreviewViewer.vue"
 
@@ -12,6 +13,14 @@ defineProps<{ request: SessionWindowRequest }>()
     v-bind="request.item"
     mode="tab"
     class="h-full rounded-none border-0"
+  />
+  <AgentResourceViewer
+    v-else-if="request.kind === 'resource'"
+    :request="request.item.request"
+    :title="request.item.title"
+    :source="request.item.source"
+    mode="tab"
+    class="h-full"
   />
   <MermaidViewer
     v-else

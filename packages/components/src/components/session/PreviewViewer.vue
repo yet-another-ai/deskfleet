@@ -41,6 +41,7 @@ const props = withDefaults(defineProps<{
   mimeType?: string
   mode?: PreviewMode
   source?: PreviewSource
+  resourceRequest?: FileResourceRequest
   loading?: boolean
 }>(), {
   mode: "inline",
@@ -84,9 +85,14 @@ const kind = computed<PreviewKind>(() =>
   resolvePreviewKind(props.content, props.kind, loadedMime.value ?? props.mimeType),
 )
 const url = computed(() => isLocalResource.value ? loadedUrl.value : props.content)
-const request = computed<FileResourceRequest | undefined>(() =>
-  isLocalResource.value && resourceContext.value ? { ...resourceContext.value, uri: props.content } : undefined,
-)
+const request = computed<FileResourceRequest | undefined>(() => {
+  if (props.resourceRequest) {
+    return { ...props.resourceRequest, target: { ...props.resourceRequest.target } }
+  }
+  return isLocalResource.value && resourceContext.value
+    ? { ...resourceContext.value, target: { ...resourceContext.value.target }, uri: props.content }
+    : undefined
+})
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
 const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
 
@@ -133,10 +139,11 @@ function previewSource(): PreviewSource {
 
 function descriptor() {
   const hostUri = root.value?.closest<HTMLElement>("[data-preview]")?.dataset.preview
-  const modelSourceContent = isLocalResource.value ? props.content : (hostUri && isFileResource(hostUri) ? hostUri : undefined)
+  const localSourceContent = props.resourceRequest?.uri
+    ?? (isLocalResource.value ? props.content : (kind.value === "model" && hostUri && isFileResource(hostUri) ? hostUri : undefined))
   return {
     kind: kind.value,
-    content: (kind.value === "model" && modelSourceContent) ? modelSourceContent : (url.value ?? props.content),
+    content: localSourceContent ?? url.value ?? props.content,
     ...(props.title ? { title: props.title } : {}),
     ...(loadedMime.value || props.mimeType ? { mimeType: loadedMime.value ?? props.mimeType } : {}),
     source: previewSource(),
@@ -170,13 +177,14 @@ function showInNewWindow(): void {
 
 function locateOriginal(): void {
   const resolvedSource = previewSource()
+  const targetContent = props.resourceRequest?.uri ?? props.content
   if (props.mode === "tab") layout?.closeCompactPanel()
   if (props.mode === "window") {
-    broadcastPreviewLocate(props.content, resolvedSource)
+    broadcastPreviewLocate(targetContent, resolvedSource)
     window.opener?.focus?.()
     return
   }
-  void locatePreviewInMainView(props.content, resolvedSource)
+  void locatePreviewInMainView(targetContent, resolvedSource)
 }
 
 function download(): void {
@@ -229,7 +237,7 @@ onBeforeUnmount(() => {
         :src="url"
         :data="loadedBytes ?? props.data"
         :mime-type="loadedMime ?? props.mimeType"
-        :filename="props.title || props.content"
+        :filename="isLocalResource ? props.content : (props.title || props.content)"
         :mode="mode"
       />
       <div

@@ -147,3 +147,58 @@ test.each(["main.ts#L20", "main.ts#L3-L2", "literal%23L2", "literal%3A2"])("does
   expect(scroll).not.toHaveBeenCalled()
   view.unmount()
 })
+
+test("renders media, line-highlighted code, and workspace authorization errors inside a preview tab", async () => {
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:clip")
+  const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  const resolveResource = vi.fn().mockResolvedValue({ name: "clip.mp4", path: "/work/clip.mp4", kind: "file" })
+  const readResource = vi.fn().mockResolvedValue({ name: "clip.mp4", data: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" })
+  const mediaView = mount(AgentResourceViewer, {
+    props: { api: { resolveResource, readResource } as unknown as FilesApi, request: { ...request, uri: "file:///work/clip.mp4" }, mode: "tab" },
+    global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(mediaView.find('[data-resource-viewer-mode="tab"]').exists()).toBe(true)
+  expect(mediaView.get("video").attributes("src")).toBe("blob:clip")
+  expect(mediaView.find("pre code").exists()).toBe(false)
+  expect(create).toHaveBeenCalledOnce()
+  mediaView.unmount()
+  expect(revoke).toHaveBeenCalledWith("blob:clip")
+
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const codeView = mount(AgentResourceViewer, {
+    props: {
+      api: {
+        resolveResource: vi.fn().mockResolvedValue({ name: "deskfleet.svg", path: "/work/deskfleet.svg", kind: "file" }),
+        readResource: vi.fn().mockResolvedValue({ name: "deskfleet.svg", data: new TextEncoder().encode("<svg>\n  <path />\n</svg>"), mimeType: "image/svg+xml" }),
+      } as unknown as FilesApi,
+      request: { ...request, uri: "./deskfleet.svg#L2-L2" },
+      mode: "tab",
+    },
+    global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(codeView.findAll("pre .bg-ui-hover").map(line => line.text())).toEqual(["<path />"])
+  expect(scroll).toHaveBeenCalledWith({ block: "center" })
+  expect(codeView.find('[data-preview-action="download"]').exists()).toBe(true)
+  codeView.unmount()
+
+  const deniedView = mount(AgentResourceViewer, {
+    props: {
+      api: {
+        resolveResource: vi.fn().mockRejectedValue(new Error("File path is outside the authorized folder")),
+      } as unknown as FilesApi,
+      request: { ...request, uri: "file:///etc/passwd" },
+      mode: "tab",
+    },
+    global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(deniedView.get('[role="alert"]').text()).toContain("File path is outside the authorized folder")
+  expect(deniedView.find('[data-preview-action="download"]').exists()).toBe(false)
+  deniedView.unmount()
+})
+

@@ -226,8 +226,12 @@ against the Session's captured first directory, including archived Sessions whos
 working context remains available. Editing Workspace directories later does not
 retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
-part of the path. The conversation opens directory links in a file browser and previews supported
-text and image files in a dialog. Text previews use the shared Shiki highlighter
+part of the path. In a Session view, clicking any resource link opens a right-side
+preview tab (or mobile preview view) first and resolves workspace authorization
+and file type inside that tab: supported image, audio, video, and 3D model files
+(without line references) render in the shared media/model previewer, directories
+open in a file browser, and text or line-referenced files render as syntax-highlighted
+code (falling back to a dialog when session preview tabs are unavailable). Text previews use the shared Shiki highlighter
 for recognized filenames, with the same light/dark colors as Markdown code blocks.
 Unknown languages, files over 200,000 characters, and highlighting failures retain
 plain text. Highlighting preserves source text, line endings, and blank lines.
@@ -236,10 +240,10 @@ Text previews highlight the whole line for
 `#Lstart-Lend` range, and scroll to the first requested line. Encoded location
 separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
-Other files can be downloaded from that dialog.
+Other authorized files can be downloaded from that tab or dialog.
 
 Markdown embeds such as `![Clip](./clip.mp4)` use the shared media viewer for
-supported image, audio, and video MIME types. Files are fetched through the same
+supported image, audio, video, and 3D model MIME types. Files are fetched through the same
 authenticated file endpoint and rendered using typed Blob URLs, which are
 released when their content or Session context leaves the view. The file client
 assigns media MIME types from filename extensions; playback also requires browser

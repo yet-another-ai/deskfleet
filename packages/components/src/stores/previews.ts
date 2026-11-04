@@ -1,8 +1,9 @@
+import { getActivePinia } from "pinia"
 import { nextTick, ref } from "vue"
 import type { RouteLocationNormalizedLoadedGeneric } from "vue-router"
 import { router } from "../router/index.ts"
 import { resolvePreviewKind, type PreviewDescriptor, type PreviewSource } from "../services/preview.ts"
-import { useLayoutStore } from "./layout.ts"
+import { useLayoutStore, type ResourceWindowItem } from "./layout.ts"
 
 export interface PreviewLocateRequest extends PreviewSource {
   id: number
@@ -64,8 +65,24 @@ export function focusedPreviewFromRoute(
 }
 
 /** Session renderers open previews as desktop tabs or mobile views. */
-export function openPreviewFromAction(item: PreviewDescriptor): void {
-  useLayoutStore().requestSessionWindow({ kind: "preview", item })
+export function openPreviewFromAction(item: PreviewDescriptor): boolean {
+  if (!getActivePinia()) return false
+  return useLayoutStore().requestSessionWindow({ kind: "preview", item })
+}
+
+/** Session resource links open in a preview tab first and resolve workspace/type inside the tab. */
+export function openResourceFromAction(item: ResourceWindowItem): boolean {
+  if (!getActivePinia()) return false
+  const clean: ResourceWindowItem = {
+    request: {
+      target: { ...item.request.target },
+      sessionId: item.request.sessionId,
+      uri: item.request.uri,
+    },
+    ...(item.title ? { title: item.title } : {}),
+    ...(item.source ? { source: { ...item.source } } : {}),
+  }
+  return useLayoutStore().requestSessionWindow({ kind: "resource", item: clean })
 }
 
 export function performPreviewLocateDom(request: PreviewLocateRequest | null = pendingPreviewLocate.value): boolean {
@@ -74,11 +91,15 @@ export function performPreviewLocateDom(request: PreviewLocateRequest | null = p
     ? document.querySelector<HTMLElement>(`[data-conversation-entry=${JSON.stringify(request.entryId)}]`)
     : null
   if (request.entryId && !entryEl) return false
-  const candidates = [...(entryEl ?? document).querySelectorAll<HTMLElement>("[data-preview]")].filter(
+  const scope = entryEl ?? document
+  const candidates = [...scope.querySelectorAll<HTMLElement>("[data-preview]")].filter(
     element => !element.dataset.previewMode || element.dataset.previewMode === "inline",
   )
+  const resourceLinks = [...scope.querySelectorAll<HTMLElement>("[data-resource-link]")]
   const target = (request.itemId && candidates.find(element => element.dataset.preview === request.itemId))
     || candidates.find(element => element.dataset.previewContent === request.content)
+    || (request.itemId && resourceLinks.find(element => element.dataset.resourceLink === request.itemId))
+    || resourceLinks.find(element => element.dataset.resourceLink === request.content)
     || entryEl
   if (!target) return false
   if (pendingPreviewLocate.value?.id === request.id) pendingPreviewLocate.value = null
