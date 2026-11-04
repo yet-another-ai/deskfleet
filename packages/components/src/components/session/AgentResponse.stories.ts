@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import type { ConversationResponse } from "../../services/agent-conversation.ts"
 import { storybookPermission } from "../../../.storybook/storybook-fixtures.ts"
 import AgentResponse from "./AgentResponse.vue"
+import { RemoteOperation, RemoteScreenshot } from "./AgentToolCall.stories.ts"
 
 const completedResponse: ConversationResponse = {
   id: "resp-1",
@@ -80,6 +81,20 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const CompletedWithFoldedWork: Story = {}
+
+export const RemoteComputerResult: Story = {
+  args: {
+    response: {
+      ...completedResponse,
+      steps: [
+        ...completedResponse.steps.slice(0, 2),
+        { id: "remote-operation", kind: "tool", tool: { ...RemoteOperation.args!.tool!, status: "completed" } },
+        { id: "remote-screenshot", kind: "tool", tool: RemoteScreenshot.args!.tool! },
+        { id: "remote-answer", kind: "message", role: "assistant", content: [{ type: "text", text: "The remote operation is complete. Here is the returned screenshot." }] },
+      ],
+    },
+  },
+}
 
 export const CompletedWithToolResult: Story = {
   args: {

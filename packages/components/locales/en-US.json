@@ -986,6 +986,10 @@
     "collapseText": "Collapse",
     "contentType": "{type} content",
     "tool": "Tool call",
+    "remoteMcp": {
+      "details": "Call details",
+      "screenshot": "{machine} · {action}"
+    },
     "thinking": "Thinking",
     "activity": {
       "tools": "{n} tool call | {n} tool calls",

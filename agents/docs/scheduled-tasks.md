@@ -138,6 +138,14 @@ or credential.
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
 | `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |
 
+Chat displays remote MCP calls as cards with the target's name from the current
+Team directory (or its Machine ID when unavailable), the tool/action, and returned
+image previews. Cards remain visible alongside the final reply, with raw call
+details in a separate disclosure. AUV `invoke` receipts alone do not contain an
+image; screenshots appear when an image-returning tool such as
+`artifact_read_image` supplies the image content. Rendering never initiates another
+remote operation or reads screenshot paths from the source Agent's machine.
+
 Tool discovery and execution create a request-owned MCP connection on the target
 using its saved stdio, Streamable HTTP, or SSE settings. Stdio starts in the host
 directory. Launch environment and HTTP headers stay on that target. Every tool

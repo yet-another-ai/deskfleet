@@ -986,6 +986,10 @@
     "collapseText": "收起",
     "contentType": "{type} 内容",
     "tool": "工具调用",
+    "remoteMcp": {
+      "details": "调用详情",
+      "screenshot": "{machine} · {action}"
+    },
     "thinking": "思考",
     "activity": {
       "tools": "{n} 次工具调用",
