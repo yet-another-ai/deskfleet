@@ -212,7 +212,7 @@ onBeforeUnmount(() => { finished = true })
       />
 
       <CollapsibleRoot v-if="!setupExpanded" v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
-        <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-[13px] text-ui-text-muted hover:text-ui-text">
+        <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md outline-offset-2 text-[13px] text-ui-text-muted hover:text-ui-text">
           <ChevronRight :size="14" :stroke-width="1.75" class="ui-motion" :class="advanced && 'rotate-90'" aria-hidden="true" />
           {{ t("providers.advanced") }}
           <span v-if="!advanced && advancedSummary" class="text-ui-text-faint">· {{ advancedSummary }}</span>

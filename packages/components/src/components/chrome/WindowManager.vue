@@ -535,7 +535,12 @@ onScopeDispose(() => {
 }
 /* The window that comes forward settles into its highlight, like a selected nav item. */
 .deskfleet-windows :deep(.dv-active-tab) { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
-.deskfleet-windows :deep(.dv-tab::before) { display: none; }
+.deskfleet-windows :deep(.dv-tab:focus-visible) {
+  outline: 2px solid var(--ui-color-focus);
+  outline-offset: -2px;
+}
+.deskfleet-windows :deep(.dv-tab::before),
+.deskfleet-windows :deep(.dv-tab::after) { display: none; }
 .deskfleet-windows :deep(.dv-active-tab:hover) { background: color-mix(in srgb, var(--ui-color-accent) 20%, transparent); }
 .deskfleet-windows :deep(.dv-inactive-tab:hover) { background: var(--ui-color-hover); }
 .deskfleet-windows :deep(.dv-pre-actions-container > .dv-vue-part),

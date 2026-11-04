@@ -86,9 +86,9 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
         <LoaderCircle :size="15" :stroke-width="2" class="animate-spin" aria-hidden="true" />
         <span class="ui-shimmer-text">{{ duration ? t('agent.workingFor', { duration }) : t('agent.working') }}</span>
       </div>
-      <CollapsibleTrigger v-else-if="steps.length" type="button" data-turn-work class="group/worked inline-flex cursor-pointer items-center gap-1 self-start text-ui-text-muted hover:text-ui-text">
+      <CollapsibleTrigger v-else-if="steps.length" type="button" data-turn-work class="group/worked inline-flex cursor-pointer items-center gap-1 self-start rounded-sm outline-offset-2 text-ui-text-muted hover:text-ui-text">
         <span>{{ duration ? t('agent.workedFor', { duration }) : t('agent.worked') }}</span>
-        <ChevronRight :size="15" :stroke-width="2" class="opacity-0 ui-motion group-hover/worked:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
+        <ChevronRight :size="15" :stroke-width="2" class="opacity-0 ui-motion group-hover/worked:opacity-100 group-focus-visible/worked:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
       </CollapsibleTrigger>
       <p v-else-if="duration" class="m-0 text-ui-text-muted">{{ t('agent.workedFor', { duration }) }}</p>
     </template>
@@ -99,8 +99,8 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
-          <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 hover:text-ui-text">
-            {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 ui-motion group-hover/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
+          <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 rounded-sm outline-offset-2 hover:text-ui-text">
+            {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 ui-motion group-hover/thought:opacity-100 group-focus-visible/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
           </CollapsibleTrigger>
           <CollapsibleContent><AgentContent :content="step.content" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="mt-1" /></CollapsibleContent>
         </CollapsibleRoot>
