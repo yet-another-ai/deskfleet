@@ -3,6 +3,7 @@ import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { computed, defineComponent, h, isReactive } from "vue"
 import type { AgentCommand, AgentEvent, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { catalogFixture } from "../test/catalog.ts"
 import { deferred } from "../test/desktop-media.ts"
@@ -955,6 +956,36 @@ test("a confirmed Agent switch sends one audited operation and applies the repla
   expect(store.sessions["30"]?.provider).toBe("claude")
   expect(store.views["30"]?.snapshot?.session.provider).toBe("claude")
   expect(store.configurations["30"]).toBeUndefined()
+})
+
+test("an in-flight configuration read cannot restore the previous Agent's catalog", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const pending = deferred<AgentConfiguration>()
+  const switched = agentSnapshot()
+  switched.session.provider = "claude"
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => {
+    if (method === "_deskfleet/session/configuration") return pending.promise
+    if (method === "_deskfleet/session/switch-agent") return switched
+    return normal(method, params)
+  })
+  const reading = store.sessionConfiguration("30")
+  await flushPromises()
+  await store.switchAgent("30", "claude")
+  pending.resolve({
+    provider: { id: "codex", name: "Codex" },
+    models: { id: "model", currentValue: "old", options: [{ id: "old", name: "Old" }] },
+    reasoningEfforts: null, modes: null, commands: [{ name: "old-command", description: "Old" }], skills: [],
+  })
+  const stale = await reading
+  expect(stale.provider.id).toBe("claude")
+  expect(store.configurations["30"]).toBeUndefined()
+  const fresh = deferred<AgentConfiguration>()
+  mock.call.mockImplementation(async (method: string, params: unknown) => method === "_deskfleet/session/configuration" ? fresh.promise : normal(method, params))
+  const next = store.sessionConfiguration("30")
+  fresh.resolve({ provider: { id: "claude", name: "Claude" }, models: null, reasoningEfforts: null, modes: null, commands: [], skills: [] })
+  await expect(next).resolves.toMatchObject({ provider: { id: "claude" } })
+  expect(store.configurations["30"]?.provider.id).toBe("claude")
 })
 
 test("live configuration events update the UI without extra reads and outrank stale responses or history", async () => {

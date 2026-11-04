@@ -72,6 +72,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const configurations = ref<Record<string, AgentConfiguration>>({})
   const configurationReads = new Map<string, Promise<AgentConfiguration>>()
   const configurationSequences = new Map<string, string>()
+  // A provider switch invalidates reads and merges started for the previous Agent.
+  const configurationEpochs = new Map<string, number>()
   const commandSequences = new Map<string, string>()
   const unclassifiedCommands = new Map<string, Parameters<typeof agentComposerCatalog>[0]>()
   const state = ref<AgentConnectionState>("idle")
@@ -577,7 +579,21 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function releaseAgentConfiguration(params: { provider: string; workspaceId?: string; probeId: string }): Promise<void> {
     await call("_deskfleet/agent/configuration", { ...params, release: true })
   }
-  function mergeConfiguration(sessionId: string, result: AgentConfiguration, sequence: string | undefined, commands: string | undefined): AgentConfiguration {
+  function configurationEpoch(sessionId: string): number {
+    return configurationEpochs.get(sessionId) ?? 0
+  }
+  function emptyConfiguration(providerId: string | undefined): AgentConfiguration {
+    const id = providerId ?? ""
+    return normalizeAgentConfiguration([], { id, name: providers.providers.find(provider => provider.id === id)?.name ?? id })
+  }
+  function mergeConfiguration(sessionId: string, result: AgentConfiguration, sequence: string | undefined, commands: string | undefined, epoch: number): AgentConfiguration {
+    const expected = sessions.value[sessionId]?.provider
+    // A response for the replaced Agent must not overwrite the new provider's state,
+    // including when its request started before the switch was confirmed.
+    if (epoch !== configurationEpoch(sessionId) || expected !== undefined && result.provider.id !== expected) {
+      const latest = configurations.value[sessionId]
+      return latest && (expected === undefined || latest.provider.id === expected) ? latest : emptyConfiguration(expected)
+    }
     const latest = configurations.value[sessionId]
     const catalog = commands === commandSequences.get(sessionId) ? result : latest ?? result
     if (catalog === result) unclassifiedCommands.delete(sessionId)
@@ -588,25 +604,29 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     return configurations.value[sessionId]!
   }
   function sessionConfiguration(sessionId: string, composer = false): Promise<AgentConfiguration> {
-    const key = `${sessionId}:${composer}`
+    const epoch = configurationEpoch(sessionId)
+    const key = `${sessionId}:${epoch}:${composer}`
     const current = configurationReads.get(key)
     if (current) return current
     const sequence = configurationSequences.get(sessionId)
     const commands = commandSequences.get(sessionId)
     const reading = call("_deskfleet/session/configuration", { sessionId, ...(composer ? { composer } : {}) })
-      .then(result => mergeConfiguration(sessionId, result, sequence, commands))
+      .then(result => mergeConfiguration(sessionId, result, sequence, commands, epoch))
       .finally(() => { configurationReads.delete(key) })
     configurationReads.set(key, reading)
     return reading
   }
   async function configureSession(sessionId: string, choices: Omit<AgentSelection, "provider">): Promise<AgentConfiguration> {
+    const epoch = configurationEpoch(sessionId)
     const sequence = configurationSequences.get(sessionId)
     const commands = commandSequences.get(sessionId)
     const result = await mutation("_deskfleet/session/configure", { sessionId, ...choices })
-    return mergeConfiguration(sessionId, result, sequence, commands)
+    return mergeConfiguration(sessionId, result, sequence, commands, epoch)
   }
   /** Replace a stopped Session's Agent; its previous conversation context is not transferred. */
   async function switchAgent(sessionId: string, provider: string): Promise<void> {
+    // Fence reads that started before the user confirmed the replacement.
+    configurationEpochs.set(sessionId, configurationEpoch(sessionId) + 1)
     snapshotReceived(await mutation("_deskfleet/session/switch-agent", { sessionId, provider }))
     // The previous Agent's catalog and command list do not describe the replacement.
     // Keep values already projected from the new provider's live events.
