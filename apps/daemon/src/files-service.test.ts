@@ -7,7 +7,15 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import test, { type TestContext } from "node:test"
 import { FILE_CHUNK_BYTES } from "./files-protocol.ts"
+import { normalizeResourcePath } from "./files-paths.ts"
 import { FilesService } from "./files-service.ts"
+
+test("Windows resource pathnames retain their drive without duplicating it", () => {
+  assert.equal(normalizeResourcePath("/E:/projects/a%20b.png", "win32"), "E:/projects/a%20b.png")
+  assert.equal(normalizeResourcePath("/E:/projects/a b.png", "linux"), "/E:/projects/a b.png")
+  assert.equal(normalizeResourcePath("E:/projects/a b.png", "win32"), "E:/projects/a b.png")
+  assert.equal(normalizeResourcePath("/projects/a b.png", "win32"), "/projects/a b.png")
+})
 
 async function fixture(context: TestContext) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-files-")))
@@ -31,6 +39,9 @@ test("Session resources use captured cwd and return bounded binary reads", async
   for (const uri of ["a%20b.png", path.replace(" ", "%20"), pathToFileURL(path).href, "a%20b.png:12:3", `${path}#L12-L20`, "a%20b.png#preview", `${pathToFileURL(path).href}:12#L8`]) {
     const result = await service.call("resolve", { sessionId: "12", uri })
     assert.equal(result.value.path, path)
+  }
+  if (process.platform === "win32") {
+    assert.equal((await service.call("resolve", { sessionId: "12", uri: `/${path.replaceAll("\\", "/").replace(" ", "%20")}#L12` })).value.path, path)
   }
   const info = (await service.call("stat", { path })).value
   const read = await service.call("read", { path, offset: 1, length: 2, modifiedAt: info.modifiedAt })

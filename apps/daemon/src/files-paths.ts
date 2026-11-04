@@ -64,6 +64,11 @@ export async function fileRoots(): Promise<FileListing["roots"]> {
   return roots.filter((root): root is { name: string; path: string } => root !== null)
 }
 
+export function normalizeResourcePath(path: string, platform: NodeJS.Platform = process.platform): string {
+  // Some Markdown links use the pathname form of a Windows file URL without its scheme.
+  return platform === "win32" && /^\/[a-z]:[\\/]/iu.test(path) ? path.slice(1) : path
+}
+
 export async function sessionResourcePath(sessionId: unknown, value: unknown, sessionDirectory?: (sessionId: string) => Promise<string>): Promise<string> {
   const id = text(sessionId, "Session ID")
   if (!sessionDirectory) throw fileError("Session resources are unavailable", "unsupported")
@@ -77,7 +82,7 @@ export async function sessionResourcePath(sessionId: unknown, value: unknown, se
   if (!isAbsolute(uri) && /^[a-z][a-z0-9+.-]*:/iu.test(uri)) throw fileError("Only file references are supported", "unsupported")
   let path: string
   try { path = decodeURIComponent(uri) } catch { throw fileError("Invalid resource URI", "invalid") }
-  return resolve(absolutePath(cwd), text(path, "resource path"))
+  return resolve(absolutePath(cwd), normalizeResourcePath(text(path, "resource path")))
 }
 
 export const defaultDirectory = homedir
