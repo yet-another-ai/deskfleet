@@ -49,7 +49,7 @@ test("loads deployment STUN configuration without creating a peer and preserves 
   f.responses.push(configuration)
   expect(await f.client.networkConfiguration()).toEqual(configuration)
   expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/network-configuration", expect.objectContaining({
-    method: "GET", headers: { Authorization: "Bearer application-token" }, signal: expect.any(AbortSignal),
+    method: "GET", headers: { Accept: "application/json", Authorization: "Bearer application-token" }, signal: expect.any(AbortSignal),
   }))
 })
 
@@ -67,7 +67,7 @@ test("recovers from transient configuration route 404s and refreshes configurati
   expect(f.fetch).toHaveBeenCalledTimes(4)
   for (const call of f.fetch.mock.calls) {
     expect(call).toEqual(["https://fleet.example/api/network-configuration", expect.objectContaining({
-      method: "GET", headers: { Authorization: "Bearer application-token" },
+      method: "GET", headers: { Accept: "application/json", Authorization: "Bearer application-token" },
     })])
   }
 })
@@ -244,8 +244,8 @@ test.each([['AbortError', 'cancelled'], ['TimeoutError', 'timeout']] as const)("
 
 test("HTTP errors preserve supported desktop recovery reasons", async () => {
   const f = setup()
-  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "daemon_error", message: "desktop control needs Accessibility permission on the remote Mac", reason: "accessibility" } }), { status: 502 }))
-  await expect(f.client.rpc("team", "machine", "desktop.start", {})).rejects.toMatchObject({ status: 502, reason: "accessibility" })
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "daemon_error", message: "desktop control needs Accessibility permission on the remote Mac", reason: "accessibility" } }), { status: 422 }))
+  await expect(f.client.rpc("team", "machine", "desktop.start", {})).rejects.toMatchObject({ status: 422, reason: "accessibility" })
 })
 
 test("transfers Team ownership with the encoded Team ID and selected member", async () => {
@@ -342,7 +342,7 @@ test("browser requests use cookie authentication and CSRF, with no bearer WebSoc
   socket.onopen!()
   expect(socket.send).not.toHaveBeenCalled()
   await client.createTeam("Team")
-  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/teams", expect.objectContaining({ credentials: "include", headers: { "X-CSRF-Token": "csrf-token", "Content-Type": "application/json" } }))
+  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/teams", expect.objectContaining({ credentials: "include", headers: { Accept: "application/json", "X-CSRF-Token": "csrf-token", "Content-Type": "application/json" } }))
   expect(persist).not.toHaveBeenCalled()
 })
 
@@ -400,7 +400,7 @@ test("GitHub pull-request lookup keeps fork identity and branch punctuation in q
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "secret" }, persist: async () => {}, authorize: async () => {}, fetch })
   clients.push(client)
   expect(await client.githubPullRequest({ owner: "upstream", repo: "deskfleet", headOwner: "contributor", branch: "feat/status&checks#78" })).toEqual({ pullRequest })
-  expect(fetch).toHaveBeenCalledWith("https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", expect.objectContaining({ method: "GET", headers: { Authorization: "Bearer secret" } }))
+  expect(fetch).toHaveBeenCalledWith("https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", expect.objectContaining({ method: "GET", headers: { Accept: "application/json", Authorization: "Bearer secret" } }))
 })
 
 test("replaces a silent signaling socket instead of waiting for a close event", async () => {

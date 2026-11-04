@@ -76,7 +76,7 @@ test("a daemon rollback rejects the offer explicitly and releases the unused pee
   const f = fixture()
   vi.mocked(f.central.offerPeer).mockImplementationOnce(async () => {
     f.emit({ type: "peerRevoked", peerId: "peer-1", reason: "negotiation_failed" })
-    throw new HttpError(502, "Unsupported peer purpose", undefined, "operation_failed")
+    throw new HttpError(422, "Unsupported peer purpose", undefined, "daemon_error")
   })
   expect(await f.registry.open(target, "terminal")).toBeUndefined()
   expect(f.peers[0]!.close).toHaveBeenCalledOnce()

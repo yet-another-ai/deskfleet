@@ -314,7 +314,11 @@ test("peer grant binds target, user, purpose, and a maximum 24-hour lifetime", a
     { ...grant(), teamId: "another" }, { ...grant(), expiresAt: new Date(epoch + 86_400_001).toISOString() },
     { ...grant(), targetMachine: { ...grant().targetMachine, originId: "other-origin" } },
   ]) await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] }))
-  await f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] })
+  const laggedServerNow = epoch + 5 * 60_000
+  await f.peers.offer({
+    peerId: "peer", sdp, iceServers: [],
+    authorization: { ...grant(), issuedAt: new Date(laggedServerNow).toISOString(), expiresAt: new Date(laggedServerNow + 86_400_000).toISOString() },
+  })
   await f.peers.close("peer")
   await assert.rejects(f.peers.offer({ peerId: "peer", sdp, authorization: grant(), iceServers: [] }), /new peer/)
 })

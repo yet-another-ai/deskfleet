@@ -151,7 +151,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     }
     const init: RequestInit = {
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
-      headers: { ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { Accept: "application/json", ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       ...(signal === undefined ? {} : { signal }),
     }

@@ -199,7 +199,14 @@ async fn connect(
                             ControlMessage::Response{id:request_id,result,error} if is_daemon=>{
                                 let result=match error{
                                     Some(e)=>{
-                                        let mut failure=ApiError::new(actix_web::http::StatusCode::BAD_GATEWAY,"daemon_error",e.message);
+                                        tracing::warn!(
+                                            registration_id = %id,
+                                            request_id = %request_id,
+                                            code = %e.code,
+                                            reason = e.reason.as_deref(),
+                                            "daemon RPC returned error"
+                                        );
+                                        let mut failure=ApiError::new(actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,"daemon_error",e.message);
                                         if matches!(e.reason.as_deref(), Some("encoder" | "accessibility")) { failure.reason = e.reason; }
                                         Err(failure)
                                     }

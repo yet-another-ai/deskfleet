@@ -49,15 +49,15 @@ test("a failed reporter cannot replace the caller's network error", async () => 
 })
 
 test("HTTP failures cross IPC with diagnostic status while preserving the existing displayed error", async () => {
-  const original = new HttpError(502, "Accessibility permission required", "accessibility", "daemon_error", requestDiagnostics(undefined, {
-    method: "POST", path: "/api/teams/team/machines/machine/rpc", body: { method: "capabilities" }, elapsedMs: 10, kind: "http", status: 502,
+  const original = new HttpError(422, "Accessibility permission required", "accessibility", "daemon_error", requestDiagnostics(undefined, {
+    method: "POST", path: "/api/teams/team/machines/machine/rpc", body: { method: "capabilities" }, elapsedMs: 10, kind: "http", status: 422,
   }))
   const report = vi.fn()
   const api = centralBridgeClient(bridge(structuredClone(centralIpcFailure(original))), report)
   const error = await api.rpc("team", "machine", "capabilities", {}).catch(error => error)
-  expect(original).toMatchObject({ status: 502, code: "daemon_error", reason: "accessibility" })
+  expect(original).toMatchObject({ status: 422, code: "daemon_error", reason: "accessibility" })
   expect(error).toBeInstanceOf(CentralRequestError)
-  expect(error).toMatchObject({ message: "Error invoking remote method 'deskfleet:central': Error: Accessibility permission required", diagnostics: { kind: "http", status: 502, rpcMethod: "capabilities" } })
+  expect(error).toMatchObject({ message: "Error invoking remote method 'deskfleet:central': Error: Accessibility permission required", diagnostics: { kind: "http", status: 422, rpcMethod: "capabilities" } })
   expect(error).not.toHaveProperty("status")
   expect(report).toHaveBeenCalledExactlyOnceWith(error)
 })

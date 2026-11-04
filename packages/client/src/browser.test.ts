@@ -36,22 +36,22 @@ async function setup(saved?: { serverUrl: string; token: string; user: typeof us
 test("a fresh browser account uses the configured backend", async () => {
   const f = await setup()
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
   await f.central.site()
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
   expect(f.storage.getItem("deskfleet.account")).toBeNull()
 })
 
 test("browser authentication uses cookies and ignores saved bearer credentials", async () => {
   const f = await setup({ serverUrl, token: "saved-token", user })
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
 })
 
 test("browser storage cannot override the configured backend or reuse another server's token", async () => {
   const f = await setup({ serverUrl: "https://old.example", token: "old-token", user })
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
   await f.central.site()
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: {} }))
+  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
 })

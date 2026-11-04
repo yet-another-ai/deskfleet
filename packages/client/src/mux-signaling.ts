@@ -15,7 +15,9 @@ export function isMuxUnsupported(error: unknown): boolean {
   const value = error as { status?: unknown; code?: unknown; message?: unknown } | null
   return value?.status === 400 && (value.code === "mux_unsupported"
     || (value.code === "invalid_request" && value.message === "unsupported peer purpose"))
-    || value?.status === 502 && value.code === "operation_failed" && value.message === "Unsupported peer purpose"
+    || (value?.status === 422 || value?.status === 502)
+      && (value?.code === "daemon_error" || value?.code === "operation_failed")
+      && value?.message === "Unsupported peer purpose"
 }
 
 export async function connectMachineMux(
