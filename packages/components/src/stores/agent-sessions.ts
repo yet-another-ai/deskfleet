@@ -171,9 +171,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       pending.error = command.error ?? command.status
       return
     }
-    // Keep a fork's result until its caller consumes it: a completion event can
-    // precede a lost response, and the next attempt must find the same Session.
-    if (pending.method === "_deskfleet/session/fork") { pending.result = command.result; return }
+    // Keep create/fork results until their caller consumes them: a completion
+    // event can precede a lost response, and the next attempt must find the same Session.
+    if (pending.method === "_deskfleet/session/create" || pending.method === "_deskfleet/session/fork") {
+      pending.result = command.result
+      return
+    }
     completeOperation(command.operationId)
   }
   function apply(event: AgentEvent, snapshot: AgentSnapshot): void {
@@ -538,7 +541,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       return result
     } catch (reason) {
       const pending = operations.value[operationId]
-      if (pending?.method === "_deskfleet/session/fork" && pending.result) {
+      if (pending?.result && (pending.method === "_deskfleet/session/create" || pending.method === "_deskfleet/session/fork")) {
         const result = await resolveCommandResult(pending.result)
         completeOperation(operationId)
         return result as AgentMethods[M]["result"]
@@ -667,14 +670,22 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
     const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
       if (pending) {
+        if (pending.result) return await checkOperation(pending.operationId) as AgentSnapshot
         const command = await call("_deskfleet/command/get", { operationId: pending.operationId })
-        if (command?.status === "completed") { commandReceived(command); return command.result as AgentSnapshot }
+        if (command?.status === "completed") {
+          pending.result = command.result
+          return await checkOperation(pending.operationId) as AgentSnapshot
+        }
         if (command?.status === "accepted" || !command && JSON.stringify({ ...params, operationId: pending.operationId }) === JSON.stringify(pending.params)) {
           try {
             const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"]) as AgentSnapshot
             completeOperation(pending.operationId)
             return result
-          } catch (reason) { pending.error = messageOf(reason); throw reason }
+          } catch (reason) {
+            if (pending.result) return await checkOperation(pending.operationId) as AgentSnapshot
+            pending.error = messageOf(reason)
+            throw reason
+          }
         }
         delete operations.value[pending.operationId]
       }
