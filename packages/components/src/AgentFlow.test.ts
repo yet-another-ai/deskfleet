@@ -43,6 +43,7 @@ beforeEach(async () => {
   vi.spyOn(platformClient.catalog, "list").mockImplementation(async () => structuredClone(catalog))
   vi.spyOn(platformClient.desktop, "target").mockResolvedValue({ id: "local-daemon", name: "Host", online: true, desktop: true })
   transport.call.mockReset().mockImplementation(async (method: string, params: Record<string, unknown>) => {
+    structuredClone(params)
     if (method === "initialize") return {}
     if (method === "_deskfleet/session/list") return snapshot.session.title ? [structuredClone(snapshot.session)] : []
     if (method === "_deskfleet/agent/configuration") return {

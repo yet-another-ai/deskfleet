@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { computed, defineComponent, h, isReactive } from "vue"
+import { computed, defineComponent, h, isReactive, ref } from "vue"
 import type { AgentCommand, AgentEvent, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
 import { catalogFixture } from "../test/catalog.ts"
@@ -23,7 +23,8 @@ beforeEach(() => {
   vi.mocked(trackEvent).mockClear()
   pinia = createPinia(); setActivePinia(pinia); mock.call.mockReset(); mock.close.mockClear()
   vi.spyOn(platformClient.catalog, "list").mockResolvedValue({ ...catalogFixture(), workspaces: [], sessions: [], sessionIds: [] })
-  mock.call.mockImplementation(async (method: string) => {
+  mock.call.mockImplementation(async (method: string, params: unknown) => {
+    structuredClone(params)
     if (method === "initialize") return { _meta: { deskfleet: { identity: actor } } }
     if (method === "_deskfleet/session/subscribe") return agentSnapshot()
     if (method === "_deskfleet/session/history") return []
@@ -1223,3 +1224,56 @@ test.each([false, true])("pending catalog reads preserve concurrent session chan
     expect(store.sessions["30"]).toBeUndefined()
   } finally { platformClient.agent.history = previous }
 })
+
+test("session creation unwraps reactive parameters for structuredClone and recovers from failed or modified retries", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  const reactiveRevisions = ref([{ path: "/repo", revision: "a".repeat(40) }])
+  expect(() => structuredClone(reactiveRevisions.value)).toThrow()
+
+  const created = agentSnapshot()
+  created.session = { ...created.session, id: "31", workspaceId: "20", context: "worktree" }
+
+  // 1. Transport failure before daemon records command: retry with identical params reuses operationId and plain params.
+  mock.call.mockImplementationOnce(async (_method: string, params: unknown) => {
+    structuredClone(params)
+    throw new Error("Lost create response")
+  })
+  await expect(store.create("20", "First attempt", "worktree", "codex", undefined, reactiveRevisions.value)).rejects.toThrow("Lost create response")
+  const firstOperation = Object.values(store.operations)[0]!
+  expect(isReactive(firstOperation.params)).toBe(false)
+  expect(() => structuredClone(firstOperation.params)).not.toThrow()
+
+  mock.call
+    .mockImplementationOnce(async (method: string, params: unknown) => {
+      structuredClone(params)
+      expect(method).toBe("_deskfleet/command/get")
+      return null
+    })
+    .mockImplementationOnce(async (method: string, params: unknown) => {
+      structuredClone(params)
+      expect(method).toBe("_deskfleet/session/create")
+      expect(params).toEqual(firstOperation.params)
+      return created
+    })
+  await expect(store.create("20", "First attempt", "worktree", "codex", undefined, reactiveRevisions.value)).resolves.toEqual(created)
+  expect(store.operations).toEqual({})
+
+  // 2. Failed command on daemon or modified parameters replaces the failed operation instead of wedging future creates.
+  mock.call.mockRejectedValueOnce(new Error("Worktree creation failed"))
+  await expect(store.create("20", "Broken branch", "worktree", "codex", "missing-branch")).rejects.toThrow("Worktree creation failed")
+  const failedOperation = Object.values(store.operations)[0]!
+  mock.call
+    .mockResolvedValueOnce({
+      id: "51", operationId: failedOperation.operationId, actor, method: "_deskfleet/session/create",
+      params: failedOperation.params, isCanonical: true, status: "failed", error: "Worktree creation failed", receivedAt: "now",
+    } satisfies AgentCommand)
+    .mockImplementationOnce(async (method: string, params: unknown) => {
+      structuredClone(params)
+      expect(method).toBe("_deskfleet/session/create")
+      expect((params as { operationId: string }).operationId).not.toBe(failedOperation.operationId)
+      return created
+    })
+  await expect(store.create("20", "Fixed branch", "worktree", "codex", "main")).resolves.toEqual(created)
+  expect(store.operations).toEqual({})
+})
+
