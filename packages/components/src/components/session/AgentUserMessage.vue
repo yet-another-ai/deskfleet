@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { CircleAlert, CircleCheck, LoaderCircle, User } from "@lucide/vue"
-import { computed } from "vue"
+import { usePreferredReducedMotion } from "@vueuse/core"
+import { computed, onMounted, onScopeDispose, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
+import { consumeSentMessageTransition } from "../../services/message-sent-transition.ts"
 import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
@@ -18,12 +20,21 @@ const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.i
 const state = computed(() => props.input.state === "delivered" ? undefined : props.input.state === "dispatching" && props.input.actualDelivery === "turn_start" ? t("agent.inputInProgress") : t(`agent.inputState.${props.input.state}`))
 const steered = computed(() => props.input.state === "delivered" && props.input.actualDelivery === "steer")
 const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
+const root = useTemplateRef<HTMLElement>("root")
+const reducedMotion = usePreferredReducedMotion()
+let animations: Animation[] = []
+onMounted(() => queueMicrotask(() => {
+  if (!root.value?.parentElement?.nextElementSibling) {
+    animations = consumeSentMessageTransition(root.value, reducedMotion.value === "reduce")
+  }
+}))
+onScopeDispose(() => { for (const anim of animations) anim.cancel() })
 </script>
 
 <template>
-  <div class="group flex justify-end gap-3 pl-12">
+  <div ref="root" class="group flex justify-end gap-3 pl-12">
     <div class="flex min-w-0 flex-col items-end gap-1.5">
-      <div class="flex items-center gap-1.5 text-xs text-ui-text-muted">
+      <div data-user-message-meta class="flex items-center gap-1.5 text-xs text-ui-text-muted">
         <template v-if="input.author.userId"><AgentActor :actor="input.author" class="font-medium text-ui-text" /><span aria-hidden="true">·</span></template>
         <span v-if="steered">{{ t('agent.steered') }}<template v-if="input.dispatcher && input.dispatcher.userId !== input.author.userId"> · <AgentActor :actor="input.dispatcher" /></template></span>
         <LoaderCircle v-if="input.state === 'dispatching'" :size="14" :stroke-width="2" class="animate-spin" aria-hidden="true" />
@@ -32,14 +43,14 @@ const text = computed(() => props.input.content.flatMap(block => block.type === 
         <span v-if="state">{{ state }}</span>
         <time v-if="time" :datetime="input.deliveredAt ?? input.createdAt">{{ time }}</time>
       </div>
-      <div class="max-w-full rounded-2xl bg-ui-accent/8 px-4 py-2.5">
+      <div data-user-message-bubble class="max-w-full rounded-2xl bg-ui-accent/8 px-4 py-2.5">
         <AgentContent :content="input.content" />
       </div>
       <p v-if="input.state === 'uncertain'" class="m-0 max-w-md text-right text-xs text-ui-warning">{{ t('agent.uncertainInput') }}</p>
       <AgentMessageActions :text="text" />
     </div>
-    <UserAvatar v-if="input.author.userId" :name="name" :email="email" :size="32" :title="name" class="mt-6 text-xs" />
-    <span v-else class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="name" aria-hidden="true">
+    <UserAvatar v-if="input.author.userId" data-user-message-avatar :name="name" :email="email" :size="32" :title="name" class="mt-6 text-xs" />
+    <span v-else data-user-message-avatar class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="name" aria-hidden="true">
       <User :size="16" :stroke-width="2" />
     </span>
   </div>

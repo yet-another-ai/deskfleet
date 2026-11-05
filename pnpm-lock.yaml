@@ -331,6 +331,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      animejs:
+        specifier: ^4.5.0
+        version: 4.5.0(@types/three@0.187.0)(three@0.187.0)
       dockview-vue:
         specifier: 8.8.3
         version: 8.8.3(vue@3.6.0-rc.13(@typescript/typescript6@6.0.2))
@@ -3424,6 +3427,17 @@ packages:
 
   alien-signals@3.2.1:
     resolution: {integrity: sha512-I8FjmltrfnDFoZedi5CG8DghVYNhzb/Ijluz7tCSJH0xpd0484Kowhbb1XDYOxfJpU1p5wnM2X54dA+IfGyD1g==}
+
+  animejs@4.5.0:
+    resolution: {integrity: sha512-NQimYX+lz8WaXonGS9zVVoviCIAjONeJayxacUditaivYLqyXgGjFKjuyl0aUUhFKm5MriX9ty1TGovNzoJQWA==}
+    peerDependencies:
+      '@types/three': '>=0.150.0'
+      three: '>=0.150.0'
+    peerDependenciesMeta:
+      '@types/three':
+        optional: true
+      three:
+        optional: true
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -8855,6 +8869,11 @@ snapshots:
       require-from-string: 2.0.2
 
   alien-signals@3.2.1: {}
+
+  animejs@4.5.0(@types/three@0.187.0)(three@0.187.0):
+    optionalDependencies:
+      '@types/three': 0.187.0
+      three: 0.187.0
 
   ansi-regex@5.0.1: {}
 
