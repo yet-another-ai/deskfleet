@@ -181,9 +181,6 @@ ol:has([data-message-sending="true"]) .ui-conversation-history {
 .ui-switch:enabled:active .ui-switch-thumb { width: 1.25rem; }
 .ui-switch:enabled:active .ui-switch-thumb[data-state="checked"] { left: -0.125rem; }
 
-/* Checkbox marks pop in. */
-.ui-check-indicator > svg { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
-
 /* Radios: the checked ring tints and its dot springs in. */
 [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); }
 [data-state="checked"] > .ui-radio {
