@@ -1,6 +1,9 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { HttpCentralClient, HttpError } from "./http-central.ts"
 import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
+import type { DeskfleetDesktopApi } from "./desktop-api.ts"
+import { remoteMachineClient } from "./remote.ts"
+import { MUX_PROFILE } from "./mux/protocol.ts"
 
 const clients: HttpCentralClient[] = []
 afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -124,6 +127,44 @@ test("collects Session summary pages without merging equal IDs from another mach
   f.responses.push({ sessions: [{ session: { id: "1" } }], nextCursor: "1" }, { sessions: [{ session: { id: "3" } }] })
   expect(await f.client.sessions("team", "remote7")).toEqual([{ session: { id: "1" } }, { session: { id: "3" } }])
   expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team/machines/remote7/sessions?after=1&limit=200", expect.anything())
+})
+
+test.each([null, undefined])("opens a machine before capabilities are reported and adopts later reports: %j", async capabilities => {
+  const f = setup()
+  const machine = { id: "remote7", teamId: "team", name: "Remote", originId: "origin", localMachineId: "1", capabilities, online: true, lastSeenAt: null }
+  const reported = { ...machine, capabilities: { mux: MUX_PROFILE, muxServer: MUX_PROFILE, desktop: true, platform: "linux" } }
+  f.responses.push([machine], [machine], [reported], [reported], [machine])
+  const [initial] = await f.client.machines("team")
+  expect(initial).toEqual({ ...machine, capabilities: {} })
+  const remote = remoteMachineClient({ platform: "web" } as DeskfleetDesktopApi, f.client, initial!)
+  try {
+    expect(remote.api.agent.connectChannel).toBeUndefined()
+    expect(remote.api.terminal.multiplexed).toBe(false)
+    expect(await remote.api.desktop.target()).toEqual({ id: machine.id, name: machine.name, online: true, desktop: false })
+
+    const [updated] = await f.client.machines("team")
+    expect(updated).toEqual(reported)
+    remote.updateMachine(updated!)
+    expect(remote.api.agent.connectChannel).toBeTypeOf("function")
+    expect(remote.api.terminal.multiplexed).toBe(true)
+    expect(await remote.api.desktop.target()).toEqual({ id: machine.id, name: machine.name, online: true, desktop: true, platform: "linux" })
+
+    const [unreported] = await f.client.machines("team")
+    remote.updateMachine(unreported!)
+    expect(remote.api.agent.connectChannel).toBeUndefined()
+    expect(remote.api.terminal.multiplexed).toBe(false)
+  } finally { remote.dispose() }
+})
+
+test.each([null, { desktop: true, platform: "linux" }])("normalizes enrollment and rename responses without losing machine data: %j", async capabilities => {
+  const f = setup()
+  const machine = { id: "remote7", teamId: "team", name: "Remote", originId: "origin", localMachineId: "1", capabilities, online: false, lastSeenAt: null }
+  const renamed = { ...machine, name: "Renamed" }
+  f.responses.push({ machine, token: "machine-token" }, renamed)
+  expect(await f.client.enrollHeadless("team", { name: machine.name, originId: machine.originId, localMachineId: machine.localMachineId, identityToken: "identity-token" })).toEqual({
+    machine: { ...machine, capabilities: capabilities ?? {} }, token: "machine-token",
+  })
+  expect(await f.client.renameMachine("team", machine.id, renamed.name)).toEqual({ ...renamed, capabilities: capabilities ?? {} })
 })
 
 test("loads team AI usage and day details with explicit timezone and encoded team identity", async () => {

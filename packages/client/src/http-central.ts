@@ -9,7 +9,7 @@ import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { attachRequestStack, centralRequestFailure, HttpError, requestDiagnostics, type RequestTransport } from "./request-diagnostics.ts"
-import type { NetworkConfiguration } from "../../../crates/protocol/control.ts"
+import type { Machine as WireMachine, NetworkConfiguration } from "../../../crates/protocol/control.ts"
 import { isDesktopErrorReason } from "./desktop-media.ts"
 
 export { HttpError } from "./request-diagnostics.ts"
@@ -24,6 +24,13 @@ const RETRY_MAX_MS = 30_000
 const PROBE_TIMEOUT_MS = 3_000
 
 type SocketMessage = CentralEvent | { type: "ready" } | { type: "ping" } | { type: "pong" }
+
+/** Enrollment can precede the daemon's first capability report. */
+function machineFromWire(machine: WireMachine): Machine {
+  const capabilities = machine.capabilities
+  return { ...machine, capabilities: capabilities !== null && typeof capabilities === "object" && !Array.isArray(capabilities)
+    ? capabilities as Record<string, unknown> : {} }
+}
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
 export interface HttpCentralOptions {
@@ -262,7 +269,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   updateCloudflareTurnSettings(settings: CloudflareTurnSettingsUpdate) { return this.request<CloudflareTurnSettings>("PATCH", "/api/admin/cloudflare-turn-settings", settings) }
   teams() { return this.request<Team[]>("GET", "/api/teams") }
   createTeam(name: string) { return this.request<Team>("POST", "/api/teams", { name }) }
-  enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string; identityToken: string }) { return this.request<{ machine: Machine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine) }
+  async enrollHeadless(teamId: string, machine: { name: string; originId: string; localMachineId: string; identityToken: string }) {
+    const result = await this.request<{ machine: WireMachine; token: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines`, machine)
+    return { ...result, machine: machineFromWire(result.machine) }
+  }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
   teamTurnSettings(teamId: string) { return this.request<TeamTurnSettings>("GET", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`) }
@@ -288,8 +298,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async setMemberRole(teamId: string, userId: string, role: "admin" | "member") { await this.request("PATCH", `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`, { role }) }
   async removeMember(teamId: string, userId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`) }
   async transferOwnership(teamId: string, userId: string) { await this.request("POST", `/api/teams/${encodeURIComponent(teamId)}/ownership`, { userId }) }
-  machines(teamId: string) { return this.request<Machine[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines`) }
-  renameMachine(teamId: string, machineId: string, name: string) { return this.request<Machine>("PATCH", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}`, { name }) }
+  async machines(teamId: string) { return (await this.request<WireMachine[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines`)).map(machineFromWire) }
+  async renameMachine(teamId: string, machineId: string, name: string) { return machineFromWire(await this.request<WireMachine>("PATCH", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}`, { name })) }
   async removeMachine(teamId: string, machineId: string) { await this.request("DELETE", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}`) }
   catalog(teamId: string, machineId: string) { return this.request<{ machineId: string; snapshot: CatalogSnapshot; lastObservedAt: string; providers?: ProviderDisplaySnapshot }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/catalog`) }
   async sessions(teamId: string, machineId: string, sessionId?: string): Promise<AgentSessionSummary[]> {
