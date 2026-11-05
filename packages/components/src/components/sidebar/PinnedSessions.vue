@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Pin } from "@lucide/vue"
+import { Pin, Unplug } from "@lucide/vue"
 import { useArrayFilter } from "@vueuse/core"
 import { useId } from "vue"
 import { useI18n } from "vue-i18n"
@@ -54,7 +54,10 @@ function open(machineId: string, sessionId: string): void {
             <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
             <SessionWorkingIndicator v-if="item.working" />
             <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
-            <span v-if="!item.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t('machine.offline') }}</span>
+            <span v-if="!item.online" class="inline-flex shrink-0 items-center text-ui-warning" :title="t('machine.offline')">
+              <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
+              <span class="sr-only">{{ t('machine.offline') }}</span>
+            </span>
           </button>
         </SessionContextMenu>
       </li>

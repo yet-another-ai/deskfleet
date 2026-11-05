@@ -6,9 +6,11 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  LocateFixed,
   MonitorPlay,
   SquarePen,
   SquareTerminal,
+  Unplug,
 } from "@lucide/vue"
 import { useArrayFilter } from "@vueuse/core"
 import { computed, ref } from "vue"
@@ -103,13 +105,17 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
         class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
       >
         <span class="truncate">{{ machine.name }}</span>
-        <span v-if="machine.local" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.local") }}</span>
+        <span v-if="machine.local" class="inline-flex shrink-0 items-center text-ui-text-muted" :title="t('machine.local')">
+          <LocateFixed :size="14" :stroke-width="1.75" aria-hidden="true" />
+          <span class="sr-only">{{ t("machine.local") }}</span>
+        </span>
         <span
           v-if="!machine.online"
-          class="ui-badge shrink-0 rounded-full font-normal"
-          :title="lastSeen"
+          class="inline-flex shrink-0 items-center text-ui-warning"
+          :title="lastSeen ?? t('machine.offline')"
         >
-          {{ t("machine.offline") }}
+          <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
+          <span class="sr-only">{{ t("machine.offline") }}</span>
         </span>
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>

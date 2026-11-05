@@ -3,7 +3,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
 import { useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-5">
     <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
-      <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Monitor :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="ui-badge">{{ t("machine.local") }}</span></span>
+      <span class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="sr-only">{{ t("machine.local") }}</span></span>
       <template v-if="location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
