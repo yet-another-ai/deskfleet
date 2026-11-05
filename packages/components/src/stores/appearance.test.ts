@@ -190,3 +190,34 @@ test("a desktop read failure keeps startup usable and can be retried", async () 
   expect(appearance.error).toBeNull()
   expect(document.documentElement.style.colorScheme).toBe("dark")
 })
+
+test("custom theme hue and dynamic RGB mode update root chromatic tokens and reset to default", async () => {
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  expect(appearance.settings.themeHue).toBeNull()
+  expect(appearance.settings.themeHueDynamic).toBe(false)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toBe("")
+
+  appearance.previewThemeHue(145)
+  expect(appearance.themeHue).toBe(145)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toContain("oklch(")
+  expect(appearance.settings.themeHue).toBeNull()
+
+  await appearance.set({ themeHue: 210 })
+  appearance.previewThemeHue(null)
+  expect(appearance.settings.themeHue).toBe(210)
+  expect(appearance.themeHue).toBe(210)
+  const hue210Accent = document.documentElement.style.getPropertyValue("--ui-color-accent")
+  expect(hue210Accent).toContain("oklch(")
+  expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({ themeHue: 210, themeHueDynamic: false })
+
+  await appearance.set({ themeHue: null, themeHueDynamic: true })
+  expect(appearance.settings.themeHueDynamic).toBe(true)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toContain("oklch(")
+
+  await appearance.set({ themeHue: null, themeHueDynamic: false })
+  expect(appearance.settings.themeHue).toBeNull()
+  expect(appearance.settings.themeHueDynamic).toBe(false)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toBe("")
+})
+

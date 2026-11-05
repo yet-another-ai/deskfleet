@@ -56,13 +56,13 @@ const options = [
 .theme-option[data-state="checked"] .theme-picture { box-shadow: var(--ui-shadow-raised); }
 .mini-app {
   --mini-canvas: #fbfbfd; --mini-sidebar: #f0f1f6; --mini-surface: #ffffff;
-  --mini-line: #c3c8d7; --mini-border: #e3e6ed; --mini-accent: #6674df; --mini-bubble: #e8ebfc;
+  --mini-line: #c3c8d7; --mini-border: #e3e6ed; --mini-accent: var(--ui-color-mini-accent-light, #6674df); --mini-bubble: var(--ui-color-mini-bubble-light, #e8ebfc);
   position: absolute; inset: 0; display: grid; grid-template: 19px 1fr / 28% 1fr;
   background: var(--mini-canvas);
 }
 .mini-app[data-palette="dark"] {
   --mini-canvas: #191b23; --mini-sidebar: #13151c; --mini-surface: #262a35;
-  --mini-line: #50576c; --mini-border: #303443; --mini-accent: #97a3ff; --mini-bubble: #313753;
+  --mini-line: #50576c; --mini-border: #303443; --mini-accent: var(--ui-color-mini-accent-dark, #97a3ff); --mini-bubble: var(--ui-color-mini-bubble-dark, #313753);
 }
 [data-mode="system"] .mini-app[data-palette="dark"] { clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%); }
 .mini-titlebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 3px; padding: 0 7px; border-bottom: 1px solid var(--mini-border); }

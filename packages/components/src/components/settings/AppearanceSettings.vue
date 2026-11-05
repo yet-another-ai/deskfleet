@@ -10,6 +10,7 @@ import UiSelect from "../common/UiSelect.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import AgentOutline from "../session/AgentOutline.vue"
 import AppearanceThemePicker from "./AppearanceThemePicker.vue"
+import AppearanceThemeColor from "./AppearanceThemeColor.vue"
 import AppearanceTerminalPreview from "./AppearanceTerminalPreview.vue"
 import AppearanceTerminalColors from "./AppearanceTerminalColors.vue"
 
@@ -52,6 +53,8 @@ onMounted(() => { void appearance.initialize() })
       <h2 class="mb-2 mt-0 text-sm font-medium">{{ t("appearance.theme") }}</h2>
       <AppearanceThemePicker :model-value="appearance.settings.theme" :disabled="busy" @update:model-value="appearance.set({ theme: $event })" />
     </div>
+
+    <AppearanceThemeColor :disabled="busy" />
 
     <div class="my-5 flex flex-wrap items-center justify-between gap-3 border-y border-ui-border py-4 sm:gap-6">
       <span id="appearance-language-label" class="text-sm font-medium">{{ t("appearance.language") }}</span>

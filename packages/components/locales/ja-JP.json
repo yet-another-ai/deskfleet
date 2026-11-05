@@ -332,6 +332,11 @@
   },
   "appearance": {
     "language": "言語", "theme": "テーマ",
+    "themeColor": "テーマカラー",
+    "themeColorHint": "インターフェースのアクセント色相を調整するか、虹色に循環させます。",
+    "themeColorHue": "テーマカラーの色相",
+    "themeColorRgb": "RGB",
+    "resetThemeColor": "デフォルトに戻す",
     "followSystem": "システム設定に合わせる", "light": "ライト",
     "dark": "ダーク", "preview": "ライブプレビュー",
     "defaultFont": "システムのデフォルト", "interfaceFont": "インターフェースのフォント",

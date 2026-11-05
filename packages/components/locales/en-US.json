@@ -436,6 +436,11 @@
   "appearance": {
     "language": "Language",
     "theme": "Theme",
+    "themeColor": "Theme color",
+    "themeColorHint": "Adjust the accent hue across the interface, or cycle through the spectrum.",
+    "themeColorHue": "Theme color hue",
+    "themeColorRgb": "RGB",
+    "resetThemeColor": "Reset to default",
     "followSystem": "Follow system",
     "light": "Light",
     "dark": "Dark",

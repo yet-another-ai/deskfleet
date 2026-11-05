@@ -11,9 +11,15 @@ export function isReadingSpotlightStyle(value: unknown): value is ReadingSpotlig
   return value === "under" || value === "aside"
 }
 
+export const DEFAULT_THEME_HUE = 272
+
 export interface AppearanceSettings {
   language: "system" | AppLocale
   theme: "system" | "light" | "dark"
+  /** Custom OKLCH hue in [0, 360], or null for the default DeskFleet palette. */
+  themeHue: number | null
+  /** Continuously cycle the theme hue across the spectrum. */
+  themeHueDynamic: boolean
   /** Empty uses the application default; otherwise a CSS font-family list. */
   interfaceFont: string
   terminalFont: string
@@ -34,6 +40,8 @@ export interface AppearanceSettings {
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   language: "system",
   theme: "system",
+  themeHue: null,
+  themeHueDynamic: false,
   interfaceFont: "",
   terminalFont: "",
   terminalLigatures: false,
@@ -60,10 +68,16 @@ function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
 }
 
+function isThemeHue(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 360)
+}
+
 export function validateAppearanceSettings(value: unknown): AppearanceSettings {
   if (!value || typeof value !== "object"
     || !("language" in value) || (value.language !== "system" && !isAppLocale(value.language))
     || !("theme" in value) || (value.theme !== "system" && value.theme !== "light" && value.theme !== "dark")
+    || ("themeHue" in value && !isThemeHue(value.themeHue))
+    || ("themeHueDynamic" in value && typeof value.themeHueDynamic !== "boolean")
     || !("interfaceFont" in value) || typeof value.interfaceFont !== "string"
     || !("terminalFont" in value) || typeof value.terminalFont !== "string"
     || ("terminalLigatures" in value && typeof value.terminalLigatures !== "boolean")
@@ -79,6 +93,8 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
   return {
     language: value.language,
     theme: value.theme,
+    themeHue: "themeHue" in value && typeof value.themeHue === "number" ? value.themeHue : null,
+    themeHueDynamic: "themeHueDynamic" in value && value.themeHueDynamic === true,
     interfaceFont: value.interfaceFont,
     terminalFont: value.terminalFont,
     terminalLigatures: "terminalLigatures" in value && value.terminalLigatures === true,
