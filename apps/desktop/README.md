@@ -525,8 +525,8 @@ catalogs share keys and parameters and that literal `t("…")` keys exist.
 ## Styling
 
 Design tokens are CSS custom properties in `packages/components/src/theme-tokens.css`:
-colors with light and dark values, depth (shadows, a top-edge highlight that reads
-as elevation in dark mode, and the filled-action sheen), and motion (easings and
+colors with light and dark values, depth (shadows and a top-edge highlight that reads
+as elevation in dark mode), and motion (easings and
 `--ui-duration-*`). Entrances decelerate, exits accelerate and run shorter, and
 only toggles overshoot. Under `prefers-reduced-motion`, every duration collapses to
 1ms and decorative loops stop.

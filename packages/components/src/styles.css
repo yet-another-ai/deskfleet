@@ -172,15 +172,6 @@ ol:has([data-message-sending="true"]) .ui-conversation-history {
   will-change: width, height, margin, translate, transform;
 }
 
-/* Filled buttons: a sheen and tinted shadow that deepen on hover. */
-:is(.ui-button-primary):not(:disabled) {
-  background-image: var(--ui-gloss);
-  box-shadow: var(--ui-shadow-action);
-}
-:is(.ui-button-primary):not(:disabled, [aria-disabled="true"]):hover {
-  box-shadow: var(--ui-shadow-action), 0 6px 16px -6px color-mix(in srgb, var(--ui-color-action) 55%, transparent);
-}
-
 /* Switch: the thumb springs across and stretches while held, like a native toggle. */
 .ui-switch-thumb {
   transition-property: transform, translate, left, width;

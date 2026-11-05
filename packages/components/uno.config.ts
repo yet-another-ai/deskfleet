@@ -34,10 +34,15 @@ const colorNames = [
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
 // Pressing a button settles it slightly; inert buttons stay still.
 const button =
-  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion enabled:active:scale-[0.97] [&[aria-disabled=true]]:active:scale-100 disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
+  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap squircle-lg border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion enabled:active:scale-[0.97] [&[aria-disabled=true]]:active:scale-100 disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
 
 export default defineConfig({
   presets: [presetWind4()],
+  content: {
+    pipeline: {
+      include: [/\.(vue|[jt]sx|mdx?|html)($|\?)/, /\.stories\.ts($|\?)/],
+    },
+  },
   theme: {
     font: { mono: "var(--ui-font-mono)" },
     colors: Object.fromEntries(colorNames.map((name) => [`ui-${name}`, `var(--ui-color-${name})`])),
@@ -58,7 +63,6 @@ export default defineConfig({
 
     // Controls
     "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text enabled:hover:bg-ui-control-hover enabled:active:bg-ui-active disabled:op-50`,
-    // Filled actions carry the gloss and tinted shadow from styles.css while enabled.
     "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
     "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger enabled:hover:border-ui-danger/45 enabled:hover:bg-ui-danger/14 enabled:active:bg-ui-danger/20 disabled:op-50`,
     "ui-button-ghost": `${button} border-transparent bg-transparent text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:op-40`,
@@ -111,6 +115,17 @@ export default defineConfig({
     "ui-avatar": "inline-flex shrink-0 items-center justify-center bg-ui-avatar text-xs font-semibold text-ui-avatar-text",
   },
   rules: [
+    // Continuous-curvature corners: falls back to `border-radius` and scales up 1.25x when `corner-shape: superellipse(1.4)` is supported.
+    [/^squircle(?:-(.+))?$/, function* ([, size = "DEFAULT"], { theme, symbols }) {
+      const radius = theme.radius?.[size] ?? (size.startsWith("[") && size.endsWith("]") ? size.slice(1, -1) : undefined)
+      if (!radius) return
+      yield { "border-radius": radius }
+      yield {
+        [symbols.parent]: "@supports (corner-shape: superellipse(1.4))",
+        "border-radius": `calc(${radius} * 1.25)`,
+        "corner-shape": "superellipse(1.4)",
+      }
+    }],
     // The shared interaction transition: state colors, elevation, and press scale.
     // `duration-*` and `ease-*` utilities set these variables, so they adjust it regardless of CSS order.
     ["ui-motion", {

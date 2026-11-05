@@ -59,6 +59,19 @@ export const AllVariantsShowcase: Story = {
           <UiButton variant="primary" loading>Loading</UiButton>
           <UiButton variant="default" disabled>Disabled</UiButton>
         </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <UiButton class="rounded-lg [corner-shape:round]" variant="default">Rounded Default</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" variant="primary"><Sparkles :size="14" /> Rounded Primary</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" variant="danger"><Trash2 :size="14" /> Rounded Danger</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" variant="ghost">Rounded Ghost</UiButton>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <UiButton class="rounded-lg [corner-shape:round]" size="sm" variant="default">Rounded Small Default</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" size="sm" variant="primary">Rounded Small Primary</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" size="icon" variant="default" aria-label="Add"><Plus :size="15" /></UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" variant="primary" loading>Rounded Loading</UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" variant="default" disabled>Rounded Disabled</UiButton>
+        </div>
       </div>
     `,
   }),
