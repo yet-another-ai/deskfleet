@@ -87,8 +87,8 @@ onMounted(load)
       <UiButton v-if="!members.length" type="button" class="shrink-0" :disabled="loading" @click="load">{{ t("settings.retryLoad") }}</UiButton>
     </div>
     <p v-if="loading" role="status" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
-    <ul v-else-if="members.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
-      <li v-for="(member, index) in members" :key="member.userId" class="flex items-center gap-3 px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-member-id="member.userId">
+    <ul v-else-if="members.length" class="ui-card m-0 list-none p-0">
+      <li v-for="member in members" :key="member.userId" class="flex items-center gap-3 px-4 py-3" :data-member-id="member.userId">
         <UserAvatar :name="member.name" :email="member.email" :size="32" class="text-[13px]" />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm">

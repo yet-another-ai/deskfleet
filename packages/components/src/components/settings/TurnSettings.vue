@@ -52,18 +52,18 @@ function submit(): void {
       <UiButton type="button" @click="load()">{{ t("welcome.retry") }}</UiButton>
     </div>
     <form v-else-if="form" class="flex flex-col gap-4" :aria-labelledby="`${id}-title`" @submit.prevent="submit">
-      <div class="ui-card px-4">
-        <div v-for="(_, index) in form.urls" :key="index" class="ui-setting flex items-center gap-3 py-3">
+      <div class="ui-card">
+        <div v-for="(_, index) in form.urls" :key="index" class="ui-setting flex items-center gap-3 px-4 py-3">
           <label :for="`${id}-url-${index}`" class="shrink-0 text-sm text-ui-text-muted">{{ index + 1 }}<span class="sr-only"> — {{ t("siteAdmin.turnUrl") }}</span></label>
           <input :id="`${id}-url-${index}`" v-model="form.urls[index]" class="ui-input min-w-0 flex-1 font-mono text-xs" :name="`turn-url-${index}`" :aria-label="t('siteAdmin.turnUrlLabel', { number: index + 1 })" placeholder="turn:turn.example.com:3478?transport=udp" required autocomplete="off" spellcheck="false" :disabled="saving" />
           <UiButton variant="ghost" size="icon" :aria-label="t('siteAdmin.turnRemove', { number: index + 1 })" :disabled="saving" @click="form.urls.splice(index, 1)"><Trash2 :size="15" aria-hidden="true" /></UiButton>
         </div>
-        <p v-if="form.urls.length === 0" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("siteAdmin.turnEmpty") }}</p>
-        <div class="py-3">
+        <p v-if="form.urls.length === 0" class="m-0 px-4 py-4 text-sm text-ui-text-muted">{{ t("siteAdmin.turnEmpty") }}</p>
+        <div class="ui-setting px-4 py-3">
           <UiButton :disabled="saving" @click="form.urls.push('')"><Plus :size="14" aria-hidden="true" />{{ t("siteAdmin.turnAdd") }}</UiButton>
         </div>
       </div>
-      <div class="ui-card px-4">
+      <div class="ui-card">
         <SettingsRow :label="t('siteAdmin.allowTeamTurnServers')" :label-id="`${id}-team-servers`" :description-id="`${id}-team-servers-description`">
           <template #description>{{ t("siteAdmin.allowTeamTurnServersDescription") }}</template>
           <UiSwitch v-model="form.allowTeamServers" :aria-labelledby="`${id}-team-servers`" :aria-describedby="`${id}-team-servers-description`" name="allow-team-turn-servers" :disabled="saving" />

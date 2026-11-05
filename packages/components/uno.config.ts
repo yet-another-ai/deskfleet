@@ -80,10 +80,10 @@ export default defineConfig({
     "ui-radio-dot": "h-2 w-2 rounded-full bg-ui-accent",
 
     // Surfaces
-    "ui-card": "overflow-hidden rounded-xl border border-ui-border bg-ui-surface shadow-ui-card",
+    "ui-card": "overflow-hidden squircle-xl border border-ui-border-strong bg-ui-surface",
     "ui-card-row": "flex min-h-11 items-center gap-3 px-4 py-2",
     "ui-option-card":
-      "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:-translate-y-px enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:translate-y-0 enabled:active:scale-[0.99] disabled:cursor-default",
+      "flex w-full cursor-pointer items-center gap-3 squircle-xl border border-ui-border-strong bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:-translate-y-px enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:translate-y-0 enabled:active:scale-[0.99] disabled:cursor-default",
     "ui-empty":
       "flex flex-col items-center gap-1 rounded-xl border border-dashed border-ui-border-strong bg-ui-surface/40 px-6 py-10 text-center",
     "ui-dialog":

@@ -59,8 +59,8 @@ function submit(): void {
     <UiButton type="button" @click="load()">{{ t("welcome.retry") }}</UiButton>
   </div>
   <form v-else-if="form" class="flex flex-col gap-4" @submit.prevent="submit">
-    <div class="ui-card px-4">
-      <label class="ui-setting flex min-h-14 flex-col gap-2 py-3 text-sm lg:flex-row lg:items-center lg:justify-between lg:gap-6" :for="`${id}-name`">
+    <div class="ui-card">
+      <label class="ui-setting flex min-h-14 flex-col gap-2 px-4 py-3 text-sm lg:flex-row lg:items-center lg:justify-between lg:gap-6" :for="`${id}-name`">
         {{ t("siteAdmin.siteName") }}
         <input :id="`${id}-name`" v-model="form.siteName" class="ui-input w-full lg:w-64" name="site-name" required maxlength="200" autocomplete="off" :disabled="saving" />
       </label>
@@ -68,18 +68,18 @@ function submit(): void {
         <template #description>{{ t("siteAdmin.allowTeamCreationDescription") }}</template>
         <UiSwitch v-model="form.allowTeamCreation" :aria-labelledby="`${id}-teams`" name="allow-team-creation" :disabled="saving" />
       </SettingsRow>
-      <label class="ui-setting flex min-h-14 flex-col gap-2 py-3 text-sm lg:flex-row lg:items-center lg:justify-between lg:gap-6" :for="`${id}-terms`">
+      <label class="ui-setting flex min-h-14 flex-col gap-2 px-4 py-3 text-sm lg:flex-row lg:items-center lg:justify-between lg:gap-6" :for="`${id}-terms`">
         {{ t("siteAdmin.termsOfServiceUrl") }}
         <input :id="`${id}-terms`" v-model="form.termsOfServiceUrl" class="ui-input w-full lg:w-64" type="url" name="terms-of-service-url" autocomplete="off" :disabled="saving" />
       </label>
-      <label class="ui-setting flex flex-col gap-2 py-3 text-sm" :for="`${id}-privacy`">
+      <label class="ui-setting flex flex-col gap-2 px-4 py-3 text-sm" :for="`${id}-privacy`">
         <span class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
           {{ t("siteAdmin.privacyTermsUrl") }}
           <input :id="`${id}-privacy`" v-model="form.privacyTermsUrl" class="ui-input w-full lg:w-64" type="url" name="privacy-terms-url" autocomplete="off" :disabled="saving" />
         </span>
         <span class="text-[13px] text-ui-text-muted">{{ t("siteAdmin.termsDescription") }}</span>
       </label>
-      <label class="flex flex-col gap-2 py-4 text-sm" :for="`${id}-announcement`">
+      <label class="ui-setting flex flex-col gap-2 px-4 py-4 text-sm" :for="`${id}-announcement`">
         {{ t("siteAdmin.announcement") }}
         <textarea :id="`${id}-announcement`" v-model="form.announcement" class="ui-input min-h-28 resize-y" name="announcement" maxlength="10000" rows="4" :disabled="saving" />
         <span class="text-[13px] text-ui-text-muted">{{ t("siteAdmin.announcementDescription") }}</span>

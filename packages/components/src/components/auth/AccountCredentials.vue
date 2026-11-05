@@ -46,7 +46,7 @@ async function submit(): Promise<void> {
 <template>
   <section :aria-labelledby="`${id}-title`" class="mb-8">
     <h2 :id="`${id}-title`" class="ui-section-title mb-2">{{ t("auth.signInMethods") }}</h2>
-    <div class="ui-card px-4 shadow-ui-card">
+    <div class="ui-card">
       <SettingsRow :label="t('auth.email')">
         <template #description><span class="break-all">{{ user.email }}</span></template>
         <UiButton @click="edit('email')">{{ t("auth.change") }}</UiButton>

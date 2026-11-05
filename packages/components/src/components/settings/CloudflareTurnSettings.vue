@@ -64,24 +64,24 @@ function submit(): void {
       <UiButton @click="load()">{{ t("welcome.retry") }}</UiButton>
     </div>
     <form v-else-if="form" class="flex flex-col gap-4" :aria-labelledby="`${id}-title`" @submit.prevent="submit">
-      <div class="ui-card px-4">
+      <div class="ui-card">
         <SettingsRow :label="t('siteAdmin.cloudflareTurnEnabled')" :label-id="`${id}-enabled`">
           <UiSwitch v-model="form.enabled" :aria-labelledby="`${id}-enabled`" name="cloudflare-turn-enabled" :disabled="saving" />
         </SettingsRow>
         <template v-if="form.enabled || current?.accountId || current?.keyId">
-          <div class="ui-setting py-3">
+          <div class="ui-setting px-4 py-3">
             <UiField v-model="form.accountId" :label="t('siteAdmin.cloudflareTurnAccountId')" name="cloudflare-turn-account-id" autocomplete="off" spellcheck="false" :required="form.enabled" :disabled="saving" />
           </div>
-          <div class="ui-setting py-3">
+          <div class="ui-setting px-4 py-3">
             <UiField v-model="form.keyId" :label="t('siteAdmin.cloudflareTurnKeyId')" name="cloudflare-turn-key-id" autocomplete="off" spellcheck="false" :required="form.enabled" :disabled="saving" />
           </div>
-          <div class="ui-setting py-3">
+          <div class="ui-setting px-4 py-3">
             <UiField v-model="apiToken" :label="t('siteAdmin.cloudflareTurnApiToken')" name="cloudflare-turn-api-token" type="password" autocomplete="new-password" spellcheck="false" :placeholder="current?.apiTokenConfigured ? t('siteAdmin.cloudflareTurnTokenSaved') : undefined" :hint="t('siteAdmin.cloudflareTurnApiTokenHint')" :required="form.enabled && !current?.apiTokenConfigured" :disabled="saving" />
           </div>
-          <div class="ui-setting py-3">
+          <div class="ui-setting px-4 py-3">
             <UiField v-model="analyticsToken" :label="t('siteAdmin.cloudflareTurnAnalyticsToken')" name="cloudflare-turn-analytics-token" type="password" autocomplete="new-password" spellcheck="false" :placeholder="current?.analyticsTokenConfigured ? t('siteAdmin.cloudflareTurnTokenSaved') : undefined" :hint="t('siteAdmin.cloudflareTurnAnalyticsTokenHint')" :required="form.enabled && !current?.analyticsTokenConfigured" :disabled="saving" />
           </div>
-          <p v-if="current?.apiTokenConfigured || current?.analyticsTokenConfigured" class="m-0 pb-3 text-[13px] text-ui-text-muted">{{ t('siteAdmin.cloudflareTurnKeepTokens') }}</p>
+          <p v-if="current?.apiTokenConfigured || current?.analyticsTokenConfigured" class="m-0 px-4 pb-3 text-[13px] text-ui-text-muted">{{ t('siteAdmin.cloudflareTurnKeepTokens') }}</p>
         </template>
       </div>
       <p v-if="saveError" role="alert" class="m-0 text-sm text-ui-danger">{{ message(saveError) }}</p>

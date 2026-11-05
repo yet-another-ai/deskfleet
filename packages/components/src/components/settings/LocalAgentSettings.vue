@@ -105,7 +105,7 @@ onBeforeUnmount(unsubscribe)
       @update:model-value="setEnabled"
      />
   </SettingsRow>
-  <div v-if="permissions.length" data-desktop-permissions role="group" :aria-label="t('settings.desktopPermissions')" class="-mt-1 flex flex-col gap-2 pb-3 text-[13px]">
+  <div v-if="permissions.length" data-desktop-permissions role="group" :aria-label="t('settings.desktopPermissions')" class="-mt-1 flex flex-col gap-2 px-4 pb-3 text-[13px]">
     <div
       v-for="notice in permissions"
       :key="notice.kind"
@@ -119,5 +119,5 @@ onBeforeUnmount(unsubscribe)
       <p v-if="notice.permission.status === 'error' && notice.permission.error" class="mb-0 mt-1 break-words">{{ notice.permission.error }}</p>
     </div>
   </div>
-  <p v-if="requestError || state?.error" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
+  <p v-if="requestError || state?.error" role="alert" class="m-0 -mt-1 break-words px-4 pb-3 text-[13px] text-ui-danger">{{ requestError || state?.error }}</p>
 </template>

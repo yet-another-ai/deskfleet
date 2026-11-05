@@ -67,7 +67,7 @@ onMounted(() => { void load() })
       <p role="status" class="m-0 mt-2 text-[13px] leading-relaxed text-ui-text-muted">{{ t(`settings.notificationPermissionStatus.${permission}`) }}</p>
       <UiButton v-if="permission === 'default'" class="mt-3" :disabled="busy" @click="enablePermission">{{ t("settings.enableBrowserNotifications") }}</UiButton>
     </div>
-    <div class="ui-card px-4">
+    <div class="ui-card">
       <SettingsRow v-for="option in options" :key="option.key" :label="t(option.label)" :label-id="`notifications-${option.key}-label`" :description-id="`notifications-${option.key}-description`">
         <template #description>{{ t(option.description) }}</template>
         <UiSwitch

@@ -12,7 +12,7 @@ const developerMode = useLocalStorage("deskfleet.developer-mode", false)
 
 <template>
   <h1 class="ui-page-title mb-6">{{ t("developerSettings.title") }}</h1>
-  <div class="ui-card mb-4 px-4">
+  <div class="ui-card mb-4">
     <SettingsRow :label="t('developerSettings.mode')" label-id="developer-mode-label" description-id="developer-mode-description">
       <template #description>{{ t("developerSettings.modeDescription") }}</template>
       <UiSwitch

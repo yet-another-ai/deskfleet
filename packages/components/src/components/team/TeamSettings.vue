@@ -37,7 +37,7 @@ async function rename(): Promise<void> {
     </header>
     <section v-if="admin" :aria-labelledby="`${id}-general`" class="mb-8">
       <h2 :id="`${id}-general`" class="ui-section-title mb-2">{{ t("team.general") }}</h2>
-      <form class="ui-card px-4" @submit.prevent="rename">
+      <form class="ui-card" @submit.prevent="rename">
         <SettingsRow :label="t('team.name')" :label-id="`${id}-name`">
           <input v-model="name" class="ui-input w-56" :aria-labelledby="`${id}-name`" name="team-name" required maxlength="256" autocomplete="off" :disabled="saving" />
           <UiButton type="submit" class="shrink-0" :disabled="saving || !changed">{{ saving ? t("catalog.saving") : t("catalog.save") }}</UiButton>

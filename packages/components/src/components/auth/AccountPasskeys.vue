@@ -58,7 +58,7 @@ async function remove(key: Passkey): Promise<void> {
       <p class="m-0 text-sm font-medium">{{ t("auth.noPasskeys") }}</p>
       <p class="m-0 max-w-xs text-[13px] text-ui-text-muted">{{ t("auth.noPasskeysDescription") }}</p>
     </div>
-    <ul v-else class="ui-card m-0 list-none p-0 shadow-ui-card">
+    <ul v-else class="ui-card m-0 list-none p-0">
       <li v-for="key in passkeys" :key="key.id" class="ui-card-row py-3">
         <KeyRound :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         <div class="min-w-0 flex-1">

@@ -17,14 +17,14 @@ const name = (id: string, value: string) => id === "unknown" ? t(props.dimension
 
 <template>
   <section class="ui-card min-w-0 overflow-hidden" :data-ai-usage-breakdown="dimension">
-    <div class="flex items-center gap-2 border-b border-ui-border px-5 py-4 sm:px-6">
+    <div class="flex items-center gap-2 border-b border-ui-border-strong px-5 py-4 sm:px-6">
       <h2 class="text-sm font-medium">{{ t(dimension === "models" ? "aiUsage.byModel" : "aiUsage.byMember") }}</h2>
       <span v-if="dimension === 'models'" tabindex="0" :title="t('aiUsage.modelNote')" :aria-label="t('aiUsage.modelNote')" class="text-ui-text-muted"><Info :size="14" /></span>
     </div>
     <div class="px-3 py-4 sm:px-5">
       <AiUsageChart :buckets="usage.buckets" :groups="groups" :dimension="dimension" :period="usage.period" :time-zone="usage.timeZone" />
     </div>
-    <div class="border-t border-ui-border px-5 py-4 sm:px-6">
+    <div class="border-t border-ui-border-strong px-5 py-4 sm:px-6">
       <div v-if="usage.totals.totalTokens > 0" class="ui-meter mb-4 flex" aria-hidden="true">
         <span v-for="(group, index) in groups" :key="group.id" class="ui-meter-fill rounded-none" :style="{ width: `${group.totalTokens / usage.totals.totalTokens * 100}%`, backgroundColor: AI_USAGE_COLORS[index % AI_USAGE_COLORS.length] }" />
       </div>

@@ -41,6 +41,6 @@ defineExpose({ refresh: () => { if (!isLoading.value) void executeImmediate() } 
         @update:model-value="executeImmediate"
       />
     </SettingsRow>
-    <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
+    <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words px-4 pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
   </template>
 </template>

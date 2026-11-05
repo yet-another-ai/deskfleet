@@ -9,7 +9,7 @@ defineProps<{
 
 <template>
   <!-- Controls follow their description on narrow screens. -->
-  <div class="ui-setting flex min-h-14 flex-col items-start gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+  <div class="ui-setting flex min-h-14 flex-col items-start gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
     <div class="min-w-0">
       <div :id="labelId" class="text-sm">{{ label }}</div>
       <div v-if="$slots.description" :id="descriptionId" class="mt-0.5 text-[13px] text-ui-text-muted">

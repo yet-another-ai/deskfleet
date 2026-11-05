@@ -32,7 +32,7 @@ function next(task: ScheduledTask): string {
 </script>
 
 <template>
-  <ul class="ui-card m-0 list-none divide-y divide-ui-border p-0">
+  <ul class="ui-card m-0 list-none p-0">
     <li v-for="task in tasks" :key="task.id" class="flex cursor-pointer items-center gap-4 px-4 py-3.5 ui-motion hover:bg-ui-hover" @click="router.push({ name: 'schedules', params: { scheduleId: task.id } })">
       <CalendarClock :size="18" :stroke-width="1.75" class="shrink-0" :class="task.enabled || task.trigger.kind === 'manual' ? 'text-ui-accent' : 'text-ui-text-faint'" aria-hidden="true" />
       <div class="min-w-0 flex-1">

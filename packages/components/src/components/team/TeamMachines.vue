@@ -71,8 +71,8 @@ async function rename(machine: Machine): Promise<void> {
         <Plus :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("account.addMachine") }}
       </UiButton>
     </div>
-    <ul v-if="session.machines.value.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
-      <li v-for="(machine, index) in session.machines.value" :key="machine.id" class="flex items-center gap-3 px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-team-machine-id="machine.id">
+    <ul v-if="session.machines.value.length" class="ui-card m-0 list-none p-0">
+      <li v-for="machine in session.machines.value" :key="machine.id" class="flex items-center gap-3 px-4 py-3" :data-team-machine-id="machine.id">
         <span class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ui-badge text-ui-text-muted" aria-hidden="true">
           <Monitor :size="16" :stroke-width="1.75" />
           <span class="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-ui-surface" :class="machine.online ? 'bg-ui-success' : 'bg-ui-text-faint'" />

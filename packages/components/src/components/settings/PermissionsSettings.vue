@@ -154,7 +154,7 @@ onBeforeUnmount(() => { unsubscribe?.() })
       </section>
     </div>
   </template>
-  <section v-if="hasWindowsService" data-permission="windowsDesktopService" class="ui-card mt-4 px-4">
+  <section v-if="hasWindowsService" data-permission="windowsDesktopService" class="ui-card mt-4">
     <WindowsDesktopServiceSettings ref="windowsService" />
   </section>
 </template>

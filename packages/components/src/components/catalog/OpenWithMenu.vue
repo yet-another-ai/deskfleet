@@ -115,7 +115,7 @@ defineExpose({ launchError })
               <ApplicationIcon :application="application" />{{ applicationName(application) }}
             </DropdownMenuItem>
           </template>
-          <DropdownMenuSeparator class="my-1 border-t border-ui-border" />
+          <DropdownMenuSeparator class="-mx-1 my-1 border-t border-ui-border" />
           <DropdownMenuItem as="button" type="button" class="ui-menu-item w-full" :disabled="scanning" @select.prevent="scan()"><RefreshCw :size="14" aria-hidden="true" />{{ t("applications.rescan") }}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenuPortal>

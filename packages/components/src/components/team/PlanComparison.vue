@@ -60,18 +60,18 @@ function relay(plan: typeof plans[number]) {
           <p v-if="price(plan.id)" class="m-0 mt-1 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }}</p>
         </div>
       </div>
-      <dl class="m-0 flex-1 border-t border-ui-border px-5">
-        <div v-for="feature in features" :key="feature.key" class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border py-3">
+      <dl class="m-0 flex-1 border-t border-ui-border-strong px-5">
+        <div v-for="feature in features" :key="feature.key" class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border-strong py-3">
           <dt class="text-[13px] text-ui-text-muted">{{ t(feature.label) }}</dt>
           <dd class="m-0 text-sm font-semibold tabular-nums">{{ limits(plan)[feature.key] ?? t("team.unlimited") }}</dd>
         </div>
-        <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border py-3">
+        <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border-strong py-3">
           <dt class="text-[13px] text-ui-text-muted">{{ t("billing.comparison.monthlyRelay") }}</dt>
           <dd class="m-0 flex items-center gap-1.5 text-sm font-semibold tabular-nums" :class="limits(plan).turnBytes === 0 ? 'text-ui-text-muted' : 'text-ui-accent'">
             <Minus v-if="limits(plan).turnBytes === 0" :size="14" aria-hidden="true" />{{ relay(plan) }}
           </dd>
         </div>
-        <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border py-3" :data-plan-team-turn="plan.teamTurnServers">
+        <div class="flex min-h-16 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ui-border-strong py-3" :data-plan-team-turn="plan.teamTurnServers">
           <dt class="text-[13px] text-ui-text-muted">{{ t("billing.comparison.teamTurn") }}</dt>
           <dd v-if="plan.teamTurnServers" class="m-0 flex items-center gap-1.5 text-sm"><Check :size="15" class="text-ui-accent" aria-hidden="true" />{{ t("billing.comparison.included") }}</dd>
           <dd v-else class="m-0 flex items-center gap-1.5 text-sm text-ui-text-muted"><Minus :size="14" aria-hidden="true" />{{ t("billing.notIncluded") }}</dd>

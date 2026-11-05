@@ -55,7 +55,7 @@ async function setDisabled(user: User, disabled: boolean): Promise<void> {
 <template>
   <section :aria-labelledby="`${id}-title`" class="mt-10">
     <h2 :id="`${id}-title`" class="ui-section-title mb-2">{{ t("siteAdmin.accounts") }}</h2>
-    <div class="ui-card px-4">
+    <div class="ui-card">
       <SettingsRow :label="t('siteAdmin.registration')" :label-id="`${id}-registration`">
         <template #description>{{ policyError ? failureMessage(policyError) : t("siteAdmin.registrationDescription") }}</template>
         <UiSwitch v-if="policy" :model-value="policy.registrationEnabled" :aria-labelledby="`${id}-registration`" name="public-registration" :disabled="!!pending" @update:model-value="setRegistration" />

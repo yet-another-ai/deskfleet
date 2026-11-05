@@ -93,7 +93,7 @@ const rangeEnd = computed(() => state.value ? calendarDate(state.value.to, timeZ
           <AiUsageHeatmap :days="state.heatmap" :from="rangeStart" :to="rangeEnd" :selected="selectedDay" @select="selectedDay = selectedDay === $event ? undefined : $event" />
           <AiUsageDayDetails v-if="selectedDay" :key="selectedDay" :team-id="team.id" :date="selectedDay" :time-zone="timeZone" @close="selectedDay = undefined" />
         </div>
-        <dl class="grid grid-cols-2 gap-5 border-t border-ui-border bg-ui-hover/40 p-5 sm:grid-cols-4 sm:p-6">
+        <dl class="grid grid-cols-2 gap-5 border-t border-ui-border-strong bg-ui-hover/40 p-5 sm:grid-cols-4 sm:p-6">
           <div>
             <dt class="text-xs text-ui-text-muted">{{ t(period === '24h' ? 'aiUsage.hourlyAverage' : 'aiUsage.dailyAverage') }}</dt>
             <dd class="mt-2 text-xl font-medium tabular-nums">{{ metric(stats.average) }}</dd>

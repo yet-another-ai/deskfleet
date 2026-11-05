@@ -34,7 +34,7 @@ function save(permission: keyof RemoteAgentSettings, enabled: boolean) {
       @update:model-value="save(permission, $event)"
     />
   </SettingsRow>
-  <p v-if="isLoading" role="status" class="m-0 pb-3 text-[13px] text-ui-text-muted">{{ state ? t('catalog.saving') : t('settings.loading') }}</p>
-  <p v-if="requestError" role="alert" class="m-0 pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
-  <UiButton v-if="!state && requestError" :disabled="isLoading" @click="executeImmediate()">{{ t('settings.retryLoad') }}</UiButton>
+  <p v-if="isLoading" role="status" class="m-0 px-4 pb-3 text-[13px] text-ui-text-muted">{{ state ? t('catalog.saving') : t('settings.loading') }}</p>
+  <p v-if="requestError" role="alert" class="m-0 px-4 pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
+  <UiButton v-if="!state && requestError" class="mx-4 mb-3" :disabled="isLoading" @click="executeImmediate()">{{ t('settings.retryLoad') }}</UiButton>
 </template>

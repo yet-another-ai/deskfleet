@@ -70,7 +70,7 @@ function open(result: SearchResult): void {
         <p class="m-0 text-sm font-medium">{{ t(empty ? 'search.empty' : 'search.start') }}</p>
         <p class="m-0 max-w-md text-center text-[13px] leading-5 text-ui-text-muted">{{ t(empty ? 'search.emptyHint' : 'search.startHint') }}</p>
       </div>
-      <ul v-if="results.length" class="ui-card m-0 list-none divide-y divide-ui-border p-0">
+      <ul v-if="results.length" class="ui-card m-0 list-none p-0">
         <li v-for="result in results" :key="`${result.kind}:${result.machineId}:${result.resourceId}:${result.entryId ?? ''}`">
           <button type="button" data-search-result class="flex w-full cursor-pointer items-start gap-3.5 px-4 py-4 text-left ui-motion hover:bg-ui-hover" @click="open(result)">
             <component :is="result.kind === 'chat' ? MessagesSquare : CalendarClock" :size="18" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />

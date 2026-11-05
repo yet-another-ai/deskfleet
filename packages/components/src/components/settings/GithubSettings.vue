@@ -48,7 +48,7 @@ useEventListener(window, "focus", () => {
   <h1 class="ui-page-title mb-2">{{ t("githubSettings.title") }}</h1>
   <p class="m-0 mb-6 text-sm text-ui-text-muted">{{ t("githubSettings.description") }}</p>
   <p v-if="!account || state?.configured === false" role="status" class="m-0 mb-4 text-sm text-ui-text-muted">{{ t("githubSettings.unavailable") }}</p>
-  <section :aria-label="t('githubSettings.title')" class="ui-card px-4">
+  <section :aria-label="t('githubSettings.title')" class="ui-card">
     <SettingsRow :label="t('githubSettings.repositories')">
       <template #description>{{ t("githubSettings.manageDescription") }}</template>
       <UiButton :disabled="busy || !state?.manageUrl" @click="run(() => account!.central.manageGithub())">{{ t("githubSettings.manage") }}</UiButton>
