@@ -11,7 +11,6 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { fileSize } from "../../services/file-format.ts"
 import { beginAnalyticsPlanRefresh, trackEvent } from "../../services/analytics.ts"
 import { billingFailure } from "../../services/billing-events.ts"
-import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import AgentNotice from "../session/AgentNotice.vue"
 import UsageMeter from "./UsageMeter.vue"
@@ -170,7 +169,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           <div data-team-usage="turns" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border px-4 py-3.5">
             <div class="flex min-w-0 items-center gap-1">
               <h3 class="m-0 truncate text-sm font-normal">{{ t("billing.turnsPerSession") }}</h3>
-              <IconButton :icon="Info" :label="t('billing.turnsPerSessionHint')" class="-my-1" />
+              <UiButton variant="ghost" size="icon" :label="t('billing.turnsPerSessionHint')" class="-my-1"><Info :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
             <span v-if="state.limits.maxTurnsPerSession === null" class="ui-badge shrink-0">{{ t("team.unlimited") }}</span>
             <span v-else class="shrink-0 text-sm tabular-nums">{{ t("billing.turnsPerSessionLimit", { count: state.limits.maxTurnsPerSession }) }}</span>

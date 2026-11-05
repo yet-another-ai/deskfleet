@@ -12,7 +12,7 @@ import { renderMermaidDiagram } from "../../services/mermaid.ts"
 import type { PreviewMode } from "../../services/preview.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import { broadcastMermaidLocate, locateMermaidInMainView, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 
 const platformClient = usePlatformClient()
 
@@ -146,13 +146,13 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
     </header>
     <div v-if="svg" class="relative flex min-h-0 flex-1 flex-col">
       <div data-mermaid-toolbar class="app-no-drag absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-ui-border bg-ui-canvas/90 p-0.5 shadow-ui-card backdrop-blur-xs">
-        <IconButton :icon="ZoomIn" :label="t('mermaid.zoomIn')" data-mermaid-action="zoom-in" @click="zoomIn" />
-        <IconButton :icon="ZoomOut" :label="t('mermaid.zoomOut')" data-mermaid-action="zoom-out" @click="zoomOut" />
-        <IconButton :icon="RotateCcw" :label="t('mermaid.resetView')" data-mermaid-action="reset" @click="resetView" />
-        <IconButton v-if="mode === 'tab' || mode === 'window'" :icon="LocateFixed" :label="t('mermaid.locateMessage')" data-mermaid-action="locate-message" @click="locateOriginalMessage" />
-        <IconButton v-if="mode !== 'focus' && mode !== 'window'" :icon="Maximize2" :label="t('mermaid.focus')" data-mermaid-action="focus" @click="focusDiagram" />
+        <UiButton variant="ghost" size="icon" :label="t('mermaid.zoomIn')" data-mermaid-action="zoom-in" @click="zoomIn"><ZoomIn :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" :label="t('mermaid.zoomOut')" data-mermaid-action="zoom-out" @click="zoomOut"><ZoomOut :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" :label="t('mermaid.resetView')" data-mermaid-action="reset" @click="resetView"><RotateCcw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton v-if="mode === 'tab' || mode === 'window'" variant="ghost" size="icon" :label="t('mermaid.locateMessage')" data-mermaid-action="locate-message" @click="locateOriginalMessage"><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton v-if="mode !== 'focus' && mode !== 'window'" variant="ghost" size="icon" :label="t('mermaid.focus')" data-mermaid-action="focus" @click="focusDiagram"><Maximize2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         <DropdownMenuRoot :open="menuOpen" :modal="false" @update:open="menuOpen = $event">
-          <DropdownMenuTrigger :as="IconButton" :icon="Ellipsis" :label="t('mermaid.more')" data-mermaid-action="more" />
+          <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('mermaid.more')" data-mermaid-action="more"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
           <DropdownMenuPortal>
             <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex w-44 flex-col" loop>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" data-mermaid-action="copy" @select="copyCode">

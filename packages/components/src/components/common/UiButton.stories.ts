@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import { Plus, Trash2, Sparkles } from "@lucide/vue"
+import { Copy, PanelLeft, Plus, Settings, Sparkles, Trash2 } from "@lucide/vue"
 import UiButton from "./UiButton.vue"
 
 const meta = {
@@ -19,6 +19,8 @@ const meta = {
       control: "select",
       options: ["button", "submit", "reset"],
     },
+    label: { control: "text" },
+    placeholder: { control: "boolean" },
     disabled: { control: "boolean" },
     loading: { control: "boolean" },
   },
@@ -55,7 +57,7 @@ export const AllVariantsShowcase: Story = {
         <div class="flex flex-wrap items-center gap-3">
           <UiButton size="sm" variant="default">Small Default</UiButton>
           <UiButton size="sm" variant="primary">Small Primary</UiButton>
-          <UiButton size="icon" variant="default" aria-label="Add"><Plus :size="15" /></UiButton>
+          <UiButton size="icon" variant="default" label="Add"><Plus :size="15" /></UiButton>
           <UiButton variant="primary" loading>Loading</UiButton>
           <UiButton variant="default" disabled>Disabled</UiButton>
         </div>
@@ -68,10 +70,25 @@ export const AllVariantsShowcase: Story = {
         <div class="flex flex-wrap items-center gap-3">
           <UiButton class="rounded-lg [corner-shape:round]" size="sm" variant="default">Rounded Small Default</UiButton>
           <UiButton class="rounded-lg [corner-shape:round]" size="sm" variant="primary">Rounded Small Primary</UiButton>
-          <UiButton class="rounded-lg [corner-shape:round]" size="icon" variant="default" aria-label="Add"><Plus :size="15" /></UiButton>
+          <UiButton class="rounded-lg [corner-shape:round]" size="icon" variant="default" label="Add"><Plus :size="15" /></UiButton>
           <UiButton class="rounded-lg [corner-shape:round]" variant="primary" loading>Rounded Loading</UiButton>
           <UiButton class="rounded-lg [corner-shape:round]" variant="default" disabled>Rounded Disabled</UiButton>
         </div>
+      </div>
+    `,
+  }),
+}
+
+export const IconToolbarCluster: Story = {
+  render: () => ({
+    components: { UiButton, PanelLeft, Plus, Copy, Settings, Trash2 },
+    template: `
+      <div class="inline-flex items-center gap-1 rounded-lg border border-ui-border bg-ui-surface p-1">
+        <UiButton variant="ghost" size="icon" label="Toggle sidebar"><PanelLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" label="New session"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" label="Copy link"><Copy :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" label="Settings" placeholder><Settings :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" label="Delete" disabled><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     `,
   }),

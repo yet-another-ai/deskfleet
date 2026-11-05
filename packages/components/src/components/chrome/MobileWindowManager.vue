@@ -11,7 +11,7 @@ import { pendingMermaidLocate, useLayoutStore, type SessionWindowRequest } from 
 import { pendingPreviewLocate } from "../../stores/previews.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import ErrorNotice from "../common/ErrorNotice.vue"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
 import SessionDesktopPanel from "../desktop/SessionDesktopPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
@@ -186,7 +186,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
       <WindowToolbar :history="false" />
       <h1 class="m-0 min-w-0 flex-1 truncate text-sm font-medium">{{ overviewOpen ? t('mobileViews.overview') : activeView.title }}</h1>
       <div :id="headerId" v-show="activeId === 'chat' && !overviewOpen" />
-      <IconButton :icon="overviewOpen ? X : Grid3x3" :label="overviewOpen ? t('common.close') : t('mobileViews.overview')" :aria-expanded="overviewOpen" data-open-overview @click="toggleOverview" />
+      <UiButton variant="ghost" size="icon" :label="overviewOpen ? t('common.close') : t('mobileViews.overview')" :aria-expanded="overviewOpen" data-open-overview @click="toggleOverview"><component :is="overviewOpen ? X : Grid3x3" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     </header>
     <ErrorNotice v-if="error" :error="error" />
     <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging: dragging || settling, zooming }">

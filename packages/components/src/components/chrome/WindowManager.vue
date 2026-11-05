@@ -27,7 +27,7 @@ import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
@@ -465,7 +465,7 @@ onScopeDispose(() => {
       </template>
       <template #leftHeaderActions="{ group }">
         <DropdownMenuRoot :modal="false">
-          <DropdownMenuTrigger :as="IconButton" :icon="Plus" :label="t('toolbar.addWindow')" class="app-no-drag mx-[3px]" />
+          <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('toolbar.addWindow')" class="app-no-drag mx-[3px]"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
           <DropdownMenuPortal>
             <DropdownMenuContent align="start" :side-offset="4" :collision-padding="8" :aria-label="t('toolbar.addWindow')" class="app-no-drag ui-menu z-50 flex w-44 flex-col" loop>
               <DropdownMenuItem as="button" type="button" data-window-type="changes" class="ui-menu-item" :disabled="changesOpen" @select="openWindowTab('changes', group)">

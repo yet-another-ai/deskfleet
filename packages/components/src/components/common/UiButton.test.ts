@@ -1,9 +1,9 @@
+import { h } from "vue"
 import { mount } from "@vue/test-utils"
 import { expect, test, vi } from "vitest"
 import { Plus } from "@lucide/vue"
 import { i18n } from "../../i18n/index.ts"
 import UiButton from "./UiButton.vue"
-import IconButton from "./IconButton.vue"
 
 test("buttons opt into form submission and block actions while loading", async () => {
   const click = vi.fn()
@@ -23,9 +23,10 @@ test("buttons opt into form submission and block actions while loading", async (
 
 test("icon buttons keep labels and refuse disabled and placeholder actions", async () => {
   const click = vi.fn()
-  const view = mount(IconButton, {
-    props: { icon: Plus, label: "Add", onClick: click },
+  const view = mount(UiButton, {
+    props: { variant: "ghost", size: "icon", label: "Add", onClick: click },
     attrs: { "data-action": "add", "aria-expanded": "false" },
+    slots: { default: () => h(Plus, { size: 16, strokeWidth: 1.75, "aria-hidden": "true" }) },
     global: { plugins: [i18n] },
   })
   expect(view.get("button").attributes("aria-label")).toBe("Add")

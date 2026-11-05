@@ -28,7 +28,6 @@ import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
 import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
 import MermaidViewer from "../components/session/MermaidViewer.vue"
 import PreviewViewer from "../components/session/PreviewViewer.vue"
-import IconButton from "../components/common/IconButton.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../stores/layout.ts"
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
@@ -316,8 +315,8 @@ async function checkOperation(operationId: string): Promise<void> {
       <div v-if="snapshot || faces.length" data-session-window-actions class="app-no-drag flex items-center gap-1">
         <template v-if="snapshot">
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
-          <IconButton v-if="newTerminalWindow && !compact" :icon="SquareTerminal" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow" />
-          <IconButton v-if="compact && !windowedMainWindow && terminalWorktree" :icon="SquareTerminal" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen" />
+          <UiButton v-if="newTerminalWindow && !compact" variant="ghost" size="icon" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton v-if="compact && !windowedMainWindow && terminalWorktree" variant="ghost" size="icon" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
         </template>
         <UserAvatarStack v-if="faces.length" :people="faces" :size="22" :limit="5" :class="snapshot && 'ml-1'" />

@@ -7,7 +7,6 @@ import { useI18n } from "vue-i18n"
 import type { Team, TeamMember } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
-import IconButton from "../common/IconButton.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import InviteDialog from "./InviteDialog.vue"
 import TransferOwnershipDialog from "./TransferOwnershipDialog.vue"
@@ -101,7 +100,7 @@ onMounted(load)
           <UiSelect :aria-label="t('team.roleFor', { name: member.name })" :model-value="member.role" :options="[{ value: 'member', label: t('team.member') }, { value: 'admin', label: t('team.admin') }]" :disabled="!!updating" @update:model-value="changeRole(member, $event)" />
         </div>
         <span v-else class="ui-badge shrink-0">{{ t(`team.${member.role}`) }}</span>
-        <IconButton v-if="manageable(member)" :icon="Trash2" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member" />
+        <UiButton v-if="manageable(member)" variant="ghost" size="icon" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         <span v-else-if="admin" class="w-7 shrink-0" aria-hidden="true" />
       </li>
     </ul>

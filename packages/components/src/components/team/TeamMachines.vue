@@ -7,7 +7,6 @@ import type { Machine } from "@deskfleet/client/central"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
-import IconButton from "../common/IconButton.vue"
 
 const { t, locale } = useI18n()
 const id = useId()
@@ -102,8 +101,8 @@ async function rename(machine: Machine): Promise<void> {
             </div>
             <div class="truncate text-[13px] text-ui-text-muted">{{ status(machine) }}</div>
           </div>
-          <IconButton :icon="Pencil" :label="t('team.renameMachineLabel', { name: machine.name })" :data-rename-machine="machine.id" :disabled="!!editing" @click="startRename(machine)" />
-          <IconButton v-if="admin" :icon="Trash2" :label="t('team.removeMachineLabel', { name: machine.name })" :disabled="!!editing" @click="removing = machine" />
+          <UiButton variant="ghost" size="icon" :label="t('team.renameMachineLabel', { name: machine.name })" :data-rename-machine="machine.id" :disabled="!!editing" @click="startRename(machine)"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton v-if="admin" variant="ghost" size="icon" :label="t('team.removeMachineLabel', { name: machine.name })" :disabled="!!editing" @click="removing = machine"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </template>
       </li>
     </ul>

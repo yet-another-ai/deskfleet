@@ -3,7 +3,6 @@ import UiButton from "../common/UiButton.vue"
 import { X } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
-import IconButton from "../common/IconButton.vue"
 
 const { t } = useI18n()
 const session = useAccountSession()
@@ -19,7 +18,7 @@ const session = useAccountSession()
     </div>
     <div v-if="session.notice.value" role="alert" class="flex items-start gap-1 rounded-lg border border-ui-danger/30 bg-ui-danger/8 py-1 pr-1 pl-2.5 text-xs text-ui-danger">
       <p class="m-0 min-w-0 flex-1 break-words py-1">{{ session.notice.value }}</p>
-      <IconButton :icon="X" :label="t('account.dismiss')" @click="session.notice.value = undefined" />
+      <UiButton variant="ghost" size="icon" :label="t('account.dismiss')" @click="session.notice.value = undefined"><X :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     </div>
   </div>
 </template>

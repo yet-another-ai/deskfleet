@@ -7,7 +7,6 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { useI18n } from "vue-i18n"
 import type { FileEntry, FileListing, FileLocation, FilesApi, FileTarget } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
-import IconButton from "../common/IconButton.vue"
 const props = withDefaults(defineProps<{ api: FilesApi; target: FileTarget; name: string; revision: number; resetKey: number; selection: FileEntry[]; initialPath?: string; selectable?: boolean }>(), { selectable: true })
 const emit = defineEmits<{ selection: [entries: FileEntry[]]; location: [location: FileLocation | undefined] }>()
 const { t } = useI18n()
@@ -64,12 +63,12 @@ onBeforeUnmount(() => { disposed = true; ++generation })
 
 <template>
   <section class="file-browser-pane flex min-h-64 min-w-0 flex-col overflow-hidden rounded-lg border border-ui-border" :aria-label="name">
-    <div class="flex shrink-0 items-center justify-between px-3 py-2"><span class="truncate text-sm font-medium">{{ name }}</span><IconButton v-if="target.kind === 'local'" :icon="FolderOpen" :label="t('files.chooseFolder')" @click="choose" /></div>
+    <div class="flex shrink-0 items-center justify-between px-3 py-2"><span class="truncate text-sm font-medium">{{ name }}</span><UiButton v-if="target.kind === 'local'" variant="ghost" size="icon" :label="t('files.chooseFolder')" @click="choose"><FolderOpen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton></div>
     <nav class="flex min-w-0 shrink-0 items-center gap-1 px-2 pb-2" :aria-label="t('folderPicker.location')">
-      <IconButton :icon="Home" :label="t('folderPicker.home')" @click="navigate(listing?.homePath)" />
-      <IconButton :icon="ArrowUp" :label="t('folderPicker.up')" :disabled="!listing?.parentPath" @click="navigate(listing?.parentPath ?? undefined)" />
+      <UiButton variant="ghost" size="icon" :label="t('folderPicker.home')" @click="navigate(listing?.homePath)"><Home :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+      <UiButton variant="ghost" size="icon" :label="t('folderPicker.up')" :disabled="!listing?.parentPath" @click="navigate(listing?.parentPath ?? undefined)"><ArrowUp :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       <span v-if="listing" class="min-w-0 flex-1 truncate text-xs" :title="listing.path" :data-current-path="listing.path">{{ listing.path }}</span>
-      <IconButton :icon="RefreshCw" :label="t('files.refresh')" :disabled="loading" @click="navigate(requestedPath)" />
+      <UiButton variant="ghost" size="icon" :label="t('files.refresh')" :disabled="loading" @click="navigate(requestedPath)"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     </nav>
     <div class="file-browser-entries max-h-80 min-h-40 flex-1 overflow-y-auto border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
       <p v-if="loading" class="m-0 p-3 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>

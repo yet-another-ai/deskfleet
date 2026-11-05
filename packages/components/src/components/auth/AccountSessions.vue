@@ -6,7 +6,6 @@ import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, LoginSession } from "@deskfleet/client/account-security"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
-import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 
 /** Login sessions are browser and desktop sign-ins, not enrolled Machines. */
@@ -46,7 +45,7 @@ async function revoke(target: LoginSession | "all"): Promise<void> {
           </div>
           <div class="text-[13px] text-ui-text-muted">{{ t("auth.sessionDates", { created: formatDate(session.createdAt), expires: formatDate(session.expiresAt) }) }}</div>
         </div>
-        <IconButton :icon="LogOut" :label="t('auth.revoke')" @click="revoking = session" />
+        <UiButton variant="ghost" size="icon" :label="t('auth.revoke')" @click="revoking = session"><LogOut :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </li>
     </ul>
   </section>

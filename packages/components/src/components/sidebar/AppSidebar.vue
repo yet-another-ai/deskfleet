@@ -11,7 +11,7 @@ import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import AccountNotices from "./AccountNotices.vue"
 import AppUpdateNotice from "./AppUpdateNotice.vue"
 import MachineSection from "./MachineSection.vue"
@@ -99,7 +99,7 @@ function refresh(): void {
         <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
         <div class="-mr-1.5 flex items-center">
           <button type="button" class="cursor-pointer rounded px-1 py-1 hover:bg-ui-hover disabled:op-40" :disabled="catalogLoading" @click="refresh">{{ t("catalog.refresh") }}</button>
-          <IconButton v-if="account" :icon="Plus" :label="t('account.addMachine')" @click="account.dialog.value = 'add-machine'" />
+          <UiButton v-if="account" variant="ghost" size="icon" :label="t('account.addMachine')" @click="account.dialog.value = 'add-machine'"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>
       <p v-if="catalogError" role="alert" class="mx-2.5 mb-3 break-words text-xs text-ui-danger">{{ catalogError }}</p>

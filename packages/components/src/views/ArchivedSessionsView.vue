@@ -12,7 +12,6 @@ import MachineTabs from "../components/account/MachineTabs.vue"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import HoldButton from "../components/common/HoldButton.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import IconButton from "../components/common/IconButton.vue"
 import UiButton from "../components/common/UiButton.vue"
 import UiDialog from "../components/common/UiDialog.vue"
 import SessionContextMenu from "../components/session/SessionContextMenu.vue"
@@ -105,8 +104,8 @@ async function confirmAction(): Promise<void> {
                 <span v-if="item.machine" class="block truncate text-[13px] text-ui-text-muted">{{ item.workspace ? t('archivedSessions.location', { machine: item.machine.name, workspace: item.workspace.name }) : item.machine.name }}</span>
               </RouterLink>
               <span v-if="!item.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t('machine.offline') }}</span>
-              <IconButton :icon="ArchiveRestore" :label="t('archivedSessions.restoreLabel', { title: item.title })" :disabled="!item.online || busy" :data-restore-session="item.session.id" @click="requestAction(item.session.id, 'restore')" />
-              <IconButton :icon="Trash2" :label="t('archivedSessions.deleteLabel', { title: item.title })" :disabled="!item.online || busy" :data-delete-session="item.session.id" @click="requestAction(item.session.id, 'delete')" />
+              <UiButton variant="ghost" size="icon" :label="t('archivedSessions.restoreLabel', { title: item.title })" :disabled="!item.online || busy" :data-restore-session="item.session.id" @click="requestAction(item.session.id, 'restore')"><ArchiveRestore :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+              <UiButton variant="ghost" size="icon" :label="t('archivedSessions.deleteLabel', { title: item.title })" :disabled="!item.online || busy" :data-delete-session="item.session.id" @click="requestAction(item.session.id, 'delete')"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
           </SessionContextMenu>
         </li>
