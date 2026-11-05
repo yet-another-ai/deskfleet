@@ -171,6 +171,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       ...signaling("agent"),
       control,
       history: {
+        parallel: () => !local,
         available: () => online,
         list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({ ...snapshot.session,
           working: snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),

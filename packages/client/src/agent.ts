@@ -12,6 +12,8 @@ export interface AgentSignalingApi {
   connectionFailureReason?(sessionId: string): RelayDeniedReason | null | undefined
   control?<M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]): Promise<AgentMethods[M]["result"]> | undefined
   history?: {
+    /** Race retained history against remote attachment; disabled for local channels. */
+    parallel?(): boolean
     available(): boolean
     list(): Promise<(AgentSessionRecord & { working?: boolean })[]>
     snapshot(sessionId: string): Promise<AgentSnapshot>
