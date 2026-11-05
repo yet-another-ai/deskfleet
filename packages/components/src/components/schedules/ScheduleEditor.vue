@@ -84,7 +84,7 @@ async function submit(): Promise<void> {
 
 <template>
   <form class="flex flex-col gap-7" @submit.prevent="submit">
-    <div class="rounded-2xl border border-ui-border bg-ui-surface px-4 pt-4 shadow-ui-card focus-within:border-ui-accent/60">
+    <div class="rounded-2xl border border-ui-border bg-ui-surface px-4 pt-4 focus-within:border-ui-accent/60">
       <input v-model="title" name="schedule-title" class="block w-full border-b border-ui-border bg-transparent pb-3 text-base font-semibold outline-none" :aria-label="t('schedules.name')" :placeholder="t('schedules.nameHint')" maxlength="200" required :disabled="blocked" />
       <textarea v-model="prompt" name="schedule-prompt" class="mt-3 block min-h-30 w-full resize-y bg-transparent text-sm leading-6 outline-none" :aria-label="t('schedules.prompt')" :placeholder="t('schedules.promptHint')" required :disabled="blocked" />
       <div class="flex min-h-11 items-center pb-2">
