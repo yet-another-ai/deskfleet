@@ -15,7 +15,7 @@ const platform = platformClient.platform
 <template>
   <!-- The main pane's title bar. It takes over the toolbar while the sidebar is hidden. -->
   <header
-    class="app-drag titlebar-overlay-inset flex h-12 shrink-0 items-center gap-2 pr-2"
+    class="app-drag titlebar-overlay-inset box-content flex h-12 shrink-0 items-center gap-2 pr-2 pt-[var(--safe-area-top,0px)]"
     :class="!sidebarOpen && platform === 'darwin' ? 'pl-20' : 'pl-3'"
   >
     <WindowToolbar v-if="compact || !sidebarOpen" />

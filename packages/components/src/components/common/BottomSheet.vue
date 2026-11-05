@@ -51,7 +51,7 @@ function focusPanel(event: Event): void {
   --bleed: 48px;
   height: calc(88dvh + var(--bleed));
   max-width: 48rem;
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--bleed));
+  padding-bottom: calc(var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)) + var(--bleed));
   margin-bottom: calc(-1 * var(--bleed));
   transform: translateY(var(--drawer-swipe-movement-y, 0px));
   transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);

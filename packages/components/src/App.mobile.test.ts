@@ -104,6 +104,7 @@ test("Escape closes a compact drawer and returns focus to its visible opener", a
   await view.get('[role="dialog"]').trigger("keydown", { key: "Escape" })
   await vi.waitFor(() => expect(view.find('[role="dialog"]').exists()).toBe(false))
   await vi.waitFor(() => expect(document.activeElement).toBe(opener.element))
+  expect(view.find('[role="tooltip"]').exists()).toBe(false)
 })
 
 test("compact navigation closes on both a new destination and the current destination", async () => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { useMediaQuery } from "@vueuse/core"
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
 import { defineComponent, type PropType } from "vue"
 
@@ -6,11 +7,15 @@ import { defineComponent, type PropType } from "vue"
 export default defineComponent({
   components: { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger },
   props: { text: { type: String, required: true }, portalTo: [String, Object] as PropType<string | HTMLElement> },
+  setup() {
+    const disabled = useMediaQuery("(max-width: 1023.9px), (hover: none)")
+    return { disabled }
+  },
 })
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="400">
+  <TooltipProvider :delay-duration="400" :disabled="disabled">
     <TooltipRoot>
       <TooltipTrigger as-child><slot /></TooltipTrigger>
       <TooltipPortal :to="portalTo">

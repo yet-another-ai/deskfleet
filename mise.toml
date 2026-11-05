@@ -190,6 +190,16 @@ description = "Run the Vue Web development server"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/web dev"
 
+[tasks."web:dev:ios"]
+description = "Run the Vue Web development server with Capacitor iOS live reload"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/web dev:ios"
+
+[tasks."web:dev:android"]
+description = "Run the Vue Web development server with Capacitor Android live reload"
+depends = ["install"]
+run = "pnpm --filter @deskfleet/web dev:android"
+
 [tasks."web:build"]
 description = "Build the Vue Web client"
 depends = ["install"]

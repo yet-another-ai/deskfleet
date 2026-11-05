@@ -26,6 +26,7 @@ minimumReleaseAgeExclude:
   - '@intlify/bundle-utils@11.2.8'
   - '@intlify/unplugin-vue-i18n@11.2.8'
   - '@lucide/vue@1.62.0'
+  - '@proj-airi/cap-vite@0.15.1'
 
 overrides:
   # The docs render the same Vue components as the desktop and Web clients.
