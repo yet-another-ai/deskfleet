@@ -143,6 +143,15 @@ description = "Run the standalone headless daemon from TypeScript"
 depends = ["native:debug"]
 run = "node apps/daemon/src/main.ts"
 
+[tasks."dsh:stage"]
+description = "Stage the pinned DeepSeek Harness and private Node runtime for source launches"
+run = "node scripts/stage-dsh.ts"
+
+[tasks."dsh:smoke"]
+description = "Verify bundled DeepSeek Harness without system Node, npm, or dsh"
+depends = ["dsh:stage"]
+run = "node scripts/smoke-dsh.ts"
+
 [tasks."daemon:pack"]
 description = "Package the daemon as a Node.js single executable"
 depends = ["native:release"]

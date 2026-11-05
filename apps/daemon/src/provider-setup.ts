@@ -4,6 +4,7 @@ import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
+import { dshRuntimeProcess } from "./agents/dsh-runtime.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
@@ -66,7 +67,6 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
   if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
   if (template === "omp") directories.push(path.join(env.BUN_INSTALL ?? path.join(home, ".bun"), "bin"))
-  if (template === "deepseek-harness") directories.push(...npmLocations(ctx))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
@@ -102,14 +102,10 @@ async function findCommand(command: string, ctx: Context, extraDirectories: stri
 
 /** Fixed official installer endpoints; scripts handle the vendor's package selection and verification. */
 async function installer(template: AgentProviderTemplateId, ctx: Context): Promise<{ command: string; args: string[] } | string> {
+  if (template === "deepseek-harness") return "DeepSeek Harness is included with DeskFleet. Reinstall DeskFleet to repair its runtime, or select your own executable."
   if (template === "acp") return "Custom ACP providers use an executable you install yourself."
   if (!["x64", "arm64"].includes(ctx.arch) || !["darwin", "linux", "win32"].includes(ctx.platform)) {
     return "Automatic installation is unavailable for this operating system or architecture."
-  }
-  if (template === "deepseek-harness") {
-    const npm = await findCommand("npm", ctx, npmLocations(ctx))
-    if (!npm) return "npm is required to install DeepSeek Harness (`npm install -g @deepseek-ai/dsh`)."
-    return { command: npm, args: ["install", "-g", "@deepseek-ai/dsh"] }
   }
   if (ctx.platform === "win32" && template !== "grok") {
     const shell = await findCommand("pwsh", ctx) ?? await findCommand("powershell", ctx, [
@@ -225,6 +221,17 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
   const base = {
     auth: "unknown" as const, installable: typeof installation !== "string", loginAvailable: false,
     ...(typeof installation === "string" ? { installMessage: installation } : {}),
+  }
+  if (provider.template === "deepseek-harness" && !provider.binaryPath) {
+    const launch = dshRuntimeProcess(["--version"], ctx.env)
+    try {
+      const result = await ctx.run(launch.command, launch.args ?? [], ctx.env, ctx.home)
+      if (result.code === 0 && text(result.stdout)) return {
+        ...base, status: "found", version: text(result.stdout),
+        auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown",
+      }
+    } catch { /* A missing packaged runtime is repaired by reinstalling DeskFleet. */ }
+    return { ...base, status: "missing" }
   }
   const commands = provider.binaryPath ? [provider.binaryPath] : provider.template === "cursor" ? ["cursor-agent", "agent"]
     : provider.template === "antigravity" && ctx.platform === "win32" ? ["agy_acp_server.exe"]

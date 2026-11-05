@@ -97,7 +97,7 @@ test("templates resolve their own binary defaults and cannot change after creati
   assert.deepEqual(registry.resolve(omp.id).config, { name: "Oh My Pi", binaryPath: "omp", env: { ANTHROPIC_API_KEY: "secret" } })
   const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
   assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
-  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: "dsh", env: { DEEPSEEK_API_KEY: "secret" } })
+  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret" } })
   const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
   assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
   const antigravityBinary = process.platform === "win32" ? "agy_acp_server.exe" : "agy_acp_server.par"

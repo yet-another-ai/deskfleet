@@ -151,7 +151,8 @@ export class AgentProviders {
       provider: this.#providerByTemplate[record.template],
       config: {
         name: record.name,
-        binaryPath: record.binaryPath ?? (record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
+        binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
+          : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
         env: commandEnvironment(record.env, this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
       },

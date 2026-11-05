@@ -5,6 +5,9 @@ executableName: deskfleet
 asar: true
 asarUnpack:
   - out/main/deskfleet.node
+extraResources:
+  - from: out/main/dsh
+    to: dsh
 # Vite bundles every renderer and main-process dependency into out/.
 npmRebuild: false
 # Give packaged executables their own macOS Local Network permission identity.
@@ -39,6 +42,7 @@ publish:
 files:
   - out/**/*
   - "!out/**/*.map"
+  - "!out/main/dsh/**/*"
   - "!out/auv/**/*"
   - "!out/windows/**/*"
   - "!out/native/**/*"
@@ -54,6 +58,7 @@ mac:
     - from: out/native/deskfleet-viewer
       to: native/deskfleet-viewer
   binaries:
+    - Contents/Resources/dsh/bin/node
     - Contents/MacOS/auv
     - Contents/Resources/native/deskfleet-viewer
   category: public.app-category.developer-tools

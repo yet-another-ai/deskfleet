@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawn } from "node:child_process"
 import { once } from "node:events"
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { chmodSync, copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
@@ -22,6 +22,7 @@ environment.DESKFLEET_DAEMON_DIRECTORY = join(directory, "control")
 try {
   copyFileSync(join(output, executableName), command)
   chmodSync(command, 0o755)
+  cpSync(join(output, "dsh"), join(directory, "dsh"), { recursive: true })
 
   const manifest = JSON.parse(readFileSync(join(root, "apps/daemon/package.json"), "utf8")) as {
     version: string
@@ -66,6 +67,13 @@ try {
   })) as { agentInfo: { name: string; version: string } }
   assert.equal(piInitialization.agentInfo.name, "pi-acp")
   assert.equal(piInitialization.agentInfo.version, manifest.dependencies["pi-acp"])
+
+  const deepseek = JSON.parse(execFileSync(command, ["agent", "deepseek-harness", "--check"], {
+    cwd: directory, env: { ...environment, HOME: directory, USERPROFILE: directory,
+      DSH_HOME: join(directory, ".dsh"), DSH_AGENTS_HOME: join(directory, ".agents"),
+      DEEPSEEK_API_KEY: "", DEEPSEEK_BASE_URL: "https://api.deepseek.com" }, encoding: "utf8", timeout: 30_000,
+  })) as { agentInfo: { name: string } }
+  assert.match(deepseek.agentInfo.name, /dsh|deepseek/iu)
 
   const child = spawn(command, ["--port", "0"], {
     cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],

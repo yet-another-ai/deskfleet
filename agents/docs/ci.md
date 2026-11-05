@@ -100,10 +100,16 @@ as described in the Web guide. Publish includes this same-run Web artifact in
 both server image architectures. The artifact remains available for independent
 static hosting for 14 days; it is not added to the GitHub Release archives.
 
-Smoke tests copy the daemon executable alone to an unrelated temporary directory,
+The standalone archive includes `dsh/` beside the daemon executable, containing
+the pinned DeepSeek Harness package tree, private Node executable, and licenses.
+Desktop packaging places the same payload in its resources. Staging uses an
+offline production deploy from the workspace lockfile; it preserves upstream
+plugins, native modules, and subprocess helpers.
+
+Smoke tests copy the daemon executable and `dsh/` to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
-the bundled ACP adapter, startup, and the health endpoint. Unix tests also require
-clean signal-driven shutdown; Windows tests terminate the process forcibly.
+the bundled ACP adapter, the DeepSeek ACP handshake, startup, and the health
+endpoint. Unix tests also require clean signal-driven shutdown; Windows tests terminate the process forcibly.
 
 ## Product website deployment
 

@@ -209,6 +209,7 @@ jobs:
           host_target=$(mise exec -- rustc --print host-tuple)
           cp "target/$host_target/release/deskfleet-server$extension" dist/
           cp "apps/daemon/dist/deskfleet-daemon$extension" dist/
+          cp -R apps/daemon/dist/dsh dist/dsh
           tar -czf "deskfleet-$PLATFORM.tar.gz" -C dist .
 
       - name: Upload server and daemon artifacts

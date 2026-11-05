@@ -872,8 +872,12 @@ It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise wit
 The Oh My Pi template launches the installed `omp` CLI directly as `omp acp`,
 using its existing provider credentials. Its native ACP server supplies session
 configuration and supports client filesystem, terminal, and MCP integration.
-The DeepSeek Harness template launches the installed `dsh` CLI directly as
-`dsh --profile acp`. Credentials come from `DEEPSEEK_API_KEY` (optional
+The DeepSeek Harness template launches the bundled CLI with its private Node
+runtime as `dsh --profile acp`; an explicit binary path selects an external CLI.
+The immutable runtime is shared by registrations, while provider environment
+overrides remain registration-owned. Desktop resources and the standalone
+release archive carry the complete pinned package tree and Node runtime.
+Credentials come from `DEEPSEEK_API_KEY` (optional
 `DEEPSEEK_BASE_URL`); the ACP server does not advertise interactive authenticate
 methods.
 The Antigravity template launches Google's standalone ACP runtime and its matching
@@ -890,7 +894,8 @@ version remains `1`, and forking requires the provider's advertised capability.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the template default (`codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `dsh`,
+paths use the bundled DeepSeek runtime or the template default (`codex`, `claude`,
+`agent`, `grok`, `pi`, `omp`,
 `agy_acp_server.par` / `agy_acp_server.exe`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
