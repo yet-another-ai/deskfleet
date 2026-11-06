@@ -184,13 +184,14 @@ export class AgentClient {
     const connection = this.connect()
     await connection
     if (this.#connecting !== connection) throw new Error("Agent connection closed")
-    return new Promise<T>((resolve, reject) => {
+    const compressHistory = method === "_deskfleet/session/history" && object(params) && typeof DecompressionStream !== "undefined"
+    const result = await new Promise<unknown>((resolve, reject) => {
       const id = ++this.#nextId
       const timeout = setTimeout(() => {
         if (this.#current) this.#fail(this.#current, new Error(`Agent ${method} response timed out; reconnect to check its result`))
       }, 60_000)
-      this.#pending.set(id, { resolve: result => resolve(result as T), reject, timeout })
-      void this.#send({ jsonrpc: "2.0", id, method, params }).catch(error => {
+      this.#pending.set(id, { resolve, reject, timeout })
+      void this.#send({ jsonrpc: "2.0", id, method, params: compressHistory ? { ...params, responseEncoding: "gzip" } : params }).catch(error => {
         const pending = this.#pending.get(id)
         if (!pending) return
         clearTimeout(pending.timeout)
@@ -198,6 +199,23 @@ export class AgentClient {
         pending.reject(errorOf(error))
       })
     })
+    if (compressHistory && object(result) && result.encoding === "gzip" && typeof result.data === "string") {
+      const compressed = Uint8Array.from(atob(result.data), char => char.charCodeAt(0))
+      const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"))
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+      let size = 0
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        size += value.byteLength
+        if (size > AGENT_MESSAGE_BYTES) { await reader.cancel(); throw new Error("Agent message exceeds the 32 MiB limit") }
+        chunks.push(value)
+      }
+      const decoder = new TextDecoder("utf-8", { fatal: true })
+      return JSON.parse(chunks.map(chunk => decoder.decode(chunk, { stream: true })).join("") + decoder.decode()) as T
+    }
+    return result as T
   }
 
   #send(message: unknown): Promise<void> {

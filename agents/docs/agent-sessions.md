@@ -897,7 +897,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
 | `_deskfleet/session/switch-agent` | Audit and replace a ready, idle Session's Agent, clear its provider conversation, and start the replacement; clients confirm the cache/context loss first |
 | `_deskfleet/session/subscribe` | Attach and return snapshot with `session.lastEventSeq` watermark |
-| `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request |
+| `_deskfleet/session/history` | Page events after a sequence; up to 200 events per request. A DataChannel viewer may request `responseEncoding: "gzip"`; large compressible pages can then return `{ encoding: "gzip", data }`, with base64-encoded gzip JSON instead of the event array. The decoded page remains subject to the message byte limit. |
 | `_deskfleet/session/read` | A person acknowledges shared history through an observed `throughSeq`, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
 | `_deskfleet/session/unread` | A person rewinds the shared read watermark to just before the latest completion, with an operation ID; requires `agent:read` on peers and returns the updated snapshot |
 | `_deskfleet/git/status` | Inspect the Session's captured checkouts, branch/HEAD, and staged/unstaged/untracked files |

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
+import { promisify } from "node:util"
+import { gzip } from "node:zlib"
 import {
   AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES,
   type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
@@ -42,6 +44,7 @@ const METHODS = new Set<AgentMethod>([
 const MAX_PENDING_REQUESTS = 128
 const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2
 const SEND_TIMEOUT_MS = 5_000
+const gzipAsync = promisify(gzip)
 
 function object(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -223,7 +226,15 @@ export class AgentChannel {
       }
       const result = await this.#sessions.handle(method as AgentMethod, params, this.#actor)
       if (this.#closed) return
-      this.#queue({ jsonrpc: "2.0", id, result })
+      let response = result
+      if (method === "_deskfleet/session/history" && object(params) && params.responseEncoding === "gzip" && Array.isArray(result)) {
+        const json = Buffer.from(JSON.stringify(result))
+        if (json.byteLength >= 4096 && json.byteLength <= AGENT_MESSAGE_BYTES) {
+          const compressed = await gzipAsync(json, { level: 4 })
+          if (compressed.byteLength * 4 / 3 < json.byteLength) response = { encoding: "gzip", data: compressed.toString("base64") }
+        }
+      }
+      this.#queue({ jsonrpc: "2.0", id, result: response })
       if (this.#closed) return
       if (subscribing) {
         const { subscription } = subscribing

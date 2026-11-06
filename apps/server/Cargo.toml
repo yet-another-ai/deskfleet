@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-actix-web = { workspace = true, features = ["cookies"] }
+actix-web = { workspace = true, features = ["cookies", "compress-gzip"] }
 deskfleet-protocol.workspace = true
 deskfleet-control-store.workspace = true
 sea-orm.workspace = true
@@ -42,6 +42,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+flate2 = "1"
 webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
 serde_json.workspace = true
 

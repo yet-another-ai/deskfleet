@@ -1,4 +1,5 @@
 import { flushPromises } from "@vue/test-utils"
+import { gzipSync } from "node:zlib"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentSignalingApi } from "../../../client/src/agent.ts"
 import { LocalDataChannel, type LocalChannelsApi } from "../../../client/src/local-channels.ts"
@@ -46,6 +47,17 @@ async function connect(client: AgentClient) {
 }
 beforeEach(() => { TestPeer.instances = []; vi.stubGlobal("RTCPeerConnection", TestPeer) })
 afterEach(() => { for (const client of clients.splice(0)) client.close(); vi.unstubAllGlobals(); vi.useRealTimers() })
+
+test("requests and decodes compressed history", async () => {
+  const { client } = setup(); const peer = await connect(client)
+  const events = [{ text: "思考内容".repeat(2000) }]
+  const pending = client.call("_deskfleet/session/history", { sessionId: "1", afterSeq: "0" })
+  await flushPromises()
+  const request = peer.channel.sent()[0]!
+  expect(request.params).toMatchObject({ responseEncoding: "gzip" })
+  peer.channel.message({ jsonrpc: "2.0", id: request.id, result: { encoding: "gzip", data: gzipSync(JSON.stringify(events)).toString("base64") } })
+  await expect(pending).resolves.toEqual(events)
+})
 
 test("sends serialized UTF-8 frames within negotiated size and resumes after backpressure", async () => {
   const { client } = setup(); const peer = await connect(client)
