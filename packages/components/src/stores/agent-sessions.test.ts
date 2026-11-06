@@ -1166,13 +1166,94 @@ test("a catalog notification during a pending read triggers a trailing refresh",
   } finally { platformClient.agent.history = previous }
 })
 
+test.each(["history", "catalog"] as const)("a notification during a failed %s read still refreshes the session list", async source => {
+  const previous = platformClient.agent.history
+  const failed = deferred<never>()
+  const session = agentSnapshot().session
+  const list = vi.fn().mockReturnValueOnce(source === "history" ? failed.promise : Promise.resolve([])).mockResolvedValue([session])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  if (source === "catalog") vi.mocked(platformClient.catalog.list).mockReturnValueOnce(failed.promise)
+  try {
+    const store = useAgentSessionsStore()
+    if (source === "catalog") store.sessions[session.id] = session
+    const initial = store.refresh()
+    await flushPromises()
+    const changed = store.refresh(session.id)
+    failed.reject(new Error("HTTP 502"))
+    await Promise.all([initial, changed])
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(store.sessions[session.id]).toEqual(session)
+    expect(store.error).toBeNull()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("a failed refresh waits for another request and clears its error after recovery", async () => {
+  const previous = platformClient.agent.history
+  const list = vi.fn().mockRejectedValueOnce(new RelayConnectionError("turn_quota_exhausted")).mockResolvedValue([agentSnapshot().session])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    await store.refresh()
+    await flushPromises()
+    expect(list).toHaveBeenCalledOnce()
+    expect(store.error).not.toBeNull()
+    expect(store.relayDeniedReason).toBe("turn_quota_exhausted")
+    await store.refresh()
+    expect(store.sessions["30"]).toBeDefined()
+    expect(store.error).toBeNull()
+    expect(store.relayDeniedReason).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
+test("successful history refresh preserves a newer live connection error", async () => {
+  const previous = platformClient.agent.history
+  const pending = deferred<ReturnType<typeof agentSnapshot>["session"][]>()
+  const list = vi.fn().mockRejectedValueOnce(new Error("History unavailable")).mockReturnValueOnce(pending.promise)
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    await store.refresh()
+    const refreshing = store.refresh()
+    mock.state("error", "Peer unavailable", "free_plan")
+    pending.resolve([agentSnapshot().session])
+    await refreshing
+    expect(store.error).toBe("Peer unavailable")
+    expect(store.relayDeniedReason).toBe("free_plan")
+  } finally { platformClient.agent.history = previous }
+})
+
+test.each(["history", "event", "snapshot"] as const)("a newly created session omitted by central sync reappears from its next %s", async source => {
+  const previous = platformClient.agent.history
+  const snapshot = agentSnapshot()
+  const list = vi.fn().mockResolvedValue([])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => snapshot, events: async () => [] }
+  const normalCall = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => method === "_deskfleet/session/create" ? snapshot : normalCall(method, params))
+  try {
+    const store = useAgentSessionsStore()
+    await store.create("20", snapshot.session.title, "worktree", "codex")
+    expect(store.sessions["30"]).toEqual(snapshot.session)
+    await store.refresh()
+    expect(store.sessions["30"]).toBeUndefined()
+    expect(store.views["30"]).toBeUndefined()
+
+    list.mockResolvedValue([snapshot.session])
+    vi.mocked(platformClient.catalog.list).mockResolvedValue({ ...catalogFixture(), sessionIds: ["30"] })
+    if (source === "history") await store.refresh("30")
+    else if (source === "event") receive(agentEvent(1, "session", { ...snapshot.session, lastEventSeq: "1" }))
+    else await store.open("30")
+    expect(store.sessions["30"]?.title).toBe(snapshot.session.title)
+    expect(store.sessions["30"]?.archiveState).toBe("active")
+  } finally { platformClient.agent.history = previous }
+})
+
 
 test("catalog removal drops an opened session without reopening its cached snapshot", async () => {
   const previous = platformClient.agent.history
   const list = vi.fn().mockResolvedValueOnce([{ ...agentSnapshot().session, working: true }]).mockResolvedValue([])
   platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
   try {
-    const store = useAgentSessionsStore()
+    const { store, persistence } = cachedStore()
     await store.refresh()
     await store.open("30")
     expect(store.views["30"]?.snapshot).not.toBeNull()
@@ -1180,6 +1261,7 @@ test("catalog removal drops an opened session without reopening its cached snaps
     await store.refresh("30")
     expect(store.sessions["30"]).toBeUndefined()
     expect(store.views["30"]).toBeUndefined()
+    expect(persistence.remove).toHaveBeenCalledWith("30")
     expect(mock.call).not.toHaveBeenCalled()
     await store.refresh()
     expect(store.sessions["30"]).toBeUndefined()

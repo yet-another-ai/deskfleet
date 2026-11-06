@@ -187,13 +187,18 @@ export const useFleetStore = defineStore("fleet", () => {
       try {
         do {
           refreshRequested = false
-          const snapshot = await platformClient.catalog.list()
-          if (!refreshRequested) applySnapshot(snapshot)
+          try {
+            const snapshot = await platformClient.catalog.list()
+            if (!refreshRequested) applySnapshot(snapshot)
+          } catch (error) {
+            // A newer notification still needs a read when this request fails.
+            if (!refreshRequested) {
+              catalogError.value = error instanceof Error ? error.message : String(error)
+              catalogReady.value = false
+              localDesktopTarget.value = { ...localDesktopTarget.value, online: false }
+            }
+          }
         } while (refreshRequested)
-      } catch (error) {
-        catalogError.value = error instanceof Error ? error.message : String(error)
-        catalogReady.value = false
-        localDesktopTarget.value = { ...localDesktopTarget.value, online: false }
       } finally {
         catalogLoading.value = false
         refreshingCatalog = null
