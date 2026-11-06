@@ -136,7 +136,11 @@ pub async fn request_screen_capture_access() -> Result<Option<bool>, MediaError>
 pub struct DesktopConfig {
     pub display_id: u32,
     pub fps: f64,
+    /// Adaptive bitrate ceiling in bits/sec (default 8 Mbps). GCC/TWCC targets
+    /// are clamped to this value before live encoder updates.
     pub bitrate_bps: u32,
+    /// Optional hard peak bitrate. When non-zero it becomes the adaptive ceiling
+    /// (and must be ≥ [`Self::bitrate_bps`]).
     pub max_bitrate_bps: u32,
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,
@@ -163,6 +167,11 @@ impl DesktopConfig {
             }
         }
         Ok(())
+    }
+
+    /// Ceiling for congestion-driven encoder bitrate updates.
+    pub(crate) fn bitrate_ceiling(&self) -> u32 {
+        crate::rtc::bitrate_ceiling(self.bitrate_bps, self.max_bitrate_bps)
     }
 
     /// Fit within the requested box without upscaling; hardware codecs use even dimensions.
@@ -335,11 +344,23 @@ impl CaptureSource {
         )?)))
     }
 
-    fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
+    fn poll(
+        &mut self,
+        keyframe: bool,
+        estimate_bps: Option<f64>,
+    ) -> Result<CaptureBatch, MediaError> {
         match self {
-            Self::Local(pipeline) => pipeline.poll(keyframe),
+            Self::Local(pipeline) => {
+                if let Some(estimate) = estimate_bps {
+                    pipeline.apply_bandwidth_estimate(estimate)?;
+                }
+                pipeline.poll(keyframe)
+            }
             #[cfg(windows)]
-            Self::Service(client) => client.poll(keyframe),
+            Self::Service(client) => {
+                let target = estimate_bps.map(|estimate| estimate as u32);
+                client.poll(keyframe, target)
+            }
         }
     }
 
@@ -362,6 +383,7 @@ fn capture_loop(
     ready: oneshot::Sender<()>,
 ) -> Result<(), MediaError> {
     let mut source = CaptureSource::open(config, codec, audio)?;
+    let mut target_bitrate = peer.subscribe_target_bitrate();
     let mut ready = Some(ready);
     let first_frame_deadline = Instant::now() + Duration::from_secs(5);
     let mut encoder_started = false;
@@ -374,7 +396,8 @@ fn capture_loop(
                     MediaError::FirstFrameTimeout
                 });
             }
-            let batch = source.poll(peer.take_keyframe_request())?;
+            let estimate = target_bitrate.as_mut().map(|rx| *rx.borrow_and_update());
+            let batch = source.poll(peer.take_keyframe_request(), estimate)?;
             encoder_started = batch.encoder_started;
             if !deliver_packets(batch.packets, &packets, &mut ready) {
                 return Ok(());

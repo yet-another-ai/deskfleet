@@ -42,7 +42,9 @@ pub struct DesktopConfig {
     /// Enable mouse and keyboard input for this display after authorization.
     pub control: Option<bool>,
     pub fps: Option<f64>,
+    /// Adaptive bitrate ceiling in bits/sec (default 8_000_000).
     pub bitrate_bps: Option<u32>,
+    /// Optional hard peak; when set it becomes the adaptive ceiling.
     pub max_bitrate_bps: Option<u32>,
     pub max_width: Option<u32>,
     pub max_height: Option<u32>,

@@ -4,8 +4,11 @@ use std::time::{Duration, Instant};
 
 use deskfleet_capture::{CaptureConfig, CaptureStream, Frame, FrameScaler};
 use deskfleet_encoder::{
-    Codec, EncodedPacket, Encoder, EncoderConfig, H264Profile, OpusEncoder, OpusEncoderConfig,
+    Codec, EncodedPacket, Encoder, EncoderConfig, EncoderError, H264Profile, OpusEncoder,
+    OpusEncoderConfig,
 };
+
+use crate::rtc::BitrateController;
 
 use super::{DesktopConfig, MediaError, Packet};
 
@@ -27,6 +30,7 @@ pub(crate) struct CapturePipeline {
     dimensions: (u32, u32),
     generation: u64,
     cadence: VideoCadence,
+    bitrate: BitrateController,
 }
 
 impl CapturePipeline {
@@ -63,6 +67,7 @@ impl CapturePipeline {
             },
         )?;
         let generation = capture.desktop_generation();
+        let bitrate = BitrateController::new(config.bitrate_ceiling());
         Ok(Self {
             encoder: None,
             retained: RetainedVideoFrame::new(),
@@ -77,7 +82,44 @@ impl CapturePipeline {
             dimensions: (0, 0),
             generation,
             cadence: VideoCadence::new(fps),
+            bitrate,
         })
+    }
+
+    /// Apply a GCC/TWCC bandwidth estimate (bits/sec) to the live encoder.
+    ///
+    /// Platforms that cannot retarget bitrate live (for example Windows NVENC)
+    /// recreate once at the configured ceiling and then leave the rate fixed.
+    pub(crate) fn apply_bandwidth_estimate(&mut self, estimate_bps: f64) -> Result<(), MediaError> {
+        let Some(target) = self.bitrate.observe_estimate(estimate_bps) else {
+            return Ok(());
+        };
+        self.apply_encoder_bitrate(target)
+    }
+
+    fn apply_encoder_bitrate(&mut self, target: u32) -> Result<(), MediaError> {
+        let ceiling = self.bitrate.ceiling_bps();
+        let Some(encoder) = self.encoder.as_ref() else {
+            return Ok(());
+        };
+        match encoder.set_bitrate(target, ceiling) {
+            Ok(()) => Ok(()),
+            Err(EncoderError::Unsupported(reason)) => {
+                tracing::warn!(
+                    reason,
+                    ceiling_bps = ceiling,
+                    "live encoder bitrate changes unsupported; freezing at configured ceiling"
+                );
+                if self.bitrate.disable_live_adaptation() {
+                    self.encoder = None;
+                    self.dimensions = (0, 0);
+                    self.retained.clear();
+                    self.bitrate.freeze_at_ceiling();
+                }
+                Ok(())
+            }
+            Err(error) => Err(MediaError::VideoEncoder(error)),
+        }
     }
 
     pub(crate) fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
@@ -116,8 +158,8 @@ impl CapturePipeline {
                     height: frame.height,
                     fps: self.fps,
                     codec: self.codec,
-                    bitrate_bps: self.config.bitrate_bps,
-                    max_bitrate_bps: self.config.max_bitrate_bps,
+                    bitrate_bps: self.bitrate.encoder_open_bitrate_bps(),
+                    max_bitrate_bps: self.bitrate.ceiling_bps(),
                     h264_profile: H264Profile::ConstrainedBaseline,
                     ..EncoderConfig::default()
                 })

@@ -48,6 +48,7 @@ export interface DesktopStart {
   displayId: number
   control?: boolean
   fps?: number
+  /** Adaptive bitrate ceiling in bits/sec (default 8_000_000). */
   bitrateBps?: number
   /** Bound encoded video dimensions while preserving the display aspect ratio. */
   maxWidth?: number

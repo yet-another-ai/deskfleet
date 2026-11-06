@@ -133,10 +133,16 @@ fn execute(request: Request, activity: &mut Activity, pipe: &mut Pipe) -> Result
                 Activity::Capture(Box::new(CapturePipeline::new(config, codec.into(), false)?));
             Reply::Ready
         }
-        Request::Poll { keyframe } => {
+        Request::Poll {
+            keyframe,
+            target_bitrate_bps,
+        } => {
             let Activity::Capture(capture) = activity else {
                 return Err(MediaError::InvalidConfig("desktop capture has not started").into());
             };
+            if let Some(target) = target_bitrate_bps {
+                capture.apply_bandwidth_estimate(f64::from(target))?;
+            }
             let batch = capture.poll(keyframe)?;
             pipe.check_session().map_err(Failure::Transport)?;
             return protocol::write_batch(pipe, batch.packets, batch.encoder_started)
