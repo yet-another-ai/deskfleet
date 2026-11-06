@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawnSync } from "node:child_process"
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
-import { classifyDocumentation, isDocumentationDiff } from "./ci-docs-only.ts"
+import { classifyChanges, classifyDocumentation, isDocumentationDiff } from "./ci-docs-only.ts"
 
 const sha = "a".repeat(40)
 const record = (file: string, old = "100644", next = "100644", status = "M") =>
@@ -37,7 +37,11 @@ test("classifies complete PR and push changes, including removals during renames
   const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid", ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
   }).trim()
-  const save = (file: string, content: string) => writeFileSync(join(cwd, file), content)
+  const save = (file: string, content: string) => {
+    const full = join(cwd, file)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content)
+  }
   const snapshot = () => { git("add", "."); git("commit", "-qm", "Fixture"); return git("rev-parse", "HEAD") }
   const push = (before: string, after: string) => classifyDocumentation("push", "refs/heads/main", { before, after }, cwd)
   git("init", "-q", "-b", "main")
@@ -69,6 +73,53 @@ test("classifies complete PR and push changes, including removals during renames
   assert.equal(push(sha, docs), false)
 })
 
+test("classifies draft PRs and packaging-related changes", context => {
+  const cwd = temporary(context)
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid", ...args], {
+    cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
+  }).trim()
+  const save = (file: string, content: string) => {
+    const full = join(cwd, file)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content)
+  }
+  const snapshot = () => { git("add", "."); git("commit", "-qm", "Fixture"); return git("rev-parse", "HEAD") }
+  git("init", "-q", "-b", "main")
+  save("README.md", "docs\n")
+  save("source.rs", "source\n")
+  const initial = snapshot()
+  git("checkout", "-qb", "topic")
+  save("source.rs", "modified source\n")
+  const code = snapshot()
+
+  // Standard non-packaging PR skips release build
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: code } }
+  }, cwd), { docsOnly: false, runBuild: false })
+
+  // Draft PR skips release build
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: code }, draft: true }
+  }, cwd), { docsOnly: false, runBuild: false })
+
+  // Packaging change in PR triggers release build
+  save("packaging/aur/PKGBUILD.in", "pkgbuild\n")
+  const packagingSha = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: packagingSha } }
+  }, cwd), { docsOnly: false, runBuild: true })
+
+  // Packaging change in Draft PR still skips release build until ready
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: packagingSha }, draft: true }
+  }, cwd), { docsOnly: false, runBuild: false })
+
+  // Push to main always runs build on code changes
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", {
+    before: initial, after: code
+  }, cwd), { docsOnly: false, runBuild: true })
+})
+
 test("manual and scheduled runs, unrelated refs, and malformed events retain full validation", context => {
   for (const [eventName, ref] of [["workflow_dispatch", "refs/heads/main"], ["schedule", "refs/heads/main"], ["push", "refs/tags/v1"], ["push", "refs/heads/topic"]])
     assert.equal(classifyDocumentation(eventName, ref, { before: sha, after: sha }), false)
@@ -83,7 +134,7 @@ test("manual and scheduled runs, unrelated refs, and malformed events retain ful
     execFileSync(process.execPath, [join(import.meta.dirname, "ci-docs-only.ts")], {
       env: { ...process.env, GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: "pull_request" }
     })
-    assert.equal(readFileSync(output, "utf8"), "docs_only=false\n")
+    assert.equal(readFileSync(output, "utf8"), "docs_only=false\nrun_build=true\n")
   }
 })
 
@@ -97,14 +148,15 @@ function workflowScript(job: string): string {
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
-  for (const changes of results) for (const tests of results) for (const build of results) for (const nix of results) for (const aur of results) for (const docs of ["true", "false", ""]) {
+  for (const changes of results) for (const tests of results) for (const build of results) for (const nix of results) for (const aur of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
     const result = spawnSync("bash", ["-c", script], {
-      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_RESULT: nix, AUR_RESULT: aur, DOCS_ONLY: docs }
+      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_RESULT: nix, AUR_RESULT: aur, DOCS_ONLY: docs, RUN_BUILD: runBuild }
     })
+    const allowSkip = docs === "true" || runBuild === "false"
     assert.equal(result.status === 0, changes === "success" && tests === "success"
-      && build === (docs === "true" ? "skipped" : "success") && nix === (docs === "true" ? "skipped" : "success")
-      && aur === (docs === "true" ? "skipped" : "success"),
-      JSON.stringify({ changes, tests, build, nix, aur, docs }))
+      && build === (allowSkip ? "skipped" : "success") && nix === (allowSkip ? "skipped" : "success")
+      && aur === (allowSkip ? "skipped" : "success"),
+      JSON.stringify({ changes, tests, build, nix, aur, docs, runBuild }))
   }
 })
 
@@ -118,6 +170,8 @@ test("classifier process failure or missing output cannot skip CI", { skip: proc
     chmodSync(node, 0o755)
     writeFileSync(output, "")
     execFileSync("bash", ["-c", script], { env: { ...process.env, PATH: `${cwd}:${process.env.PATH}`, GITHUB_OUTPUT: output } })
-    assert.equal(readFileSync(output, "utf8").trim().split("\n").at(-1), "docs_only=false")
+    const lines = readFileSync(output, "utf8").trim().split("\n")
+    assert.ok(lines.includes("docs_only=false"))
+    assert.ok(lines.includes("run_build=true"))
   }
 })

@@ -9,13 +9,19 @@ a stable `Gate` result for branch protection.
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
   runs, and a daily full run at 03:17 UTC. It classifies the changed files with
   the hosted runner's Node, calls Test, Build, Nix, and AUR, and combines their
-  results in `Gate`. Configure `Gate` under
-  the `CI` workflow as the required status check in repository branch protection.
-  Successful push and manual runs on `main` then deploy the product website to
-  GitHub Pages.
-- `.github/workflows/test.yml` runs static checks and the desktop/Web/website builds
-  once on Linux with `mise run ci:check:static`, plus Rust, daemon, and desktop
-  tests on Linux, macOS, and Windows. Linux uses `mise run test`, including the
+  results in `Gate`. Pull requests without packaging changes skip release
+  packaging (`Build`, `Nix`, `AUR`), relying on `Test` to validate code changes
+  and leaving the smoke build to `main`. Draft pull requests run static checks
+  only, automatically triggering the full runtime test suite upon `ready_for_review`.
+  Configure `Gate` under the `CI` workflow as the required status check in
+  repository branch protection. Successful push and manual runs on `main` then
+  deploy the product website to GitHub Pages.
+- `.github/workflows/test.yml` runs a staged test pipeline. Fast `Static checks`
+  and the desktop/Web/website builds run first on Linux with `mise run ci:check:static`.
+  Platform tests and backend integration jobs wait for static checks to pass
+  (`needs: static`), providing fast-fail feedback before running on expensive
+  runners. Once static checks pass, Rust, daemon, and desktop tests run in parallel
+  on Linux, macOS, and Windows. Linux uses `mise run test`, including the
   renderer Vitest project. macOS and Windows use `mise run ci:test:platform`:
   the same Rust, daemon, script, and desktop main/shared/client checks, without
   repeating the happy-dom renderer project. Each platform also runs
@@ -48,11 +54,13 @@ a stable `Gate` result for branch protection.
   unless the caller explicitly selects prebuilt staging. The server is read from
   `target/<host-triple>/release/`, where `rustc --print host-tuple` identifies the
   native runner's triple.
-  Pull requests and main pushes use a Linux x64 smoke build. Daily scheduled,
-  manual, and tagged release runs use the full platform matrix. Nix follows
-  Build's Linux matrix so it only downloads archives produced in the same run.
-  The daily CI, Test, Build, and Nix concurrency groups are independent of main
-  pushes, so frequent merges do not cancel full-platform validation.
+  Pushes to `main` use a Linux x64 smoke build; pull requests run it only when
+  packaging or distribution configurations change (`packaging/**`, `nix/**`,
+  packaging scripts, or packaging workflow files). Daily scheduled, manual, and
+  tagged release runs use the full platform matrix. Nix follows Build's Linux
+  matrix so it only downloads archives produced in the same run. The daily CI,
+  Test, Build, and Nix concurrency groups are independent of main pushes, so
+  frequent merges do not cancel full-platform validation.
   Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Windows packaging additionally
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
@@ -464,8 +472,9 @@ the hosted runner's Node and does not install a toolchain. An older runtime or
 missing output keeps the full tier.
 
 `Gate` requires successful classification and Test. Skipped Build, Nix, and AUR
-workflows are accepted only for a positively classified documentation-only
-change. Failed, cancelled, or unexpectedly skipped required work fails the gate.
+workflows are accepted for a positively classified documentation-only
+change or pull requests without packaging changes. Failed, cancelled, or unexpectedly
+skipped required work fails the gate.
 
 ## Toolchains and caches
 

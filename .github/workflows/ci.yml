@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   schedule:
@@ -22,6 +23,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      run_build: ${{ steps.classify.outputs.run_build }}
     steps:
       - name: Check out complete history
         uses: actions/checkout@v7
@@ -36,9 +38,11 @@ jobs:
           # Use the hosted runner's Node without provisioning a toolchain. Older
           # runtimes or missing output must fall back to full CI, never a skip.
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          echo "run_build=true" >> "$GITHUB_OUTPUT"
           if ! node scripts/ci-docs-only.ts; then
             echo "::warning::Classification could not run; running full CI."
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -48,13 +52,14 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+      draft_pr: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
     permissions:
       contents: read
 
   build:
     name: Build
-    needs: changes
-    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true') }}
+    needs: [changes, test]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.run_build == 'true' }}
     uses: ./.github/workflows/build.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -89,17 +94,18 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          RUN_BUILD: ${{ needs.changes.outputs.run_build }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           AUR_RESULT: ${{ needs.aur.result }}
           NIX_RESULT: ${{ needs.nix.result }}
         run: |
           expected_build=success
-          if [[ "$CHANGES_RESULT" == "success" && "$DOCS_ONLY" == "true" ]]; then
+          if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false") ]]; then
             expected_build=skipped
           fi
           if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_RESULT" != "$expected_build" || "$AUR_RESULT" != "$expected_build" ]]; then
-            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix: $NIX_RESULT, AUR: $AUR_RESULT)."
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix: $NIX_RESULT, AUR: $AUR_RESULT)."
             exit 1
           fi
 
