@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import DefaultTheme from "vitepress/theme-without-fonts"
-import { useData } from "vitepress"
-import { watch } from "vue"
+import { useData, useRouter } from "vitepress"
+import { onMounted, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import { usePreferredLanguages } from "@vueuse/core"
 import { resolveAppLocale } from "@deskfleet/client/i18n"
+import { firstVisitLanguageRedirect } from "../preferred-language"
 const { Layout } = DefaultTheme
 const { lang } = useData()
 const { locale } = useI18n()
+const router = useRouter()
+const languages = usePreferredLanguages()
 watch(lang, value => { locale.value = resolveAppLocale([value]) }, { immediate: true })
+onMounted(() => {
+  const target = firstVisitLanguageRedirect(window, languages.value)
+  if (target) void router.go(target, { replace: true })
+})
 </script>
 
 <template>
