@@ -10,6 +10,11 @@ mod m20261027_000004_optional_session_workspace;
 mod m20261028_000005_agent_query_indexes;
 
 /// Applies the catalog migrations in their declared order.
+///
+/// Ordinary migrations opt into one transaction for their schema changes and
+/// history record. SQLite otherwise commits every statement separately, making
+/// first-run file catalogs perform many durable disk flushes. The table-rebuild
+/// migration remains outside a transaction so its foreign-key PRAGMAs work.
 pub struct Migrator;
 
 #[async_trait::async_trait]

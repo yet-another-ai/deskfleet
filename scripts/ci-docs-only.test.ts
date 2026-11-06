@@ -184,7 +184,7 @@ test("platform and backend detectors cover shared actions and build-env paths", 
 })
 
 test("manual Test workflow_dispatch declares full matrix and backend defaults", () => {
-  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/test.yml"), "utf8")
+  const yaml = workflowYaml("../.github/workflows/test.yml")
   const dispatch = yaml.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1]
   assert.ok(dispatch, "Missing workflow on: block")
   assert.match(dispatch, /workflow_dispatch:\n(?: {4}.+\n)*? {4}inputs:/)
@@ -213,15 +213,19 @@ test("manual and scheduled runs, unrelated refs, and malformed events retain ful
   }
 })
 
+function workflowYaml(relativePath: string): string {
+  return readFileSync(join(import.meta.dirname, relativePath), "utf8").replace(/\r\n/gu, "\n")
+}
+
 function workflowScript(job: string): string {
-  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/ci.yml"), "utf8")
+  const yaml = workflowYaml("../.github/workflows/ci.yml")
   const block = yaml.match(new RegExp(`^  ${job}:[\\s\\S]*?^        run: \\|\\n((?:          .*\\n)+)`, "m"))?.[1]
   assert.ok(block, `Missing shell step for ${job}`)
   return block.replace(/^ {10}/gm, "")
 }
 
 test("Build requires a successful Test before packaging", () => {
-  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/ci.yml"), "utf8")
+  const yaml = workflowYaml("../.github/workflows/ci.yml")
   const build = yaml.match(/^  build:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
   assert.ok(build, "Missing Build job")
   assert.match(build, /needs:\s*\[changes,\s*test\]/)
