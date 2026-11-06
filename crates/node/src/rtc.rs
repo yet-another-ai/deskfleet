@@ -1,4 +1,4 @@
-//! Async Node-API adapter; the daemon owns each peer and its capture lifetime.
+//! Async Node-API adapter; the daemon owns each peer and its capture subscription.
 
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use napi::{Env, Error, Result};
 use napi_derive::napi;
 use tokio::sync::Mutex;
 
-use crate::media::DesktopConfig;
+use crate::media::{DesktopConfig, DesktopStreamPool};
 
 pub(crate) fn native_error(error: impl std::fmt::Display) -> Error {
     Error::from_reason(error.to_string())
@@ -306,7 +306,11 @@ impl NativePeer {
 
     /// Capture and encode entirely in Rust; call only after authorizing desktop access.
     #[napi]
-    pub async fn start_desktop(&self, config: DesktopConfig) -> Result<()> {
+    pub async fn start_desktop(
+        &self,
+        config: DesktopConfig,
+        pool: Option<&DesktopStreamPool>,
+    ) -> Result<()> {
         let mut desktop = self.desktop.lock().await;
         if self.peer.is_closed() {
             return Err(native_error("peer is closed"));
@@ -323,7 +327,15 @@ impl NativePeer {
         } else {
             None
         };
-        let stream = match DesktopStream::start(Arc::clone(&self.peer), config.into()).await {
+        let started = match pool {
+            Some(pool) => {
+                pool.inner
+                    .start(Arc::clone(&self.peer), config.into())
+                    .await
+            }
+            None => DesktopStream::start(Arc::clone(&self.peer), config.into()).await,
+        };
+        let stream = match started {
             Ok(stream) => stream,
             Err(error) => {
                 if let Some(input) = input {

@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
+import type { DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 import type { NatTestResult } from "./bindings.d.ts"
 
-export type { DesktopConfig, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
+export type { DesktopConfig, DesktopStreamPool, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
@@ -75,6 +75,11 @@ export function openLocalApplication(applicationId: string, directory: string): 
 
 export function createPeer(config: PeerConfig = {}): Promise<NativePeer> {
   return (bindings ??= loadBindings()).createPeer(config)
+}
+
+/** Allocate a registration's sharing pool without starting capture. */
+export function createDesktopStreamPool(): DesktopStreamPool {
+  return new (bindings ??= loadBindings()).DesktopStreamPool()
 }
 
 export function createTerminal(config: TerminalConfig): Promise<NativeTerminal> {

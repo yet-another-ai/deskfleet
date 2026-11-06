@@ -125,6 +125,7 @@ pub(super) enum Reply {
 #[derive(Serialize, Deserialize)]
 pub(super) struct PacketInfo {
     video: bool,
+    keyframe: bool,
     length: u32,
     duration_ns: u64,
     timestamp_ns: u64,
@@ -183,14 +184,15 @@ pub(super) fn write_batch(
     let metadata: Vec<_> = packets
         .iter()
         .map(|packet| {
-            let (video, data, duration, timestamp_ns) = match packet {
-                Packet::Video(data, duration, timestamp_ns) => {
-                    (true, data, duration, *timestamp_ns)
+            let (video, data, duration, timestamp_ns, keyframe) = match packet {
+                Packet::Video(data, duration, timestamp_ns, keyframe) => {
+                    (true, data, duration, *timestamp_ns, *keyframe)
                 }
-                Packet::Audio(data, duration) => (false, data, duration, 0),
+                Packet::Audio(data, duration) => (false, data, duration, 0, false),
             };
             Ok(PacketInfo {
                 video,
+                keyframe,
                 length: u32::try_from(data.len())
                     .map_err(|_| invalid("desktop packet is too large"))?,
                 duration_ns: u64::try_from(duration.as_nanos())
@@ -226,9 +228,9 @@ pub(super) fn read_packets(
             reader.read_exact(&mut data)?;
             let duration = Duration::from_nanos(packet.duration_ns);
             Ok(if packet.video {
-                Packet::Video(data, duration, packet.timestamp_ns)
+                Packet::Video(data.into(), duration, packet.timestamp_ns, packet.keyframe)
             } else {
-                Packet::Audio(data, duration)
+                Packet::Audio(data.into(), duration)
             })
         })
         .collect()
@@ -251,7 +253,12 @@ mod tests {
         let mut wire = Vec::new();
         write_batch(
             &mut wire,
-            vec![Packet::Video(bytes.clone(), duration, timestamp_ns)],
+            vec![Packet::Video(
+                bytes.clone().into(),
+                duration,
+                timestamp_ns,
+                true,
+            )],
             true,
         )
         .unwrap();
@@ -266,12 +273,13 @@ mod tests {
         };
         assert!(encoder_started);
         let packets = read_packets(&mut reader, packets).unwrap();
-        let Packet::Video(data, actual_duration, actual_timestamp) = &packets[0] else {
+        let Packet::Video(data, actual_duration, actual_timestamp, keyframe) = &packets[0] else {
             panic!("expected video")
         };
         assert_eq!(data, &bytes);
         assert_eq!(*actual_duration, duration);
         assert_eq!(*actual_timestamp, timestamp_ns);
+        assert!(*keyframe);
     }
 
     #[test]
@@ -286,6 +294,7 @@ mod tests {
     fn invalid_packet_batches_are_rejected_before_allocating_payloads() {
         let oversized = PacketInfo {
             video: true,
+            keyframe: false,
             length: MAX_PACKET as u32 + 1,
             duration_ns: 1,
             timestamp_ns: 0,
@@ -300,6 +309,7 @@ mod tests {
         let too_many = (0..=MAX_PACKETS)
             .map(|_| PacketInfo {
                 video: true,
+                keyframe: false,
                 length: 1,
                 duration_ns: 1,
                 timestamp_ns: 0,
@@ -315,6 +325,7 @@ mod tests {
         let large_batch = (0..3)
             .map(|_| PacketInfo {
                 video: true,
+                keyframe: false,
                 length: MAX_PACKET as u32,
                 duration_ns: 1,
                 timestamp_ns: 0,
@@ -333,6 +344,7 @@ mod tests {
     fn truncated_video_is_not_delivered_as_a_complete_packet() {
         let metadata = vec![PacketInfo {
             video: true,
+            keyframe: false,
             length: 5,
             duration_ns: 1,
             timestamp_ns: 0,

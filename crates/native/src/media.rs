@@ -1,21 +1,18 @@
 //! On-demand capture → hardware encode → WebRTC, adapted from desk-fleet's streamer.
 //!
-//! Capture and encoders live on one worker thread. Only encoded packets cross the
-//! bounded queue; native surfaces never cross the Node-API boundary.
+//! Each shared capture source and its encoders live on one worker thread. Only
+//! encoded packets cross the bounded broadcast queue; surfaces stay in Rust.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use deskfleet_capture::{CaptureError, Display};
 use deskfleet_encoder::{Codec, EncoderError};
 
 pub(crate) mod pipeline;
 use pipeline::{CaptureBatch, CapturePipeline};
-use tokio::sync::{mpsc, oneshot, watch};
-use tokio::task::JoinHandle;
-
-use crate::rtc::{Peer, VideoCodec};
+mod shared;
+pub use shared::{DesktopStream, DesktopStreamPool};
 
 // Leave room for slow hardware startup within the caller's separate 45-second media-start budget.
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
@@ -43,6 +40,9 @@ pub enum MediaError {
     Service { message: String, encoder: bool },
     #[error("media worker stopped during startup")]
     Startup,
+    /// A source failure is shared by all subscribers without losing its classification.
+    #[error(transparent)]
+    Shared(Arc<MediaError>),
     #[error("capture and encoding did not produce the first video packet within 30 seconds")]
     FirstFrameTimeout,
     /// The video encoder was open but never emitted a packet. Capture that never
@@ -59,6 +59,7 @@ impl MediaError {
             Self::VideoEncoder(_) | Self::EncoderStall | Self::Service { encoder: true, .. } => {
                 Some("encoder")
             }
+            Self::Shared(error) => error.fallback_reason(),
             _ => None,
         }
     }
@@ -196,132 +197,11 @@ impl DesktopConfig {
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum Packet {
-    Video(Vec<u8>, Duration, u64),
-    Audio(Vec<u8>, Duration),
-}
-
-/// Owns a single capture pipeline. Explicit stop joins both workers; drop also
-/// cancels delivery and wakes a producer blocked on a full queue.
-pub struct DesktopStream {
-    stop: Arc<AtomicBool>,
-    shutdown: Option<watch::Sender<()>>,
-    capture: Option<JoinHandle<Result<(), MediaError>>>,
-    delivery: Option<JoinHandle<Result<(), MediaError>>>,
-}
-
-impl DesktopStream {
-    /// Start capture for the peer's negotiated codec and audio configuration.
-    pub async fn start(peer: Arc<Peer>, config: DesktopConfig) -> Result<Self, MediaError> {
-        config.validate()?;
-        let codec = match peer.video_codec() {
-            Some(VideoCodec::H264) => Codec::H264,
-            Some(VideoCodec::H265) => Codec::H265,
-            Some(VideoCodec::Av1) => Codec::AV1,
-            None => return Err(MediaError::InvalidConfig("peer has no video track")),
-        };
-        let audio = peer.has_audio();
-        let stop = Arc::new(AtomicBool::new(false));
-        let (shutdown, mut shutdown_rx) = watch::channel(());
-        let (packets, mut packet_rx) = mpsc::channel(1);
-        let (ready, startup) = oneshot::channel();
-        let capture_stop = Arc::clone(&stop);
-        let capture_peer = Arc::clone(&peer);
-        let capture = tokio::task::spawn_blocking(move || {
-            let result = capture_loop(
-                config,
-                codec,
-                audio,
-                capture_stop,
-                Arc::clone(&capture_peer),
-                packets,
-                ready,
-            );
-            if let Err(error) = &result {
-                capture_peer.report_media_error(error.to_string(), error.fallback_reason());
-            }
-            result
-        });
-        let delivery_stop = Arc::clone(&stop);
-        let delivery = tokio::spawn(async move {
-            let result: Result<(), MediaError> = async {
-                loop {
-                    tokio::select! {
-                        biased;
-                        _ = shutdown_rx.changed() => return Ok(()),
-                        packet = packet_rx.recv() => {
-                            let Some(packet) = packet else { return Ok(()) };
-                            let write = async {
-                                match packet {
-                                    Packet::Video(data, duration, timestamp_ns) => peer.write_video_at(data.into(), duration, timestamp_ns).await,
-                                    Packet::Audio(data, duration) => peer.write_audio(data.into(), duration).await,
-                                }.map_err(|error| MediaError::Transport(error.to_string()))
-                            };
-                            tokio::select! {
-                                biased;
-                                _ = shutdown_rx.changed() => return Ok(()),
-                                result = write => result?,
-                            }
-                        }
-                    }
-                }
-            }.await;
-            delivery_stop.store(true, Ordering::Relaxed);
-            if let Err(error) = &result {
-                peer.report_media_error(error.to_string(), error.fallback_reason());
-            }
-            result
-        });
-        let stream = Self {
-            stop,
-            shutdown: Some(shutdown),
-            capture: Some(capture),
-            delivery: Some(delivery),
-        };
-        match startup.await {
-            Ok(()) => Ok(stream),
-            Err(_) => {
-                stream.stop().await?;
-                Err(MediaError::Startup)
-            }
-        }
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.capture.as_ref().is_none_or(JoinHandle::is_finished)
-            || self.delivery.as_ref().is_none_or(JoinHandle::is_finished)
-    }
-
-    /// Stop delivery before joining the producer, so a full queue cannot deadlock shutdown.
-    pub async fn stop(mut self) -> Result<(), MediaError> {
-        self.stop.store(true, Ordering::Relaxed);
-        self.shutdown.take();
-        let delivery = match self.delivery.take() {
-            Some(handle) => handle
-                .await
-                .map_err(MediaError::from)
-                .and_then(|result| result),
-            None => Ok(()),
-        };
-        let capture = match self.capture.take() {
-            Some(handle) => handle
-                .await
-                .map_err(MediaError::from)
-                .and_then(|result| result),
-            None => Ok(()),
-        };
-        capture.and(delivery)
-    }
-}
-
-impl Drop for DesktopStream {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        self.shutdown.take();
-        if let Some(delivery) = &self.delivery {
-            delivery.abort();
-        }
-    }
+    /// Encoded access unit, duration, capture timestamp, and decoder entry-point flag.
+    Video(bytes::Bytes, Duration, u64, bool),
+    Audio(bytes::Bytes, Duration),
 }
 
 enum CaptureSource {
@@ -377,123 +257,9 @@ impl CaptureSource {
     }
 }
 
-fn capture_loop(
-    config: DesktopConfig,
-    codec: Codec,
-    audio: bool,
-    stop: Arc<AtomicBool>,
-    peer: Arc<Peer>,
-    packets: mpsc::Sender<Packet>,
-    ready: oneshot::Sender<()>,
-) -> Result<(), MediaError> {
-    let mut source = CaptureSource::open(config, codec, audio)?;
-    let mut target_bitrate = peer.subscribe_target_bitrate();
-    let mut ready = Some(ready);
-    let first_frame_deadline = Instant::now() + FIRST_FRAME_TIMEOUT;
-    let mut encoder_started = false;
-    let result = (|| {
-        while !stop.load(Ordering::Relaxed) {
-            // Only startup is timed: a running stream can legitimately stop
-            // producing video while the desktop or hardware encoder is idle.
-            if ready.is_some() && Instant::now() >= first_frame_deadline {
-                return Err(if encoder_started {
-                    MediaError::EncoderStall
-                } else {
-                    MediaError::FirstFrameTimeout
-                });
-            }
-            let estimate = target_bitrate.as_mut().map(|rx| *rx.borrow_and_update());
-            let batch = source.poll(
-                peer.take_keyframe_request(),
-                estimate,
-                peer.video_send_congested(),
-            )?;
-            encoder_started = batch.encoder_started;
-            if !deliver_packets(batch.packets, &packets, &mut ready) {
-                return Ok(());
-            }
-        }
-        Ok(())
-    })();
-    result.and(source.stop())
-}
-
-fn deliver_packets(
-    encoded: Vec<Packet>,
-    packets: &mpsc::Sender<Packet>,
-    ready: &mut Option<oneshot::Sender<()>>,
-) -> bool {
-    for packet in encoded {
-        let video = matches!(&packet, Packet::Video(data, ..) if !data.is_empty());
-        let empty = match &packet {
-            Packet::Video(data, ..) | Packet::Audio(data, _) => data.is_empty(),
-        };
-        if empty {
-            continue;
-        }
-        if packets.blocking_send(packet).is_err() {
-            return false;
-        }
-        if video && let Some(ready) = ready.take() {
-            let _ = ready.send(());
-        }
-    }
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn startup_waits_for_nonempty_video_output_and_delivery() {
-        let (packets, mut receiver) = mpsc::channel(2);
-        let (sender, mut started) = oneshot::channel();
-        let mut ready = Some(sender);
-        assert!(deliver_packets(
-            vec![Packet::Video(Vec::new(), Duration::ZERO, 0)],
-            &packets,
-            &mut ready
-        ));
-        assert!(deliver_packets(
-            vec![Packet::Audio(vec![1], Duration::from_millis(20))],
-            &packets,
-            &mut ready
-        ));
-        assert!(matches!(
-            started.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
-        assert!(deliver_packets(
-            vec![Packet::Video(
-                vec![0, 0, 0, 1, 0x65],
-                Duration::from_millis(33),
-                1_000_000_000,
-            )],
-            &packets,
-            &mut ready
-        ));
-        assert!(started.try_recv().is_ok());
-        assert!(matches!(receiver.try_recv().unwrap(), Packet::Audio(..)));
-        let Packet::Video(bytes, duration, timestamp_ns) = receiver.try_recv().unwrap() else {
-            panic!("expected video")
-        };
-        assert_eq!(bytes, [0, 0, 0, 1, 0x65]);
-        assert_eq!(duration, Duration::from_millis(33));
-        assert_eq!(timestamp_ns, 1_000_000_000);
-        drop(receiver);
-        let (sender, mut started) = oneshot::channel();
-        let mut ready = Some(sender);
-        assert!(!deliver_packets(
-            vec![Packet::Video(bytes, duration, timestamp_ns)],
-            &packets,
-            &mut ready
-        ));
-        assert!(matches!(
-            started.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
-    }
 
     #[test]
     fn invalid_settings_fail_before_capture() {

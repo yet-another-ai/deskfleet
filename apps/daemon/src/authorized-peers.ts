@@ -1,4 +1,4 @@
-import type { NativePeer } from "@deskfleet/native"
+import { createDesktopStreamPool, type DesktopStreamPool, type NativePeer } from "@deskfleet/native"
 import { timingSafeEqual } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
@@ -37,6 +37,11 @@ interface AuthorizedChannels {
   files?: FilesChannel
 }
 
+interface RegistrationDesktopStreams {
+  scope: string
+  pool?: DesktopStreamPool
+}
+
 interface AuthorizedPeer extends AuthorizedChannels {
   release(): void
   authorization: PeerAuthorization
@@ -47,6 +52,7 @@ interface AuthorizedPeer extends AuthorizedChannels {
   mux?: AuthorizedMux
   input?: DesktopInputChannel
   desktopStart?: "starting" | "started"
+  desktopStreams?: RegistrationDesktopStreams
   local?: {
     token?: string
     claimBy: number
@@ -84,6 +90,7 @@ export class AuthorizedPeers {
   readonly #closing = new Map<string, Promise<void>>()
   readonly #used = new Map<string, number>()
   #credentials: MachineCredentials | undefined
+  #desktopStreams: RegistrationDesktopStreams | undefined
   #identity: { originId: string; machineId: string }
 
   constructor(options: {
@@ -110,7 +117,11 @@ export class AuthorizedPeers {
     this.#now = options.now ?? Date.now
   }
 
-  bind(credentials: MachineCredentials): void { this.#credentials = credentials }
+  bind(credentials: MachineCredentials): void {
+    const scope = JSON.stringify([credentials.serverId, credentials.teamId, credentials.machineId])
+    if (this.#desktopStreams?.scope !== scope) this.#desktopStreams = { scope }
+    this.#credentials = credentials
+  }
 
   #validate(grant: PeerAuthorization): void {
     const target = grant.targetMachine, bound = this.#credentials
@@ -155,6 +166,7 @@ export class AuthorizedPeers {
     const owned: AuthorizedPeer = {
       release,
       authorization: structuredClone(params.authorization), native, remoteSdp: params.sdp,
+      desktopStreams: purpose === "desktop" ? this.#desktopStreams : undefined,
       timer: setTimeout(() => { void this.close(params.peerId).catch(error => console.error("Expired peer cleanup failed", error)) }, Date.parse(params.authorization.expiresAt) - this.#now()),
     }
     owned.timer.unref()
@@ -356,7 +368,10 @@ export class AuthorizedPeers {
     const native = await owned.native
     try {
       this.#live(id, "desktop:stream")
-      await native.startDesktop(options)
+      // Keep the pool captured at admission even if this registration is rebound
+      // while the peer negotiates. Clients cannot choose the sharing scope.
+      const streams = owned.desktopStreams!
+      await native.startDesktop(options, streams.pool ??= createDesktopStreamPool())
       this.#live(id, "desktop:stream")
       if (options.control) await owned.input!.enable()
       this.#live(id, "desktop:stream")

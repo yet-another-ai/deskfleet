@@ -90,9 +90,9 @@ display, ICE, and transport failures stop without another codec. The desktop
 error event includes `reason: "encoder"` for the failures that may continue.
 Older callers omit `reason`; those failures are not retried.
 
-Capture startup waits up to 30 seconds for the first nonempty video packet after
-opening the capture source, allowing asynchronous hardware encoders time to warm
-up. Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
+Each viewer's media startup waits up to 30 seconds for its first delivered,
+nonempty keyframe, allowing asynchronous hardware encoders time to warm up.
+Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
 the browser and native viewers give connection setup 45 seconds, then start a
 separate 45-second media-start deadline when requesting capture on the connected
 peer. Time spent negotiating SDP/ICE does not consume the encoder's startup
@@ -369,15 +369,26 @@ Reconnecting a client reads the existing daemon's status without requesting
 again. Tests inject permission checks and requests so ordinary test runs do not
 open OS dialogs.
 
-The native desktop pipeline owns capture and hardware encoding on one blocking
-worker, preserving D3D11 thread ownership and retained GPU surface lifetimes.
-Raw frames stay in Rust. Encoded packets enter a bounded queue of eight packets
-and one async task delivers them in order. Shutdown closes delivery before
-joining capture, unblocking a producer waiting on a full queue. `stopDesktop()`
-and `close()` report worker failures; the event loop also receives media errors.
-`startDesktop()` resolves after the first nonempty encoded video packet enters
-delivery. The worker polls asynchronous encoder output even when the desktop
-has not changed. Dropping a stream also cancels its work.
+The native desktop stream pool owns capture and hardware encoding on one blocking
+worker per matching stream profile, preserving D3D11 thread ownership and retained
+GPU surface lifetimes. A profile includes the display, negotiated codec, audio,
+frame rate, bitrate limits, and resolution bounds. Each authenticated Machine
+registration owns a pool; different backends or Teams never share it. Sessions
+in the same registration can reuse a display stream because desktop capture
+belongs to the Machine, not to an AgentSession.
+
+Raw frames stay in Rust. Encoded packet buffers are shared across subscribers,
+with bounded delivery and an independent async sender for each peer. A slow or
+failed sender cannot block the other viewers. New viewers and silent viewers that
+fall behind request a keyframe and wait for it before sending video. A lagging
+audio-enabled viewer ends its own stream, since skipping packets would break
+its audio/video timing. Each peer retains its own WebRTC transport, grant, input
+authorization, and shutdown. `stopDesktop()`
+and `close()` detach that subscriber; the last subscriber releases capture and
+encoding. Capture failures reach every attached peer with their original encoder
+fallback classification. `startDesktop()` waits for that subscriber's first
+nonempty keyframe. The worker polls asynchronous encoder output even when the
+desktop has not changed. Dropping a stream also releases its subscription.
 
 Desktop options select a display, frame rate, bitrate ceiling, and optional
 hard peak bitrate. The bitrate fields are an upper bound for congestion-driven
@@ -401,9 +412,11 @@ at the same rate, clamped to the stream's configured ceiling (including the
 estimate to accommodate IDR bursts and RTP overhead. This is a burst release
 budget, not a promise of network capacity; feedback still lowers the estimate.
 
-A `ReportingEstimator` publishes GCC targets on a watch channel. The capture
-worker clamps them into `[100 kb/s, configured ceiling]` and retargets only when
-both 10% and 50 kb/s hysteresis thresholds are met. This avoids frequent Linux
+A `ReportingEstimator` publishes each peer's GCC target on a watch channel.
+Shared streams use the lowest active subscriber estimate; disconnecting a viewer
+removes its estimate. Keyframe requests from all subscribers are coalesced by the
+shared worker. The worker clamps the estimate into `[100 kb/s, configured ceiling]`
+and retargets only when both 10% and 50 kb/s hysteresis thresholds are met. This avoids frequent Linux
 VA encoder reconfiguration, which drains references and restarts its GOP.
 VideoToolbox, GStreamer and Media Foundation retarget live. Windows NVENC checks
 dynamic-bitrate capability and uses `NvEncReconfigureEncoder` without resetting
@@ -415,14 +428,17 @@ and initialization failures remain fatal. Linux NVIDIA properties use
 
 Each media-track write completes when its final RTP packet leaves the pacer,
 so the pacer holds at most one original sample per track. A large IDR cannot be
-truncated by the upstream default 4096-packet limit. The capture-to-delivery
-channel holds one packet; when pacer backlog exceeds 150 ms by age or expected
-send time, the worker pauses raw video submission while draining encoder/audio
-output. Keyframe requests remain pending through that pause, and the next
+truncated by the upstream default 4096-packet limit. The shared capture-to-delivery
+broadcast holds eight packets. When every subscriber's pacer backlog exceeds
+150 ms by age or expected send time, the worker pauses raw video submission while
+draining encoder/audio output. One slow subscriber cannot pause capture for a
+healthy viewer. Keyframe requests remain pending through that pause, and the next
 capture uses current desktop pixels. ScreenCaptureKit callbacks replace a single
 raw-frame slot, matching the latest-frame behavior of the Linux capture paths.
-Encoded reference frames are never dropped
-to catch up. Retransmissions cannot enlarge an already congested pacing queue.
+A silent subscriber that overruns the broadcast discards its pending dependent
+frames and resumes at a new keyframe; an audio-enabled subscriber ends its stream
+to preserve audio/video timing. Retransmissions cannot enlarge an already
+congested pacing queue.
 RTCP bypasses pacing, and TWCC/send history still record actual release times.
 Capture timestamp gaps are preserved in RTP across skipped raw frames.
 Sends taking at least 150 ms emit a debug diagnostic with media kind, encoded
@@ -434,6 +450,8 @@ and resolution ladders remain outside this control loop.
 
 The Session's right-hand Desktops tab requests one silent, read-only stream per display
 with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
+Multiple viewers using the same negotiated codec reuse this preview's capture
+and encoder. A full-resolution viewer or a different codec uses a separate profile.
 It initially shows the Session's owning machine. Users can switch to all
 remote machines in the current Team; narrowing the scope closes the other peers.
 Offline machines, unavailable capture, and individual connection failures remain
