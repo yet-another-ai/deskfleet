@@ -209,6 +209,22 @@ test("unborn repositories and untracked text, binary and empty files have useful
   assert.equal((await inspection.diff(request(snapshot, "binary.bin", "untracked"), [root])).binary, true)
 })
 
+test("large status output preserves complete entries and supports their diffs", async context => {
+  const root = await fixture(context)
+  await repository(root)
+  const prefix = "a".repeat(210)
+  for (let start = 0; start < 10_000; start += 500) {
+    await Promise.all(Array.from({ length: 500 }, (_, offset) => writeFile(join(root, `${prefix}${String(start + offset).padStart(5, "0")}`), "new\n")))
+  }
+  const snapshot = await inspection.status("1", [root])
+  const checkout = snapshot.repositories[0]!
+  assert.match(checkout.error!, /too many changes/u)
+  assert.ok(checkout.changes.length > 0 && checkout.changes.length < 10_000)
+  assert.ok(checkout.changes.every(change => change.path.length === 215))
+  const first = checkout.changes[0]!
+  assert.match((await inspection.diff(request(snapshot, first.path, "untracked"), [root])).patch, /\+new/u)
+})
+
 test("renames, deletions and unusual filenames retain exact paths and line counts", async context => {
   const root = await fixture(context)
   await repository(root)
