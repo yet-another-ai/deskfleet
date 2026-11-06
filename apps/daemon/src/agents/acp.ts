@@ -119,8 +119,8 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         .map(([key, value]) => [process.platform === "win32" ? key.toUpperCase() : key, value]),
     ),
     stdio: ["pipe", "pipe", "inherit"],
-    // The daemon runs inside a GUI process; without this a console window is
-    // allocated for the Agent process and its children on Windows.
+    // Hide this Agent's console when the daemon runs inside a GUI process.
+    // Adapters must also hide each console subprocess they launch.
     windowsHide: true,
   })
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))

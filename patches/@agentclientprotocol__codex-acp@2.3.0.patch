@@ -1,7 +1,20 @@
 diff --git a/dist/index.js b/dist/index.js
-index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..d6e71c98ee39b8d07ff6139ff9841e6102f7ea58 100644
+index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344c8d0af0f 100644
 --- a/dist/index.js
 +++ b/dist/index.js
+@@ -27966,10 +27966,10 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
+   const spawnEnv = env ?? process.env;
+   let codex;
+   if (codexPath) {
+-    codex = process.platform === "win32" ? (0, import_cross_spawn.default)(codexPath, appServerStartupArgs, { env: spawnEnv }) : spawn(codexPath, appServerStartupArgs, { env: spawnEnv });
++    codex = process.platform === "win32" ? (0, import_cross_spawn.default)(codexPath, appServerStartupArgs, { env: spawnEnv, windowsHide: true }) : spawn(codexPath, appServerStartupArgs, { env: spawnEnv, windowsHide: true });
+   } else {
+     const bundledCodexPath = require2.resolve("@openai/codex/bin/codex.js");
+-    codex = spawn(process.execPath, [bundledCodexPath, ...appServerStartupArgs], { env: spawnEnv });
++    codex = spawn(process.execPath, [bundledCodexPath, ...appServerStartupArgs], { env: spawnEnv, windowsHide: true });
+   }
+   attachLogs(codex);
+   codex.stdin.on("error", (error62) => logger.log(`[STDIN ERROR] ${error62.message}`));
 @@ -43076,7 +43076,11 @@ var CodexAppServerSupervisor = class {
      let closed = false;
      let stdoutEnded = false;

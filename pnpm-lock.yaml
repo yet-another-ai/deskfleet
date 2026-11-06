@@ -8,11 +8,11 @@ overrides:
   vitepress>vue: 3.6.0-rc.13
 
 patchedDependencies:
-  '@agentclientprotocol/codex-acp@2.3.0': 30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43
+  '@agentclientprotocol/codex-acp@2.3.0': 54da0a5f5b663b5c0aa2a709477c5cdfc12508b95884f030d4a56b7e5e30d4a5
   '@deepseek-ai/dsh-app-boot@0.2.2-rc.1': 9628a9aeca9810359879e255fb64f6a8d5ec910ed16ea3e1fb446979ce330b5f
   '@xterm/addon-ligatures@0.10.0': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   '@xterm/addon-search@0.16.0': a3398047a9423d007abbb875aec542ed6f855cc861c4b69b46fd93b7c649c1a0
-  pi-acp@0.0.34: 36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb
+  pi-acp@0.0.34: 5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024
   stream-markdown-parser@1.2.22: 100e9ff04a11b902a75490525a3471d349a4ef3366254fd7b9bb3a93555f0583
 
 importers:
@@ -42,7 +42,7 @@ importers:
         version: 0.99.1(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 2.3.0
-        version: 2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)
+        version: 2.3.0(patch_hash=54da0a5f5b663b5c0aa2a709477c5cdfc12508b95884f030d4a56b7e5e30d4a5)
       '@agentclientprotocol/sdk':
         specifier: 2.1.0
         version: 2.1.0(zod@4.6.7)
@@ -57,7 +57,7 @@ importers:
         version: link:../../crates/node
       pi-acp:
         specifier: 0.0.34
-        version: 0.0.34(patch_hash=36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb)
+        version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
 
   apps/desktop:
     devDependencies:
@@ -10094,7 +10094,7 @@ snapshots:
       - '@modelcontextprotocol/sdk'
       - '@modelcontextprotocol/server'
 
-  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=30d6ea4346e4bc997255a84a6dcec395905df04742bbb63a5e48355fe7307b43)':
+  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=54da0a5f5b663b5c0aa2a709477c5cdfc12508b95884f030d4a56b7e5e30d4a5)':
     dependencies:
       '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@openai/codex': 0.164.0
@@ -19331,7 +19331,7 @@ snapshots:
 
   perfect-debounce@2.1.0: {}
 
-  pi-acp@0.0.34(patch_hash=36d9ab123339167dca1f08a507a15cd2e0d55d6bf92d164e13f7bcb0d01d09fb):
+  pi-acp@0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024):
     dependencies:
       '@agentclientprotocol/sdk': 0.26.0(zod@3.25.76)
       cross-spawn: 7.0.6
