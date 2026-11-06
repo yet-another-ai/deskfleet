@@ -51,7 +51,7 @@ export function hasMatchingChanges(raw: string, matcher: (path: string) => boole
 
 export function isPlatformPath(path: string): boolean {
   return path.endsWith(".rs") ||
-    /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|packages\/dsh-runtime|vendor)\//u.test(path) ||
+    /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|packages\/client|packages\/mcp|packages\/dsh-runtime|vendor)\//u.test(path) ||
     /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
     /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
     path.startsWith(".config/build-env/") ||

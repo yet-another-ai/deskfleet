@@ -171,6 +171,8 @@ test("platform and backend detectors cover shared actions and build-env paths", 
     ".config/build-env/linux.toml",
     ".github/workflows/test.yml",
     "mise.toml",
+    "packages/client/src/file-transfers.ts",
+    "packages/mcp/src/index.ts",
   ]) {
     assert.equal(isPlatformPath(file), true, `platform:${file}`)
     assert.equal(isBackendPath(file), true, `backend:${file}`)
