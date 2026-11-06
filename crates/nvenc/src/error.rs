@@ -19,6 +19,10 @@ pub enum NvEncError {
     BitstreamBufferFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// An encode operation failed.
     EncodeFailed(deskfleet_nvenc_sys::NVENCSTATUS),
+    /// This device/codec cannot change its bitrate on a live session.
+    DynamicBitrateUnsupported,
+    /// Reconfiguring an existing session failed.
+    ReconfigureFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// Locking a buffer failed.
     LockFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// A generic NVENC error.
@@ -42,6 +46,10 @@ impl fmt::Display for NvEncError {
                 write!(f, "failed to create bitstream buffer: {s:?}")
             }
             Self::EncodeFailed(s) => write!(f, "encode failed: {s:?}"),
+            Self::DynamicBitrateUnsupported => {
+                write!(f, "live NVENC bitrate changes are unsupported")
+            }
+            Self::ReconfigureFailed(s) => write!(f, "encoder reconfiguration failed: {s:?}"),
             Self::LockFailed(s) => write!(f, "buffer lock failed: {s:?}"),
             Self::Api(s) => write!(f, "NVENC API error: {s:?}"),
         }

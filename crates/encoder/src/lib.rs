@@ -83,7 +83,7 @@ impl Encoder {
 
     /// Change the target and/or maximum bitrate on the live encoder session.
     pub fn set_bitrate(
-        &self,
+        &mut self,
         avg_bitrate_bps: u32,
         max_bitrate_bps: u32,
     ) -> Result<(), EncoderError> {

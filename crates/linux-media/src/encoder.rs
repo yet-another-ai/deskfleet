@@ -207,13 +207,13 @@ impl Encoder {
         set_property(
             &self.hardware,
             c"bitrate",
-            &average.div_ceil(1000).to_string(),
+            &bitrate_property(self.factory, average).to_string(),
         )?;
         if self.factory.starts_with("nv") {
             set_property(
                 &self.hardware,
                 c"max-bitrate",
-                &maximum.div_ceil(1000).to_string(),
+                &bitrate_property(self.factory, maximum).to_string(),
             )?;
         }
         self.pipeline.check_error()
@@ -262,8 +262,21 @@ fn validate(settings: &EncoderSettings, pixels: &[u8]) -> Result<()> {
     Ok(())
 }
 
+// nvcodec labels these properties "kbit/sec" but multiplies them by 1024;
+// VA uses decimal kbps. Use the same conversion at startup and on live updates.
+// See GStreamer's sys/nvcodec/gstnvh264encoder.cpp (set_format/check_reconfigure):
+// https://github.com/GStreamer/gstreamer/blob/1.26/subprojects/gst-plugins-bad/sys/nvcodec/gstnvh264encoder.cpp
+fn bitrate_property(factory: &str, bits_per_second: u32) -> u32 {
+    let unit = if factory.starts_with("nv") {
+        1024
+    } else {
+        1000
+    };
+    bits_per_second.div_ceil(unit)
+}
+
 fn description(settings: &EncoderSettings, factory: &str) -> String {
-    let bitrate = settings.bitrate_bps.div_ceil(1000);
+    let bitrate = bitrate_property(factory, settings.bitrate_bps);
     let baseline = settings.profile == "constrained-baseline";
     let hardware = if factory.starts_with("nv") {
         let codec_options = match settings.codec {
@@ -273,7 +286,7 @@ fn description(settings: &EncoderSettings, factory: &str) -> String {
         format!(
             "{factory} name=hardware bitrate={bitrate} max-bitrate={} rc-mode=cbr \
             rc-lookahead=0 zerolatency=true {codec_options}",
-            settings.max_bitrate_bps.div_ceil(1000),
+            bitrate_property(factory, settings.max_bitrate_bps),
         )
     } else {
         let codec_options = match settings.codec {
@@ -339,6 +352,28 @@ mod tests {
         options = settings(Codec::Av1);
         options.profile = "high";
         assert!(validate(&options, &vec![0; 320 * 240 * 4]).is_err());
+    }
+
+    #[test]
+    fn bitrate_properties_match_each_hardware_plugins_units() {
+        for codec in Codec::ALL {
+            for factory in codec.factories() {
+                let (average, maximum, unit) = if factory.starts_with("nv") {
+                    (977, 1954, 1024)
+                } else {
+                    (1000, 2000, 1000)
+                };
+                let pipeline = description(&settings(codec), factory);
+                assert!(pipeline.contains(&format!(" bitrate={average} ")));
+                if factory.starts_with("nv") {
+                    assert!(pipeline.contains(&format!(" max-bitrate={maximum} ")));
+                }
+                // Quantization may add at most one property unit, not 2.4%.
+                let effective = bitrate_property(factory, 1_000_000) * unit;
+                assert!((1_000_000..1_000_000 + unit).contains(&effective));
+                assert_eq!(bitrate_property(factory, 0), 0);
+            }
+        }
     }
 
     #[test]

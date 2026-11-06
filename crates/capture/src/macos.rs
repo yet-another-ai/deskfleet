@@ -27,6 +27,7 @@ use objc2_screen_capture_kit::{
 use crate::audio::AudioFrame;
 use crate::error::CaptureError;
 use crate::frame::{Frame, PixelFormat};
+use crate::latest_frame::LatestFrame;
 use crate::surface::NativeSurface;
 use crate::types::{CaptureConfig, Display};
 
@@ -34,8 +35,8 @@ use crate::types::{CaptureConfig, Display};
 mod audio_capture;
 use audio_capture::audio_from_sample_buffer;
 
-/// Shared, closable sender handle for video frames.
-type SharedVideoSender = Arc<Mutex<Option<mpsc::SyncSender<Frame>>>>;
+/// One replaceable raw frame; callbacks never retain an old desktop backlog.
+type SharedVideo = Arc<LatestFrame<Frame>>;
 
 /// Shared, closable sender handle for audio frames.
 type SharedAudioSender = Arc<Mutex<Option<mpsc::SyncSender<AudioFrame>>>>;
@@ -94,7 +95,7 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
 }
 
 struct OutputDelegateIvars {
-    video_tx: SharedVideoSender,
+    video: SharedVideo,
     audio_tx: SharedAudioSender,
     audio_sample_rate: u32,
     audio_channels: u16,
@@ -121,11 +122,8 @@ define_class!(
             output_type: SCStreamOutputType,
         ) {
             if output_type == SCStreamOutputType::Screen {
-                if let Some(frame) = frame_from_sample_buffer(sample_buffer)
-                    && let Ok(guard) = self.ivars().video_tx.lock()
-                    && let Some(tx) = guard.as_ref()
-                {
-                    let _ = tx.try_send(frame);
+                if let Some(frame) = frame_from_sample_buffer(sample_buffer) {
+                    self.ivars().video.publish(frame);
                 }
             } else if output_type == SCStreamOutputType::Audio {
                 let ivars = self.ivars();
@@ -146,10 +144,8 @@ define_class!(
     unsafe impl SCStreamDelegate for OutputDelegate {
         #[unsafe(method(stream:didStopWithError:))]
         unsafe fn stream_didStopWithError(&self, _stream: &SCStream, _error: &NSError) {
-            // Release senders so consumers observe StreamEnded after an OS failure.
-            if let Ok(mut sender) = self.ivars().video_tx.lock() {
-                *sender = None;
-            }
+            // Close capture delivery so consumers observe StreamEnded after an OS failure.
+            self.ivars().video.close();
             if let Ok(mut sender) = self.ivars().audio_tx.lock() {
                 *sender = None;
             }
@@ -159,13 +155,13 @@ define_class!(
 
 impl OutputDelegate {
     fn new(
-        video_tx: SharedVideoSender,
+        video: SharedVideo,
         audio_tx: SharedAudioSender,
         audio_sample_rate: u32,
         audio_channels: u16,
     ) -> Retained<Self> {
         let this = Self::alloc().set_ivars(OutputDelegateIvars {
-            video_tx,
+            video,
             audio_tx,
             audio_sample_rate,
             audio_channels,
@@ -214,9 +210,8 @@ fn frame_from_sample_buffer(sample_buffer: &CMSampleBuffer) -> Option<Frame> {
 pub struct MacOSStream {
     stream: Retained<SCStream>,
     _delegate: Retained<OutputDelegate>,
-    video_tx_handle: SharedVideoSender,
+    video: SharedVideo,
     audio_tx_handle: SharedAudioSender,
-    video_rx: mpsc::Receiver<Frame>,
     audio_rx: Option<mpsc::Receiver<AudioFrame>>,
     started: AtomicBool,
     fps: f64,
@@ -230,7 +225,6 @@ impl MacOSStream {
     #[allow(clippy::cast_possible_truncation)]
     pub fn new(display: &Display, config: &CaptureConfig) -> Result<Self, CaptureError> {
         let sc_display = find_sc_display(display.id)?;
-        let (video_tx, video_rx) = mpsc::sync_channel::<Frame>(3);
         let (audio_tx, audio_rx) = if config.capture_audio {
             let (tx, rx) = mpsc::sync_channel::<AudioFrame>(8);
             (Some(tx), Some(rx))
@@ -285,14 +279,14 @@ impl MacOSStream {
             c
         };
 
-        // Wrap the senders so we can close the channels from stop().
+        // Video retains only the newest surface; audio keeps its bounded channel.
         #[allow(clippy::arc_with_non_send_sync)]
-        let video_tx_handle: SharedVideoSender = Arc::new(Mutex::new(Some(video_tx)));
+        let video: SharedVideo = Arc::new(LatestFrame::new());
         #[allow(clippy::arc_with_non_send_sync)]
         let audio_tx_handle: SharedAudioSender = Arc::new(Mutex::new(audio_tx));
 
         let delegate = OutputDelegate::new(
-            Arc::clone(&video_tx_handle),
+            Arc::clone(&video),
             Arc::clone(&audio_tx_handle),
             config.audio_sample_rate,
             config.audio_channels,
@@ -336,9 +330,8 @@ impl MacOSStream {
         Ok(Self {
             stream,
             _delegate: delegate,
-            video_tx_handle,
+            video,
             audio_tx_handle,
-            video_rx,
             audio_rx,
             started: AtomicBool::new(false),
             fps: config.fps,
@@ -412,31 +405,19 @@ impl MacOSStream {
     pub fn poll_frame(&self) -> Result<Option<Frame>, CaptureError> {
         self.ensure_started()?;
         let timeout = Duration::from_secs_f64((1.0 / self.fps()).max(0.001));
-        match self.video_rx.recv_timeout(timeout) {
-            Ok(frame) => Ok(Some(frame)),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(CaptureError::StreamEnded),
-        }
+        self.video.receive(Some(timeout))
     }
 
     pub fn next_frame(&self) -> Result<Frame, CaptureError> {
-        self.video_rx.recv().map_err(|_| CaptureError::StreamEnded)
+        self.video.receive(None)?.ok_or(CaptureError::StreamEnded)
     }
 
     pub fn try_next_frame(&self) -> Result<Option<Frame>, CaptureError> {
-        match self.video_rx.try_recv() {
-            Ok(frame) => Ok(Some(frame)),
-            Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => Err(CaptureError::StreamEnded),
-        }
+        self.video.receive(Some(Duration::ZERO))
     }
 
     pub fn next_frame_timeout(&self, timeout: Duration) -> Result<Option<Frame>, CaptureError> {
-        match self.video_rx.recv_timeout(timeout) {
-            Ok(frame) => Ok(Some(frame)),
-            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(CaptureError::StreamEnded),
-        }
+        self.video.receive(Some(timeout))
     }
 
     pub fn next_audio_frame(&self) -> Result<AudioFrame, CaptureError> {
@@ -466,9 +447,8 @@ impl MacOSStream {
 
     /// Stop capture.
     ///
-    /// After the capture is stopped, the frame sender is closed so that any
-    /// blocking `recv()` on the receiver side returns immediately with
-    /// `Disconnected` (mapped to `StreamEnded`).
+    /// Closing delivery wakes blocked readers with `StreamEnded` once the last
+    /// pending frame has been consumed.
     pub fn stop(&self) -> Result<(), CaptureError> {
         if !self.started.swap(false, Ordering::AcqRel) {
             return Ok(());
@@ -494,10 +474,8 @@ impl MacOSStream {
             .recv()
             .map_err(|_| CaptureError::Platform("stop capture channel dropped".into()))?;
 
-        // Close the frame senders — unblocks any waiting recv() calls.
-        if let Ok(mut guard) = self.video_tx_handle.lock() {
-            *guard = None;
-        }
+        // Close delivery and wake blocked video/audio readers.
+        self.video.close();
         if let Ok(mut guard) = self.audio_tx_handle.lock() {
             *guard = None;
         }

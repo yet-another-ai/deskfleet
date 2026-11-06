@@ -175,21 +175,22 @@ impl PlatformEncoder {
     }
 
     pub(crate) fn set_bitrate(
-        &self,
+        &mut self,
         avg_bitrate_bps: u32,
         max_bitrate_bps: u32,
     ) -> Result<(), EncoderError> {
-        match &self.active {
+        match &mut self.active {
             Some(ActiveEncoder::Nvenc(encoder)) => {
-                encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)
+                encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)?;
             }
             Some(ActiveEncoder::MediaFoundation(encoder)) => {
-                encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)
+                encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)?;
             }
-            None => Err(EncoderError::Unsupported(
-                "bitrate changes before encoding starts",
-            )),
+            None => {}
         }
+        self.config.bitrate_bps = avg_bitrate_bps;
+        self.config.max_bitrate_bps = max_bitrate_bps;
+        Ok(())
     }
 
     pub(crate) fn set_fps(&mut self, fps: f64) -> Result<(), EncoderError> {

@@ -31,6 +31,8 @@ pub(super) enum Request {
         /// Congestion-control target in bits/sec for live encoder retargeting.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target_bitrate_bps: Option<u32>,
+        /// Stop submitting raw video while the transport is behind.
+        video_paused: bool,
     },
     InputStart {
         display_id: u32,
@@ -125,6 +127,7 @@ pub(super) struct PacketInfo {
     video: bool,
     length: u32,
     duration_ns: u64,
+    timestamp_ns: u64,
 }
 
 pub(super) fn write_json(writer: &mut impl Write, value: &impl Serialize) -> io::Result<()> {
@@ -180,9 +183,11 @@ pub(super) fn write_batch(
     let metadata: Vec<_> = packets
         .iter()
         .map(|packet| {
-            let (video, data, duration) = match packet {
-                Packet::Video(data, duration) => (true, data, duration),
-                Packet::Audio(data, duration) => (false, data, duration),
+            let (video, data, duration, timestamp_ns) = match packet {
+                Packet::Video(data, duration, timestamp_ns) => {
+                    (true, data, duration, *timestamp_ns)
+                }
+                Packet::Audio(data, duration) => (false, data, duration, 0),
             };
             Ok(PacketInfo {
                 video,
@@ -190,6 +195,7 @@ pub(super) fn write_batch(
                     .map_err(|_| invalid("desktop packet is too large"))?,
                 duration_ns: u64::try_from(duration.as_nanos())
                     .map_err(|_| invalid("desktop packet duration overflow"))?,
+                timestamp_ns,
             })
         })
         .collect::<io::Result<_>>()?;
@@ -202,7 +208,7 @@ pub(super) fn write_batch(
         },
     )?;
     for packet in packets {
-        let (Packet::Video(data, _) | Packet::Audio(data, _)) = packet;
+        let (Packet::Video(data, ..) | Packet::Audio(data, _)) = packet;
         writer.write_all(&data)?;
     }
     writer.flush()
@@ -220,7 +226,7 @@ pub(super) fn read_packets(
             reader.read_exact(&mut data)?;
             let duration = Duration::from_nanos(packet.duration_ns);
             Ok(if packet.video {
-                Packet::Video(data, duration)
+                Packet::Video(data, duration, packet.timestamp_ns)
             } else {
                 Packet::Audio(data, duration)
             })
@@ -241,10 +247,11 @@ mod tests {
     fn binary_packets_roundtrip_without_json_encoding_video() {
         let bytes = vec![0, 0, 0, 1, 0xff, 0x65];
         let duration = Duration::from_millis(33);
+        let timestamp_ns = 7_000_000_000;
         let mut wire = Vec::new();
         write_batch(
             &mut wire,
-            vec![Packet::Video(bytes.clone(), duration)],
+            vec![Packet::Video(bytes.clone(), duration, timestamp_ns)],
             true,
         )
         .unwrap();
@@ -259,11 +266,12 @@ mod tests {
         };
         assert!(encoder_started);
         let packets = read_packets(&mut reader, packets).unwrap();
-        let Packet::Video(data, actual_duration) = &packets[0] else {
+        let Packet::Video(data, actual_duration, actual_timestamp) = &packets[0] else {
             panic!("expected video")
         };
         assert_eq!(data, &bytes);
         assert_eq!(*actual_duration, duration);
+        assert_eq!(*actual_timestamp, timestamp_ns);
     }
 
     #[test]
@@ -280,6 +288,7 @@ mod tests {
             video: true,
             length: MAX_PACKET as u32 + 1,
             duration_ns: 1,
+            timestamp_ns: 0,
         };
         assert_eq!(
             read_packets(&mut io::empty(), vec![oversized])
@@ -293,6 +302,7 @@ mod tests {
                 video: true,
                 length: 1,
                 duration_ns: 1,
+                timestamp_ns: 0,
             })
             .collect();
         assert_eq!(
@@ -307,6 +317,7 @@ mod tests {
                 video: true,
                 length: MAX_PACKET as u32,
                 duration_ns: 1,
+                timestamp_ns: 0,
             })
             .collect();
         assert_eq!(
@@ -324,6 +335,7 @@ mod tests {
             video: true,
             length: 5,
             duration_ns: 1,
+            timestamp_ns: 0,
         }];
         assert_eq!(
             read_packets(&mut Cursor::new([1, 2]), metadata)

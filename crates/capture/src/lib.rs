@@ -7,6 +7,8 @@ mod audio;
 mod backend;
 mod error;
 mod frame;
+#[cfg(any(target_os = "macos", test))]
+mod latest_frame;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]

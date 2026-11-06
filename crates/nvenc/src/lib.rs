@@ -18,6 +18,7 @@
 
 pub mod d3d11;
 mod error;
+mod rate_control;
 
 pub use d3d11::D3D11Encoder;
 pub use error::NvEncError;

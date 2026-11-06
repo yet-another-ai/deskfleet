@@ -146,13 +146,23 @@ impl WindowsEncoder {
     }
 
     pub fn set_bitrate(
-        &self,
-        _avg_bitrate_bps: u32,
-        _max_bitrate_bps: u32,
+        &mut self,
+        avg_bitrate_bps: u32,
+        max_bitrate_bps: u32,
     ) -> Result<(), EncoderError> {
-        Err(EncoderError::Unsupported(
-            "live NVENC bitrate reconfiguration",
-        ))
+        if let Some(encoder) = self.inner.as_mut() {
+            encoder
+                .set_bitrate(avg_bitrate_bps, max_bitrate_bps)
+                .map_err(|error| match error {
+                    deskfleet_nvenc::NvEncError::DynamicBitrateUnsupported => {
+                        EncoderError::Unsupported("live NVENC bitrate reconfiguration")
+                    }
+                    error => EncoderError::Platform(format!("NVENC bitrate: {error}")),
+                })?;
+        }
+        self.config.bitrate_bps = avg_bitrate_bps;
+        self.config.max_bitrate_bps = max_bitrate_bps;
+        Ok(())
     }
 
     /// Probe NVENC on the selected display's D3D11 device.

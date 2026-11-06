@@ -88,8 +88,8 @@ impl CapturePipeline {
 
     /// Apply a GCC/TWCC bandwidth estimate (bits/sec) to the live encoder.
     ///
-    /// Platforms that cannot retarget bitrate live (for example Windows NVENC)
-    /// recreate once at the configured ceiling and then leave the rate fixed.
+    /// Devices that cannot retarget live recreate once at the requested rate;
+    /// capture admission then prevents their fixed rate from filling the pacer.
     pub(crate) fn apply_bandwidth_estimate(&mut self, estimate_bps: f64) -> Result<(), MediaError> {
         let Some(target) = self.bitrate.observe_estimate(estimate_bps) else {
             return Ok(());
@@ -99,7 +99,7 @@ impl CapturePipeline {
 
     fn apply_encoder_bitrate(&mut self, target: u32) -> Result<(), MediaError> {
         let ceiling = self.bitrate.ceiling_bps();
-        let Some(encoder) = self.encoder.as_ref() else {
+        let Some(encoder) = self.encoder.as_mut() else {
             return Ok(());
         };
         match encoder.set_bitrate(target, ceiling) {
@@ -107,31 +107,37 @@ impl CapturePipeline {
             Err(EncoderError::Unsupported(reason)) => {
                 tracing::warn!(
                     reason,
-                    ceiling_bps = ceiling,
-                    "live encoder bitrate changes unsupported; freezing at configured ceiling"
+                    target_bps = target,
+                    "live encoder bitrate changes unsupported; recreating at current target"
                 );
-                if self.bitrate.disable_live_adaptation() {
-                    self.encoder = None;
-                    self.dimensions = (0, 0);
-                    self.retained.clear();
-                    self.bitrate.freeze_at_ceiling();
-                }
+                self.bitrate.disable_live_adaptation();
+                self.encoder = None;
+                self.dimensions = (0, 0);
+                self.retained.clear();
                 Ok(())
             }
             Err(error) => Err(MediaError::VideoEncoder(error)),
         }
     }
 
-    pub(crate) fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
+    pub(crate) fn poll(
+        &mut self,
+        keyframe: bool,
+        video_paused: bool,
+    ) -> Result<CaptureBatch, MediaError> {
         let capture = self.capture.as_ref().ok_or(MediaError::Startup)?;
         let now = Instant::now();
-        let (capture_due, keyframe) = self.cadence.poll(now, keyframe);
+        let (capture_due, keyframe) = self.cadence.poll(now, keyframe, video_paused);
         let captured = if capture_due {
             capture.poll_frame()?
         } else {
             // Keep draining asynchronous encoder/audio output without busy-polling
             // or acquiring full-size desktop surfaces between preview frames.
-            std::thread::sleep(self.cadence.wait(now).min(Duration::from_millis(5)));
+            std::thread::sleep(if video_paused {
+                Duration::from_millis(5)
+            } else {
+                self.cadence.wait(now).min(Duration::from_millis(5))
+            });
             None
         };
         let generation = capture.desktop_generation();
@@ -248,9 +254,9 @@ impl VideoCadence {
             .map_or(Duration::ZERO, |next| next.saturating_duration_since(now))
     }
 
-    fn poll(&mut self, now: Instant, keyframe: bool) -> (bool, bool) {
+    fn poll(&mut self, now: Instant, keyframe: bool, paused: bool) -> (bool, bool) {
         self.keyframe |= keyframe;
-        if self.wait(now) != Duration::ZERO {
+        if paused || self.wait(now) != Duration::ZERO {
             return (false, false);
         }
         self.next = Some(now + self.period);
@@ -276,7 +282,7 @@ fn append_video(packets: &mut Vec<Packet>, encoded: Vec<EncodedPacket>, fps: f64
         } else {
             Duration::from_nanos(packet.duration_ns)
         };
-        packets.push(Packet::Video(packet.data, duration));
+        packets.push(Packet::Video(packet.data, duration, packet.timestamp_ns));
     }
 }
 
@@ -361,7 +367,7 @@ mod tests {
         while started.elapsed() < Duration::from_secs(3) {
             // Repeated feedback also exercises an idle desktop without relying on
             // user activity. No captured image or encoded packet is saved.
-            let batch = pipeline.poll(true).unwrap();
+            let batch = pipeline.poll(true, false).unwrap();
             frames += batch
                 .packets
                 .iter()
@@ -387,22 +393,45 @@ mod tests {
     fn preview_cadence_limits_capture_and_coalesces_keyframe_requests() {
         let now = Instant::now();
         let mut cadence = VideoCadence::new(1.0);
-        assert_eq!(cadence.poll(now, false), (true, false));
+        assert_eq!(cadence.poll(now, false, false), (true, false));
         for millis in [1, 200, 500, 999] {
             assert_eq!(
-                cadence.poll(now + Duration::from_millis(millis), true),
+                cadence.poll(now + Duration::from_millis(millis), true, false),
                 (false, false)
             );
         }
         assert_eq!(
-            cadence.poll(now + Duration::from_secs(1), false),
+            cadence.poll(now + Duration::from_secs(1), false, false),
             (true, true)
         );
         assert_eq!(
-            cadence.poll(now + Duration::from_secs(2), false),
+            cadence.poll(now + Duration::from_secs(2), false, false),
             (true, false)
         );
     }
+    #[test]
+    fn congestion_pauses_capture_and_retains_keyframe_until_resume() {
+        let now = Instant::now();
+        let mut cadence = VideoCadence::new(60.0);
+        assert_eq!(cadence.poll(now, false, false), (true, false));
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(1), true, true),
+            (false, false)
+        );
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(2), false, true),
+            (false, false)
+        );
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(3), false, false),
+            (true, true)
+        );
+        assert_eq!(
+            cadence.poll(now + Duration::from_secs(4), false, false),
+            (true, false)
+        );
+    }
+
     #[test]
     fn desktop_change_discards_old_pixels_even_when_a_keyframe_is_requested() {
         let now = Instant::now();

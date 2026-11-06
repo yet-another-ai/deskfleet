@@ -136,6 +136,7 @@ fn execute(request: Request, activity: &mut Activity, pipe: &mut Pipe) -> Result
         Request::Poll {
             keyframe,
             target_bitrate_bps,
+            video_paused,
         } => {
             let Activity::Capture(capture) = activity else {
                 return Err(MediaError::InvalidConfig("desktop capture has not started").into());
@@ -143,7 +144,7 @@ fn execute(request: Request, activity: &mut Activity, pipe: &mut Pipe) -> Result
             if let Some(target) = target_bitrate_bps {
                 capture.apply_bandwidth_estimate(f64::from(target))?;
             }
-            let batch = capture.poll(keyframe)?;
+            let batch = capture.poll(keyframe, video_paused)?;
             pipe.check_session().map_err(Failure::Transport)?;
             return protocol::write_batch(pipe, batch.packets, batch.encoder_started)
                 .map_err(Failure::Transport);

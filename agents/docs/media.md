@@ -43,9 +43,9 @@ decoder's level are not implemented; callers must choose settings the receiving
 device can decode. Sending video peers enable webrtc-rs send-side congestion
 control (GCC with TWCC feedback and a pacer). The estimator's target bitrate
 drives live hardware-encoder retargeting, clamped to the stream's configured
-ceiling (default 8 Mbps). Platforms that cannot change bitrate on a live encoder
-session (notably Windows NVENC) keep that ceiling as a fixed CBR target after a
-one-time fallback. The browser WebRTC stack owns receive-side decoding and
+ceiling (default 8 Mbps). Windows NVENC uses live session reconfiguration when the device supports it.
+An unsupported device recreates once at the requested target, with capture
+backpressure preventing a growing send queue. The browser WebRTC stack owns receive-side decoding and
 playback for the embedded viewer. The optional
 [native desktop window](#native-desktop-window) uses the Rust receive path.
 
@@ -382,16 +382,41 @@ mutual support.
 
 ### Congestion-driven bitrate
 
-Sending desktop peers install `configure_congestion_control` around Google
-Congestion Control before the default NACK/report/TWCC-receiver interceptors.
-A thin `ReportingEstimator` publishes the GCC target on a watch channel. The
-capture worker clamps that estimate into `[100 kb/s, configured ceiling]`,
-applies a 10% / 50 kb/s hysteresis, and calls `Encoder::set_bitrate` when the
-encoder supports live retargeting (macOS VideoToolbox, Linux GStreamer, Windows
-Media Foundation). Windows NVENC returns unsupported for live bitrate changes:
-the pipeline recreates once at the configured ceiling and leaves the rate fixed
-while the pacer continues to limit on-wire send rate. Framerate and resolution
-ladders are out of scope for this control loop.
+Sending desktop peers install GCC/TWCC and a desktop pacer before the default
+NACK/report/TWCC-receiver interceptors. GCC starts at 8 Mb/s; the encoder starts
+at the same rate, clamped to the stream's configured ceiling (including the
+150 kb/s preview ceiling). The pacer starts at, and follows, 2.5 times the GCC
+estimate to accommodate IDR bursts and RTP overhead. This is a burst release
+budget, not a promise of network capacity; feedback still lowers the estimate.
+
+A `ReportingEstimator` publishes GCC targets on a watch channel. The capture
+worker clamps them into `[100 kb/s, configured ceiling]` and retargets only when
+both 10% and 50 kb/s hysteresis thresholds are met. This avoids frequent Linux
+VA encoder reconfiguration, which drains references and restarts its GOP.
+VideoToolbox, GStreamer and Media Foundation retarget live. Windows NVENC checks
+dynamic-bitrate capability and uses `NvEncReconfigureEncoder` without resetting
+the session or forcing an IDR. An unsupported device recreates once at the
+requested rate, rather than jumping to the ceiling. Linux NVIDIA properties use
+1024-bit kilobits; VA properties use 1000-bit kilobits.
+
+Each media-track write completes when its final RTP packet leaves the pacer,
+so the pacer holds at most one original sample per track. A large IDR cannot be
+truncated by the upstream default 4096-packet limit. The capture-to-delivery
+channel holds one packet; when pacer backlog exceeds 150 ms by age or expected
+send time, the worker pauses raw video submission while draining encoder/audio
+output. Keyframe requests remain pending through that pause, and the next
+capture uses current desktop pixels. ScreenCaptureKit callbacks replace a single
+raw-frame slot, matching the latest-frame behavior of the Linux capture paths.
+Encoded reference frames are never dropped
+to catch up. Retransmissions cannot enlarge an already congested pacing queue.
+RTCP bypasses pacing, and TWCC/send history still record actual release times.
+Capture timestamp gaps are preserved in RTP across skipped raw frames.
+Sends taking at least 150 ms emit a debug diagnostic with media kind, encoded
+byte count and elapsed send time; no captured content is logged.
+
+The 150 ms threshold controls admission, not a hard end-to-end latency guarantee:
+an already encoded IDR still needs to cross the available network. Framerate
+and resolution ladders remain outside this control loop.
 
 The Session's right-hand Desktops tab requests one silent, read-only stream per display
 with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
