@@ -148,15 +148,14 @@ function workflowScript(job: string): string {
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
-  for (const changes of results) for (const tests of results) for (const build of results) for (const nix of results) for (const aur of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
+  for (const changes of results) for (const tests of results) for (const build of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
     const result = spawnSync("bash", ["-c", script], {
-      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_RESULT: nix, AUR_RESULT: aur, DOCS_ONLY: docs, RUN_BUILD: runBuild }
+      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, DOCS_ONLY: docs, RUN_BUILD: runBuild }
     })
     const allowSkip = docs === "true" || runBuild === "false"
     assert.equal(result.status === 0, changes === "success" && tests === "success"
-      && build === (allowSkip ? "skipped" : "success") && nix === (allowSkip ? "skipped" : "success")
-      && aur === (allowSkip ? "skipped" : "success"),
-      JSON.stringify({ changes, tests, build, nix, aur, docs, runBuild }))
+      && build === (allowSkip ? "skipped" : "success"),
+      JSON.stringify({ changes, tests, build, docs, runBuild }))
   }
 })
 

@@ -1,21 +1,22 @@
 # Continuous integration
 
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
-one orchestrator, reusable Test, Build, Nix, and AUR workflows, a shared setup action, and
-a stable `Gate` result for branch protection.
+one orchestrator, reusable Test and Build workflows, a shared setup action, and
+a stable `Gate` result for branch protection. (Nix and AUR package validation are
+dedicated release workflows called by `publish.yml`).
 
 ## Workflow ownership
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
   runs, and a daily full run at 03:17 UTC. It classifies the changed files with
-  the hosted runner's Node, calls Test, Build, Nix, and AUR, and combines their
-  results in `Gate`. Pull requests without packaging changes skip release
-  packaging (`Build`, `Nix`, `AUR`), relying on `Test` to validate code changes
-  and leaving the smoke build to `main`. Draft pull requests run static checks
-  only, automatically triggering the full runtime test suite upon `ready_for_review`.
-  Configure `Gate` under the `CI` workflow as the required status check in
-  repository branch protection. Successful push and manual runs on `main` then
-  deploy the product website to GitHub Pages.
+  the hosted runner's Node, calls Test and Build, and combines their results
+  in `Gate`. Pull requests without packaging changes skip release packaging
+  (`Build`), relying on `Test` to validate code changes and leaving the smoke
+  build to `main`. Draft pull requests run static checks only, automatically
+  triggering the full runtime test suite upon `ready_for_review`. Configure
+  `Gate` under the `CI` workflow as the required status check in repository
+  branch protection. Successful push and manual runs on `main` then deploy the
+  product website to GitHub Pages.
 - `.github/workflows/test.yml` runs a staged test pipeline. Fast `Static checks`
   and the desktop/Web/website builds run first on Linux with `mise run ci:check:static`.
   Platform tests and backend integration jobs wait for static checks to pass
@@ -80,15 +81,15 @@ a stable `Gate` result for branch protection.
 - `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
   Build, generates a flake bundle, and checks the repackaged app under Xvfb.
   It preloads the archives into Nix's fixed-output store so checks can run before
-  the release assets are published. CI includes it in `Gate`; documentation-only
-  changes skip it alongside Build. Publish reuses the workflow and includes its
+  the release assets are published. Publish reuses the workflow and includes its
   generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
-  the production environment or read its variables or secrets.
+  the production environment or read its variables or secrets. It is dedicated to
+  release publication and excluded from daily CI.
 - `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
   x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
-  a disposable Arch container. CI includes it in `Gate`; documentation-only
-  changes skip it alongside Build. Publish also requires it before creating the
-  draft or pushing the server image. It needs no AUR credentials.
+  a disposable Arch container. Publish requires it before creating the draft or
+  pushing the server image. It needs no AUR credentials and is excluded from daily
+  CI.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for the Test and Build workflows. The locked
   toolchain install retries once after a transient failure: hosted macOS runners
@@ -422,11 +423,11 @@ wrapper, and disabled self-updates.
 On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 
-`Gate` requires Nix validation on code changes, and Publish requires it before
-creating the draft release or publishing the server image. Nix reuses the
-configuration already compiled by Build, so it needs no production environment
-access, configuration snapshot, synchronization workflow, or additional token.
-Nix binary-cache publication is not configured.
+`Gate` does not include distribution packaging; Publish requires Nix and AUR
+validation before creating the draft release or publishing the server image. Nix
+reuses the configuration already compiled by Build, so it needs no production
+environment access, configuration snapshot, synchronization workflow, or
+additional token. Nix binary-cache publication is not configured.
 
 ### Server image
 
@@ -471,10 +472,10 @@ full tier. Manual and scheduled runs use full validation. Classification uses
 the hosted runner's Node and does not install a toolchain. An older runtime or
 missing output keeps the full tier.
 
-`Gate` requires successful classification and Test. Skipped Build, Nix, and AUR
-workflows are accepted for a positively classified documentation-only
-change or pull requests without packaging changes. Failed, cancelled, or unexpectedly
-skipped required work fails the gate.
+`Gate` requires successful classification and Test. A skipped Build workflow is
+accepted for a positively classified documentation-only change or pull requests
+without packaging changes. Failed, cancelled, or unexpectedly skipped required
+work fails the gate.
 
 ## Toolchains and caches
 
