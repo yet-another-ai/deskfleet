@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 
 use crate::rtc::{Peer, VideoCodec};
 
-// Leave room for slow hardware startup within the caller's 45-second setup budget.
+// Leave room for slow hardware startup within the caller's separate 45-second media-start budget.
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]

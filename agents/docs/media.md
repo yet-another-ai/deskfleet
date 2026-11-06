@@ -93,7 +93,10 @@ Older callers omit `reason`; those failures are not retried.
 Capture startup waits up to 30 seconds for the first nonempty video packet after
 opening the capture source, allowing asynchronous hardware encoders time to warm
 up. Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
-the viewer's overall connection setup budget remains 45 seconds. After the first
+the browser and native viewers give connection setup 45 seconds, then start a
+separate 45-second media-start deadline when requesting capture on the connected
+peer. Time spent negotiating SDP/ICE does not consume the encoder's startup
+window or mask its failure classification and codec fallback. After the first
 packet, a gap in encoder output alone does not fail the stream. Explicit capture,
 encoder, and transport errors still end it and retain their error classification.
 

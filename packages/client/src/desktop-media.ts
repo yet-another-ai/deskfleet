@@ -21,6 +21,9 @@ export type {
   VideoCodec,
 } from "../../../apps/daemon/src/control-protocol.ts"
 
+/** Starts after SDP/ICE setup, allowing the daemon's 30-second first-packet wait to finish. */
+export const DESKTOP_START_TIMEOUT_MS = 45_000
+
 /** A local connection target; this is not an enrolled machine identity. */
 export interface LocalDesktopTarget {
   id: string

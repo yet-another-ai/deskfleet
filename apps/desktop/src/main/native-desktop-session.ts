@@ -1,5 +1,5 @@
 import type { CentralApi } from "@deskfleet/client/central"
-import type { DesktopCapabilities, IceCandidate, VideoCodec } from "@deskfleet/client/desktop-media"
+import { DESKTOP_START_TIMEOUT_MS, type DesktopCapabilities, type IceCandidate, type VideoCodec } from "@deskfleet/client/desktop-media"
 import type { NativeDesktopRequest } from "@deskfleet/client/native-desktop"
 import { createPeerDisconnectGuard, PEER_SETUP_TIMEOUT_MS } from "@deskfleet/client/peer-lifecycle"
 import { observePeerGrant, type PeerConnectionTelemetry } from "@deskfleet/client/peer-telemetry"
@@ -94,7 +94,7 @@ function openAttempt(
   let resolveReady!: () => void, rejectReady!: (error: Error) => void
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
   void ready.catch(() => {})
-  const startup = setTimeout(() => fail(new Error("Native desktop connection timed out")), PEER_SETUP_TIMEOUT_MS)
+  let startup = setTimeout(() => fail(new Error("Native desktop connection timed out")), PEER_SETUP_TIMEOUT_MS)
 
   function closeGrant(): Promise<void> {
     if (!peerId) return Promise.resolve()
@@ -149,6 +149,9 @@ function openAttempt(
     if (!answerApplied || !connected || starting || closed) return
     starting = true
     startPending = true
+    // Give capture its full startup budget after grant, SDP, and ICE complete.
+    clearTimeout(startup)
+    startup = setTimeout(() => fail(new Error("Native desktop media startup timed out")), DESKTOP_START_TIMEOUT_MS)
     try {
       await central.startPeer(peerId!, { displayId: request.displayId, ...(request.control ? { control: true } : {}) })
     } finally { startPending = false }
