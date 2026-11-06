@@ -128,6 +128,39 @@ test("Pi runs the bundled ACP bridge with its configured CLI and continues saved
   await pi.exited(launches[1]!.pid as number)
 })
 
+test("Pi CLI fixture survives a closed output pipe until adapter disposal", { timeout: 5_000 }, async t => {
+  const pi = await fixture(t)
+  const child = spawn(process.execPath, [fileURLToPath(new URL("./fixtures/pi-rpc-agent.ts", import.meta.url))], {
+    env: { ...process.env, ...pi.env, PI_ACP_PI_COMMAND: pi.binaryPath }, cwd: pi.cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+  })
+  const exited = once(child, "close")
+  const stderr: Buffer[] = []
+  child.stderr.on("data", chunk => stderr.push(chunk))
+  t.after(async () => { child.kill("SIGKILL"); await exited })
+  const outputClosed = once(child.stdout, "close")
+  child.stdout.destroy()
+  await outputClosed
+  // The adapter can close its read end while Pi is answering a final metadata request.
+  child.stdin.write(`${JSON.stringify({ id: "closed-output", type: "get_state" })}\n`)
+  const observed = await Promise.race([
+    (async () => {
+      while (!t.signal.aborted) {
+        if ((await pi.log().catch(() => [])).some(entry => entry.type === "output-closed")) return "output-closed"
+        await delay(10, undefined, { signal: t.signal })
+      }
+    })(),
+    exited.then(() => `exited: ${Buffer.concat(stderr).toString()}`),
+  ])
+  assert.equal(observed, "output-closed")
+  assert.equal(child.exitCode, null)
+  if (process.platform !== "win32") {
+    child.kill("SIGTERM")
+    await exited
+    await pi.exited(child.pid!)
+  }
+})
+
 test("Pi disposes its CLI when ACP output closes before input", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
   const pi = await fixture(t)
   const child = spawn(process.execPath, [fileURLToPath(new URL("./main.ts", import.meta.url)), "--pi-acp"], {
