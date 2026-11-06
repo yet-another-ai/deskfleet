@@ -35,9 +35,12 @@ test("headless daemon serves information from the Rust addon", async context => 
   assert.ok(daemon.address.startsWith("http://127.0.0.1:"))
 })
 
-test("authenticated shutdown acknowledges before cleanup and releases discovery last", { timeout: 15_000 }, async context => {
-  // Windows CI intermittently exceeds 15s without naming the stalled phase (#154 / Cluster A).
-  // Keep the real file catalog and deadline; emit one bounded report only on timeout.
+test("authenticated shutdown acknowledges before cleanup and releases discovery last", {
+  // Windows CI diagnostics (#154 / Cluster A) show the first SQLite file-catalog open can
+  // remain pending past 15s under hosted-runner load. Keep the real catalog and assertions;
+  // widen only this test's Windows budget so a slow open can finish instead of cancelling.
+  timeout: process.platform === "win32" ? 30_000 : 15_000,
+}, async context => {
   const began = performance.now()
   const pending = new Map<symbol, { name: string; began: number }>()
   const completed: string[] = []
