@@ -396,7 +396,8 @@ installs the desktop entry and icons, and supplies the runtime libraries and
 GStreamer plugins. It does not compile Rust or run pnpm. Electron, the native
 addon, ASAR contents, ACP adapters, and embedded daemon come from the same app
 as the release installers. The daemon continues to run in Electron's main
-process.
+process. Koffi's unused musl variant is removed from this glibc package before
+ELF fixup; its glibc variant remains subject to dependency validation.
 
 The launcher identifies itself to Linux autostart through
 `DESKFLEET_LAUNCHER`. After upgrading, launch the new version once to refresh an
@@ -407,8 +408,9 @@ The Nix workflow downloads the desktop archives from Build in the same workflow
 run and generates the flake bundle. It preloads those archives into Nix's
 fixed-output store, allowing flake checks, installation, and smoke tests before
 the versioned release URLs are public. Its installed-package smoke checks
-native-addon loading, bundled ACP adapters, the packaged renderer, the hosted
-daemon, startup registration through the Nix wrapper, and disabled self-updates.
+native-addon loading, bundled ACP adapters, dsh startup and native FFI, the
+packaged renderer, the hosted daemon, startup registration through the Nix
+wrapper, and disabled self-updates.
 On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 

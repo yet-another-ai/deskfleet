@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { copyFileSync, createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
+import { createInterface } from "node:readline"
 import { parseArgs } from "node:util"
 import { validateReleaseTag } from "./release-version.ts"
 
@@ -25,11 +26,24 @@ export async function packageAurRelease(
     if (sources.has(arch)) throw new Error(`Duplicate desktop archive for ${arch}`)
     const absolute = resolve(directory, archive)
     // electron-builder prefixes tar members with the archive's basename.
-    const contents = new Set(execFileSync("tar", ["-tzf", absolute], { encoding: "utf8" }).split(/\r?\n/).map(path => path.replaceAll("/./", "/")))
     const prefix = filename.slice(0, -".tar.gz".length)
-    for (const member of ["deskfleet", "chrome-sandbox", "resources/app.asar", "resources/app.asar.unpacked/out/main/deskfleet.node"]) {
-      if (!contents.has(`${prefix}/${member}`)) throw new Error(`Desktop archive ${filename} is missing ${prefix}/${member}`)
-    }
+    const missing = new Set(["deskfleet", "chrome-sandbox", "resources/app.asar", "resources/app.asar.unpacked/out/main/deskfleet.node"]
+      .map(member => `${prefix}/${member}`))
+    // Runtime dependencies make the listing large; retain only the required members.
+    const listing = spawn("tar", ["-tzf", absolute], { stdio: ["ignore", "pipe", "inherit"], windowsHide: true })
+    const lines = createInterface({ input: listing.stdout, crlfDelay: Infinity })
+    lines.on("line", path => missing.delete(path.replaceAll("/./", "/")))
+    try {
+      await new Promise<void>((resolveExit, reject) => {
+        listing.once("error", reject)
+        listing.once("close", (code, signal) => {
+          if (code === 0) resolveExit()
+          else reject(new Error(`Could not inspect desktop archive ${filename}: tar exited with ${signal ?? code}`))
+        })
+      })
+    } finally { lines.close() }
+    const [member] = missing
+    if (member) throw new Error(`Desktop archive ${filename} is missing ${member}`)
     const hash = createHash("sha256")
     for await (const chunk of createReadStream(absolute)) hash.update(chunk)
     sources.set(arch, { archive: absolute, filename, hash: hash.digest("hex") })
