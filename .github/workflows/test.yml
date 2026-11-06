@@ -2,6 +2,27 @@ name: Test
 
 on:
   workflow_dispatch:
+    inputs:
+      docs_only:
+        description: Keep static checks and skip runtime tests for classified documentation changes.
+        type: boolean
+        required: false
+        default: false
+      draft_pr:
+        description: Keep static checks and skip runtime tests for draft pull requests.
+        type: boolean
+        required: false
+        default: false
+      all_platforms:
+        description: Run tests on full cross-platform matrix (Linux, macOS, Windows). When false, tests run on Linux x64 only.
+        type: boolean
+        required: false
+        default: true
+      run_backend:
+        description: Run PostgreSQL, Valkey, coturn, and remote backend integration tests.
+        type: boolean
+        required: false
+        default: true
   workflow_call:
     inputs:
       docs_only:

@@ -4,7 +4,14 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
-import { classifyChanges, classifyDocumentation, isDocumentationDiff, isPackagingPath } from "./ci-docs-only.ts"
+import {
+  classifyChanges,
+  classifyDocumentation,
+  isBackendPath,
+  isDocumentationDiff,
+  isPackagingPath,
+  isPlatformPath,
+} from "./ci-docs-only.ts"
 
 const sha = "a".repeat(40)
 const record = (file: string, old = "100644", next = "100644", status = "M") =>
@@ -144,7 +151,7 @@ test("classifies draft PRs and packaging-related changes", context => {
   const desktopPackaging = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: desktopPackaging } }
-  }, cwd), { docsOnly: false, runBuild: true })
+  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // Packaging change in Draft PR still skips release build until ready
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
@@ -155,6 +162,32 @@ test("classifies draft PRs and packaging-related changes", context => {
   assert.deepEqual(classifyChanges("push", "refs/heads/main", {
     before: initial, after: code
   }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+})
+
+test("platform and backend detectors cover shared actions and build-env paths", () => {
+  for (const file of [
+    ".github/actions/setup-build/action.yml",
+    ".config/build-env/macos.toml",
+    ".config/build-env/linux.toml",
+    ".github/workflows/test.yml",
+    "mise.toml",
+  ]) {
+    assert.equal(isPlatformPath(file), true, `platform:${file}`)
+    assert.equal(isBackendPath(file), true, `backend:${file}`)
+  }
+  for (const file of ["apps/web/src/App.vue", "docs/guide.md", "README.md"]) {
+    assert.equal(isPlatformPath(file), false, `platform:${file}`)
+    assert.equal(isBackendPath(file), false, `backend:${file}`)
+  }
+})
+
+test("manual Test workflow_dispatch declares full matrix and backend defaults", () => {
+  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/test.yml"), "utf8")
+  const dispatch = yaml.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1]
+  assert.ok(dispatch, "Missing workflow on: block")
+  assert.match(dispatch, /workflow_dispatch:\n(?: {4}.+\n)*? {4}inputs:/)
+  assert.match(dispatch, /workflow_dispatch:[\s\S]*?all_platforms:[\s\S]*?default:\s*true/)
+  assert.match(dispatch, /workflow_dispatch:[\s\S]*?run_backend:[\s\S]*?default:\s*true/)
 })
 
 test("manual and scheduled runs, unrelated refs, and malformed events retain full validation", context => {

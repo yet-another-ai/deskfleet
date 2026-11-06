@@ -53,7 +53,8 @@ export function isPlatformPath(path: string): boolean {
   return path.endsWith(".rs") ||
     /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|packages\/dsh-runtime|vendor)\//u.test(path) ||
     /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
-    /^(?:\.github\/workflows|scripts)\//u.test(path) ||
+    /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
+    path.startsWith(".config/build-env/") ||
     path.startsWith("patches/")
 }
 
@@ -61,7 +62,8 @@ export function isBackendPath(path: string): boolean {
   return path.endsWith(".rs") ||
     /^(?:apps\/server|apps\/daemon|apps\/desktop|crates|packages\/mcp|packages\/client|packages\/dsh-runtime|vendor)\//u.test(path) ||
     /^(?:Cargo\.toml|Cargo\.lock|compose\.yaml|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml)$/u.test(path) ||
-    /^(?:\.github\/workflows|scripts)\//u.test(path) ||
+    /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
+    path.startsWith(".config/build-env/") ||
     path.startsWith("patches/")
 }
 
