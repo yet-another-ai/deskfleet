@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
-import { classifyChanges, classifyDocumentation, isDocumentationDiff } from "./ci-docs-only.ts"
+import { classifyChanges, classifyDocumentation, isDocumentationDiff, isPackagingPath } from "./ci-docs-only.ts"
 
 const sha = "a".repeat(40)
 const record = (file: string, old = "100644", next = "100644", status = "M") =>
@@ -73,6 +73,29 @@ test("classifies complete PR and push changes, including removals during renames
   assert.equal(push(sha, docs), false)
 })
 
+test("packaging detector covers desktop builder configs, staging scripts, and build inputs", () => {
+  for (const file of [
+    "apps/desktop/package.json",
+    "apps/desktop/electron-builder.yml",
+    "apps/desktop/electron-builder.release.yml",
+    "apps/desktop/build/entitlements.mac.plist",
+    "apps/desktop/build/windows-desktop-service.nsh",
+    "apps/desktop/scripts/stage-native-viewer.ts",
+    "apps/desktop/scripts/stage-windows-service.ts",
+    "apps/desktop/scripts/stage-auv.ts",
+    "scripts/stage-native-binaries.ts",
+    "packaging/aur/PKGBUILD.in",
+    ".github/workflows/build.yml",
+  ]) assert.equal(isPackagingPath(file), true, file)
+  for (const file of [
+    "apps/desktop/src/main/index.ts",
+    "apps/desktop/scripts/dev.ts",
+    "apps/desktop/README.md",
+    "scripts/check.ts",
+    ".github/workflows/ci.yml",
+  ]) assert.equal(isPackagingPath(file), false, file)
+})
+
 test("classifies draft PRs and packaging-related changes", context => {
   const cwd = temporary(context)
   const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid", ...args], {
@@ -107,6 +130,13 @@ test("classifies draft PRs and packaging-related changes", context => {
   const packagingSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: packagingSha } }
+  }, cwd), { docsOnly: false, runBuild: true })
+
+  // Desktop electron-builder and staging inputs also trigger packaging
+  save("apps/desktop/electron-builder.yml", "appId: test\n")
+  const desktopPackaging = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: desktopPackaging } }
   }, cwd), { docsOnly: false, runBuild: true })
 
   // Packaging change in Draft PR still skips release build until ready
@@ -145,6 +175,14 @@ function workflowScript(job: string): string {
   return block.replace(/^ {10}/gm, "")
 }
 
+test("Build requires a successful Test before packaging", () => {
+  const yaml = readFileSync(join(import.meta.dirname, "../.github/workflows/ci.yml"), "utf8")
+  const build = yaml.match(/^  build:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
+  assert.ok(build, "Missing Build job")
+  assert.match(build, /needs:\s*\[changes,\s*test\]/)
+  assert.match(build, /needs\.test\.result\s*==\s*'success'/)
+})
+
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
@@ -152,7 +190,7 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
     const result = spawnSync("bash", ["-c", script], {
       env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, DOCS_ONLY: docs, RUN_BUILD: runBuild }
     })
-    const allowSkip = docs === "true" || runBuild === "false"
+    const allowSkip = docs === "true" || runBuild === "false" || tests !== "success"
     assert.equal(result.status === 0, changes === "success" && tests === "success"
       && build === (allowSkip ? "skipped" : "success"),
       JSON.stringify({ changes, tests, build, docs, runBuild }))
