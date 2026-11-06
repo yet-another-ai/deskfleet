@@ -121,10 +121,35 @@ async fn real_assets_use_content_hash_cache_policy_and_keep_validators() {
     let fixture = Fixture::new();
     let app = http_test::init_service(
         App::new()
+            .wrap(actix_web::middleware::Compress::default())
             .configure(crate::configure)
             .configure(|config| fixture.assets.configure(config)),
     )
     .await;
+    let response = http_test::call_service(
+        &app,
+        http_test::TestRequest::get()
+            .uri("/assets/app-a1b2c3d4.js")
+            .insert_header((header::ACCEPT_ENCODING, "gzip"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(
+        response.headers().get(header::CONTENT_ENCODING).unwrap(),
+        "gzip"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        IMMUTABLE
+    );
+    let encoded = http_test::read_body(response).await;
+    let mut decoded = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::GzDecoder::new(encoded.as_ref()),
+        &mut decoded,
+    )
+    .unwrap();
+    assert_eq!(decoded, SCRIPT.as_bytes());
     for (path, cache_control, content_type) in [
         (
             "/assets/app-a1b2c3d4.js?download=1",

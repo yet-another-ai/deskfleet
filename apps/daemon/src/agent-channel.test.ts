@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
+import { gunzipSync } from "node:zlib"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot } from "./agent-protocol.ts"
 
@@ -119,6 +120,22 @@ function attach(sessions = new Sessions(), identity = actor, send?: (chunk: Uint
     },
   }
 }
+
+test("history compression is negotiated and preserves the original events", async t => {
+  const sessions = new Sessions()
+  const events = [{ text: "A long thought about the implementation. ".repeat(500) }]
+  sessions.handler = async () => events
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  h.request("plain", "_deskfleet/session/history", { sessionId: "1", afterSeq: "0" })
+  assert.deepEqual((await h.waitFor(message => message.id === "plain")).result, events)
+  h.request("compressed", "_deskfleet/session/history", { sessionId: "1", afterSeq: "0", responseEncoding: "gzip" })
+  const result = (await h.waitFor(message => message.id === "compressed")).result
+  assert.equal(result.encoding, "gzip")
+  assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(result.data, "base64")).toString()), events)
+  assert.ok(result.data.length < JSON.stringify(events).length / 2)
+})
 
 test("AgentChannel offers rename, archive, restore, and Session deletion", async t => {
   const h = attach()

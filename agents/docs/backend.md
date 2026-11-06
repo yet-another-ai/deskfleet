@@ -305,6 +305,10 @@ Both frontends use the same backend API and target-machine operation contracts.
 The official server image serves the Vue application alongside the API. Binary
 deployments enable this with `DESKFLEET_WEB_DIRECTORY`; leaving it unset keeps
 API-only operation for an independent static host or local Vite development.
+The HTTP server globally negotiates gzip/deflate response compression through
+`Accept-Encoding`, including history APIs and hosted Web assets. Clients that
+do not request compression receive identity responses. Already encoded responses
+and WebSocket upgrades are left unchanged by the Actix compression middleware.
 
 Browser identity must be modeled explicitly: the user and client/device are
 known, but the browser need not run on an enrolled Machine. Adapt the current

@@ -1,4 +1,4 @@
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, middleware::Compress, web};
 use deskfleet_server::{AppState, WebAssets, config::ServerConfig, configure};
 use tracing_subscriber::EnvFilter;
 
@@ -31,6 +31,7 @@ async fn main() -> std::io::Result<()> {
             cors = cors.allowed_origin(origin);
         }
         App::new()
+            .wrap(Compress::default())
             .wrap(cors)
             .app_data(state.clone())
             .configure(configure)
