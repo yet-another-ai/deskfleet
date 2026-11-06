@@ -259,7 +259,7 @@ Agent configuration uses these common options:
 | Option | Meaning |
 | --- | --- |
 | `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `dsh`, or `agy_acp_server.par` (`agy_acp_server.exe` on Windows) on PATH |
+| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, or `agy_acp_server.par` (`agy_acp_server.exe` on Windows) on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -294,14 +294,19 @@ binary through the official `omp.sh` installer. **Log in** opens
 `omp --allow-home`; enter `/login`, complete authentication, then `/quit`.
 Discovery leaves credential status unknown; **Test Connection** opens a session
 without sending a prompt.
-DeepSeek Harness is native ACP: the daemon runs the bundled CLI with its private
-Node runtime, or an explicit external binary, using `--profile acp`
+DeepSeek Harness is native ACP: the daemon runs the bundled CLI, or an explicit
+external binary, using `--profile acp`
 (`dsh acp` is the same launch). Credentials come from `DEEPSEEK_API_KEY` in the
 provider environment (optional `DEEPSEEK_BASE_URL`); the ACP server does not
 advertise interactive authenticate methods. Node.js, npm, and a global dsh
 installation are unnecessary. Discovery reports ready when `DEEPSEEK_API_KEY`
-is set. Clear an existing executable path to use the bundle. For source launches,
-run `mise run dsh:stage` first; `mise run dsh:smoke` verifies the staged runtime.
+is set. Clear an existing executable path to use the bundle. Source launches use
+the installed dependency tree with the running Node executable, without staging.
+Desktop uses Electron's Node mode; standalone releases include a private Node
+runtime. `packages/dsh-runtime` owns launch resolution, deployment, and smoke
+checks. `mise run dsh:stage` prepares `apps/daemon/dist/dsh` for standalone
+distribution; `mise run dsh:smoke` verifies that payload. To check the installed
+source runtime, run `mise exec -- node packages/dsh-runtime/smoke.ts`.
 
 Antigravity runs Google's standalone ACP runtime, `agy_acp_server.par` on macOS
 and Linux or `agy_acp_server.exe` on Windows. Linux launches add `--uid=`.

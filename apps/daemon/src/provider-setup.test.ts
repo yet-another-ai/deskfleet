@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
+import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import type { AgentProviderInput } from "./provider-protocol.ts"
 import { launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
 import { probeProvider, ProviderSetup } from "./provider-setup.ts"
@@ -172,6 +173,22 @@ test("missing bundled DeepSeek runtime reports repair without offering npm insta
   assert.equal(found.status, "missing")
   assert.equal(found.installable, false)
   assert.match(found.installMessage!, /Reinstall DeskFleet/u)
+})
+
+test("bundled DeepSeek metadata uses the embedding host environment", async context => {
+  configureDshRuntime(bundledDshRuntime("/resources/dsh", electronDshHost("/desktop/electron")))
+  context.after(() => configureDshRuntime(sourceDshRuntime(import.meta.url)))
+  const f = fixture({ env: { PATH: "" }, answer: async () => result("0.2.2-rc.1") })
+  const found = await f.setup.probe(input("deepseek-harness", {
+    env: { DEEPSEEK_API_KEY: "configured-key", ELECTRON_RUN_AS_NODE: "0" },
+  }))
+  assert.equal(found.status, "found")
+  assert.equal(found.auth, "authenticated")
+  assert.equal(found.binaryPath, undefined)
+  assert.equal(f.calls[0]!.command, "/desktop/electron")
+  assert.equal(f.calls[0]!.args[0], "--expose-internals")
+  assert.equal(f.calls[0]!.env.ELECTRON_RUN_AS_NODE, "1")
+  assert.equal(f.calls[0]!.env.DEEPSEEK_API_KEY, "configured-key")
 })
 
 test("bundled DeepSeek metadata can complete after the external CLI timeout", { timeout: 15_000 }, async () => {

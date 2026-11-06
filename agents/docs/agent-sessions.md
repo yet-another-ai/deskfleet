@@ -297,7 +297,8 @@ It accepts client-provided MCP servers and delegates filesystem and terminal
 operations when the client advertises those capabilities.
 The DeepSeek Harness template runs the bundled
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
-with its private Node runtime as `dsh --profile acp`. An empty executable path
+as `dsh --profile acp`, using Electron's Node mode in Desktop or the private Node
+runtime in standalone releases. An empty executable path
 selects the bundled version; an explicit path uses that external CLI. Set
 `DEEPSEEK_API_KEY` in the provider environment (optional `DEEPSEEK_BASE_URL`)
 before starting a session. The ACP automation profile does not advertise

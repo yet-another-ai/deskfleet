@@ -4,7 +4,7 @@ import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
-import { dshRuntimeProcess } from "./agents/dsh-runtime.ts"
+import { dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
@@ -227,7 +227,7 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
   if (provider.template === "deepseek-harness" && !provider.binaryPath) {
     const launch = dshRuntimeProcess(["--version"], ctx.env)
     try {
-      const result = await ctx.run(launch.command, launch.args ?? [], ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
+      const result = await ctx.run(launch.command, launch.args ?? [], launch.env ?? ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
       if (result.code === 0 && text(result.stdout)) return {
         ...base, status: "found", version: text(result.stdout),
         auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown",

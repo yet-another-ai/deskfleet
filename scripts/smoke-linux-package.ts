@@ -199,8 +199,19 @@ try {
   ]) {
     assert.equal(await node([entry, argument, "--version"]), `${prefix}${manifest.dependencies[dependency]}`)
   }
+  const dsh = join(resources, "dsh/node_modules/@deepseek-ai/dsh")
+  const dshEntry = join(dsh, "lib/bin.js")
+  const dshManifest = JSON.parse(await readFile(join(dsh, "package.json"), "utf8")) as { version: string }
+  assert.equal(await node(["--expose-internals", dshEntry, "--version"]), dshManifest.version)
+  await node(["--expose-internals", "-e", `
+    const assert = require('node:assert/strict');
+    const { createRequire } = require('node:module');
+    const dependency = createRequire(createRequire(process.argv[1]).resolve('@deepseek-ai/dsh-subprocess-local'));
+    const koffi = dependency('koffi');
+    assert.equal(koffi.load('libc.so.6').func('int getpid()')(), process.pid);
+  `, dshEntry])
   if (options.includes("--gui")) await gui()
-  console.log(`Linux package smoke passed: native addon, PTY command, and bundled ACP adapters${options.includes("--gui") ? ", packaged renderer, hosted daemon, autostart wrapper, and disabled updater" : ""}`)
+  console.log(`Linux package smoke passed: native addon, PTY command, bundled ACP adapters, and dsh native FFI${options.includes("--gui") ? ", packaged renderer, hosted daemon, autostart wrapper, and disabled updater" : ""}`)
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

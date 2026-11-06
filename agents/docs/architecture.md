@@ -872,11 +872,14 @@ It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise wit
 The Oh My Pi template launches the installed `omp` CLI directly as `omp acp`,
 using its existing provider credentials. Its native ACP server supplies session
 configuration and supports client filesystem, terminal, and MCP integration.
-The DeepSeek Harness template launches the bundled CLI with its private Node
-runtime as `dsh --profile acp`; an explicit binary path selects an external CLI.
-The immutable runtime is shared by registrations, while provider environment
-overrides remain registration-owned. Desktop resources and the standalone
-release archive carry the complete pinned package tree and Node runtime.
+The DeepSeek Harness template launches the bundled CLI as `dsh --profile acp`;
+an explicit binary path selects an external CLI. `packages/dsh-runtime` owns
+source and packaged launch resolution, deployment, and runtime smoke checks.
+Source launches resolve its installed dependency tree without staging. Desktop
+runs dsh in an Electron Node-mode child process and ships the complete pinned
+package tree in resources; standalone releases carry that tree and a private
+Node executable beside the SEA daemon. The immutable runtime is shared by
+registrations, while provider environment overrides remain registration-owned.
 Credentials come from `DEEPSEEK_API_KEY` (optional
 `DEEPSEEK_BASE_URL`); the ACP server does not advertise interactive authenticate
 methods.

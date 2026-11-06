@@ -124,6 +124,9 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
     mkdir -p "$out/lib/deskfleet"
     cp -r . "$out/lib/deskfleet/"
+    # Koffi ships both libc variants. This glibc package cannot use or patch
+    # the musl fallback; keep the glibc binary under autoPatchelf validation.
+    rm -rf "$out/lib/deskfleet/resources/dsh/node_modules/@koromix"/koffi-linux-*/musl_*
     install -Dm644 ${./icon.png} "$out/share/icons/hicolor/1024x1024/apps/deskfleet.png"
     # Use the loader configured to discover NixOS Vulkan drivers.
     rm "$out/lib/deskfleet/libvulkan.so.1"

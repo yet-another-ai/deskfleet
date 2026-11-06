@@ -109,7 +109,7 @@ depends = ["check:scripts", "check:daemon", "ci:check:desktop-main", "check:rust
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
-depends = ["rust:release", "web:build"]
+depends = ["rust:release", "web:build", "dsh:stage"]
 run = "node scripts/build-sea.ts"
 
 [tasks."rust:release"]
@@ -144,17 +144,27 @@ depends = ["native:debug"]
 run = "node apps/daemon/src/main.ts"
 
 [tasks."dsh:stage"]
-description = "Stage the pinned DeepSeek Harness and private Node runtime for source launches"
-run = "node scripts/stage-dsh.ts"
+description = "Prepare DeepSeek Harness and private Node for the standalone distribution"
+depends = ["install"]
+run = "node packages/dsh-runtime/stage.ts node apps/daemon/dist/dsh"
 
 [tasks."dsh:smoke"]
 description = "Verify bundled DeepSeek Harness without system Node, npm, or dsh"
 depends = ["dsh:stage"]
-run = "node scripts/smoke-dsh.ts"
+run = "node packages/dsh-runtime/smoke.ts apps/daemon/dist/dsh"
+
+[tasks."desktop:smoke-dsh"]
+description = "Verify DeepSeek Harness on Electron's Node host without staging or system Node"
+depends = ["install"]
+run = "node apps/desktop/scripts/smoke-dsh.ts"
+
+[tasks."desktop:smoke-packaged-dsh"]
+description = "Verify the packaged Electron executable and DeepSeek resources after packaging"
+run = "node apps/desktop/scripts/smoke-dsh.ts --packaged"
 
 [tasks."daemon:pack"]
 description = "Package the daemon as a Node.js single executable"
-depends = ["native:release"]
+depends = ["native:release", "dsh:stage"]
 run = "node scripts/build-sea.ts"
 
 [tasks."daemon:smoke"]
@@ -374,7 +384,7 @@ run = "pnpm --filter @deskfleet/desktop test --project main"
 [tasks."check:scripts"]
 hide = true
 depends = ["install"]
-run = "node --test scripts/*.test.ts"
+run = "node --test scripts/*.test.ts packages/dsh-runtime/src/*.test.ts"
 
 [tasks."check:rust-tests"]
 hide = true

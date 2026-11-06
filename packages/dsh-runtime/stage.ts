@@ -2,9 +2,9 @@ import { execFileSync } from "node:child_process"
 import { chmod, copyFile, mkdir, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 
-/** Keep the upstream plugin tree and native helpers intact, with a private Node runtime. */
-export async function stageDsh(destination: string): Promise<void> {
-  const root = resolve(import.meta.dirname, "..")
+/** Preserve dynamic plugins and native helpers; standalone releases also need a Node host. */
+export async function stageDsh(destination: string, host: "node" | "electron"): Promise<void> {
+  const root = resolve(import.meta.dirname, "../..")
   await rm(destination, { recursive: true, force: true })
   // Use the dedicated deploy lockfile; legacy deploy re-resolves packages from registry metadata.
   // Workspace installation already validates supply-chain policy. Trust that locked graph so
@@ -14,6 +14,7 @@ export async function stageDsh(destination: string): Promise<void> {
     "--filter", "@deskfleet/dsh-runtime", "deploy", "--prod",
     "--node-linker=hoisted", "--offline", "--frozen-lockfile", "--trust-lockfile", destination,
   ], { cwd: root, env: { ...process.env, PNPM_CONFIG_ALLOW_UNUSED_PATCHES: "true" }, stdio: "inherit" })
+  if (host === "electron") return
   const bin = join(destination, "bin")
   await mkdir(bin, { recursive: true })
   const node = join(bin, process.platform === "win32" ? "node.exe" : "node")
@@ -24,4 +25,8 @@ export async function stageDsh(destination: string): Promise<void> {
   await copyFile(join(nodeRoot, "LICENSE"), join(destination, "LICENSE.node"))
 }
 
-if (import.meta.main) await stageDsh(resolve(process.argv[2] ?? "packages/dsh-runtime/dist"))
+if (import.meta.main) {
+  const host = process.argv[2]
+  if (host !== "node" && host !== "electron") throw new Error("Usage: stage.ts <node|electron> [destination]")
+  await stageDsh(resolve(process.argv[3] ?? join(import.meta.dirname, "dist")), host)
+}

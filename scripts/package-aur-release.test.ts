@@ -24,17 +24,30 @@ function fixture(context: TestContext, version = "1.2.3"): string {
   return directory
 }
 
-function archive(directory: string, arch = "x64", version = "1.2.3", omit = ""): string {
+function archive(directory: string, arch = "x64", version = "1.2.3", omit = "", largeListing = false): string {
   const prefix = `deskfleet-${version}-linux-${arch}`
   const bundle = join(directory, prefix)
+  const members: string[] = []
   for (const filename of ["deskfleet", "chrome-sandbox", "resources/app.asar", "resources/app.asar.unpacked/out/main/deskfleet.node", "LICENSE.electron.txt", "LICENSES.chromium.html"]) {
     if (filename === omit) continue
     const target = join(bundle, filename)
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, `${arch}: ${filename}\n`, { mode: filename === "deskfleet" || filename === "chrome-sandbox" ? 0o755 : 0o644 })
+    members.push(`${prefix}/${filename}`)
   }
   const filename = `${prefix}.tar.gz`
-  execFileSync("tar", ["-czf", join(directory, filename), "-C", directory, prefix])
+  if (largeListing) {
+    const payload = `${prefix}/resources/dsh/node_modules/${"long-package-name-".repeat(6)}/index.js`
+    mkdirSync(dirname(join(directory, payload)), { recursive: true })
+    writeFileSync(join(directory, payload), "")
+    // Repeated members produce a real large listing without thousands of fixture files.
+    // Put the required files last so validation must consume the complete output.
+    const listing = [...Array<string>(10_000).fill(payload), ...members].join("\n") + "\n"
+    assert.ok(Buffer.byteLength(listing) > 1024 * 1024)
+    const list = join(directory, `${prefix}.members`)
+    writeFileSync(list, listing)
+    execFileSync("tar", ["-czf", join(directory, filename), "-C", directory, "-T", list])
+  } else execFileSync("tar", ["-czf", join(directory, filename), "-C", directory, prefix])
   return filename
 }
 
@@ -79,6 +92,31 @@ test("CLI can override the checkout version and retains prerelease release URLs"
   assert.match(pkgbuild, /^arch=\('aarch64'\)$/m)
   assert.ok(pkgbuild.includes(`/v1.2.3-rc.1/${filename}`))
   assert.doesNotMatch(pkgbuild, /^source_x86_64=/m)
+})
+
+test("validates desktop archives whose tar listing exceeds one MiB", async context => {
+  const directory = fixture(context)
+  const filename = archive(directory, "x64", "1.2.3", "", true)
+  const output = join(directory, "aur")
+  await packageAurRelease(directory, output, [filename])
+  assert.ok(readFileSync(join(output, "PKGBUILD"), "utf8").includes(digest(join(directory, filename))))
+})
+
+test("still rejects missing required files after a large archive payload", async context => {
+  const directory = fixture(context)
+  const filename = archive(directory, "x64", "1.2.3", "resources/app.asar.unpacked/out/main/deskfleet.node", true)
+  const output = join(directory, "aur")
+  await assert.rejects(packageAurRelease(directory, output, [filename]), /missing .*deskfleet\.node/)
+  assert.equal(existsSync(output), false)
+})
+
+test("rejects a failed tar listing before checking archive members", async context => {
+  const directory = fixture(context)
+  const filename = "deskfleet-1.2.3-linux-x64.tar.gz"
+  writeFileSync(join(directory, filename), "not a tar archive")
+  const output = join(directory, "aur")
+  await assert.rejects(packageAurRelease(directory, output, [filename]), /Could not inspect desktop archive .*tar exited/)
+  assert.equal(existsSync(output), false)
 })
 
 test("package() installs the full Electron tree, desktop integration and licenses", { skip: process.platform !== "linux" }, async context => {

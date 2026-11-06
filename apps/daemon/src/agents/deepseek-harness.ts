@@ -1,5 +1,5 @@
 import { connectAcpProcess, type AgentConfig, type AgentProcess, type AgentProvider } from "./acp.ts"
-import { dshRuntimeProcess } from "./dsh-runtime.ts"
+import { dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 
 /**

@@ -18,8 +18,9 @@ a stable `Gate` result for branch protection.
   tests on Linux, macOS, and Windows. Linux uses `mise run test`, including the
   renderer Vitest project. macOS and Windows use `mise run ci:test:platform`:
   the same Rust, daemon, script, and desktop main/shared/client checks, without
-  repeating the happy-dom renderer project. Local `mise run test` still runs
-  both Vitest projects on every OS. It supports reusable
+  repeating the happy-dom renderer project. Each platform also runs
+  `mise run desktop:smoke-dsh` against Electron's Node host. Local `mise run test`
+  still runs both Vitest projects on every OS. It supports reusable
   calls and manual runs. A separate Linux job runs real PostgreSQL integration
   tests, Valkey-backed Team TURN collection tests, and the owned-account/two-daemon remote
   workflow against the same pinned PostgreSQL 18.6 and Valkey images as local
@@ -102,9 +103,16 @@ static hosting for 14 days; it is not added to the GitHub Release archives.
 
 The standalone archive includes `dsh/` beside the daemon executable, containing
 the pinned DeepSeek Harness package tree, private Node executable, and licenses.
-Desktop packaging places the same payload in its resources. Staging uses an
-offline production deploy from the workspace lockfile; it preserves upstream
-plugins, native modules, and subprocess helpers.
+The build task prepares this payload separately from SEA bundling through
+`dsh:stage`. Desktop builds prepare the package tree in `out/dsh` and smoke-test
+it with Electron before Vite runs; packaging places that tree in resources
+without a private Node executable. Desktop launches dsh using Electron's Node
+mode. `packages/dsh-runtime` owns both deployment paths and smoke checks.
+Staging uses an offline production deploy from the workspace lockfile and
+preserves upstream plugins, native modules, and subprocess helpers.
+After desktop packaging, `desktop:smoke-packaged-dsh` runs the installed
+executable against its resources with the configured Electron fuses. This
+also checks that the package tree was copied and no private Node was included.
 
 Smoke tests copy the daemon executable and `dsh/` to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
@@ -388,7 +396,8 @@ installs the desktop entry and icons, and supplies the runtime libraries and
 GStreamer plugins. It does not compile Rust or run pnpm. Electron, the native
 addon, ASAR contents, ACP adapters, and embedded daemon come from the same app
 as the release installers. The daemon continues to run in Electron's main
-process.
+process. Koffi's unused musl variant is removed from this glibc package before
+ELF fixup; its glibc variant remains subject to dependency validation.
 
 The launcher identifies itself to Linux autostart through
 `DESKFLEET_LAUNCHER`. After upgrading, launch the new version once to refresh an
@@ -399,8 +408,9 @@ The Nix workflow downloads the desktop archives from Build in the same workflow
 run and generates the flake bundle. It preloads those archives into Nix's
 fixed-output store, allowing flake checks, installation, and smoke tests before
 the versioned release URLs are public. Its installed-package smoke checks
-native-addon loading, bundled ACP adapters, the packaged renderer, the hosted
-daemon, startup registration through the Nix wrapper, and disabled self-updates.
+native-addon loading, bundled ACP adapters, dsh startup and native FFI, the
+packaged renderer, the hosted daemon, startup registration through the Nix
+wrapper, and disabled self-updates.
 On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 

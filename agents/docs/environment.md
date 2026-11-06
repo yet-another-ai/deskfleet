@@ -371,14 +371,32 @@ The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned 
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
 Grok (`grok agent stdio`), Pi (`pi --mode rpc`), or Oh My Pi (`omp acp`).
-DeepSeek Harness is bundled with a private Node runtime. For source daemon
-launches run `mise run dsh:stage` after installing dependencies; desktop and SEA
-builds stage it automatically. Desktop development stages `out/dsh` once before
-launching Electron; main-process rebuilds leave that runtime intact. Staging uses
-the dedicated deploy lockfile and trusts the graph already validated by workspace
-installation, so offline builds do not need registry metadata to resolve it again.
-`mise run dsh:smoke` checks its version and ACP
-handshake with an empty PATH and an isolated home.
+`packages/dsh-runtime` owns DeepSeek Harness launch resolution, deployment, and
+smoke checks. Source daemon launches use the installed dependency tree with the
+running Node executable; Desktop development uses that same tree with Electron
+in Node mode. Neither development path needs staging.
+
+Production Desktop builds prepare `out/dsh` and run the package smoke check
+with Electron before Vite bundles application code. This payload contains the
+upstream package tree without a second Node executable. Vite rebuilds do not
+deploy or validate the runtime. Standalone builds depend on `mise run dsh:stage`,
+which prepares `apps/daemon/dist/dsh` with the same package tree and a private
+Node executable for the SEA distribution. Staging uses the dedicated deploy
+lockfile and trusts the graph already validated by workspace installation, so
+offline builds do not need registry metadata to resolve it again.
+`mise run dsh:smoke` checks the standalone payload with an empty PATH and an
+isolated home; `mise exec -- node packages/dsh-runtime/smoke.ts` checks the source
+runtime without staging. `mise run desktop:smoke-dsh` checks the installed tree
+using Electron's Node mode, including native FFI, managed subprocesses, PTYs,
+ACP initialization, session creation, and shutdown.
+After packaging, `mise run desktop:smoke-packaged-dsh` repeats those checks
+using the application executable and its final resource directory.
+
+Electron's dsh child uses `--expose-internals`. The pinned `dsh-app-boot` patch
+uses those exposed modules directly instead of the native loader's
+Electron-version-specific ABI bridge; the upstream loader shape checks remain.
+Ordinary Node launches retain the upstream native loader path. Keep both host
+smoke checks when updating dsh or Electron.
 Antigravity uses a separate native ACP runtime with its matching local harness;
 Settings downloads the pinned Google package and verifies its SHA-256 for the
 executing machine. Pi's official installer can

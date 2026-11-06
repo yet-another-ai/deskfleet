@@ -196,6 +196,9 @@ jobs:
       - name: Verify the standalone daemon
         run: mise run daemon:smoke
 
+      - name: Verify packaged DeepSeek Harness
+        run: mise run desktop:smoke-packaged-dsh
+
       - name: Stage artifacts
         shell: bash
         env:
