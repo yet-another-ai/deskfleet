@@ -16,7 +16,7 @@ type ChartOption = ComposeOption<LineSeriesOption | GridComponentOption | Legend
 const props = defineProps<{ samples: { time: number; cpu: number; memory: number }[]; active: boolean }>()
 const { t, locale } = useI18n()
 const element = useTemplateRef<HTMLDivElement>("chart")
-const { isDark, interfaceFont } = storeToRefs(useAppearanceStore())
+const { isDark, activeThemeHue, interfaceFont } = storeToRefs(useAppearanceStore())
 let chartInstance: EChartsType | undefined
 
 function colors(host: HTMLElement): Record<string, string> {
@@ -101,7 +101,7 @@ function render(): void {
 
 onMounted(render)
 useResizeObserver(element, render)
-watch([() => props.samples, () => props.active, locale, isDark, interfaceFont], render, { flush: "post" })
+watch([() => props.samples, () => props.active, locale, isDark, activeThemeHue, interfaceFont], render, { flush: "post" })
 onBeforeUnmount(() => chartInstance?.dispose())
 </script>
 

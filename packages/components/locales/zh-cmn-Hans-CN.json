@@ -436,6 +436,11 @@
   "appearance": {
     "language": "语言",
     "theme": "主题",
+    "themeColor": "主题色",
+    "themeColorHint": "自由调整界面强调色色相，或开启流光动态循环。",
+    "themeColorHue": "主题色色相",
+    "themeColorRgb": "RGB 流光",
+    "resetThemeColor": "恢复默认",
     "followSystem": "跟随系统",
     "light": "浅色",
     "dark": "深色",

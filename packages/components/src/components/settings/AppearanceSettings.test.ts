@@ -161,6 +161,50 @@ test("reading spotlight switch defaults off and persists when enabled", async ()
   expect(useAppearanceStore(pinia).settings.readingSpotlight).toBe(false)
 })
 
+test("adjusts theme hue slider with live shade preview, toggles RGB cycling, and resets to default", async () => {
+  const wrapper = await render()
+  const appearance = useAppearanceStore(pinia)
+  const slider = wrapper.get<HTMLInputElement>("[data-theme-hue-slider]")
+  const reset = wrapper.get<HTMLButtonElement>("[data-theme-color-reset]")
+  const rgbToggle = wrapper.get('[role="switch"][aria-labelledby="appearance-theme-color-rgb-label"]')
+  const shades = wrapper.findAll("[data-theme-shade]")
+
+  expect(shades).toHaveLength(11)
+  expect(shades[0]!.text()).toBe("50")
+  expect(shades[10]!.text()).toBe("950")
+  expect(reset.element.disabled).toBe(true)
+  expect(slider.element.disabled).toBe(false)
+  const initialShade500 = shades[5]!.attributes("style")
+
+  slider.element.value = "140"
+  await slider.trigger("input")
+  expect(set).not.toHaveBeenCalled()
+  expect(appearance.themeHue).toBe(140)
+  expect(shades[5]!.attributes("style")).not.toBe(initialShade500)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toContain("oklch(")
+  expect(reset.element.disabled).toBe(false)
+
+  await slider.trigger("change")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, themeHue: 140, themeHueDynamic: false })
+  expect(appearance.settings.themeHue).toBe(140)
+
+  await rgbToggle.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith({ ...DEFAULT_APPEARANCE_SETTINGS, themeHue: 140, themeHueDynamic: true })
+  expect(appearance.settings.themeHueDynamic).toBe(true)
+  expect(slider.element.disabled).toBe(true)
+
+  await reset.trigger("click")
+  await flushPromises()
+  expect(set).toHaveBeenLastCalledWith(DEFAULT_APPEARANCE_SETTINGS)
+  expect(appearance.settings.themeHue).toBeNull()
+  expect(appearance.settings.themeHueDynamic).toBe(false)
+  expect(slider.element.disabled).toBe(false)
+  expect(reset.element.disabled).toBe(true)
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toBe("")
+})
+
 test("keeps a failed font edit available to retry", async () => {
   set.mockRejectedValueOnce(new Error("Could not save appearance"))
   const wrapper = await render()
