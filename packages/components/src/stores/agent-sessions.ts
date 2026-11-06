@@ -114,6 +114,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   let attendanceAttempt = 0
   let initialized: Promise<void> | null = null
   let refreshPending = false
+  let refreshFailed = false
   let refreshing: Promise<void> | null = null
   let activeSessionId: string | undefined
   let disposed = false
@@ -329,6 +330,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
 
   const client = new AgentClient(api, (next, detail, relayReason) => {
     state.value = next
+    refreshFailed = false
     error.value = detail ?? null
     relayDeniedReason.value = relayReason
     if (next === "error" || next === "idle") {
@@ -410,50 +412,64 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   function refresh(sessionId?: string): Promise<void> {
     refreshPending = true
-    const list = (refreshing ??= refreshList().catch(reason => {
-      error.value = messageOf(reason)
-      relayDeniedReason.value = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
-    }).finally(() => { refreshing = null }))
+    const list = (refreshing ??= (async () => {
+      do {
+        refreshPending = false
+        try {
+          await refreshList()
+          if (refreshFailed) {
+            refreshFailed = false
+            error.value = null
+            relayDeniedReason.value = undefined
+          }
+        } catch (reason) {
+          // A newer notification still needs its own read after this request fails.
+          // Central history recovery does not recover a failed live connection.
+          if (!refreshPending && state.value !== "error") {
+            refreshFailed = true
+            error.value = messageOf(reason)
+            relayDeniedReason.value = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
+          }
+        }
+      } while (refreshPending && !disposed)
+    })().finally(() => { refreshing = null }))
     return list.then(() => {
       const id = sessionId ?? activeSessionId
       if (id && id === activeSessionId && sessions.value[id]) return open(id, false)
     })
   }
   async function refreshList(): Promise<void> {
-    do {
-      refreshPending = false
-      const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
-      // Catalog activity must not depend on opening every conversation's live channel.
-      const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
+    const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
+    // Catalog activity must not depend on opening every conversation's live channel.
+    const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
+    if (disposed) return
+    const listed = new Set(records.map(session => session.id))
+    let catalogSessions = new Set<string>()
+    if (api.history && Object.keys(sessions.value).some(id => !listed.has(id))) {
+      // Catalog and history uploads are independent. Missing retained history
+      // cannot erase live metadata while the catalog still owns the Session.
+      const catalog = await platformClient.catalog.list()
       if (disposed) return
-      const listed = new Set(records.map(session => session.id))
-      let catalogSessions = new Set<string>()
-      if (api.history && Object.keys(sessions.value).some(id => !listed.has(id))) {
-        // Catalog and history uploads are independent. Missing retained history
-        // cannot erase live metadata while the catalog still owns the Session.
-        const catalog = await platformClient.catalog.list()
-        if (disposed) return
-        catalogSessions = new Set(catalog.sessionIds)
+      catalogSessions = new Set(catalog.sessionIds)
+    }
+    const received = new Map(records.filter(session => !deletedSessions.has(session.id)).map(session => [session.id, session]))
+    for (const record of records) {
+      if (deletedSessions.has(record.id)) continue
+      const previous = activity.value[record.id]
+      if (record.working !== undefined && (!previous || sequenceCompare(record.lastEventSeq, previous.seq) >= 0)) {
+        activity.value[record.id] = { seq: record.lastEventSeq, working: record.working }
       }
-      const received = new Map(records.filter(session => !deletedSessions.has(session.id)).map(session => [session.id, session]))
-      for (const record of records) {
-        if (deletedSessions.has(record.id)) continue
-        const previous = activity.value[record.id]
-        if (record.working !== undefined && (!previous || sequenceCompare(record.lastEventSeq, previous.seq) >= 0)) {
-          activity.value[record.id] = { seq: record.lastEventSeq, working: record.working }
-        }
-      }
-      for (const current of Object.values(sessions.value)) {
-        const record = received.get(current.id)
-        if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : catalogSessions.has(current.id) || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
-      }
-      if (api.history) for (const id of listedBefore.keys()) {
-        if (!received.has(id) && !catalogSessions.has(id)) forgetSession(id)
-      }
-      if (cache) void cache.retain([...received.keys(), ...catalogSessions])
-      sessions.value = Object.fromEntries(received)
-      for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
-    } while (refreshPending && !disposed)
+    }
+    for (const current of Object.values(sessions.value)) {
+      const record = received.get(current.id)
+      if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : catalogSessions.has(current.id) || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
+    }
+    if (api.history) for (const id of listedBefore.keys()) {
+      if (!received.has(id) && !catalogSessions.has(id)) forgetSession(id)
+    }
+    if (cache) void cache.retain([...received.keys(), ...catalogSessions])
+    sessions.value = Object.fromEntries(received)
+    for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
   }
   function isWorking(id: string): boolean {
     const live = views.value[id]?.snapshot
@@ -857,10 +873,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })
+    // Only an acknowledged deletion can exclude future snapshots and events.
+    deletedSessions.add(sessionId)
     forgetSession(sessionId)
   }
   function forgetSession(sessionId: string): void {
-    deletedSessions.add(sessionId)
     cacheDirty.delete(sessionId)
     void cache?.remove(sessionId)
     for (const elicitation of views.value[sessionId]?.snapshot?.elicitations ?? []) delete elicitationDrafts.value[elicitation.id]

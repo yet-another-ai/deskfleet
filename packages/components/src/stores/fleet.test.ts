@@ -345,6 +345,45 @@ function pendingCatalog() {
   return { promise, resolve }
 }
 
+test("a catalog notification during a failed read still refreshes the inventory", async () => {
+  const store = setup()
+  const pending = Promise.withResolvers<CatalogSnapshot>()
+  const list = vi.mocked(platformClient.catalog.list).mockReturnValueOnce(pending.promise)
+  const loading = store.refreshLocalCatalog()
+  changed()
+  pending.reject(new Error("Catalog temporarily unavailable"))
+  await loading
+  expect(list).toHaveBeenCalledTimes(2)
+  expect(store.findSession(sessionId)).not.toBeNull()
+  expect(store.catalogError).toBeNull()
+  expect(store.catalogReady).toBe(true)
+})
+
+test("a failed catalog read without another notification does not retry", async () => {
+  const store = setup()
+  const list = vi.mocked(platformClient.catalog.list).mockRejectedValue(new Error("Catalog temporarily unavailable"))
+  await store.refreshLocalCatalog()
+  expect(list).toHaveBeenCalledOnce()
+  expect(store.catalogError).toBe("Catalog temporarily unavailable")
+  expect(store.catalogReady).toBe(false)
+})
+
+test("a recovered pending refresh keeps a remote machine online", async () => {
+  configureClient({ ...getClient(), target: { id: "remote-machine", local: false } })
+  const store = setup()
+  store.localDesktopTarget.online = true
+  const pending = Promise.withResolvers<CatalogSnapshot>()
+  const list = vi.mocked(platformClient.catalog.list).mockReturnValueOnce(pending.promise)
+  const loading = store.refreshLocalCatalog()
+  const notified = store.refreshLocalCatalog()
+  pending.reject(new Error("Catalog temporarily unavailable"))
+  await Promise.all([loading, notified])
+  expect(list).toHaveBeenCalledTimes(2)
+  expect(store.localDesktopTarget.online).toBe(true)
+  expect(store.catalogError).toBeNull()
+  expect(store.canManageCatalog).toBe(true)
+})
+
 test("catalog notifications keep the loaded workspace and title stable while a background request is pending", async () => {
   const store = setup()
   const initial = pendingCatalog()
