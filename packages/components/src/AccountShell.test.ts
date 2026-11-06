@@ -627,6 +627,8 @@ test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens
   const fake = fakeCentral()
   mountShell(fake.central, "web")
   await settled(() => expect(page().find("[data-billing-entry]").exists()).toBe(true))
+  const origin = "/?from=billing-entry"
+  await router.push(origin)
   if (source === "sidebar") await page().get("[data-billing-entry] button").trigger("click")
   else if (source === "team_menu") {
     await page().get('button[aria-label="Team"]').trigger("click")
@@ -639,4 +641,6 @@ test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens
   await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
   expect(page().get("section header").text()).toContain("Design team")
   expect(events).toHaveBeenCalledWith("billing_entry_clicked", expect.objectContaining({ source }))
+  await buttonText("Back to app")!.trigger("click")
+  await settled(() => expect(router.currentRoute.value.fullPath).toBe(origin))
 })

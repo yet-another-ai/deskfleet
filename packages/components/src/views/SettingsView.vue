@@ -27,7 +27,7 @@ function leave(): void {
   <SettingsLayout @back="leave">
     <template #nav>
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
-      <SidebarLink v-if="account?.team.value" :to="{ name: 'team-settings-plans' }" :icon="CreditCard" :label="t('billing.plansAndBilling')" @click="trackEvent('billing_entry_clicked', { source: 'settings' })" />
+      <SidebarLink v-if="account?.team.value" :to="{ name: 'team-settings-plans' }" :icon="CreditCard" :label="t('billing.plansAndBilling')" replace @click="trackEvent('billing_entry_clicked', { source: 'settings' })" />
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
       <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink v-if="account" :to="{ name: 'settings-github' }" :icon="GithubIcon" :label="t('githubSettings.title')" replace />
