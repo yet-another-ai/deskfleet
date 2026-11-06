@@ -10,7 +10,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.ts",
-    "build": "node scripts/stage-auv.ts && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
+    "build": "node scripts/stage-auv.ts && node scripts/prepare-dsh.ts && vite build --config vite.main.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.renderer.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "icons": "node scripts/generate-icons.ts",
@@ -22,6 +22,7 @@
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@deskfleet/daemon": "workspace:*",
+    "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/native": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.8",
     "@lobehub/icons-static-svg": "1.101.0",

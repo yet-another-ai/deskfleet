@@ -8,6 +8,9 @@ asarUnpack:
 extraResources:
   - from: out/dsh
     to: dsh
+  # Resource matchers skip their root node_modules directory; copy it explicitly.
+  - from: out/dsh/node_modules
+    to: dsh/node_modules
 # Vite bundles every renderer and main-process dependency into out/.
 npmRebuild: false
 # Give packaged executables their own macOS Local Network permission identity.
@@ -58,7 +61,6 @@ mac:
     - from: out/native/deskfleet-viewer
       to: native/deskfleet-viewer
   binaries:
-    - Contents/Resources/dsh/bin/node
     - Contents/MacOS/auv
     - Contents/Resources/native/deskfleet-viewer
   category: public.app-category.developer-tools

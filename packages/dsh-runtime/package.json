@@ -4,10 +4,22 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./stage": "./stage.ts",
+    "./smoke": "./smoke.ts",
+    "./package.json": "./package.json"
+  },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.2-rc.1"
   },
+  "devDependencies": {
+    "@agentclientprotocol/sdk": "2.1.0"
+  },
   "files": [
-    "package.json"
+    "package.json",
+    "src/index.ts",
+    "stage.ts",
+    "smoke.ts"
   ]
 }

@@ -5,7 +5,7 @@ import { installLocalChannels } from "./local-channels.ts"
 import { installMuxChannels } from "./mux-channels.ts"
 import { installLocalApplications } from "./applications.ts"
 import { installNetworkDiagnostics } from "./network-diagnostics.ts"
-import { configureDshRuntime } from "@deskfleet/daemon/dsh-runtime"
+import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
@@ -42,7 +42,10 @@ import { hideMainWindow, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
 
 function start(): void {
-  configureDshRuntime(app.isPackaged ? join(process.resourcesPath, "dsh") : join(app.getAppPath(), "out/dsh"))
+  const dshHost = electronDshHost(process.execPath)
+  configureDshRuntime(app.isPackaged
+    ? bundledDshRuntime(join(process.resourcesPath, "dsh"), dshHost)
+    : sourceDshRuntime(join(app.getAppPath(), "package.json"), dshHost))
   registerRendererScheme()
   const lifecycle = keepRunningInBackground(app, hideMainWindow)
   installApplication(lifecycle)

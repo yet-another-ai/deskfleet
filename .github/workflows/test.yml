@@ -103,6 +103,9 @@ jobs:
       - name: Run tests
         run: mise run ${{ matrix.test-task }}
 
+      - name: Verify DeepSeek Harness on Electron
+        run: mise run desktop:smoke-dsh
+
       # Tests close their last X client between cases; keep Xvfb from resetting
       # while the next case opens its connection.
       - name: Verify X11 capture and input
