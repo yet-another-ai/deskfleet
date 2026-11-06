@@ -163,7 +163,7 @@ async function transitionOverview(open: boolean, selectedId = activeId.value): P
         ease: "outQuart",
       })
       animations.push(animation)
-      finished.push(animation.then(() => {}, () => {}))
+      finished.push(Promise.resolve(animation).then(() => {}, () => {}))
     }
   }
   if (open) views.value.forEach((_, index) => reveal(index))
