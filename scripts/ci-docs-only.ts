@@ -36,19 +36,49 @@ export function isPackagingPath(path: string): boolean {
     path === "apps/desktop/package.json"
 }
 
-export function hasPackagingChanges(raw: string): boolean {
+export function hasMatchingChanges(raw: string, matcher: (path: string) => boolean): boolean {
   const records = raw.split("\0")
   if (records.pop() !== "" || records.length === 0 || records.length % 2 !== 0) return true
   for (let i = 0; i < records.length; i += 2) {
     const file = records[i + 1] ?? ""
-    if (isPackagingPath(file)) return true
+    if (matcher(file)) return true
   }
   return false
+}
+
+export function isPlatformPath(path: string): boolean {
+  return path.endsWith(".rs") ||
+    /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|packages\/dsh-runtime|vendor)\//u.test(path) ||
+    /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
+    /^(?:\.github\/workflows|scripts)\//u.test(path) ||
+    path.startsWith("patches/")
+}
+
+export function isBackendPath(path: string): boolean {
+  return path.endsWith(".rs") ||
+    /^(?:apps\/server|apps\/daemon|apps\/desktop|crates|packages\/mcp|packages\/client|packages\/dsh-runtime|vendor)\//u.test(path) ||
+    /^(?:Cargo\.toml|Cargo\.lock|compose\.yaml|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml)$/u.test(path) ||
+    /^(?:\.github\/workflows|scripts)\//u.test(path) ||
+    path.startsWith("patches/")
+}
+
+export function hasPackagingChanges(raw: string): boolean {
+  return hasMatchingChanges(raw, isPackagingPath)
+}
+
+export function hasPlatformChanges(raw: string): boolean {
+  return hasMatchingChanges(raw, isPlatformPath)
+}
+
+export function hasBackendChanges(raw: string): boolean {
+  return hasMatchingChanges(raw, isBackendPath)
 }
 
 export interface ClassificationResult {
   docsOnly: boolean
   runBuild: boolean
+  allPlatforms: boolean
+  runBackend: boolean
 }
 
 export function classifyChanges(
@@ -70,32 +100,43 @@ export function classifyChanges(
       isDraft = Boolean(event.pull_request?.draft)
       const source = event.pull_request?.head?.sha
       const target = event.pull_request?.base?.sha
-      if (!commit(source) || !commit(target)) return { docsOnly: false, runBuild: true }
+      if (!commit(source) || !commit(target)) {
+        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+      }
       head = source
       base = git("merge-base", target, source).trim()
-      if (!commit(base)) return { docsOnly: false, runBuild: true }
+      if (!commit(base)) {
+        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+      }
     } else if (eventName === "push" && ref === "refs/heads/main") {
-      if (!commit(event.before) || !commit(event.after)) return { docsOnly: false, runBuild: true }
+      if (!commit(event.before) || !commit(event.after)) {
+        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+      }
       base = event.before
       head = event.after
     } else {
-      return { docsOnly: false, runBuild: true }
+      return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
     }
     // Disabling rename detection ensures moving code into docs still checks its deletion.
     const raw = git("diff", "--raw", "--no-abbrev", "--no-renames", "-z", base, head, "--")
     const docsOnly = isDocumentationDiff(raw)
     if (docsOnly) {
-      return { docsOnly: true, runBuild: false }
+      return { docsOnly: true, runBuild: false, allPlatforms: false, runBackend: false }
     }
     if (isPr) {
       if (isDraft) {
-        return { docsOnly: false, runBuild: false }
+        return { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false }
       }
-      return { docsOnly: false, runBuild: hasPackagingChanges(raw) }
+      return {
+        docsOnly: false,
+        runBuild: hasPackagingChanges(raw),
+        allPlatforms: hasPlatformChanges(raw),
+        runBackend: hasBackendChanges(raw),
+      }
     }
-    return { docsOnly: false, runBuild: true }
+    return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
   } catch {
-    return { docsOnly: false, runBuild: true }
+    return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
   }
 }
 
@@ -111,22 +152,32 @@ export function classifyDocumentation(
 if (import.meta.main) {
   let docsOnly = false
   let runBuild = true
+  let allPlatforms = true
+  let runBackend = true
   try {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")) as ChangeEvent
     const res = classifyChanges(process.env.GITHUB_EVENT_NAME ?? "", process.env.GITHUB_REF ?? "", event)
     docsOnly = res.docsOnly
     runBuild = res.runBuild
+    allPlatforms = res.allPlatforms
+    runBackend = res.runBackend
   } catch {
     // Missing events and unavailable history never justify skipping validation.
   }
   console.log(
     docsOnly
       ? "Documentation change: static checks remain required."
-      : runBuild
-        ? "Running full CI and packaging build."
-        : "Running CI checks; skipping packaging build."
+      : [
+          `Running CI:`,
+          `platforms=${allPlatforms ? "all (Linux, Windows, macOS)" : "Linux only"}`,
+          `backend=${runBackend ? "yes" : "skip"}`,
+          `packaging_build=${runBuild ? "yes" : "skip"}`,
+        ].join(" ")
   )
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `docs_only=${docsOnly}\nrun_build=${runBuild}\n`)
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `docs_only=${docsOnly}\nrun_build=${runBuild}\nall_platforms=${allPlatforms}\nrun_backend=${runBackend}\n`
+    )
   }
 }

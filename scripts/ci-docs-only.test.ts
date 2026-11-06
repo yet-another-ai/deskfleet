@@ -92,32 +92,39 @@ test("classifies draft PRs and packaging-related changes", context => {
   save("source.rs", "modified source\n")
   const code = snapshot()
 
-  // Standard non-packaging PR skips release build
+  // Standard Rust source change triggers platform matrix and backend integration
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code } }
-  }, cwd), { docsOnly: false, runBuild: false })
+  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
 
-  // Draft PR skips release build
+  // Pure frontend UI change (apps/web) skips Windows/macOS matrix and backend integration
+  save("apps/web/src/App.vue", "<template>hello</template>\n")
+  const frontendSha = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: code }, head: { sha: frontendSha } }
+  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+
+  // Draft PR skips runtime matrix and backend tests
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code }, draft: true }
-  }, cwd), { docsOnly: false, runBuild: false })
+  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
 
   // Packaging change in PR triggers release build
   save("packaging/aur/PKGBUILD.in", "pkgbuild\n")
   const packagingSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: packagingSha } }
-  }, cwd), { docsOnly: false, runBuild: true })
+  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // Packaging change in Draft PR still skips release build until ready
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: packagingSha }, draft: true }
-  }, cwd), { docsOnly: false, runBuild: false })
+  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
 
-  // Push to main always runs build on code changes
+  // Push to main always runs build and all platforms on code changes
   assert.deepEqual(classifyChanges("push", "refs/heads/main", {
     before: initial, after: code
-  }, cwd), { docsOnly: false, runBuild: true })
+  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 })
 
 test("manual and scheduled runs, unrelated refs, and malformed events retain full validation", context => {
@@ -134,7 +141,10 @@ test("manual and scheduled runs, unrelated refs, and malformed events retain ful
     execFileSync(process.execPath, [join(import.meta.dirname, "ci-docs-only.ts")], {
       env: { ...process.env, GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: "pull_request" }
     })
-    assert.equal(readFileSync(output, "utf8"), "docs_only=false\nrun_build=true\n")
+    assert.equal(
+      readFileSync(output, "utf8"),
+      "docs_only=false\nrun_build=true\nall_platforms=true\nrun_backend=true\n"
+    )
   }
 })
 
@@ -172,5 +182,7 @@ test("classifier process failure or missing output cannot skip CI", { skip: proc
     const lines = readFileSync(output, "utf8").trim().split("\n")
     assert.ok(lines.includes("docs_only=false"))
     assert.ok(lines.includes("run_build=true"))
+    assert.ok(lines.includes("all_platforms=true"))
+    assert.ok(lines.includes("run_backend=true"))
   }
 })

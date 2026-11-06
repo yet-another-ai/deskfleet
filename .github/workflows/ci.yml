@@ -24,6 +24,8 @@ jobs:
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       run_build: ${{ steps.classify.outputs.run_build }}
+      all_platforms: ${{ steps.classify.outputs.all_platforms }}
+      run_backend: ${{ steps.classify.outputs.run_backend }}
     steps:
       - name: Check out complete history
         uses: actions/checkout@v7
@@ -39,10 +41,14 @@ jobs:
           # runtimes or missing output must fall back to full CI, never a skip.
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
           echo "run_build=true" >> "$GITHUB_OUTPUT"
+          echo "all_platforms=true" >> "$GITHUB_OUTPUT"
+          echo "run_backend=true" >> "$GITHUB_OUTPUT"
           if ! node scripts/ci-docs-only.ts; then
             echo "::warning::Classification could not run; running full CI."
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
             echo "run_build=true" >> "$GITHUB_OUTPUT"
+            echo "all_platforms=true" >> "$GITHUB_OUTPUT"
+            echo "run_backend=true" >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -53,6 +59,8 @@ jobs:
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
       draft_pr: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
+      all_platforms: ${{ needs.changes.result == 'success' && needs.changes.outputs.all_platforms == 'true' }}
+      run_backend: ${{ needs.changes.result == 'success' && needs.changes.outputs.run_backend == 'true' }}
     permissions:
       contents: read
 

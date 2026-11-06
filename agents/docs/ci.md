@@ -21,17 +21,23 @@ dedicated release workflows called by `publish.yml`).
   and the desktop/Web/website builds run first on Linux with `mise run ci:check:static`.
   Platform tests and backend integration jobs wait for static checks to pass
   (`needs: static`), providing fast-fail feedback before running on expensive
-  runners. Once static checks pass, Rust, daemon, and desktop tests run in parallel
-  on Linux, macOS, and Windows. Linux uses `mise run test`, including the
-  renderer Vitest project. macOS and Windows use `mise run ci:test:platform`:
-  the same Rust, daemon, script, and desktop main/shared/client checks, without
-  repeating the happy-dom renderer project. Each platform also runs
-  `mise run desktop:smoke-dsh` against Electron's Node host. Local `mise run test`
-  still runs both Vitest projects on every OS. It supports reusable
-  calls and manual runs. A separate Linux job runs real PostgreSQL integration
-  tests, Valkey-backed Team TURN collection tests, and the owned-account/two-daemon remote
-  workflow against the same pinned PostgreSQL 18.6 and Valkey images as local
-  development, both directly and with relay-only peers through
+  runners. Furthermore, pull requests filter runtime test jobs by changed paths:
+  cross-platform matrix checks (macOS arm64 and Windows x64) run only when
+  native/cross-platform paths are modified (`crates/`, `apps/desktop/`, `apps/daemon/`,
+  `*.rs`, root build configs, workflows, scripts, or patches), running Linux x64 only
+  for frontend-only changes; backend integration tests run only when backend, server,
+  database, or shared protocol files are touched (`apps/server/`, `crates/`, `compose.yaml`,
+  etc.). Pushes to `main`, daily scheduled runs, and manual dispatches always run the
+  full matrix and all integration suites. Once static checks pass, active platform
+  tests run in parallel. Linux uses `mise run test`, including the renderer Vitest
+  project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
+  script, and desktop main/shared/client checks, without repeating the happy-dom renderer
+  project. Each platform also runs `mise run desktop:smoke-dsh` against Electron's Node
+  host. Local `mise run test` still runs both Vitest projects on every OS. It supports
+  reusable calls and manual runs. When backend paths change, a separate Linux job runs
+  real PostgreSQL integration tests, Valkey-backed Team TURN collection tests, and the
+  owned-account/two-daemon remote workflow against the same pinned PostgreSQL 18.6 and
+  Valkey images as local development, both directly and with relay-only peers through
   an isolated coturn container. It also validates the development Compose configuration.
   The same job drives the built Web and Electron clients under Xvfb through
   actual login, remote execution, archive/restore, and offline history flows.

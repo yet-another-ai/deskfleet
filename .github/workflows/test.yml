@@ -14,6 +14,16 @@ on:
         type: boolean
         required: false
         default: false
+      all_platforms:
+        description: Run tests on full cross-platform matrix (Linux, macOS, Windows). When false, tests run on Linux x64 only.
+        type: boolean
+        required: false
+        default: true
+      run_backend:
+        description: Run PostgreSQL, Valkey, coturn, and remote backend integration tests.
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -75,16 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux x64
-            os: ubuntu-24.04
-            test-task: test
-          - name: Windows x64
-            os: windows-latest
-            test-task: ci:test:platform
-          - name: macOS arm64
-            os: macos-latest
-            test-task: ci:test:platform
+        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"}]') }}
     steps:
       # Rust tests can exhaust the hosted image's free disk space. DeskFleet
       # does not build Android; reclaim its SDK before restoring Cargo outputs.
@@ -130,7 +131,7 @@ jobs:
     name: PostgreSQL and remote backend
     needs: static
     if: >-
-      ${{ !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ inputs.run_backend && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ubuntu-26.04
