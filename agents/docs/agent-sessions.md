@@ -314,7 +314,10 @@ the `deepseek-account` route. Detection checks local credential availability,
 not whether a remote service still accepts the key or account.
 Detection and login use the provider's inherited environment and Harness-home
 `.env`, plus saved credentials; they do not read a project `.env` from their
-working directory. ACP sessions additionally load the actual workspace's `.env`.
+working directory. Bundled ACP starts in the session's primary worktree directory
+before initialization, so it loads that directory's `.env`. Draft configuration
+uses the workspace's primary directory; connection tests use an empty temporary
+directory.
 The ACP automation profile itself does not advertise interactive authenticate
 methods. No Node.js, npm, or global dsh installation is required. A missing
 bundled runtime requires reinstalling DeskFleet. Explicit paths keep external

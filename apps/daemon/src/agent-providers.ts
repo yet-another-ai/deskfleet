@@ -127,7 +127,7 @@ export class AgentProviders {
     const { provider, config } = this.#launch(providerInput(input))
     config.authentication = "existing"
     const cwd = await mkdtemp(join(tmpdir(), "df-provider-test-"))
-    const connecting = provider.connect(config, { onUpdate() {} })
+    const connecting = provider.connect({ ...config, cwd }, { onUpdate() {} })
     let timer: NodeJS.Timeout | undefined
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`${config.name} did not open a session within ${PROVIDER_TEST_TIMEOUT_MS / 1000} seconds`)), PROVIDER_TEST_TIMEOUT_MS)

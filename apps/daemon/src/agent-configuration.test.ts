@@ -58,6 +58,7 @@ test("agent configuration comes from ACP, flattens groups, and applies model bef
   const fake = fakeProvider()
   const result = await readAgentConfiguration({ provider: "codex", model: "second", reasoningEffort: "medium" }, process.cwd(), fake)
   assert.deepEqual(fake.sessions, [{ cwd: process.cwd(), mcpServers: [] }])
+  assert.equal(fake.configs[0]?.cwd, process.cwd())
   assert.deepEqual(fake.changes, [
     { sessionId: "draft", configId: "chosen-model", value: "second" },
     { sessionId: "draft", configId: "effort", value: "medium" },
@@ -381,11 +382,11 @@ test("draft configuration resolves the selected provider's current launch settin
   assert.deepEqual(configuration.provider, { id: configured.id, name: "Work agent" })
   assert.equal(configuration.models?.currentValue, "second")
   assert.equal(configuration.reasoningEfforts?.currentValue, "medium")
-  assert.deepEqual(fake.configs[0], { name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })
+  assert.deepEqual(fake.configs[0], { name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" }, cwd: directory })
   await providers.update(configured.id, { name: "Renamed agent", binaryPath: "", env: { CODEX_HOME: "/work/updated" } })
   const updated = await service.handle("_deskfleet/agent/configuration", params, service.actor()) as AgentConfiguration
   assert.deepEqual(updated.provider, { id: configured.id, name: "Renamed agent" })
-  assert.deepEqual(fake.configs[1], { name: "Renamed agent", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" } })
+  assert.deepEqual(fake.configs[1], { name: "Renamed agent", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" }, cwd: directory })
   await providers.remove(configured.id)
   await assert.rejects(service.handle("_deskfleet/agent/configuration", params, service.actor()), /provider.*unavailable/iu)
   assert.deepEqual(await service.journal.list(), [])

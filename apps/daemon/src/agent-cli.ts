@@ -99,7 +99,8 @@ export async function runAgent(args: string[], dependencies: {
       if (interrupted) return
       console.log(JSON.stringify({ event: "workspace_session", ...managed }))
     }
-    agent = await provider.connect(config, {
+    const cwd = managed?.worktree.directories[0]?.path ?? resolve(values.cwd ?? process.cwd())
+    agent = await provider.connect({ ...config, cwd }, {
       onUpdate: notification => console.log(JSON.stringify({ event: "session_update", ...notification })),
       requestPermission: async request => {
         console.log(JSON.stringify({ event: "permission_cancelled", ...request }))
@@ -111,7 +112,7 @@ export async function runAgent(args: string[], dependencies: {
     if (values.check) return
 
     const session = await agent.newSession({
-      cwd: managed?.worktree.directories[0]?.path ?? resolve(values.cwd ?? process.cwd()),
+      cwd,
       ...(managed ? { additionalDirectories: managed.worktree.directories.slice(1).map(directory => directory.path) } : {}),
       mcpServers: [],
     })

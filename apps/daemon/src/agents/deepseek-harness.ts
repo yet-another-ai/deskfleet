@@ -11,7 +11,7 @@ export const DEEPSEEK_HARNESS_ACP_ARGUMENTS = ["--profile", "acp"] as const
 export function deepseekHarnessProcess(config: AgentConfig): AgentProcess {
   return config.binaryPath
     ? launchProviderCommand(config.binaryPath, [...DEEPSEEK_HARNESS_ACP_ARGUMENTS], config.env)
-    : dshAcpProcess(config.env)
+    : { ...dshAcpProcess(config.env), cwd: config.cwd }
 }
 
 /**

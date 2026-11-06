@@ -342,6 +342,35 @@ test("DeepSeek Harness launches dsh --profile acp without interactive authentica
   await connection.close()
 })
 
+test("provider tests use their temporary session directory at process startup without persisting it", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-test-cwd-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  let startupCwd: string | undefined
+  const unexpected = async () => { assert.fail("Connection tests must only initialize and open a session") }
+  const registry = new AgentProviders(directory, {
+    id: "codex",
+    async connect(config) {
+      startupCwd = config.cwd
+      return {
+        initialization: { protocolVersion: 1, agentInfo: { name: "fixture", version: "1" } },
+        async newSession(params) {
+          assert.equal(config.cwd, params.cwd)
+          assert.notEqual(config.cwd, process.cwd())
+          assert.equal((await stat(params.cwd)).isDirectory(), true)
+          return { sessionId: "probe" }
+        },
+        setConfigOption: unexpected, resume: unexpected, prompt: unexpected, steer: unexpected,
+        cancel: unexpected, async close() {},
+      }
+    },
+  })
+  await registry.init()
+  assert.deepEqual(await registry.test({ template: "codex", name: "Fixture", env: {} }), { agentName: "fixture" })
+  assert.ok(startupCwd)
+  await assert.rejects(stat(startupCwd), { code: "ENOENT" })
+  assert.deepEqual(registry.snapshot().providers, [])
+})
+
 test("provider tests open a prompt-free session from unsaved settings and report the agent's own failure", { timeout: 15_000, skip: process.platform === "win32" }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-provider-test-"))
   t.after(() => rm(directory, { recursive: true, force: true }))

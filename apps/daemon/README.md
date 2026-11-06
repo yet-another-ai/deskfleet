@@ -307,7 +307,9 @@ a configured `DEEPSEEK_API_KEY` takes precedence and keeps `deepseek-official`
 (with optional `DEEPSEEK_BASE_URL`). Discovery checks credential availability,
 not remote validity. Discovery and login read provider environment overrides,
 inherited variables, the Harness-home `.env`, and saved credentials. Project
-`.env` files are loaded only when launching ACP in the workspace.
+`.env` files are loaded only when launching bundled ACP in the session's primary
+worktree directory, which is supplied before ACP initialization. Connection tests
+use an empty temporary directory.
 The ACP server does not advertise interactive authenticate
 methods. Node.js, npm, and a global dsh installation are unnecessary. External
 executables retain their own credential setup; clear the path to use bundled

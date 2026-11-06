@@ -74,6 +74,17 @@ function fakeProvider(hooks: {
 
 const params = { provider: "codex", workspaceId: "1", probeId: "draft" }
 
+test("configuration probes launch in their workspace without changing provider settings", async context => {
+  const fake = fakeProvider()
+  const probes = new AgentConfigurationProbes()
+  context.after(() => probes.close())
+  await probes.read("alice", params, "/first-workspace", fake)
+  await probes.read("alice", params, "/second-workspace", fake)
+  assert.deepEqual(fake.configs.map(config => config.cwd), ["/first-workspace", "/second-workspace"])
+  assert.deepEqual(fake.sessions.map(session => session.cwd), ["/first-workspace", "/second-workspace"])
+  assert.deepEqual(fake.config, { name: "Test provider" })
+})
+
 test("composer discovery captures post-setup commands, native skills and later replacement catalogs", async context => {
   const fake = fakeProvider({ async newSession() {
     setImmediate(() => { void fake.clients[0]!.onUpdate({ sessionId: "probe-1", update: {
