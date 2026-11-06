@@ -59,8 +59,9 @@ jobs:
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
       draft_pr: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
-      all_platforms: ${{ needs.changes.result == 'success' && needs.changes.outputs.all_platforms == 'true' }}
-      run_backend: ${{ needs.changes.result == 'success' && needs.changes.outputs.run_backend == 'true' }}
+      # Classification failure must expand coverage (same fail-safe direction as docs_only=false).
+      all_platforms: ${{ needs.changes.result != 'success' || needs.changes.outputs.all_platforms == 'true' }}
+      run_backend: ${{ needs.changes.result != 'success' || needs.changes.outputs.run_backend == 'true' }}
     permissions:
       contents: read
 

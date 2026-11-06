@@ -232,6 +232,24 @@ test("Build requires a successful Test before packaging", () => {
   assert.match(build, /needs\.test\.result\s*==\s*'success'/)
 })
 
+test("failed classification keeps the full Test matrix and backend jobs", () => {
+  const yaml = workflowYaml("../.github/workflows/ci.yml")
+  const test = yaml.match(/^  test:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
+  assert.ok(test, "Missing Test job")
+  assert.match(
+    test,
+    /all_platforms:\s*\$\{\{\s*needs\.changes\.result\s*!=\s*'success'\s*\|\|\s*needs\.changes\.outputs\.all_platforms\s*==\s*'true'\s*\}\}/,
+  )
+  assert.match(
+    test,
+    /run_backend:\s*\$\{\{\s*needs\.changes\.result\s*!=\s*'success'\s*\|\|\s*needs\.changes\.outputs\.run_backend\s*==\s*'true'\s*\}\}/,
+  )
+  assert.match(
+    test,
+    /docs_only:\s*\$\{\{\s*needs\.changes\.result\s*==\s*'success'\s*&&\s*needs\.changes\.outputs\.docs_only\s*==\s*'true'\s*\}\}/,
+  )
+})
+
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
