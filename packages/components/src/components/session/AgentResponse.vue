@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight, CircleAlert, CircleX, LoaderCircle } from "@lucide/vue"
 import { useIntervalFn, useNow, watchImmediate } from "@vueuse/core"
-import { computed, reactive, ref, watch } from "vue"
+import { computed, inject, reactive, watch } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse, ConversationStep } from "../../services/agent-conversation.ts"
@@ -16,6 +16,10 @@ import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
+import { conversationReadingKey, useConversationDisclosure } from "../../stores/conversation-reading.ts"
+const reading = inject(conversationReadingKey, undefined)
+const localDisclosures = reactive<Record<string, boolean | null>>({})
+const disclosures = () => reading?.().disclosures ?? localDisclosures
 const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
 const emit = defineEmits<{ fork: [] }>()
 const { t } = useI18n()
@@ -40,14 +44,14 @@ const endingToolId = computed(() => {
   const last = props.response.steps.at(-1)
   return !props.response.live && props.response.turn && last?.kind === "tool" ? last.id : undefined
 })
-const activities = reactive(new Map<string, boolean>())
-const toggled = ref<boolean | null>(null)
+const activities = { get: (id: string) => disclosures()[`activity:${id}`] ?? undefined, set: (id: string, value: boolean) => { disclosures()[`activity:${id}`] = value } }
+const toggled = useConversationDisclosure(() => `response:${props.response.id}`)
 watch(() => props.response.live, () => { toggled.value = null })
 const hasRemoteCall = computed(() => props.response.steps.some(step => step.kind === "tool" && isRemoteMcpTool(step.tool)))
 const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? (!answer.value || hasRemoteCall.value)))
 const summary = computed(() => props.response.live ? [] : summarizeTools(props.response.steps).map(({ kind, count }) => t(`agent.summary.${kind}`, { n: count }, count)))
 const outcome = computed(() => props.response.last && props.response.turn && ["cancelled", "interrupted", "failed"].includes(props.response.turn.state) ? props.response.turn : undefined)
-const thoughts = reactive(new Set<string>())
+const thoughts = { has: (id: string) => !!disclosures()[`thought:${id}`], add: (id: string) => { disclosures()[`thought:${id}`] = true }, delete: (id: string) => { disclosures()[`thought:${id}`] = false } }
 const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : thoughts.add(id)
 
 type LocateRequest = PreviewLocateRequest | MermaidLocateRequest | { entryId: string }
@@ -95,7 +99,7 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
     <CollapsibleContent v-if="steps.length" class="flex flex-col gap-2" :class="response.turn && !response.live && 'border-l border-ui-border pl-4'">
       <div v-for="step in groupedSteps" :key="step.id" :data-conversation-entry="step.kind === 'activity' ? undefined : step.id">
         <AgentActivityGroup v-if="step.kind === 'activity'" :steps="step.steps" :live="response.live" :last-step-id="steps.at(-1)?.id" :expanded-tool-id="endingToolId" :open="activities.get(step.id) ?? step.steps.some(item => item.id === endingToolId)" @update:open="activities.set(step.id, $event)" />
-        <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
+        <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">

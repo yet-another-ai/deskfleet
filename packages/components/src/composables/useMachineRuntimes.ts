@@ -1,3 +1,4 @@
+import { clearConversationOwner, conversationCacheKey, createConversationCache } from "../services/conversation-cache.ts"
 import { createPinia, disposePinia } from "pinia"
 import { computed, createApp, h, inject, nextTick, onScopeDispose, ref, shallowReactive, vaporInteropPlugin, watch, type Component, type InjectionKey } from "vue"
 import type { Machine } from "@deskfleet/client/central"
@@ -37,6 +38,8 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
     runtime?.dispose()
   }
   const identity = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id, session.teamId.value]))
+  const owner = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id]))
+  watch(owner, (_, previous) => { void clearConversationOwner(previous) })
   watch(identity, () => { for (const id of opened.keys()) release(id) }, { flush: "sync" })
   watch(() => session.machines.value.map(machine => ({ ...machine })), machines => {
     for (const [id, runtime] of opened) {
@@ -60,6 +63,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
         return session.localMachineId.value === machine.id && enrollment.teamId === machine.teamId
       }
       const remote = remoteMachineClient(host, session.central, machine, { local: isLocal(false) })
+      const cache = createConversationCache(owner.value, JSON.stringify([machine.teamId, machine.id]))
       const state = createPinia()
       const views = new Set<() => void>()
       const renderViews = ref(true)
@@ -85,6 +89,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
         updateMachine: remote.updateMachine,
         mount(component, root) {
           const app = createApp({ render: () => renderViews.value ? h(component) : null })
+            .provide(conversationCacheKey, cache)
             .provide(accountSessionKey, session)
             .provide(appearanceStoreKey, appearance)
             .provide(platformClientKey, remote.api)

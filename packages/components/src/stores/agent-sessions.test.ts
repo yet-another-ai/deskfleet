@@ -1,7 +1,8 @@
+import { conversationCacheKey, type ConversationCache } from "../services/conversation-cache.ts"
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { computed, defineComponent, h, isReactive, ref } from "vue"
+import { computed, createApp, defineComponent, h, isReactive, ref } from "vue"
 import type { AgentCommand, AgentEvent, AgentPreview } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { AgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import { agentElicitation, agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../test/agent.ts"
@@ -1178,6 +1179,7 @@ test("catalog removal drops an opened session without reopening its cached snaps
     mock.call.mockClear()
     await store.refresh("30")
     expect(store.sessions["30"]).toBeUndefined()
+    expect(store.views["30"]).toBeUndefined()
     expect(mock.call).not.toHaveBeenCalled()
     await store.refresh()
     expect(store.sessions["30"]).toBeUndefined()
@@ -1444,4 +1446,60 @@ test("late retained history cannot replace daemon events", async () => {
     await flushPromises()
     expect(store.views["30"]!.events).toEqual([event])
   } finally { platformClient.agent.history = previous }
+})
+
+function cachedStore(cache: Partial<ConversationCache> = {}) {
+  const persistence: ConversationCache = { read: vi.fn(async () => undefined), write: vi.fn(async () => {}), remove: vi.fn(async () => {}), retain: vi.fn(async () => {}), ...cache }
+  const app = createApp({}).use(pinia).provide(conversationCacheKey, persistence)
+  return { store: app.runWithContext(() => useAgentSessionsStore()), persistence }
+}
+
+test("returning to an opened conversation displays memory while subscription is pending", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  const snapshot = store.views["30"]!.snapshot
+  const subscribed = deferred<ReturnType<typeof agentSnapshot>>()
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? subscribed.promise : [])
+  const pending = store.open("30")
+  expect(store.views["30"]).toMatchObject({ loading: false, syncing: true, snapshot })
+  subscribed.resolve(agentSnapshot())
+  await pending
+  expect(store.views["30"]!.syncing).toBe(false)
+})
+
+test("disk history displays before connection and authoritative replay replaces cached sequences", async () => {
+  const stale = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "cached" }] }))
+  const fresh = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "authoritative" }] }))
+  const snapshot = { ...agentSnapshot(), session: { ...agentSnapshot().session, lastEventSeq: "1" } }
+  const subscribed = deferred<typeof snapshot>()
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? subscribed.promise : method === "_deskfleet/session/history" ? [fresh] : {})
+  const { store } = cachedStore({ read: async () => ({ snapshot, events: [stale] }) })
+  const pending = store.open("30")
+  await flushPromises()
+  expect(store.views["30"]).toMatchObject({ loading: false, syncing: true, historySeq: "0", snapshotSeq: "0", events: [stale] })
+  subscribed.resolve(snapshot)
+  await pending
+  expect(store.views["30"]).toMatchObject({ syncing: false, historySeq: "1", events: [fresh] })
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/session/history", { sessionId: "30", afterSeq: "0", limit: 100 })
+})
+
+test("late cache reads cannot overwrite a live snapshot or revive a deleted conversation", async () => {
+  const cached = deferred<{ snapshot: ReturnType<typeof agentSnapshot>; events: AgentEvent[] } | undefined>()
+  const { store, persistence } = cachedStore({ read: () => cached.promise })
+  await store.open("30")
+  await store.remove("30")
+  cached.resolve({ snapshot: agentSnapshot(), events: [] })
+  await flushPromises()
+  expect(store.views["30"]).toBeUndefined()
+  expect(persistence.remove).toHaveBeenCalledWith("30")
+})
+
+test("only durable contiguous history is persisted, without streaming previews", async () => {
+  vi.useFakeTimers()
+  const { store, persistence } = cachedStore()
+  await store.open("30")
+  mock.notification({ method: "_deskfleet/session/preview", params: preview("stream", "0", 0, ["uncommitted"]) })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(store.views["30"]!.events).toHaveLength(1)
+  expect(persistence.write).toHaveBeenCalledWith("30", { snapshot: agentSnapshot(), events: [] })
 })

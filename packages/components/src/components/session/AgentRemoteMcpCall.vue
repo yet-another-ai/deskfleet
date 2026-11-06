@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Check, ChevronRight, CircleX, LoaderCircle, Monitor } from "@lucide/vue"
-import { computed, inject, ref } from "vue"
+import { computed, inject } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -12,7 +12,8 @@ import AgentActor from "./AgentActor.vue"
 import AgentToolDetails from "./AgentToolDetails.vue"
 import PreviewViewer from "./PreviewViewer.vue"
 
-const props = defineProps<{ tool: ConversationTool; remote: RemoteMcpTool; permission?: AgentPermission; live?: boolean }>()
+import { useConversationDisclosure } from "../../stores/conversation-reading.ts"
+const props = defineProps<{ tool: ConversationTool; remote: RemoteMcpTool; permission?: AgentPermission; live?: boolean; disclosureId?: string }>()
 const { t } = useI18n()
 const account = useAccountSession()
 const context = inject(agentResourceContextKey, undefined)
@@ -25,7 +26,7 @@ const action = computed(() => props.remote.action || props.remote.toolName)
 const running = computed(() => props.live && (props.tool.status === "pending" || props.tool.status === "in_progress"))
 const failed = computed(() => props.tool.status === "failed" || props.remote.isError)
 const decision = computed(() => props.permission?.state === "resolved" ? props.permission.request.options.find(option => option.optionId === props.permission!.optionId)?.name ?? props.permission.optionId : undefined)
-const detailsOpen = ref(false)
+const detailsOpen = useConversationDisclosure(() => `remote:${props.disclosureId ?? props.tool.toolCallId}`)
 </script>
 
 <template>
@@ -48,7 +49,7 @@ const detailsOpen = ref(false)
     <div v-if="remote.images.length" class="flex flex-col gap-2 px-3 pb-3">
       <PreviewViewer v-for="(image, index) in remote.images" :key="index" class="remote-mcp-preview" :data-preview="`remote-image-${index}`" kind="image" :content="`data:${image.mimeType};base64,${image.data}`" :mime-type="image.mimeType" :title="t('agent.remoteMcp.screenshot', { machine: machineName, action })" mode="inline" />
     </div>
-    <CollapsibleRoot v-model:open="detailsOpen" class="border-t border-ui-border">
+    <CollapsibleRoot :open="detailsOpen ?? false" @update:open="detailsOpen = $event" class="border-t border-ui-border">
       <CollapsibleTrigger type="button" data-remote-mcp-details class="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-xs text-ui-text-muted hover:bg-ui-hover hover:text-ui-text">
         <ChevronRight :size="13" class="shrink-0 ui-motion" :class="detailsOpen && 'rotate-90'" aria-hidden="true" />{{ t('agent.remoteMcp.details') }}
       </CollapsibleTrigger>

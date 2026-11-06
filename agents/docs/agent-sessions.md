@@ -1069,6 +1069,29 @@ such as slash-command changes, remain visible and are saved for resume.
 
 ## Replay, recovery, and UI
 
+Opened conversations remain visible during background resubscription. Only an
+initial open without a snapshot shows the restoring indicator. Reading position
+(including whether to follow the bottom) and manual response, activity, thought,
+and tool disclosure choices live in the machine's UI store across route changes.
+Search and preview deep links take precedence over a remembered reading position.
+
+Signed-in machine runtimes also cache committed conversation snapshots and events
+in IndexedDB, including in the PWA. Keys contain server, account, Team, Machine,
+and Session identity. The browser-origin cache retains at most 30 conversations
+and 32 MiB of estimated serialized content, evicting least recently accessed
+entries; a single oversized conversation is skipped. Writes are batched once per
+second and exclude uncommitted streaming previews. Storage failure falls back to
+the existing memory and history paths.
+
+Disk history is a display projection, never a daemon cursor or authorization
+source. It can appear before attachment, while background replay starts from the
+authoritative journal and replaces duplicate sequences. Cached content remains
+visible while pages arrive. State-dependent actions and read acknowledgements
+wait for synchronization. Account changes clear the previous account's cache;
+explicit deletion and refreshed catalog membership remove deleted histories.
+This accelerates reopening the PWA after its account and machine scope load;
+it does not add offline sign-in or offline mutations.
+
 Subscribe installs an event buffer before reading the consistent snapshot. The
 response precedes buffered/live events. The client uses `session.lastEventSeq`
 as its snapshot watermark, reads earlier history in pages, deduplicates by
