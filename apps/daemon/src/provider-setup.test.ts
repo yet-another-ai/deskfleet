@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { createRequire } from "node:module"
 import { join } from "node:path"
 import { test } from "node:test"
+import { setImmediate as nextTurn } from "node:timers/promises"
 import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import type { AgentProviderInput } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
@@ -222,6 +223,29 @@ test("bundled DeepSeek metadata can complete after the external CLI timeout", { 
   assert.equal(value.version, "0.2.2-rc.1")
 })
 
+test("slow bundled DeepSeek metadata and credentials fit within one detection deadline", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  const pending = probeProvider(input("deepseek-harness"), {
+    run: (_command, args) => new Promise(resolve => {
+      setTimeout(() => resolve(args.includes("status")
+        ? result(JSON.stringify({ auth: "unauthenticated" })) : result("0.2.2-rc.1")), 20_000)
+    }),
+  })
+  // Attach the assertion before advancing the clock so a deadline rejection is observed.
+  const checked = assert.doesNotReject(async () => {
+    const found = await pending
+    assert.equal(found.status, "found")
+    assert.equal(found.version, "0.2.2-rc.1")
+    assert.equal(found.auth, "unauthenticated")
+    assert.equal(found.loginAvailable, true)
+  })
+  await nextTurn()
+  context.mock.timers.tick(20_000)
+  await nextTurn()
+  context.mock.timers.tick(10_000)
+  await checked
+})
+
 test("bundled DeepSeek spawn failures surface as probe errors instead of missing installations", async () => {
   for (const error of [Object.assign(new Error("metadata timed out"), { killed: true }), Object.assign(new Error("permission denied"), { code: "EACCES" })]) {
     const f = fixture({ answer: async () => { throw error } })
@@ -232,12 +256,13 @@ test("bundled DeepSeek spawn failures surface as probe errors instead of missing
 })
 
 test("bundled DeepSeek deadline cancels detection without reporting a missing runtime", async () => {
-  let signal: AbortSignal | undefined
+  const signals: (AbortSignal | undefined)[] = []
   await assert.rejects(probeProvider(input("deepseek-harness"), {
     timeoutMs: 10,
-    run: (_command, _args, _env, _cwd, value) => { signal = value; return new Promise(() => {}) },
+    run: (_command, _args, _env, _cwd, signal) => { signals.push(signal); return new Promise(() => {}) },
   }), /detection timed out/u)
-  assert.equal(signal?.aborted, true)
+  assert.equal(signals.length, 2)
+  assert.ok(signals.every(signal => signal?.aborted))
 })
 
 test("DeepSeek Harness still validates explicit executable overrides", async () => {

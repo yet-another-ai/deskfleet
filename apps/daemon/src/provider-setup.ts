@@ -241,10 +241,14 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
   if (provider.template === "deepseek-harness" && !provider.binaryPath) {
     const launch = dshRuntimeProcess(["--version"], ctx.env)
     try {
-      const result = await ctx.run(launch.command, launch.args ?? [], launch.env ?? ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
+      // Both read-only checks must fit within the same detection deadline.
+      const [result, auth] = await Promise.all([
+        ctx.run(launch.command, launch.args ?? [], launch.env ?? ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS),
+        deepseekAuthentication(ctx),
+      ])
       if (result.code === 0 && text(result.stdout)) return {
         ...base, status: "found", version: text(result.stdout), loginAvailable: true,
-        auth: await deepseekAuthentication(ctx),
+        auth,
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...base, status: "missing" }
