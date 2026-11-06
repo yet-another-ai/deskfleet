@@ -244,6 +244,32 @@ test("Git preflight shares the caller's deadline and never starts the operation 
   assert.equal(startedOperation, false)
 })
 
+test("only requested command overflows are marked as its output", async t => {
+  const { root } = await fixture(t)
+  let overflowPreflight = true
+  const processMock = t.mock.method(childProcess, "execFile", (...args: Parameters<typeof childProcess.execFile>) => {
+    const argv = args[1] as string[]
+    const callback = args[3] as (error: Error | null, stdout: string, stderr: string) => void
+    const overflow = overflowPreflight ? argv.includes("ls-files") : argv.includes("status")
+    const error = overflow ? Object.assign(new Error("stdout maxBuffer exceeded"), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }) : null
+    const stdout = overflow ? "partial output" : argv.includes("rev-parse") ? root + "\n" : ""
+    queueMicrotask(() => callback(error, stdout, ""))
+    return { stdin: { on() {}, end() {} } } as unknown as ReturnType<typeof childProcess.execFile>
+  })
+  syncBuiltinESMExports()
+  t.after(() => { processMock.mock.restore(); syncBuiltinESMExports() })
+  await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), error => {
+    assert.equal((error as { gitCommandOutput?: boolean }).gitCommandOutput, undefined)
+    return true
+  })
+  overflowPreflight = false
+  await assert.rejects(executeGit(["-C", root, "status", "--porcelain"]), error => {
+    assert.equal((error as { gitCommandOutput?: boolean }).gitCommandOutput, true)
+    assert.equal((error as { stdout?: string }).stdout, "partial output")
+    return true
+  })
+})
+
 test("Git expands tilde local remotes before inspecting and fetching them", async t => {
   const { root, directory } = await fixture(t)
   const remote = join(directory, "remote.git")

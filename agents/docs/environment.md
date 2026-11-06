@@ -367,6 +367,18 @@ a package manifest, run `mise exec -- pnpm install` and include the lockfile in
 the change. See the [daemon guide](../../apps/daemon/README.md) for packaging and
 runtime commands.
 
+If pnpm cannot verify a locked package's release age because a configured npm
+mirror has stale metadata, check the active registry with `mise exec -- pnpm
+config get registry`. Retry against the official npm registry without changing
+the lockfile or disabling the supply-chain policy:
+
+```sh
+mise exec -- pnpm install --frozen-lockfile --registry=https://registry.npmjs.org/
+```
+
+For mise tasks that invoke installation again, set `npm_config_registry` to that
+URL in the task's environment, or update the user's pnpm registry configuration.
+
 The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),

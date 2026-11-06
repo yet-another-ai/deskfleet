@@ -179,5 +179,12 @@ export async function executeGit(args: string[], options: Options = {}): Promise
   // A per-submodule fetch setting can override submodule.recurse=false. Avoid
   // fetching targets that have not passed the remote policy inspection above.
   if (command === "fetch") invocation.splice(invocation.indexOf("--", 3), 0, "--no-recurse-submodules")
-  return execute([...flags, ...invocation], options)
+  try {
+    return await execute([...flags, ...invocation], options)
+  } catch (error) {
+    // Only the requested command's output can be interpreted by its caller.
+    // Preflight commands use the same runner and can overflow independently.
+    if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") Object.assign(error, { gitCommandOutput: true })
+    throw error
+  }
 }

@@ -9,7 +9,7 @@ import type {
   IceCandidate,
   VideoCodec,
 } from "../../../client/src/desktop-media.ts"
-import { desktopErrorReason } from "../../../client/src/desktop-media.ts"
+import { DESKTOP_START_TIMEOUT_MS, desktopErrorReason } from "../../../client/src/desktop-media.ts"
 
 export type DesktopConnectionState = "idle" | "connecting" | "starting" | "connected" | "error"
 export interface DesktopFailure {
@@ -230,6 +230,9 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       || session.peer.connectionState !== "connected") return
     session.startRequested = true
     state.value = "starting"
+    // Capture gets its full startup budget after SDP and ICE have completed.
+    clearTimeout(session.timeout)
+    session.timeout = setTimeout(() => fail(session, { kind: "timeout" }), DESKTOP_START_TIMEOUT_MS)
     try {
       await api.start(session.start)
       session.startSettled = true

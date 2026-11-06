@@ -17,6 +17,9 @@ use tokio::task::JoinHandle;
 
 use crate::rtc::{Peer, VideoCodec};
 
+// Leave room for slow hardware startup within the caller's separate 45-second media-start budget.
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
     #[error("invalid media configuration: {0}")]
@@ -40,11 +43,11 @@ pub enum MediaError {
     Service { message: String, encoder: bool },
     #[error("media worker stopped during startup")]
     Startup,
-    #[error("capture and encoding did not produce the first video packet within 5 seconds")]
+    #[error("capture and encoding did not produce the first video packet within 30 seconds")]
     FirstFrameTimeout,
     /// The video encoder was open but never emitted a packet. Capture that never
     /// produces a frame stays [`Self::FirstFrameTimeout`].
-    #[error("the video encoder produced no packet within 5 seconds")]
+    #[error("the video encoder produced no first packet within 30 seconds")]
     EncoderStall,
 }
 
@@ -385,10 +388,12 @@ fn capture_loop(
     let mut source = CaptureSource::open(config, codec, audio)?;
     let mut target_bitrate = peer.subscribe_target_bitrate();
     let mut ready = Some(ready);
-    let first_frame_deadline = Instant::now() + Duration::from_secs(5);
+    let first_frame_deadline = Instant::now() + FIRST_FRAME_TIMEOUT;
     let mut encoder_started = false;
     let result = (|| {
         while !stop.load(Ordering::Relaxed) {
+            // Only startup is timed: a running stream can legitimately stop
+            // producing video while the desktop or hardware encoder is idle.
             if ready.is_some() && Instant::now() >= first_frame_deadline {
                 return Err(if encoder_started {
                     MediaError::EncoderStall

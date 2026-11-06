@@ -2,6 +2,7 @@ import { flushPromises } from "@vue/test-utils"
 import { effectScope } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { HttpError } from "../../../client/src/http-central.ts"
+import { DESKTOP_START_TIMEOUT_MS } from "../../../client/src/desktop-media.ts"
 import { PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import { browserCodecPreferences, commonDesktopCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
@@ -133,6 +134,7 @@ test("disconnect during an offer closes the eventual native session without star
 })
 
 test("disconnect during capture startup closes again after startup completes", async () => {
+  vi.useFakeTimers()
   const { connection, api } = setup()
   const started = deferred<void>()
   api.start.mockReturnValue(started.promise)
@@ -140,6 +142,8 @@ test("disconnect during capture startup closes again after startup completes", a
   TestPeer.instances[0]!.changeState("connected")
   expect(connection.state.value).toBe("starting")
   await connection.disconnect()
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
+  expect(connection.failure.value).toBeNull()
   started.resolve()
   await flushPromises()
   expect(api.close).toHaveBeenCalledTimes(2)
@@ -252,6 +256,71 @@ test("times out stalled connection attempts and closes both ends", async () => {
   expect(connection.state.value).toBe("error")
   expect(TestPeer.instances[0]!.close).toHaveBeenCalled()
   expect(api.close).toHaveBeenCalledTimes(1)
+})
+
+test("slow ICE setup leaves the full capture startup window and clears it on success", async () => {
+  vi.useFakeTimers()
+  const { connection, api } = setup()
+  const started = deferred<void>()
+  api.start.mockReturnValueOnce(started.promise)
+  await connection.connect(options)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1)
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(connection.state.value).toBe("starting")
+  expect(connection.failure.value).toBeNull()
+  expect(api.close).not.toHaveBeenCalled()
+  started.resolve()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
+  expect(connection.state.value).toBe("connected")
+  expect(connection.failure.value).toBeNull()
+  expect(peer.close).not.toHaveBeenCalled()
+})
+
+test("an encoder stall after slow ICE setup still falls back to the next codec", async () => {
+  vi.useFakeTimers()
+  const { connection, api } = setup()
+  const started = deferred<void>()
+  api.start.mockReturnValueOnce(started.promise)
+  await connection.connect(options)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1)
+  TestPeer.instances[0]!.changeState("connected")
+  await vi.advanceTimersByTimeAsync(30_000)
+  started.reject(Object.assign(new Error("encoder produced no first packet within 30 seconds"), { reason: "encoder" }))
+  await flushPromises()
+  expect(api.offer.mock.calls.map(call => call[0].codec)).toEqual(["av1", "h265"])
+  expect(api.close).toHaveBeenCalledWith(api.offer.mock.calls[0]![0].sessionId)
+  TestPeer.instances[1]!.changeState("connected")
+  await flushPromises()
+  expect(connection.state.value).toBe("connected")
+  expect(connection.codec.value).toBe("h265")
+  expect(connection.failure.value).toBeNull()
+})
+
+test("capture startup remains bounded and repeated connection events do not extend it", async () => {
+  vi.useFakeTimers()
+  const { connection, api } = setup()
+  const started = deferred<void>()
+  api.start.mockReturnValueOnce(started.promise)
+  await connection.connect(options)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1)
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS - 1)
+  expect(connection.state.value).toBe("starting")
+  peer.changeState("connected")
+  expect(api.start).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(connection.failure.value).toEqual({ kind: "timeout" })
+  expect(connection.state.value).toBe("error")
+  expect(peer.close).toHaveBeenCalledTimes(1)
+  expect(api.close).toHaveBeenCalledTimes(1)
+  started.resolve()
+  await flushPromises()
+  expect(api.close).toHaveBeenCalledTimes(2)
+  expect(connection.state.value).toBe("error")
 })
 
 test("a transient disconnected state does not tear down a recoverable desktop peer", async () => {
