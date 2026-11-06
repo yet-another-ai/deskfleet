@@ -6,6 +6,7 @@
 /deskfleet.db-wal
 /deskfleet.db-journal
 **/node_modules/
+**/.pnpm-store/
 **/dist/
 **/storybook-static/
 /docs/.vitepress/cache/

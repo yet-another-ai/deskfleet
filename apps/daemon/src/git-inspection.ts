@@ -32,8 +32,9 @@ const within = (root: string, path: string) => { const rel = relative(root, path
 const conflicts = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"])
 const statuses: Record<string, GitFileStatus> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "copied", T: "typeChanged", U: "conflicted" }
 
-function parseStatus(text: string): GitFileChange[] {
+function parseStatus(text: string, truncated = false): GitFileChange[] {
   const fields = text.split("\0")
+  if (truncated) fields.pop()
   const changes: GitFileChange[] = []
   for (let index = 0; index < fields.length; index++) {
     const field = fields[index]!
@@ -41,6 +42,7 @@ function parseStatus(text: string): GitFileChange[] {
     const xy = field.slice(0, 2)
     const path = field.slice(3)
     const previousPath = /[RC]/u.test(xy) ? fields[++index] : undefined
+    if (/[RC]/u.test(xy) && previousPath === undefined) break
     const base = { path, additions: null, deletions: null }
     if (xy === "??") { changes.push({ ...base, kind: "untracked", status: "untracked" }); continue }
     if (conflicts.has(xy)) { changes.push({ ...base, kind: "unstaged", status: "conflicted" }); continue }
@@ -53,12 +55,14 @@ function parseStatus(text: string): GitFileChange[] {
   return changes
 }
 
-async function changes(root: string): Promise<GitFileChange[]> {
-  return parseStatus((await git(root, ["status", "--porcelain=v1", "-z", "--find-renames", "--untracked-files=all", "--ignore-submodules=none"])).text)
+async function changes(root: string, path?: string): Promise<{ files: GitFileChange[]; truncated: boolean }> {
+  const output = await git(root, ["status", "--porcelain=v1", "-z", "--find-renames", "--untracked-files=all", "--ignore-submodules=none", ...(path ? ["--", path] : [])], STATUS_BYTES, true)
+  return { files: parseStatus(output.text, output.truncated), truncated: output.truncated }
 }
 
-function parseCounts(text: string): Map<string, { additions: number | null; deletions: number | null }> {
+function parseCounts(text: string, truncated = false): Map<string, { additions: number | null; deletions: number | null }> {
   const fields = text.split("\0")
+  if (truncated) fields.pop()
   const counts = new Map<string, { additions: number | null; deletions: number | null }>()
   for (let index = 0; index < fields.length; index++) {
     const field = fields[index]!
@@ -67,7 +71,7 @@ function parseCounts(text: string): Map<string, { additions: number | null; dele
     const second = field.indexOf("\t", first + 1)
     if (first < 0 || second < 0) continue
     let path = field.slice(second + 1)
-    if (!path) { index++; path = fields[++index]! }
+    if (!path) { index++; path = fields[++index]!; if (path === undefined) break }
     const added = field.slice(0, first)
     const deleted = field.slice(first + 1, second)
     counts.set(path, { additions: added === "-" ? null : Number(added), deletions: deleted === "-" ? null : Number(deleted) })
@@ -106,14 +110,15 @@ async function inspect(root: string): Promise<GitRepositoryStatus> {
       changes(root),
       git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(value => value.text.replace(/\n$/u, "")).catch(() => null),
       git(root, ["rev-parse", "--verify", "HEAD"]).then(value => value.text.trim()).catch(() => null),
-      git(root, ["diff", ...diffOptions, "--cached", "--numstat", "-z", "--"]),
-      git(root, ["diff", ...diffOptions, "--numstat", "-z", "--"]),
+      git(root, ["diff", ...diffOptions, "--cached", "--numstat", "-z", "--"], STATUS_BYTES, true),
+      git(root, ["diff", ...diffOptions, "--numstat", "-z", "--"], STATUS_BYTES, true),
     ])
     result.branch = branch
     result.head = head
-    result.changes = files.slice(0, MAX_FILES)
-    if (files.length > MAX_FILES) result.error = `Showing the first ${MAX_FILES} changed entries; this checkout has too many changes to display at once`
-    const counts = { staged: parseCounts(staged.text), unstaged: parseCounts(unstaged.text) }
+    result.changes = files.files.slice(0, MAX_FILES)
+    if (files.truncated || files.files.length > MAX_FILES) result.error = `Showing the first ${result.changes.length} changed entries; this checkout has too many changes to display at once`
+    else if (staged.truncated || unstaged.truncated) result.error = "Some change counts are unavailable because this checkout has too many changes"
+    const counts = { staged: parseCounts(staged.text, staged.truncated), unstaged: parseCounts(unstaged.text, unstaged.truncated) }
     for (const change of result.changes) {
       if (change.kind !== "untracked") {
         if (change.status !== "conflicted") Object.assign(change, counts[change.kind].get(change.path))
@@ -305,7 +310,9 @@ export class GitInspection {
     const root = roots.get(request.repositoryId)
     if (!root) throw new Error("Repository does not belong to this Session")
     if (request.path.includes("\0") || isAbsolute(request.path) || !within(root, resolve(root, request.path))) throw new Error("Invalid Git file path")
-    const change = (await changes(root)).find(file => file.path === request.path && file.kind === request.kind)
+    const status = await changes(root)
+    let change = status.files.find(file => file.path === request.path && file.kind === request.kind)
+    if (!change && status.truncated) change = (await changes(root, request.path)).files.find(file => file.path === request.path && file.kind === request.kind)
     if (!change) throw new Error("This file change is no longer present; refresh the changes list")
     if (request.kind === "untracked") return { ...request, ...newFilePatch(request.path, await untrackedContent(root, request.path, PATCH_BYTES)) }
     const args = ["diff", ...diffOptions, "--unified=3", "--src-prefix=a/", "--dst-prefix=b/"]
