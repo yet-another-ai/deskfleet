@@ -312,6 +312,9 @@ Alternatively, set `DEEPSEEK_API_KEY` (optional `DEEPSEEK_BASE_URL`). A configur
 API key takes precedence over account login; otherwise a saved account selects
 the `deepseek-account` route. Detection checks local credential availability,
 not whether a remote service still accepts the key or account.
+Detection and login use the provider's inherited environment and Harness-home
+`.env`, plus saved credentials; they do not read a project `.env` from their
+working directory. ACP sessions additionally load the actual workspace's `.env`.
 The ACP automation profile itself does not advertise interactive authenticate
 methods. No Node.js, npm, or global dsh installation is required. A missing
 bundled runtime requires reinstalling DeskFleet. Explicit paths keep external

@@ -305,7 +305,10 @@ moving existing Harness profiles or session history. An explicit provider
 `DSH_HOME` selects that home's credential store. Saved accounts use `deepseek-account`;
 a configured `DEEPSEEK_API_KEY` takes precedence and keeps `deepseek-official`
 (with optional `DEEPSEEK_BASE_URL`). Discovery checks credential availability,
-not remote validity. The ACP server does not advertise interactive authenticate
+not remote validity. Discovery and login read provider environment overrides,
+inherited variables, the Harness-home `.env`, and saved credentials. Project
+`.env` files are loaded only when launching ACP in the workspace.
+The ACP server does not advertise interactive authenticate
 methods. Node.js, npm, and a global dsh installation are unnecessary. External
 executables retain their own credential setup; clear the path to use bundled
 login. Source launches use

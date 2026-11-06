@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile, spawn } from "node:child_process"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -74,24 +74,84 @@ test("hidden terminal reader restores raw mode and never echoes pasted redirect 
   input.destroy()
 })
 
-test("real status helper resolves project dotenv and never emits its secret", { timeout: 30_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "df-dsh-status-"))
+test("real status helper ignores incidental dotenv but retains global credentials without exposing secrets", { timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "df-dsh-status-"))
+  const home = join(directory, "home")
+  const harness = join(directory, "harness")
+  const workspace = join(directory, "workspace")
   const runtime = sourceDshRuntime()
   try {
-    const env = { ...process.env, DSH_HOME: home, HOME: home, USERPROFILE: home,
+    await Promise.all([home, harness, workspace].map(path => mkdir(path)))
+    const env = { ...process.env, DSH_HOME: harness, HOME: home, USERPROFILE: home,
       DESKFLEET_DSH_CREDENTIALS_PATH: join(home, "registration-credentials.yaml"),
       DEEPSEEK_API_KEY: "", NODE_OPTIONS: "", NODE_PATH: "" }
-    const run = () => promisify(execFile)(runtime.command,
-      [runtime.helperEntryPoint, "status", runtime.entryPoint], { cwd: home, env, timeout: 20_000 })
-    assert.deepEqual(JSON.parse((await run()).stdout), { auth: "unauthenticated" })
-    await writeFile(join(home, ".env"), "DEEPSEEK_API_KEY=fixture-secret-never-print\n")
-    const result = await run()
-    assert.deepEqual(JSON.parse(result.stdout), { auth: "authenticated", method: "api-key" })
-    assert.doesNotMatch(result.stdout + result.stderr, /fixture-secret-never-print/)
-  } finally { await rm(home, { recursive: true, force: true }) }
+    const run = async (cwd = home, overrides: NodeJS.ProcessEnv = {}) => {
+      const output = await promisify(execFile)(runtime.command,
+        [runtime.helperEntryPoint, "status", runtime.entryPoint], { cwd, env: { ...env, ...overrides }, timeout: 20_000 })
+      assert.doesNotMatch(output.stdout + output.stderr, /fixture-\S*-secret/)
+      return JSON.parse(output.stdout)
+    }
+    await writeFile(join(home, ".env"), "DEEPSEEK_API_KEY=fixture-home-secret\n")
+    await writeFile(join(workspace, ".env"), "DEEPSEEK_API_KEY=fixture-project-secret\n")
+    assert.deepEqual(await run(), { auth: "unauthenticated" })
+    assert.deepEqual(await run(workspace), { auth: "unauthenticated" })
+    await writeFile(env.DESKFLEET_DSH_CREDENTIALS_PATH, JSON.stringify({ version: 1, refs: {}, records: {
+      "deepseek-account-platform/default": { kind: "grant", payload: {
+        version: 1, issuer: "https://platform.deepseek.com", token: "fixture-account-secret",
+      } },
+    } }), { mode: 0o600 })
+    assert.deepEqual(await run(), { auth: "authenticated", method: "account" })
+    await writeFile(join(harness, ".env"), "DEEPSEEK_API_KEY=fixture-harness-secret\n")
+    assert.deepEqual(await run(), { auth: "authenticated", method: "api-key" })
+    await rm(join(harness, ".env"))
+    assert.deepEqual(await run(home, { DEEPSEEK_API_KEY: "fixture-inherited-secret" }), { auth: "authenticated", method: "api-key" })
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test("real ACP helper selects the account route from registration credentials without network or a model prompt", { timeout: 45_000 }, async () => {
+test("setup retains home environment provenance while ACP opts into project dotenv", { timeout: 30_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "df-dsh-layers-"))
+  const home = join(directory, "home")
+  const harness = join(directory, "harness")
+  const workspace = join(directory, "workspace")
+  const runtime = sourceDshRuntime()
+  try {
+    await Promise.all([home, harness, workspace].map(path => mkdir(path)))
+    await writeFile(join(harness, ".env"), "DEEPSEEK_API_KEY=fixture-harness-secret\nHTTP_PROXY=http://127.0.0.1:3128\n")
+    await writeFile(join(workspace, ".env"), "DEEPSEEK_API_KEY=fixture-project-secret\n")
+    const script = join(directory, "environment.mjs")
+    await writeFile(script, `
+      import { createAccountServices } from ${JSON.stringify(pathToFileURL(runtime.helperEntryPoint).href)};
+      const projectEnv = process.argv[3] === 'true';
+      const services = await createAccountServices(process.argv[2], false, { projectEnv });
+      try {
+        const environment = services.environment;
+        const key = environment.get('DEEPSEEK_API_KEY');
+        const source = sources => environment.getFrom('HTTP_PROXY', sources)?.source ?? null;
+        console.log(JSON.stringify({
+          keySource: key?.source,
+          keyMatches: key?.value === (projectEnv ? 'fixture-project-secret' : 'fixture-harness-secret'),
+          homeProxy: source(['user-env']), projectProxy: source(['project-env']), inheritedProxy: source(['process']),
+        }));
+      } finally { await services.dispose(); }
+    `)
+    const env = { ...Object.fromEntries(Object.entries(process.env)
+      .filter(([name]) => !["DEEPSEEK_API_KEY", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"].includes(name.toUpperCase()))),
+      HOME: home, USERPROFILE: home, DSH_HOME: harness,
+      DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "registration.yaml"), NODE_OPTIONS: "", NODE_PATH: "" }
+    for (const projectEnv of [false, true]) {
+      const output = await promisify(execFile)(runtime.command, [script, runtime.entryPoint, String(projectEnv)], {
+        cwd: workspace, env, timeout: 20_000,
+      })
+      assert.doesNotMatch(output.stdout + output.stderr, /fixture-\S*-secret/)
+      assert.deepEqual(JSON.parse(output.stdout), {
+        keySource: projectEnv ? "project-env" : "user-env", keyMatches: true,
+        homeProxy: "user-env", projectProxy: null, inheritedProxy: null,
+      })
+    }
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+for (const projectKey of [false, true]) test(`real ACP helper selects ${projectKey ? "project API key over stored account" : "the stored account route"} without network or a model prompt`, { timeout: 45_000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "df-dsh-account-acp-"))
   const runtime = sourceDshRuntime()
   const credentials = join(home, "registration-credentials.yaml")
@@ -101,6 +161,7 @@ test("real ACP helper selects the account route from registration credentials wi
       version: 1, issuer: "https://platform.deepseek.com", token: "fixture-account-token-never-print",
     } },
   } }), { mode: 0o600 })
+  if (projectKey) await writeFile(join(home, ".env"), "DEEPSEEK_API_KEY=fixture-project-secret\n")
   // Discovery falls back to its shipped catalog on this synthetic HTTP failure.
   // Deny sockets too, so neither model discovery nor an unexpected plugin can reach the network.
   await writeFile(guard, `
@@ -136,8 +197,10 @@ test("real ACP helper selects the account route from registration credentials wi
     assert.ok(session.sessionId)
     const model = session.configOptions?.find(option => option.id === "model")
     assert.ok(model && model.type === "select", "ACP must advertise its selected model")
-    assert.deepEqual(JSON.parse(model.currentValue), ["deepseek-account", "deepseek-flash"])
-    assert.doesNotMatch(stderr, /fixture-account-token-never-print/)
+    const selected = JSON.parse(model.currentValue)
+    if (projectKey) assert.equal(selected[0], "deepseek-official")
+    else assert.deepEqual(selected, ["deepseek-account", "deepseek-flash"])
+    assert.doesNotMatch(stderr, /fixture-account-token-never-print|fixture-project-secret/)
   } finally {
     clearTimeout(deadline)
     child.stdin.end()

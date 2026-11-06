@@ -41,21 +41,37 @@ interface PluginHandle extends PromiseLike<unknown> {
   dispose(): Promise<void>
 }
 
+/** The setup loader reads the Harness home as its only file; keep that file's trust source. */
+function harnessHomeEnvironment(snapshot: {
+  getFrom(name: string, sources: readonly string[]): { source: string; value: string; path?: string } | undefined
+}) {
+  const getFrom = (name: string, sources: readonly string[]) => {
+    const value = snapshot.getFrom(name, [
+      ...sources.includes("process") ? ["process"] : [],
+      ...sources.includes("user-env") ? ["project-env"] : [],
+    ])
+    return value?.source === "project-env" ? { ...value, source: "user-env" } : value
+  }
+  return { get: (name: string) => getFrom(name, ["process", "user-env"]), getFrom }
+}
+
 /** Resolve each module through the pinned upstream tree, including pnpm's isolated layout. */
 export async function createAccountServices(entryPoint: string, login = false, options: {
   platform?: Record<string, unknown>
   home?: string
   environment?: unknown
+  projectEnv?: boolean
 } = {}): Promise<AccountServices> {
   const runtime = createRequire(entryPoint)
   const base = createRequire(runtime.resolve("@deepseek-ai/dsh-base/package.json"))
   const accountRequire = createRequire(base.resolve("@deepseek-ai/dsh-deepseek-account-platform"))
   const load = (name: string, resolve = base) => import(pathToFileURL(resolve.resolve(name)).href)
   const [{ Context }, { LocalCredentialProvider }, { default: AuthorizationService }, { PlatformAccount },
-    { credentialRef, credentialKey }, { loadLayeredEnv }] = await Promise.all([
+    { credentialRef, credentialKey }, { loadLayeredEnv }, { resolveDshHome }] = await Promise.all([
     load("@deepseek-ai/cordis"), load("@deepseek-ai/dsh-credentials-local"),
     load("@deepseek-ai/dsh-authorization"), load("@deepseek-ai/dsh-deepseek-account-platform"),
     load("@deepseek-ai/dsh-credentials", accountRequire), load("@deepseek-ai/dsh-app-boot", runtime),
+    load("@deepseek-ai/dsh-home-paths", runtime),
   ])
   const ctx = new Context()
   const handles: PluginHandle[] = []
@@ -69,8 +85,9 @@ export async function createAccountServices(entryPoint: string, login = false, o
     if (errors.length) throw new AggregateError(errors, "DeepSeek account cleanup failed")
   }
   try {
-    // Preserve the official inherited/project/home .env lookup, without exporting stored secrets.
-    const environment = options.environment ?? loadLayeredEnv("dsh")
+    // Setup has no workspace. Only ACP may load an invoking directory's project .env.
+    const environment = options.environment ?? (options.projectEnv ? loadLayeredEnv("dsh")
+      : harnessHomeEnvironment(loadLayeredEnv("dsh", resolveDshHome())))
     ctx.provide("launchEnvironment", environment)
     const mount = async (plugin: unknown, config?: unknown) => {
       const handle = ctx.plugin(plugin, config) as PluginHandle
@@ -254,7 +271,7 @@ async function main(action: string, entryPoint: string): Promise<void> {
   let status: AccountStatus = { auth: "unknown" }
   let environment: unknown
   try {
-    services = await createAccountServices(entryPoint, action === "login")
+    services = await createAccountServices(entryPoint, action === "login", { projectEnv: action === "acp" })
     environment = services.environment
     if (action === "login") {
       if (!await runAccountLogin(services)) process.exitCode = 1
