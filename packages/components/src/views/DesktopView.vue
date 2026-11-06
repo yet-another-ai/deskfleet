@@ -45,6 +45,8 @@ const windowsTarget = computed(() => fleet.localDesktopTarget.platform === "win3
 const secureAttentionAvailable = computed(() => windowsTarget.value && capabilities.value?.secureAttention === true)
 useDesktopInput(video, inputEnabled, connection.sendInput)
 const playbackBlocked = ref(false)
+/** Start muted so Safari can autoplay; unmute after play() when system audio is enabled. */
+const videoMuted = ref(true)
 const fullscreenError = ref(false)
 const isFullscreen = ref(false)
 const settingsOpen = ref(false)
@@ -129,25 +131,43 @@ onBeforeUnmount(() => {
   void exitFullscreen()
 })
 
-async function play(): Promise<void> {
+let playGeneration = 0
+
+async function play(userGesture = false): Promise<void> {
   const element = video.value
   const media = element?.srcObject
   if (!element || !media) return
+  // Safari blocks unmuted autoplay once system audio is enabled. Mute the
+  // element synchronously before play(); :muted alone can lag a srcObject rebind.
+  const run = ++playGeneration
+  const wantAudio = audio.value
+  const mutedForPlay = userGesture ? !wantAudio : true
+  videoMuted.value = mutedForPlay
+  element.muted = mutedForPlay
   try {
     await element.play()
-    if (video.value === element && element.srcObject === media) playbackBlocked.value = false
+    if (run !== playGeneration || video.value !== element || element.srcObject !== media) return
+    videoMuted.value = !wantAudio
+    element.muted = !wantAudio
+    playbackBlocked.value = false
   } catch {
-    if (video.value === element && element.srcObject === media) playbackBlocked.value = true
+    if (run === playGeneration && video.value === element && element.srcObject === media) playbackBlocked.value = true
   }
 }
 
 watch([video, stream], ([element, media]) => {
   playbackBlocked.value = false
   fullscreenError.value = false
-  if (element) {
-    element.srcObject = media
-    if (media) void play()
-  }
+  videoMuted.value = true
+  if (!element) return
+  // Invalidate any in-flight autoplay unmute from the previous empty-stream bind.
+  playGeneration += 1
+  element.muted = true
+  // Rebind even when the MediaStream identity is unchanged. Safari/WebKit does
+  // not reliably start rendering tracks added after the first srcObject assign.
+  if (element.srcObject === media) element.srcObject = null
+  element.srcObject = media
+  if (media) void play(false)
 }, { flush: "post" })
 
 function connect(): void {
@@ -250,9 +270,10 @@ const errorDescription = computed(() => {
         :tabindex="inputEnabled ? 0 : -1"
         :title="inputEnabled ? t('desktop.controlHint') : undefined"
         :aria-label="t('desktop.video')"
-        :muted="!audio"
+        :muted="videoMuted"
         autoplay
         playsinline
+        webkit-playsinline
       />
 
       <div v-if="!stream" class="flex w-full max-w-md flex-col items-center gap-3 p-6 text-center">
@@ -273,7 +294,7 @@ const errorDescription = computed(() => {
         </div>
       </div>
 
-      <UiButton variant="primary" v-if="playbackBlocked" type="button" class="absolute" @click="play">
+      <UiButton variant="primary" v-if="playbackBlocked" type="button" class="absolute" @click="play(true)">
         <Play :size="14" :stroke-width="2" aria-hidden="true" />{{ t("desktop.play") }}
       </UiButton>
 

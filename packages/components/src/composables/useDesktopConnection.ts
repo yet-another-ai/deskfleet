@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, shallowRef } from "vue"
+import { onScopeDispose, ref, shallowRef, triggerRef } from "vue"
 import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
 import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage } from "../../../client/src/desktop-input.ts"
@@ -19,6 +19,10 @@ export interface DesktopFailure {
   relayDeniedReason?: RelayDeniedReason
   reason?: DesktopErrorReason
 }
+
+const DESKTOP_CODEC_ORDER = ["av1", "h265", "h264"] as const
+/** Safari/iOS WebKit decode is reliable for H.264; AV1/HEVC WebRTC support is incomplete. */
+const WEBKIT_DESKTOP_CODEC_ORDER = ["h264", "h265", "av1"] as const
 
 function parameters(codec: RTCRtpCodec): Map<string, string> {
   return new Map((codec.sdpFmtpLine ?? "").split(";").map((entry) => {
@@ -41,8 +45,22 @@ export function browserCodecPreferences(codec: VideoCodec, codecs: RTCRtpCodec[]
   })
 }
 
-export function commonDesktopCodecs(nativeCodecs: VideoCodec[], browserCodecs: RTCRtpCodec[]): VideoCodec[] {
-  return (["av1", "h265", "h264"] as const).filter(
+/** True for Safari and any iOS browser (all use WebKit for WebRTC). */
+export function isWebKitDesktopViewer(userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent): boolean {
+  if (/iP(ad|hone|od)/i.test(userAgent)) return true
+  return /Safari/i.test(userAgent) && !/Chrome|Chromium|CriOS|Edg\/|EdgiOS|Firefox|FxiOS|OPR\//i.test(userAgent)
+}
+
+export function desktopCodecPreferenceOrder(userAgent?: string): readonly VideoCodec[] {
+  return isWebKitDesktopViewer(userAgent) ? WEBKIT_DESKTOP_CODEC_ORDER : DESKTOP_CODEC_ORDER
+}
+
+export function commonDesktopCodecs(
+  nativeCodecs: VideoCodec[],
+  browserCodecs: RTCRtpCodec[],
+  userAgent?: string,
+): VideoCodec[] {
+  return desktopCodecPreferenceOrder(userAgent).filter(
     (codec) => nativeCodecs.includes(codec) && browserCodecPreferences(codec, browserCodecs).length > 0,
   )
 }
@@ -85,7 +103,7 @@ export interface DesktopConnectOptions extends Omit<DesktopStart, "sessionId"> {
   audio: boolean
 }
 
-/** Chromium receives and decodes media; the bridge carries signaling only. */
+/** The browser WebRTC stack receives and decodes media; the bridge carries signaling only. */
 export function useDesktopConnection(api: DesktopMediaApi) {
   const state = ref<DesktopConnectionState>("idle")
   const failure = shallowRef<DesktopFailure | null>(null)
@@ -346,7 +364,13 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         sendCandidates(active)
       }
       peer.ontrack = ({ track }) => {
-        if (current === active) active.stream.addTrack(track)
+        if (current !== active) return
+        active.stream.addTrack(track)
+        // Native peers add tracks without a MediaStream grouping, so the viewer
+        // assembles one. Publish after each track: Safari/WebKit often keeps a
+        // black frame when tracks are added after the first srcObject bind.
+        if (stream.value === active.stream) triggerRef(stream)
+        else stream.value = active.stream
       }
       peer.onconnectionstatechange = () => {
         if (["failed", "closed"].includes(peer.connectionState)) {

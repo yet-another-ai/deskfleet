@@ -79,7 +79,10 @@ same display's adapter, without a global cache or a union of other GPUs' codecs.
 The capability response attaches codecs to each display. Desktop Settings
 shows the codec the viewer will use and updates it when the selected display
 changes. The viewer picks the first codec in AV1, HEVC, H.264 order that both
-that display and the browser can use. It does not offer a codec menu.
+that display and the browser can use, except Safari/iOS WebKit viewers prefer
+H.264 first because AV1/HEVC WebRTC decode there is incomplete. It does not
+offer a codec menu. The embedded `<video>` rebinds `srcObject` when remote
+tracks arrive so Safari does not keep a black frame after `MediaStream.addTrack`.
 Encoding first tries NVENC on that device. If H.264 startup
 fails, it tries hardware Media Foundation transforms on the same adapter.
 There is no software encoder fallback. H.265 and AV1 remain NVENC-only.
