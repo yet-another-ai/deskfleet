@@ -11,6 +11,8 @@ import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./pro
 import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalRun, TerminalSessions } from "./terminals.ts"
 
+const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
+
 interface ProbeDependencies {
   platform?: NodeJS.Platform
   arch?: string
@@ -29,7 +31,7 @@ interface Context {
   home: string
   cwd: string
   path: typeof posix
-  run: ProbeCommand
+  run: (command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, timeoutMs?: number) => ReturnType<ProbeCommand>
   executable: (path: string) => Promise<boolean>
 }
 
@@ -41,9 +43,9 @@ function context(input: AgentProviderInput, dependencies: ProbeDependencies, sig
   const home = dependencies.home ?? (platform === "win32" ? env.USERPROFILE : env.HOME) ?? homedir()
   return {
     platform, arch: dependencies.arch ?? process.arch, env, home, path, cwd: dependencies.cwd ?? process.cwd(),
-    run: (command, args, env, cwd) => {
+    run: (command, args, env, cwd, timeoutMs) => {
       signal?.throwIfAborted()
-      return (dependencies.run ?? runProbeCommand)(command, args, env, cwd, signal)
+      return (dependencies.run ?? runProbeCommand)(command, args, env, cwd, signal, timeoutMs)
     },
     executable: dependencies.executable ?? (async path => {
       try {
@@ -208,7 +210,7 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
       const error = new Error("Provider detection timed out. Check the executable path and try again.")
       controller.abort(error)
       reject(error)
-    }, dependencies.timeoutMs ?? 10_000)
+    }, dependencies.timeoutMs ?? (input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000))
   })
   try { return await Promise.race([probe(input, dependencies, controller.signal), deadline]) }
   finally { clearTimeout(timer!); controller.abort() }
@@ -225,13 +227,16 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
   if (provider.template === "deepseek-harness" && !provider.binaryPath) {
     const launch = dshRuntimeProcess(["--version"], ctx.env)
     try {
-      const result = await ctx.run(launch.command, launch.args ?? [], ctx.env, ctx.home)
+      const result = await ctx.run(launch.command, launch.args ?? [], ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
       if (result.code === 0 && text(result.stdout)) return {
         ...base, status: "found", version: text(result.stdout),
         auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown",
       }
-    } catch { /* A missing packaged runtime is repaired by reinstalling DeskFleet. */ }
-    return { ...base, status: "missing" }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...base, status: "missing" }
+      throw error
+    }
+    return { ...base, status: "invalid", message: "The bundled DeepSeek runtime could not report its version. Retry detection or reinstall DeskFleet." }
   }
   const commands = provider.binaryPath ? [provider.binaryPath] : provider.template === "cursor" ? ["cursor-agent", "agent"]
     : provider.template === "antigravity" && ctx.platform === "win32" ? ["agy_acp_server.exe"]

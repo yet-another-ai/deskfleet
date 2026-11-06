@@ -42,7 +42,7 @@ import { hideMainWindow, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
 
 function start(): void {
-  configureDshRuntime(app.isPackaged ? join(process.resourcesPath, "dsh") : join(import.meta.dirname, "dsh"))
+  configureDshRuntime(app.isPackaged ? join(process.resourcesPath, "dsh") : join(app.getAppPath(), "out/dsh"))
   registerRendererScheme()
   const lifecycle = keepRunningInBackground(app, hideMainWindow)
   installApplication(lifecycle)

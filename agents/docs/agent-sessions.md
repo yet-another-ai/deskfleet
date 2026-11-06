@@ -305,6 +305,8 @@ interactive authenticate methods. No Node.js, npm, or global dsh installation
 is required. Settings probes the bundled runtime and offers no installer or
 interactive login; a missing runtime requires reinstalling DeskFleet. Existing
 explicit paths remain external overrides; clear the path to use the bundle.
+Bundled version detection allows 30 seconds for cold startup. Timeouts and
+launch failures surface as detection errors rather than missing installations.
 
 The Antigravity template runs Google's standalone
 [Antigravity ACP runtime](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)

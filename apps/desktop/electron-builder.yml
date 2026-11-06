@@ -6,7 +6,7 @@ asar: true
 asarUnpack:
   - out/main/deskfleet.node
 extraResources:
-  - from: out/main/dsh
+  - from: out/dsh
     to: dsh
 # Vite bundles every renderer and main-process dependency into out/.
 npmRebuild: false
@@ -42,7 +42,7 @@ publish:
 files:
   - out/**/*
   - "!out/**/*.map"
-  - "!out/main/dsh/**/*"
+  - "!out/dsh/**/*"
   - "!out/auv/**/*"
   - "!out/windows/**/*"
   - "!out/native/**/*"

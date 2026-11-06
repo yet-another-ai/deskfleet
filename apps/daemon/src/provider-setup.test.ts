@@ -167,11 +167,41 @@ test("bundled DeepSeek Harness is available without PATH, npm, or a persisted ex
 })
 
 test("missing bundled DeepSeek runtime reports repair without offering npm installation", async () => {
-  const f = fixture({ answer: async () => { throw new Error("ENOENT") } })
+  const f = fixture({ answer: async () => { throw Object.assign(new Error("missing runtime"), { code: "ENOENT" }) } })
   const found = await f.setup.probe(input("deepseek-harness"))
   assert.equal(found.status, "missing")
   assert.equal(found.installable, false)
   assert.match(found.installMessage!, /Reinstall DeskFleet/u)
+})
+
+test("bundled DeepSeek metadata can complete after the external CLI timeout", { timeout: 15_000 }, async () => {
+  const value = await probeProvider(input("deepseek-harness"), {
+    env: process.env, home: process.cwd(),
+    run: (_command, _args, env, cwd, signal, timeoutMs) => {
+      assert.equal(timeoutMs, 30_000)
+      return runProbeCommand(process.execPath, ["-e", "setTimeout(()=>console.log('0.2.2-rc.1'), 3_200)"], env, cwd, signal, timeoutMs)
+    },
+  })
+  assert.equal(value.status, "found")
+  assert.equal(value.version, "0.2.2-rc.1")
+})
+
+test("bundled DeepSeek spawn failures surface as probe errors instead of missing installations", async () => {
+  for (const error of [Object.assign(new Error("metadata timed out"), { killed: true }), Object.assign(new Error("permission denied"), { code: "EACCES" })]) {
+    const f = fixture({ answer: async () => { throw error } })
+    await assert.rejects(f.setup.probe(input("deepseek-harness")), value => value === error)
+  }
+  const f = fixture({ answer: async () => result("", 1) })
+  assert.equal((await f.setup.probe(input("deepseek-harness"))).status, "invalid")
+})
+
+test("bundled DeepSeek deadline cancels detection without reporting a missing runtime", async () => {
+  let signal: AbortSignal | undefined
+  await assert.rejects(probeProvider(input("deepseek-harness"), {
+    timeoutMs: 10,
+    run: (_command, _args, _env, _cwd, value) => { signal = value; return new Promise(() => {}) },
+  }), /detection timed out/u)
+  assert.equal(signal?.aborted, true)
 })
 
 test("DeepSeek Harness still validates explicit executable overrides", async () => {

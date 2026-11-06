@@ -9,7 +9,9 @@ export default defineConfig({
   plugins: [{
     name: "deskfleet-native-runtimes",
     async writeBundle() {
-      const directory = resolve(import.meta.dirname, "out/main/dsh")
+      // Development stages once before launching Electron; watched builds only emit code.
+      if (this.meta.watchMode) return
+      const directory = resolve(import.meta.dirname, "out/dsh")
       await stageDsh(directory)
       await smokeDsh(directory)
     },
