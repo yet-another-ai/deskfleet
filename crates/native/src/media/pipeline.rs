@@ -90,10 +90,7 @@ impl CapturePipeline {
     ///
     /// Platforms that cannot retarget bitrate live (for example Windows NVENC)
     /// recreate once at the configured ceiling and then leave the rate fixed.
-    pub(crate) fn apply_bandwidth_estimate(
-        &mut self,
-        estimate_bps: f64,
-    ) -> Result<(), MediaError> {
+    pub(crate) fn apply_bandwidth_estimate(&mut self, estimate_bps: f64) -> Result<(), MediaError> {
         let Some(target) = self.bitrate.observe_estimate(estimate_bps) else {
             return Ok(());
         };

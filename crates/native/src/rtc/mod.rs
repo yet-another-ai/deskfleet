@@ -16,9 +16,7 @@ mod runtime;
 mod sample_track;
 mod types;
 
-pub use congestion::{
-    BitrateController, INITIAL_BITRATE_BPS, MIN_BITRATE_BPS, bitrate_ceiling,
-};
+pub use congestion::{BitrateController, INITIAL_BITRATE_BPS, MIN_BITRATE_BPS, bitrate_ceiling};
 
 #[cfg(test)]
 mod tests;
