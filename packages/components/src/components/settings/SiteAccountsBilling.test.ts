@@ -21,11 +21,13 @@ test("granting Enterprise states that the Team's paid subscription keeps billing
   view = mount(EnterpriseTeams, { props: { api: central, confirmed }, global: { plugins: [i18n] }, attachTo: document.body })
   await flushPromises()
   expect(view.get("[data-enterprise-team]").text()).toContain("Go subscription · active")
-  await button(view, "Grant Enterprise").trigger("click"); await flushPromises()
+  await button(view, "Manage grant").trigger("click"); await flushPromises()
   const dialog = body().get('[role="dialog"]')
-  expect(dialog.text()).toContain("Its Go subscription keeps billing until the Team owner cancels it.")
-  await button(dialog, "Grant Enterprise").trigger("click"); await flushPromises()
-  expect(central.setEnterprise).toHaveBeenCalledExactlyOnceWith("team-1", true)
+  expect(dialog.text()).toContain("subscriptions continue billing")
+  await dialog.get("select").setValue("pro")
+  await dialog.get("textarea").setValue("Trial")
+  await button(dialog, "Save grant").trigger("click"); await flushPromises()
+  expect(central.setManualGrant).toHaveBeenCalledExactlyOnceWith("team-1", "pro", null, "Trial")
   expect(central.billingTeams).toHaveBeenCalledTimes(2)
 })
 
@@ -58,14 +60,15 @@ test.each([false, true])("Enterprise confirmation identifies the selected same-n
   ])
   view = mount(EnterpriseTeams, { props: { api: central, confirmed }, global: { plugins: [i18n] }, attachTo: document.body })
   await flushPromises()
-  const label = enterpriseOverride ? "Revoke Enterprise" : "Grant Enterprise"
+  const label = "Manage grant"
   await button(view.get('[data-enterprise-team="team-2"]'), label).trigger("click"); await flushPromises()
   const dialog = body().get('[role="dialog"]')
   expect(dialog.text()).toContain("Owner: Ada (ada@second.example)")
   expect(dialog.text()).not.toContain("ada@first.example")
-  expect(central.setEnterprise).not.toHaveBeenCalled()
-  await button(dialog, label).trigger("click"); await flushPromises()
-  expect(central.setEnterprise).toHaveBeenCalledExactlyOnceWith("team-2", !enterpriseOverride)
+  expect(central.setManualGrant).not.toHaveBeenCalled()
+  await dialog.get("textarea").setValue("Support request")
+  await button(dialog, "Save grant").trigger("click"); await flushPromises()
+  expect(central.setManualGrant).toHaveBeenCalledExactlyOnceWith("team-2", "enterprise", null, "Support request")
 })
 
 test("disabling an account is confirmed first; enabling it again is immediate", async () => {

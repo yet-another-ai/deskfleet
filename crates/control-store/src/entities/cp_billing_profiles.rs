@@ -14,6 +14,8 @@ pub struct Model {
     pub period_anchor: i64,
     pub cancel_at_period_end: bool,
     pub enterprise: bool,
+    pub grant_plan: Option<String>,
+    pub grant_expires_at: Option<i64>,
     pub reconciled_at: Option<i64>,
     pub lease_token: Option<String>,
     pub lease_until: Option<i64>,

@@ -314,6 +314,8 @@ mod tests {
             period_anchor: 0,
             cancel_at_period_end: false,
             enterprise: false,
+            grant_plan: None,
+            grant_expires_at: None,
         };
         let subscription = json!({
             "id":"sub","customer":"cus","metadata":{"deskfleet_team_id":"1"},

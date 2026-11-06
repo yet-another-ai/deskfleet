@@ -332,7 +332,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
     )
     .await;
     store
-        .set_enterprise(&operator.id, &team, true)
+        .set_manual_grant(&operator.id, &team, Some("enterprise"), None, "test grant")
         .await
         .unwrap();
     assert!(store.relay_allowed(&team).await.unwrap());
@@ -345,7 +345,7 @@ async fn paid_deadlines_override_and_turn_usage_preserve_independent_state() {
     )
     .await;
     store
-        .set_enterprise(&operator.id, &team, false)
+        .set_manual_grant(&operator.id, &team, None, None, "test revocation")
         .await
         .unwrap();
     assert!(!store.relay_allowed(&team).await.unwrap());

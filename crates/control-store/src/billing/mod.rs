@@ -96,6 +96,8 @@ pub struct BillingProfile {
     pub period_anchor: i64,
     pub cancel_at_period_end: bool,
     pub enterprise: bool,
+    pub grant_plan: Option<String>,
+    pub grant_expires_at: Option<i64>,
 }
 
 impl BillingProfile {
@@ -103,8 +105,14 @@ impl BillingProfile {
         if !hosted {
             return Plan::SelfHosted;
         }
-        if self.enterprise {
-            return Plan::Enterprise;
+        if self.grant_expires_at.is_none_or(|end| now < end) {
+            match self.grant_plan.as_deref() {
+                Some("free") => return Plan::Free,
+                Some("go") => return Plan::Go,
+                Some("pro") => return Plan::Pro,
+                Some("enterprise") => return Plan::Enterprise,
+                _ => {}
+            }
         }
         if self.paid_through.is_some_and(|end| now < end) {
             return self
@@ -128,6 +136,8 @@ fn profile(row: QueryResult) -> Result<BillingProfile> {
         period_anchor: row.try_get("", "period_anchor")?,
         cancel_at_period_end: row.try_get("", "cancel_at_period_end")?,
         enterprise: row.try_get("", "enterprise")?,
+        grant_plan: row.try_get("", "grant_plan")?,
+        grant_expires_at: row.try_get("", "grant_expires_at")?,
     })
 }
 
@@ -142,7 +152,8 @@ fn summary_value(
     let (start, end) = period_at(p.period_anchor, now);
     let last_seen = meter.try_get::<Option<i64>>("", "last_seen_at")?;
     Ok(json!({
-        "plan":plan,"limits":plan.limits(),"enterpriseOverride":p.enterprise,
+        "plan":plan,"limits":plan.limits(),"enterpriseOverride":plan == Plan::Enterprise && p.grant_plan.as_deref() == Some("enterprise"),
+        "manualGrant":p.grant_plan.as_ref().filter(|_| p.grant_expires_at.is_none_or(|end| now < end)).map(|grant| json!({"plan":grant,"expiresAt":p.grant_expires_at.map(timestamp)})),
         "usage":{"activeSessionCount":usage.try_get::<i64>("","sessions")?,"memberCount":usage.try_get::<i64>("","members")?,"relayedBytes":usage.try_get::<String>("","bytes")?},
         "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
         "metering":{"lastSeenAt":last_seen.map(timestamp),"gapSince":meter.try_get::<Option<i64>>("","gap_since")?.map(timestamp),"fresh":meter.try_get::<bool>("","fresh")?},
@@ -324,7 +335,25 @@ impl ControlStore {
         .try_get("", "relay_allowed")?)
     }
 
-    pub async fn set_enterprise(&self, actor: &str, team_id: &str, enabled: bool) -> Result<()> {
+    pub async fn set_manual_grant(
+        &self,
+        actor: &str,
+        team_id: &str,
+        plan: Option<&str>,
+        expires_at: Option<i64>,
+        reason: &str,
+    ) -> Result<()> {
+        if plan.is_some_and(|p| !matches!(p, "free" | "go" | "pro" | "enterprise"))
+            || (plan.is_none() && expires_at.is_some())
+        {
+            return Err(Error::Invalid("invalid manual grant"));
+        }
+        if reason.trim().is_empty() || reason.len() > 2000 {
+            return Err(Error::Invalid("a reason of at most 2000 bytes is required"));
+        }
+        if expires_at.is_some_and(|end| end <= now_ms()) {
+            return Err(Error::Invalid("grant expiry must be in the future"));
+        }
         if !self.hosted {
             return Err(Error::Invalid(
                 "self-hosted installations already have unlimited allowances",
@@ -366,45 +395,39 @@ impl ControlStore {
                 ),
         )
         .await?;
-        let before: bool = one_query(
+        let before = one_query(
             &tx,
             Query::select()
-                .column(profiles::Column::Enterprise)
+                .columns([
+                    profiles::Column::GrantPlan,
+                    profiles::Column::GrantExpiresAt,
+                ])
                 .from(profiles::Entity)
                 .and_where(Expr::col(profiles::Column::TeamId).eq(team))
                 .lock(LockType::Update),
         )
-        .await?
-        .try_get("", "enterprise")?;
-        if before != enabled {
+        .await?;
+        let before_plan: Option<String> = before.try_get("", "grant_plan")?;
+        let before_expiry: Option<i64> = before.try_get("", "grant_expires_at")?;
+        if before_plan.as_deref() != plan || before_expiry != expires_at {
             tx.execute(
                 Query::update()
                     .table(profiles::Entity)
-                    .value(profiles::Column::Enterprise, enabled)
+                    .value(profiles::Column::GrantPlan, plan.map(str::to_owned))
+                    .value(profiles::Column::GrantExpiresAt, expires_at)
+                    .value(profiles::Column::Enterprise, plan == Some("enterprise"))
                     .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
             )
             .await?;
-            tx.execute(
-                Query::insert()
-                    .into_table(audit::Entity)
-                    .columns([
-                        audit::Column::ActorUserId,
-                        audit::Column::Source,
-                        audit::Column::Action,
-                        audit::Column::BeforeValue,
-                        audit::Column::AfterValue,
-                        audit::Column::OccurredAt,
-                    ])
-                    .values_panic([
-                        actor.into(),
-                        "user".into(),
-                        "enterprise.update".into(),
-                        json!({"teamId":team_id,"enterprise":before}).into(),
-                        json!({"teamId":team_id,"enterprise":enabled}).into(),
-                        now_ms().into(),
-                    ]),
-            )
-            .await?;
+            tx.execute(Query::insert().into_table(audit::Entity).columns([
+                audit::Column::ActorUserId, audit::Column::Source, audit::Column::Action,
+                audit::Column::BeforeValue, audit::Column::AfterValue, audit::Column::OccurredAt,
+            ]).values_panic([
+                actor.into(), "user".into(), "enterprise.update".into(),
+                json!({"teamId":team_id,"plan":before_plan,"expiresAt":before_expiry}).into(),
+                json!({"teamId":team_id,"plan":plan,"expiresAt":expires_at,"reason":reason.trim()}).into(),
+                now_ms().into(),
+            ])).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -502,12 +525,21 @@ mod tests {
             period_anchor: 0,
             cancel_at_period_end: false,
             enterprise: false,
+            grant_plan: None,
+            grant_expires_at: None,
         };
         assert_eq!(p.effective_plan(true, 99), Plan::Go);
         assert_eq!(p.effective_plan(true, 100), Plan::Free);
-        p.enterprise = true;
+        p.grant_plan = Some("enterprise".into());
         assert_eq!(p.effective_plan(true, 100), Plan::Enterprise);
-        p.enterprise = false;
+        p.grant_plan = Some("pro".into());
+        p.grant_expires_at = Some(99);
+        assert_eq!(p.effective_plan(true, 98), Plan::Pro);
+        assert_eq!(p.effective_plan(true, 99), Plan::Go);
+        assert_eq!(p.effective_plan(true, 100), Plan::Free);
+        p.grant_plan = Some("free".into());
+        p.grant_expires_at = None;
+        assert_eq!(p.effective_plan(true, 98), Plan::Free);
         assert_eq!(p.effective_plan(false, 100), Plan::SelfHosted);
         assert_eq!(Plan::Go.limits().turn_bytes, Some(2_147_483_648));
     }

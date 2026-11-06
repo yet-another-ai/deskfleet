@@ -37,6 +37,7 @@ async function submit(): Promise<void> {
   <UiDialog class="w-[26rem]" described :prevent-close="pending" @close="cancel">
     <DialogTitle class="ui-dialog-title">{{ title }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ description }}</DialogDescription>
+    <slot />
     <ErrorNotice v-if="error" :error="error" class="mt-4" />
     <div class="ui-dialog-actions">
       <UiButton type="button" :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</UiButton>

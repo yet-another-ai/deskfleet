@@ -13,10 +13,7 @@ pub fn configure(config: &mut web::ServiceConfig) {
             web::post().to(super::webhook::receive),
         )
         .route("/admin/teams", web::get().to(admin_teams))
-        .route(
-            "/admin/teams/{teamId}/enterprise",
-            web::put().to(enterprise),
-        )
+        .route("/admin/teams/{teamId}/grant", web::put().to(manual_grant))
         .route("/daemon/entitlements", web::get().to(entitlements))
         .service(
             web::resource("/daemon/session-admissions")
@@ -110,21 +107,29 @@ async fn admin_teams(
     )))
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Enterprise {
-    enabled: bool,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ManualGrant {
+    plan: Option<String>,
+    expires_at: Option<i64>,
+    reason: String,
 }
-async fn enterprise(
+async fn manual_grant(
     req: HttpRequest,
     s: web::Data<AppState>,
     team: web::Path<String>,
-    body: web::Json<Enterprise>,
+    body: web::Json<ManualGrant>,
 ) -> Result<web::Json<Value>> {
     let user = auth::recent(&req, &s).await?;
     s.store
-        .set_enterprise(&user.user.id, &team, body.enabled)
+        .set_manual_grant(
+            &user.user.id,
+            &team,
+            body.plan.as_deref(),
+            body.expires_at,
+            &body.reason,
+        )
         .await?;
-    Ok(web::Json(json!({"enterpriseOverride":body.enabled})))
+    Ok(web::Json(json!({"ok": true})))
 }
 async fn entitlements(req: HttpRequest, s: web::Data<AppState>) -> Result<web::Json<Value>> {
     let machine = auth::machine(&req, &s).await?;
