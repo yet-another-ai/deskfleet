@@ -9,6 +9,11 @@ on:
         type: boolean
         required: false
         default: false
+      draft_pr:
+        description: Keep static checks and skip runtime tests for draft pull requests.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -60,8 +65,9 @@ jobs:
 
   checks:
     name: Tests (${{ matrix.name }})
+    needs: static
     if: >-
-      ${{ !(inputs.docs_only &&
+      ${{ !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ${{ matrix.os }}
@@ -122,8 +128,9 @@ jobs:
 
   backend:
     name: PostgreSQL and remote backend
+    needs: static
     if: >-
-      ${{ !(inputs.docs_only &&
+      ${{ !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ubuntu-26.04
