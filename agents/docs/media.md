@@ -90,6 +90,16 @@ display, ICE, and transport failures stop without another codec. The desktop
 error event includes `reason: "encoder"` for the failures that may continue.
 Older callers omit `reason`; those failures are not retried.
 
+Capture startup waits up to 30 seconds for the first nonempty video packet after
+opening the capture source, allowing asynchronous hardware encoders time to warm
+up. Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
+the browser and native viewers give connection setup 45 seconds, then start a
+separate 45-second media-start deadline when requesting capture on the connected
+peer. Time spent negotiating SDP/ICE does not consume the encoder's startup
+window or mask its failure classification and codec fallback. After the first
+packet, a gap in encoder output alone does not fail the stream. Explicit capture,
+encoder, and transport errors still end it and retain their error classification.
+
 Windows NVENC uses P3 with ultra-low-latency tuning and CBR for H.264, HEVC,
 and AV1. B-frames, lookahead, and temporal AQ are explicitly disabled; the
 infinite GOP and on-demand keyframes remain unchanged. The preset's VBV and
@@ -112,6 +122,8 @@ submission. The capture worker retains the latest owned frame so PLI/FIR can
 request a new keyframe even when the desktop stops changing; repeated submissions
 receive increasing timestamps. At most four MF inputs are in flight and one
 latest sample waits for input capacity.
+Polling keeps these bounded samples through gaps in hardware output, without an
+output inactivity deadline. Explicit flush/drain operations remain time-bounded.
 Enumeration reports candidate codec support; starting the selected display's
 stream verifies its actual device, dimensions, and profile.
 

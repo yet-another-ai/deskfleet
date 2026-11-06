@@ -91,10 +91,11 @@ export class DaemonClient {
       return Promise.reject(new Error("Local channel backpressure: send buffer is full"))
     }
     return new Promise((resolve, reject) => {
+      // Startup can await video output for 30 seconds; closing also waits for that native startup lock.
       const timeout = setTimeout(() => {
         // A timed-out mutation may still be running. Closing releases its peers.
         this.#end(new Error(`Daemon ${method} request timed out`))
-      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : method === "providerTest" ? 60_000 : 15_000)
+      }, method === "workspaceSessionCreate" || method === "workspaceSessionDestroy" ? 120_000 : method === "providerTest" ? 60_000 : method === "start" || method === "close" ? 45_000 : 15_000)
       this.#pending.set(id, {
         resolve: (value) => resolve(value as ControlMethods[M]["result"]),
         reject,

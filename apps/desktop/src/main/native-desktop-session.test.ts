@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest"
 import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
-import type { VideoCodec } from "@deskfleet/client/desktop-media"
+import { DESKTOP_START_TIMEOUT_MS, type VideoCodec } from "@deskfleet/client/desktop-media"
 import { PEER_DISCONNECT_GRACE_MS, PEER_SETUP_TIMEOUT_MS } from "@deskfleet/client/peer-lifecycle"
 import { openNativeDesktopSession, type ViewerCommand, type ViewerEvent } from "./native-desktop-session.ts"
 
@@ -14,7 +14,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, control = true, viewerCodecs = ["h264"] as VideoCodec[] } = {}) {
+function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, control = true, viewerCodecs = ["h264"] as VideoCodec[], grantLifetimeMs = 60_000 } = {}) {
   let receive!: (event: ViewerEvent) => void
   let emit!: (event: CentralEvent) => void
   const unsubscribe = vi.fn()
@@ -22,7 +22,7 @@ function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoRea
     onEvent: vi.fn((listener: typeof emit) => { emit = listener; return unsubscribe }),
     machines: vi.fn(async () => [{ id: "machine", name: "Workstation" }]),
     rpc: vi.fn(async () => ({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264", "h265", "av1"] }], audio: true })),
-    createPeer: vi.fn(async () => ({ peerId: "peer", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [{ urls: "turn:example.test", username: "user", credential: "secret" }] })),
+    createPeer: vi.fn(async () => ({ peerId: "peer", authorization: { expiresAt: new Date(Date.now() + grantLifetimeMs).toISOString() }, iceServers: [{ urls: "turn:example.test", username: "user", credential: "secret" }] })),
     offerPeer: vi.fn(async () => ({ sdp: "answer" })),
     candidatePeer: vi.fn(async () => {}), startPeer: vi.fn(async () => {}), closePeer: vi.fn(async () => {}),
   }
@@ -239,6 +239,70 @@ test("view-only startup does not wait for an input channel", async () => {
   expect(f.central.startPeer).toHaveBeenCalledWith("peer", { displayId: 7 })
 })
 
+test.each(["success", "encoder failure"])("slow connection setup leaves time for capture %s", async outcome => {
+  vi.useFakeTimers()
+  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"], grantLifetimeMs: 180_000 })
+  const starting = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(starting.promise)
+  const session = f.open()
+  await vi.advanceTimersByTimeAsync(0)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1_000)
+  f.receive({ type: "offer", sdp: "av1" }); f.receive({ type: "connected" })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.central.startPeer).toHaveBeenCalledOnce()
+  await vi.advanceTimersByTimeAsync(30_000)
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.child.close).not.toHaveBeenCalled()
+  if (outcome === "encoder failure") {
+    starting.reject(Object.assign(new Error("AV1 encoder produced no first packet within 30 seconds"), { reason: "encoder" }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ codec: "h265" }))
+    f.receive({ type: "offer", sdp: "h265" }); f.receive({ type: "connected" })
+  } else starting.resolve()
+  await session.ready
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.ended).not.toHaveBeenCalled()
+  expect(f.child.close).toHaveBeenCalledTimes(outcome === "encoder failure" ? 1 : 0)
+})
+
+test("capture has a bounded startup deadline independent of slow connection setup", async () => {
+  vi.useFakeTimers()
+  const f = fixture({ grantLifetimeMs: 180_000 })
+  const starting = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(starting.promise)
+  const session = f.open()
+  await vi.advanceTimersByTimeAsync(0)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1_000)
+  f.receive({ type: "offer", sdp: "offer" }); f.receive({ type: "connected" })
+  await vi.advanceTimersByTimeAsync(0)
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS - 1)
+  expect(f.failed).not.toHaveBeenCalled()
+  f.receive({ type: "connected" })
+  await vi.advanceTimersByTimeAsync(1)
+  await expect(session.ready).rejects.toThrow("media startup timed out")
+  expect(f.central.startPeer).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  expect(f.child.close).toHaveBeenCalledOnce()
+  starting.resolve()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(f.spawn).toHaveBeenCalledOnce()
+})
+
+test("connection setup still times out before capture starts", async () => {
+  vi.useFakeTimers()
+  const f = fixture()
+  const session = f.open()
+  await vi.advanceTimersByTimeAsync(0)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1)
+  expect(f.failed).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  await expect(session.ready).rejects.toThrow("connection timed out")
+  expect(f.central.startPeer).not.toHaveBeenCalled()
+  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  expect(f.child.close).toHaveBeenCalledOnce()
+})
+
 test.each(["local", "remote"])("%s disconnection recovers within grace but sustained loss closes the session", async side => {
   vi.useFakeTimers()
   const f = fixture()
@@ -432,7 +496,7 @@ test("the startup deadline still closes a disconnected peer when capture startup
   f.receive({ type: "disconnected" })
   await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
   expect(f.child.close).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - PEER_DISCONNECT_GRACE_MS)
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS - PEER_DISCONNECT_GRACE_MS)
   await expect(session.ready).rejects.toThrow("timed out")
   expect(f.child.close).toHaveBeenCalledOnce()
   expect(f.central.closePeer).toHaveBeenCalledOnce()
@@ -462,7 +526,7 @@ test.each(["local", "remote", "native"])("user close after deferred %s failure c
   expect(f.ended).toHaveBeenCalledOnce()
   starting.reject(Object.assign(new Error("late encoder failure"), { reason: "encoder" }))
   f.receive({ type: "closed" })
-  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
+  await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
   expect(f.spawn).toHaveBeenCalledOnce()
   expect(f.failed).not.toHaveBeenCalled()
 })

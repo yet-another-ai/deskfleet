@@ -449,6 +449,76 @@ test("request validation errors retain authenticated connections and their activ
   assert.equal(fake.peers.size, 0)
 })
 
+test("local requests stay responsive while desktop startup and cancellation await hardware", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-start-wait-"))
+  const startGate = deferred<void>(), closeGate = deferred<void>()
+  const fake = desktopPeers({ start: () => startGate.promise, close: () => closeGate.promise })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => {
+    startGate.resolve(); closeGate.resolve()
+    await (await starting).close(); await rm(directory, { recursive: true, force: true })
+  })
+  await starting
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  let started = false, closed = false
+  const start = client.call("start", { sessionId: offer.sessionId, displayId: 4 }).finally(() => { started = true })
+  const rejected = assert.rejects(start, /Desktop session is closed/)
+  await fake.started
+  assert.deepEqual(await client.call("capabilities", {}), await capabilities())
+  await assert.rejects(client.call("start", { sessionId: offer.sessionId, displayId: 4 }), /already starting/)
+  assert.equal(fake.startCalls(), 1)
+  assert.equal(started, false)
+
+  const close = client.call("close", { sessionId: offer.sessionId }).then(() => { closed = true })
+  await fake.closing
+  assert.deepEqual(await client.call("capabilities", {}), await capabilities())
+  await assert.rejects(client.call("offer", offer), /Desktop session already exists/)
+  assert.equal(closed, false)
+  startGate.resolve()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(started, false, "startup failure waits for the in-progress close")
+  closeGate.resolve()
+  await Promise.all([close, rejected])
+  assert.equal(fake.closeCalls(), 1)
+  assert.equal(fake.active(), false)
+})
+
+test("control shutdown joins desktop startup after native peer cleanup finishes", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-start-stop-"))
+  const startGate = deferred<void>()
+  let completed = false
+  const fake = desktopPeers({ start: async () => { await startGate.promise; completed = true }, close: async () => {} })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => {
+    startGate.resolve()
+    await (await starting).close(); await rm(directory, { recursive: true, force: true })
+  })
+  const server = await starting
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  const rejected = assert.rejects(client.call("start", { sessionId: offer.sessionId, displayId: 4 }), /Connection closed/)
+  await fake.started
+  let stopped = false
+  const stopping = server.stop().then(() => { stopped = true })
+  await fake.closing
+  await rejected
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(fake.active(), false)
+  assert.equal(completed, false)
+  assert.equal(stopped, false)
+  startGate.resolve()
+  await stopping
+  assert.equal(completed, true)
+  assert.equal(fake.closeCalls(), 1)
+})
+
 test("duplicate local desktop starts preserve the running capture and input controller", { timeout: 15_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-duplicate-"))
   const fake = desktopPeers({ close: async () => {} })

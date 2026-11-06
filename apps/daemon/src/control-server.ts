@@ -70,6 +70,7 @@ class ControlConnection {
   readonly #allowLocalControlForTests: boolean
   readonly #sessions = new Map<string, OwnedPeer>()
   readonly #closingSessions = new Map<string, Promise<void>>()
+  readonly #desktopOperations = new Set<Promise<void>>()
   readonly #localPeers = new Map<string, CentralClient>()
   readonly #localDeliveries = new Map<number, LocalDelivery>()
   #nextLocalSequence = 0
@@ -165,6 +166,18 @@ class ControlConnection {
           pending = pending.subarray(end + 1)
           try {
             const request = parseControlRequest(value)
+            if (this.#authenticated && this.#allowLocalControlForTests && (request.method === "start" || request.method === "close")) {
+              // Hardware startup and cleanup can wait; keep other local requests responsive.
+              const operation = this.#handle(request).then(
+                result => this.#send({ id: request.id, result }),
+                error => {
+                  const reason = desktopErrorReason(error)
+                  this.#send({ id: request.id, error: message(error), ...(reason ? { reason } : {}) })
+                },
+              ).finally(() => this.#desktopOperations.delete(operation))
+              this.#desktopOperations.add(operation)
+              continue
+            }
             if (["providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(request.method) && this.#authenticated) {
               // Probes and setup can take seconds; keep terminal I/O and other requests responsive.
               void this.#handle(request).then(
@@ -460,6 +473,7 @@ class ControlConnection {
     this.#dialed.clear()
     this.#closeLocalDeliveries()
     this.#closing ??= Promise.allSettled([
+      ...this.#desktopOperations,
       ...[...new Set([...this.#sessions.keys(), ...this.#closingSessions.keys()])].map(id => this.#closeSession(id)),
       ...[...this.#localPeers].map(([id, central]) => central.closeLocal(id, this)),
     ]).then(results => {
