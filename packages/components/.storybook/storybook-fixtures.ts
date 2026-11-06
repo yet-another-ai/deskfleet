@@ -660,7 +660,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },
       { id: "team-2", name: "Design Systems", owner: { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev" }, billing: { ...structuredClone(storybookBilling), plan: "free", enterpriseOverride: true } },
     ],
-    setEnterprise: async () => {},
+    setManualGrant: async () => {},
     registrationPolicy: async () => ({ registrationEnabled }),
     updateRegistration: async (enabled: boolean) => { registrationEnabled = enabled },
     users: async () => [

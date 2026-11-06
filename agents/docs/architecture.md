@@ -339,8 +339,8 @@ existing local assumptions, delivery order, and acceptance criteria.
 
 The target subscription model makes each Team the billing and entitlement
 boundary, including single-member Teams. Central PostgreSQL owns subscription
-coverage, Enterprise overrides, period-attributed TURN usage, and atomic Team
-member/Session capacity admission. Enterprise overrides a paid subscription
+coverage, manual plan grants, period-attributed TURN usage, and atomic Team
+member/Session capacity admission. A manual grant overrides a paid subscription
 without cancelling it. Self-hosted installations use the same authentication
 system with unlimited allowances and no payment integration. The
 [plan matrix](identity-billing.md#plan-matrix) owns exact limits.

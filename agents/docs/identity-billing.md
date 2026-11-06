@@ -241,9 +241,9 @@ count is at or above its limit, and apply Free turn limits to subsequent starts.
 Allow reading, archiving, member removal, and billing recovery. Do not remove
 members or archive Sessions automatically.
 
-### Enterprise override
+### Manual plan grants
 
-Only a current Site Admin can grant/revoke Enterprise for a hosted Team.
+Only a current Site Admin can grant or revoke Free, Go, Pro, or Enterprise for a hosted Team, with an optional expiry and a required internal reason.
 Enterprise unlocks every product allowance, including TURN. It is not sold via
 Checkout or selectable by Team owners. When
 `DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set, Plans & Usage shows a Contact us
@@ -251,13 +251,14 @@ mailto action for Teams that are not already on Enterprise; when unset, that
 offer is omitted.
 
 Store the manual grant separately from the underlying subscription. Effective
-hosted-plan precedence is Enterprise, then an eligible Go/Pro subscription, then
-Free. Payment events cannot overwrite Enterprise. Revocation restores the
-still-valid paid plan or Free if none is valid.
+hosted-plan precedence is an unexpired manual grant, then an eligible Go/Pro subscription, then
+Free. Payment events cannot overwrite the grant. Expiry or revocation restores the
+still-valid paid plan or Free if none is valid. Existing Enterprise grants remain
+unlimited until changed.
 
 Assignment does not cancel, pause, or refund a paid subscription; it continues
 its billing lifecycle. Show that effect to the administrator. Record actor,
-Team, previous/new state, and time atomically with each grant/revocation. This
+Team, previous/new state, internal reason, and time atomically with each grant/revocation. The reason is restricted to the site audit record. This
 authority does not confer access to Team machines or conversations.
 
 ## Usage and enforcement

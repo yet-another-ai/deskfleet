@@ -247,7 +247,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (password === undefined) await authenticatePasskey(this, "reauthenticate")
     else await this.request("POST", "/api/auth/reauthenticate", { password })
   }
-  async setEnterprise(teamId: string, enabled: boolean) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/enterprise`, { enabled }) }
+  async setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/grant`, { plan, expiresAt, reason }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
   async networkConfiguration(): Promise<NetworkConfiguration> {

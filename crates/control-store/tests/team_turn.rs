@@ -42,7 +42,7 @@ impl Fixture {
             .database()
             .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
-                "UPDATE cp_billing_profiles SET plan=$2, paid_through=$3, enterprise=$4 WHERE team_id=$1",
+                "UPDATE cp_billing_profiles SET plan=$2, paid_through=$3, enterprise=$4, grant_plan=CASE WHEN $4 THEN 'enterprise' ELSE NULL END WHERE team_id=$1",
                 vec![
                     team.parse::<i64>().unwrap().into(),
                     plan.into(),

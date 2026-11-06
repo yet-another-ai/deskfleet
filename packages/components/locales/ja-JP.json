@@ -1142,7 +1142,7 @@
     "turnsPerSessionHint": "エージェントへのプロンプト送信 1 回につき 1 ターン消費します。分岐したセッションには、分岐前に使用したターン数が引き継がれます。", "turnsPerSessionLimit": "セッションごとに {count} ターン",
     "sessionTurns": "このセッションで {limit} ターン中 {used} ターン使用済み", "turnsLeft": "このセッションの残りターンはありません | このセッションは全 {limit} ターン中、残り 1 ターンです | このセッションは全 {limit} ターン中、残り {remaining} ターンです",
     "inheritedTurns": "元のセッションから {count} ターン引き継ぎ", "resumeHint": "待機中の入力は保持されます。チームのアップグレード後に再試行してください。",
-    "viewPlans": "プランを見る", "enterpriseTeams": "Enterprise",
+    "viewPlans": "プランを見る", "enterpriseTeams": "手動ライセンス", "manageGrant": "ライセンスを管理", "manualGrantHint": "手動ライセンスは期限までプランを上書きします。サブスクリプションの請求は続きます。", "grantPlan": "プラン", "removeGrant": "ライセンスを取り消す", "manualGrantSubscription": "手動ライセンスの有効期間中も {plan} の請求は続きます。", "grantNoExpiry": "無期限", "grantExpiry": "有効期限（空欄は無期限）", "grantReason": "内部記録用の理由", "saveGrant": "保存", "grantReasonRequired": "内部記録用の理由を入力してください。", "grantExpiryInvalid": "未来の有効期限を選択してください。",
     "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チーム名またはオーナーアカウントで絞り込み",
     "teamOwnerAccount": "オーナー：{name}（{email}）",
     "noTeams": "チームがありません。", "noMatchingTeams": "条件に一致するチームがありません。",

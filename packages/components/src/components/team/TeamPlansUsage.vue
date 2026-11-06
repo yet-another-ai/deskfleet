@@ -44,7 +44,7 @@ const subscription = computed(() => state.value?.subscription ?? undefined)
 const paymentProblem = computed(() => ["past_due", "unpaid", "incomplete"].includes(subscription.value?.status ?? ""))
 const status = computed(() => {
   const value = subscription.value
-  if (!value || state.value?.enterpriseOverride) return undefined
+  if (!value || (state.value?.manualGrant || state.value?.enterpriseOverride)) return undefined
   if (paymentProblem.value) return { text: t("billing.paymentIssue"), tone: "bg-ui-danger/10 text-ui-danger" }
   if (!value.paidThrough) return undefined
   return value.cancelAtPeriodEnd
@@ -54,10 +54,10 @@ const status = computed(() => {
 // An existing or still-payable subscription is changed in the portal, never by a second checkout.
 const hasSubscription = computed(() => !!subscription.value && (["go", "pro"].includes(state.value!.plan) || !["canceled", "incomplete_expired"].includes(subscription.value.status)))
 const billingAdmin = computed(() => !!state.value?.canManageBilling && state.value.paymentsAvailable)
-const offers = computed(() => billingAdmin.value && !hasSubscription.value && !state.value!.enterpriseOverride)
+const offers = computed(() => billingAdmin.value && !hasSubscription.value && !state.value!.manualGrant && !state.value!.enterpriseOverride)
 const enterpriseContact = computed(() => {
   const email = state.value?.enterpriseContactEmail?.trim()
-  return email && !state.value?.enterpriseOverride ? email : undefined
+  return email && !state.value?.manualGrant && !state.value?.enterpriseOverride ? email : undefined
 })
 const caption = computed(() => {
   const value = state.value
@@ -159,7 +159,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
               <span v-if="status" class="ui-badge" :class="status.tone">{{ status.text }}</span>
             </div>
             <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(`billing.planDescription.${state.plan}`) }}</p>
-            <p v-if="state.enterpriseOverride && subscription" class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.enterpriseSubscription", { plan: t(`billing.plan.${subscription.plan}`) }) }}</p>
+            <p v-if="(state.manualGrant || state.enterpriseOverride) && subscription" class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.manualGrantSubscription", { plan: t(`billing.plan.${subscription.plan}`) }) }}</p>
           </div>
           <UiButton v-if="billingAdmin && subscription" class="shrink-0" :loading="pending === 'portal'" @click="open('portal')">{{ t("billing.manage") }}<ExternalLink :size="13" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>

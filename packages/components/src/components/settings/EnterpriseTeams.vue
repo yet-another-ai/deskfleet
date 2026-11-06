@@ -38,14 +38,21 @@ function subscriptionSummary(team: AdminTeamBilling): string {
   if (value.paidThrough) parts.push(t(value.cancelAtPeriodEnd ? "billing.ends" : "billing.renews", { date: date(value.paidThrough) }))
   return parts.join(" · ")
 }
-function description(team: AdminTeamBilling): string {
-  const value = billing(team)
-  if (!team.billing.enterpriseOverride) return t(value ? "billing.grantWithSubscription" : "billing.grantDescription", { plan: value && plan(value.plan) })
-  // The server restores the subscription's plan only while it still covers the Team; otherwise Free.
-  return t(value ? "billing.revokeWithSubscription" : "billing.revokeDescription", { plan: value && plan(value.plan) })
+const grantPlan = ref<"free" | "go" | "pro" | "enterprise" | "none">("enterprise")
+const expiry = ref("")
+const reason = ref("")
+function openGrant(team: AdminTeamBilling): void {
+  changing.value = team
+  grantPlan.value = team.billing.manualGrant?.plan ?? "enterprise"
+  const existingExpiry = team.billing.manualGrant?.expiresAt
+  expiry.value = existingExpiry ? new Date(new Date(existingExpiry).getTime() - new Date(existingExpiry).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : ""
+  reason.value = ""
 }
-async function toggle(team: AdminTeamBilling): Promise<void> {
-  await props.confirmed(() => props.api.setEnterprise(team.id, !team.billing.enterpriseOverride))
+async function save(team: AdminTeamBilling): Promise<void> {
+  if (!reason.value.trim()) throw new Error(t("billing.grantReasonRequired"))
+  const expiresAt = expiry.value ? new Date(expiry.value).getTime() : null
+  if (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= Date.now())) throw new Error(t("billing.grantExpiryInvalid"))
+  await props.confirmed(() => props.api.setManualGrant(team.id, grantPlan.value === "none" ? null : grantPlan.value, grantPlan.value === "none" ? null : expiresAt, reason.value.trim()))
   await load()
 }
 </script>
@@ -53,7 +60,7 @@ async function toggle(team: AdminTeamBilling): Promise<void> {
 <template>
   <section :aria-labelledby="`${id}-title`" class="mt-10">
     <h2 :id="`${id}-title`" class="ui-section-title mb-1">{{ t("billing.enterpriseTeams") }}</h2>
-    <p class="m-0 mb-3 text-[13px] text-ui-text-muted">{{ t("billing.enterpriseHint") }}</p>
+    <p class="m-0 mb-3 text-[13px] text-ui-text-muted">{{ t("billing.manualGrantHint") }}</p>
     <div class="relative mb-3">
       <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ui-text-faint" aria-hidden="true" />
       <input v-model="filter" type="search" class="ui-input pl-8" name="team-filter" :aria-label="t('billing.filterTeams')" :placeholder="t('billing.filterTeams')" maxlength="200" />
@@ -66,23 +73,38 @@ async function toggle(team: AdminTeamBilling): Promise<void> {
     <ul v-else-if="visible.length" class="ui-card m-0 list-none p-0">
       <li v-for="team in visible" :key="team.id" class="ui-card-row py-3" :data-enterprise-team="team.id">
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 text-sm"><span class="truncate">{{ team.name }}</span><span class="ui-badge shrink-0" :class="team.billing.enterpriseOverride && 'bg-ui-accent/12 text-ui-accent'">{{ plan(team.billing.plan) }}</span></div>
+          <div class="flex items-center gap-2 text-sm"><span class="truncate">{{ team.name }}</span><span class="ui-badge shrink-0" :class="team.billing.manualGrant && 'bg-ui-accent/12 text-ui-accent'">{{ plan(team.billing.plan) }}</span></div>
           <div class="break-words text-[13px] text-ui-text-muted">{{ ownerAccount(team) }}</div>
           <div class="truncate text-[13px] text-ui-text-muted">{{ subscriptionSummary(team) }}</div>
+          <div v-if="team.billing.manualGrant" class="text-[13px] text-ui-text-muted">{{ t("billing.grantPlan") }}: {{ plan(team.billing.manualGrant.plan) }} · {{ team.billing.manualGrant.expiresAt ? date(team.billing.manualGrant.expiresAt) : t("billing.grantNoExpiry") }}</div>
         </div>
-        <UiButton class="shrink-0" :variant="team.billing.enterpriseOverride ? 'danger' : 'default'" @click="changing = team">{{ t(team.billing.enterpriseOverride ? "billing.revokeEnterprise" : "billing.grantEnterprise") }}</UiButton>
+        <UiButton class="shrink-0" @click="openGrant(team)">{{ t("billing.manageGrant") }}</UiButton>
       </li>
     </ul>
     <p v-else class="m-0 py-4 text-sm text-ui-text-muted">{{ t(filter.trim() ? "billing.noMatchingTeams" : "billing.noTeams") }}</p>
   </section>
   <ConfirmDialog
     v-if="changing"
-    class="break-words"
-    :title="t(changing.billing.enterpriseOverride ? 'billing.revokeTitle' : 'billing.grantTitle', { team: changing.name })"
-    :description="`${ownerAccount(changing)}. ${description(changing)}`"
-    :confirm-label="t(changing.billing.enterpriseOverride ? 'billing.revokeEnterprise' : 'billing.grantEnterprise')"
-    :tone="changing.billing.enterpriseOverride ? 'danger' : 'primary'"
-    :confirm="() => toggle(changing!)"
+    :title="t('billing.manageGrant')"
+    :description="`${changing.name} · ${ownerAccount(changing)}. ${t('billing.manualGrantHint')}`"
+    :confirm-label="t('billing.saveGrant')"
+    tone="primary"
+    :confirm="() => save(changing!)"
     @close="changing = undefined"
-  />
+  >
+    <div class="mt-4 grid gap-3">
+      <label class="text-sm">{{ t("billing.grantPlan") }}
+        <select v-model="grantPlan" class="ui-input mt-1">
+          <option value="none">{{ t("billing.removeGrant") }}</option>
+          <option v-for="item in ['free', 'go', 'pro', 'enterprise']" :key="item" :value="item">{{ plan(item) }}</option>
+        </select>
+      </label>
+      <label v-if="grantPlan !== 'none'" class="text-sm">{{ t("billing.grantExpiry") }}
+        <input v-model="expiry" type="datetime-local" class="ui-input mt-1" />
+      </label>
+      <label class="text-sm">{{ t("billing.grantReason") }}
+        <textarea v-model="reason" maxlength="2000" class="ui-input mt-1" />
+      </label>
+    </div>
+  </ConfirmDialog>
 </template>

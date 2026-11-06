@@ -56,7 +56,7 @@ export interface SiteAdministrationApi {
   cloudflareTurnSettings(): Promise<CloudflareTurnSettings>
   updateCloudflareTurnSettings(settings: CloudflareTurnSettingsUpdate): Promise<CloudflareTurnSettings>
   billingTeams(): Promise<AdminTeamBilling[]>
-  setEnterprise(teamId: string, enabled: boolean): Promise<void>
+  setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string): Promise<void>
   registrationPolicy(): Promise<{ registrationEnabled: boolean }>
   updateRegistration(enabled: boolean): Promise<void>
   users(query: string): Promise<Array<{ id: string; name: string; email: string; disabled: boolean }>>

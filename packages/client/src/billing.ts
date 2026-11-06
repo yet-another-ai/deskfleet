@@ -15,6 +15,7 @@ export interface TeamBilling {
   period: { start: string; end: string } | null
   nextResetAt: string | null
   enterpriseOverride: boolean
+  manualGrant?: { plan: "free" | "go" | "pro" | "enterprise"; expiresAt: string | null } | null
   subscription: { plan: "go" | "pro"; status: string; paidThrough: string | null; cancelAtPeriodEnd: boolean } | null
   paymentsAvailable: boolean
   canManageBilling: boolean
