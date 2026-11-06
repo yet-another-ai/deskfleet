@@ -197,7 +197,7 @@ impl DesktopConfig {
 }
 
 pub(crate) enum Packet {
-    Video(Vec<u8>, Duration),
+    Video(Vec<u8>, Duration, u64),
     Audio(Vec<u8>, Duration),
 }
 
@@ -223,7 +223,7 @@ impl DesktopStream {
         let audio = peer.has_audio();
         let stop = Arc::new(AtomicBool::new(false));
         let (shutdown, mut shutdown_rx) = watch::channel(());
-        let (packets, mut packet_rx) = mpsc::channel(8);
+        let (packets, mut packet_rx) = mpsc::channel(1);
         let (ready, startup) = oneshot::channel();
         let capture_stop = Arc::clone(&stop);
         let capture_peer = Arc::clone(&peer);
@@ -253,7 +253,7 @@ impl DesktopStream {
                             let Some(packet) = packet else { return Ok(()) };
                             let write = async {
                                 match packet {
-                                    Packet::Video(data, duration) => peer.write_video(data.into(), duration).await,
+                                    Packet::Video(data, duration, timestamp_ns) => peer.write_video_at(data.into(), duration, timestamp_ns).await,
                                     Packet::Audio(data, duration) => peer.write_audio(data.into(), duration).await,
                                 }.map_err(|error| MediaError::Transport(error.to_string()))
                             };
@@ -351,18 +351,19 @@ impl CaptureSource {
         &mut self,
         keyframe: bool,
         estimate_bps: Option<f64>,
+        video_paused: bool,
     ) -> Result<CaptureBatch, MediaError> {
         match self {
             Self::Local(pipeline) => {
                 if let Some(estimate) = estimate_bps {
                     pipeline.apply_bandwidth_estimate(estimate)?;
                 }
-                pipeline.poll(keyframe)
+                pipeline.poll(keyframe, video_paused)
             }
             #[cfg(windows)]
             Self::Service(client) => {
                 let target = estimate_bps.map(|estimate| estimate as u32);
-                client.poll(keyframe, target)
+                client.poll(keyframe, target, video_paused)
             }
         }
     }
@@ -402,7 +403,11 @@ fn capture_loop(
                 });
             }
             let estimate = target_bitrate.as_mut().map(|rx| *rx.borrow_and_update());
-            let batch = source.poll(peer.take_keyframe_request(), estimate)?;
+            let batch = source.poll(
+                peer.take_keyframe_request(),
+                estimate,
+                peer.video_send_congested(),
+            )?;
             encoder_started = batch.encoder_started;
             if !deliver_packets(batch.packets, &packets, &mut ready) {
                 return Ok(());
@@ -419,9 +424,9 @@ fn deliver_packets(
     ready: &mut Option<oneshot::Sender<()>>,
 ) -> bool {
     for packet in encoded {
-        let video = matches!(&packet, Packet::Video(data, _) if !data.is_empty());
+        let video = matches!(&packet, Packet::Video(data, ..) if !data.is_empty());
         let empty = match &packet {
-            Packet::Video(data, _) | Packet::Audio(data, _) => data.is_empty(),
+            Packet::Video(data, ..) | Packet::Audio(data, _) => data.is_empty(),
         };
         if empty {
             continue;
@@ -446,7 +451,7 @@ mod tests {
         let (sender, mut started) = oneshot::channel();
         let mut ready = Some(sender);
         assert!(deliver_packets(
-            vec![Packet::Video(Vec::new(), Duration::ZERO)],
+            vec![Packet::Video(Vec::new(), Duration::ZERO, 0)],
             &packets,
             &mut ready
         ));
@@ -462,23 +467,25 @@ mod tests {
         assert!(deliver_packets(
             vec![Packet::Video(
                 vec![0, 0, 0, 1, 0x65],
-                Duration::from_millis(33)
+                Duration::from_millis(33),
+                1_000_000_000,
             )],
             &packets,
             &mut ready
         ));
         assert!(started.try_recv().is_ok());
         assert!(matches!(receiver.try_recv().unwrap(), Packet::Audio(..)));
-        let Packet::Video(bytes, duration) = receiver.try_recv().unwrap() else {
+        let Packet::Video(bytes, duration, timestamp_ns) = receiver.try_recv().unwrap() else {
             panic!("expected video")
         };
         assert_eq!(bytes, [0, 0, 0, 1, 0x65]);
         assert_eq!(duration, Duration::from_millis(33));
+        assert_eq!(timestamp_ns, 1_000_000_000);
         drop(receiver);
         let (sender, mut started) = oneshot::channel();
         let mut ready = Some(sender);
         assert!(!deliver_packets(
-            vec![Packet::Video(bytes, duration)],
+            vec![Packet::Video(bytes, duration, timestamp_ns)],
             &packets,
             &mut ready
         ));

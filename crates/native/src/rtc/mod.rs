@@ -10,6 +10,7 @@ mod congestion;
 mod events;
 mod feedback;
 mod h265_payloader;
+mod pacing;
 mod ports;
 mod receive;
 mod runtime;
@@ -64,6 +65,7 @@ pub struct Peer {
     keyframe_requested: Arc<AtomicBool>,
     /// TWCC/GCC target bitrate (bits/sec) for sending video peers; `None` otherwise.
     target_bitrate: StdMutex<Option<watch::Receiver<f64>>>,
+    pacing: Option<pacing::PacingHandle>,
     media_failure: StdMutex<Option<(String, Option<String>)>>,
     closing: AtomicBool,
     closed: watch::Sender<bool>,
@@ -113,7 +115,7 @@ impl Peer {
         // publishes targets for the capture worker. Defaults still supply NACK,
         // RTCP reports, and a TWCC receiver (replacing the one congestion
         // control installed at the same slot).
-        let (registry, target_bitrate) = if sending_video {
+        let (registry, target_bitrate, pacing) = if sending_video {
             let (estimator, target_rx) = congestion::reporting_gcc();
             let registry = configure_congestion_control(
                 Registry::new(),
@@ -121,9 +123,14 @@ impl Peer {
                 CongestionFeedback::Twcc,
                 &mut media,
             )?;
-            (registry, Some(target_rx))
+            let (pacer, handle) = pacing::DesktopPacer::new(f64::from(INITIAL_BITRATE_BPS));
+            (
+                registry.with(Slot::Pacer, pacer),
+                Some(target_rx),
+                Some(handle),
+            )
         } else {
-            (Registry::new(), None)
+            (Registry::new(), None, None)
         };
         let interceptors = register_default_interceptors(registry, &mut media)?
             .with(Slot::from(14_000), feedback::KeyframeFeedback::default());
@@ -189,6 +196,7 @@ impl Peer {
             receiver: Mutex::new(receiver),
             keyframe_requested,
             target_bitrate: StdMutex::new(target_bitrate),
+            pacing,
             media_failure: StdMutex::new(None),
             closing: AtomicBool::new(false),
             closed,
@@ -214,6 +222,7 @@ impl Peer {
                     codecs::video_capability(codec),
                     "video",
                     RtpCodecKind::Video,
+                    peer.pacing.clone(),
                 )
                 .await?,
             );
@@ -231,6 +240,7 @@ impl Peer {
                     codecs::audio_capability(),
                     "audio",
                     RtpCodecKind::Audio,
+                    peer.pacing.clone(),
                 )
                 .await?,
             ));
@@ -276,6 +286,12 @@ impl Peer {
     /// DataChannel events away from the daemon's event consumer.
     pub fn take_keyframe_request(&self) -> bool {
         self.keyframe_requested.swap(false, Ordering::Relaxed)
+    }
+
+    pub(crate) fn video_send_congested(&self) -> bool {
+        self.pacing
+            .as_ref()
+            .is_some_and(pacing::PacingHandle::is_congested)
     }
 
     /// Subscribe to the send-side GCC target bitrate (bits/sec).
@@ -426,13 +442,30 @@ impl Peer {
     /// Send one complete encoded access unit using the configured video codec.
     /// H.264/H.265 input is Annex B; AV1 input is an encoded OBU stream.
     pub async fn write_video(&self, data: Bytes, duration: Duration) -> Result<()> {
-        self.write_sample(self.video.as_deref(), "video", data, duration)
+        self.write_sample(self.video.as_deref(), "video", data, duration, None)
             .await
+    }
+
+    /// Preserve capture-time gaps when raw frames are skipped under send pressure.
+    pub(crate) async fn write_video_at(
+        &self,
+        data: Bytes,
+        duration: Duration,
+        timestamp_ns: u64,
+    ) -> Result<()> {
+        self.write_sample(
+            self.video.as_deref(),
+            "video",
+            data,
+            duration,
+            Some(timestamp_ns),
+        )
+        .await
     }
 
     /// Send one Opus packet, with the duration of the encoded PCM frames.
     pub async fn write_audio(&self, data: Bytes, duration: Duration) -> Result<()> {
-        self.write_sample(self.audio.as_deref(), "audio", data, duration)
+        self.write_sample(self.audio.as_deref(), "audio", data, duration, None)
             .await
     }
 
@@ -442,19 +475,34 @@ impl Peer {
         kind: &'static str,
         data: Bytes,
         duration: Duration,
+        timestamp_ns: Option<u64>,
     ) -> Result<()> {
         self.ensure_open()?;
         let track = track.ok_or(PeerError::MissingTrack(kind))?;
         if data.is_empty() || duration.is_zero() {
             return Err(PeerError::InvalidSample);
         }
-        track
-            .write_sample(&Sample {
-                data,
-                duration,
-                ..Sample::new(std::time::Instant::now())
-            })
-            .await?;
+        let sample = Sample {
+            data,
+            duration,
+            ..Sample::new(std::time::Instant::now())
+        };
+        let mut closed = self.closed.subscribe();
+        tokio::select! {
+            biased;
+            _ = closed.wait_for(|closed| *closed) => return Err(PeerError::Closed),
+            result = track.write_sample(&sample, timestamp_ns) => result?,
+        }
+        let elapsed = sample.timestamp.elapsed();
+        if elapsed >= Duration::from_millis(150) {
+            tracing::debug!(
+                kind,
+                encoded_bytes = sample.data.len(),
+                elapsed_ms = elapsed.as_millis(),
+                "desktop sample waited for paced send"
+            );
+        }
+
         Ok(())
     }
 

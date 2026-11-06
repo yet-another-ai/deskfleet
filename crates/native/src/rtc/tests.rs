@@ -543,3 +543,77 @@ async fn h264_negotiation_rejects_high_profile_but_accepts_browser_level_31() {
     a.unwrap();
     b.unwrap();
 }
+
+#[tokio::test]
+async fn paced_video_completes_fragmented_idr_and_close_cancels_pending_sample() {
+    use rtc::shared::marshal::Unmarshal;
+
+    let config = PeerConfig {
+        video: Some(VideoCodec::H264),
+        ..Default::default()
+    };
+    let viewer = Peer::new_video_receiver(config.clone()).await.unwrap();
+    let sender = Peer::new(config).await.unwrap();
+    let mut receiver = viewer.take_video_receiver().unwrap();
+    connect(&viewer, &sender).await;
+
+    // One large synthetic IDR NAL exercises packetization and real peer-driver
+    // release acknowledgements without depending on a capture device/decoder.
+    let mut idr = vec![0, 0, 0, 1, 0x65];
+    idr.resize(512 * 1024, 0x55);
+    let expected_payload = idr.len() - 5;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let send = sender.write_video(idr.into(), Duration::from_millis(33));
+        let receive = async {
+            let mut bytes = 0;
+            let mut fragments = 0;
+            let mut previous_sequence: Option<u16> = None;
+            loop {
+                let received = receiver.next_packet().await.unwrap().unwrap();
+                let mut data = received.data;
+                let packet = rtc::rtp::Packet::unmarshal(&mut data).unwrap();
+                assert_eq!(packet.payload[0] & 0x1f, 28, "H264 FU-A fragment");
+                if let Some(previous) = previous_sequence {
+                    assert_eq!(packet.header.sequence_number, previous.wrapping_add(1));
+                } else {
+                    assert_ne!(packet.payload[1] & 0x80, 0, "first fragment");
+                }
+                previous_sequence = Some(packet.header.sequence_number);
+                bytes += packet.payload.len() - 2;
+                fragments += 1;
+                if packet.header.marker {
+                    assert_ne!(packet.payload[1] & 0x40, 0, "last fragment");
+                    break;
+                }
+            }
+            assert!(fragments > 400);
+            assert_eq!(bytes, expected_payload);
+        };
+        let (sent, ()) = tokio::join!(send, receive);
+        sent.unwrap();
+    })
+    .await
+    .expect("startup IDR should finish without a packet-count FIFO truncation");
+
+    // Begin a larger frame, prove that it is still paced, then close. Shutdown
+    // must cancel the final-packet receipt instead of waiting to drain the IDR.
+    let mut large_idr = vec![0, 0, 0, 1, 0x65];
+    large_idr.resize(16 * 1024 * 1024, 0x55);
+    let send = sender.write_video(large_idr.into(), Duration::from_millis(33));
+    tokio::pin!(send);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = &mut send => panic!("large sample completed before shutdown: {result:?}"),
+            _ = async {
+                while !sender.video_send_congested() {
+                    tokio::task::yield_now().await;
+                }
+            } => {}
+        }
+        sender.close().await.unwrap();
+        assert!(matches!(send.await, Err(PeerError::Closed)));
+    })
+    .await
+    .expect("close should cancel a pending paced sample");
+    viewer.close().await.unwrap();
+}

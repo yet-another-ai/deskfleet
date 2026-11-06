@@ -58,10 +58,12 @@ impl Client {
         &mut self,
         keyframe: bool,
         target_bitrate_bps: Option<u32>,
+        video_paused: bool,
     ) -> Result<CaptureBatch, MediaError> {
         match self.call(Request::Poll {
             keyframe,
             target_bitrate_bps,
+            video_paused,
         })? {
             Reply::Batch {
                 packets,

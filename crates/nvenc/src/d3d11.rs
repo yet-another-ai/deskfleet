@@ -9,6 +9,7 @@
 use crate::EncodedFrame;
 use crate::error::NvEncError;
 use crate::guids_equal;
+use crate::rate_control::RateControl;
 use deskfleet_nvenc_sys::{
     GUID, NV_ENC_BUFFER_FORMAT, NV_ENC_CONFIG_VER, NV_ENC_CREATE_BITSTREAM_BUFFER,
     NV_ENC_CREATE_BITSTREAM_BUFFER_VER, NV_ENC_DEVICE_TYPE, NV_ENC_INITIALIZE_PARAMS,
@@ -43,6 +44,7 @@ pub struct D3D11Encoder {
     height: u32,
     /// Whether the next frame should be forced to a keyframe.
     force_keyframe: bool,
+    rate_control: RateControl,
     /// Cache of registered NVENC resources keyed by the raw D3D11 texture
     /// pointer.  Resources are registered once on first use and reused for
     /// subsequent frames, avoiding the heavy per-frame
@@ -230,6 +232,10 @@ impl D3D11Encoder {
         init_params.presetGUID = preset_guid;
         init_params.encodeWidth = width;
         init_params.encodeHeight = height;
+        // Reuse explicit fixed-size bounds during bitrate reconfiguration.
+        // Resolution changes still recreate the session and its resources.
+        init_params.maxEncodeWidth = width;
+        init_params.maxEncodeHeight = height;
         init_params.darWidth = width;
         init_params.darHeight = height;
         init_params.frameRateNum = fps_num;
@@ -274,8 +280,20 @@ impl D3D11Encoder {
             width,
             height,
             force_keyframe: false,
+            rate_control: RateControl::new(init_params, encode_config),
             registered_resources: HashMap::new(),
         })
+    }
+
+    /// Retarget this live session without replacing registered input textures or
+    /// forcing another IDR. Encoding and reconfiguration share exclusive access.
+    pub fn set_bitrate(&mut self, average: u32, maximum: u32) -> Result<(), NvEncError> {
+        // SAFETY: this handle belongs to the live session described by rate_control;
+        // the function table and session remain alive throughout the call.
+        unsafe {
+            self.rate_control
+                .set_bitrate(&self.fns, self.encoder, average, maximum)
+        }
     }
 
     /// Encode a D3D11 texture.

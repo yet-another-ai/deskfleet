@@ -14,12 +14,12 @@ use tokio::sync::watch;
 pub const MIN_BITRATE_BPS: u32 = 100_000;
 
 /// Starting encoder target before TWCC feedback arrives (bits/sec).
-pub const INITIAL_BITRATE_BPS: u32 = 300_000;
+pub const INITIAL_BITRATE_BPS: u32 = 8_000_000;
 
 /// Relative change required before calling into a live encoder again.
 const MIN_CHANGE_RATIO: f64 = 0.10;
 
-/// Absolute change (bits/sec) that always triggers an encoder update.
+/// Minimum absolute change, in addition to the relative threshold.
 const MIN_CHANGE_BPS: u32 = 50_000;
 
 /// Delegates to `inner` and publishes its target after every update.
@@ -63,11 +63,15 @@ impl<E: BandwidthEstimator> BandwidthEstimator for ReportingEstimator<E> {
     }
 }
 
-/// Build the default GCC estimator (300 kb/s → 100 Mb/s). The capture worker
+/// Start GCC at the desktop budget (8 Mb/s), with a 100 Mb/s ceiling. The capture worker
 /// clamps published targets to the stream's configured ceiling before calling
 /// the encoder; the peer is created before desktop settings are known.
 pub(super) fn reporting_gcc() -> (ReportingEstimator<Gcc>, watch::Receiver<f64>) {
-    ReportingEstimator::new(Gcc::default())
+    ReportingEstimator::new(Gcc::new(
+        f64::from(INITIAL_BITRATE_BPS),
+        f64::from(MIN_BITRATE_BPS),
+        100_000_000.0,
+    ))
 }
 
 /// Pure controller: maps a bandwidth estimate onto an encoder target ≤ ceiling.
@@ -76,7 +80,7 @@ pub struct BitrateController {
     ceiling_bps: u32,
     floor_bps: u32,
     applied_bps: u32,
-    /// When live `set_bitrate` is unsupported, freeze at the ceiling after one recreate.
+    /// Whether the encoder can retarget without recreation.
     live_adaptation: bool,
 }
 
@@ -135,19 +139,10 @@ impl BitrateController {
         Some(target)
     }
 
-    /// Live bitrate changes are unavailable; keep the current encoder rate and
-    /// stop adapting. Callers that opened below the ceiling should recreate at
-    /// [`Self::ceiling_bps`] once.
-    pub fn disable_live_adaptation(&mut self) -> bool {
-        let was_adaptive = self.live_adaptation;
+    /// A device without live retargeting is recreated once at the current
+    /// target, then capture admission provides backpressure at that fixed rate.
+    pub fn disable_live_adaptation(&mut self) {
         self.live_adaptation = false;
-        was_adaptive && self.applied_bps != self.ceiling_bps
-    }
-
-    /// After a forced recreate on an encoder that cannot retarget live.
-    pub fn freeze_at_ceiling(&mut self) {
-        self.live_adaptation = false;
-        self.applied_bps = self.ceiling_bps;
     }
 }
 
@@ -156,8 +151,8 @@ fn should_retarget(applied: u32, target: u32) -> bool {
         return false;
     }
     let delta = applied.abs_diff(target);
-    if delta >= MIN_CHANGE_BPS {
-        return true;
+    if delta < MIN_CHANGE_BPS {
+        return false;
     }
     let baseline = applied.max(1) as f64;
     (delta as f64) / baseline >= MIN_CHANGE_RATIO
@@ -184,7 +179,7 @@ mod tests {
     fn clamps_estimate_to_ceiling_and_floor() {
         let mut controller = BitrateController::new(8_000_000);
         assert_eq!(controller.encoder_open_bitrate_bps(), INITIAL_BITRATE_BPS);
-        assert_eq!(controller.observe_estimate(20_000_000.0), Some(8_000_000));
+        assert_eq!(controller.observe_estimate(20_000_000.0), None);
         assert_eq!(controller.applied_bps(), 8_000_000);
         assert_eq!(controller.observe_estimate(1_000.0), Some(MIN_BITRATE_BPS));
     }
@@ -207,14 +202,25 @@ mod tests {
     }
 
     #[test]
-    fn disable_live_adaptation_requests_ceiling_recreate() {
+    fn unsupported_retarget_does_not_jump_to_ceiling() {
         let mut controller = BitrateController::new(8_000_000);
-        assert!(controller.disable_live_adaptation());
+        assert_eq!(controller.observe_estimate(1_000_000.0), Some(1_000_000));
+        controller.disable_live_adaptation();
         assert!(!controller.live_adaptation());
-        assert_eq!(controller.observe_estimate(1_000_000.0), None);
-        controller.freeze_at_ceiling();
-        assert_eq!(controller.applied_bps(), 8_000_000);
-        assert!(!controller.disable_live_adaptation());
+        assert_eq!(controller.observe_estimate(8_000_000.0), None);
+        assert_eq!(controller.encoder_open_bitrate_bps(), 1_000_000);
+    }
+
+    #[test]
+    fn startup_estimator_matches_encoder_and_small_steps_do_not_reconfigure() {
+        let (_, receiver) = reporting_gcc();
+        let mut controller = BitrateController::new(8_000_000);
+        assert_eq!(
+            *receiver.borrow(),
+            f64::from(controller.encoder_open_bitrate_bps())
+        );
+        assert_eq!(controller.observe_estimate(7_900_000.0), None);
+        assert_eq!(controller.observe_estimate(7_000_000.0), Some(7_000_000));
     }
 
     #[test]
