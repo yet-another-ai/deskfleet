@@ -36,6 +36,7 @@ import SessionPreparation from "./SessionPreparation.vue"
 import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
+import { recordSentMessageOrigin } from "../../services/message-sent-transition.ts"
 
 const client = usePlatformClient()
 const configurationLoading = ref(false)
@@ -250,6 +251,7 @@ function onPaste(event: ClipboardEvent): void {
 }
 function submit(delivery: "backlog" | "steer"): void {
   if (props.disabled || props.submitting || preparing.value || configurationLoading.value || !props.location || empty.value) return
+  recordSentMessageOrigin(dropZoneRef.value)
   emit("submit", commandInput.value ? "backlog" : delivery)
 }
 function keydown(event: KeyboardEvent): void {

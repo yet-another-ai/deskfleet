@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
+import { ref } from "vue"
 import { storybookElicitation, storybookSessionEvents, storybookSessionSnapshot } from "../../../.storybook/storybook-fixtures.ts"
+import SessionComposer from "../composer/SessionComposer.vue"
 import AgentConversation from "./AgentConversation.vue"
 
 const meta = {
@@ -78,3 +80,51 @@ export const AwaitingElicitation: Story = {
     },
   },
 }
+
+export const MessageSentTransition: Story = {
+  args: CompletedTurn.args,
+  render: (args) => ({
+    components: { AgentConversation, SessionComposer },
+    setup() {
+      const events = ref([...(args.events ?? [])])
+      const draft = ref("Verify the post-send spring transition.")
+      function send() {
+        const text = draft.value.trim()
+        if (!text) return
+        const seq = String(events.value.length + 1)
+        const createdAt = new Date().toISOString()
+        draft.value = ""
+        events.value = [
+          ...events.value,
+          {
+            sessionId: "sess-1",
+            seq,
+            kind: "input",
+            payload: {
+              id: `inp-${seq}`,
+              sessionId: "sess-1",
+              submissionCommandId: `cmd-${seq}`,
+              author: { kind: "user", userId: "Ada Lovelace" },
+              content: [{ type: "text", text }],
+              acceptedSeq: seq,
+              state: "delivered",
+              requestedDelivery: "backlog",
+              actualDelivery: "turn_start",
+              createdAt,
+            },
+            createdAt,
+            runGeneration: 1,
+          },
+        ]
+      }
+      return { args, events, draft, send }
+    },
+    template: `
+      <div class="mx-auto flex max-w-3xl flex-col gap-6">
+        <AgentConversation v-bind="args" :events="events" />
+        <SessionComposer v-model="draft" :show-target="false" @submit="send" />
+      </div>
+    `,
+  }),
+}
+

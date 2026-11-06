@@ -159,6 +159,19 @@ textarea {
   from { opacity: 0; scale: 0.85; }
 }
 
+/* Sent user messages morph from the composer shell into their conversation bubble. */
+ol:has([data-message-sending="true"]) .ui-conversation-history {
+  content-visibility: visible;
+}
+[data-user-message-bubble][data-message-sending="true"] {
+  position: relative;
+  z-index: 30;
+  max-width: none;
+  overflow: hidden;
+  pointer-events: none;
+  will-change: width, height, margin, translate, transform;
+}
+
 /* Filled buttons: a sheen and tinted shadow that deepen on hover. */
 :is(.ui-button-primary):not(:disabled) {
   background-image: var(--ui-gloss);
