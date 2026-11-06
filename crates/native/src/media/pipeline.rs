@@ -204,7 +204,7 @@ impl CapturePipeline {
             while let Some(frame) = capture.try_next_audio_frame()? {
                 for packet in opus.encode(&frame.samples)? {
                     packets.push(Packet::Audio(
-                        packet.data,
+                        packet.data.into(),
                         Duration::from_nanos(packet.duration_ns),
                     ));
                 }
@@ -282,7 +282,12 @@ fn append_video(packets: &mut Vec<Packet>, encoded: Vec<EncodedPacket>, fps: f64
         } else {
             Duration::from_nanos(packet.duration_ns)
         };
-        packets.push(Packet::Video(packet.data, duration, packet.timestamp_ns));
+        packets.push(Packet::Video(
+            packet.data.into(),
+            duration,
+            packet.timestamp_ns,
+            packet.is_keyframe,
+        ));
     }
 }
 

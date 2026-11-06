@@ -1132,6 +1132,11 @@ into a standard HTML video element. Linux, Windows, and macOS Electron clients
 also offer a separate native H.264/HEVC/AV1 window. Electron owns its Team grant and
 signaling over private control pipes; the Rust viewer owns receive, decode,
 input, and GPU presentation. Its lifetime is independent of the hosted daemon.
+Within each Machine registration, a native desktop stream pool shares capture
+and encoding for matching display, codec, audio, and quality parameters across
+viewing peers. Peer authorization and transport remain independent; releasing
+the last subscriber stops that media source. Pools never span backend or Team
+registrations.
 See [native media](media.md) for codec support, capture lifecycle, and validation.
 
 The [WebRTC key exchange design](webrtc-security.md) uses trusted HTTPS/WSS

@@ -4,6 +4,21 @@ use napi_derive::napi;
 
 use crate::rtc::native_error;
 
+/// Capture sharing owned by one authorized machine registration.
+#[napi]
+#[derive(Default)]
+pub struct DesktopStreamPool {
+    pub(crate) inner: media::DesktopStreamPool,
+}
+
+#[napi]
+impl DesktopStreamPool {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[napi(object)]
 pub struct DisplayInfo {
     pub id: u32,

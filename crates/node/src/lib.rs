@@ -24,7 +24,9 @@ pub use desktop_access::{
 pub use local_applications::{
     LocalApplication, LocalApplicationKind, open_local_application, scan_local_applications,
 };
-pub use media::{DesktopConfig, DisplayInfo, capture_displays, supported_video_codecs};
+pub use media::{
+    DesktopConfig, DesktopStreamPool, DisplayInfo, capture_displays, supported_video_codecs,
+};
 pub use nat::{NatFiltering, NatMapping, NatTestResult, NatTestStatus, test_nat};
 pub use permissions::{
     LocalNetworkAccessRequest, check_accessibility_access, check_full_disk_access,
