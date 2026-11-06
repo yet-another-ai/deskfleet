@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -7,7 +7,8 @@ import { pathToFileURL } from "node:url"
 import { bundledDshRuntime, configureDshRuntime, dshRuntimeProcess, electronDshHost, sourceDshRuntime } from "./index.ts"
 
 test("source runtime resolves dsh from its owning package, anchored at the embedding application", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "deskfleet-dsh-source-"))
+  // Module resolution follows symlinks, including macOS's /var -> /private/var.
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-dsh-source-")))
   try {
     const runtime = join(directory, "node_modules", "@deskfleet", "dsh-runtime")
     const entryPoint = join(runtime, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")
