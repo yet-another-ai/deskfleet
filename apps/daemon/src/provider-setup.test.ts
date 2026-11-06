@@ -151,28 +151,67 @@ test("OMP rejects a different provider with a bare version", async () => {
   assert.equal(value.loginAvailable, false)
 })
 
-test("DeepSeek Harness validates its bare version with help and reports DEEPSEEK_API_KEY readiness", async () => {
-  const f = fixture({ files: ["/home/someone/.local/bin/dsh", "/tools/npm", "/bin/bash"], answer: async (_command, args) =>
-    args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
-  assert.deepEqual(await f.setup.probe(input("deepseek-harness")), {
-    status: "found", binaryPath: "/home/someone/.local/bin/dsh", version: "0.2.1-rc.2", auth: "unknown", installable: true, loginAvailable: false,
-  })
-  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
-  const ready = fixture({ files: ["/tools/dsh", "/tools/npm"], answer: async (_command, args) =>
-    args[0] === "--version" ? result("0.2.1-rc.2") : result("Usage: dsh [--profile] <name>") })
-  assert.equal((await ready.setup.probe(input("deepseek-harness", { env: { DEEPSEEK_API_KEY: "secret" } }))).auth, "authenticated")
+test("bundled DeepSeek Harness is available without PATH, npm, or a persisted executable path", async () => {
+  const f = fixture({ env: { PATH: "" }, answer: async () => result("0.2.2-rc.1") })
+  const found = await f.setup.probe(input("deepseek-harness"))
+  assert.equal(found.status, "found")
+  assert.equal(found.binaryPath, undefined)
+  assert.equal(found.version, "0.2.2-rc.1")
+  assert.equal(found.installable, false)
+  assert.equal(found.loginAvailable, false)
+  assert.equal(found.auth, "unknown")
+  assert.equal(f.calls[0]!.args.at(-1), "--version")
+  assert.match(f.calls[0]!.args[0]!, /dsh[/\\]lib[/\\]bin\.js$/u)
+  assert.equal(f.runs.length, 0)
+  assert.equal((await f.setup.probe(input("deepseek-harness", { env: { DEEPSEEK_API_KEY: "secret" } }))).auth, "authenticated")
 })
 
-test("DeepSeek Harness discovers npm global prefixes", async () => {
-  for (const [platform, env, binary] of [
-    ["linux", { PATH: "", NPM_CONFIG_PREFIX: "/custom/npm" }, "/custom/npm/bin/dsh"],
-    ["win32", { PATH: "", APPDATA: "C:\\Roaming" }, "C:\\Roaming\\npm\\dsh.cmd"],
-    ["win32", { PATH: "", NPM_CONFIG_PREFIX: "C:\\npm-prefix" }, "C:\\npm-prefix\\dsh.cmd"],
-  ] as const) {
-    const f = fixture({ platform, env, files: [binary, ...(platform === "linux" ? ["/tools/npm"] : ["C:\\Roaming\\npm\\npm.cmd", "C:\\npm-prefix\\npm.cmd"])],
-      answer: async (_command, args) => args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
-    assert.equal((await f.setup.probe(input("deepseek-harness"))).binaryPath, binary)
+test("missing bundled DeepSeek runtime reports repair without offering npm installation", async () => {
+  const f = fixture({ answer: async () => { throw Object.assign(new Error("missing runtime"), { code: "ENOENT" }) } })
+  const found = await f.setup.probe(input("deepseek-harness"))
+  assert.equal(found.status, "missing")
+  assert.equal(found.installable, false)
+  assert.match(found.installMessage!, /Reinstall DeskFleet/u)
+})
+
+test("bundled DeepSeek metadata can complete after the external CLI timeout", { timeout: 15_000 }, async () => {
+  const value = await probeProvider(input("deepseek-harness"), {
+    env: process.env, home: process.cwd(),
+    run: (_command, _args, env, cwd, signal, timeoutMs) => {
+      assert.equal(timeoutMs, 30_000)
+      return runProbeCommand(process.execPath, ["-e", "setTimeout(()=>console.log('0.2.2-rc.1'), 3_200)"], env, cwd, signal, timeoutMs)
+    },
+  })
+  assert.equal(value.status, "found")
+  assert.equal(value.version, "0.2.2-rc.1")
+})
+
+test("bundled DeepSeek spawn failures surface as probe errors instead of missing installations", async () => {
+  for (const error of [Object.assign(new Error("metadata timed out"), { killed: true }), Object.assign(new Error("permission denied"), { code: "EACCES" })]) {
+    const f = fixture({ answer: async () => { throw error } })
+    await assert.rejects(f.setup.probe(input("deepseek-harness")), value => value === error)
   }
+  const f = fixture({ answer: async () => result("", 1) })
+  assert.equal((await f.setup.probe(input("deepseek-harness"))).status, "invalid")
+})
+
+test("bundled DeepSeek deadline cancels detection without reporting a missing runtime", async () => {
+  let signal: AbortSignal | undefined
+  await assert.rejects(probeProvider(input("deepseek-harness"), {
+    timeoutMs: 10,
+    run: (_command, _args, _env, _cwd, value) => { signal = value; return new Promise(() => {}) },
+  }), /detection timed out/u)
+  assert.equal(signal?.aborted, true)
+})
+
+test("DeepSeek Harness still validates explicit executable overrides", async () => {
+  const f = fixture({ files: ["/tools/dsh"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("0.2.1-rc.2") : result("dsh: boot a DeepSeek Harness profile") })
+  const found = await f.setup.probe(input("deepseek-harness", { binaryPath: "/tools/dsh" }))
+  assert.equal(found.status, "found")
+  assert.equal(found.binaryPath, "/tools/dsh")
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+  assert.equal((await f.setup.probe(input("deepseek-harness", { binaryPath: "/missing/dsh" }))).status, "missing")
 })
 
 test("Pi rejects an unrelated executable with a bare version", async () => {
@@ -255,20 +294,10 @@ test("official installers start dedicated terminals and do not start login or AC
   }
 })
 
-test("DeepSeek Harness installs through npm and rejects interactive login", async () => {
+test("DeepSeek Harness rejects installation and interactive login without opening terminals", async () => {
   const f = fixture({ files: ["/tools/npm", "/bin/bash"] })
-  const terminal = await f.setup.install(input("deepseek-harness", { env: { TOKEN: "sensitive-value" } }))
-  assert.equal(terminal.status, "running")
-  assert.equal(f.runs[0]!.command, "/tools/npm")
-  assert.deepEqual(f.runs[0]!.args, ["install", "-g", "@deepseek-ai/dsh"])
-  assert.equal(f.runs[0]!.env?.TOKEN, "sensitive-value")
+  await assert.rejects(f.setup.install(input("deepseek-harness")), /included with DeskFleet/u)
   await assert.rejects(f.setup.login(input("deepseek-harness")), /DEEPSEEK_API_KEY/u)
-  assert.equal(f.runs.length, 1)
-})
-
-test("DeepSeek Harness install requires npm", async () => {
-  const f = fixture({ files: ["/bin/bash"] })
-  await assert.rejects(f.setup.install(input("deepseek-harness")), /npm is required/u)
   assert.equal(f.runs.length, 0)
 })
 

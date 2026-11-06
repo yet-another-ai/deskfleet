@@ -4,6 +4,7 @@ import { createRequire } from "node:module"
 import { resolve } from "node:path"
 import { build, createServer } from "vite"
 import type { ViteDevServer } from "vite"
+import { stageDsh } from "../../../scripts/stage-dsh.ts"
 import { stageAuv } from "./stage-auv.ts"
 
 // Vite's build API defaults NODE_ENV to production even with development mode.
@@ -157,6 +158,7 @@ process.once("SIGTERM", () => void shutdown(0))
 try {
   const buildsReady = Promise.all([
     stageAuv(),
+    stageDsh(resolve(appDirectory, "out/dsh")),
     createBuildWatcher("vite.main.config.ts", scheduleElectronRestart),
     createBuildWatcher("vite.preload.config.ts", scheduleElectronRestart)
   ])

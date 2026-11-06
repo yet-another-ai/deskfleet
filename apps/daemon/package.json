@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
+    "./dsh-runtime": "./src/agents/dsh-runtime.ts",
     "./adapters": "./src/agents/adapters.ts",
     "./terminal-images": "./src/terminal-images.ts",
     "./control-client": "./src/control-client.ts",
@@ -13,10 +14,10 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@deskfleet/mcp": "workspace:*",
     "@agentclientprotocol/claude-agent-acp": "0.99.1",
     "@agentclientprotocol/codex-acp": "2.3.0",
     "@agentclientprotocol/sdk": "2.1.0",
+    "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
     "pi-acp": "0.0.34"
   }

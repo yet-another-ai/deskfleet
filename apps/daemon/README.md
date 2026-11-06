@@ -294,12 +294,14 @@ binary through the official `omp.sh` installer. **Log in** opens
 `omp --allow-home`; enter `/login`, complete authentication, then `/quit`.
 Discovery leaves credential status unknown; **Test Connection** opens a session
 without sending a prompt.
-DeepSeek Harness is native ACP: the daemon runs `` `<binary> --profile acp` ``
+DeepSeek Harness is native ACP: the daemon runs the bundled CLI with its private
+Node runtime, or an explicit external binary, using `--profile acp`
 (`dsh acp` is the same launch). Credentials come from `DEEPSEEK_API_KEY` in the
 provider environment (optional `DEEPSEEK_BASE_URL`); the ACP server does not
-advertise interactive authenticate methods. Settings installs the CLI with
-`npm install -g @deepseek-ai/dsh`. Discovery reports ready when `DEEPSEEK_API_KEY`
-is set.
+advertise interactive authenticate methods. Node.js, npm, and a global dsh
+installation are unnecessary. Discovery reports ready when `DEEPSEEK_API_KEY`
+is set. Clear an existing executable path to use the bundle. For source launches,
+run `mise run dsh:stage` first; `mise run dsh:smoke` verifies the staged runtime.
 
 Antigravity runs Google's standalone ACP runtime, `agy_acp_server.par` on macOS
 and Linux or `agy_acp_server.exe` on Windows. Linux launches add `--uid=`.
@@ -366,7 +368,9 @@ mise run daemon:smoke
 
 The build embeds JavaScript and the native addon in
 `apps/daemon/dist/deskfleet-daemon` (`deskfleet-daemon.exe` on Windows). This file
-runs by itself without a Node installation or adjacent addon:
+runs without a system Node installation or adjacent addon. Keep the generated
+`apps/daemon/dist/dsh/` directory beside it to use bundled DeepSeek Harness;
+release archives include that directory and its licenses:
 
 ```sh
 ./apps/daemon/dist/deskfleet-daemon --info

@@ -5,10 +5,17 @@ packages:
   - apps/web
   - packages/client
   - packages/components
+  - packages/dsh-runtime
   - packages/mcp
   - docs
 
 allowBuilds:
+  # DSH native subprocess helpers and FFI; the other hooks are optional notices.
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  koffi: true
+  node-pty: true
+  protobufjs: false
   # Platform packages supply the binary; do not run the CLI's download fallback.
   '@sentry/cli': false
   # Squirrel.Windows support; electron-builder's NSIS target does not use it.

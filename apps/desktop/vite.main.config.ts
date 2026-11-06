@@ -1,3 +1,5 @@
+import { smokeDsh } from "../../scripts/smoke-dsh.ts"
+import { stageDsh } from "../../scripts/stage-dsh.ts"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { defineConfig } from "vite"
@@ -5,7 +7,14 @@ import { nodeBuiltins } from "./build/node-builtins.ts"
 
 export default defineConfig({
   plugins: [{
-    name: "deskfleet-native-addon",
+    name: "deskfleet-native-runtimes",
+    async writeBundle() {
+      // Development stages once before launching Electron; watched builds only emit code.
+      if (this.meta.watchMode) return
+      const directory = resolve(import.meta.dirname, "out/dsh")
+      await stageDsh(directory)
+      await smokeDsh(directory)
+    },
     async generateBundle() {
       this.emitFile({
         type: "asset",

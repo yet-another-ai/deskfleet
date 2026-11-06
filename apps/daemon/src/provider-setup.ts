@@ -4,11 +4,14 @@ import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
+import { dshRuntimeProcess } from "./agents/dsh-runtime.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalRun, TerminalSessions } from "./terminals.ts"
+
+const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
 
 interface ProbeDependencies {
   platform?: NodeJS.Platform
@@ -28,7 +31,7 @@ interface Context {
   home: string
   cwd: string
   path: typeof posix
-  run: ProbeCommand
+  run: (command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, timeoutMs?: number) => ReturnType<ProbeCommand>
   executable: (path: string) => Promise<boolean>
 }
 
@@ -40,9 +43,9 @@ function context(input: AgentProviderInput, dependencies: ProbeDependencies, sig
   const home = dependencies.home ?? (platform === "win32" ? env.USERPROFILE : env.HOME) ?? homedir()
   return {
     platform, arch: dependencies.arch ?? process.arch, env, home, path, cwd: dependencies.cwd ?? process.cwd(),
-    run: (command, args, env, cwd) => {
+    run: (command, args, env, cwd, timeoutMs) => {
       signal?.throwIfAborted()
-      return (dependencies.run ?? runProbeCommand)(command, args, env, cwd, signal)
+      return (dependencies.run ?? runProbeCommand)(command, args, env, cwd, signal, timeoutMs)
     },
     executable: dependencies.executable ?? (async path => {
       try {
@@ -66,7 +69,6 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
   if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
   if (template === "omp") directories.push(path.join(env.BUN_INSTALL ?? path.join(home, ".bun"), "bin"))
-  if (template === "deepseek-harness") directories.push(...npmLocations(ctx))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
@@ -102,14 +104,10 @@ async function findCommand(command: string, ctx: Context, extraDirectories: stri
 
 /** Fixed official installer endpoints; scripts handle the vendor's package selection and verification. */
 async function installer(template: AgentProviderTemplateId, ctx: Context): Promise<{ command: string; args: string[] } | string> {
+  if (template === "deepseek-harness") return "DeepSeek Harness is included with DeskFleet. Reinstall DeskFleet to repair its runtime, or select your own executable."
   if (template === "acp") return "Custom ACP providers use an executable you install yourself."
   if (!["x64", "arm64"].includes(ctx.arch) || !["darwin", "linux", "win32"].includes(ctx.platform)) {
     return "Automatic installation is unavailable for this operating system or architecture."
-  }
-  if (template === "deepseek-harness") {
-    const npm = await findCommand("npm", ctx, npmLocations(ctx))
-    if (!npm) return "npm is required to install DeepSeek Harness (`npm install -g @deepseek-ai/dsh`)."
-    return { command: npm, args: ["install", "-g", "@deepseek-ai/dsh"] }
   }
   if (ctx.platform === "win32" && template !== "grok") {
     const shell = await findCommand("pwsh", ctx) ?? await findCommand("powershell", ctx, [
@@ -212,7 +210,7 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
       const error = new Error("Provider detection timed out. Check the executable path and try again.")
       controller.abort(error)
       reject(error)
-    }, dependencies.timeoutMs ?? 10_000)
+    }, dependencies.timeoutMs ?? (input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000))
   })
   try { return await Promise.race([probe(input, dependencies, controller.signal), deadline]) }
   finally { clearTimeout(timer!); controller.abort() }
@@ -225,6 +223,20 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
   const base = {
     auth: "unknown" as const, installable: typeof installation !== "string", loginAvailable: false,
     ...(typeof installation === "string" ? { installMessage: installation } : {}),
+  }
+  if (provider.template === "deepseek-harness" && !provider.binaryPath) {
+    const launch = dshRuntimeProcess(["--version"], ctx.env)
+    try {
+      const result = await ctx.run(launch.command, launch.args ?? [], ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
+      if (result.code === 0 && text(result.stdout)) return {
+        ...base, status: "found", version: text(result.stdout),
+        auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown",
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...base, status: "missing" }
+      throw error
+    }
+    return { ...base, status: "invalid", message: "The bundled DeepSeek runtime could not report its version. Retry detection or reinstall DeskFleet." }
   }
   const commands = provider.binaryPath ? [provider.binaryPath] : provider.template === "cursor" ? ["cursor-agent", "agent"]
     : provider.template === "antigravity" && ctx.platform === "win32" ? ["agy_acp_server.exe"]

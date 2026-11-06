@@ -295,13 +295,18 @@ Its native ACP server advertises model and thinking configuration, Default and
 Plan modes where enabled, and saved-session loading, resuming, and forking.
 It accepts client-provided MCP servers and delegates filesystem and terminal
 operations when the client advertises those capabilities.
-The DeepSeek Harness template runs the installed
+The DeepSeek Harness template runs the bundled
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
-directly as `dsh --profile acp`; its default binary is `dsh`. Set
+with its private Node runtime as `dsh --profile acp`. An empty executable path
+selects the bundled version; an explicit path uses that external CLI. Set
 `DEEPSEEK_API_KEY` in the provider environment (optional `DEEPSEEK_BASE_URL`)
 before starting a session. The ACP automation profile does not advertise
-interactive authenticate methods. Settings installs the CLI with
-`npm install -g @deepseek-ai/dsh`.
+interactive authenticate methods. No Node.js, npm, or global dsh installation
+is required. Settings probes the bundled runtime and offers no installer or
+interactive login; a missing runtime requires reinstalling DeskFleet. Existing
+explicit paths remain external overrides; clear the path to use the bundle.
+Bundled version detection allows 30 seconds for cold startup. Timeouts and
+launch failures surface as detection errors rather than missing installations.
 
 The Antigravity template runs Google's standalone
 [Antigravity ACP runtime](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)

@@ -3,6 +3,7 @@ import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { stageDsh } from "./stage-dsh.ts"
 import { build } from "esbuild"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
@@ -11,6 +12,7 @@ const bundle = join(output, "daemon.cjs")
 const addon = join(root, "crates/node/deskfleet.node")
 
 mkdirSync(output, { recursive: true })
+await stageDsh(join(output, "dsh"))
 await build({
   absWorkingDir: root,
   entryPoints: ["apps/daemon/src/main.ts"],

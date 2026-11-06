@@ -330,7 +330,7 @@ to check module initialization order as well as file sizes.
 | `mise run build` | Build the release server and standalone SEA daemon |
 | `mise run ci:build` | Build all release bundles with one shared Rust workspace build |
 | `mise run daemon:pack` | Package the daemon as a standalone SEA executable |
-| `mise run daemon:smoke` | Run the SEA executable alone with no Node on PATH |
+| `mise run daemon:smoke` | Run the SEA release payload with no Node on PATH |
 | `mise run native:debug` / `native:release` | Build the napi-rs addon and regenerate TypeScript declarations |
 | `mise run format` | Apply Rust formatting |
 | `mise run format-check` | Check Rust formatting |
@@ -370,8 +370,15 @@ runtime commands.
 The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
-Grok (`grok agent stdio`), Pi (`pi --mode rpc`), Oh My Pi (`omp acp`), or
-DeepSeek Harness (`dsh --profile acp`).
+Grok (`grok agent stdio`), Pi (`pi --mode rpc`), or Oh My Pi (`omp acp`).
+DeepSeek Harness is bundled with a private Node runtime. For source daemon
+launches run `mise run dsh:stage` after installing dependencies; desktop and SEA
+builds stage it automatically. Desktop development stages `out/dsh` once before
+launching Electron; main-process rebuilds leave that runtime intact. Staging uses
+the dedicated deploy lockfile and trusts the graph already validated by workspace
+installation, so offline builds do not need registry metadata to resolve it again.
+`mise run dsh:smoke` checks its version and ACP
+handshake with an empty PATH and an isolated home.
 Antigravity uses a separate native ACP runtime with its matching local harness;
 Settings downloads the pinned Google package and verifies its SHA-256 for the
 executing machine. Pi's official installer can
