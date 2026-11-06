@@ -1222,6 +1222,35 @@ test("successful history refresh preserves a newer live connection error", async
   } finally { platformClient.agent.history = previous }
 })
 
+test.each(["before", "during"] as const)("history failure and recovery preserve a connection error raised %s the refresh", async timing => {
+  const previous = platformClient.agent.history
+  const failed = deferred<never>()
+  const list = vi.fn().mockReturnValueOnce(failed.promise).mockResolvedValue([agentSnapshot().session])
+  platformClient.agent.history = { available: () => true, list, snapshot: async () => agentSnapshot(), events: async () => [] }
+  try {
+    const store = useAgentSessionsStore()
+    const disconnect = () => mock.state("error", "Peer unavailable", "turn_quota_exhausted")
+    if (timing === "before") disconnect()
+    const refreshing = store.refresh()
+    if (timing === "during") disconnect()
+    failed.reject(new Error("History unavailable"))
+    await refreshing
+    expect(store.state).toBe("error")
+    expect(store.error).toBe("Peer unavailable")
+    expect(store.relayDeniedReason).toBe("turn_quota_exhausted")
+
+    await store.refresh()
+    expect(store.sessions["30"]).toBeDefined()
+    expect(store.state).toBe("error")
+    expect(store.error).toBe("Peer unavailable")
+    expect(store.relayDeniedReason).toBe("turn_quota_exhausted")
+
+    mock.state("connected")
+    expect(store.error).toBeNull()
+    expect(store.relayDeniedReason).toBeUndefined()
+  } finally { platformClient.agent.history = previous }
+})
+
 test.each(["history", "event", "snapshot"] as const)("a newly created session omitted by central sync reappears from its next %s", async source => {
   const previous = platformClient.agent.history
   const snapshot = agentSnapshot()

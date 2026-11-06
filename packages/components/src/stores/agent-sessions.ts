@@ -424,7 +424,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
           }
         } catch (reason) {
           // A newer notification still needs its own read after this request fails.
-          if (!refreshPending) {
+          // Central history recovery does not recover a failed live connection.
+          if (!refreshPending && state.value !== "error") {
             refreshFailed = true
             error.value = messageOf(reason)
             relayDeniedReason.value = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
