@@ -7,7 +7,6 @@ import { useI18n } from "vue-i18n"
 import type { Team, TeamMember } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
-import IconButton from "../common/IconButton.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import InviteDialog from "./InviteDialog.vue"
 import TransferOwnershipDialog from "./TransferOwnershipDialog.vue"
@@ -88,8 +87,8 @@ onMounted(load)
       <UiButton v-if="!members.length" type="button" class="shrink-0" :disabled="loading" @click="load">{{ t("settings.retryLoad") }}</UiButton>
     </div>
     <p v-if="loading" role="status" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
-    <ul v-else-if="members.length" class="ui-card m-0 list-none p-0 shadow-ui-card">
-      <li v-for="(member, index) in members" :key="member.userId" class="flex items-center gap-3 px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-member-id="member.userId">
+    <ul v-else-if="members.length" class="ui-card m-0 list-none p-0">
+      <li v-for="member in members" :key="member.userId" class="flex items-center gap-3 px-4 py-3" :data-member-id="member.userId">
         <UserAvatar :name="member.name" :email="member.email" :size="32" class="text-[13px]" />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm">
@@ -101,7 +100,7 @@ onMounted(load)
           <UiSelect :aria-label="t('team.roleFor', { name: member.name })" :model-value="member.role" :options="[{ value: 'member', label: t('team.member') }, { value: 'admin', label: t('team.admin') }]" :disabled="!!updating" @update:model-value="changeRole(member, $event)" />
         </div>
         <span v-else class="ui-badge shrink-0">{{ t(`team.${member.role}`) }}</span>
-        <IconButton v-if="manageable(member)" :icon="Trash2" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member" />
+        <UiButton v-if="manageable(member)" variant="ghost" size="icon" :label="t('team.removeMemberLabel', { name: member.name })" :disabled="!!updating" @click="removing = member"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         <span v-else-if="admin" class="w-7 shrink-0" aria-hidden="true" />
       </li>
     </ul>

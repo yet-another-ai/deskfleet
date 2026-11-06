@@ -12,7 +12,6 @@ import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
 import { previewKindFromMime, previewKindFromUri, type MediaPreviewKind, type PreviewSource } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { locatePreviewInMainView } from "../../stores/previews.ts"
-import IconButton from "../common/IconButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 import UiButton from "../common/UiButton.vue"
 import FileBrowserPane from "../files/FileBrowserPane.vue"
@@ -146,12 +145,13 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
           {{ entry?.name ?? title ?? request.uri }}
         </span>
         <div class="flex shrink-0 items-center gap-1.5">
-          <IconButton
-            :icon="LocateFixed"
+          <UiButton
+            variant="ghost"
+            size="icon"
             :label="t('mermaid.locateMessage')"
             data-preview-action="locate-message"
             @click="locateOriginal"
-          />
+          ><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton
             v-if="entry"
             type="button"

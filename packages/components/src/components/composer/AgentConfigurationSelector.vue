@@ -117,9 +117,9 @@ async function confirmSwitch(): Promise<void> {
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
-          <p v-if="loading" class="m-0 flex items-center gap-1.5 border-t border-ui-border px-2.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
-          <div v-if="error" class="border-t border-ui-border px-2.5 py-2 text-xs">
-            <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
+          <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
+          <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
+            <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>
             <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>
           </div>
         </DropdownMenuContent>

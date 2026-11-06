@@ -30,7 +30,7 @@ async function enable(): Promise<void> {
     <BrandLogo :size="24" decorative />{{ siteName }}
   </div>
   <main class="flex min-h-0 flex-1 justify-center overflow-y-auto p-5 sm:p-8">
-    <div class="ui-card my-auto grid w-full max-w-4xl overflow-hidden shadow-ui-card md:grid-cols-[0.9fr_1.1fr]">
+    <div class="ui-card my-auto grid w-full max-w-4xl overflow-hidden md:grid-cols-[0.9fr_1.1fr]">
       <aside class="flex flex-col gap-6 border-b border-ui-border bg-ui-sidebar p-7 md:border-b-0 md:border-r md:p-9">
         <div>
           <BrandLogo :size="52" class="mb-5" />

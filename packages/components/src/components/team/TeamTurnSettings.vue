@@ -70,16 +70,16 @@ async function remove(): Promise<void> {
         </div>
       </div>
       <form v-else class="flex flex-col gap-4" :aria-labelledby="`${id}-title`" @submit.prevent="submit">
-        <div class="ui-card px-4">
-          <div v-for="(_, index) in urlsForm" :key="index" class="ui-setting flex items-center gap-3 py-3">
+        <div class="ui-card">
+          <div v-for="(_, index) in urlsForm" :key="index" class="ui-setting flex items-center gap-3 px-4 py-3">
             <label :for="`${id}-url-${index}`" class="shrink-0 text-sm text-ui-text-muted">{{ index + 1 }}<span class="sr-only"> — {{ t("siteAdmin.turnUrl") }}</span></label>
             <input :id="`${id}-url-${index}`" v-model="urlsForm[index]" class="ui-input min-w-0 flex-1 font-mono text-xs" :name="`team-turn-url-${index}`" :aria-label="t('siteAdmin.turnUrlLabel', { number: index + 1 })" placeholder="turn:turn.example.com:3478?transport=udp" required autocomplete="off" spellcheck="false" :disabled="saving" />
             <UiButton variant="ghost" size="icon" :aria-label="t('siteAdmin.turnRemove', { number: index + 1 })" :disabled="saving || urlsForm.length === 1" @click="urlsForm.splice(index, 1)"><Trash2 :size="15" aria-hidden="true" /></UiButton>
           </div>
-          <div class="py-3">
+          <div class="ui-setting px-4 py-3">
             <UiButton :disabled="saving" @click="urlsForm.push('')"><Plus :size="14" aria-hidden="true" />{{ t("siteAdmin.turnAdd") }}</UiButton>
           </div>
-          <div class="ui-setting py-3">
+          <div class="ui-setting px-4 py-3">
             <UiField v-model="secret" :label="t('team.turnSecret')" type="password" name="team-turn-secret" autocomplete="new-password" maxlength="1024" spellcheck="false" :required="!current.secretConfigured" :placeholder="current.secretConfigured ? t('team.turnSecretSaved') : undefined" :hint="t(current.secretConfigured ? 'team.turnSecretKeepHint' : 'team.turnSecretHint')" :disabled="saving" />
           </div>
         </div>

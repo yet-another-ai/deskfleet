@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight } from "@lucide/vue"
+import { ChevronRight, LocateFixed, Unplug } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import type { Machine } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -21,8 +21,14 @@ const session = useAccountSession()
       @click="emit('select')"
     >
       <span class="truncate">{{ machine.name }}</span>
-      <span v-if="machine.id === session?.localMachineId.value" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.local") }}</span>
-      <span v-if="!machine.online" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.offline") }}</span>
+      <span v-if="machine.id === session?.localMachineId.value" class="inline-flex shrink-0 items-center text-ui-text-muted" :title="t('machine.local')">
+        <LocateFixed :size="14" :stroke-width="1.75" aria-hidden="true" />
+        <span class="sr-only">{{ t("machine.local") }}</span>
+      </span>
+      <span v-if="!machine.online" class="inline-flex shrink-0 items-center text-ui-warning" :title="t('machine.offline')">
+        <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
+        <span class="sr-only">{{ t("machine.offline") }}</span>
+      </span>
       <ChevronRight :size="14" class="shrink-0" aria-hidden="true" />
     </button>
   </section>

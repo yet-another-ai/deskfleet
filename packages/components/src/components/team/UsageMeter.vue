@@ -2,7 +2,7 @@
 import { Info } from "@lucide/vue"
 import { computed, useId } from "vue"
 import { useI18n } from "vue-i18n"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 
 /**
  * One allowance row. `limit` is null for unlimited and 0 for not included; only
@@ -20,7 +20,7 @@ const fill = computed(() => ratio.value >= 1 ? "bg-ui-danger" : ratio.value >= 0
     <div class="flex min-h-7 items-center justify-between gap-4">
       <div class="flex min-w-0 items-center gap-1">
         <h3 :id="id" class="m-0 truncate text-sm font-normal">{{ label }}</h3>
-        <IconButton :icon="Info" :label="hint" class="-my-1" />
+        <UiButton variant="ghost" size="icon" :label="hint" class="-my-1"><Info :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
       <span v-if="limit === 0" class="ui-badge shrink-0">{{ t("billing.notIncluded") }}</span>
       <span v-else class="flex shrink-0 items-center gap-2 text-sm tabular-nums">

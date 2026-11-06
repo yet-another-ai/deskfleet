@@ -34,10 +34,15 @@ const colorNames = [
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
 // Pressing a button settles it slightly; inert buttons stay still.
 const button =
-  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion enabled:active:scale-[0.97] [&[aria-disabled=true]]:active:scale-100 disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
+  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap squircle-lg border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion enabled:active:scale-[0.97] [&[aria-disabled=true]]:active:scale-100 disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
 
 export default defineConfig({
   presets: [presetWind4()],
+  content: {
+    pipeline: {
+      include: [/\.(vue|[jt]sx|mdx?|html)($|\?)/, /\.stories\.ts($|\?)/],
+    },
+  },
   theme: {
     font: { mono: "var(--ui-font-mono)" },
     colors: Object.fromEntries(colorNames.map((name) => [`ui-${name}`, `var(--ui-color-${name})`])),
@@ -58,7 +63,6 @@ export default defineConfig({
 
     // Controls
     "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text enabled:hover:bg-ui-control-hover enabled:active:bg-ui-active disabled:op-50`,
-    // Filled actions carry the gloss and tinted shadow from styles.css while enabled.
     "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
     "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger enabled:hover:border-ui-danger/45 enabled:hover:bg-ui-danger/14 enabled:active:bg-ui-danger/20 disabled:op-50`,
     "ui-button-ghost": `${button} border-transparent bg-transparent text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:op-40`,
@@ -76,10 +80,10 @@ export default defineConfig({
     "ui-radio-dot": "h-2 w-2 rounded-full bg-ui-accent",
 
     // Surfaces
-    "ui-card": "overflow-hidden rounded-xl border border-ui-border bg-ui-surface shadow-ui-card",
+    "ui-card": "overflow-hidden squircle-xl border border-ui-border-strong bg-ui-surface",
     "ui-card-row": "flex min-h-11 items-center gap-3 px-4 py-2",
     "ui-option-card":
-      "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:-translate-y-px enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:translate-y-0 enabled:active:scale-[0.99] disabled:cursor-default",
+      "flex w-full cursor-pointer items-center gap-3 squircle-xl border border-ui-border-strong bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:-translate-y-px enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:translate-y-0 enabled:active:scale-[0.99] disabled:cursor-default",
     "ui-empty":
       "flex flex-col items-center gap-1 rounded-xl border border-dashed border-ui-border-strong bg-ui-surface/40 px-6 py-10 text-center",
     "ui-dialog":
@@ -111,6 +115,17 @@ export default defineConfig({
     "ui-avatar": "inline-flex shrink-0 items-center justify-center bg-ui-avatar text-xs font-semibold text-ui-avatar-text",
   },
   rules: [
+    // Continuous-curvature corners: falls back to `border-radius` and scales up 1.25x when `corner-shape: superellipse(1.4)` is supported.
+    [/^squircle(?:-(.+))?$/, function* ([, size = "DEFAULT"], { theme, symbols }) {
+      const radius = theme.radius?.[size] ?? (size.startsWith("[") && size.endsWith("]") ? size.slice(1, -1) : undefined)
+      if (!radius) return
+      yield { "border-radius": radius }
+      yield {
+        [symbols.parent]: "@supports (corner-shape: superellipse(1.4))",
+        "border-radius": `calc(${radius} * 1.25)`,
+        "corner-shape": "superellipse(1.4)",
+      }
+    }],
     // The shared interaction transition: state colors, elevation, and press scale.
     // `duration-*` and `ease-*` utilities set these variables, so they adjust it regardless of CSS order.
     ["ui-motion", {

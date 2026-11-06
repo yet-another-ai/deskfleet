@@ -14,7 +14,7 @@ watch(() => props.open, open => {
 
 function focusPanel(event: Event): void {
   event.preventDefault()
-  if (event.target instanceof HTMLElement) event.target.focus()
+  if (event.target instanceof HTMLElement) event.target.focus({ preventScroll: true })
 }
 </script>
 
@@ -49,18 +49,22 @@ function focusPanel(event: Event): void {
 <style scoped>
 .bottom-sheet {
   --bleed: 48px;
+  --sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
   height: calc(88dvh + var(--bleed));
   max-width: 48rem;
   padding-bottom: calc(var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)) + var(--bleed));
   margin-bottom: calc(-1 * var(--bleed));
+  contain: layout paint;
+  will-change: transform, translate;
   transform: translateY(var(--drawer-swipe-movement-y, 0px));
-  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform 500ms var(--sheet-ease);
 }
-.bottom-sheet[data-state="open"] { animation: sheet-in 320ms cubic-bezier(0.32, 0.72, 0, 1); }
-.bottom-sheet[data-state="closed"] { animation: sheet-out 240ms cubic-bezier(0.32, 0.72, 0, 1); }
+.bottom-sheet[data-state="open"] { animation: sheet-in 500ms var(--sheet-ease); }
+.bottom-sheet[data-state="closed"] { animation: sheet-out calc(500ms * var(--drawer-swipe-strength, 1)) var(--sheet-ease) forwards; }
 .bottom-sheet[data-swiping] { transition-duration: 0ms; }
-.bottom-sheet-overlay[data-state="open"] { animation: overlay-in 240ms ease-out; }
-.bottom-sheet-overlay[data-state="closed"] { animation: overlay-out 240ms ease-out; }
+.bottom-sheet-overlay { will-change: opacity; }
+.bottom-sheet-overlay[data-state="open"] { animation: overlay-in 500ms var(--sheet-ease); }
+.bottom-sheet-overlay[data-state="closed"] { animation: overlay-out calc(500ms * var(--drawer-swipe-strength, 1)) var(--sheet-ease) forwards; }
 @keyframes sheet-in { from { translate: 0 calc(100% - var(--bleed)); } }
 @keyframes sheet-out { to { translate: 0 calc(100% - var(--bleed)); } }
 @keyframes overlay-in { from { opacity: 0; } }

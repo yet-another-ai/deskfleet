@@ -22,7 +22,7 @@ export const Default: Story = {
     components: { SettingsRow, UiSwitch, UiButton },
     setup: () => ({ args }),
     template: `
-      <div class="ui-card divide-y divide-ui-border px-4">
+      <div class="ui-card">
         <SettingsRow v-bind="args">
           <template #description>Prevent the system from sleeping while an agent session is actively running.</template>
           <UiSwitch :model-value="true" aria-labelledby="row-label" aria-describedby="row-desc" />

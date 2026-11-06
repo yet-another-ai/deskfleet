@@ -4,7 +4,6 @@ import { Archive, ArchiveRestore, Ellipsis, GitFork, Pencil, Square } from "@luc
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import IconButton from "../common/IconButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 /** Archival closes execution and removes generated worktrees while retaining the conversation. */
 const props = defineProps<{ canStop: boolean; canFork?: boolean; forkDisabled?: boolean; disabled: boolean; context: "directory" | "worktree"; archiveState: "active" | "archiving" | "archived" }>()
@@ -50,7 +49,7 @@ function restoreFocus(event: Event): void {
 <template>
   <div ref="actions" class="app-no-drag">
     <DropdownMenuRoot :open="open" :modal="false" @update:open="changeOpen">
-      <DropdownMenuTrigger :as="IconButton" :icon="Ellipsis" :label="t('agent.sessionActions')" :disabled="disabled" />
+      <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('agent.sessionActions')" :disabled="disabled"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('agent.sessionActions')" class="ui-menu z-50 flex w-44 flex-col" @close-auto-focus="(confirming || openingDialog) && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()" loop>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</DropdownMenuItem>

@@ -3,7 +3,7 @@ import { Settings } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRouter } from "vue-router"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import AccountFooter from "./AccountFooter.vue"
 import ArchivedSessionsButton from "./ArchivedSessionsButton.vue"
@@ -29,6 +29,6 @@ const initial = computed(() => t("catalog.local").charAt(0).toUpperCase())
       <span class="truncate">{{ t("catalog.local") }}</span>
     </div>
     <ArchivedSessionsButton />
-    <IconButton :icon="Settings" :label="t('nav.settings')" @click="router.push({ name: 'settings' })" />
+    <UiButton variant="ghost" size="icon" :label="t('nav.settings')" @click="router.push({ name: 'settings' })"><Settings :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
   </footer>
 </template>

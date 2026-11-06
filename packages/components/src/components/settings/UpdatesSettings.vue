@@ -65,11 +65,11 @@ function installUpdate(): void {
 
 <template>
   <h2 class="mb-3 text-base font-semibold">{{ t("aboutSettings.versionAndUpdates") }}</h2>
-  <section :aria-label="t('updatesSettings.title')" class="ui-card px-4">
+  <section :aria-label="t('updatesSettings.title')" class="ui-card">
     <SettingsRow :label="t('updatesSettings.currentVersion')">
       <span class="text-sm text-ui-text-muted">{{ state?.currentVersion ?? version }}</span>
     </SettingsRow>
-    <div v-if="state" class="py-4">
+    <div v-if="state" class="ui-setting px-4 py-4">
       <p role="status" aria-live="polite" class="m-0 text-sm">{{ status }}</p>
       <div v-if="api" class="mt-4 flex flex-wrap gap-2">
         <UiButton :loading="checking || state.status === 'checking'" :disabled="busy || state.status === 'disabled'" @click="checkForUpdates">
@@ -84,8 +84,8 @@ function installUpdate(): void {
       <p v-if="checkError" role="alert" :title="errorMessage(checkError)" class="m-0 mt-3 text-[13px] text-ui-danger">{{ t("updatesSettings.checkFailed") }}</p>
       <p v-if="state.status === 'error'" role="alert" :title="state.error" class="m-0 mt-3 text-[13px] text-ui-danger">{{ t("updates.failed") }}</p>
     </div>
-    <p v-else-if="loading" role="status" class="m-0 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
-    <div v-if="loadError && !state" class="py-4">
+    <p v-else-if="loading" role="status" class="ui-setting m-0 px-4 py-4 text-sm text-ui-text-muted">{{ t("settings.loading") }}</p>
+    <div v-if="loadError && !state" class="ui-setting px-4 py-4">
       <p role="alert" class="m-0 mb-3 break-words text-[13px] text-ui-danger">{{ errorMessage(loadError) }}</p>
       <UiButton :loading="loading" @click="() => load()">{{ t("settings.retryLoad") }}</UiButton>
     </div>

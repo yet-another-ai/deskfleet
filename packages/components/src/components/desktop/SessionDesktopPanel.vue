@@ -3,7 +3,7 @@ import { MonitorPlay, Pause, Play, RefreshCw } from "@lucide/vue"
 import { useDocumentVisibility } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import MachineDesktopPreviews from "./MachineDesktopPreviews.vue"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -48,8 +48,8 @@ function open(machineId: string, displayId: number): void {
         >{{ t(all ? 'desktopOverview.allMachines' : 'desktopOverview.sessionMachine') }}</button>
       </div>
       <div class="flex gap-0.5">
-        <IconButton :icon="paused ? Play : Pause" :label="t(paused ? 'desktopOverview.resume' : 'desktopOverview.pause')" :aria-pressed="paused" @click="paused = !paused" />
-        <IconButton :icon="RefreshCw" :label="t('desktop.retry')" @click="refresh" />
+        <UiButton variant="ghost" size="icon" :label="t(paused ? 'desktopOverview.resume' : 'desktopOverview.pause')" :aria-pressed="paused" @click="paused = !paused"><component :is="paused ? Play : Pause" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" :label="t('desktop.retry')" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </header>
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">

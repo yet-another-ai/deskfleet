@@ -8,7 +8,6 @@ import type { AccountAuthentication, Passkey } from "@deskfleet/client/account-s
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
-import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 
@@ -59,15 +58,15 @@ async function remove(key: Passkey): Promise<void> {
       <p class="m-0 text-sm font-medium">{{ t("auth.noPasskeys") }}</p>
       <p class="m-0 max-w-xs text-[13px] text-ui-text-muted">{{ t("auth.noPasskeysDescription") }}</p>
     </div>
-    <ul v-else class="ui-card m-0 list-none p-0 shadow-ui-card">
+    <ul v-else class="ui-card m-0 list-none p-0">
       <li v-for="key in passkeys" :key="key.id" class="ui-card-row py-3">
         <KeyRound :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         <div class="min-w-0 flex-1">
           <div class="truncate text-sm">{{ key.name }}</div>
           <div class="text-[13px] text-ui-text-muted">{{ t("auth.added", { date: formatDate(key.createdAt) }) }}</div>
         </div>
-        <IconButton :icon="Pencil" :label="t('auth.renamePasskeyLabel', { name: key.name })" @click="name(key)" />
-        <IconButton :icon="Trash2" :label="t('auth.removePasskeyLabel', { name: key.name })" @click="removing = key" />
+        <UiButton variant="ghost" size="icon" :label="t('auth.renamePasskeyLabel', { name: key.name })" @click="name(key)"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" :label="t('auth.removePasskeyLabel', { name: key.name })" @click="removing = key"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </li>
     </ul>
   </section>

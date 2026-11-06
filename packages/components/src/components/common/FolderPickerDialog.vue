@@ -6,7 +6,6 @@ import { DialogTitle } from "reka-ui"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
-import IconButton from "./IconButton.vue"
 import UiDialog from "./UiDialog.vue"
 import UiCheckbox from "./UiCheckbox.vue"
 
@@ -129,7 +128,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
             @keydown.enter.prevent="submitPathInput"
             @keydown.esc.stop.prevent="cancelEditingPath"
           />
-          <IconButton :icon="Check" :label="t('folderPicker.applyPath')" :disabled="loading || !pathInput.trim()" data-apply-path @click="submitPathInput" />
+          <UiButton variant="ghost" size="icon" :label="t('folderPicker.applyPath')" :disabled="loading || !pathInput.trim()" data-apply-path @click="submitPathInput"><Check :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </template>
         <template v-else-if="listing">
           <nav class="flex min-w-0 flex-1 flex-wrap items-center gap-1" :aria-label="t('folderPicker.location')">
@@ -138,7 +137,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
               <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
             </template>
           </nav>
-          <IconButton :icon="Pencil" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath" />
+          <UiButton variant="ghost" size="icon" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </template>
       </div>
       <div class="h-64 overflow-y-auto rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">

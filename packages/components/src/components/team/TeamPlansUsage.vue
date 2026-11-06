@@ -11,7 +11,6 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { fileSize } from "../../services/file-format.ts"
 import { beginAnalyticsPlanRefresh, trackEvent } from "../../services/analytics.ts"
 import { billingFailure } from "../../services/billing-events.ts"
-import IconButton from "../common/IconButton.vue"
 import UiButton from "../common/UiButton.vue"
 import AgentNotice from "../session/AgentNotice.vue"
 import UsageMeter from "./UsageMeter.vue"
@@ -151,7 +150,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
         <UiButton size="sm" class="shrink-0" :loading="pending === 'portal'" @click="open('portal', 'payment_recovery')">{{ t("billing.fixPayment") }}</UiButton>
       </AgentNotice>
       <AgentNotice v-if="checkoutOpened && !hasSubscription" tone="progress" :text="t('billing.checkoutOpened')" />
-      <div class="ui-card shadow-ui-card" data-team-plan>
+      <div class="ui-card" data-team-plan>
         <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-4">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
@@ -163,14 +162,14 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
           <UiButton v-if="billingAdmin && subscription" class="shrink-0" :loading="pending === 'portal'" @click="open('portal')">{{ t("billing.manage") }}<ExternalLink :size="13" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
-        <div class="border-t border-ui-border">
+        <div class="border-t border-ui-border-strong">
           <UsageMeter data-team-usage="traffic" :label="t('team.relayedTraffic')" :hint="t('billing.trafficHint')" :used="Number(state.usage.relayedBytes)" :limit="state.limits.turnBytes" :format="fileSize" :caption="caption" />
-          <UsageMeter data-team-usage="sessions" class="border-t border-ui-border" :label="t('team.activeSessions')" :hint="t('team.activeSessionsHint')" :used="state.usage.activeSessionCount" :limit="state.limits.maxActiveSessions" :format="count" />
-          <UsageMeter data-team-usage="members" class="border-t border-ui-border" :label="t('team.usageMembers')" :hint="t('team.usageMembersHint')" :used="state.usage.memberCount" :limit="state.limits.maxMembers" :format="count" />
-          <div data-team-usage="turns" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border px-4 py-3.5">
+          <UsageMeter data-team-usage="sessions" class="border-t border-ui-border-strong" :label="t('team.activeSessions')" :hint="t('team.activeSessionsHint')" :used="state.usage.activeSessionCount" :limit="state.limits.maxActiveSessions" :format="count" />
+          <UsageMeter data-team-usage="members" class="border-t border-ui-border-strong" :label="t('team.usageMembers')" :hint="t('team.usageMembersHint')" :used="state.usage.memberCount" :limit="state.limits.maxMembers" :format="count" />
+          <div data-team-usage="turns" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border-strong px-4 py-3.5">
             <div class="flex min-w-0 items-center gap-1">
               <h3 class="m-0 truncate text-sm font-normal">{{ t("billing.turnsPerSession") }}</h3>
-              <IconButton :icon="Info" :label="t('billing.turnsPerSessionHint')" class="-my-1" />
+              <UiButton variant="ghost" size="icon" :label="t('billing.turnsPerSessionHint')" class="-my-1"><Info :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
             <span v-if="state.limits.maxTurnsPerSession === null" class="ui-badge shrink-0">{{ t("team.unlimited") }}</span>
             <span v-else class="shrink-0 text-sm tabular-nums">{{ t("billing.turnsPerSessionLimit", { count: state.limits.maxTurnsPerSession }) }}</span>

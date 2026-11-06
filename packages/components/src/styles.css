@@ -33,6 +33,7 @@ ol {
 .ui-card > li + li,
 .ui-card > .ui-setting ~ .ui-setting {
   border-top-width: 1px;
+  border-color: var(--ui-color-border-strong);
 }
 
 html,
@@ -179,15 +180,6 @@ ol:has([data-message-sending="true"]) .ui-conversation-history {
   will-change: width, height, margin, translate, transform;
 }
 
-/* Filled buttons: a sheen and tinted shadow that deepen on hover. */
-:is(.ui-button-primary):not(:disabled) {
-  background-image: var(--ui-gloss);
-  box-shadow: var(--ui-shadow-action);
-}
-:is(.ui-button-primary):not(:disabled, [aria-disabled="true"]):hover {
-  box-shadow: var(--ui-shadow-action), 0 6px 16px -6px color-mix(in srgb, var(--ui-color-action) 55%, transparent);
-}
-
 /* Switch: the thumb springs across and stretches while held, like a native toggle. */
 .ui-switch-thumb {
   transition-property: transform, translate, left, width;
@@ -196,9 +188,6 @@ ol:has([data-message-sending="true"]) .ui-conversation-history {
 }
 .ui-switch:enabled:active .ui-switch-thumb { width: 1.25rem; }
 .ui-switch:enabled:active .ui-switch-thumb[data-state="checked"] { left: -0.125rem; }
-
-/* Checkbox marks pop in. */
-.ui-check-indicator > svg { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
 
 /* Radios: the checked ring tints and its dot springs in. */
 [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); }

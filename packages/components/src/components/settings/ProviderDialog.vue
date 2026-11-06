@@ -6,7 +6,6 @@ import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, AgentProviderInput, AgentProviderTemplate, AgentProviderTemplateId, ProviderProbeResult, ProviderTestResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
-import IconButton from "../common/IconButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderIconPicker from "./ProviderIconPicker.vue"
 import ProviderSetup from "./ProviderSetup.vue"
@@ -171,7 +170,7 @@ onBeforeUnmount(() => { finished = true })
     @close="cancel"
   >
     <div class="mb-5 flex shrink-0 items-start gap-2">
-      <IconButton v-if="step === 'details' && !initial" :icon="ChevronLeft" :label="t('providers.back')" :disabled="formDisabled" class="-ml-1.5 mt-[-2px]" data-provider-back @click="back" />
+      <UiButton v-if="step === 'details' && !initial" variant="ghost" size="icon" :label="t('providers.back')" :disabled="formDisabled" class="-ml-1.5 mt-[-2px]" data-provider-back @click="back"><ChevronLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       <div class="min-w-0">
         <DialogTitle class="ui-dialog-title">{{ t(initial ? "providers.edit" : "providers.add") }}</DialogTitle>
         <DialogDescription class="ui-dialog-description" data-provider-template>
@@ -230,7 +229,7 @@ onBeforeUnmount(() => { finished = true })
               <div v-for="(row, index) in environment" :key="row.id" class="flex items-center gap-2" data-environment-row>
                 <input v-model="row.key" class="ui-input min-w-0 flex-1 font-mono text-xs" :aria-label="t('providers.environmentKey', { n: index + 1 })" :placeholder="t('providers.key')" autocomplete="off" :spellcheck="false" />
                 <input v-model="row.value" class="ui-input min-w-0 flex-[1.4] font-mono text-xs" :aria-label="t('providers.environmentValue', { n: index + 1 })" :placeholder="t('providers.value')" autocomplete="off" :spellcheck="false" />
-                <IconButton :icon="Trash2" :label="t('providers.removeEnvironment', { n: index + 1 })" :disabled="formDisabled" @click="environment.splice(index, 1)" />
+                <UiButton variant="ghost" size="icon" :label="t('providers.removeEnvironment', { n: index + 1 })" :disabled="formDisabled" @click="environment.splice(index, 1)"><Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
               </div>
               <UiButton variant="ghost" size="sm" type="button" class="-ml-2 w-fit cursor-pointer hover:bg-ui-hover" @click="environment.push({ id: nextRowId++, key: '', value: '' })">
                 <Plus :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.addEnvironment") }}

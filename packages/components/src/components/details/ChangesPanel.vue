@@ -7,7 +7,7 @@ import { useRouteWorktree } from "../../composables/useRouteWorktree.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import GitChanges from "./GitChanges.vue"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 
 defineProps<{ windowed?: boolean; standalone?: boolean }>()
 const { t } = useI18n()
@@ -33,7 +33,7 @@ const unavailable = computed(() => {
   >
     <div v-if="!windowed" class="titlebar-overlay-inset app-drag flex h-12 shrink-0 items-center pl-4">
       <h2 class="m-0 flex-1 text-[13px] font-medium">{{ t('panel.changes') }}</h2>
-      <IconButton v-if="compact" :icon="X" :label="t('toolbar.hidePanel')" @click="layout.toggleDetails()" />
+      <UiButton v-if="compact" variant="ghost" size="icon" :label="t('toolbar.hidePanel')" @click="layout.toggleDetails()"><X :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     </div>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <GitChanges v-if="worktree && !unavailable" :key="worktree.session.id" class="min-h-0 min-w-0 flex-1" :session-id="worktree.session.id" :enabled="worktree.machine.online" />

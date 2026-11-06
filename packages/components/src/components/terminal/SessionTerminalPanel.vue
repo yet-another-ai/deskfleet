@@ -7,7 +7,7 @@ import { useI18n } from "vue-i18n"
 import type { WorktreeSummary } from "../../stores/fleet-types.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import TerminalWorkspace from "./TerminalWorkspace.vue"
 
 /**
@@ -68,7 +68,7 @@ function keyResize(event: KeyboardEvent): void {
     />
     <TerminalWorkspace v-model:active-id="active" :terminals="worktree.terminals" :read-only="readOnly" :create="() => terminals.create({ worktreeId: worktree.id })" :ensure-terminal="() => terminals.ensureWorktreeTerminal(worktree.id)">
       <template #actions>
-        <IconButton :icon="PanelBottomClose" :label="t('terminal.hidePanel')" @click="terminalPanelOpen = false" />
+        <UiButton variant="ghost" size="icon" :label="t('terminal.hidePanel')" @click="terminalPanelOpen = false"><PanelBottomClose :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </template>
     </TerminalWorkspace>
   </section>

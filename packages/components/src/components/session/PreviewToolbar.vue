@@ -4,7 +4,7 @@ import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenu
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { PreviewMode, PreviewToolbarAction } from "../../services/preview.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 
 defineProps<{
   mode: PreviewMode
@@ -32,17 +32,18 @@ function select(action: () => void): void {
 
 <template>
   <div data-preview-toolbar class="app-no-drag absolute top-2 right-2 z-10 flex items-center gap-0.5 rounded-lg border border-ui-border bg-ui-canvas/90 p-0.5 shadow-ui-card backdrop-blur-xs">
-    <IconButton
+    <UiButton
       v-for="action in actions"
       :key="action.id"
-      :icon="action.icon"
+      variant="ghost"
+      size="icon"
       :label="action.label"
       :data-preview-action="action.id"
       @click="action.onClick"
-    />
-    <IconButton v-if="mode === 'inline'" :icon="Maximize2" :label="t('mermaid.focus')" data-preview-action="focus" @click="emit('focus')" />
+    ><component :is="action.icon" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    <UiButton v-if="mode === 'inline'" variant="ghost" size="icon" :label="t('mermaid.focus')" data-preview-action="focus" @click="emit('focus')"><Maximize2 :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     <DropdownMenuRoot v-model:open="menuOpen" :modal="false">
-      <DropdownMenuTrigger :as="IconButton" :icon="Ellipsis" :label="t('mermaid.more')" data-preview-action="more" />
+      <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('mermaid.more')" data-preview-action="more"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex w-44 flex-col" loop>
           <DropdownMenuItem v-if="canDownload" as="button" type="button" class="ui-menu-item" data-preview-action="download" @select="select(() => emit('download'))">

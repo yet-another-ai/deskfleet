@@ -7,7 +7,6 @@ import { useI18n } from "vue-i18n"
 import type { AgentProviderInput, ProviderProbeResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import IconButton from "../common/IconButton.vue"
 import LiveTerminal, { type TerminalConnection } from "../terminal/LiveTerminal.vue"
 
 const props = defineProps<{
@@ -209,7 +208,7 @@ onBeforeUnmount(() => { disposed = true; revision++; cancelProbe() })
       <p v-else class="m-0 min-w-0 flex-1 text-ui-text-muted">{{ t("providers.setup.unavailable") }}</p>
       <!-- The running operation owns the card's only action, Stop, until it finishes. -->
       <div v-if="!running" class="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
-        <IconButton :icon="RotateCw" :label="t('providers.setup.refresh')" :disabled="actionsDisabled || !provider" data-provider-probe @click="probe()" />
+        <UiButton variant="ghost" size="icon" :label="t('providers.setup.refresh')" :disabled="actionsDisabled || !provider" data-provider-probe @click="probe()"><RotateCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         <UiButton variant="ghost" size="sm" v-if="canSetPath" type="button" class="cursor-pointer hover:bg-ui-hover" :disabled="busy || disabled" data-provider-set-path @click="emit('editPath')">{{ t("providers.setup.setPath") }}</UiButton>
         <UiButton v-if="canInstall" type="button" :variant="result?.status === 'found' ? 'ghost' : 'default'" :size="result?.status === 'found' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-install @click="start('install')">{{ t(result?.status === "found" ? "providers.setup.reinstall" : "providers.setup.install") }}</UiButton>
         <UiButton v-if="canLogin" :variant="result?.auth === 'authenticated' ? 'ghost' : 'default'" :size="result?.auth === 'authenticated' ? 'sm' : 'default'" :disabled="actionsDisabled" data-provider-login @click="start('login')">{{ t("providers.setup.login") }}</UiButton>

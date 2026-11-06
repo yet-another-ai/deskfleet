@@ -6,9 +6,11 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  LocateFixed,
   MonitorPlay,
   SquarePen,
   SquareTerminal,
+  Unplug,
 } from "@lucide/vue"
 import { useArrayFilter } from "@vueuse/core"
 import { computed, ref } from "vue"
@@ -22,7 +24,7 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import WorkspaceContextMenu from "../catalog/WorkspaceContextMenu.vue"
@@ -103,18 +105,22 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
         class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
       >
         <span class="truncate">{{ machine.name }}</span>
-        <span v-if="machine.local" class="ui-badge shrink-0 rounded-full font-normal">{{ t("machine.local") }}</span>
+        <span v-if="machine.local" class="inline-flex shrink-0 items-center text-ui-text-muted" :title="t('machine.local')">
+          <LocateFixed :size="14" :stroke-width="1.75" aria-hidden="true" />
+          <span class="sr-only">{{ t("machine.local") }}</span>
+        </span>
         <span
           v-if="!machine.online"
-          class="ui-badge shrink-0 rounded-full font-normal"
-          :title="lastSeen"
+          class="inline-flex shrink-0 items-center text-ui-warning"
+          :title="lastSeen ?? t('machine.offline')"
         >
-          {{ t("machine.offline") }}
+          <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
+          <span class="sr-only">{{ t("machine.offline") }}</span>
         </span>
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>
       <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
-        <IconButton :icon="FolderPlus" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true" />
+        <UiButton variant="ghost" size="icon" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true"><FolderPlus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </div>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
@@ -150,12 +156,15 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
               <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
             </template>
             <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-              <IconButton
-                :icon="Archive"
+              <UiButton
+                variant="ghost"
+                size="icon"
                 :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
                 :disabled="!machine.online || pending || !session.context"
                 @click="requestArchive()"
-              />
+              >
+                <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+              </UiButton>
             </template>
           </TreeLink>
         </SessionContextMenu>
@@ -172,8 +181,8 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
               <span class="truncate">{{ workspace.name }}</span>
             </CollapsibleTrigger>
             <div class="workspace-actions flex shrink-0 items-center pr-1">
-              <IconButton :icon="SquareTerminal" :label="t('workspace.openDefaultTerminal')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online || openingTerminal || workspace.directories.length === 0" @click="openTerminal(workspace)" />
-              <IconButton :icon="SquarePen" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)" />
+              <UiButton variant="ghost" size="icon" :label="t('workspace.openDefaultTerminal')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online || openingTerminal || workspace.directories.length === 0" @click="openTerminal(workspace)"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+              <UiButton variant="ghost" size="icon" :label="t('workspace.newSession')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online" @click="startSession(workspace.id)"><SquarePen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
           </div>
         </WorkspaceContextMenu>
@@ -204,12 +213,15 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
                   <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
                 </template>
                 <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-                  <IconButton
-                    :icon="Archive"
+                  <UiButton
+                    variant="ghost"
+                    size="icon"
                     :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
                     :disabled="!machine.online || pending || !session.context"
                     @click="requestArchive()"
-                  />
+                  >
+                    <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  </UiButton>
                 </template>
               </TreeLink>
             </SessionContextMenu>

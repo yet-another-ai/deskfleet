@@ -3,7 +3,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
 import { useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -267,7 +267,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-[calc(1.25rem+var(--safe-area-bottom,0px))]">
     <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
-      <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Monitor :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="ui-badge">{{ t("machine.local") }}</span></span>
+      <span class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="sr-only">{{ t("machine.local") }}</span></span>
       <template v-if="location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
       <SessionPreparation v-if="showTarget && location.workspace" ref="preparationButton" v-model:base-revisions="baseRevisions" v-model:branches="preparedBranches" :location="location" :context="context" :disabled="submitting" @busy="preparing = $event" />
       <button v-if="changes.additions || changes.deletions" type="button" class="ml-auto shrink-0 cursor-pointer rounded-md bg-ui-badge px-1.5 font-mono text-xs leading-5 ui-motion hover:bg-ui-hover" :title="t('panel.changes')" data-composer-changes @click="layout.requestDetailsOpen()"><span class="text-ui-success">+{{ changes.additions }}</span> <span class="text-ui-danger">−{{ changes.deletions }}</span></button>
     </div>
-    <div ref="dropZoneRef" class="composer-shell relative rounded-2xl border bg-ui-surface shadow-ui-card ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
+    <div ref="dropZoneRef" class="composer-shell relative rounded-2xl border bg-ui-surface ui-motion duration-[var(--ui-duration-base)] focus-within:border-ui-accent/50" :class="isOverDropZone ? 'composer-dropping border-ui-accent bg-ui-accent/5' : 'border-ui-border'">
       <ComposerCompletions v-if="completion.trigger" :id="completionId" :candidates="completion.candidates" :selected="completion.selected" :loading="completion.loading" :error="completion.error" :truncated="completion.truncated" :kind="completion.trigger.kind" @select="completion.accept" @highlight="completion.selected = $event" />
       <span v-if="showTarget && submitting" class="composer-creation-beam" aria-hidden="true" />
       <input ref="fileInput" type="file" multiple class="sr-only" data-composer-file-input @change="onFilesPicked" />
@@ -392,9 +392,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .session-composer { container-type: inline-size; }
-
-/* The composer lifts into focus with an accent glow, and glows while files hover over it. */
-.composer-shell:is(:focus-within, .composer-dropping) { box-shadow: var(--ui-shadow-card), var(--ui-shadow-glow); }
 
 /* Send springs forward when it becomes available; its arrow nudges up on hover. */
 .composer-send:enabled { animation: composer-send-ready var(--ui-duration-slow) var(--ui-ease-spring); }

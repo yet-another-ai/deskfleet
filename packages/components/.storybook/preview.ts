@@ -54,6 +54,7 @@ const preview: Preview = {
   initialGlobals: {
     theme: "light",
     locale: "en-US",
+    backgrounds: { value: undefined, grid: true },
   },
   parameters: {
     controls: {
@@ -77,7 +78,7 @@ const preview: Preview = {
 
       return {
         components: { story },
-        template: `<div class="bg-ui-canvas text-ui-text p-4 rounded-xl min-h-[120px]"><story /></div>`,
+        template: `<div class="text-ui-text p-4 rounded-xl min-h-[120px]"><story /></div>`,
       }
     },
   ],

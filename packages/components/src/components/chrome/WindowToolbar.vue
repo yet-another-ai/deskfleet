@@ -5,7 +5,7 @@ import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import { useLayoutStore } from "../../stores/layout.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 
 const { t } = useI18n()
 withDefaults(defineProps<{ sidebar?: boolean; history?: boolean }>(), {
@@ -29,25 +29,28 @@ const canGoForward = computed(() => historyEntry("forward"))
 
 <template>
   <div class="flex items-center gap-1">
-    <IconButton
+    <UiButton
       v-if="sidebar"
-      :icon="PanelLeft"
+      variant="ghost"
+      size="icon"
       :label="sidebarOpen ? t('toolbar.hideSidebar') : t('toolbar.showSidebar')"
       @click="layout.toggleSidebar()"
-    />
-    <IconButton
+    ><PanelLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    <UiButton
       v-if="history"
-      :icon="ArrowLeft"
+      variant="ghost"
+      size="icon"
       :label="t('toolbar.back')"
       :disabled="!canGoBack"
       @click="router.back()"
-    />
-    <IconButton
+    ><ArrowLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+    <UiButton
       v-if="history"
-      :icon="ArrowRight"
+      variant="ghost"
+      size="icon"
       :label="t('toolbar.forward')"
       :disabled="!canGoForward"
       @click="router.forward()"
-    />
+    ><ArrowRight :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
   </div>
 </template>

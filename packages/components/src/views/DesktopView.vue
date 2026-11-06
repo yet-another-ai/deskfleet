@@ -12,7 +12,6 @@ import { computed, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } fro
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
-import IconButton from "../components/common/IconButton.vue"
 import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
 import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
@@ -301,14 +300,14 @@ const errorDescription = computed(() => {
         <span v-if="stream" role="status" class="flex items-center gap-1.5 px-2 text-[13px] text-ui-text-muted">
           <span class="ui-status-dot" :class="state === 'connected' ? 'ui-status-live text-ui-success' : 'text-ui-text-faint'" aria-hidden="true" />{{ status }}
         </span>
-        <IconButton :portal-to="stage ?? undefined" v-if="isFullscreen || (stream && state === 'connected')" :icon="isFullscreen ? Minimize : Maximize" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen" />
+        <UiButton variant="ghost" size="icon" :portal-to="stage ?? undefined" v-if="isFullscreen || (stream && state === 'connected')" :label="t(isFullscreen ? 'desktop.exitFullscreen' : 'desktop.fullscreen')" @click="fullscreen"><component :is="isFullscreen ? Minimize : Maximize" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         <UiButton v-if="stream && control && state === 'connected'" type="button" class="py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
         </UiButton>
         <UiButton v-if="stream && control && state === 'connected' && secureAttentionAvailable" type="button" class="py-1" data-desktop-secure-attention :disabled="!inputEnabled" @click="sendSecureAttention">
           {{ t("desktop.sendSecureAttention") }}
         </UiButton>
-        <PopoverTrigger :as="IconButton" :portal-to="stage ?? undefined" :icon="SlidersHorizontal" :label="t('desktop.settings')" :disabled="!capabilities" />
+        <PopoverTrigger :as="UiButton" variant="ghost" size="icon" :portal-to="stage ?? undefined" :label="t('desktop.settings')" :disabled="!capabilities"><SlidersHorizontal :size="16" :stroke-width="1.75" aria-hidden="true" /></PopoverTrigger>
         <UiButton variant="danger" v-if="stream && active" type="button" class="py-1" @click="connection.disconnect()">
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.disconnect") }}
         </UiButton>

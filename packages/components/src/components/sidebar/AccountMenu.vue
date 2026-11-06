@@ -30,7 +30,7 @@ function signOut(): void {
       <ChevronUp :size="13" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </template>
     <template #default>
-      <div class="border-b border-ui-border px-2.5 py-2.5">
+      <div class="-mx-1 border-b border-ui-border px-3.5 py-2.5">
         <div class="truncate text-[13px] font-medium">{{ session.account.value.user.name }}</div>
         <div v-if="session.account.value.user.email" class="mt-0.5 truncate text-xs text-ui-text-muted">{{ session.account.value.user.email }}</div>
         <div class="mt-0.5 truncate text-xs text-ui-text-faint">{{ session.account.value.serverUrl }}</div>

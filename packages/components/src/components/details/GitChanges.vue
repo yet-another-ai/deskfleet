@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import type { GitChangeKind, GitFileChange } from "../../../../../apps/daemon/src/git-protocol.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { gitDiffCardKey } from "./git-diff-card.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import GitChangeFile from "./GitChangeFile.vue"
 import GitCheckout from "./GitCheckout.vue"
 import GitDiffCard from "./GitDiffCard.vue"
@@ -80,8 +80,8 @@ function reveal(repositoryId: string, change: GitFileChange): void {
       <div class="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 pt-2">
         <span class="text-xs text-ui-text-muted" role="status">{{ t(connected && !error ? 'panel.gitLive' : 'panel.gitPaused') }}</span>
         <div class="flex shrink-0">
-          <IconButton :icon="ListTree" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen" />
-          <IconButton :icon="RefreshCw" :label="t('panel.refreshGit')" :disabled="loading" @click="refresh" />
+          <UiButton variant="ghost" size="icon" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton variant="ghost" size="icon" :label="t('panel.refreshGit')" :disabled="loading" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>
       <p v-if="loading && !snapshot" class="m-0 flex shrink-0 items-center gap-2 px-3 text-[13px] text-ui-text-muted" role="status"><LoaderCircle :size="14" class="animate-spin" aria-hidden="true" />{{ t('panel.gitLoading') }}</p>

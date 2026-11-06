@@ -8,7 +8,6 @@ import { useI18n } from "vue-i18n"
 import type { FileConflict, FileEntry, FileLocation, FilesApi, FileTarget, FileTransfer } from "../../../../client/src/files.ts"
 import { fileSize } from "../../services/file-format.ts"
 import FileBrowserPane from "./FileBrowserPane.vue"
-import IconButton from "../common/IconButton.vue"
 
 const client = usePlatformClient()
 const props = defineProps<{ api: FilesApi; target: FileTarget; machineName: string }>()
@@ -79,8 +78,8 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
       <div class="file-transfer-grid grid flex-1 grid-cols-1 gap-3">
         <FileBrowserPane :api="api" :target="local" :name="t('files.local')" :revision="revision" :reset-key="resetKey" :selection="selection.local" @selection="selection.local = $event" @location="paths.local = $event" />
         <div class="file-transfer-actions flex items-center justify-center gap-2">
-          <IconButton :icon="ArrowRight" :label="t('files.send')" :disabled="busy || !selection.local.length || !paths.remote" class="file-transfer-arrow" @click="transfer('local')" />
-          <IconButton :icon="ArrowLeft" :label="t('files.receive')" :disabled="busy || !selection.remote.length || !paths.local" class="file-transfer-arrow" @click="transfer('remote')" />
+          <UiButton variant="ghost" size="icon" :label="t('files.send')" :disabled="busy || !selection.local.length || !paths.remote" class="file-transfer-arrow" @click="transfer('local')"><ArrowRight :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton variant="ghost" size="icon" :label="t('files.receive')" :disabled="busy || !selection.remote.length || !paths.local" class="file-transfer-arrow" @click="transfer('remote')"><ArrowLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
         <FileBrowserPane :api="api" :target="target" :name="machineName" :revision="revision" :reset-key="resetKey" :selection="selection.remote" @selection="selection.remote = $event" @location="paths.remote = $event" />
       </div>
@@ -95,8 +94,8 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
               <div v-if="task.state === 'transferring'" class="flex items-center gap-2 tabular-nums" role="progressbar" :aria-label="task.name" :aria-valuenow="progress(task)" aria-valuemin="0" aria-valuemax="100" :title="`${fileSize(task.transferredBytes)} / ${fileSize(task.totalBytes ?? 0)}`"><div class="file-transfer-progress h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-ui-hover"><div class="h-full bg-ui-accent" :style="{ width: `${progress(task)}%` }" /></div>{{ progress(task) }}%</div>
               <span v-else class="truncate" :class="task.state === 'failed' && 'text-ui-danger'" :title="task.error">{{ t(`files.state.${task.state}`) }}</span>
               <span class="text-right tabular-nums text-ui-text-muted">{{ task.state === 'transferring' ? `${fileSize(task.bytesPerSecond)}/s` : '' }}</span>
-              <IconButton v-if="['failed', 'cancelled'].includes(task.state)" :icon="RotateCcw" :label="t('files.retry')" :disabled="busy" @click="retry(task)" />
-              <IconButton v-else-if="task.state !== 'completed'" :icon="X" :label="t('files.cancel')" :disabled="busy" @click="operation(() => api.cancel(task.id))" />
+              <UiButton v-if="['failed', 'cancelled'].includes(task.state)" variant="ghost" size="icon" :label="t('files.retry')" :disabled="busy" @click="retry(task)"><RotateCcw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+              <UiButton v-else-if="task.state !== 'completed'" variant="ghost" size="icon" :label="t('files.cancel')" :disabled="busy" @click="operation(() => api.cancel(task.id))"><X :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
             </div>
             <div v-if="task.state === 'conflict'" class="flex flex-wrap items-center gap-2 pb-3 pl-6">
               <UiButton type="button" :disabled="busy" @click="retry(task, 'rename')">{{ t('files.keepBoth') }}</UiButton>

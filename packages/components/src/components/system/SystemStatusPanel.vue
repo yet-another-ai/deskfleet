@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useSystemStatus } from "../../composables/useSystemStatus.ts"
 import { fileSize } from "../../services/file-format.ts"
-import IconButton from "../common/IconButton.vue"
+import UiButton from "../common/UiButton.vue"
 import SystemMetricCard from "./SystemMetricCard.vue"
 import SystemUsageChart from "./SystemUsageChart.vue"
 
@@ -35,7 +35,7 @@ const swapAmount = computed(() => fileSize(snapshot.value?.swapUsedBytes ?? 0).s
       <h2 class="m-0 min-w-0 truncate text-base font-semibold">{{ machineName }}</h2>
       <div class="flex shrink-0 items-center gap-3">
         <span class="flex items-center gap-1.5 text-xs text-ui-text-muted"><span class="ui-status-dot" :class="online ? 'ui-status-live text-ui-success' : 'text-ui-text-faint'" />{{ t(online ? 'systemStatus.online' : 'systemStatus.offline') }}</span>
-        <IconButton data-system-refresh :icon="RefreshCw" :label="t('systemStatus.refresh')" :disabled="loading || !running" @click="refresh()" />
+        <UiButton variant="ghost" size="icon" data-system-refresh :label="t('systemStatus.refresh')" :disabled="loading || !running" @click="refresh()"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </div>
 

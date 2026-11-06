@@ -47,7 +47,7 @@ const meta = {
             <DropdownMenuItem as="button" type="button" class="ui-menu-item w-full" @select="close()">
               <Settings :size="14" /> Workspace Settings
             </DropdownMenuItem>
-            <DropdownMenuSeparator class="my-1 border-t border-ui-border" />
+            <DropdownMenuSeparator class="-mx-1 my-1 border-t border-ui-border" />
             <DropdownMenuItem as="button" type="button" class="ui-menu-item w-full text-ui-danger" @select="close()">
               <Trash2 :size="14" /> Remove Workspace
             </DropdownMenuItem>
