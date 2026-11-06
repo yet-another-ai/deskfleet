@@ -38,6 +38,8 @@ test("bundled DeepSeek provider loads the session workspace dotenv before ACP in
   // The daemon and worktree deliberately have different directories. Going through
   // the provider must pass cwd before the helper selects its credential route.
   process.chdir(daemon)
+  // The OS may resolve symlinks in cwd, such as macOS /var -> /private/var.
+  const daemonCwd = process.cwd()
   const registry = new AgentProviders(daemon)
   await registry.init()
   const record = await registry.create({ template: "deepseek-harness", name: "DeepSeek", env: {
@@ -54,7 +56,7 @@ test("bundled DeepSeek provider loads the session workspace dotenv before ACP in
     const model = session.configOptions?.find(option => option.id === "model")
     assert.ok(model && model.type === "select")
     assert.equal(JSON.parse(model.currentValue)[0], "deepseek-official", "the workspace key must override the stored account")
-    assert.equal(process.cwd(), daemon, "provider startup must not change the daemon's working directory")
+    assert.equal(process.cwd(), daemonCwd, "provider startup must not change the daemon's working directory")
     assert.equal(registry.get(record.id).env.DEEPSEEK_API_KEY, "", "workspace credentials stay in the child process")
   } finally { await connection.close() }
 })
