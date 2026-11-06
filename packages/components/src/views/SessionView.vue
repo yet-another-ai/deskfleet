@@ -6,7 +6,7 @@ import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewport } from "reka-ui"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, ref, useTemplateRef, watch } from "vue"
+import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -45,12 +45,15 @@ import { useConversationProjection } from "../composables/useConversationProject
 import { createAgentUsageSelector } from "../services/agent-usage.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
+import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
 
 const client = usePlatformClient()
 
 // xterm stays out of the session bundle until the panel is opened.
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
 const props = defineProps<{ sessionId: string }>()
+const reading = useConversationReadingStore()
+provide(conversationReadingKey, () => reading.session(props.sessionId))
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -135,7 +138,7 @@ const forkContext = computed(() => {
   if (!snapshot.value?.session.workspaceId) return "directory"
   return snapshot.value.session.context ?? "worktree"
 })
-const forkDisabled = computed(() => !connected.value || !!view.value?.loading || !!view.value?.error)
+const forkDisabled = computed(() => !connected.value || !!view.value?.syncing || !!view.value?.error)
 // A stopped or interrupted agent resumes on the next message; only a dead end is shown.
 const resumeUnavailable = computed(() => snapshot.value?.session.lifecycle === "ready" && run.value?.state !== "running" && !canResume.value)
 const additionalDirectoriesUnavailable = computed(() => snapshot.value?.session.capabilities?.additionalDirectories === false && (location.value?.worktree?.directories.length ?? 0) > 1)
@@ -166,9 +169,15 @@ let locatedEntry: string | undefined
 let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
 onScopeDispose(() => { clearTimeout(entryHighlightTimer) })
 
+let restoringScroll = false
+function saveReading(id: string): void {
+  if (scroller.value && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
+}
+onBeforeUnmount(() => saveReading(props.sessionId))
 const { arrivedState } = useScroll(scroller, {
   offset: { bottom: 100 },
   onScroll() {
+    if (restoringScroll) return
     followBottom.value = arrivedState.bottom
     updateOutline()
   },
@@ -196,7 +205,9 @@ function locateEntry(id: string): void {
 }
 
 const faces = useSessionFaces(() => props.sessionId)
-watchImmediate(() => props.sessionId, id => {
+watchImmediate(() => props.sessionId, (id, previous) => {
+  if (previous) saveReading(previous)
+  restoringScroll = true
   busy.value = false
   forkOpen.value = false
   renameOpen.value = false
@@ -204,7 +215,15 @@ watchImmediate(() => props.sessionId, id => {
   activeEntry.value = undefined
   locatedEntry = undefined
   followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id))
+  const saved = reading.session(id).scroll
+  if (saved && !focusedEntry.value && !pendingLocate.value) followBottom.value = saved.bottom
   void agents.open(id)
+  void nextTick(() => {
+    if (props.sessionId !== id) return
+    if (saved && !focusedEntry.value && !pendingLocate.value) scroller.value?.scrollTo({ top: saved.bottom ? scroller.value.scrollHeight : saved.top })
+    restoringScroll = false
+    updateOutline()
+  })
 })
 watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _, onCleanup) => {
   // A dropped channel already clears attendance. Attend again when this view is still mounted.
@@ -214,7 +233,7 @@ watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _
   void agents.attend(id).then(present => { if (left && present) void agents.leave(id) })
 })
 useSessionRead(() => props.sessionId)
-watch(() => [view.value?.events.length, view.value?.loading], () => {
+watch(() => [view.value?.events.length, view.value?.loading, view.value?.syncing], () => {
   if (!view.value?.loading && followBottom.value && !pendingLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
@@ -315,7 +334,7 @@ async function checkOperation(operationId: string): Promise<void> {
         <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
           <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
           <template v-else-if="snapshot">
-            <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
+            <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
             <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
           </template>
         </div>
@@ -358,12 +377,12 @@ async function checkOperation(operationId: string): Promise<void> {
             <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
             <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
             <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
-            <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
+            <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
             <SessionAllowance :snapshot="snapshot" />
-            <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
+            <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
           </template>
         </div>
-        <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+        <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
       </div>
     </div>
   </div>

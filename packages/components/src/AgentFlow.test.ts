@@ -371,7 +371,7 @@ test.each(["archiving", "archived"] as const)("questions remain visible but cann
   expect(transport.call.mock.calls.some(([method]) => method === "_deskfleet/elicitation/respond")).toBe(false)
 })
 
-test("returning to unchanged conversation history scrolls after loading, while live updates respect manual scrolling", async () => {
+test("returning to cached conversation history stays visible while syncing, while live updates respect manual scrolling", async () => {
   await wrapper.get("textarea").setValue("Implement the feature")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
@@ -395,7 +395,8 @@ test("returning to unchanged conversation history scrolls after loading, while l
     expect(session.find('[data-testid="agent-elicitation"]').exists()).toBe(true)
     expect(session.text()).not.toContain("Restoring conversation")
   })
-  expect(session.text()).toContain("Restoring conversation")
+  expect(session.text()).not.toContain("Restoring conversation")
+  expect(session.find('[data-testid="agent-elicitation"]').exists()).toBe(true)
   restored.resolve(structuredClone(snapshot))
   await flushPromises()
   expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 1600 })
@@ -907,4 +908,28 @@ test("fork is unavailable while a Session is running a turn or archived", async 
   emit("session", { ...snapshot.session, archiveState: "archived" })
   await flushPromises()
   expect(page().findAll('[role="menuitem"]').some(item => item.text() === "Fork session")).toBe(false)
+})
+
+
+test("switching away and back restores a manual reading position before synchronization finishes", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const scroller = wrapper.findComponent(SessionView).get<HTMLElement>("[data-session-scroll-viewport]")
+  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 350, writable: true } })
+  await scroller.trigger("scroll")
+  await router.push({ name: "new-session" })
+  await flushPromises()
+  const restored = deferred<AgentSnapshot>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/subscribe" ? restored.promise : normal(method, params))
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollTo")
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(scroll).toHaveBeenCalledWith({ top: 350 })
+  expect(wrapper.findComponent(SessionView).text()).not.toContain("Restoring conversation")
+  scroll.mockClear()
+  restored.resolve(structuredClone(snapshot))
+  await flushPromises()
+  expect(scroll).not.toHaveBeenCalled()
 })

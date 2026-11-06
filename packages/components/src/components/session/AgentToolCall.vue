@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowRightLeft, Bot, Brain, ChevronRight, CircleX, FilePen, FileText, Globe, LoaderCircle, Repeat, Search, SquareTerminal, Trash2, Wrench } from "@lucide/vue"
-import { computed, ref, type Component } from "vue"
+import { computed, type Component } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -9,10 +9,11 @@ import { remoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import AgentActor from "./AgentActor.vue"
 import AgentRemoteMcpCall from "./AgentRemoteMcpCall.vue"
 import AgentToolDetails from "./AgentToolDetails.vue"
-const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean; defaultOpen?: boolean }>()
+import { useConversationDisclosure } from "../../stores/conversation-reading.ts"
+const props = defineProps<{ tool: ConversationTool; permission?: AgentPermission; live?: boolean; defaultOpen?: boolean; disclosureId?: string }>()
 const { t } = useI18n()
 const remote = computed(() => remoteMcpTool(props.tool))
-const toggled = ref<boolean | null>(null)
+const toggled = useConversationDisclosure(() => `tool:${props.disclosureId ?? props.tool.toolCallId}`)
 const icons: Record<string, Component> = { read: FileText, edit: FilePen, delete: Trash2, move: ArrowRightLeft, search: Search, execute: SquareTerminal, think: Brain, fetch: Globe, switch_mode: Repeat }
 const icon = computed(() => props.tool.content?.some(block => block.type === "terminal") ? Bot : icons[props.tool.kind ?? ""] ?? Wrench)
 // A finished turn leaves no tool running, even when the provider never reported completion.
@@ -23,7 +24,7 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
 </script>
 
 <template>
-  <AgentRemoteMcpCall v-if="remote" :tool="tool" :remote="remote" :permission="permission" :live="live" />
+  <AgentRemoteMcpCall v-if="remote" :tool="tool" :disclosure-id="disclosureId" :remote="remote" :permission="permission" :live="live" />
   <CollapsibleRoot v-else :open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id" @update:open="toggled = $event">
     <CollapsibleTrigger type="button" class="group/tool -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui-text-muted" :class="hasDetails ? 'cursor-pointer hover:bg-ui-hover hover:text-ui-text' : 'cursor-default'">
       <component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />

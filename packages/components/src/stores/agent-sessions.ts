@@ -1,3 +1,4 @@
+import { useConversationCache } from "../services/conversation-cache.ts"
 import { snapshotIsWorking } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
@@ -26,6 +27,7 @@ export interface AgentSessionView {
   /** Display history includes an ephemeral preview tail; cursors below are durable. */
   events: AgentEvent[]
   loading: boolean
+  syncing?: boolean
   error: string | null
   relayDeniedReason?: RelayDeniedReason
   historySeq: string
@@ -59,6 +61,18 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const platformClient = usePlatformClient()
   const api = platformClient.agent
+  const cache = useConversationCache()
+  const cacheDirty = new Set<string>()
+  const cacheTimer = useTimeoutFn(persistConversations, 1000, { immediate: false })
+  function persistConversations(): void {
+    for (const id of cacheDirty) {
+      const current = views.value[id]
+      if (current?.snapshot && !retainedDisplays.has(id) && current.historySeq === current.snapshotSeq) {
+        void cache?.write(id, { snapshot: current.snapshot, events: [...journal(id).values()].sort((a, b) => sequenceCompare(a.seq, b.seq)) })
+      }
+    }
+    cacheDirty.clear()
+  }
   const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
   const activity = ref<Record<string, { seq: string; working: boolean }>>({})
@@ -204,6 +218,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       next = events.get((BigInt(current.snapshotSeq) + 1n).toString())
     }
     if (sequenceCompare(current.snapshotSeq, sessions.value[id]?.lastEventSeq ?? "0") >= 0) sessions.value[id] = { ...current.snapshot.session }
+    if (cache) { cacheDirty.add(id); if (!cacheTimer.isPending.value) cacheTimer.start() }
     resolvePermissions()
     resolveElicitations(current.snapshot)
   }
@@ -256,7 +271,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       })
       // Live notifications normally extend the journal; only late history needs a full merge.
       if (ordered && !retainedDisplays.has(id)) current.events.push(...appended)
-      else {
+      else if (retainedDisplays.has(id)) {
+        const merged = new Map(current.events.map(event => [event.seq, event]))
+        for (const event of journal(id).values()) merged.set(event.seq, event)
+        current.events = [...merged.values()].sort((a, b) => sequenceCompare(a.seq, b.seq))
+      } else {
         current.events = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
         visiblePreviews.delete(id)
         retainedDisplays.delete(id)
@@ -428,6 +447,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         const record = received.get(current.id)
         if (record ? sequenceCompare(current.lastEventSeq, record.lastEventSeq) > 0 : catalogSessions.has(current.id) || !listedBefore.has(current.id) || sequenceCompare(current.lastEventSeq, listedBefore.get(current.id)!) > 0) received.set(current.id, current)
       }
+      if (api.history) for (const id of listedBefore.keys()) {
+        if (!received.has(id) && !catalogSessions.has(id)) forgetSession(id)
+      }
+      if (cache) void cache.retain([...received.keys(), ...catalogSessions])
       sessions.value = Object.fromEntries(received)
       for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
     } while (refreshPending && !disposed)
@@ -469,14 +492,24 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const existing = loads.get(id)
     if (existing) return existing
     const current = view(id)
-    if (showLoading) current.loading = true
+    if (showLoading) current.loading = !current.snapshot
+    current.syncing = true
     current.error = null
     current.relayDeniedReason = undefined
     let liveSnapshot = false
+    let cachedShown = false
+    const cached = !current.snapshot ? cache?.read(id).then(value => {
+      if (!value || disposed || deletedSessions.has(id) || liveSnapshot || current.snapshot) return
+      cachedShown = true
+      current.snapshot = value.snapshot
+      current.events = value.events.map(event => markRaw(event))
+      retainedDisplays.add(id)
+      current.loading = false
+    }) : undefined
     const history = api.history
     // Retained data is a display projection only: it must not advance the
     // daemon cursor or win duplicate sequence numbers against its journal.
-    const retained = history?.parallel?.() && history.available() ? (async () => {
+    const retained = !current.snapshot && history?.parallel?.() && history.available() ? (async () => {
       const snapshot = await history.snapshot(id)
       const events: AgentEvent[] = []
       let after = "0"
@@ -484,7 +517,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         const page = await history.events(id, after, 100)
         if (disposed || deletedSessions.has(id) || liveSnapshot) return
         events.push(...page)
-        if (journal(id).size === 0) {
+        if (journal(id).size === 0 && !cachedShown) {
           current.snapshot = snapshot
           current.events = [...events]
           retainedDisplays.add(id)
@@ -502,12 +535,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       snapshotReceived(snapshot)
       await readHistory(id)
       if (retainedDisplays.delete(id)) current.events = [...journal(id).values()].sort((a, b) => sequenceCompare(a.seq, b.seq))
+      if (cache) { cacheDirty.add(id); if (!cacheTimer.isPending.value) cacheTimer.start() }
       await reconcileOperations(id)
     })().catch(async reason => {
+      await cached
       await retained
       current.error = messageOf(reason)
       current.relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
-    }).finally(() => { current.loading = false; loads.delete(id) })
+    }).finally(() => { current.loading = false; current.syncing = false; loads.delete(id) })
     loads.set(id, loading)
     return loading
   }
@@ -822,7 +857,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })
+    forgetSession(sessionId)
+  }
+  function forgetSession(sessionId: string): void {
     deletedSessions.add(sessionId)
+    cacheDirty.delete(sessionId)
+    void cache?.remove(sessionId)
     for (const elicitation of views.value[sessionId]?.snapshot?.elicitations ?? []) delete elicitationDrafts.value[elicitation.id]
     delete sessions.value[sessionId]
     delete activity.value[sessionId]
@@ -862,6 +902,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
-  onScopeDispose(() => { disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
+  onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
   return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

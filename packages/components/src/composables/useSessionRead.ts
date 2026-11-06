@@ -11,7 +11,7 @@ export function useSessionRead(sessionId: MaybeRefOrGetter<string>): void {
     const id = toValue(sessionId)
     const view = agents.views[id]
     const seq = view?.snapshot?.session.lastCompletedSeq
-    if (visibility.value === "hidden" || agents.state !== "connected" || !view || view.loading || view.error
+    if (visibility.value === "hidden" || agents.state !== "connected" || !view || view.loading || view.syncing || view.error
       || !seq || BigInt(view.historySeq) < BigInt(seq)) return undefined
     return seq
   })
