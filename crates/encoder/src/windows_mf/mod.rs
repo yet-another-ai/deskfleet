@@ -51,7 +51,6 @@ pub(crate) struct MfEncoder {
     keyframe_requested: bool,
     draining: bool,
     drain_complete: bool,
-    last_progress: Instant,
     // COM/MF outlive every interface above and are released on the same worker.
     _runtime: Runtime,
 }
@@ -96,7 +95,6 @@ impl MfEncoder {
                         keyframe_requested: true,
                         draining: false,
                         drain_complete: false,
-                        last_progress: Instant::now(),
                         _runtime: runtime,
                     });
                 }
@@ -188,7 +186,6 @@ impl MfEncoder {
             } else if event_type == METransformHaveOutput.0 as u32 {
                 if let Some(packet) = self.output.read(&self.session, &self.config)? {
                     self.in_flight = self.in_flight.saturating_sub(1);
-                    self.last_progress = Instant::now();
                     packets.push(packet);
                 }
             } else if event_type == METransformDrainComplete.0 as u32 {
@@ -199,11 +196,9 @@ impl MfEncoder {
         if !self.draining {
             self.submit_pending()?;
         }
-        if self.in_flight != 0 && self.last_progress.elapsed() >= Duration::from_secs(5) {
-            return Err(EncoderError::Platform(
-                "hardware H.264 MFT output timed out".into(),
-            ));
-        }
+        // Hardware may retain input without producing output for an extended
+        // period. Keep polling and honor MFT errors instead of treating elapsed
+        // time as a failure; input remains bounded by MAX_IN_FLIGHT and pending.
         Ok(packets)
     }
 
@@ -238,9 +233,6 @@ impl MfEncoder {
             Ok(()) => {
                 self.pending = None;
                 self.input_requests -= 1;
-                if self.in_flight == 0 {
-                    self.last_progress = Instant::now();
-                }
                 self.in_flight += 1;
                 self.keyframe_requested = false;
             }
@@ -388,6 +380,12 @@ mod tests {
             assert!(encoder.keyframe_requested);
             assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
         }
+        // Delayed hardware output must preserve the pending sample and permit
+        // recovery beyond the former five-second output watchdog.
+        std::thread::sleep(Duration::from_secs(6));
+        assert!(encoder.poll_output().unwrap().is_empty());
+        assert!(encoder.pending.is_some());
+        assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
         encoder.in_flight = 0;
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut packets = Vec::new();

@@ -101,3 +101,44 @@ test("the final complete response is delivered before EOF rejects other pending 
   client.close()
   assert.equal(disconnected.length, 1)
 })
+
+for (const method of ["start", "close"] as const) {
+  test(`desktop ${method} can finish after the ordinary daemon request deadline`, { timeout: 5_000 }, async context => {
+    let onRequest!: (respond: () => void) => void
+    const received = new Promise<() => void>(resolve => { onRequest = resolve })
+    const { client, disconnected } = await connectFixture(context, (socket, request) => {
+      onRequest(() => { socket.write(`${JSON.stringify({ id: request.id, result: null })}\n`) })
+    })
+    context.mock.timers.enable({ apis: ["setTimeout"] })
+    let settled = false
+    const pending = (method === "start"
+      ? client.call(method, { sessionId: "desktop", displayId: 1 })
+      : client.call(method, { sessionId: "desktop" })).finally(() => { settled = true })
+    const respond = await received
+    context.mock.timers.tick(20_000)
+    assert.equal(client.closed, false)
+    assert.equal(settled, false)
+    respond()
+    assert.equal(await pending, null)
+    context.mock.timers.tick(25_000)
+    assert.equal(client.closed, false)
+    assert.deepEqual(disconnected, [])
+  })
+}
+
+for (const method of ["start", "close", "capabilities"] as const) {
+  test(`${method} requests close the daemon connection after their deadline`, { timeout: 5_000 }, async context => {
+    const { client, disconnected } = await connectFixture(context)
+    context.mock.timers.enable({ apis: ["setTimeout"] })
+    const pending = method === "start"
+      ? client.call(method, { sessionId: "desktop", displayId: 1 })
+      : method === "close" ? client.call(method, { sessionId: "desktop" }) : client.call(method, {})
+    const rejected = assert.rejects(pending, new RegExp(`Daemon ${method} request timed out`))
+    context.mock.timers.tick((method === "capabilities" ? 15_000 : 45_000) - 1)
+    assert.equal(client.closed, false)
+    context.mock.timers.tick(1)
+    await rejected
+    assert.equal(client.closed, true)
+    assert.equal(disconnected.length, 1)
+  })
+}
