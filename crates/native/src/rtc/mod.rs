@@ -6,6 +6,7 @@
 
 mod channels;
 mod codecs;
+mod congestion;
 mod events;
 mod feedback;
 mod h265_payloader;
@@ -14,6 +15,10 @@ mod receive;
 mod runtime;
 mod sample_track;
 mod types;
+
+pub use congestion::{
+    BitrateController, INITIAL_BITRATE_BPS, MIN_BITRATE_BPS, bitrate_ceiling,
+};
 
 #[cfg(test)]
 mod tests;
@@ -38,9 +43,9 @@ pub use types::{
 };
 use webrtc::media_stream::track_local::{TrackLocal, TrackLocalEvent};
 use webrtc::peer_connection::{
-    PeerConnection, PeerConnectionBuilder, RTCConfigurationBuilder, RTCIceCandidateInit,
-    RTCIceServer, RTCIceTransportPolicy, RTCSessionDescription, Registry,
-    register_default_interceptors,
+    CongestionFeedback, PeerConnection, PeerConnectionBuilder, RTCConfigurationBuilder,
+    RTCIceCandidateInit, RTCIceServer, RTCIceTransportPolicy, RTCSessionDescription, Registry,
+    configure_congestion_control, register_default_interceptors,
 };
 
 const EVENT_CAPACITY: usize = 256;
@@ -59,6 +64,8 @@ pub struct Peer {
     events: broadcast::Sender<PeerEvent>,
     receiver: Mutex<broadcast::Receiver<PeerEvent>>,
     keyframe_requested: Arc<AtomicBool>,
+    /// TWCC/GCC target bitrate (bits/sec) for sending video peers; `None` otherwise.
+    target_bitrate: StdMutex<Option<watch::Receiver<f64>>>,
     media_failure: StdMutex<Option<(String, Option<String>)>>,
     closing: AtomicBool,
     closed: watch::Sender<bool>,
@@ -102,7 +109,25 @@ impl Peer {
         mut media: webrtc::peer_connection::MediaEngine,
         receiving_video: bool,
     ) -> Result<Self> {
-        let interceptors = register_default_interceptors(Registry::new(), &mut media)?
+        let sending_video = config.video.is_some() && !receiving_video;
+        // Send-side GCC + TWCC + pacer only when this peer emits video. The
+        // estimator is boxed into the interceptor chain; ReportingEstimator
+        // publishes targets for the capture worker. Defaults still supply NACK,
+        // RTCP reports, and a TWCC receiver (replacing the one congestion
+        // control installed at the same slot).
+        let (registry, target_bitrate) = if sending_video {
+            let (estimator, target_rx) = congestion::reporting_gcc();
+            let registry = configure_congestion_control(
+                Registry::new(),
+                estimator,
+                CongestionFeedback::Twcc,
+                &mut media,
+            )?;
+            (registry, Some(target_rx))
+        } else {
+            (Registry::new(), None)
+        };
+        let interceptors = register_default_interceptors(registry, &mut media)?
             .with(Slot::from(14_000), feedback::KeyframeFeedback::default());
         let rtc_config = RTCConfigurationBuilder::default()
             .with_ice_servers(
@@ -131,7 +156,6 @@ impl Peer {
             }
             _ => (None, None),
         };
-        let sending_video = config.video.is_some() && !receiving_video;
         let keyframe_requested = Arc::new(AtomicBool::new(sending_video));
         let channels = Arc::new(Mutex::new(HashMap::new()));
         let ports = ports::Forwarding::default();
@@ -166,6 +190,7 @@ impl Peer {
             events,
             receiver: Mutex::new(receiver),
             keyframe_requested,
+            target_bitrate: StdMutex::new(target_bitrate),
             media_failure: StdMutex::new(None),
             closing: AtomicBool::new(false),
             closed,
@@ -253,6 +278,17 @@ impl Peer {
     /// DataChannel events away from the daemon's event consumer.
     pub fn take_keyframe_request(&self) -> bool {
         self.keyframe_requested.swap(false, Ordering::Relaxed)
+    }
+
+    /// Subscribe to the send-side GCC target bitrate (bits/sec).
+    ///
+    /// Only sending video peers install congestion control. Receivers and
+    /// DataChannel-only peers return `None`.
+    pub fn subscribe_target_bitrate(&self) -> Option<watch::Receiver<f64>> {
+        self.target_bitrate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Record a capture/encoder failure and wake the daemon event loop.

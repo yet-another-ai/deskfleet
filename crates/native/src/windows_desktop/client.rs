@@ -54,8 +54,15 @@ impl Client {
         })
     }
 
-    pub(crate) fn poll(&mut self, keyframe: bool) -> Result<CaptureBatch, MediaError> {
-        match self.call(Request::Poll { keyframe })? {
+    pub(crate) fn poll(
+        &mut self,
+        keyframe: bool,
+        target_bitrate_bps: Option<u32>,
+    ) -> Result<CaptureBatch, MediaError> {
+        match self.call(Request::Poll {
+            keyframe,
+            target_bitrate_bps,
+        })? {
             Reply::Batch {
                 packets,
                 encoder_started,

@@ -28,6 +28,9 @@ pub(super) enum Request {
     },
     Poll {
         keyframe: bool,
+        /// Congestion-control target in bits/sec for live encoder retargeting.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_bitrate_bps: Option<u32>,
     },
     InputStart {
         display_id: u32,

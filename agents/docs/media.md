@@ -38,10 +38,15 @@ three- and four-byte Annex B start codes. The sample track uses the negotiated
 payload type and validates the encoded codec profile with the new sender API.
 Video uses H.264 constrained baseline, H.265 Main, or AV1 Main, selected before
 negotiation. H.264/H.265 input is Annex B; AV1 is an OBU stream. Encoders select
-levels automatically; resolution/frame-rate adaptation to the remote decoder's
-level and congestion-driven bitrate control are not implemented. Callers must
-choose settings the receiving device can decode. The browser WebRTC stack owns
-receive-side decoding and playback for the embedded viewer. The optional
+levels automatically. Resolution and frame-rate adaptation to the remote
+decoder's level are not implemented; callers must choose settings the receiving
+device can decode. Sending video peers enable webrtc-rs send-side congestion
+control (GCC with TWCC feedback and a pacer). The estimator's target bitrate
+drives live hardware-encoder retargeting, clamped to the stream's configured
+ceiling (default 8 Mbps). Platforms that cannot change bitrate on a live encoder
+session (notably Windows NVENC) keep that ceiling as a fixed CBR target after a
+one-time fallback. The browser WebRTC stack owns receive-side decoding and
+playback for the embedded viewer. The optional
 [native desktop window](#native-desktop-window) uses the Rust receive path.
 
 `Peer::new_video_receiver()` creates a receive-only video transceiver without
@@ -362,14 +367,31 @@ and `close()` report worker failures; the event loop also receives media errors.
 delivery. The worker polls asynchronous encoder output even when the desktop
 has not changed. Dropping a stream also cancels its work.
 
-Desktop options select a display, frame rate, average bitrate, and optional
-maximum bitrate. Frame rate is capped at the display's refresh rate when known.
-Optional `maxWidth` and `maxHeight` bounds must be supplied together. The native
-pipeline preserves the display's aspect ratio, rounds down to even encoder
-dimensions, and never upscales. Windows resizes BGRA surfaces on the GPU before
-encoding, macOS requests smaller ScreenCaptureKit surfaces, and Linux downsamples
-the captured BGRA buffer. Capture acquisition is paced at the selected frame rate;
-keyframe requests coalesce until the next video tick.
+Desktop options select a display, frame rate, bitrate ceiling, and optional
+hard peak bitrate. The bitrate fields are an upper bound for congestion-driven
+adaptation (default ceiling 8 Mbps when omitted), not a fixed open-loop CBR
+target for the whole session. Frame rate is capped at the display's refresh rate
+when known. Optional `maxWidth` and `maxHeight` bounds must be supplied together.
+The native pipeline preserves the display's aspect ratio, rounds down to even
+encoder dimensions, and never upscales. Windows resizes BGRA surfaces on the GPU
+before encoding, macOS requests smaller ScreenCaptureKit surfaces, and Linux
+downsamples the captured BGRA buffer. Capture acquisition is paced at the
+selected frame rate; keyframe requests coalesce until the next video tick. The
+UI does not expose encoding parameter knobs; codec choice remains automatic by
+mutual support.
+
+### Congestion-driven bitrate
+
+Sending desktop peers install `configure_congestion_control` around Google
+Congestion Control before the default NACK/report/TWCC-receiver interceptors.
+A thin `ReportingEstimator` publishes the GCC target on a watch channel. The
+capture worker clamps that estimate into `[100 kb/s, configured ceiling]`,
+applies a 10% / 50 kb/s hysteresis, and calls `Encoder::set_bitrate` when the
+encoder supports live retargeting (macOS VideoToolbox, Linux GStreamer, Windows
+Media Foundation). Windows NVENC returns unsupported for live bitrate changes:
+the pipeline recreates once at the configured ceiling and leaves the rate fixed
+while the pacer continues to limit on-wire send rate. Framerate and resolution
+ladders are out of scope for this control loop.
 
 The Session's right-hand Desktops tab requests one silent, read-only stream per display
 with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
