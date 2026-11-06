@@ -56,11 +56,34 @@ installation adds neither offline access nor notifications after the app closes.
 New frontend builds load on normal navigation or reload without a service-worker
 cache or a forced refresh of active sessions.
 
-The 192px and 512px installation icons and the existing Apple touch icon come
-from the shared brand artwork. Regenerate them with
-`mise exec -- pnpm --filter @deskfleet/desktop icons`.
+The 192px and 512px installation icons, the existing Apple touch icon, and the
+Capacitor iOS and Android app icons come from the shared brand artwork. Regenerate
+them with `mise exec -- pnpm --filter @deskfleet/desktop icons`.
 After `mise run web:build`, check the manifest and icon previews in browser
 DevTools under Application → Manifest on an HTTPS or localhost deployment.
+
+## Capacitor (iOS & Android)
+
+`@deskfleet/web` also manages the Capacitor iOS and Android projects under `ios/`
+and `android/` with app ID `io.github.yet_another_ai.deskfleet.mobile`. [`capacitor.config.ts`](capacitor.config.ts)
+reads `CAPACITOR_DEV_SERVER_URL` so [`@proj-airi/cap-vite`](https://www.npmjs.com/package/@proj-airi/cap-vite)
+can start the Vite dev server and launch Capacitor live reload in one command:
+
+```sh
+mise run web:dev:ios
+mise run web:dev:android
+# Or select a specific device/simulator via environment variable or arguments:
+CAPACITOR_DEVICE_ID_IOS="<DEVICE_ID_OR_SIMULATOR_NAME>" mise run web:dev:ios
+CAPACITOR_DEVICE_ID_ANDROID="<DEVICE_ID_OR_EMULATOR_NAME>" mise run web:dev:android
+```
+
+For a bundled native build without the dev server, build the Web client and sync
+`dist/` into the native projects:
+
+```sh
+mise run web:build
+mise exec -- pnpm --filter @deskfleet/web exec cap sync
+```
 
 ## Backend and integrations
 
