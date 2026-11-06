@@ -4,16 +4,18 @@ import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
-import { dshRuntimeProcess } from "@deskfleet/dsh-runtime"
+import { dshAccountProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
+import { providerEnvironment } from "./provider-environment.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
-import { launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
+import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalRun, TerminalSessions } from "./terminals.ts"
 
 const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
 
 interface ProbeDependencies {
+  directory?: string
   platform?: NodeJS.Platform
   arch?: string
   env?: NodeJS.ProcessEnv
@@ -37,7 +39,7 @@ interface Context {
 
 function context(input: AgentProviderInput, dependencies: ProbeDependencies, signal?: AbortSignal): Context {
   const platform = dependencies.platform ?? process.platform
-  const env = Object.fromEntries([...Object.entries(dependencies.env ?? process.env), ...Object.entries(input.env)]
+  const env = Object.fromEntries([...Object.entries(dependencies.env ?? process.env), ...Object.entries(providerEnvironment(input, dependencies.directory, platform))]
     .map(([key, value]) => [platform === "win32" ? key.toUpperCase() : key, value]))
   const path = platform === "win32" ? win32 : posix
   const home = dependencies.home ?? (platform === "win32" ? env.USERPROFILE : env.HOME) ?? homedir()
@@ -201,6 +203,18 @@ async function authentication(template: AgentProviderTemplateId, binary: string,
   return "unknown"
 }
 
+async function deepseekAuthentication(ctx: Context): Promise<ProviderProbeResult["auth"]> {
+  const launch = dshAccountProcess("status", ctx.env)
+  try {
+    const result = await ctx.run(launch.command, launch.args ?? [], launch.env ?? ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
+    if (result.code !== 0) return "unknown"
+    const value: unknown = JSON.parse(result.stdout)
+    if (value && typeof value === "object" && "auth" in value
+      && (value.auth === "authenticated" || value.auth === "unauthenticated")) return value.auth
+  } catch { /* An unavailable credential store is not proof of a signed-out account. */ }
+  return "unknown"
+}
+
 /** Find the binary on the executing machine without initializing ACP or starting a login. */
 export async function probeProvider(input: AgentProviderInput, dependencies: ProbeDependencies = {}): Promise<ProviderProbeResult> {
   const controller = new AbortController()
@@ -229,8 +243,8 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
     try {
       const result = await ctx.run(launch.command, launch.args ?? [], launch.env ?? ctx.env, ctx.home, BUNDLED_DSH_PROBE_TIMEOUT_MS)
       if (result.code === 0 && text(result.stdout)) return {
-        ...base, status: "found", version: text(result.stdout),
-        auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown",
+        ...base, status: "found", version: text(result.stdout), loginAvailable: true,
+        auth: await deepseekAuthentication(ctx),
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...base, status: "missing" }
@@ -262,7 +276,7 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
       try {
         const version = await identity(provider.template, binary, ctx)
         if (version === undefined) { invalid = true; continue }
-        // DeepSeek Harness has no interactive CLI login; configure DEEPSEEK_API_KEY in environment variables.
+        // An explicit external dsh keeps its own launch and authentication contract.
         const loginAvailable = provider.template !== "deepseek-harness"
         return { ...base, status: "found", binaryPath: binary, version, loginAvailable,
           auth: await authentication(provider.template, binary, ctx) }
@@ -296,12 +310,15 @@ export class ProviderSetup {
   async login(input: AgentProviderInput): Promise<TerminalSummary> {
     const provider = providerInput(input)
     if (provider.template === "acp") throw new Error("Configure authentication through your custom ACP provider.")
-    if (provider.template === "deepseek-harness") {
-      throw new Error("Set DEEPSEEK_API_KEY in the provider environment variables (optional DEEPSEEK_BASE_URL).")
-    }
     const result = await this.probe(provider)
-    if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     const ctx = context(provider, this.#dependencies)
+    if (provider.template === "deepseek-harness") {
+      if (provider.binaryPath) throw new Error("Use the bundled DeepSeek Harness to sign in, or configure credentials for your external CLI.")
+      if (result.status !== "found") throw new Error("The bundled DeepSeek runtime is unavailable. Reinstall DeskFleet before signing in.")
+      const launch = interactiveProviderProcess(dshAccountProcess("login", ctx.env), ctx.platform, true)
+      return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)
+    }
+    if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     if (provider.template === "antigravity") {
       return this.#run({ ...antigravityLoginProcess(result.binaryPath, ctx.env, ctx.platform), cwd: ctx.home }, `${provider.name} sign in`)
     }

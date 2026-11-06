@@ -3,7 +3,7 @@ import { createInterface } from "node:readline"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentConfig, type AgentProcess, type AgentProvider } from "./acp.ts"
 import { adapterProcess, ANTIGRAVITY_LOGIN_ARGUMENT } from "./adapter-host.ts"
-import { launchProviderCommand } from "../provider-setup-process.ts"
+import { interactiveProviderProcess, launchProviderCommand } from "../provider-setup-process.ts"
 
 /** Google's standalone ACP runtime ships with a matching local harness. */
 export function antigravityProcess(config: AgentConfig, platform: NodeJS.Platform = process.platform): AgentProcess {
@@ -23,29 +23,7 @@ export function antigravityLoginProcess(
 ): AgentProcess {
   const host = adapterProcess(ANTIGRAVITY_LOGIN_ARGUMENT)
   const merged: NodeJS.ProcessEnv = { ...env, ...host.env, DESKFLEET_ANTIGRAVITY_BINARY: binaryPath }
-  // Windows ConPTY does not attach console stdio handles to a /SUBSYSTEM:WINDOWS Electron binary.
-  if (platform !== "win32" || !host.env?.ELECTRON_RUN_AS_NODE) return { ...host, env: merged }
-  const args = (host.args ?? []).map(arg => `"${arg.replaceAll('"', '\\"')}"`).join(" ").replaceAll("'", "''")
-  const script = `$psi = [Diagnostics.ProcessStartInfo]::new($env:DESKFLEET_LOGIN_HOST, '${args}')
-$psi.UseShellExecute = $false
-$psi.RedirectStandardInput = $psi.RedirectStandardOutput = $psi.RedirectStandardError = $true
-$p = [Diagnostics.Process]::Start($psi)
-$out = $p.StandardOutput.BaseStream.CopyToAsync([Console]::OpenStandardOutput())
-$err = $p.StandardError.BaseStream.CopyToAsync([Console]::OpenStandardError())
-$in = [Console]::OpenStandardInput(); $buf = [byte[]]::new(256); $read = $null
-while (-not $p.WaitForExit(50)) {
-  if (-not $read) { $read = $in.ReadAsync($buf, 0, $buf.Length) }
-  if ($read.IsCompleted) {
-    if (($n = $read.GetAwaiter().GetResult()) -le 0) { $p.StandardInput.Close(); break }
-    $p.StandardInput.BaseStream.Write($buf, 0, $n); $p.StandardInput.BaseStream.Flush(); $read = $null
-  }
-}
-[void]$out.Wait(1000); [void]$err.Wait(1000); [Environment]::Exit($p.ExitCode)`
-  return {
-    command: win32.join(merged.SYSTEMROOT ?? process.env.SYSTEMROOT ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-    args: ["-NoLogo", "-NoProfile", "-Command", script],
-    env: { ...merged, DESKFLEET_LOGIN_HOST: host.command },
-  }
+  return interactiveProviderProcess({ ...host, env: merged }, platform)
 }
 
 async function selectLoginMethod(methods: readonly acp.AuthMethod[], signal: AbortSignal): Promise<acp.AuthMethod> {

@@ -880,9 +880,21 @@ runs dsh in an Electron Node-mode child process and ships the complete pinned
 package tree in resources; standalone releases carry that tree and a private
 Node executable beside the SEA daemon. The immutable runtime is shared by
 registrations, while provider environment overrides remain registration-owned.
-Credentials come from `DEEPSEEK_API_KEY` (optional
-`DEEPSEEK_BASE_URL`); the ACP server does not advertise interactive authenticate
-methods.
+Bundled login, credential detection, and ACP launches share a credential file
+under the registration directory. Their Harness home, profiles, and persisted
+session history stay in their existing locations. An explicit provider `DSH_HOME`
+selects that home's credential store instead.
+The runtime package owns a separate browser-login helper using Harness's official
+credential, authorization, account, and loopback callback services. Settings runs
+that helper in an ordinary setup terminal. A remote browser can return its full
+callback URL through that terminal; the helper only forwards it to its own exact
+loopback callback, where Harness validates state and PKCE. Credentials remain on
+the executing machine. The ACP launcher selects `deepseek-account` when an account
+credential is stored, unless an API key is configured. API-key configurations keep
+`deepseek-official` and optional `DEEPSEEK_BASE_URL`. Detection reports local
+credential availability, not a network validation of the account or key. The ACP
+server itself still advertises no interactive authenticate methods. Explicit
+external executables keep their own launch and credential setup.
 The Antigravity template launches Google's standalone ACP runtime and its matching
 local harness. The daemon downloads and verifies the platform package on explicit
 installation, keeps both executables in its provider directory, and uses existing

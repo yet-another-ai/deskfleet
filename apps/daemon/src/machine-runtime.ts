@@ -37,7 +37,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   const providers = new AgentProviders(directory, options.agentProvider, options.auvPath ? dirname(options.auvPath) : undefined)
   const mcpServers = new McpServers(directory, options.auvPath)
   const terminals = options.terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })
-  const setup = new ProviderSetup(terminals)
+  const setup = new ProviderSetup(terminals, { directory })
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
   let schedules: ScheduledTasks | undefined

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
-import { chmod, copyFile, mkdir, rm } from "node:fs/promises"
+import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { stripTypeScriptTypes } from "node:module"
 import { dirname, join, resolve } from "node:path"
 
 /** Preserve dynamic plugins and native helpers; standalone releases also need a Node host. */
@@ -14,6 +15,12 @@ export async function stageDsh(destination: string, host: "node" | "electron"): 
     "--filter", "@deskfleet/dsh-runtime", "deploy", "--prod",
     "--node-linker=hoisted", "--offline", "--frozen-lockfile", "--trust-lockfile", destination,
   ], { cwd: root, env: { ...process.env, PNPM_CONFIG_ALLOW_UNUSED_PATCHES: "true" }, stdio: "inherit" })
+  // The helper must work outside source checkouts, including hosts that cannot strip
+  // TypeScript beneath node_modules. Keep its executable and static overlay at the runtime root.
+  await writeFile(join(destination, "helper.js"), stripTypeScriptTypes(
+    await readFile(join(import.meta.dirname, "src/helper.ts"), "utf8"), { mode: "strip" }))
+  await copyFile(join(import.meta.dirname, "src/account-acp.yml"), join(destination, "account-acp.yml"))
+  await copyFile(join(import.meta.dirname, "src/credentials-acp.yml"), join(destination, "credentials-acp.yml"))
   if (host === "electron") return
   const bin = join(destination, "bin")
   await mkdir(bin, { recursive: true })

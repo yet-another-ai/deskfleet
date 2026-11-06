@@ -1,0 +1,5 @@
+# The account route is separate from the API-key-backed deepseek-official route.
+- id: acp
+  config:
+    provider: deepseek-account
+    model: deepseek-flash

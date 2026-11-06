@@ -233,6 +233,41 @@ test("offers login separately, blocks Test during login, and saves the discovere
   expect(testConnection).not.toHaveBeenCalled()
 })
 
+test("bundled DeepSeek signs in, refreshes authentication, and keeps its runtime path implicit", async () => {
+  const { view, save, test: testConnection, terminals } = await render()
+  const loginTerminal = { id: "deepseek-login", title: "DeepSeek Harness sign in", cwd: "/home/user", cols: 100, rows: 24, status: "running" as const }
+  const login = vi.fn().mockResolvedValue(loginTerminal)
+  const probe = vi.fn()
+    .mockResolvedValueOnce({ status: "found", version: "0.2.2-rc.1", auth: "unauthenticated", installable: false, loginAvailable: true })
+    .mockResolvedValue({ status: "found", version: "0.2.2-rc.1", auth: "authenticated", installable: false, loginAvailable: true })
+  await view.setProps({ login, probe })
+  await pick(view, "deepseek-harness")
+  await flushPromises()
+  expect(view.get("[data-provider-status]").text()).toContain("Not signed in")
+  expect(view.find("[data-provider-install]").exists()).toBe(false)
+
+  await view.get("[data-provider-login]").trigger("click")
+  await flushPromises()
+  const input = { template: "deepseek-harness", name: "DeepSeek Harness", binaryPath: undefined, env: {} }
+  expect(login).toHaveBeenCalledExactlyOnceWith(input)
+  expect(view.get("[role=dialog]").attributes("data-provider-expanded")).toBe("true")
+  expect(view.find("[data-provider-test]").exists()).toBe(false)
+  expect(save).not.toHaveBeenCalled()
+
+  terminals.sessions.push({ ...loginTerminal, status: "exited", exitCode: 0 })
+  await flushPromises()
+  expect(probe).toHaveBeenCalledTimes(2)
+  expect(probe).toHaveBeenLastCalledWith(input)
+  expect(view.get("[data-provider-status]").text()).toBe("Ready0.2.2-rc.1")
+  expect(view.find("[data-provider-terminal]").exists()).toBe(false)
+  expect(view.get("[role=dialog]").attributes("data-provider-expanded")).toBeUndefined()
+  expect((view.get('[name="provider-binary"]').element as HTMLInputElement).value).toBe("")
+
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith({ ...input, icon: undefined })
+  expect(testConnection).not.toHaveBeenCalled()
+})
+
 test("a completed installation fills the binary field and retains the refreshed login state", async () => {
   const { view, terminals } = await render()
   const probe = vi.fn().mockResolvedValueOnce({ status: "missing", auth: "unknown", installable: true, loginAvailable: false })
