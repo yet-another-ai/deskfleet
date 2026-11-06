@@ -10,7 +10,7 @@ const PATCH_BYTES = 1024 * 1024
 const COUNT_BYTES = 128 * 1024
 const MAX_FILES = 10_000
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
-type CommandError = Error & { code?: string | number; stdout?: string; stderr?: string }
+type CommandError = Error & { code?: string | number; stdout?: string; stderr?: string; gitCommandOutput?: boolean }
 
 async function git(root: string, args: string[], limit = STATUS_BYTES, allowTruncation = false): Promise<{ text: string; truncated: boolean }> {
   try {
@@ -20,7 +20,7 @@ async function git(root: string, args: string[], limit = STATUS_BYTES, allowTrun
     return { text: result.stdout, truncated: false }
   } catch (reason) {
     const error = reason as CommandError
-    if (allowTruncation && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" && error.stdout) {
+    if (allowTruncation && error.gitCommandOutput && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" && error.stdout) {
       return { text: error.stdout, truncated: true }
     }
     throw new Error(error.stderr?.trim() || message(reason))
