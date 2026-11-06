@@ -6,10 +6,13 @@ import { dirname, join, resolve } from "node:path"
 export async function stageDsh(destination: string): Promise<void> {
   const root = resolve(import.meta.dirname, "..")
   await rm(destination, { recursive: true, force: true })
-  // The runtime has no workspace adapter/UI dependencies, so their patches are unused here.
+  // Use the dedicated deploy lockfile; legacy deploy re-resolves packages from registry metadata.
+  // Workspace installation already validates supply-chain policy. Trust that locked graph so
+  // offline deployment does not require a second set of registry metadata. Unused UI patches
+  // are allowed because they are outside this production dependency graph.
   execFileSync("mise", ["exec", "--", "pnpm",
-    "--filter", "@deskfleet/dsh-runtime", "deploy", "--prod", "--legacy",
-    "--node-linker=hoisted", "--offline", "--frozen-lockfile", destination,
+    "--filter", "@deskfleet/dsh-runtime", "deploy", "--prod",
+    "--node-linker=hoisted", "--offline", "--frozen-lockfile", "--trust-lockfile", destination,
   ], { cwd: root, env: { ...process.env, PNPM_CONFIG_ALLOW_UNUSED_PATCHES: "true" }, stdio: "inherit" })
   const bin = join(destination, "bin")
   await mkdir(bin, { recursive: true })

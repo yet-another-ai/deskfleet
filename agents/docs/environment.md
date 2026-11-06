@@ -374,7 +374,9 @@ Grok (`grok agent stdio`), Pi (`pi --mode rpc`), or Oh My Pi (`omp acp`).
 DeepSeek Harness is bundled with a private Node runtime. For source daemon
 launches run `mise run dsh:stage` after installing dependencies; desktop and SEA
 builds stage it automatically. Desktop development stages `out/dsh` once before
-launching Electron; main-process rebuilds leave that runtime intact.
+launching Electron; main-process rebuilds leave that runtime intact. Staging uses
+the dedicated deploy lockfile and trusts the graph already validated by workspace
+installation, so offline builds do not need registry metadata to resolve it again.
 `mise run dsh:smoke` checks its version and ACP
 handshake with an empty PATH and an isolated home.
 Antigravity uses a separate native ACP runtime with its matching local harness;
