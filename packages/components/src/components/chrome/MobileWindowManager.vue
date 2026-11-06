@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
 import { useElementSize, usePreferredReducedMotion } from "@vueuse/core"
+import { waapi, type WAAPIAnimation } from "animejs"
 import { computed, defineAsyncComponent, nextTick, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
@@ -127,7 +128,7 @@ const cardWidth = computed(() => Math.max(0, (viewportWidth.value - 56) / 3))
 const cardScale = computed(() => viewportWidth.value > 0 ? cardWidth.value / viewportWidth.value : 1)
 const rowHeight = computed(() => viewportHeight.value * cardScale.value + 52)
 const gridHeight = computed(() => Math.ceil(views.value.length / 3) * rowHeight.value + 16)
-let animations: Animation[] = []
+let animations: WAAPIAnimation[] = []
 let transitionId = 0
 onScopeDispose(() => { transitionId++; for (const animation of animations) animation.cancel() })
 
@@ -136,32 +137,37 @@ onScopeDispose(() => { transitionId++; for (const animation of animations) anima
 async function transitionOverview(open: boolean, selectedId = activeId.value): Promise<void> {
   const id = ++transitionId
   const surfaces = [...stage.value?.querySelectorAll<HTMLElement>("[data-view-surface]") ?? []]
-  const previous = new Map(surfaces.map(element => [element, {
-    rect: element.getBoundingClientRect(), radius: getComputedStyle(element).borderRadius,
-  }]))
+  const previous = new Map(surfaces.map(element => [element, element.getBoundingClientRect()]))
   for (const animation of animations) animation.cancel()
   animations = []
   zooming.value = true
   if (!open && document.activeElement && stage.value?.contains(document.activeElement)) {
     viewport.value?.parentElement?.querySelector<HTMLButtonElement>("[data-open-overview]")?.focus({ preventScroll: true })
   }
-  if (open) views.value.forEach((_, index) => reveal(index))
   activeId.value = selectedId
   overviewOpen.value = open
   await nextTick()
   if (id !== transitionId || !stage.value || !scroller.value) return
   scroller.value.scrollTop = open ? Math.floor(activeIndex.value / 3) * rowHeight.value : 0
   const origin = stage.value.getBoundingClientRect()
+  const finished: Promise<unknown>[] = []
   if (reducedMotion.value !== "reduce" && viewportWidth.value > 0) {
-    for (const [element, { rect, radius }] of previous) {
+    for (const [element, rect] of previous) {
       if (!element.isConnected || rect.width === 0) continue
-      animations.push(element.animate([
-        { transform: `translate(${rect.left - origin.left}px, ${rect.top - origin.top}px) scale(${rect.width / viewportWidth.value})`, borderRadius: radius },
-        { transform: element.style.transform, borderRadius: getComputedStyle(element).borderRadius },
-      ], { duration: 420, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }))
+      const animation = waapi.animate(element, {
+        transform: [
+          `translate3d(${rect.left - origin.left}px, ${rect.top - origin.top}px, 0) scale(${rect.width / viewportWidth.value})`,
+          element.style.transform,
+        ],
+        duration: 420,
+        ease: "outQuart",
+      })
+      animations.push(animation)
+      finished.push(animation.then(() => {}, () => {}))
     }
   }
-  await Promise.all(animations.map(animation => animation.finished.catch(() => {})))
+  if (open) views.value.forEach((_, index) => reveal(index))
+  await Promise.all(finished)
   if (id === transitionId) { zooming.value = false; animations = [] }
 }
 function dismissOverview(): void {
