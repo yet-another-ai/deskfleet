@@ -90,8 +90,15 @@ display, ICE, and transport failures stop without another codec. The desktop
 error event includes `reason: "encoder"` for the failures that may continue.
 Older callers omit `reason`; those failures are not retried.
 
-Each viewer's media startup waits up to 30 seconds for its first delivered,
-nonempty keyframe, allowing asynchronous hardware encoders time to warm up.
+The shared source waits up to 30 seconds for its first nonempty video packet
+after capture has opened, allowing asynchronous hardware encoders time to warm
+up. Viewers await this source-wide startup result before starting their own
+30-second first-keyframe delivery deadline. Joining an already producing source
+starts that viewer deadline immediately. A viewer deadline is a transport failure
+and does not trigger codec fallback; actual source startup and encoder failures
+retain their classification for every attached viewer.
+Audio produced before the first video packet is discarded so it cannot fill the
+broadcast while viewers wait for video readiness.
 Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
 the browser and native viewers give connection setup 45 seconds, then start a
 separate 45-second media-start deadline when requesting capture on the connected

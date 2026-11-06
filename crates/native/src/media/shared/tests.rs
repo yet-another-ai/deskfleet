@@ -650,3 +650,5 @@ async fn audio_overrun_stops_only_the_lagging_viewer() {
     until(|| fast.values().contains(&31)).await;
     a.stop().await.unwrap();
 }
+
+mod startup;

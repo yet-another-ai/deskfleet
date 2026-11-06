@@ -252,6 +252,7 @@ struct Source {
     keyframe: AtomicBool,
     encoder_started: AtomicBool,
     packets: broadcast::Sender<Packet>,
+    video_ready: watch::Sender<bool>,
     completion: watch::Sender<Completion>,
 }
 
@@ -264,6 +265,7 @@ impl Source {
             keyframe: AtomicBool::new(true),
             encoder_started: AtomicBool::new(false),
             packets: broadcast::channel(8).0,
+            video_ready: watch::channel(false).0,
             completion: watch::channel(None).0,
         }
     }
@@ -364,8 +366,17 @@ impl Source {
                     if empty {
                         continue;
                     }
-                    has_video |= matches!(packet, Packet::Video(..));
+                    // Viewers wait for video before consuming the broadcast.
+                    // Warmup audio cannot be played yet and must not fill it.
+                    if !has_video && matches!(packet, Packet::Audio(..)) {
+                        continue;
+                    }
+                    let first_video = !has_video && matches!(packet, Packet::Video(..));
                     let _ = self.packets.send(packet);
+                    if first_video {
+                        has_video = true;
+                        self.video_ready.send_replace(true);
+                    }
                 }
             }
             Ok(())
@@ -437,6 +448,17 @@ async fn deliver(
     ready: oneshot::Sender<()>,
     audio: bool,
 ) -> Result<(), MediaError> {
+    // The producer owns the post-open first-output deadline and its encoder
+    // failure classification. A viewer's deadline cannot consume that budget.
+    let mut video_ready = source.video_ready.subscribe();
+    tokio::select! {
+        biased;
+        _ = shutdown.changed() => return Ok(()),
+        result = source.finished() => return result,
+        result = video_ready.wait_for(|ready| *ready) => {
+            result.map_err(|_| MediaError::Startup)?;
+        }
+    }
     let mut ready = Some(ready);
     let mut waiting_keyframe = true;
     let deadline = tokio::time::sleep(FIRST_FRAME_TIMEOUT);
@@ -446,7 +468,9 @@ async fn deliver(
             biased;
             _ = shutdown.changed() => return Ok(()),
             result = source.finished() => return result,
-            _ = &mut deadline, if ready.is_some() => return Err(source.startup_error()),
+            _ = &mut deadline, if ready.is_some() => {
+                return Err(MediaError::Transport("desktop media delivery did not start within 30 seconds".to_owned()));
+            }
             packet = packets.recv() => match packet {
                 Ok(packet) => packet,
                 Err(broadcast::error::RecvError::Lagged(_)) => {
