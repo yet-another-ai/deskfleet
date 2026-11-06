@@ -6,6 +6,8 @@ type PortalMetadata = { source: "manage" | "payment_recovery" }
 export type BillingReturn = "checkout_success" | "checkout_cancel" | "portal"
 
 export interface BillingAnalyticsEvents {
+  billing_entry_viewed: { source: "sidebar"; current_plan?: BillingPlan; action: "upgrade" | "view" }
+  billing_entry_clicked: { source: "sidebar" | "team_menu" | "settings"; current_plan?: BillingPlan; action?: "upgrade" | "view" }
   billing_plans_viewed: { current_plan: BillingPlan; can_manage: boolean; payments_available: boolean; has_subscription: boolean; enterprise_contact_available: boolean }
   billing_interval_selected: { interval: BillingInterval; previous_interval: BillingInterval }
   billing_checkout_started: CheckoutMetadata

@@ -431,7 +431,8 @@ test.each([
   const settingsLinks = () => page().findAll('nav[aria-label="Settings sections"] a')
   expect(settingsLinks().map(link => link.text())).toEqual(["Team settings", "Plans & Usages", "AI usage"])
   expect(page().find("[data-team-plan]").exists()).toBe(false)
-  expect(fake.central.billing).not.toHaveBeenCalled()
+  expect(fake.central.billing).toHaveBeenCalledWith("team-1")
+  fake.central.billing.mockClear()
   const navItem = (label: string) => settingsLinks().find(item => item.text() === label)!
   await navItem("Plans & Usages").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
@@ -461,7 +462,7 @@ test.each([
   await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
   expect(router.currentRoute.value.path).toBe("/settings/preferences")
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
-    "#/settings/preferences", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
+    "#/settings/preferences", "#/team/settings/plans", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
     "#/settings/developer", "#/settings/about",
   ])
@@ -530,7 +531,8 @@ test.each([
   await flushPromises()
   await vi.waitFor(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
   expect(page().get("section header").text()).toContain(target === "team-1" ? "First team" : "Paying team")
-  expect(fake.central.billing).toHaveBeenCalledExactlyOnceWith(target)
+  expect(fake.central.billing).toHaveBeenCalledWith(target)
+  expect(fake.central.billing.mock.calls.every(([teamId]) => teamId === target)).toBe(true)
   expect(location.search).toBe("")
   expect(router.currentRoute.value.path).toBe("/team/settings/plans")
   expect(events).toHaveBeenCalledWith("billing_returned", { source: "checkout_success" })
@@ -618,4 +620,27 @@ test("the selected machine shows when central presence reports it offline", asyn
   expect(page().get("aside").text()).not.toContain("Offline")
   fake.emit({ type: "presence", teamId: "team-1", machineId: "m1", online: false } as never)
   await vi.waitFor(() => expect(page().get("aside").text()).toContain("Offline"))
+})
+
+test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens current Team plans and records its source without a machine", async source => {
+  const events = vi.spyOn(analytics, "trackEvent")
+  const fake = fakeCentral()
+  mountShell(fake.central, "web")
+  await settled(() => expect(page().find("[data-billing-entry]").exists()).toBe(true))
+  const origin = "/?from=billing-entry"
+  await router.push(origin)
+  if (source === "sidebar") await page().get("[data-billing-entry] button").trigger("click")
+  else if (source === "team_menu") {
+    await page().get('button[aria-label="Team"]').trigger("click")
+    await page().findAll('[role="menuitem"]').find(item => item.text() === "Plans & billing")!.trigger("click")
+  } else {
+    await page().get('button[aria-label="Settings"]').trigger("click")
+    await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
+    await page().findAll('nav a').find(item => item.text() === "Plans & billing")!.trigger("click")
+  }
+  await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
+  expect(page().get("section header").text()).toContain("Design team")
+  expect(events).toHaveBeenCalledWith("billing_entry_clicked", expect.objectContaining({ source }))
+  await buttonText("Back to app")!.trigger("click")
+  await settled(() => expect(router.currentRoute.value.fullPath).toBe(origin))
 })

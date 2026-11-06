@@ -138,6 +138,8 @@ test("keeps the updater above the account footer when no machine is selected", a
   wrapper = mount(AccountShell, { props: { host: desktopHost }, global: { plugins: [pinia, router, i18n] } })
   await vi.waitFor(() => expect(wrapper!.find("aside [data-app-update]").exists()).toBe(true))
   const notice = wrapper.get("aside [data-app-update]").element
-  expect(notice.nextElementSibling?.tagName).toBe("FOOTER")
+  const billing = wrapper.get("aside [data-billing-entry]").element
+  expect(notice.nextElementSibling).toBe(billing)
+  expect(billing.nextElementSibling?.tagName).toBe("FOOTER")
   expect(install).not.toHaveBeenCalled()
 })

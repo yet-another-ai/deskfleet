@@ -105,6 +105,8 @@ URL, or viewing an active subscription never emits a client-side paid event.
 
 | Frontend event | Meaning and dimensions |
 | --- | --- |
+| `billing_entry_viewed` | Sidebar entry intersects the viewport after billing loads; once per account session/user/Team/plan/action, including across route remounts; `source=sidebar`, effective `current_plan`, `action=upgrade`/`view` |
+| `billing_entry_clicked` | Navigation intent; `source=sidebar`/`team_menu`/`settings`; sidebar also supplies effective plan (when loaded) and action. Join by Team with Plans views, checkout attempts, and verified initial invoice payments; clicks are not purchases. |
 | `billing_plans_viewed` | Once per mounted Plans view after loading; effective plan, billing permission, payment/subscription/contact availability |
 | `billing_interval_selected` | Actual month/year selection change; previous and selected interval |
 | `billing_checkout_started` | Each attempt; `target_plan`, `interval`, `request_id` |
