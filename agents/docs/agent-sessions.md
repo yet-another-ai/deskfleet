@@ -258,6 +258,14 @@ Settings → Agents, where executable discovery, installation, login, and
 connection testing are available. Startup preserves existing provider settings,
 including an empty list after all providers are removed.
 
+Background ACP and MCP subprocesses started by DeskFleet must hide their Windows
+console windows. Each nested launch needs its own `windowsHide` option; hiding
+the outer ACP process does not configure its descendants. This covers the AUV
+bridge and the pinned Codex and Pi adapter patches. The remote MCP and bundled
+DSH stdio transports, and the Claude SDK launcher, already request hidden windows.
+MCP subprocesses launched inside separately installed provider CLIs remain owned
+by those CLIs. Interactive login terminals retain their existing behavior.
+
 A provider has a stable ID, a template, a display name, an optional icon, an
 optional binary path, and environment overrides. Icons are bundled catalog slugs;
 omitting one uses the template's default icon. Icon selection affects display

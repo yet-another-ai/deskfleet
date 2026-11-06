@@ -1,8 +1,16 @@
 diff --git a/dist/index.js b/dist/index.js
-index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc77b4f99d6 100755
+index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..02c3a4474d0a9c2c0647f0deb4f4669192f555ff 100755
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -1887,7 +1887,7 @@ function mergeCommands(a, b) {
+@@ -134,6 +134,7 @@ var PiRpcProcess = class _PiRpcProcess {
+     const child = start(cmd, args, {
+       cwd: params.cwd,
+       stdio: "pipe",
++      windowsHide: true,
+       env: process.env
+     });
+     try {
+@@ -1887,7 +1888,7 @@ function mergeCommands(a, b) {
    }
    return out;
  }
@@ -11,7 +19,7 @@ index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc7
  var PiAcpAgent = class {
    conn;
    sessions = new SessionManager();
-@@ -3039,8 +3039,7 @@ function readNearestPackageJson(metaUrl) {
+@@ -3039,8 +3040,7 @@ function readNearestPackageJson(metaUrl) {
  // src/index.ts
  if (process.argv.includes("--terminal-login")) {
 -  const { spawnSync: spawnSync2 } = await import("child_process");
@@ -21,7 +29,7 @@ index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc7
      stdio: "inherit",
      env: process.env,
      shell: shouldUseShellForPiCommand(cmd)
-@@ -3077,11 +3076,12 @@ var output = new ReadableStream({
+@@ -3077,11 +3077,12 @@ var output = new ReadableStream({
    }
  });
  var stream = ndJsonStream(input, output);
@@ -36,7 +44,8 @@ index 64758f027a38a7ecbe7d6e05e88edcc72ee9f193..5eea81248c0e116ecef54c41f72bcdc7
    } catch {
    }
    try {
-@@ -3094,9 +3094,4 @@ process.stdin.resume();
+@@ -3094,10 +3095,5 @@ process.stdin.on("close", shutdown);
+ process.stdin.resume();
  process.on("SIGINT", shutdown);
  process.on("SIGTERM", shutdown);
 -process.stdout.on("error", () => {

@@ -39,7 +39,7 @@ function handshakeTransform(
 export async function runAuvMcp(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const binary = env.DESKFLEET_AUV_PATH
   if (!binary) throw new Error("DESKFLEET_AUV_PATH is required")
-  const child = spawn(binary, ["mcp", "serve"], { stdio: ["pipe", "pipe", "inherit"] })
+  const child = spawn(binary, ["mcp", "serve"], { stdio: ["pipe", "pipe", "inherit"], windowsHide: true })
   // AUV 0.0.40 exits on discovery; an unsupported-method response lets newer clients initialize normally.
   const requests = handshakeTransform((message, line) => {
     if (message?.method === "server/discover" && "id" in message) {
