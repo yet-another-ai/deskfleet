@@ -292,7 +292,7 @@ export class AgentRuntime {
       const { provider, config } = this.#resolveProvider(snapshot.session.provider)
       this.#providerName = config.name
       this.#providerKind = provider.id
-      const connection = await provider.connect(config, {
+      const connection = await provider.connect({ ...config, cwd: worktree.directories[0].path }, {
         ...(this.#terminals ? { terminals: {
           sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id,
           ...(config.commandDirectory ? { commandDirectory: config.commandDirectory, path: commandPath(config.env ?? {}) } : {}),

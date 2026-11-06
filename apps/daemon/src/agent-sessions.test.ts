@@ -1575,9 +1575,10 @@ test("Sessions retain the chosen provider ID and read edited launch settings on 
     ...f.create, operationId: randomUUID(), provider: configured.id,
   }, f.actor) as AgentSnapshot
   const sessionId = snapshot.session.id
+  const cwd = (await f.catalog.sessionWorktree(sessionId))!.directories[0]!.path
   assert.equal(snapshot.session.provider, configured.id)
   assert.deepEqual(f.provider.configs.at(-1), {
-    name: "Work account", binaryPath: "/tools/work-codex",
+    name: "Work account", binaryPath: "/tools/work-codex", cwd,
     env: { CODEX_HOME: "/work/account", TOKEN: "private-provider-value" },
   })
   const launches = f.provider.configs.length
@@ -1587,7 +1588,7 @@ test("Sessions retain the chosen provider ID and read edited launch settings on 
   await f.service.handle("_deskfleet/session/stop", { sessionId, operationId: randomUUID() }, f.actor)
   await f.service.handle("_deskfleet/session/resume", { sessionId, operationId: randomUUID() }, f.actor)
   assert.equal(f.provider.configs.length, launches + 1)
-  assert.deepEqual(f.provider.configs.at(-1), { name: "Renamed account", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" } })
+  assert.deepEqual(f.provider.configs.at(-1), { name: "Renamed account", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" }, cwd })
   assert.equal((await f.service.journal.read(sessionId)).session.provider, configured.id)
   assert.deepEqual(f.provider.resumes, ["provider-conversation"])
   const journal = await f.service.journal.history(sessionId, "0")
@@ -1639,7 +1640,8 @@ test("failed configuration recovery keeps the configured provider and applies it
   const before = await restored.journal.read(sessionId)
   const configuration = await restored.handle("_deskfleet/session/configuration", { sessionId }, f.actor) as AgentConfiguration
   const identity = { id: configured.id, name: "Renamed account" }
-  const launch = { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" } }
+  const cwd = (await f.catalog.sessionWorktree(sessionId))!.directories[0]!.path
+  const launch = { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" }, cwd }
   assert.deepEqual(configuration.provider, identity)
   assert.equal(configuration.models?.currentValue, "second")
   assert.equal(configuration.reasoningEfforts?.currentValue, "retired")

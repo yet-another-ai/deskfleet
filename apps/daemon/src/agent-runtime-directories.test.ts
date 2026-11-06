@@ -7,7 +7,7 @@ import test, { type TestContext } from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { openInMemoryCatalog } from "@deskfleet/native"
-import type { AgentConnection, AgentProvider } from "./agents/acp.ts"
+import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import type { AgentSnapshot } from "./agent-protocol.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { DaemonCatalog } from "./catalog.ts"
@@ -19,8 +19,10 @@ class DirectoryProvider implements AgentProvider {
   opened: acp.NewSessionRequest[] = []
   resumed: acp.ResumeSessionRequest[] = []
   prompts: acp.PromptRequest[] = []
+  startupDirectories: (string | undefined)[] = []
 
-  async connect(): Promise<AgentConnection> {
+  async connect(config: AgentConfig): Promise<AgentConnection> {
+    this.startupDirectories.push(config.cwd)
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: {
         resume: {}, ...(this.additionalDirectories ? { additionalDirectories: {} } : {}),
@@ -83,6 +85,7 @@ for (const supported of [false, true]) {
     assert.equal(f.created.runs[0]?.state, "running")
     const expected = { cwd: f.directories[0], mcpServers: [], ...(supported ? { additionalDirectories: f.directories.slice(1) } : {}) }
     assert.deepEqual(provider.opened, [expected])
+    assert.deepEqual(provider.startupDirectories, [f.directories[0]])
 
     await f.submit()
     const first = await completedTurns(f.read, 1)
@@ -91,6 +94,7 @@ for (const supported of [false, true]) {
     await f.stop()
     await f.resume()
     assert.deepEqual(provider.resumed, [{ ...expected, sessionId: "conversation" }])
+    assert.deepEqual(provider.startupDirectories, [f.directories[0], f.directories[0]])
 
     await f.submit()
     const resumed = await completedTurns(f.read, 2)

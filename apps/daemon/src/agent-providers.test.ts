@@ -97,7 +97,7 @@ test("templates resolve their own binary defaults and cannot change after creati
   assert.deepEqual(registry.resolve(omp.id).config, { name: "Oh My Pi", binaryPath: "omp", env: { ANTHROPIC_API_KEY: "secret" } })
   const deepseek = await registry.create({ template: "deepseek-harness", name: "DeepSeek Harness", env: { DEEPSEEK_API_KEY: "secret" } })
   assert.equal(registry.resolve(deepseek.id).provider.id, "deepseek-harness")
-  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret" } })
+  assert.deepEqual(registry.resolve(deepseek.id).config, { name: "DeepSeek Harness", binaryPath: undefined, env: { DEEPSEEK_API_KEY: "secret", DESKFLEET_DSH_CREDENTIALS_PATH: join(directory, "deepseek-harness", ".credentials.yaml") } })
   const antigravity = await registry.create({ template: "antigravity", name: "Antigravity", env: { GEMINI_HOME: "/account/antigravity" } })
   assert.equal(registry.resolve(antigravity.id).provider.id, "antigravity")
   const antigravityBinary = process.platform === "win32" ? "agy_acp_server.exe" : "agy_acp_server.par"
@@ -108,6 +108,27 @@ test("templates resolve their own binary defaults and cannot change after creati
   const copy = registry.get(custom.id)
   copy.env.CUSTOM = "mutated"
   assert.equal(registry.resolve(custom.id).config.env?.CUSTOM, "yes")
+})
+
+test("bundled DeepSeek sessions isolate registration credentials without persisting inferred paths", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-deepseek-registrations-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const first = new AgentProviders(join(directory, "first"))
+  const second = new AgentProviders(join(directory, "second"))
+  await Promise.all([first.init(), second.init()])
+  const input = { template: "deepseek-harness" as const, name: "DeepSeek", env: {} }
+  const a = await first.create(input)
+  const b = await second.create(input)
+  assert.equal(first.resolve(a.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, join(directory, "first", "deepseek-harness", ".credentials.yaml"))
+  assert.equal(second.resolve(b.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, join(directory, "second", "deepseek-harness", ".credentials.yaml"))
+  assert.equal(first.resolve(a.id).config.env?.DSH_HOME, undefined, "existing profiles and session history must stay in their original home")
+  assert.deepEqual(first.get(a.id).env, {})
+  assert.deepEqual(first.metadata().providers[0], { id: a.id, name: "DeepSeek", template: "deepseek-harness" })
+  await first.update(a.id, { name: "Custom home", env: { DSH_HOME: "/chosen/home" } })
+  assert.equal(first.resolve(a.id).config.env?.DSH_HOME, "/chosen/home")
+  assert.equal(first.resolve(a.id).config.env?.DESKFLEET_DSH_CREDENTIALS_PATH, undefined)
+  await first.update(a.id, { name: "External", binaryPath: "/tools/dsh", env: {} })
+  assert.deepEqual(first.resolve(a.id).config.env, {})
 })
 
 test("public provider revision changes on settings edits without exposing launch configuration", async t => {
@@ -319,6 +340,35 @@ test("DeepSeek Harness launches dsh --profile acp without interactive authentica
   const created = await connection.newSession({ cwd: directory, mcpServers: [] })
   assert.ok(created.sessionId)
   await connection.close()
+})
+
+test("provider tests use their temporary session directory at process startup without persisting it", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-provider-test-cwd-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  let startupCwd: string | undefined
+  const unexpected = async () => { assert.fail("Connection tests must only initialize and open a session") }
+  const registry = new AgentProviders(directory, {
+    id: "codex",
+    async connect(config) {
+      startupCwd = config.cwd
+      return {
+        initialization: { protocolVersion: 1, agentInfo: { name: "fixture", version: "1" } },
+        async newSession(params) {
+          assert.equal(config.cwd, params.cwd)
+          assert.notEqual(config.cwd, process.cwd())
+          assert.equal((await stat(params.cwd)).isDirectory(), true)
+          return { sessionId: "probe" }
+        },
+        setConfigOption: unexpected, resume: unexpected, prompt: unexpected, steer: unexpected,
+        cancel: unexpected, async close() {},
+      }
+    },
+  })
+  await registry.init()
+  assert.deepEqual(await registry.test({ template: "codex", name: "Fixture", env: {} }), { agentName: "fixture" })
+  assert.ok(startupCwd)
+  await assert.rejects(stat(startupCwd), { code: "ENOENT" })
+  assert.deepEqual(registry.snapshot().providers, [])
 })
 
 test("provider tests open a prompt-free session from unsaved settings and report the agent's own failure", { timeout: 15_000, skip: process.platform === "win32" }, async t => {

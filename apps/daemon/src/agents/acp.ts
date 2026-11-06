@@ -13,6 +13,8 @@ export interface AgentConfig {
   name: string
   binaryPath?: string
   env?: Record<string, string>
+  /** Connection-local primary worktree (or probe) directory, supplied before initialization. */
+  cwd?: string
   /** Host-owned bundled commands, also supplied to daemon-hosted ACP terminals. */
   commandDirectory?: string
   /** Connection checks may consume existing credentials but must never start login. */
@@ -28,6 +30,7 @@ export interface AgentProcess {
   command: string
   args?: string[]
   env?: NodeJS.ProcessEnv
+  cwd?: string
 }
 
 export interface AgentClient {
@@ -110,6 +113,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const sessionModes = new AcpSessionModes()
   const reasoning = new AcpModelReasoning()
   const child = spawn(launch.command, launch.args ?? [], {
+    cwd: launch.cwd,
     env: Object.fromEntries(
       [...Object.entries(process.env), ...Object.entries(launch.env ?? {})]
         .map(([key, value]) => [process.platform === "win32" ? key.toUpperCase() : key, value]),

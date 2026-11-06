@@ -15,6 +15,12 @@ let state: { model: typeof models[number]; thinkingLevel: string; messages: Mess
   ? JSON.parse(readFileSync(sessionFile, "utf8"))
   : { model: models[0]!, thinkingLevel: "medium", messages: [] }
 const record = (value: unknown) => appendFileSync(logPath, `${JSON.stringify(value)}\n`)
+// Disposal can close the response pipe before SIGTERM is dispatched. Keep this
+// fixture alive so the lifecycle test observes disposal rather than an EPIPE crash.
+process.stdout.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EPIPE") throw error
+  record({ type: "output-closed", pid: process.pid })
+})
 const send = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`)
 const save = () => writeFileSync(sessionFile, JSON.stringify(state))
 // A real CLI can retain resources after stdin EOF. Only adapter disposal should stop it.

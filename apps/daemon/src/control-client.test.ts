@@ -102,6 +102,36 @@ test("the final complete response is delivered before EOF rejects other pending 
   assert.equal(disconnected.length, 1)
 })
 
+for (const method of ["providerProbe", "providerLogin"] as const) {
+  test(`${method} allows the bundled probe window while retaining a request deadline`, { timeout: 5_000 }, async context => {
+    let receive!: (request: ControlRequest) => void
+    const received = new Promise<ControlRequest>(resolve => { receive = resolve })
+    const { client, remote, disconnected } = await connectFixture(context, (_socket, request) => receive(request))
+    context.mock.timers.enable({ apis: ["setTimeout"] })
+    const params = { provider: { template: "deepseek-harness" as const, name: "DeepSeek", env: {} } }
+    const response = client.call(method, params).then(result => ({ result }), error => ({ error }))
+    const request = await received
+    context.mock.timers.tick(30_000)
+    assert.equal(client.closed, false)
+    const result = method === "providerProbe"
+      ? { status: "found", auth: "unauthenticated", installable: false, loginAvailable: true }
+      : { id: "sign-in", title: "DeepSeek sign in", cwd: "/home/test", cols: 100, rows: 24, status: "running" }
+    remote.write(`${JSON.stringify({ id: request.id, result })}\n`)
+    assert.deepEqual(await response, { result })
+    context.mock.timers.tick(30_000)
+    assert.equal(client.closed, false)
+    assert.equal(disconnected.length, 0)
+
+    const timedOut = assert.rejects(client.call(method, params), new RegExp(`Daemon ${method} request timed out`))
+    context.mock.timers.tick(59_999)
+    assert.equal(client.closed, false)
+    context.mock.timers.tick(1)
+    await timedOut
+    assert.equal(client.closed, true)
+    assert.equal(disconnected.length, 1)
+  })
+}
+
 for (const method of ["start", "close"] as const) {
   test(`desktop ${method} can finish after the ordinary daemon request deadline`, { timeout: 5_000 }, async context => {
     let onRequest!: (respond: () => void) => void

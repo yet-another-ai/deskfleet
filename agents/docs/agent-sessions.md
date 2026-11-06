@@ -299,13 +299,29 @@ The DeepSeek Harness template runs the bundled
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
 as `dsh --profile acp`, using Electron's Node mode in Desktop or the private Node
 runtime in standalone releases. An empty executable path
-selects the bundled version; an explicit path uses that external CLI. Set
-`DEEPSEEK_API_KEY` in the provider environment (optional `DEEPSEEK_BASE_URL`)
-before starting a session. The ACP automation profile does not advertise
-interactive authenticate methods. No Node.js, npm, or global dsh installation
-is required. Settings probes the bundled runtime and offers no installer or
-interactive login; a missing runtime requires reinstalling DeskFleet. Existing
-explicit paths remain external overrides; clear the path to use the bundle.
+selects the bundled version; an explicit path uses that external CLI. For the
+bundle, **Log in** opens a setup terminal with a browser authorization URL. Open
+that URL and finish signing in. If the browser is on a different machine and
+cannot reach the loopback callback, paste its full callback URL into the login
+terminal. Successful login closes the helper and refreshes the credential status.
+Cancelling or failing login does not replace an existing account credential.
+Each registration uses its own credential file, shared by login, detection, and
+sessions. Existing Harness profiles and session history keep their original home;
+set the provider's `DSH_HOME` to use that home's credential store explicitly.
+Alternatively, set `DEEPSEEK_API_KEY` (optional `DEEPSEEK_BASE_URL`). A configured
+API key takes precedence over account login; otherwise a saved account selects
+the `deepseek-account` route. Detection checks local credential availability,
+not whether a remote service still accepts the key or account.
+Detection and login use the provider's inherited environment and Harness-home
+`.env`, plus saved credentials; they do not read a project `.env` from their
+working directory. Bundled ACP starts in the session's primary worktree directory
+before initialization, so it loads that directory's `.env`. Draft configuration
+uses the workspace's primary directory; connection tests use an empty temporary
+directory.
+The ACP automation profile itself does not advertise interactive authenticate
+methods. No Node.js, npm, or global dsh installation is required. A missing
+bundled runtime requires reinstalling DeskFleet. Explicit paths keep external
+credential setup and have no built-in login action; clear the path to use the bundle.
 Bundled version detection allows 30 seconds for cold startup. Timeouts and
 launch failures surface as detection errors rather than missing installations.
 

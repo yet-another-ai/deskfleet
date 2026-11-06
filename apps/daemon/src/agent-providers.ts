@@ -14,6 +14,7 @@ import { grokProvider } from "./agents/grok.ts"
 import { ompProvider } from "./agents/omp.ts"
 import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
+import { providerEnvironment } from "./provider-environment.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
@@ -126,7 +127,7 @@ export class AgentProviders {
     const { provider, config } = this.#launch(providerInput(input))
     config.authentication = "existing"
     const cwd = await mkdtemp(join(tmpdir(), "df-provider-test-"))
-    const connecting = provider.connect(config, { onUpdate() {} })
+    const connecting = provider.connect({ ...config, cwd }, { onUpdate() {} })
     let timer: NodeJS.Timeout | undefined
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`${config.name} did not open a session within ${PROVIDER_TEST_TIMEOUT_MS / 1000} seconds`)), PROVIDER_TEST_TIMEOUT_MS)
@@ -153,7 +154,7 @@ export class AgentProviders {
         name: record.name,
         binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
           : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
-        env: commandEnvironment(record.env, this.#commandDirectory),
+        env: commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
       },
     }

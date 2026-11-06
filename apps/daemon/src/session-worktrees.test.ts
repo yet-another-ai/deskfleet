@@ -673,7 +673,8 @@ test("workspace CLI passes ordered directories to ACP and destroys them only aft
   let disconnected = false
   const provider: AgentProvider = {
     id: "fixture",
-    async connect(_config, client) {
+    async connect(config, client) {
+      assert.equal(config.cwd, created!.worktree.directories[0]!.path)
       const connection = await connectAcpProcess({
         command: process.execPath,
         args: [fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))],

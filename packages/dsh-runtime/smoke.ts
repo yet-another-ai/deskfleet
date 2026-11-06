@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
-import { bundledDshRuntime, sourceDshRuntime, type DshRuntime } from "./src/index.ts"
+import { bundledDshRuntime, configureDshRuntime, dshAccountProcess, dshAcpProcess, sourceDshRuntime, type DshRuntime } from "./src/index.ts"
 
 /** Exercise the selected host with no system Node/npm/dsh, credentials, or model request. */
 export async function smokeDsh(runtime: DshRuntime): Promise<void> {
@@ -13,17 +13,23 @@ export async function smokeDsh(runtime: DshRuntime): Promise<void> {
   const env = Object.fromEntries([...Object.entries({ ...process.env,
     PATH: "", NODE_PATH: "", NODE_OPTIONS: "", HOME: home, USERPROFILE: home, APPDATA: home, LOCALAPPDATA: home,
     DSH_HOME: join(home, ".dsh"), DSH_AGENTS_HOME: join(home, ".agents"),
+    DESKFLEET_DSH_CREDENTIALS_PATH: join(home, "registration", ".credentials.yaml"),
     DEEPSEEK_API_KEY: "", DEEPSEEK_BASE_URL: "https://api.deepseek.com",
   }), ...Object.entries(runtime.env ?? {})].map(([key, value]) => [process.platform === "win32" ? key.toUpperCase() : key, value]))
   try {
+    configureDshRuntime(runtime)
     const manifest = JSON.parse(await readFile(join(dirname(runtime.entryPoint), "../package.json"), "utf8")) as { version: string }
     const version = execFileSync(runtime.command, [...runtime.args ?? [], runtime.entryPoint, "--version"], {
       env, cwd: home, encoding: "utf8", timeout: 30_000, windowsHide: true,
     }).trim()
     assert.equal(version, manifest.version)
+    const probe = dshAccountProcess("status", env)
+    assert.deepEqual(JSON.parse(execFileSync(probe.command, probe.args ?? [], {
+      env: { ...env, ...probe.env }, cwd: home, encoding: "utf8", timeout: 30_000, windowsHide: true,
+    })), { auth: "unauthenticated" })
     smokeNativeHelpers(runtime, env, home)
     await smokeAcp(runtime, env, home)
-    console.log(`dsh ${version}: native helpers, ACP initialization, and newSession passed without system Node/npm/dsh`)
+    console.log(`dsh ${version}: account probe, native helpers, ACP initialization, and newSession passed without system Node/npm/dsh`)
   } finally { await rm(home, { recursive: true, force: true }) }
 }
 
@@ -74,8 +80,10 @@ function smokeNativeHelpers(runtime: DshRuntime, env: NodeJS.ProcessEnv, cwd: st
 }
 
 async function smokeAcp(runtime: DshRuntime, env: NodeJS.ProcessEnv, cwd: string): Promise<void> {
-  const child = spawn(runtime.command, [...runtime.args ?? [], runtime.entryPoint, "--profile", "acp"], {
-    env, cwd, windowsHide: true, stdio: ["pipe", "pipe", "inherit"],
+  configureDshRuntime(runtime)
+  const launch = dshAcpProcess(env)
+  const child = spawn(launch.command, launch.args ?? [], {
+    env: { ...env, ...launch.env }, cwd, windowsHide: true, stdio: ["pipe", "pipe", "inherit"],
   })
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolveExit => {
     child.once("close", (code, signal) => resolveExit({ code, signal }))

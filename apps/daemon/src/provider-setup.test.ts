@@ -1,11 +1,13 @@
 import assert from "node:assert/strict"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { createRequire } from "node:module"
 import { join } from "node:path"
 import { test } from "node:test"
+import { setImmediate as nextTurn } from "node:timers/promises"
 import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import type { AgentProviderInput } from "./provider-protocol.ts"
-import { launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
+import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
 import { probeProvider, ProviderSetup } from "./provider-setup.ts"
 import type { TerminalRun } from "./terminals.ts"
 
@@ -16,11 +18,13 @@ const result = (stdout: string, code = 0): ProbeCommandResult => ({ stdout, stde
 
 function fixture(options: {
   files?: string[]; platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv
+  directory?: string
   answer?: ProbeCommand
 } = {}) {
   const calls: { command: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string }[] = []
   const runs: TerminalRun[] = []
   const dependencies = {
+    directory: options.directory,
     platform: options.platform ?? "linux" as NodeJS.Platform,
     arch: "x64", env: options.env ?? { PATH: "/tools" }, home: options.platform === "win32" ? "C:\\Users\\someone" : "/home/someone", cwd: "/working",
     executable: async (path: string) => (options.files ?? []).includes(path),
@@ -153,14 +157,15 @@ test("OMP rejects a different provider with a bare version", async () => {
 })
 
 test("bundled DeepSeek Harness is available without PATH, npm, or a persisted executable path", async () => {
-  const f = fixture({ env: { PATH: "" }, answer: async () => result("0.2.2-rc.1") })
+  const f = fixture({ env: { PATH: "" }, answer: async (_command, args, env) => args.includes("status")
+    ? result(JSON.stringify({ auth: env.DEEPSEEK_API_KEY ? "authenticated" : "unauthenticated" })) : result("0.2.2-rc.1") })
   const found = await f.setup.probe(input("deepseek-harness"))
   assert.equal(found.status, "found")
   assert.equal(found.binaryPath, undefined)
   assert.equal(found.version, "0.2.2-rc.1")
   assert.equal(found.installable, false)
-  assert.equal(found.loginAvailable, false)
-  assert.equal(found.auth, "unknown")
+  assert.equal(found.loginAvailable, true)
+  assert.equal(found.auth, "unauthenticated")
   assert.equal(f.calls[0]!.args.at(-1), "--version")
   assert.match(f.calls[0]!.args[0]!, /dsh[/\\]lib[/\\]bin\.js$/u)
   assert.equal(f.runs.length, 0)
@@ -178,7 +183,8 @@ test("missing bundled DeepSeek runtime reports repair without offering npm insta
 test("bundled DeepSeek metadata uses the embedding host environment", async context => {
   configureDshRuntime(bundledDshRuntime("/resources/dsh", electronDshHost("/desktop/electron")))
   context.after(() => configureDshRuntime(sourceDshRuntime(import.meta.url)))
-  const f = fixture({ env: { PATH: "" }, answer: async () => result("0.2.2-rc.1") })
+  const f = fixture({ env: { PATH: "" }, answer: async (_command, args) => args.includes("status")
+    ? result(JSON.stringify({ auth: "authenticated", method: "account" })) : result("0.2.2-rc.1") })
   const found = await f.setup.probe(input("deepseek-harness", {
     env: { DEEPSEEK_API_KEY: "configured-key", ELECTRON_RUN_AS_NODE: "0" },
   }))
@@ -189,6 +195,20 @@ test("bundled DeepSeek metadata uses the embedding host environment", async cont
   assert.equal(f.calls[0]!.args[0], "--expose-internals")
   assert.equal(f.calls[0]!.env.ELECTRON_RUN_AS_NODE, "1")
   assert.equal(f.calls[0]!.env.DEEPSEEK_API_KEY, "configured-key")
+  assert.equal(f.calls[1]!.command, "/desktop/electron")
+  assert.equal(f.calls[1]!.env.ELECTRON_RUN_AS_NODE, "1")
+})
+
+test("failed DeepSeek credential detection leaves sign-in available and never exposes helper output", async () => {
+  for (const response of [result("private diagnostic", 1), result("not JSON"), result(JSON.stringify({ auth: "private-value" }))]) {
+    const f = fixture({ answer: async (_command, args) => args.includes("status") ? response : result("0.2.2-rc.1") })
+    const found = await f.setup.probe(input("deepseek-harness"))
+    assert.equal(found.status, "found")
+    assert.equal(found.auth, "unknown")
+    assert.equal(found.loginAvailable, true)
+    assert.ok(!JSON.stringify(found).includes("private"))
+    assert.equal(f.runs.length, 0)
+  }
 })
 
 test("bundled DeepSeek metadata can complete after the external CLI timeout", { timeout: 15_000 }, async () => {
@@ -203,6 +223,29 @@ test("bundled DeepSeek metadata can complete after the external CLI timeout", { 
   assert.equal(value.version, "0.2.2-rc.1")
 })
 
+test("slow bundled DeepSeek metadata and credentials fit within one detection deadline", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  const pending = probeProvider(input("deepseek-harness"), {
+    run: (_command, args) => new Promise(resolve => {
+      setTimeout(() => resolve(args.includes("status")
+        ? result(JSON.stringify({ auth: "unauthenticated" })) : result("0.2.2-rc.1")), 20_000)
+    }),
+  })
+  // Attach the assertion before advancing the clock so a deadline rejection is observed.
+  const checked = assert.doesNotReject(async () => {
+    const found = await pending
+    assert.equal(found.status, "found")
+    assert.equal(found.version, "0.2.2-rc.1")
+    assert.equal(found.auth, "unauthenticated")
+    assert.equal(found.loginAvailable, true)
+  })
+  await nextTurn()
+  context.mock.timers.tick(20_000)
+  await nextTurn()
+  context.mock.timers.tick(10_000)
+  await checked
+})
+
 test("bundled DeepSeek spawn failures surface as probe errors instead of missing installations", async () => {
   for (const error of [Object.assign(new Error("metadata timed out"), { killed: true }), Object.assign(new Error("permission denied"), { code: "EACCES" })]) {
     const f = fixture({ answer: async () => { throw error } })
@@ -213,12 +256,13 @@ test("bundled DeepSeek spawn failures surface as probe errors instead of missing
 })
 
 test("bundled DeepSeek deadline cancels detection without reporting a missing runtime", async () => {
-  let signal: AbortSignal | undefined
+  const signals: (AbortSignal | undefined)[] = []
   await assert.rejects(probeProvider(input("deepseek-harness"), {
     timeoutMs: 10,
-    run: (_command, _args, _env, _cwd, value) => { signal = value; return new Promise(() => {}) },
+    run: (_command, _args, _env, _cwd, signal) => { signals.push(signal); return new Promise(() => {}) },
   }), /detection timed out/u)
-  assert.equal(signal?.aborted, true)
+  assert.equal(signals.length, 2)
+  assert.ok(signals.every(signal => signal?.aborted))
 })
 
 test("DeepSeek Harness still validates explicit executable overrides", async () => {
@@ -311,11 +355,75 @@ test("official installers start dedicated terminals and do not start login or AC
   }
 })
 
-test("DeepSeek Harness rejects installation and interactive login without opening terminals", async () => {
-  const f = fixture({ files: ["/tools/npm", "/bin/bash"] })
+test("bundled DeepSeek login shares registration credentials with detection without moving session history", async () => {
+  const directory = join(tmpdir(), "registration-login")
+  const f = fixture({ directory, env: { PATH: "", DSH_HOME: "/another-registration" }, answer: async (_command, args) => args.includes("status")
+    ? result(JSON.stringify({ auth: "unauthenticated" })) : result("0.2.2-rc.1") })
   await assert.rejects(f.setup.install(input("deepseek-harness")), /included with DeskFleet/u)
-  await assert.rejects(f.setup.login(input("deepseek-harness")), /DEEPSEEK_API_KEY/u)
-  assert.equal(f.runs.length, 0)
+  const provider = input("deepseek-harness")
+  await f.setup.login(provider)
+  assert.equal(f.runs.length, 1)
+  assert.ok(f.runs[0]!.args?.includes("login"))
+  assert.equal(f.runs[0]!.env?.DSH_HOME, "/another-registration")
+  assert.equal(f.runs[0]!.env?.DESKFLEET_DSH_CREDENTIALS_PATH, join(directory, "deepseek-harness", ".credentials.yaml"))
+  assert.ok(f.calls.every(call => call.env.DESKFLEET_DSH_CREDENTIALS_PATH === f.runs[0]!.env?.DESKFLEET_DSH_CREDENTIALS_PATH))
+  assert.deepEqual(provider.env, {})
+  await f.setup.login(input("deepseek-harness", { env: { DSH_HOME: "/chosen/account" } }))
+  assert.equal(f.runs[1]!.env?.DSH_HOME, "/chosen/account")
+  assert.equal(f.runs[1]!.env?.DESKFLEET_DSH_CREDENTIALS_PATH, undefined)
+})
+
+test("DeepSeek login refuses missing bundled runtimes and leaves external CLI authentication alone", async () => {
+  const missing = fixture({ answer: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }) } })
+  await assert.rejects(missing.setup.login(input("deepseek-harness")), /Reinstall DeskFleet/u)
+  assert.equal(missing.runs.length, 0)
+  const external = fixture({ files: ["/tools/dsh"], answer: async () => result("dsh 0.2.2-rc.1") })
+  await assert.rejects(external.setup.login(input("deepseek-harness", { binaryPath: "/tools/dsh" })), /external CLI/u)
+  assert.equal(external.runs.length, 0)
+})
+
+test("bundled DeepSeek login bridges the Electron host into a Windows terminal", async context => {
+  configureDshRuntime(bundledDshRuntime("C:\\resources\\dsh", electronDshHost("C:\\DeskFleet\\deskfleet.exe")))
+  context.after(() => configureDshRuntime(sourceDshRuntime(import.meta.url)))
+  const f = fixture({ platform: "win32", directory: "C:\\registration", answer: async (_command, args) => args.includes("status")
+    ? result(JSON.stringify({ auth: "unauthenticated" })) : result("0.2.2-rc.1") })
+  await f.setup.login(input("deepseek-harness"))
+  assert.equal(f.runs[0]!.env?.DESKFLEET_LOGIN_HOST, "C:\\DeskFleet\\deskfleet.exe")
+  assert.equal(f.runs[0]!.env?.ELECTRON_RUN_AS_NODE, "1")
+  assert.match(f.runs[0]!.args!.join(" "), /RedirectStandardInput/u)
+  assert.match(f.runs[0]!.args!.join(" "), /ReadKey\(\$true\)/u)
+  assert.match(f.runs[0]!.args!.join(" "), /login/u)
+})
+
+test("Windows login carrier hides pasted callback input and forwards cancellation", { skip: process.platform !== "win32", timeout: 20_000 }, async () => {
+  const runtime = sourceDshRuntime(import.meta.url)
+  const dependency = createRequire(createRequire(runtime.entryPoint).resolve("@deepseek-ai/dsh-subprocess-local"))
+  const pty = dependency("node-pty") as { spawn(command: string, args: string[], options: { env: NodeJS.ProcessEnv; cwd: string }): {
+    onData(listener: (text: string) => void): void
+    onExit(listener: (event: { exitCode: number }) => void): void
+    write(text: string): void
+    destroy(): void
+  } }
+  for (const [input, expected] of [["fixture-private-callback\r", 0], ["\u0003", 130]] as const) {
+    const script = "let input = ''; process.stdout.write('LOGIN_READY'); process.stdin.on('data', data => { input += data; if (input.includes(String.fromCharCode(3))) process.exit(130); if (/[\\r\\n]/.test(input)) { process.stdout.write('LOGIN_RECEIVED'); process.exit(0); } })"
+    const launch = interactiveProviderProcess({ command: process.execPath, args: ["-e", script],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }, "win32", true)
+    const terminal = pty.spawn(launch.command, launch.args ?? [], { env: launch.env ?? {}, cwd: process.cwd() })
+    let output = ""
+    let sent = false
+    const timeout = setTimeout(() => terminal.destroy(), 8_000)
+    try {
+      const exited = new Promise<{ exitCode: number }>(resolve => terminal.onExit(resolve))
+      terminal.onData(text => {
+        output += text
+        if (!sent && output.includes("LOGIN_READY")) { sent = true; terminal.write(input) }
+      })
+      assert.equal((await exited).exitCode, expected)
+      assert.equal(sent, true)
+      assert.doesNotMatch(output, /fixture-private-callback/u)
+      if (expected === 0) assert.match(output, /LOGIN_RECEIVED/u)
+    } finally { clearTimeout(timeout); terminal.destroy() }
+  }
 })
 
 test("login launches only the selected provider's dedicated login command", async () => {

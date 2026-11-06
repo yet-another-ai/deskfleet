@@ -296,11 +296,24 @@ Discovery leaves credential status unknown; **Test Connection** opens a session
 without sending a prompt.
 DeepSeek Harness is native ACP: the daemon runs the bundled CLI, or an explicit
 external binary, using `--profile acp`
-(`dsh acp` is the same launch). Credentials come from `DEEPSEEK_API_KEY` in the
-provider environment (optional `DEEPSEEK_BASE_URL`); the ACP server does not
-advertise interactive authenticate methods. Node.js, npm, and a global dsh
-installation are unnecessary. Discovery reports ready when `DEEPSEEK_API_KEY`
-is set. Clear an existing executable path to use the bundle. Source launches use
+(`dsh acp` is the same launch). The bundle's **Log in** action opens a terminal
+with a browser authorization URL. On a remote machine, paste the browser's full
+loopback callback URL into that terminal if the browser cannot reach it directly.
+The official Harness account services own the PKCE exchange and credential save.
+Login, detection, and sessions share a registration-local credential file without
+moving existing Harness profiles or session history. An explicit provider
+`DSH_HOME` selects that home's credential store. Saved accounts use `deepseek-account`;
+a configured `DEEPSEEK_API_KEY` takes precedence and keeps `deepseek-official`
+(with optional `DEEPSEEK_BASE_URL`). Discovery checks credential availability,
+not remote validity. Discovery and login read provider environment overrides,
+inherited variables, the Harness-home `.env`, and saved credentials. Project
+`.env` files are loaded only when launching bundled ACP in the session's primary
+worktree directory, which is supplied before ACP initialization. Connection tests
+use an empty temporary directory.
+The ACP server does not advertise interactive authenticate
+methods. Node.js, npm, and a global dsh installation are unnecessary. External
+executables retain their own credential setup; clear the path to use bundled
+login. Source launches use
 the installed dependency tree with the running Node executable, without staging.
 Desktop uses Electron's Node mode; standalone releases include a private Node
 runtime. `packages/dsh-runtime` owns launch resolution, deployment, and smoke

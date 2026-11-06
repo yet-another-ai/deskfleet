@@ -53,7 +53,7 @@ export async function readAgentConfiguration(
     aborted = () => reject(signal.reason)
     signal.addEventListener("abort", aborted, { once: true })
   })
-  const connecting = Promise.resolve().then(() => provider.connect(config, {
+  const connecting = Promise.resolve().then(() => provider.connect({ ...config, cwd }, {
     onUpdate({ update }) {
       if (update.sessionUpdate === "config_option_update") notifiedOptions = update.configOptions
       if (update.sessionUpdate === "available_commands_update") commands.update(update.availableCommands)
