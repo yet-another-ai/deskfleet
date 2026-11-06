@@ -153,11 +153,15 @@ impl WindowsEncoder {
         if let Some(encoder) = self.inner.as_mut() {
             encoder
                 .set_bitrate(avg_bitrate_bps, max_bitrate_bps)
-                .map_err(|error| match error {
-                    deskfleet_nvenc::NvEncError::DynamicBitrateUnsupported => {
+                .map_err(|error| {
+                    if error.is_bitrate_reconfiguration_failure() {
+                        // A capability query or reconfigure rejection must use
+                        // the same recreate-once path as an unsupported device.
+                        tracing::warn!(%error, "NVENC live bitrate update unavailable");
                         EncoderError::Unsupported("live NVENC bitrate reconfiguration")
+                    } else {
+                        EncoderError::Platform(format!("NVENC bitrate: {error}"))
                     }
-                    error => EncoderError::Platform(format!("NVENC bitrate: {error}")),
                 })?;
         }
         self.config.bitrate_bps = avg_bitrate_bps;

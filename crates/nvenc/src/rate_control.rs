@@ -35,9 +35,7 @@ impl RateControl {
         maximum: u32,
     ) -> Result<(), NvEncError> {
         if average == 0 || (maximum != 0 && maximum < average) {
-            return Err(NvEncError::ReconfigureFailed(
-                NVENCSTATUS::NV_ENC_ERR_INVALID_PARAM,
-            ));
+            return Err(NvEncError::Api(NVENCSTATUS::NV_ENC_ERR_INVALID_PARAM));
         }
         let query = fns
             .nvEncGetEncodeCaps
@@ -62,7 +60,7 @@ impl RateControl {
             )
         };
         if status != NVENCSTATUS::NV_ENC_SUCCESS {
-            return Err(NvEncError::Api(status));
+            return Err(NvEncError::BitrateCapabilityQueryFailed(status));
         }
         if supported == 0 {
             return Err(NvEncError::DynamicBitrateUnsupported);
@@ -124,6 +122,8 @@ mod tests {
             encodeGUID: deskfleet_nvenc_sys::NV_ENC_CODEC_H264_GUID,
             encodeWidth: 1920,
             encodeHeight: 1080,
+            maxEncodeWidth: 1920,
+            maxEncodeHeight: 1080,
             frameRateNum: 60_000,
             frameRateDen: 1000,
             enablePTD: 1,
@@ -145,6 +145,7 @@ mod tests {
                 let init = &params.reInitEncodeParams;
                 assert_eq!(init.version, NV_ENC_INITIALIZE_PARAMS_VER);
                 assert_eq!((init.encodeWidth, init.encodeHeight), (1920, 1080));
+                assert_eq!((init.maxEncodeWidth, init.maxEncodeHeight), (1920, 1080));
                 assert_eq!((init.frameRateNum, init.frameRateDen), (60_000, 1000));
                 assert_eq!(init.enablePTD, 1);
                 // SAFETY: update supplies a live local config for this callback.
@@ -167,10 +168,43 @@ mod tests {
     }
 
     #[test]
+    fn failed_capability_query_allows_recreation_without_changing_settings() {
+        unsafe extern "C" fn failed_query(
+            _: *mut c_void,
+            _: deskfleet_nvenc_sys::GUID,
+            _: *mut NV_ENC_CAPS_PARAM,
+            _: *mut i32,
+        ) -> NVENCSTATUS {
+            NVENCSTATUS::NV_ENC_ERR_UNSUPPORTED_PARAM
+        }
+        unsafe extern "C" fn reconfigure(
+            _: *mut c_void,
+            _: *mut NV_ENC_RECONFIGURE_PARAMS,
+        ) -> NVENCSTATUS {
+            NVENCSTATUS::NV_ENC_SUCCESS
+        }
+        let fns = NV_ENCODE_API_FUNCTION_LIST {
+            nvEncGetEncodeCaps: Some(failed_query),
+            nvEncReconfigureEncoder: Some(reconfigure),
+            ..Default::default()
+        };
+        let mut state = settings();
+        // SAFETY: the mock callbacks neither dereference nor use the session
+        // handle. All parameter pointers belong to the synchronous call.
+        let error = unsafe { state.set_bitrate(&fns, ptr::null_mut(), 2_000_000, 0) }.unwrap_err();
+        assert!(matches!(error, NvEncError::BitrateCapabilityQueryFailed(_)));
+        assert!(error.is_bitrate_reconfiguration_failure());
+        assert_eq!(state.config.rcParams.averageBitRate, 8_000_000);
+        assert_eq!(state.config.rcParams.maxBitRate, 10_000_000);
+    }
+
+    #[test]
     fn failed_reconfigure_preserves_last_applied_settings() {
         let mut state = settings();
-        let result = state.update(2_000_000, 0, |_| NVENCSTATUS::NV_ENC_ERR_GENERIC);
-        assert!(matches!(result, Err(NvEncError::ReconfigureFailed(_))));
+        let result = state.update(2_000_000, 0, |_| NVENCSTATUS::NV_ENC_ERR_INVALID_PARAM);
+        let error = result.unwrap_err();
+        assert!(matches!(error, NvEncError::ReconfigureFailed(_)));
+        assert!(error.is_bitrate_reconfiguration_failure());
         assert_eq!(state.config.rcParams.averageBitRate, 8_000_000);
         assert_eq!(state.config.rcParams.maxBitRate, 10_000_000);
         state

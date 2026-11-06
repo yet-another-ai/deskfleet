@@ -395,8 +395,10 @@ both 10% and 50 kb/s hysteresis thresholds are met. This avoids frequent Linux
 VA encoder reconfiguration, which drains references and restarts its GOP.
 VideoToolbox, GStreamer and Media Foundation retarget live. Windows NVENC checks
 dynamic-bitrate capability and uses `NvEncReconfigureEncoder` without resetting
-the session or forcing an IDR. An unsupported device recreates once at the
-requested rate, rather than jumping to the ceiling. Linux NVIDIA properties use
+the session or forcing an IDR. A device that does not support or rejects a live
+bitrate update (including a failed capability query) recreates once at the requested rate, rather than
+jumping to the ceiling. Driver status is logged before this fallback; encode
+and initialization failures remain fatal. Linux NVIDIA properties use
 1024-bit kilobits; VA properties use 1000-bit kilobits.
 
 Each media-track write completes when its final RTP packet leaves the pacer,

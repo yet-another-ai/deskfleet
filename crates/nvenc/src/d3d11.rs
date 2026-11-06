@@ -232,6 +232,10 @@ impl D3D11Encoder {
         init_params.presetGUID = preset_guid;
         init_params.encodeWidth = width;
         init_params.encodeHeight = height;
+        // Reuse explicit fixed-size bounds during bitrate reconfiguration.
+        // Resolution changes still recreate the session and its resources.
+        init_params.maxEncodeWidth = width;
+        init_params.maxEncodeHeight = height;
         init_params.darWidth = width;
         init_params.darHeight = height;
         init_params.frameRateNum = fps_num;

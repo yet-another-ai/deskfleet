@@ -21,12 +21,29 @@ pub enum NvEncError {
     EncodeFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// This device/codec cannot change its bitrate on a live session.
     DynamicBitrateUnsupported,
+    /// Querying support for a live bitrate change failed.
+    BitrateCapabilityQueryFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// Reconfiguring an existing session failed.
     ReconfigureFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// Locking a buffer failed.
     LockFailed(deskfleet_nvenc_sys::NVENCSTATUS),
     /// A generic NVENC error.
     Api(deskfleet_nvenc_sys::NVENCSTATUS),
+}
+
+impl NvEncError {
+    /// Whether a failed live bitrate update can be retried by recreating the
+    /// encoder. Capture/encode failures stay fatal; only this optional control
+    /// operation may fall back to a fixed-rate session.
+    #[must_use]
+    pub fn is_bitrate_reconfiguration_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::DynamicBitrateUnsupported
+                | Self::BitrateCapabilityQueryFailed(_)
+                | Self::ReconfigureFailed(_)
+        )
+    }
 }
 
 impl fmt::Display for NvEncError {
@@ -49,6 +66,9 @@ impl fmt::Display for NvEncError {
             Self::DynamicBitrateUnsupported => {
                 write!(f, "live NVENC bitrate changes are unsupported")
             }
+            Self::BitrateCapabilityQueryFailed(s) => {
+                write!(f, "bitrate capability query failed: {s:?}")
+            }
             Self::ReconfigureFailed(s) => write!(f, "encoder reconfiguration failed: {s:?}"),
             Self::LockFailed(s) => write!(f, "buffer lock failed: {s:?}"),
             Self::Api(s) => write!(f, "NVENC API error: {s:?}"),
@@ -57,3 +77,29 @@ impl fmt::Display for NvEncError {
 }
 
 impl std::error::Error for NvEncError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use deskfleet_nvenc_sys::NVENCSTATUS;
+
+    #[test]
+    fn only_live_bitrate_failures_allow_session_recreation() {
+        let rejected = NVENCSTATUS::NV_ENC_ERR_INVALID_PARAM;
+        for error in [
+            NvEncError::DynamicBitrateUnsupported,
+            NvEncError::BitrateCapabilityQueryFailed(rejected),
+            NvEncError::ReconfigureFailed(rejected),
+        ] {
+            assert!(error.is_bitrate_reconfiguration_failure());
+        }
+        for error in [
+            NvEncError::EncodeFailed(rejected),
+            NvEncError::LockFailed(rejected),
+            NvEncError::InitFailed(rejected),
+            NvEncError::Api(rejected),
+        ] {
+            assert!(!error.is_bitrate_reconfiguration_failure());
+        }
+    }
+}
