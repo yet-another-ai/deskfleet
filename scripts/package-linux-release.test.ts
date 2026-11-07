@@ -84,6 +84,7 @@ test("package metadata renders complete control and spec files", () => {
   assert.match(control, /^Architecture: arm64$/m)
   assert.match(control, /^Installed-Size: 1234$/m)
   assert.match(control, /^Depends: .*libgtk-3-0t64 \| libgtk-3-0.*$/m)
+  assert.match(control, /^Depends: .*xdg-utils.*$/m)
   assert.match(control, /^Recommends: .*xdg-desktop-portal$/m)
   assert.doesNotMatch(control, /@[A-Z_]+@/u)
 
@@ -91,6 +92,7 @@ test("package metadata renders complete control and spec files", () => {
   assert.match(spec, /^Version:\s+1\.2\.3~rc\.1$/m)
   assert.match(spec, /^BuildArch:\s+aarch64$/m)
   assert.match(spec, /^Requires:\s+gtk3$/m)
+  assert.match(spec, /^Requires:\s+xdg-utils$/m)
   assert.match(spec, /^Recommends:\s+xdg-desktop-portal$/m)
   assert.doesNotMatch(spec, /@[A-Z_]+@/u)
 })
@@ -103,6 +105,14 @@ test("release publication verifies every generated package asset", () => {
         `${format} ${architecture} must be a required release asset`)
     }
   }
+})
+
+test("linux package validation enables Chromium user namespaces before GUI smoke", () => {
+  const yaml = readFileSync(join(repository, ".github/workflows/linux-packages.yml"), "utf8")
+  const enable = yaml.indexOf("kernel.apparmor_restrict_unprivileged_userns=0")
+  const smoke = yaml.indexOf("scripts/check-linux-release.ts")
+  assert.ok(enable >= 0, "linux-packages.yml must disable AppArmor userns restriction")
+  assert.ok(smoke > enable, "AppArmor userns must be enabled before the package smoke")
 })
 
 test("builds installable deb and rpm packages from desktop archives", { skip: !buildable }, async context => {

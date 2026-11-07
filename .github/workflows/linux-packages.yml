@@ -50,6 +50,11 @@ jobs:
       - name: Build DEB and RPM packages from the same-run archive
         run: mise exec node -- node scripts/package-linux-release.ts "$RUNNER_TEMP/linux-packages" desktop-artifacts/*.tar.gz
 
+      - name: Enable Chromium's user namespace sandbox on the runner
+        # Match AUR and Nix validation: keep Chromium's sandbox enabled in the test.
+        # Ubuntu's AppArmor restriction blocks Electron inside Docker without this.
+        run: sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Install and smoke test each package in its target distribution
         run: mise exec node -- node scripts/check-linux-release.ts "$RUNNER_TEMP/linux-packages" --gui
 

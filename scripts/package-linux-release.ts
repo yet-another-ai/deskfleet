@@ -77,6 +77,7 @@ const debDepends = [
   "libuuid1",
   "hicolor-icon-theme",
   "git",
+  "xdg-utils",
 ]
 const debRecommends = [
   "gstreamer1.0-plugins-base",
