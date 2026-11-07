@@ -23,6 +23,7 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
   }
   const permissions: OnboardingPermissionsState & DesktopPermissionsState = {
     localNetwork: "not-requested",
+    ...(platform === "linux" ? { auv: { status: "not-requested" as const } } : {}),
     fullDiskAccessPermission: { status: platform === "linux" ? "not-required" : "denied" },
     screenCapturePermission: { status: "denied" },
     accessibilityPermission: { status: "denied" },
@@ -38,8 +39,9 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = false,
     requestPermission: vi.fn(async (kind: OnboardingPermission) => {
       if (kind === "localNetwork") permissions.localNetwork = "attempted"
       else if (kind === "windowsDesktopService") permissions.windowsDesktopService = { available: true, installed: true, running: true }
+      else if (kind === "auv") permissions.auv = { status: "saved" }
       else permissions[`${kind}Permission`] = { status: "requesting" }
-      if (platform === "linux") {
+      if (platform === "linux" && kind !== "auv") {
         permissions.screenCapturePermission = { status: "requesting" }
         permissions.accessibilityPermission = { status: "requesting" }
       }
@@ -359,10 +361,10 @@ test("Linux welcome shows the shared startup authorization and continues through
   app.mount()
   await flushPromises()
   expect(view!.findAll("ol li").map(item => item.text())).toEqual([
-    "Screen sharing", "Mouse and keyboard control", "Your account",
+    "Screen sharing", "Mouse and keyboard control", "AI computer access", "Your account",
   ])
   expect(view!.get("h1").text()).toBe("Screen sharing")
-  expect(view!.text()).toContain("Step 1 of 3")
+  expect(view!.text()).toContain("Step 1 of 4")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
   expect(view!.text()).not.toMatch(/macOS|System Settings|Full Disk Access|system audio|quit and reopen/u)
   for (const text of ["Retry access", "Skip for now"]) {
@@ -378,12 +380,14 @@ test("Linux welcome shows the shared startup authorization and continues through
   await flushPromises()
   await click("Continue")
   expect(view!.get("h1").text()).toBe("Mouse and keyboard control")
-  expect(view!.text()).toContain("Step 2 of 3")
+  expect(view!.text()).toContain("Step 2 of 4")
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.get("h1").text()).toBe("AI computer access")
   expect(app.onboarding.advancePermission.mock.calls).toEqual([["screenCapture"], ["accessibility"]])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  await click("Skip for now")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
 })
 
 test("Linux denied screen sharing can retry the combined authorization without duplicate requests", async () => {
@@ -432,6 +436,113 @@ test("Linux can retry access when the initial permission check fails", async () 
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
 })
 
+test("Linux AUV setup checks silently and requires its own authorization before continuing", async () => {
+  const app = setup("auv", false, "linux")
+  app.permissions.screenCapturePermission = { status: "granted" }
+  app.permissions.accessibilityPermission = { status: "granted" }
+  app.mount()
+  await flushPromises()
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  expect(view!.text()).toContain("screenshots and use the mouse and keyboard")
+  expect(view!.get('[role="status"]').text()).toBe("AUV has not been authorized")
+  expect(view!.findAll("button").map(button => button.text())).not.toContain("Continue")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  await click("Check again")
+  expect(app.onboarding.permissions).toHaveBeenCalledTimes(3)
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  await click("Authorize AUV")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(view!.text()).toContain("expires or is revoked")
+  await click("Continue")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+})
+
+test("AUV setup ignores pending native access and preserves authorization across native events", async () => {
+  const app = setup("auv", false, "linux")
+  app.permissions.screenCapturePermission = { status: "requesting" }
+  app.permissions.accessibilityPermission = { status: "requesting" }
+  let finish!: (value: OnboardingPermissionsState & DesktopPermissionsState) => void
+  app.onboarding.requestPermission.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  app.mount()
+  await flushPromises()
+  await click("Authorize AUV")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(view!.get('[role="status"]').text()).toBe("Waiting for AUV authorization…")
+  for (const button of view!.findAll("button")) expect(button.attributes("disabled")).toBeDefined()
+  await click("Authorize AUV")
+  await click("Skip for now")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(app.onboarding.requestPermission).toHaveBeenCalledOnce()
+  expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
+  expect(app.onboarding.permissions).toHaveBeenCalledOnce()
+  app.changed()
+  finish({ ...app.permissions, auv: { status: "saved" } })
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  await click("Continue")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("auv")
+})
+
+test("cancelled AUV setup stays on the step and can retry or skip", async () => {
+  const app = setup("auv", false, "linux")
+  app.onboarding.requestPermission.mockResolvedValueOnce({ ...app.permissions, auv: { status: "error", error: "Authorization cancelled" } })
+  app.mount()
+  await flushPromises()
+  await click("Authorize AUV")
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization was not saved")
+  expect(view!.get('[role="alert"]').text()).toBe("Authorization cancelled")
+  expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
+  await click("Authorize AUV")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledTimes(2)
+  expect(view!.find('[role="alert"]').exists()).toBe(false)
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  await click("Authorize AUV again")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledTimes(3)
+  view!.unmount()
+  const skipped = setup("auv", false, "linux")
+  skipped.mount()
+  await flushPromises()
+  await click("Skip for now")
+  expect(skipped.onboarding.requestPermission).not.toHaveBeenCalled()
+  expect(skipped.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("auv")
+})
+
+test("AUV status reads retain their result when native permissions change concurrently", async () => {
+  const app = setup("auv", false, "linux")
+  let finish!: (value: OnboardingPermissionsState & DesktopPermissionsState) => void
+  app.onboarding.permissions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  app.mount()
+  await flushPromises()
+  app.changed()
+  finish({ ...app.permissions, auv: { status: "saved" } })
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
+test("AUV setup can recheck authorization started before the current view mounted", async () => {
+  const app = setup("auv", false, "linux")
+  app.permissions.auv = { status: "requesting" }
+  app.mount()
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("Waiting for AUV authorization…")
+  for (const label of ["Authorize AUV", "Skip for now"]) {
+    expect(view!.findAll("button").find(button => button.text() === label)!.attributes("disabled")).toBeDefined()
+  }
+  expect(view!.findAll("button").find(button => button.text() === "Check again")!.attributes("disabled")).toBeUndefined()
+  app.permissions.auv = { status: "saved" }
+  await click("Check again")
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(app.onboarding.permissions).toHaveBeenCalledTimes(2)
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  await click("Continue")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("auv")
+})
+
 test("Linux permission setup can skip unavailable sharing and resume mouse and keyboard access", async () => {
   const app = setup("screenCapture", true, "linux")
   app.permissions.screenCapturePermission = { status: "error", error: "Desktop authorization unavailable" }
@@ -449,6 +560,7 @@ test("Linux permission setup can skip unavailable sharing and resume mouse and k
   await flushPromises()
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
+  await click("Skip for now")
   await submit()
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   expect(app.fake.central.login).not.toHaveBeenCalled()
@@ -530,19 +642,19 @@ for (const platform of ["darwin", "linux"] as const) test(`${platform} permissio
 })
 
 
-test.each(["x11", null] as const)("Linux %s welcome goes directly to account without Portal guidance", async backend => {
-  const app = setup("account", false, "linux")
+test.each(["x11", null] as const)("Linux %s welcome offers AUV access without native Portal guidance", async backend => {
+  const app = setup("auv", false, "linux")
   app.state.linuxDesktopBackend = backend
-  app.state.permissionSteps = []
+  app.state.permissionSteps = ["auv"]
   app.permissions.linuxDesktopBackend = backend
   app.permissions.screenCapturePermission = { status: "not-required" }
   app.permissions.accessibilityPermission = { status: "not-required" }
   app.mount()
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
-  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Your account"])
-  expect(view!.text()).not.toMatch(/desktop authorization|sharing dialog|Screen sharing|Mouse and keyboard control/u)
-  expect(app.onboarding.permissions).not.toHaveBeenCalled()
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["AI computer access", "Your account"])
+  expect(view!.text()).not.toMatch(/Screen sharing|Mouse and keyboard control/u)
+  expect(app.onboarding.permissions).toHaveBeenCalledOnce()
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })
 
@@ -556,14 +668,17 @@ test("Linux welcome follows X11 discovered while retrying its initial permission
   expect(view!.get("h1").text()).toBe("Screen sharing")
 
   app.state.linuxDesktopBackend = "x11"
-  app.state.permissionSteps = []
-  app.state.step = "account"
-  resolve({ ...app.permissions, linuxDesktopBackend: "x11", screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } })
+  app.state.permissionSteps = ["auv"]
+  app.state.step = "auv"
+  app.permissions.auv = { status: "saved" }
+  resolve({ fullDiskAccessPermission: { status: "not-required" }, linuxDesktopBackend: "x11", screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } })
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
-  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Your account"])
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["AI computer access", "Your account"])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
+  await click("Continue")
   await submit()
   expect(app.onboarding.complete).toHaveBeenCalledOnce()
   expect(view!.text()).toContain("Welcome, Ada")
@@ -578,14 +693,14 @@ test("Linux welcome reconciles a late X11 hello after a failed permission refres
   expect(view!.get('[role="alert"]').text()).toBe("Local Agent startup failed")
 
   app.state.linuxDesktopBackend = "x11"
-  app.state.permissionSteps = []
-  app.state.step = "account"
+  app.state.permissionSteps = ["auv"]
+  app.state.step = "auv"
   app.permissions.linuxDesktopBackend = "x11"
   app.changed()
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.get("h1").text()).toBe("AI computer access")
   expect(view!.find('[role="alert"]').exists()).toBe(false)
-  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["Your account"])
+  expect(view!.findAll("ol li").map(item => item.text())).toEqual(["AI computer access", "Your account"])
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })
 
@@ -603,7 +718,7 @@ test("Linux account keeps a sign-in error when reconcile only discovers the back
   // Failed first-run acts always reconcile; a late hello may only add the backend.
   app.onboarding.get.mockImplementationOnce(async () => {
     app.state.linuxDesktopBackend = "x11"
-    app.state.permissionSteps = []
+    app.state.permissionSteps = ["auv"]
     return { ...app.state }
   })
   await submit()
@@ -645,8 +760,8 @@ test("Linux welcome defers late backend reconciliation until an active permissio
   const reads = app.onboarding.get.mock.calls.length
 
   app.state.linuxDesktopBackend = "x11"
-  app.state.permissionSteps = []
-  app.state.step = "account"
+  app.state.permissionSteps = ["auv"]
+  app.state.step = "auv"
   app.permissions.linuxDesktopBackend = "x11"
   app.changed()
   app.changed()
@@ -655,7 +770,7 @@ test("Linux welcome defers late backend reconciliation until an active permissio
   reject(new Error("Welcome setup step has changed"))
   await flushPromises()
   expect(app.onboarding.get).toHaveBeenCalledTimes(reads + 1)
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.get("h1").text()).toBe("AI computer access")
   expect(view!.find('[role="alert"]').exists()).toBe(false)
 })
 
@@ -663,13 +778,13 @@ test("Linux welcome recovers when the host normalized its step before the permis
   const app = setup("screenCapture", false, "linux")
   app.state.linuxDesktopBackend = undefined
   app.onboarding.permissions.mockImplementationOnce(async () => {
-    app.state.step = "account"
+    app.state.step = "auv"
     app.state.linuxDesktopBackend = "x11"
-    app.state.permissionSteps = []
+    app.state.permissionSteps = ["auv"]
     throw new Error("Welcome setup is not on a permission step")
   })
   app.mount()
   await flushPromises()
-  expect(view!.get("h1").text()).toBe("Sign in to DeskFleet")
+  expect(view!.get("h1").text()).toBe("AI computer access")
   expect(view!.find('[role="alert"]').exists()).toBe(false)
 })
