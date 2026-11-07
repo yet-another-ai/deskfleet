@@ -15,7 +15,7 @@ export interface AgentSignalingApi {
     /** Race retained history against remote attachment; disabled for local channels. */
     parallel?(): boolean
     available(): boolean
-    list(): Promise<(AgentSessionRecord & { working?: boolean })[]>
+    list(): Promise<(AgentSessionRecord & { working?: boolean | "working" | "permission" | "question" })[]>
     snapshot(sessionId: string): Promise<AgentSnapshot>
     events(sessionId: string, after: string, limit: number): Promise<AgentEvent[]>
   }

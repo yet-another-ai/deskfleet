@@ -152,7 +152,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
             </template>
             <template #trailing>
               <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-              <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
+              <SessionWorkingIndicator v-if="sessionWorking(session.id)" :state="sessionWorking(session.id)" />
               <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
             </template>
             <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
@@ -209,7 +209,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
                 </template>
                 <template #trailing>
                   <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-                  <SessionWorkingIndicator v-if="sessionWorking(session.id)" />
+                  <SessionWorkingIndicator v-if="sessionWorking(session.id)" :state="sessionWorking(session.id)" />
                   <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
                 </template>
                 <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
