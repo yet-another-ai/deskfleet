@@ -50,6 +50,27 @@ permissions:
   contents: read
 
 jobs:
+  # Checks that need no Rust compilation. They fail fast on formatting,
+  # dependency, script, and Web type errors before the platform tests start.
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Run preflight checks
+        run: mise run ci:preflight
+
+  # Clippy, native type checks, and bundle builds run beside the platform
+  # tests instead of ahead of them.
   static:
     name: Static checks
     runs-on: ubuntu-26.04
@@ -77,7 +98,7 @@ jobs:
 
   checks:
     name: Tests (${{ matrix.name }})
-    needs: static
+    needs: preflight
     if: >-
       ${{ !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
@@ -127,7 +148,7 @@ jobs:
 
   backend:
     name: PostgreSQL and remote backend
-    needs: static
+    needs: preflight
     if: >-
       ${{ inputs.run_backend && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
