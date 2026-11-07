@@ -57,7 +57,7 @@ async function save(provider: AgentProviderInput): Promise<void> {
   const initial = editor.value?.initial
   if (initial) {
     const { name, binaryPath, env, icon, inheritShellEnvironment } = provider
-    await platformClient.providers.update(initial.id, { name, binaryPath, env, icon, ...(inheritShellEnvironment ? { inheritShellEnvironment } : {}) })
+    await platformClient.providers.update(initial.id, { name, binaryPath, env, icon, inheritShellEnvironment })
   } else await platformClient.providers.create(provider)
   await refresh()
 }
@@ -124,7 +124,7 @@ async function remove(): Promise<void> {
       </div>
     </template>
   </div>
-  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="editor = null" @cancel="editor = null" />
+  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :shell-environment-default="snapshot.shellEnvironmentDefault" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="editor = null" @cancel="editor = null" />
   <UiDialog v-if="removing" class="w-[26rem]" described :prevent-close="removePending" @close="cancelRemove">
     <DialogTitle class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing.name }) }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("providers.removeDescription") }}</DialogDescription>

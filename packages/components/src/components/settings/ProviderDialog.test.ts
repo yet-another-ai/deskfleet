@@ -7,9 +7,9 @@ import { i18n } from "../../i18n/index.ts"
 import ProviderDialog from "./ProviderDialog.vue"
 
 let wrapper: VueWrapper | undefined
-async function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" })) {
+async function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" }), shellEnvironmentDefault = true) {
   const pinia = createPinia()
-  wrapper = mount(ProviderDialog, { attachTo: document.body, props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }), install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true, teleport: { inheritAttrs: false, template: "<slot />" } } } })
+  wrapper = mount(ProviderDialog, { attachTo: document.body, props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", shellEnvironmentDefault, probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }), install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true, teleport: { inheritAttrs: false, template: "<slot />" } } } })
   await wrapper.vm.$nextTick()
   return { view: wrapper, save, test, terminals: useTerminalsStore(pinia) }
 }
@@ -41,7 +41,7 @@ test("chooses a template, leaves the binary default implicit, and preserves envi
   await view.get('[aria-label="Environment variable 1 value"]').setValue("  value=one  ")
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "My agent", binaryPath: undefined, icon: "deepseek", env: { API_TOKEN: "  value=one  " } })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "My agent", binaryPath: undefined, icon: "deepseek", inheritShellEnvironment: true, env: { API_TOKEN: "  value=one  " } })
   expect(view.emitted("saved")).toEqual([[]])
   expect(view.emitted("cancel")).toBeUndefined()
 })
@@ -62,7 +62,7 @@ test.each([
   await vi.waitFor(() => expect(view.get("[data-provider-icon]").attributes("data-provider-icon")).toBe(mark))
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template, name, binaryPath: undefined, icon: undefined, env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template, name, binaryPath: undefined, icon: undefined, inheritShellEnvironment: true, env: {} })
 })
 
 test("tests the unsaved settings without saving and clears a result once launch settings change", async () => {
@@ -75,7 +75,7 @@ test("tests the unsaved settings without saving and clears a result once launch 
   expect(view.get("[data-provider-test-result]").attributes("role")).toBe("status")
   finish({ agentName: "Claude Agent" })
   await flushPromises()
-  expect(test).toHaveBeenCalledExactlyOnceWith({ template: "claude-code", name: "Claude Code", binaryPath: "/opt/claude", icon: undefined, env: {} })
+  expect(test).toHaveBeenCalledExactlyOnceWith({ template: "claude-code", name: "Claude Code", binaryPath: "/opt/claude", icon: undefined, inheritShellEnvironment: true, env: {} })
   expect(save).not.toHaveBeenCalled()
   expect(view.get("[data-provider-test-result]").text()).toBe("Connected to Claude Agent.")
   await view.get('[name="provider-name"]').setValue("Renamed")
@@ -150,7 +150,7 @@ test("keeps the template immutable when editing and supports removing variables"
   await view.get('[name="provider-binary"]').setValue("  ")
   await view.get('[aria-label="Remove environment variable 1"]').trigger("click")
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Personal", binaryPath: undefined, icon: "claude", env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Personal", binaryPath: undefined, icon: "claude", inheritShellEnvironment: true, env: {} })
 })
 
 test("rejects missing and duplicate environment names before saving and reveals them", async () => {
@@ -170,7 +170,7 @@ test("rejects missing and duplicate environment names before saving and reveals 
   expect(save).not.toHaveBeenCalled()
   await view.get('[aria-label="Environment variable 2 key"]').setValue("SECOND_KEY")
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Codex", binaryPath: undefined, icon: undefined, env: { API_KEY: "", SECOND_KEY: "" } })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Codex", binaryPath: undefined, icon: undefined, inheritShellEnvironment: true, env: { API_KEY: "", SECOND_KEY: "" } })
 })
 
 test("prevents duplicate saves and dismissal while saving, and retains an unsuccessful draft", async () => {
@@ -216,7 +216,7 @@ test("offers login separately, blocks Test during login, and saves the discovere
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).toBe("/tools/cursor-agent")
   await view.get("[data-provider-login]").trigger("click")
   await flushPromises()
-  expect(login).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: "/tools/cursor-agent", env: {} })
+  expect(login).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: "/tools/cursor-agent", inheritShellEnvironment: true, env: {} })
   expect(testConnection).not.toHaveBeenCalled()
   // The running login owns the window and hides settings that cannot change.
   expect(view.get("[role=dialog]").attributes("data-provider-expanded")).toBe("true")
@@ -229,7 +229,7 @@ test("offers login separately, blocks Test during login, and saves the discovere
   expect(view.get("[role=dialog]").attributes("data-provider-expanded")).toBeUndefined()
   expect(view.find('[name="provider-name"]').exists()).toBe(true)
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: "/tools/cursor-agent", icon: undefined, env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: "/tools/cursor-agent", icon: undefined, inheritShellEnvironment: true, env: {} })
   expect(testConnection).not.toHaveBeenCalled()
 })
 
@@ -248,7 +248,7 @@ test("bundled DeepSeek signs in, refreshes authentication, and keeps its runtime
 
   await view.get("[data-provider-login]").trigger("click")
   await flushPromises()
-  const input = { template: "deepseek-harness", name: "DeepSeek Harness", binaryPath: undefined, env: {} }
+  const input = { template: "deepseek-harness", name: "DeepSeek Harness", binaryPath: undefined, inheritShellEnvironment: true, env: {} }
   expect(login).toHaveBeenCalledExactlyOnceWith(input)
   expect(view.get("[role=dialog]").attributes("data-provider-expanded")).toBe("true")
   expect(view.find("[data-provider-test]").exists()).toBe(false)
@@ -328,7 +328,7 @@ test("environment edits keep a discovered executable and rediscover after an inv
   await vi.advanceTimersByTimeAsync(300)
   expect(probe).toHaveBeenCalledTimes(2)
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: found.binaryPath, icon: undefined, env: { API_KEY: "" } })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: found.binaryPath, icon: undefined, inheritShellEnvironment: true, env: { API_KEY: "" } })
   finish(found)
   await flushPromises()
   expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ template: "cursor", env: { API_KEY: "" } }))
@@ -351,7 +351,7 @@ test("choosing a different template drops the previous executable and environmen
   expect(view.find("[data-environment-row]").exists()).toBe(false)
   expect(view.get('[name="provider-binary"]').attributes("placeholder")).not.toBe("/tools/codex")
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: undefined, icon: undefined, env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "cursor", name: "Cursor", binaryPath: undefined, icon: undefined, inheritShellEnvironment: true, env: {} })
   expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ template: "cursor", binaryPath: undefined, env: {} }))
 })
 
@@ -368,7 +368,8 @@ test("Set path opens Advanced when the CLI cannot be installed automatically", a
 
 test("saves shell environment preference and invalidates a previous test", async () => {
   const { view, save, test } = await render(undefined, { id: "codex", template: "codex", name: "Codex", env: {}, inheritShellEnvironment: true })
-  expect(advancedOpen(view)).toBe(true)
+  expect(advancedOpen(view)).toBe(false)
+  await view.get("[data-provider-advanced] > button").trigger("click")
   const toggle = view.get("[data-provider-shell-environment]")
   expect(toggle.attributes("aria-checked")).toBe("true")
   await button(view, "Test connection").trigger("click")
@@ -383,5 +384,14 @@ test("saves shell environment preference and invalidates a previous test", async
   expect(view.get("[data-provider-test-result]").text()).toBe("Connected to Claude Agent.")
   await toggle.trigger("click")
   await view.get("form").trigger("submit")
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Codex", binaryPath: undefined, icon: undefined, env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codex", name: "Codex", binaryPath: undefined, icon: undefined, inheritShellEnvironment: false, env: {} })
+})
+
+test("uses the target machine default and preserves an explicit disabled setting", async () => {
+  const { view, save } = await render(undefined, undefined, undefined, false)
+  await pick(view, "codex")
+  await view.get("[data-provider-advanced] > button").trigger("click")
+  expect(view.get("[data-provider-shell-environment]").attributes("aria-checked")).toBe("false")
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ inheritShellEnvironment: false }))
 })

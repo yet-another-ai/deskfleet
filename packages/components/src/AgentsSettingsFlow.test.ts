@@ -63,7 +63,7 @@ function fixture() {
     machineFixture("m3", "team-1", "Offline machine", false),
   ] })
   const snapshots = new Map<string, ProviderSnapshot>(["m1", "m2"].map(id => [id, {
-    revision: id, templates: [...AGENT_PROVIDER_TEMPLATES],
+    revision: id, templates: [...AGENT_PROVIDER_TEMPLATES], shellEnvironmentDefault: true,
     providers: [{ id: "shared-provider", template: "codex", name: `Codex ${id}`, env: {} }],
   }]))
   const list = vi.fn(async (machineId: string) => structuredClone(snapshots.get(machineId)!))
@@ -146,9 +146,11 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "terminalHangup", { terminalId: "setup-terminal" })
 
   await page().get('[name="provider-name"]').setValue("Renamed second provider")
+  await page().get('[data-provider-advanced] > button').trigger("click")
+  await page().get('[data-provider-shell-environment]').trigger("click")
   await page().get("form").trigger("submit")
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
-  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerUpdate", { providerId: "shared-provider", changes: expect.objectContaining({ name: "Renamed second provider" }) })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerUpdate", { providerId: "shared-provider", changes: expect.objectContaining({ name: "Renamed second provider", inheritShellEnvironment: false }) })
   expect(f.snapshots.get("m1")!.providers[0]!.name).toBe("Codex m1")
 
   await button("Add provider").trigger("click")

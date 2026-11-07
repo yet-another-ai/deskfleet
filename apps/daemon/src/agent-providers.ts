@@ -17,7 +17,7 @@ import { launchProviderCommand } from "./provider-setup-process.ts"
 import { providerEnvironment } from "./provider-environment.ts"
 import { loadShellEnvironment } from "./shell-environment.ts"
 import {
-  AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
+  AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, shellEnvironmentEnabled, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
 } from "./provider-protocol.ts"
 
@@ -110,7 +110,7 @@ export class AgentProviders {
     const templates = AGENT_PROVIDER_TEMPLATES.map(template => ({ ...template,
       ...(template.id === "antigravity" && process.platform === "win32" ? { defaultBinaryPath: "agy_acp_server.exe" } : {}),
     }))
-    return { revision: this.#revision, templates, providers: structuredClone(this.#providers) }
+    return { revision: this.#revision, shellEnvironmentDefault: shellEnvironmentEnabled(undefined), templates, providers: structuredClone(this.#providers) }
   }
 
   /** Public display fields and an opaque revision may enter the central catalog replica. */
@@ -162,14 +162,15 @@ export class AgentProviders {
 
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
-    const provider = (record.inheritShellEnvironment ? this.#shellProviderByTemplate : this.#providerByTemplate)[record.template]
+    const inheritShell = shellEnvironmentEnabled(record.inheritShellEnvironment)
+    const provider = (inheritShell ? this.#shellProviderByTemplate : this.#providerByTemplate)[record.template]
     return {
       provider,
       config: {
         name: record.name,
         binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
           : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
-        env: record.inheritShellEnvironment ? providerEnvironment(record, this.#directory)
+        env: inheritShell ? providerEnvironment(record, this.#directory)
           : commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
       },

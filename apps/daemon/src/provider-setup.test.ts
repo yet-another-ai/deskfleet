@@ -12,7 +12,7 @@ import { probeProvider, ProviderSetup } from "./provider-setup.ts"
 import type { TerminalRun } from "./terminals.ts"
 
 const input = (template: AgentProviderInput["template"], overrides: Partial<AgentProviderInput> = {}): AgentProviderInput => ({
-  template, name: template, env: {}, ...overrides,
+  template, name: template, inheritShellEnvironment: false, env: {}, ...overrides,
 })
 const result = (stdout: string, code = 0): ProbeCommandResult => ({ stdout, stderr: "", code })
 
@@ -83,6 +83,17 @@ test("provider setup uses the shell environment with manual overrides for detect
   await f.setup.install(provider)
   assert.equal(f.runs[1]!.env?.PATH, "/shell")
   assert.equal(f.runs[1]!.env?.ACCOUNT, "manual")
+})
+
+test("provider setup defaults to shell environment only on supported platforms", async () => {
+  let loads = 0
+  const unix = fixture({ files: ["/shell/codex", "/bin/bash"], shellEnvironment: async () => { loads++; return { PATH: "/shell" } } })
+  const provider = input("codex", { inheritShellEnvironment: undefined })
+  assert.equal((await unix.setup.probe(provider)).binaryPath, "/shell/codex")
+  assert.equal(loads, 1)
+  const windows = fixture({ platform: "win32", shellEnvironment: async () => { loads++; return {} } })
+  await windows.setup.probe(provider)
+  assert.equal(loads, 1)
 })
 
 test("shell startup has a separate budget from provider detection", async context => {

@@ -29,8 +29,14 @@ export interface AgentProviderConfig extends AgentProviderInput {
 export interface ProviderSnapshot {
   /** Opaque settings revision; contains no launch settings or credential-derived data. */
   revision: string
+  /** Default on the machine that owns this provider registry. */
+  shellEnvironmentDefault: boolean
   templates: AgentProviderTemplate[]
   providers: AgentProviderConfig[]
+}
+
+export function shellEnvironmentEnabled(value: boolean | undefined, platform = process.platform): boolean {
+  return value ?? (platform === "linux" || platform === "darwin")
 }
 
 export interface ProviderTestResult {
@@ -115,7 +121,7 @@ export function providerSettings(value: unknown): AgentProviderSettings {
     name: settings.name.trim(),
     ...(settings.icon !== undefined ? { icon: settings.icon } : {}),
     ...(binaryPath ? { binaryPath } : {}),
-    ...(settings.inheritShellEnvironment ? { inheritShellEnvironment: true } : {}),
+    ...(settings.inheritShellEnvironment !== undefined ? { inheritShellEnvironment: settings.inheritShellEnvironment as boolean } : {}),
     env: Object.fromEntries(Object.entries(env)) as Record<string, string>,
   }
 }

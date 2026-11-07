@@ -8,7 +8,7 @@ import { dshAccountProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { providerEnvironment } from "./provider-environment.ts"
 import { loadShellEnvironment, SHELL_ENVIRONMENT_TIMEOUT_MS } from "./shell-environment.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
-import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
+import { AGENT_PROVIDER_TEMPLATES, providerInput, shellEnvironmentEnabled, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalRun, TerminalSessions } from "./terminals.ts"
@@ -41,7 +41,7 @@ interface Context {
 
 async function context(input: AgentProviderInput, dependencies: ProbeDependencies, signal?: AbortSignal): Promise<Context> {
   const platform = dependencies.platform ?? process.platform
-  const shellEnv = input.inheritShellEnvironment
+  const shellEnv = shellEnvironmentEnabled(input.inheritShellEnvironment, platform)
     ? await (dependencies.shellEnvironment ? dependencies.shellEnvironment(signal) : loadShellEnvironment(undefined, signal))
     : {}
   signal?.throwIfAborted()
@@ -226,7 +226,7 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
   const controller = new AbortController()
   const probeTimeout = input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000
   // Shell startup has its own bounded budget; preserve the full detection budget after it.
-  const timeout = dependencies.timeoutMs ?? (probeTimeout + (input.inheritShellEnvironment ? SHELL_ENVIRONMENT_TIMEOUT_MS : 0))
+  const timeout = dependencies.timeoutMs ?? (probeTimeout + (shellEnvironmentEnabled(input.inheritShellEnvironment, dependencies.platform) ? SHELL_ENVIRONMENT_TIMEOUT_MS : 0))
   let timer: ReturnType<typeof setTimeout>
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {

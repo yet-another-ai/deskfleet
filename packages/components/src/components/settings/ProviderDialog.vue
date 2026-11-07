@@ -12,17 +12,18 @@ import ProviderIconPicker from "./ProviderIconPicker.vue"
 import ProviderSetup from "./ProviderSetup.vue"
 import UiDialog from "../common/UiDialog.vue"
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   initial?: AgentProviderConfig
   templates: AgentProviderTemplate[]
   disabled?: boolean
   machineName: string
+  shellEnvironmentDefault?: boolean
   probe(provider: AgentProviderInput): Promise<ProviderProbeResult>
   install(provider: AgentProviderInput): Promise<TerminalSummary>
   login(provider: AgentProviderInput): Promise<TerminalSummary>
   save(provider: AgentProviderInput): Promise<void>
   test(provider: AgentProviderInput): Promise<ProviderTestResult>
-}>()
+}>(), { shellEnvironmentDefault: true })
 const emit = defineEmits<{ saved: []; cancel: [] }>()
 const { t } = useI18n()
 const pathInput = useTemplateRef<HTMLInputElement>("pathInput")
@@ -33,10 +34,10 @@ const selectedTemplate = computed(() => props.templates.find(value => value.id =
 const name = ref(props.initial?.name ?? selectedTemplate.value.name)
 const binaryPath = ref(props.initial?.binaryPath ?? "")
 const icon = ref(props.initial?.icon)
-const inheritShellEnvironment = ref(props.initial?.inheritShellEnvironment ?? false)
+const inheritShellEnvironment = ref(props.initial?.inheritShellEnvironment ?? props.shellEnvironmentDefault)
 let nextRowId = 0
 const environment = ref(Object.entries(props.initial?.env ?? {}).map(([key, value]) => ({ id: nextRowId++, key, value })))
-const advanced = ref(!!props.initial?.binaryPath || environment.value.length > 0 || inheritShellEnvironment.value)
+const advanced = ref(!!props.initial?.binaryPath || environment.value.length > 0 || inheritShellEnvironment.value !== props.shellEnvironmentDefault)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const testing = ref(false)
@@ -51,14 +52,14 @@ const setupProvider = computed((): AgentProviderInput | null => {
   return {
     template: template.value, name: selectedTemplate.value.name,
     binaryPath: binaryPath.value.trim() || undefined,
-    ...(inheritShellEnvironment.value ? { inheritShellEnvironment: true } : {}),
+    inheritShellEnvironment: inheritShellEnvironment.value,
     env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
   }
 })
 /** Names the overrides hidden inside a collapsed Advanced section. */
 const advancedSummary = computed(() => [
   ...(binaryPath.value.trim() ? [t("providers.customPath")] : []),
-  ...(inheritShellEnvironment.value ? [t("providers.shellEnvironment")] : []),
+  ...(inheritShellEnvironment.value !== props.shellEnvironmentDefault ? [t("providers.shellEnvironment")] : []),
   ...(environment.value.length ? [t("providers.environmentCount", environment.value.length)] : []),
 ].join(" · "))
 const testResult = ref<{ ok: true; agentName: string } | { ok: false; error: string } | null>(null)
@@ -121,7 +122,7 @@ function current(): AgentProviderInput | null {
     name: name.value.trim(),
     binaryPath: resolvedBinaryPath.value || binaryPath.value.trim() || undefined,
     icon: icon.value,
-    ...(inheritShellEnvironment.value ? { inheritShellEnvironment: true } : {}),
+    inheritShellEnvironment: inheritShellEnvironment.value,
     env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
   }
 }

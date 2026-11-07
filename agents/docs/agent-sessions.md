@@ -267,8 +267,10 @@ MCP subprocesses launched inside separately installed provider CLIs remain owned
 by those CLIs. Interactive login terminals retain their existing behavior.
 
 A provider has a stable ID, a template, a display name, an optional icon, an
-optional binary path, and environment overrides. On macOS and Linux, a provider
-can opt in to loading exported variables from the user's interactive login shell.
+optional binary path, and environment overrides. On macOS and Linux, providers
+load exported variables from the user's interactive login shell by default; the
+setting can be disabled for each provider. Windows defaults to disabled because
+shell environment loading is not supported there.
 Discovery, installation, login, connection tests, and Agent launches use those
 variables over the daemon's environment; manually configured variables take
 precedence over both. Shell aliases, functions, and variables that were not

@@ -77,7 +77,7 @@ test("templates resolve their own binary defaults and cannot change after creati
   const fixture = { id: "fixture", connect: async () => { throw new Error("fixture") } }
   const registry = new AgentProviders(directory, fixture)
   await registry.init()
-  const codex = await registry.create({ template: "codex", name: "Codex", env: {} })
+  const codex = await registry.create({ template: "codex", name: "Codex", inheritShellEnvironment: false, env: {} })
   assert.equal(registry.resolve(codex.id).provider, fixture)
   assert.equal(registry.resolve(codex.id).config.binaryPath, "codex")
   const custom = await registry.create({ template: "acp", name: "Local ACP", env: { CUSTOM: "yes" } })
@@ -179,7 +179,7 @@ test("generic ACP launches the configured binary with added variables and inheri
   const registry = new AgentProviders(directory)
   await registry.init()
   const configured = await registry.create({
-    template: "acp", name: "Fixture ACP", binaryPath,
+    template: "acp", name: "Fixture ACP", binaryPath, inheritShellEnvironment: false,
     env: {
       LANG: "deskfleet-provider-test", DESKFLEET_TEST_VALUE: "provider override",
     },

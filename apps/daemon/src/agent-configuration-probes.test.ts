@@ -160,7 +160,7 @@ test("shell-enabled providers reuse configuration probes and changing the settin
   await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
   await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
   assert.equal(fake.configs.length, 1, "Repeated resolutions keep the warm provider process")
-  await providers.update(record.id, { name: "Test provider", env: {} })
+  await providers.update(record.id, { name: "Test provider", inheritShellEnvironment: false, env: {} })
   await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
   assert.equal(fake.configs.length, 2, "Disabling shell inheritance replaces the probe")
   assert.equal(fake.closes, 1)

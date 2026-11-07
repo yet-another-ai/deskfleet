@@ -11,6 +11,7 @@ beforeEach(() => { localStorage.clear(); pinia = createPinia(); setActivePinia(p
 afterEach(() => { disposePinia(pinia); vi.restoreAllMocks(); localStorage.clear() })
 const snapshot = (ids: string[], revision = "registry-1"): ProviderSnapshot => ({
   revision,
+  shellEnvironmentDefault: true,
   templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }],
   providers: ids.map(id => ({ id, template: "codex", name: id, env: {} })),
 })
