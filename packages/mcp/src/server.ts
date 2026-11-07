@@ -32,8 +32,9 @@ export function gatewayInvoker(endpoint: string, token: string, request: typeof 
   }
   if (!token) throw new Error("DESKFLEET_MCP_TOKEN is required")
   return async (name, args) => {
+    const timeoutMs = name === "deskfleet_remote_file_upload" || name === "deskfleet_remote_file_download" ? 15 * 60_000 : 60_000
     const result = await apiRequest<{ result?: unknown }>(url.toString(), {
-      method: "POST", redirect: "error", timeoutMs: 60_000, totalTimeoutMs: 60_000, idempotent: false,
+      method: "POST", redirect: "error", timeoutMs, totalTimeoutMs: timeoutMs, idempotent: false,
       headers: { Authorization: `Bearer ${token}` },
       json: { name, arguments: args }, fetch: request, errorPrefix: "DeskFleet request failed",
     })
