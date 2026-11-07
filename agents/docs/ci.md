@@ -1,19 +1,20 @@
 # Continuous integration
 
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
-one orchestrator, reusable Test and Build workflows, a shared setup action, and
-a stable `Gate` result for branch protection. (Nix and AUR package validation are
-dedicated release workflows called by `publish.yml`).
+one orchestrator, reusable Test, Build, and Nix server workflows, a shared setup
+action, and a stable `Gate` result for branch protection. Desktop Nix and AUR
+package validation are dedicated release workflows called by `publish.yml`.
 
 ## Workflow ownership
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
   runs, and a daily full run at 03:17 UTC. It classifies the changed files with
-  the hosted runner's Node, calls Test and Build, and combines their results
-  in `Gate`. Pull requests without packaging changes skip release packaging
-  (`Build`), relying on `Test` to validate code changes and leaving the smoke
-  build to `main`. Draft pull requests run static checks only, automatically
-  triggering the full runtime test suite upon `ready_for_review`. Configure
+  the hosted runner's Node, calls Test, Build, and Nix server, and combines their
+  results in `Gate`. Pull requests without packaging changes skip release packaging
+  (`Build` and the experimental Nix image), relying on `Test` to validate code
+  changes and leaving the smoke build to `main`. Draft pull requests run static
+  checks only, automatically triggering the full runtime test suite upon
+  `ready_for_review`. Configure
   `Gate` under the `CI` workflow as the required status check in repository
   branch protection. Successful push and manual runs on `main` then deploy the
   product website to GitHub Pages.
@@ -63,10 +64,11 @@ dedicated release workflows called by `publish.yml`).
   native runner's triple.
   Pushes to `main` use a Linux x64 smoke build; pull requests run it only when
   packaging or distribution configurations change (`packaging/**`, `nix/**`,
-  packaging scripts, or packaging workflow files). Daily scheduled, manual, and
-  tagged release runs use the full platform matrix. Nix follows Build's Linux
-  matrix so it only downloads archives produced in the same run. The daily CI,
-  Test, Build, and Nix concurrency groups are independent of main pushes, so
+  root flake files, packaging scripts, or packaging workflow files). Daily
+  scheduled, manual, and tagged release runs use the full platform matrix.
+  Desktop Nix packaging follows Build's Linux matrix during releases so it only
+  downloads archives produced in the same run. The daily CI, Test, Build, and
+  Nix server concurrency groups are independent of main pushes, so
   frequent merges do not cancel full-platform validation.
   Packaging keeps Cargo's parallel release codegen: 16 units,
   LTO off, no debug info, and stripped symbols. Windows packaging additionally
@@ -91,6 +93,13 @@ dedicated release workflows called by `publish.yml`).
   generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
   the production environment or read its variables or secrets. It is dedicated to
   release publication and excluded from daily CI.
+- `.github/workflows/nix-server.yml` builds the experimental server and Web image
+  from source with the root flake, loads it, and runs the existing server image
+  smoke test. It runs alongside Build after Test succeeds, under the same
+  packaging-change gate, and its result is required by `Gate`. It follows the
+  native Linux smoke/full matrix and uploads each tested image as
+  `deskfleet-server-nix-<platform>` for three days. These images do not replace
+  the official image published by the tag workflow.
 - `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
   x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
   a disposable Arch container. Publish requires it before creating the draft or
@@ -460,6 +469,38 @@ fallback, 404 responses for missing API routes and assets, and graceful shutdown
 before uploading its archive. Docker does not compile the Rust server or Web app
 again.
 
+### Experimental Nix server image
+
+The repository-root `flake.nix` and `flake.lock` own source builds for the server
+and Web application. `nix/server.nix` uses Crane to build the selected server
+package with a separate Cargo dependency derivation. Its source filter keeps
+workspace metadata and the backend's actual sources, including embedded SQL.
+`nix/web.nix` fetches the filtered pnpm workspace dependencies with a fixed hash
+and builds the browser bundle offline. Toolchain versions follow `mise.toml` and
+the locked download metadata in `mise.lock`.
+
+`nix/server-image.nix` uses `dockerTools.buildLayeredImage` to include the runtime
+closure, CA certificates, interactive Bash, coreutils, and independent server
+and Web outputs. No Ubuntu base or apt step is involved. Docker remains the
+runtime for the image smoke test; it does not build these components. Both
+architectures are evaluated in every
+Nix server job. PR and main-push packaging runs build and smoke-test amd64;
+scheduled and manual full CI runs also build and smoke-test ARM64 natively.
+
+This experiment uses default public frontend configuration without production
+credentials or telemetry settings. The existing release image and source-map
+upload flow remain owned by Build and Publish. A future release cutover must
+upload maps matching the Nix-built Web output. The ordinary server binaries also
+remain in their portable release archives; a binary linked against Nix store
+paths cannot replace those archives directly.
+
+Nix build outputs and container layers have separate caches. No project binary
+cache is published; the runners can substitute upstream packages, while the
+project's cold source build remains part of this experiment. Compare compressed
+image size, cold/warm build time, and changed layer bytes before treating this
+path as a release optimization. See the [server guide](../../apps/server/README.md#experimental-nix-source-image)
+for local commands and dependency-hash updates.
+
 ## Documentation-only changes
 
 Static validation still runs for documentation changes. The independent runtime
@@ -478,10 +519,10 @@ full tier. Manual and scheduled runs use full validation. Classification uses
 the hosted runner's Node and does not install a toolchain. An older runtime or
 missing output keeps the full tier.
 
-`Gate` requires successful classification and Test. A skipped Build workflow is
-accepted for a positively classified documentation-only change or pull requests
-without packaging changes. Failed, cancelled, or unexpectedly skipped required
-work fails the gate.
+`Gate` requires successful classification and Test. Skipped Build and Nix server
+workflows are accepted for a positively classified documentation-only change or
+pull requests without packaging changes. Failed, cancelled, or unexpectedly
+skipped required work fails the gate.
 
 ## Toolchains and caches
 

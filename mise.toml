@@ -50,6 +50,10 @@ description = "Build the central server"
 wait_for = ["native:debug", "rust:clippy", "rust:test"]
 run = "cargo build -p deskfleet-server --locked"
 
+[tasks."backend:image:nix"]
+description = "Build the experimental Linux server and Web image from source with Nix"
+run = "nix build .#server-image --print-build-logs --out-link result-server-image"
+
 [tasks."backend:test"]
 description = "Run persistence, API, and TURN collection tests against TEST_DATABASE_URL and TEST_REDIS_URL"
 run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored"

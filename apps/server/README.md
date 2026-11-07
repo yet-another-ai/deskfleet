@@ -191,6 +191,61 @@ cache policies and conditional requests, missing API/asset responses, and
 signal-driven shutdown, then removes its
 containers and network.
 
+### Experimental Nix source image
+
+The repository-root flake builds the Rust server and Web application from source
+and assembles them with `dockerTools.buildLayeredImage`. It supports native
+`x86_64-linux` and `aarch64-linux` builders. Install Nix with `nix-command` and
+`flakes` enabled, then run from the repository root:
+
+```sh
+mise run backend:image:nix
+docker load --input result-server-image
+image_tag=$(nix eval --raw .#server-image.imageTag)
+mise exec node -- node scripts/smoke-server-image.ts "deskfleet-server:$image_tag"
+```
+
+`nix build .#server` and `nix build .#web` build the two components independently.
+Crane caches the server's Cargo dependency compilation separately from the
+application. The Web derivation installs only its workspace dependency closure
+from the frozen pnpm lockfile. Both use the versions selected by `mise.toml`;
+`flake.lock` pins Nixpkgs, Crane, and the Rust toolchain definitions.
+
+The image preserves the UID/GID, port, Web path, environment configuration, and
+shutdown behavior of the official image. Its runtime contains the server, Web
+files, CA certificates, interactive Bash, basic file utilities, and their Nix
+store dependencies. Nix and build tools are not required on the deployment host.
+Run the image with the same
+`docker run` configuration shown above, using the loaded local image tag.
+
+For an interactive debugging shell in a running container:
+
+```sh
+docker exec -it deskfleet-server /bin/bash
+```
+
+The shell runs as the container's UID/GID `10001:10001`. Coreutils provides
+commands such as `ls`, `cat`, `env`, and `tail` on `PATH`. To inspect the image
+without starting the server, override its entrypoint:
+
+```sh
+docker run --rm -it --entrypoint /bin/bash "deskfleet-server:$image_tag"
+```
+
+This is an experimental build; tagged releases still publish the existing
+Dockerfile-based image. The experiment defaults to a same-origin Web build with
+Statsig and Sentry disabled. Public frontend settings can be supplied explicitly
+through the flake's `lib.mkPackages { system; webConfig; }` function; see
+`nix/web.nix` for its fields. With `webConfig.sourcemaps = true`, the `web.sourcemaps`
+output contains the matching JavaScript and maps for a separate upload. The
+image always excludes maps, and upload credentials never enter a derivation.
+
+After dependency or toolchain changes, refresh the root flake inputs as needed
+with `nix flake update`. Update the Web dependency hash in `nix/web.nix` by setting
+it to `lib.fakeHash`, building `.#web.pnpmDeps`, and copying the reported hash.
+Verify it on both Linux architectures before accepting the update. The flake
+under `nix/` remains the separate prebuilt desktop release template.
+
 ## Authentication and API
 
 ### Site administration
