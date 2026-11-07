@@ -420,7 +420,7 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <section class="deskfleet-windows min-h-0 min-w-0 flex-1" :aria-label="t('toolbar.windows')">
+  <section class="deskfleet-windows min-h-0 min-w-0 flex-1 overflow-clip" :aria-label="t('toolbar.windows')">
     <DockviewVue
       class="h-full w-full"
       :theme="themeLight"
