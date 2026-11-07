@@ -172,6 +172,9 @@ importers:
       '@capacitor/ios':
         specifier: 8.6.0
         version: 8.6.0(@capacitor/core@8.6.0)
+      '@deskfleet/capacitor-native-desktop':
+        specifier: workspace:*
+        version: link:../../packages/capacitor-native-desktop
     devDependencies:
       '@capacitor/cli':
         specifier: 8.6.0
@@ -282,6 +285,19 @@ importers:
       vue-tsc:
         specifier: 3.3.14
         version: 3.3.14(@typescript/typescript6@6.0.2)
+
+  packages/capacitor-native-desktop:
+    dependencies:
+      '@capacitor/core':
+        specifier: 8.6.0
+        version: 8.6.0
+      '@deskfleet/client':
+        specifier: workspace:*
+        version: link:../client
+    devDependencies:
+      typescript:
+        specifier: npm:@typescript/typescript6@6.0.2
+        version: '@typescript/typescript6@6.0.2'
 
   packages/client:
     dependencies:

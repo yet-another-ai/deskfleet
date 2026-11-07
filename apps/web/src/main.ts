@@ -1,5 +1,6 @@
 import { App as CapApp } from "@capacitor/app"
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
+import { createCapacitorNativeDesktopApi } from "@deskfleet/capacitor-native-desktop"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
@@ -9,6 +10,9 @@ import "virtual:uno.css"
 
 initializeErrorReporting("web")
 const adapter = await browserClient(import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin), captureCentralRequestError)
+if (Capacitor.getPlatform() === "android" && adapter.central) {
+  adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
+}
 configureClient(adapter)
 if (location.pathname.startsWith("/auth/")) {
   const { mountAuthentication } = await import("@deskfleet/components/auth-mount.ts")
