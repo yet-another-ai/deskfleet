@@ -18,7 +18,7 @@
     "package:dir": "node scripts/stage-auv.ts && node scripts/stage-windows-service.ts && node scripts/stage-native-viewer.ts && electron-builder --dir --publish never"
   },
   "devDependencies": {
-    "@auv-js/cli": "0.0.40",
+    "@auv-js/cli": "0.0.43",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@deskfleet/daemon": "workspace:*",
