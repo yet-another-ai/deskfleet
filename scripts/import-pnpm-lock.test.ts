@@ -92,7 +92,9 @@ test("Web Nix deps stay lockfile-driven without aggregate FOD hash or IFD", () =
 })
 
 test("pnpm-lock.yaml matches the pure Nix parser's integrity-only package contract", () => {
-  for (const text of [lockfile, lockfile.replaceAll("\n", "\r\n")]) {
+  // Normalize first so Windows CRLF checkouts do not become `\r\r\n`.
+  const lf = lockfile.replaceAll("\r\n", "\n").replaceAll("\r", "\n")
+  for (const text of [lf, lf.replaceAll("\n", "\r\n")]) {
     const { version, packages } = parseLockfilePackages(text)
     assert.equal(version, "9.0")
     assert.ok(packages.size > 0, "expected locked packages")
