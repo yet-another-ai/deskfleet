@@ -390,12 +390,15 @@ in Node mode. Neither development path needs staging.
 
 Production Desktop builds prepare `out/dsh` and run the package smoke check
 with Electron before Vite bundles application code. This payload contains the
-upstream package tree without a second Node executable. Vite rebuilds do not
-deploy or validate the runtime. Standalone builds depend on `mise run dsh:stage`,
-which prepares `apps/daemon/dist/dsh` with the same package tree and a private
-Node executable for the SEA distribution. Staging uses the dedicated deploy
-lockfile and trusts the graph already validated by workspace installation, so
-offline builds do not need registry metadata to resolve it again.
+upstream package tree without a second Node executable. Staging removes source
+maps, type declarations, and debug symbols from the deployed tree; they are
+development-only and otherwise add tens of thousands of files to every install.
+Vite rebuilds do not deploy or validate the runtime. Standalone builds depend on
+`mise run dsh:stage`, which prepares `apps/daemon/dist/dsh` with the same package
+tree and a private Node executable for the SEA distribution. Staging uses the
+dedicated deploy lockfile and trusts the graph already validated by workspace
+installation, so offline builds do not need registry metadata to resolve it
+again.
 `mise run dsh:smoke` checks the standalone payload with an empty PATH and an
 isolated home; `mise exec -- node packages/dsh-runtime/smoke.ts` checks the source
 runtime without staging. `mise run desktop:smoke-dsh` checks the installed tree

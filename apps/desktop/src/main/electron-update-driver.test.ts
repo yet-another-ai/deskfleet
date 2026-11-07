@@ -25,7 +25,7 @@ test("stable update policy requires a click, never installs on ordinary quit, an
   expect(channel()).toBe("latest")
   expect(mock).toMatchObject({
     autoDownload: false, autoInstallOnAppQuit: false, allowPrerelease: false, allowDowngrade: false,
-    disableWebInstaller: true, disableDifferentialDownload: true,
+    disableWebInstaller: true, disableDifferentialDownload: false,
   })
   expect(await driver.check()).toBe("0.2.0")
   expect(mock.downloadUpdate).not.toHaveBeenCalled()

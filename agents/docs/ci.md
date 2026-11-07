@@ -274,7 +274,9 @@ restarts the app. When disabled, clicking **Update and restart** downloads the
 update first before installing and restarting. Ordinary app exit does not install
 an update.
 Windows uses NSIS, macOS uses the signed update ZIP, and Linux requires running
-the AppImage. Development runs do not check for updates.
+the AppImage. Windows updates use the published blockmap for differential
+downloads; electron-updater falls back to a full installer when a differential
+download cannot be applied. Development runs do not check for updates.
 
 Installed upgrades still need platform release testing: metadata generation and
 unit tests do not demonstrate a successful installation on Windows, signed macOS
