@@ -1,4 +1,4 @@
-import type { AgentCommand, AgentSessionRecord, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
+import type { AgentCommand, AgentSessionRecord, AgentSnapshot, AgentTurn, TurnLimitCode } from "./agent-protocol.ts"
 import type { AgentJournal } from "./agent-store.ts"
 
 export interface SessionAdmission {
@@ -70,28 +70,32 @@ export function consumedTurns(snapshot: AgentSnapshot): number {
   return (snapshot.session.inheritedTurnCount ?? 0) + snapshot.turns.filter(turn => turn.consumed === true).length
 }
 
-export class TurnAdmissionBlocked extends Error {}
+export class TurnAdmissionBlocked extends Error {
+  readonly code: TurnLimitCode
+  constructor(code: TurnLimitCode, message: string) { super(message); this.code = code }
+}
 
 /** The journal transaction reserves the turn before the provider can observe it. */
 export async function consumeTurn(journal: AgentJournal, authority: AgentQuotaAuthority, turn: AgentTurn): Promise<void> {
   let limit: number | null
   try { limit = await authority.turnLimit() }
-  catch (error) { throw new TurnAdmissionBlocked(error instanceof Error ? error.message : "Team allowance is unavailable") }
+  catch (error) { throw new TurnAdmissionBlocked("authority_unavailable", error instanceof Error ? error.message : "Team allowance is unavailable") }
   await journal.serial(turn.sessionId, async () => {
     const snapshot = await journal.read(turn.sessionId)
     const current = snapshot.turns.find(value => value.id === turn.id)
     if (!current || current.state !== "running" || snapshot.session.archiveState !== "active") throw new Error("Agent stopped before provider dispatch")
     if (current.consumed) return
-    if (limit !== null && consumedTurns(snapshot) >= limit) throw new TurnAdmissionBlocked(`This Session has reached its ${limit}-turn allowance. Upgrade the Team to continue.`)
+    if (limit !== null && consumedTurns(snapshot) >= limit) throw new TurnAdmissionBlocked("turn_limit_reached", `This Session has reached its ${limit}-turn allowance. Upgrade the Team to continue.`)
     const consumed = { ...current, consumed: true }
-    const session = { ...snapshot.session, turnLimitReason: undefined }
+    const session = { ...snapshot.session, turnLimitCode: undefined, turnLimitReason: undefined }
     await journal.commit(snapshot, { session, turns: [consumed], events: [
       journal.event(turn.sessionId, "turn", consumed), journal.event(turn.sessionId, "session", session),
     ] })
   })
 }
 
-export async function pauseTurn(journal: AgentJournal, turn: AgentTurn, command: AgentCommand, reason: string): Promise<void> {
+export async function pauseTurn(journal: AgentJournal, turn: AgentTurn, command: AgentCommand, error: TurnAdmissionBlocked): Promise<void> {
+  const reason = error.message
   await journal.serial(turn.sessionId, async () => {
     const snapshot = await journal.read(turn.sessionId)
     const previous = snapshot.inputs.find(input => input.id === turn.initialInputId)
@@ -101,7 +105,7 @@ export async function pauseTurn(journal: AgentJournal, turn: AgentTurn, command:
       dispatchCommandId: undefined, dispatcher: undefined, turnId: undefined, requestedTurnId: undefined,
       actualDelivery: undefined, error: reason }
     const stopped = { ...current, state: "failed" as const, endedAt: new Date().toISOString(), error: reason }
-    const session = { ...snapshot.session, turnLimitReason: reason }
+    const session = { ...snapshot.session, turnLimitCode: error.code, turnLimitReason: reason }
     await journal.commit(snapshot, { session, inputs: [input], turns: [stopped],
       command: { ...command, status: "rejected", completedAt: stopped.endedAt, error: reason }, events: [
         journal.event(turn.sessionId, "input", input), journal.event(turn.sessionId, "turn", stopped),

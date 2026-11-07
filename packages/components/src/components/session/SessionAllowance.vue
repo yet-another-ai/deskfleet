@@ -26,8 +26,9 @@ const used = computed(() => inherited.value + props.snapshot.turns.filter(turn =
 const limit = computed(() => state.value?.limits.maxTurnsPerSession ?? null)
 const remaining = computed(() => limit.value === null ? null : Math.max(0, limit.value - used.value))
 const detail = computed(() => inherited.value ? t("billing.inheritedTurns", { count: inherited.value }) : undefined)
-const allowanceState = computed<TurnAllowanceState | undefined>(() => remaining.value === 0 ? "reached"
-  : props.snapshot.session.turnLimitReason ? "blocked"
+const limitReached = computed(() => props.snapshot.session.turnLimitCode === "turn_limit_reached")
+const allowanceState = computed<TurnAllowanceState | undefined>(() => props.snapshot.session.turnLimitReason ? (limitReached.value ? "reached" : "blocked")
+  : remaining.value === 0 ? "reached"
   : remaining.value !== null && remaining.value <= 5 ? "near_limit" : undefined)
 // Repeated snapshots and billing refreshes must not repeat an impression for this Session.
 const observed = (account && accountImpressions.get(account)) || new Set<string>()
@@ -40,14 +41,14 @@ watch([() => props.snapshot.session.id, allowanceState], ([sessionId, value]) =>
   trackEvent("session_turn_allowance_viewed", { state: value, used_turns: used.value, ...(limit.value === null ? {} : { turn_limit: limit.value }) })
 }, { immediate: true })
 function viewPlans(): void {
-  if (allowanceState.value) trackEvent("session_turn_plans_clicked", { source: allowanceState.value })
+  if (allowanceState.value && allowanceState.value !== "blocked") trackEvent("session_turn_plans_clicked", { source: allowanceState.value })
   account?.openSettings("plans")
 }
 </script>
 
 <template>
-  <AgentNotice v-if="snapshot.session.turnLimitReason" tone="warning" :text="snapshot.session.turnLimitReason" :detail="t('billing.resumeHint')">
-    <UiButton v-if="account" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
+  <AgentNotice v-if="snapshot.session.turnLimitReason" tone="warning" :text="snapshot.session.turnLimitReason" :detail="t(limitReached ? 'billing.resumeHint' : 'billing.retryHint')">
+    <UiButton v-if="account && limitReached" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
   </AgentNotice>
   <AgentNotice v-else-if="remaining !== null && remaining <= 5" tone="warning" :text="t('billing.turnsLeft', { remaining, limit }, remaining)" :detail="detail">
     <UiButton v-if="account" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>

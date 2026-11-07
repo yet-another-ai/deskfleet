@@ -24,6 +24,12 @@ const user = { id: "user-1", name: "Ada" }
 const serverUrl = "https://fleet.example"
 const roots: string[] = []
 const clients: HttpCentralClient[] = []
+const networkFetch = globalThis.fetch
+function sentRequest(fetch: ReturnType<typeof vi.fn<typeof globalThis.fetch>>, index = -1): Request {
+  const input = fetch.mock.calls.at(index)?.[0]
+  expect(input).toBeInstanceOf(Request)
+  return input as Request
+}
 afterEach(async () => {
   for (const client of clients.splice(0)) client.dispose()
   setPeerTelemetrySink(undefined)
@@ -78,17 +84,19 @@ test("restores an encrypted account using the async decryption result", async ()
   const client = await f.install()
   expect(await client.status()).toEqual({ serverUrl, user, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).toHaveBeenCalledExactlyOnceWith(encrypted)
-  expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/me`, expect.objectContaining({ headers: { Accept: "application/json", Authorization: "Bearer restored-token" } }))
+  expect(sentRequest(f.fetch).url).toBe(`${serverUrl}/api/me`)
+  expect(sentRequest(f.fetch).headers.get("authorization")).toBe("Bearer restored-token")
 })
 
 test("the desktop account bridge forwards ownership transfer to the selected Team", async () => {
   const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
   await f.install()
   const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === CENTRAL_CHANNEL)![1]
+  let submitted: unknown
+  f.fetch.mockImplementationOnce(async input => { submitted = await (input as Request).json(); return Response.json({}) })
   await handler({} as Electron.IpcMainInvokeEvent, "transferOwnership", ["team/1", "user-2"])
-  expect(f.fetch).toHaveBeenCalledWith(`${serverUrl}/api/teams/team%2F1/ownership`, expect.objectContaining({
-    method: "POST", body: JSON.stringify({ userId: "user-2" }),
-  }))
+  expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/teams/team%2F1/ownership`, method: "POST" })
+  expect(submitted).toEqual({ userId: "user-2" })
 })
 
 test("a fresh profile uses the compiled backend without account configuration", async () => {
@@ -105,7 +113,9 @@ test("a saved backend cannot override the compiled address or supply its credent
   expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
   await client.site()
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ headers: { Accept: "application/json" } }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(sentRequest(f.fetch).url).toBe(`${serverUrl}/api/site`)
+  expect(sentRequest(f.fetch).headers.has("authorization")).toBe(false)
 })
 
 test("desktop IPC reads public site settings but rejects administration even for a site administrator", async () => {
@@ -123,7 +133,8 @@ test("desktop IPC reads public site settings but rejects administration even for
   await expect(invoke(event, "siteSettings", [])).rejects.toThrow("Invalid account operation")
   await expect(invoke(event, "setServer", ["https://other.example"])).rejects.toThrow("Invalid account operation")
   await expect(invoke(event, "updateSiteSettings", [settings])).rejects.toThrow("Invalid account operation")
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/site`, expect.objectContaining({ method: "GET" }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/site`, method: "GET" })
 })
 
 test("login waits for async encryption before saving the token and publishing the account", async () => {
@@ -171,13 +182,53 @@ test("desktop GitHub settings bridge keeps authorization in the host transport",
   const settings = { configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: true, login: "octocat", actAsYou: false }
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify(settings)))
   await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubSettings", [])).resolves.toEqual({ ok: true, value: settings })
-  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ ...settings, actAsYou: true })))
+  let submitted: unknown
+  f.fetch.mockImplementationOnce(async input => { submitted = await (input as Request).json(); return Response.json({ ...settings, actAsYou: true }) })
   await invoke({} as Electron.IpcMainInvokeEvent, "setGithubActAsYou", [true])
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github`, expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
+  expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/integrations/github`, method: "PATCH" })
+  expect(submitted).toEqual({ actAsYou: true })
   const pullRequest = { number: 78, title: "Show PR status", url: "https://github.com/owner/repo/pull/78", state: "draft" }
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ pullRequest })))
   await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubPullRequest", [{ owner: "owner", repo: "repo", branch: "feat/status" }])).resolves.toEqual({ ok: true, value: { pullRequest } })
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/integrations/github/pull-request?owner=owner&repo=repo&branch=feat%2Fstatus`, expect.objectContaining({ method: "GET" }))
+  expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/integrations/github/pull-request?owner=owner&repo=repo&branch=feat%2Fstatus`, method: "GET" })
+})
+
+test("the browser login callback submits its code as a same-origin form", async () => {
+  const f = await setup()
+  const loginCode = "one-use+code&value"
+  let returnTo = ""
+  f.fetch.mockImplementation(async input => {
+    expect(input).toBeInstanceOf(Request)
+    const request = input as Request
+    const body = await request.json()
+    if (request.url.endsWith("/api/auth/start")) {
+      returnTo = body.returnTo
+      return Response.json({ authorizationUrl: "https://fleet.example/auth/authorize", loginVerifier: "private-verifier" })
+    }
+    expect(request.url).toBe(`${serverUrl}/api/auth/exchange`)
+    expect(body).toEqual({ code: loginCode, loginVerifier: "private-verifier" })
+    return Response.json({ token: "new-token", user })
+  })
+  const client = await installCentralAccount({ openAuthorization: async () => {
+    const page = await networkFetch(returnTo)
+    expect(page.headers.get("referrer-policy")).toBe("same-origin")
+    expect(page.headers.get("content-security-policy")).toContain("form-action 'self'")
+    const html = await page.text()
+    expect(html).toContain('<form method="post" action="/auth/complete">')
+    expect(html).toContain("history.replaceState(null,'','/auth/callback')")
+    expect(html).not.toContain("fetch(")
+    const origin = new URL(returnTo).origin
+    const body = new URLSearchParams({ code: loginCode })
+    const rejected = await networkFetch(`${origin}/auth/complete`, { method: "POST", headers: { Origin: "https://other.example" }, body })
+    expect(rejected.status).toBe(404)
+    const accepted = await networkFetch(`${origin}/auth/complete`, { method: "POST", headers: { Origin: origin }, body })
+    expect(accepted.status).toBe(200)
+    expect(await accepted.text()).toBe("Signed in. You can close this tab.")
+  } })
+  clients.push(client)
+  await client.login()
+  expect(f.fetch).toHaveBeenCalledTimes(2)
+  expect(JSON.parse(await readFile(f.path, "utf8")).encryptedToken).toBe(Buffer.from("encrypted-new-token").toString("base64"))
 })
 
 test("central IPC preserves network diagnostics for caught renderer failures without exposing request payloads", async () => {

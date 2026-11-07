@@ -2,6 +2,8 @@ import { chmod, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { join } from "node:path"
 import type { RemoteMcpRequest } from "../../../crates/protocol/control.ts"
+import { apiRequest, type ApiRequestOptions } from "@deskfleet/client/api-request"
+import { HttpError } from "@deskfleet/client/request-diagnostics"
 import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
@@ -24,11 +26,9 @@ const RETRY_MIN_MS = 2_000
 const RETRY_MAX_MS = 30_000
 
 /** Only the backend's explicit machine credential error can retire an identity. */
-async function machineCredentialRejected(response: Response): Promise<boolean> {
-  if (response.status !== 401 || response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") return false
-  // Keep the original body available to the request's own error handling.
-  const body = await response.clone().json().catch(() => undefined) as { error?: { code?: unknown } } | undefined
-  return body?.error?.code === "machine_credential_rejected"
+function machineCredentialRejected(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 401 && error.code === "machine_credential_rejected"
+    && error.response?.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
 }
 
 /** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
@@ -111,15 +111,10 @@ export class CentralClient {
     const credentials = this.#credentials
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Machine delegation is unavailable")
-    const response = await fetch(`${credentials.serverUrl}/api/daemon/authorize-delegation`, {
-      method: "POST", headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ userId: actor.userId }),
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
+    const result = await this.#api<{ authorized?: boolean }>(credentials, "/api/daemon/authorize-delegation", {
+      method: "POST", json: { userId: actor.userId }, timeoutMs: 15_000, totalTimeoutMs: 15_000,
+      errorPrefix: "User delegation is no longer authorized",
     })
-    // User denials and gateway errors do not revoke an otherwise valid machine.
-    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
-    if (!response.ok) throw new Error(`User delegation is no longer authorized (${response.status})`)
-    const result = await response.json() as { authorized?: boolean }
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
     return structuredClone(actor)
   }
@@ -128,35 +123,20 @@ export class CentralClient {
   async remoteMcp(request: RemoteMcpRequest): Promise<unknown> {
     const credentials = this.#credentials
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Remote Agent delegation is unavailable")
-    const response = await fetch(`${credentials.serverUrl}/api/daemon/mcp`, {
-      method: "POST", redirect: "error",
-      headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
-      body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(55_000), this.#httpClosing.signal]),
+    return this.#api(credentials, "/api/daemon/mcp", {
+      method: "POST", redirect: "error", json: request, timeoutMs: 55_000, totalTimeoutMs: 55_000,
+      errorPrefix: "Remote MCP request failed",
     })
-    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
-    if (!response.ok) {
-      const error = await response.json().catch(() => null) as { error?: { message?: string } } | null
-      throw new Error(error?.error?.message ?? `Remote MCP request failed (${response.status})`)
-    }
-    return response.json()
   }
 
-  /** Machine credentials authorize fresh quota decisions independently of peer lifetime. */
+  /** Fresh quota reads and admission writes with stable operation/generation IDs are safe to retry. */
   async quotaRequest(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
     const credentials = this.#credentials
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Team allowance is unavailable")
-    const response = await fetch(`${credentials.serverUrl}${path}`, {
-      method, headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), this.#httpClosing.signal]),
+    return this.#api(credentials, path, {
+      method, ...(body === undefined ? {} : { json: body }), idempotent: true,
+      errorPrefix: "Team allowance request failed",
     })
-    if (await machineCredentialRejected(response)) await this.#revoked(credentials)
-    if (!response.ok) {
-      const error = await response.json().catch(() => null) as { message?: string; error?: { message?: string } | string } | null
-      const message = error?.message ?? (typeof error?.error === "string" ? error.error : error?.error?.message)
-      throw new Error(message || `Team allowance request failed (${response.status})`)
-    }
-    return response.json()
   }
 
   async enroll(value: MachineEnrollment): Promise<CentralStatus> {
@@ -174,11 +154,12 @@ export class CentralClient {
     try {
       await this.#revocation
       const serverUrl = centralUrl(value.serverUrl)
-      const response = await fetch(`${serverUrl}/api/daemon/me`, { headers: { accept: "application/json", authorization: `Bearer ${value.token}` }, signal: AbortSignal.timeout(15_000) })
-      if (!response.ok) throw new Error(`Machine enrollment verification failed (${response.status})`)
-      const verified = await response.json() as {
+      const verified = await apiRequest<{
         serverId: string; machine: { id: string; teamId: string; originId: string; localMachineId: string }
-      }
+      }>(`${serverUrl}/api/daemon/me`, {
+        headers: { authorization: `Bearer ${value.token}` }, totalTimeoutMs: 15_000,
+        signal: this.#httpClosing.signal, errorPrefix: "Machine enrollment verification failed",
+      })
       const identity = this.#operations.agents.journal.identity
       if (!verified.serverId || verified.machine.id !== value.machineId || verified.machine.teamId !== value.teamId ||
         verified.machine.originId !== identity.originId || verified.machine.localMachineId !== identity.machineId) {
@@ -206,15 +187,21 @@ export class CentralClient {
   async #http(path: string, body: unknown): Promise<unknown> {
     const credentials = this.#credentials
     if (!credentials || this.#closed) throw new Error("Machine is not connected to a team")
-    const response = await fetch(`${credentials.serverUrl}${path}`, {
-      method: "POST", headers: { accept: "application/json", authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
-      body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(30_000), this.#httpClosing.signal]),
+    return this.#api(credentials, path, {
+      method: "POST", json: body, timeoutMs: 30_000, totalTimeoutMs: 30_000, errorPrefix: "Central sync failed",
     })
-    if (!response.ok) {
-      if (await machineCredentialRejected(response)) await this.#revoked(credentials)
-      throw new Error(`Central sync failed (${response.status})`)
+  }
+
+  async #api<T>(credentials: MachineCredentials, path: string, options: ApiRequestOptions): Promise<T> {
+    try {
+      return await apiRequest<T>(`${credentials.serverUrl}${path}`, {
+        ...options, headers: { authorization: `Bearer ${credentials.token}` }, signal: this.#httpClosing.signal,
+      })
+    } catch (error) {
+      // Only the captured registration's explicit credential rejection can revoke it.
+      if (machineCredentialRejected(error)) await this.#revoked(credentials)
+      throw error
     }
-    return response.json()
   }
 
   #connect(): void {

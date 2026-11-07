@@ -49,18 +49,23 @@ async function authorize(client: HttpCentralClient, openAuthorization: (url: str
     if (!address || typeof address === "string") { response.writeHead(503).end(); return }
     const origin = `http://127.0.0.1:${address.port}`
     if (request.method === "GET" && request.url?.startsWith("/auth/callback")) {
-      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; style-src 'unsafe-inline'" })
-      response.end(`<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">DeskFleet</p><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code)fetch('/auth/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>{document.getElementById('status').textContent=r.ok?'Signed in. You can close this tab.':'Sign-in failed.'});</script></body></html>`)
+      // A same-origin form needs its real Origin header; no-referrer makes it null.
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; form-action 'self'" })
+      response.end(`<!doctype html><html><meta charset="utf-8"><title>DeskFleet</title><body><p id="status">Signing in…</p><form method="post" action="/auth/complete"><input type="hidden" name="code"></form><script>const code=new URLSearchParams(location.hash.slice(1)).get('loginCode');history.replaceState(null,'','/auth/callback');if(code){const form=document.querySelector('form');form.elements.code.value=code;form.submit();}else document.getElementById('status').textContent='Sign-in failed.';</script></body></html>`)
       return
     }
     if (request.method !== "POST" || request.url !== "/auth/complete" || request.headers.origin !== origin) { response.writeHead(404).end(); return }
     try {
       let body = ""
       for await (const chunk of request) { body += String(chunk); if (body.length > 8192) throw new Error("Invalid login response") }
-      const result = JSON.parse(body) as { code?: unknown }
-      if (typeof result.code !== "string" || !result.code) throw new Error("Missing login code")
-      response.writeHead(200).end(); complete(result.code)
-    } catch (error) { response.writeHead(400).end(); fail(error instanceof Error ? error : new Error("Invalid login response")) }
+      const loginCode = new URLSearchParams(body).get("code")
+      if (!loginCode) throw new Error("Missing login code")
+      response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Signed in. You can close this tab.")
+      complete(loginCode)
+    } catch (error) {
+      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("Sign-in failed.")
+      fail(error instanceof Error ? error : new Error("Invalid login response"))
+    }
   })
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve) })
   const address = server.address()

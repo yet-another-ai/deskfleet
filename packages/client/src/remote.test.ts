@@ -26,11 +26,15 @@ function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
 
 function offerHttpFixture() {
   const f = fixture()
-  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ sdp: "answer" }), { headers: { "Content-Type": "application/json" } }))
+  const bodies: Promise<unknown>[] = []
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    bodies.push((input as Request).clone().json())
+    return new Response(JSON.stringify({ sdp: "answer" }), { headers: { "Content-Type": "application/json" } })
+  })
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
   disposers.push(() => client.dispose())
   f.central.offerPeer = client.offerPeer.bind(client)
-  return { ...f, fetch }
+  return { ...f, fetch, bodies }
 }
 
 test("automatic read acknowledgements and explicit mutations retain their triggers", async () => {
@@ -50,8 +54,9 @@ test.each(["terminal", "agent"] as const)("legacy %s offers omit media options f
   await signaling.prepare!("local-session")
   expect(await signaling.offer({ sessionId: "local-session", sdp })).toEqual({ sdp: "answer" })
   expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", purpose)
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/offer", expect.objectContaining({ method: "POST" }))
-  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ sdp })
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(f.fetch.mock.calls[0]![0]).toMatchObject({ url: "https://fleet.example/api/peers/peer1/offer", method: "POST" })
+  expect(await f.bodies[0]).toEqual({ sdp })
 })
 
 test.each([
@@ -63,8 +68,9 @@ test.each([
   await f.remote.api.desktop.prepare!("local-desktop")
   expect(await f.remote.api.desktop.offer({ sessionId: "local-desktop", sdp: "desktop-offer", ...options })).toEqual({ sdp: "answer" })
   expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", "desktop")
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/offer", expect.objectContaining({ method: "POST" }))
-  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ sdp: "desktop-offer", options })
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(f.fetch.mock.calls[0]![0]).toMatchObject({ url: "https://fleet.example/api/peers/peer1/offer", method: "POST" })
+  expect(await f.bodies[0]).toEqual({ sdp: "desktop-offer", options })
 })
 
 test("native desktop opens the adapter's authorized machine and outlives renderer signaling", async () => {
@@ -87,8 +93,9 @@ test("desktop preview settings reach the authorized peer HTTP start without the 
   await f.remote.api.desktop.prepare!("preview")
   await f.remote.api.desktop.start({ sessionId: "preview", ...settings })
   expect(f.central.createPeer).toHaveBeenCalledWith("team2", "central7", "desktop")
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/start", expect.objectContaining({ method: "POST" }))
-  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual(settings)
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(f.fetch.mock.calls[0]![0]).toMatchObject({ url: "https://fleet.example/api/peers/peer1/start", method: "POST" })
+  expect(await f.bodies[0]).toEqual(settings)
 })
 test("initial audio delivery reaches the authorized peer HTTP start", async () => {
   const f = offerHttpFixture()
@@ -97,7 +104,7 @@ test("initial audio delivery reaches the authorized peer HTTP start", async () =
   f.central.startPeer = client.startPeer.bind(client)
   await f.remote.api.desktop.prepare!("desktop")
   await f.remote.api.desktop.start({ sessionId: "desktop", displayId: 4, audio: false, control: false })
-  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ displayId: 4, audio: false, control: false })
+  expect(await f.bodies[0]).toEqual({ displayId: 4, audio: false, control: false })
 })
 test("a refreshed machine reconciles missed presence without replacing its peer", async () => {
   const f = fixture()

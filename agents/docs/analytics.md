@@ -189,7 +189,7 @@ Plans & Usage. They carry selected Team/plan context described above.
 | `member_invite_action` | Invitation attempt/success/failure and invited role; no email |
 | `team_join_action` | Invite acceptance attempt/success/failure; no invite token; acceptance is the member-capacity boundary |
 | `session_turn_allowance_viewed` | `near_limit`/`reached`/`blocked`, consumed-turn count including inheritance, and finite limit when known |
-| `session_turn_plans_clicked` | Upgrade entry from a near-limit, reached, or blocked turn allowance |
+| `session_turn_plans_clicked` | Upgrade entry from a near-limit or reached turn allowance |
 | `peer_granted` | Actual agent/terminal/desktop/files/ports peer grant; relay access `allowed`, `unconfigured`, `free_plan`, `turn_quota_exhausted`, or `metering_unavailable` |
 | `peer_connection` | First observed connected/failed outcome per grant, feature, and relay access; `transport=unknown` |
 
@@ -198,9 +198,11 @@ Session, and warning boundary across route remounts. Functional failure events
 describe failed client attempts: the existing transports do not expose a
 specific structured capacity code, so analytics does not infer one from error
 messages. Invitation creation does not consume a member seat.
-An admission pause with no confirmed exhausted allowance is `blocked`, so an
-unavailable entitlement service is not counted as quota exhaustion. Async
-functional outcomes are omitted when the account or selected Team has changed.
+An admission pause is `reached` only for the daemon's explicit
+`turn_limit_reached` code. Other pauses are `blocked` and show retry guidance
+without an upgrade entry, even if the client's last billing snapshot shows no
+remaining turns. Async functional outcomes are omitted when the account or
+selected Team has changed.
 
 Peer grants indicate permitted fallback, not proof that TURN was selected.
 Connection telemetry does not measure transferred bytes. Billing's server-side

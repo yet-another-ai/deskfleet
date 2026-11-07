@@ -99,7 +99,9 @@ for (const operation of ["sync", "delegation", "quota", "remoteMcp"] as const) {
           await central.close()
           assert.deepEqual(requests, ["/api/daemon/catalog"])
         } else if (operation === "delegation") {
-          await assert.rejects(central.authorizeDelegation({ kind: "user", userId: "user", deviceId: "device" }), new RegExp(`\\(${response.status}\\)`))
+          await assert.rejects(central.authorizeDelegation({ kind: "user", userId: "user", deviceId: "device" }), {
+            message: response.quotaMessage ?? `User delegation is no longer authorized (${response.status})`,
+          })
           assert.deepEqual(requests, ["/api/daemon/authorize-delegation"])
         } else if (operation === "remoteMcp") {
           await assert.rejects(central.remoteMcp({ userId: "user", deviceId: "device", sessionId: "session", operation: "machines", arguments: {} }), {

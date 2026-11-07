@@ -25,7 +25,7 @@ async function setup(saved?: { serverUrl: string; token: string; user: typeof us
   vi.stubGlobal("navigator", { languages: ["en-US"] })
   vi.stubGlobal("window", new EventTarget())
   vi.stubGlobal("WebSocket", class { close() {} })
-  const fetch = vi.fn(async () => new Response(JSON.stringify({ user, siteAdmin: false })))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ user, siteAdmin: false })))
   vi.stubGlobal("fetch", fetch)
   const api = await browserClient(`${serverUrl}/`)
   const central = api.central as HttpCentralClient
@@ -36,22 +36,35 @@ async function setup(saved?: { serverUrl: string; token: string; user: typeof us
 test("a fresh browser account uses the configured backend", async () => {
   const f = await setup()
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  const request = f.fetch.mock.calls[0]![0] as Request
+  expect(request).toMatchObject({ url: `${serverUrl}/api/me`, credentials: "include" })
+  expect(Object.fromEntries(request.headers)).toEqual({ accept: "application/json" })
   await f.central.site()
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
+  const siteRequest = f.fetch.mock.calls.at(-1)![0] as Request
+  expect(siteRequest).toMatchObject({ url: `${serverUrl}/api/site`, credentials: "include" })
+  expect(Object.fromEntries(siteRequest.headers)).toEqual({ accept: "application/json" })
   expect(f.storage.getItem("deskfleet.account")).toBeNull()
 })
 
 test("browser authentication uses cookies and ignores saved bearer credentials", async () => {
   const f = await setup({ serverUrl, token: "saved-token", user })
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  const request = f.fetch.mock.calls[0]![0] as Request
+  expect(request).toMatchObject({ url: `${serverUrl}/api/me`, credentials: "include" })
+  expect(Object.fromEntries(request.headers)).toEqual({ accept: "application/json" })
 })
 
 test("browser storage cannot override the configured backend or reuse another server's token", async () => {
   const f = await setup({ serverUrl: "https://old.example", token: "old-token", user })
   expect(await f.central.status()).toEqual({ serverUrl, user, siteAdmin: false })
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(`${serverUrl}/api/me`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  const request = f.fetch.mock.calls[0]![0] as Request
+  expect(request).toMatchObject({ url: `${serverUrl}/api/me`, credentials: "include" })
+  expect(Object.fromEntries(request.headers)).toEqual({ accept: "application/json" })
   await f.central.site()
-  expect(f.fetch).toHaveBeenLastCalledWith(`${serverUrl}/api/site`, expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }))
+  const siteRequest = f.fetch.mock.calls.at(-1)![0] as Request
+  expect(siteRequest).toMatchObject({ url: `${serverUrl}/api/site`, credentials: "include" })
+  expect(Object.fromEntries(siteRequest.headers)).toEqual({ accept: "application/json" })
 })

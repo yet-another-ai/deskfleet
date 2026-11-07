@@ -318,8 +318,9 @@ become executable input or synthetic local turn records.
 
 A turn record alone does not count. The daemon persists its monotonic `consumed`
 marker immediately before dispatch, after attachment preparation and a fresh
-central entitlement lookup. Authority failure pauses new dispatch; accepted
-provider work can finish.
+central entitlement lookup. The shared HTTP transport retries transient lookup
+failures within its bounded deadline. If those attempts fail, new dispatch pauses;
+accepted provider work can finish.
 
 The owning daemon checks/commits consumption at its shared new-turn boundary,
 covering interactive input, backlog, steering fallback, and scheduled inputs.
@@ -330,6 +331,12 @@ An accepted 30th turn can finish. Further starts pause with an explicit limit
 reason; preserve pending inputs for withdrawal or later execution after upgrade.
 After upgrading or restoring connectivity, users explicitly retry the preserved
 input. Plan changes never automatically resume queued execution.
+
+Admission pauses persist a structured code alongside the reason. Only
+`turn_limit_reached` offers upgrade guidance; `authority_unavailable` (including
+timeouts and invalid entitlement responses) keeps the input with retry guidance,
+without a plan link. A reason without a confirmed limit code never implies that
+an upgrade resolves the failure.
 
 ### TURN relay allowance
 

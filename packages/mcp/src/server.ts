@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import { apiRequest } from "@deskfleet/client/api-request"
 import { DESKFLEET_TOOLS } from "./tools.ts"
 
 export type ToolInvoker = (name: string, args: Record<string, unknown>) => Promise<unknown>
@@ -31,13 +32,11 @@ export function gatewayInvoker(endpoint: string, token: string, request: typeof 
   }
   if (!token) throw new Error("DESKFLEET_MCP_TOKEN is required")
   return async (name, args) => {
-    const response = await request(url, {
-      method: "POST", redirect: "error", signal: AbortSignal.timeout(60_000),
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ name, arguments: args }),
+    const result = await apiRequest<{ result?: unknown }>(url.toString(), {
+      method: "POST", redirect: "error", timeoutMs: 60_000, totalTimeoutMs: 60_000, idempotent: false,
+      headers: { Authorization: `Bearer ${token}` },
+      json: { name, arguments: args }, fetch: request, errorPrefix: "DeskFleet request failed",
     })
-    const result = await response.json() as { result?: unknown; error?: string }
-    if (!response.ok) throw new Error(result.error ?? `DeskFleet request failed (${response.status})`)
     return result.result
   }
 }

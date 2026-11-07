@@ -639,7 +639,7 @@ export class AgentRuntime {
       async error => {
         if (error instanceof TurnAdmissionBlocked) {
           this.#quotaPaused = true
-          await pauseTurn(this.journal, turn, command, error.message)
+          await pauseTurn(this.journal, turn, command, error)
         } else await this.#finish(turn, inputId, command, undefined, error, sent)
       },
     ).catch(error => console.error("Could not persist Agent turn completion", error)).finally(() => {

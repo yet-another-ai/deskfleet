@@ -46,6 +46,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 2.1.0
         version: 2.1.0(zod@4.6.7)
+      '@deskfleet/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@deskfleet/dsh-runtime':
         specifier: workspace:*
         version: link:../../packages/dsh-runtime
@@ -281,6 +284,10 @@ importers:
         version: 3.3.14(@typescript/typescript6@6.0.2)
 
   packages/client:
+    dependencies:
+      ky:
+        specifier: 2.2.0
+        version: 2.2.0
     devDependencies:
       typescript:
         specifier: npm:@typescript/typescript6@6.0.2
@@ -455,6 +462,9 @@ importers:
 
   packages/mcp:
     dependencies:
+      '@deskfleet/client':
+        specifier: workspace:*
+        version: link:../client
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(supports-color@7.2.0)(zod@4.6.7)
@@ -8147,6 +8157,10 @@ packages:
 
   koffi@3.1.1:
     resolution: {integrity: sha512-mRX6AMeeKCxSOeOopqAcLAl5jcNvge7NAG8l7rF/8gGJATI0tdHFYjteIdE0mGOtWdsrJOij+PjnP8Q9c1gwgA==}
+
+  ky@2.2.0:
+    resolution: {integrity: sha512-4+B63kyZt+Y8snQiUGydK1vgY9xYQJZEh9K/nIAIEts+gYJzy1EiAw3BbK8xpWRuWUpN70SNCMjqRGTm75xxIA==}
+    engines: {node: '>=22'}
 
   layout-base@1.0.2:
     resolution: {integrity: sha512-8h2oVEZNktL4BH2JCOI90iD1yXwL6iNW7KcCKT2QZgQJR2vbqDsldCTPRU9NifTCqHZci57XvQQ15YTu+sTYPg==}
@@ -18694,6 +18708,8 @@ snapshots:
       '@koromix/koffi-win32-arm64': 3.1.1
       '@koromix/koffi-win32-ia32': 3.1.1
       '@koromix/koffi-win32-x64': 3.1.1
+
+  ky@2.2.0: {}
 
   layout-base@1.0.2: {}
 

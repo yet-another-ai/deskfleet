@@ -8,9 +8,9 @@ import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.t
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
-import { attachRequestStack, centralRequestFailure, HttpError, requestDiagnostics, type RequestTransport } from "./request-diagnostics.ts"
+import { apiRequest, API_RETRY_STATUS_CODES, type ApiRequestOptions } from "./api-request.ts"
+import { HttpError, type RequestTransport } from "./request-diagnostics.ts"
 import type { Machine as WireMachine, NetworkConfiguration } from "../../../crates/protocol/control.ts"
-import { isDesktopErrorReason } from "./desktop-media.ts"
 
 export { HttpError } from "./request-diagnostics.ts"
 
@@ -152,36 +152,16 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     }
   }
   async #save(account: SavedAccount): Promise<void> { await this.#options.persist(account); this.#account = account }
-  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-    const requestStack = new Error()
+  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, options: Pick<ApiRequestOptions, "timeoutMs" | "totalTimeoutMs" | "retryStatusCodes"> = {}): Promise<T> {
     if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
       await this.request("GET", "/api/auth/config", undefined, signal)
     }
-    const init: RequestInit = {
+    const result = await apiRequest<{ csrfToken?: string }>(`${this.#account.serverUrl}${path}`, {
+      ...options,
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
       headers: { Accept: "application/json", ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      ...(signal === undefined ? {} : { signal }),
-    }
-    const started = performance.now()
-    const details = () => ({ method, path, body, signal, transport: this.#options.transport, elapsedMs: performance.now() - started })
-    let response: Response
-    try { response = await (this.#options.fetch ?? fetch)(`${this.#account.serverUrl}${path}`, init) }
-    catch (cause) { throw centralRequestFailure(cause, details(), requestStack.stack) }
-    let result: { csrfToken?: string; error?: { code: string; message: string; reason?: string } } | undefined
-    let bodyFailure: unknown
-    try { result = response.status === 204 ? undefined : await response.json() }
-    catch (cause) {
-      if (response.ok) throw centralRequestFailure(cause, { ...details(), phase: "response_body", status: response.status }, requestStack.stack)
-      bodyFailure = cause
-    }
-    if (!response.ok) {
-      const error = result?.error
-      throw attachRequestStack(new HttpError(response.status, error?.message ?? response.statusText,
-        isDesktopErrorReason(error?.reason) ? error.reason : undefined, error?.code,
-        requestDiagnostics(bodyFailure, { ...details(), kind: "http", phase: "response_body", status: response.status }),
-        bodyFailure ? { cause: bodyFailure } : undefined), requestStack.stack)
-    }
+      json: body, signal, fetch: this.#options.fetch, transport: this.#options.transport,
+    })
     if (result?.csrfToken) this.#csrf = result.csrfToken
     return result as T
   }
@@ -250,16 +230,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/grant`, { plan, expiresAt, reason }) }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
-  async networkConfiguration(): Promise<NetworkConfiguration> {
-    const signal = AbortSignal.timeout(5_000)
-    for (let attempt = 0; ; attempt++) {
-      try { return await this.request<NetworkConfiguration>("GET", "/api/network-configuration", undefined, signal) }
-      catch (error) {
-        // This configuration endpoint can return intermittent 404s. Bound retries
-        // by both attempt count and the original deadline.
-        if (!(error instanceof HttpError) || error.status !== 404 || attempt >= 2 || signal.aborted) throw error
-      }
-    }
+  networkConfiguration(): Promise<NetworkConfiguration> {
+    // The public configuration route can briefly return 404 during deployment.
+    return this.request("GET", "/api/network-configuration", undefined, undefined, {
+      timeoutMs: 1_500, totalTimeoutMs: 5_000, retryStatusCodes: [404, ...API_RETRY_STATUS_CODES],
+    })
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }

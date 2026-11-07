@@ -16,6 +16,7 @@ export interface AgentActor {
 }
 
 export type AgentSessionContext = "worktree" | "directory"
+export type TurnLimitCode = "turn_limit_reached" | "authority_unavailable"
 
 export interface AgentSessionRecord {
   id: string
@@ -35,6 +36,8 @@ export interface AgentSessionRecord {
   /** Immutable usage captured from the source Session at fork creation. */
   inheritedTurnCount?: number
   admissionGeneration?: string
+  /** Only a confirmed turn_limit_reached pause can offer an upgrade. */
+  turnLimitCode?: TurnLimitCode
   turnLimitReason?: string
   lastEventSeq: string
   /** Latest terminal turn event; absent until a turn finishes. */

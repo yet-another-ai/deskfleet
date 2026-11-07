@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest"
+import { afterEach, expect, test, vi, type Mock } from "vitest"
 import { HttpCentralClient, HttpError } from "./http-central.ts"
 import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
@@ -6,6 +6,12 @@ import { remoteMachineClient } from "./remote.ts"
 import { MUX_PROFILE } from "./mux/protocol.ts"
 
 const clients: HttpCentralClient[] = []
+const requestBodies = new WeakMap<Request, Promise<string>>()
+function captureBody(input: RequestInfo | URL): Request {
+  const request = input as Request
+  requestBodies.set(request, request.clone().text())
+  return request
+}
 afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function pageGlobals() {
   const windowTarget = new EventTarget()
@@ -27,12 +33,25 @@ class Socket {
 }
 function setup() {
   const responses: unknown[] = []
-  const fetch = vi.fn(async () => new Response(JSON.stringify(responses.shift() ?? {}), { status: 200, headers: { "Content-Type": "application/json" } }))
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    captureBody(input)
+    return new Response(JSON.stringify(responses.shift() ?? {}), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
   const sockets: Socket[] = []
   const persist = vi.fn(async () => {})
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist, authorize: async () => {}, fetch, socket: () => { const socket = new Socket(); sockets.push(socket); return socket as unknown as WebSocket } })
   clients.push(client)
   return { client, fetch, sockets, responses, persist }
+}
+async function expectRequest(fetch: Mock<typeof globalThis.fetch>, index: number, url: string, init: RequestInit = {}): Promise<Request> {
+  const request = fetch.mock.calls[index - 1]![0] as Request
+  expect(request).toBeInstanceOf(Request)
+  expect(request.url).toBe(url)
+  const { headers, body, ...properties } = init
+  expect(request).toMatchObject(properties)
+  new Headers(headers).forEach((value, name) => expect(request.headers.get(name)).toBe(value))
+  if (body !== undefined) expect(await requestBodies.get(request)).toBe(body)
+  return request
 }
 
 test("exchanges the callback code with its client verifier and exposes account data without the token", async () => {
@@ -40,8 +59,8 @@ test("exchanges the callback code with its client verifier and exposes account d
   f.responses.push({ authorizationUrl: "https://login.example", loginVerifier: "verifier" }, { token: "new-token", user: { id: "u1", name: "Ada" } }, { user: { id: "u1", name: "Ada" } })
   expect(await f.client.authorizationUrl("https://app.example/")).toEqual({ authorizationUrl: "https://login.example", loginVerifier: "verifier" })
   await f.client.exchange("callback-code", "verifier")
-  const request = f.fetch.mock.calls[1] as unknown as [string, RequestInit]
-  expect(JSON.parse(request[1].body as string)).toEqual({ code: "callback-code", loginVerifier: "verifier" })
+  const request = f.fetch.mock.calls[1]![0] as Request
+  expect(JSON.parse((await requestBodies.get(request))!)).toEqual({ code: "callback-code", loginVerifier: "verifier" })
   expect(await f.client.status()).toEqual({ serverUrl: "https://fleet.example", siteAdmin: false, user: { id: "u1", name: "Ada" } })
   expect(f.persist).toHaveBeenCalledWith(expect.objectContaining({ token: "new-token" }))
 })
@@ -51,9 +70,10 @@ test("loads deployment STUN configuration without creating a peer and preserves 
   const configuration = { stunUrls: ["stun:primary.example:3478", "stuns:secure.example:5349", "stun:secondary.example:3478"] }
   f.responses.push(configuration)
   expect(await f.client.networkConfiguration()).toEqual(configuration)
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/network-configuration", expect.objectContaining({
+  expect(f.fetch).toHaveBeenCalledOnce()
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/network-configuration", {
     method: "GET", headers: { Accept: "application/json", Authorization: "Bearer application-token" }, signal: expect.any(AbortSignal),
-  }))
+  })
 })
 
 test("recovers from transient configuration route 404s and refreshes configuration on the next probe", async () => {
@@ -68,10 +88,10 @@ test("recovers from transient configuration route 404s and refreshes configurati
   expect(f.fetch).toHaveBeenCalledTimes(3)
   expect(await f.client.networkConfiguration()).toEqual(updated)
   expect(f.fetch).toHaveBeenCalledTimes(4)
-  for (const call of f.fetch.mock.calls) {
-    expect(call).toEqual(["https://fleet.example/api/network-configuration", expect.objectContaining({
+  for (let index = 1; index <= f.fetch.mock.calls.length; index++) {
+    await expectRequest(f.fetch, index, "https://fleet.example/api/network-configuration", {
       method: "GET", headers: { Accept: "application/json", Authorization: "Bearer application-token" },
-    })])
+    })
   }
 })
 
@@ -82,31 +102,26 @@ test("stops after three configuration route 404s without inventing STUN configur
   expect(f.fetch).toHaveBeenCalledTimes(3)
 })
 
-test.each([401, 403, 500])("does not retry configuration HTTP %s failures", async (status) => {
+test.each([401, 403])("does not retry configuration HTTP %s failures", async (status) => {
   const f = setup()
   f.fetch.mockImplementation(async () => new Response(JSON.stringify({ error: { code: "failure", message: "Configuration unavailable" } }), { status }))
   await expect(f.client.networkConfiguration()).rejects.toMatchObject({ status, message: "Configuration unavailable" })
   expect(f.fetch).toHaveBeenCalledOnce()
 })
 
-test.each([false, true])("bounds configuration reads to five seconds including retries (%s)", async (retry) => {
-  const controller = new AbortController()
-  const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal)
-  const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => new Promise((_resolve, reject) => {
-    init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true })
+test("bounds configuration reads to five seconds including timeout retries", async () => {
+  vi.useFakeTimers()
+  const fetch = vi.fn<typeof globalThis.fetch>((input) => new Promise((_resolve, reject) => {
+    const { signal } = input as Request
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true })
   }))
-  if (retry) fetch.mockResolvedValueOnce(new Response(null, { status: 404, statusText: "Not Found" }))
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
   clients.push(client)
-  try {
-    const result = client.networkConfiguration()
-    const rejected = expect(result).rejects.toBeInstanceOf(CentralRequestError)
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(retry ? 2 : 1))
-    expect(timeout).toHaveBeenCalledExactlyOnceWith(5_000)
-    for (const [, init] of fetch.mock.calls) expect(init?.signal).toBe(controller.signal)
-    controller.abort(new DOMException("Configuration request timed out", "TimeoutError"))
-    await rejected
-  } finally { timeout.mockRestore() }
+  const failure = client.networkConfiguration().catch(error => error)
+  await vi.advanceTimersByTimeAsync(5_000)
+  expect(await failure).toMatchObject({ diagnostics: { kind: "timeout", route: "/api/network-configuration" } })
+  expect(fetch).toHaveBeenCalledTimes(3)
+  expect(fetch.mock.calls.every(([input]) => (input as Request).signal.aborted)).toBe(true)
 })
 
 test("authenticates the WebSocket in its first message and reports signaling loss without fabricating peer revocation", async () => {
@@ -126,7 +141,7 @@ test("collects Session summary pages without merging equal IDs from another mach
   const f = setup()
   f.responses.push({ sessions: [{ session: { id: "1" } }], nextCursor: "1" }, { sessions: [{ session: { id: "3" } }] })
   expect(await f.client.sessions("team", "remote7")).toEqual([{ session: { id: "1" } }, { session: { id: "3" } }])
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team/machines/remote7/sessions?after=1&limit=200", expect.anything())
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/teams/team/machines/remote7/sessions?after=1&limit=200")
 })
 
 test.each([null, undefined])("opens a machine before capabilities are reported and adopts later reports: %j", async capabilities => {
@@ -174,8 +189,8 @@ test("loads team AI usage and day details with explicit timezone and encoded tea
   f.responses.push(summary, details)
   expect(await f.client.aiUsage("team/1", { period: "30d", timeZone: "Asia/Shanghai" })).toEqual(summary)
   expect(await f.client.aiUsageSessions("team/1", { date: "2026-10-28", timeZone: "Asia/Shanghai" })).toEqual(details)
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/teams/team%2F1/ai-usage?period=30d&timeZone=Asia%2FShanghai", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/ai-usage/sessions?date=2026-10-28&timeZone=Asia%2FShanghai", expect.objectContaining({ method: "GET" }))
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team%2F1/ai-usage?period=30d&timeZone=Asia%2FShanghai", { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/teams/team%2F1/ai-usage/sessions?date=2026-10-28&timeZone=Asia%2FShanghai", { method: "GET" })
 })
 
 test("loads a targeted Session summary using the indexed collection filter", async () => {
@@ -183,9 +198,8 @@ test("loads a targeted Session summary using the indexed collection filter", asy
   const summary = { session: { id: "7", title: "Task" }, turns: [], permissions: [], elicitations: [] }
   f.responses.push({ sessions: [summary] })
   expect(await f.client.sessions("team", "remote/7", "7")).toEqual([summary])
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith(
-    "https://fleet.example/api/teams/team/machines/remote%2F7/sessions?after=0&limit=200&sessionId=7", expect.anything(),
-  )
+  expect(f.fetch).toHaveBeenCalledOnce()
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team/machines/remote%2F7/sessions?after=0&limit=200&sessionId=7")
 })
 
 test("searches a Team with encoded literal text and retains paging and Machine scope", async () => {
@@ -194,20 +208,32 @@ test("searches a Team with encoded literal text and retains paging and Machine s
   f.responses.push(page, { tasks: [], lastObservedAt: null })
   expect(await f.client.search("team/1", { q: "中文 foo_%", kind: "chat", cursor: "next/+", limit: 20 })).toEqual(page)
   expect(await f.client.scheduleSnapshot("team", "machine/2")).toEqual({ tasks: [], lastObservedAt: null })
-  expect(f.fetch).toHaveBeenNthCalledWith(1,
+  await expectRequest(f.fetch, 1,
     "https://fleet.example/api/teams/team%2F1/search?q=%E4%B8%AD%E6%96%87+foo_%25&kind=chat&cursor=next%2F%2B&limit=20",
-    expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team/machines/machine%2F2/schedules", expect.objectContaining({ method: "GET" }))
+    { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/teams/team/machines/machine%2F2/schedules", { method: "GET" })
 })
 
 test("search failure diagnostics omit query text and resource identities", async () => {
   const f = setup()
-  f.fetch.mockRejectedValueOnce(new TypeError("fetch failed"))
+  f.fetch.mockRejectedValue(new TypeError("fetch failed"))
   const error = await f.client.search("private-team", { q: "private conversation" }).catch(error => error)
   const serialized = serializeCentralRequestError(error)
   expect(serialized?.diagnostics.route).toBe("/api/teams/:teamId/search")
   expect(JSON.stringify(serialized)).not.toContain("private conversation")
   expect(JSON.stringify(serialized)).not.toContain("private-team")
+  expect(f.fetch).toHaveBeenCalledTimes(3)
+})
+
+test("ordinary reads retry transient network and server failures through the shared transport", async () => {
+  const f = setup()
+  const teams = [{ id: "team", name: "Team" }]
+  f.fetch.mockRejectedValueOnce(new TypeError("fetch failed"))
+    .mockResolvedValueOnce(new Response("Unavailable", { status: 503 }))
+  f.responses.push(teams)
+  expect(await f.client.teams()).toEqual(teams)
+  expect(f.fetch).toHaveBeenCalledTimes(3)
+  for (let index = 1; index <= 3; index++) await expectRequest(f.fetch, index, "https://fleet.example/api/teams", { method: "GET" })
 })
 
 test("collects paginated billing Teams while retaining the administration array API", async () => {
@@ -216,15 +242,15 @@ test("collects paginated billing Teams while retaining the administration array 
   const second = { id: "second", name: "Design team", owner: { id: "bob", name: "Bob", email: "bob@example.test" } }
   f.responses.push({ teams: [first], nextCursor: "team/a?b" }, { teams: [second], nextCursor: null })
   expect(await f.client.billingTeams()).toEqual([first, second])
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/teams?limit=100", expect.anything())
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/teams?limit=100&cursor=team%2Fa%3Fb", expect.anything())
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=100")
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/teams?limit=100&cursor=team%2Fa%3Fb")
 })
 
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
-  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
+  f.fetch.mockImplementation(async () => new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
   await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable", diagnostics: { apiErrorCode: "machine_offline" } })
-  f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
+  f.fetch.mockImplementation(async () => new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
   await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
 })
 
@@ -304,7 +330,8 @@ test("HTTP errors preserve supported desktop recovery reasons", async () => {
 test("transfers Team ownership with the encoded Team ID and selected member", async () => {
   const f = setup()
   await f.client.transferOwnership("team/1", "member-2")
-  expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/teams/team%2F1/ownership", expect.objectContaining({ method: "POST", body: JSON.stringify({ userId: "member-2" }) }))
+  expect(f.fetch).toHaveBeenCalledOnce()
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team%2F1/ownership", { method: "POST", body: JSON.stringify({ userId: "member-2" }) })
 })
 
 test("signing out notifies account-owned connections and retains the configured backend", async () => {
@@ -342,9 +369,9 @@ test("loads public settings and saves site settings through the admin endpoint",
   expect(await f.client.site()).toEqual(settings)
   expect(await f.client.siteSettings()).toEqual(settings)
   expect(await f.client.updateSiteSettings(settings)).toEqual(settings)
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/site", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/site-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/site", { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/site-settings", { method: "GET" })
+  await expectRequest(f.fetch, 3, "https://fleet.example/api/admin/site-settings", { method: "PATCH", body: JSON.stringify(settings) })
 })
 
 
@@ -356,9 +383,9 @@ test("loads, replaces, and clears the ordered TURN URL list through its admin en
   expect(await f.client.turnSettings()).toEqual(settings)
   expect(await f.client.updateTurnSettings(settings)).toEqual(settings)
   expect(await f.client.updateTurnSettings(cleared)).toEqual(cleared)
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(settings) }))
-  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(cleared) }))
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/turn-settings", { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/turn-settings", { method: "PATCH", body: JSON.stringify(settings) })
+  await expectRequest(f.fetch, 3, "https://fleet.example/api/admin/turn-settings", { method: "PATCH", body: JSON.stringify(cleared) })
 })
 
 test("reads and writes a Team's TURN server through its Team endpoint", async () => {
@@ -367,8 +394,8 @@ test("reads and writes a Team's TURN server through its Team endpoint", async ()
   f.responses.push(settings, settings)
   expect(await f.client.teamTurnSettings("team/1")).toEqual(settings)
   expect(await f.client.updateTeamTurnSettings("team/1", { urls: settings.urls, secret: "north-secret" })).toEqual(settings)
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/teams/team%2F1/turn-settings", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/teams/team%2F1/turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ urls: settings.urls, secret: "north-secret" }) }))
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team%2F1/turn-settings", { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/teams/team%2F1/turn-settings", { method: "PATCH", body: JSON.stringify({ urls: settings.urls, secret: "north-secret" }) })
 })
 
 test("manages Cloudflare TURN through its private endpoint without sending preserved tokens", async () => {
@@ -380,13 +407,13 @@ test("manages Cloudflare TURN through its private endpoint without sending prese
   expect(await f.client.cloudflareTurnSettings()).toEqual(settings)
   expect(await f.client.updateCloudflareTurnSettings(update)).toEqual(settings)
   expect(await f.client.updateCloudflareTurnSettings(disabled)).toEqual({ ...settings, enabled: false })
-  expect(f.fetch).toHaveBeenNthCalledWith(1, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "GET" }))
-  expect(f.fetch).toHaveBeenNthCalledWith(2, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(update) }))
-  expect(f.fetch).toHaveBeenNthCalledWith(3, "https://fleet.example/api/admin/cloudflare-turn-settings", expect.objectContaining({ method: "PATCH", body: JSON.stringify(disabled) }))
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/cloudflare-turn-settings", { method: "GET" })
+  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/cloudflare-turn-settings", { method: "PATCH", body: JSON.stringify(update) })
+  await expectRequest(f.fetch, 3, "https://fleet.example/api/admin/cloudflare-turn-settings", { method: "PATCH", body: JSON.stringify(disabled) })
 })
 
 test("browser requests use cookie authentication and CSRF, with no bearer WebSocket frame", async () => {
-  const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf-token", siteAdmin: false }), { status: 200 }))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf-token", siteAdmin: false }), { status: 200 }))
   const socket = new Socket()
   const persist = vi.fn(async () => {})
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist, authorize: async () => {}, fetch: fetch as typeof globalThis.fetch, socket: () => socket as unknown as WebSocket })
@@ -395,21 +422,21 @@ test("browser requests use cookie authentication and CSRF, with no bearer WebSoc
   socket.onopen!()
   expect(socket.send).not.toHaveBeenCalled()
   await client.createTeam("Team")
-  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/teams", expect.objectContaining({ credentials: "include", headers: { Accept: "application/json", "X-CSRF-Token": "csrf-token", "Content-Type": "application/json" } }))
+  await expectRequest(fetch, fetch.mock.calls.length, "https://fleet.example/api/teams", { credentials: "include", headers: { Accept: "application/json", "X-CSRF-Token": "csrf-token", "Content-Type": "application/json" } })
   expect(persist).not.toHaveBeenCalled()
 })
 
 test("browser public mutations obtain a CSRF token before posting", async () => {
-  const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({ csrfToken: "first-csrf" }), { status: 200 }))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ csrfToken: "first-csrf" }), { status: 200 }))
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist: async () => {}, authorize: async () => {}, fetch: fetch as typeof globalThis.fetch })
   clients.push(client)
   await client.request("POST", "/api/auth/register", { email: "ada@example.test" })
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(["https://fleet.example/api/auth/config", "https://fleet.example/api/auth/register"])
-  expect(fetch.mock.calls[1]![1].headers).toMatchObject({ "X-CSRF-Token": "first-csrf" })
+  expect(fetch.mock.calls.map(([input]) => (input as Request).url)).toEqual(["https://fleet.example/api/auth/config", "https://fleet.example/api/auth/register"])
+  expect((fetch.mock.calls[1]![0] as Request).headers.get("X-CSRF-Token")).toBe("first-csrf")
 })
 
 test("failed browser logout keeps the authenticated connection until its cookie is revoked", async () => {
-  const fetch = vi.fn(async () => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf" }), { status: 200 }))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ user: { id: "u1", name: "Ada" }, csrfToken: "csrf" }), { status: 200 }))
   const socket = new Socket()
   const persist = vi.fn(async () => {})
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example" }, cookieAuth: true, persist, authorize: async () => {}, fetch, socket: () => socket as unknown as WebSocket })
@@ -429,7 +456,8 @@ test("failed browser logout keeps the authenticated connection until its cookie 
 
 test("GitHub App settings use account-owned routes and authorize through the browser account confirmation", async () => {
   const settings = { configured: true, manageUrl: "https://github.com/apps/deskfleet/installations/new", authorized: false, login: null, actAsYou: false }
-  const fetch = vi.fn(async (url: string, _init: RequestInit) => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const { url } = captureBody(input)
     const body = url.endsWith("/api/auth/config") ? { webUrl: "https://app.example" }
       : url.endsWith("/api/me") ? { user: { id: "user/1", name: "Ada" } } : settings
     return new Response(JSON.stringify(body), { status: 200 })
@@ -443,17 +471,17 @@ test("GitHub App settings use account-owned routes and authorize through the bro
   await client.authorizeGithubApp()
   expect(openExternal).toHaveBeenLastCalledWith("https://app.example/auth/github-app?user=user%2F1")
   await client.setGithubActAsYou(true)
-  expect(fetch).toHaveBeenLastCalledWith("https://fleet.example/api/integrations/github", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ actAsYou: true }) }))
-  expect(fetch.mock.calls.some(([url]) => url.includes("authorization/start"))).toBe(false)
+  await expectRequest(fetch, fetch.mock.calls.length, "https://fleet.example/api/integrations/github", { method: "PATCH", body: JSON.stringify({ actAsYou: true }) })
+  expect(fetch.mock.calls.some(([input]) => (input as Request).url.includes("authorization/start"))).toBe(false)
 })
 
 test("GitHub pull-request lookup keeps fork identity and branch punctuation in query values", async () => {
   const pullRequest = { number: 78, title: "Show PR status", url: "https://github.com/upstream/deskfleet/pull/78", state: "open" }
-  const fetch = vi.fn(async () => new Response(JSON.stringify({ pullRequest })))
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ pullRequest })))
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "secret" }, persist: async () => {}, authorize: async () => {}, fetch })
   clients.push(client)
   expect(await client.githubPullRequest({ owner: "upstream", repo: "deskfleet", headOwner: "contributor", branch: "feat/status&checks#78" })).toEqual({ pullRequest })
-  expect(fetch).toHaveBeenCalledWith("https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", expect.objectContaining({ method: "GET", headers: { Accept: "application/json", Authorization: "Bearer secret" } }))
+  await expectRequest(fetch, 1, "https://fleet.example/api/integrations/github/pull-request?owner=upstream&repo=deskfleet&branch=feat%2Fstatus%26checks%2378&headOwner=contributor", { method: "GET", headers: { Accept: "application/json", Authorization: "Bearer secret" } })
 })
 
 test("replaces a silent signaling socket instead of waiting for a close event", async () => {

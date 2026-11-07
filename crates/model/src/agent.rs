@@ -95,6 +95,10 @@ states!(TurnState {
     Interrupted => "interrupted",
     Failed => "failed",
 });
+states!(TurnLimitCode {
+    TurnLimitReached => "turn_limit_reached",
+    AuthorityUnavailable => "authority_unavailable",
+});
 states!(PermissionState {
     Pending => "pending",
     Resolved => "resolved",
@@ -184,6 +188,9 @@ pub struct AgentSessionRecord {
     pub admission_generation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_limit_reason: Option<String>,
+    /// Only an explicit allowance rejection supports an upgrade prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_limit_code: Option<TurnLimitCode>,
     pub last_event_seq: AgentSequence,
     /// Latest terminal turn event; absent until a turn finishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
