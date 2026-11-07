@@ -9,7 +9,9 @@ export function electronUpdateDriver(updater: AppUpdater, channel = "latest"): U
   // Setting channel enables downgrade internally, so set this afterwards.
   updater.allowDowngrade = false
   updater.disableWebInstaller = true
-  updater.disableDifferentialDownload = true
+  // The published blockmap lets Windows reuse unchanged installer blocks; electron-updater
+  // falls back to a full download when a differential download cannot be applied.
+  updater.disableDifferentialDownload = false
   let installFailed: ((error: Error) => void) | undefined
   updater.on("error", (error: Error) => {
     console.error("Application update failed", error)
