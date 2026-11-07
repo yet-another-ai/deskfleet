@@ -55,6 +55,7 @@ pub struct Peer {
     pc: Arc<dyn PeerConnection>,
     video: Option<Arc<SampleTrack>>,
     audio: Option<Arc<SampleTrack>>,
+    audio_enabled: AtomicBool,
     video_codec: Option<VideoCodec>,
     receiving_video: bool,
     video_receiver: StdMutex<Option<VideoReceiver>>,
@@ -187,6 +188,7 @@ impl Peer {
             pc,
             video: None,
             audio: None,
+            audio_enabled: AtomicBool::new(true),
             video_codec: config.video,
             receiving_video,
             video_receiver: StdMutex::new(video_receiver),
@@ -275,6 +277,17 @@ impl Peer {
 
     pub fn has_audio(&self) -> bool {
         self.audio.is_some()
+    }
+
+    /// Keep the negotiated track while switching this viewer's audio delivery.
+    /// Shared capture and the other viewers' audio are unaffected.
+    pub fn set_audio_enabled(&self, enabled: bool) -> Result<()> {
+        self.ensure_open()?;
+        if enabled && self.audio.is_none() {
+            return Err(PeerError::MissingTrack("audio"));
+        }
+        self.audio_enabled.store(enabled, Ordering::Relaxed);
+        Ok(())
     }
 
     /// True as soon as explicit shutdown begins.
@@ -465,6 +478,18 @@ impl Peer {
 
     /// Send one Opus packet, with the duration of the encoded PCM frames.
     pub async fn write_audio(&self, data: Bytes, duration: Duration) -> Result<()> {
+        if !self.audio_enabled.load(Ordering::Relaxed) {
+            self.ensure_open()?;
+            let track = self
+                .audio
+                .as_ref()
+                .ok_or(PeerError::MissingTrack("audio"))?;
+            if data.is_empty() || duration.is_zero() {
+                return Err(PeerError::InvalidSample);
+            }
+            track.skip_sample(duration).await;
+            return Ok(());
+        }
         self.write_sample(self.audio.as_deref(), "audio", data, duration, None)
             .await
     }

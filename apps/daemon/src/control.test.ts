@@ -115,7 +115,8 @@ function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Prom
   const queued: PeerEvent[] = [{ kind: "dataChannelOpen", label: "deskfleet-input" }]
   let waiting: ((event: PeerEvent | null) => void) | undefined
   let active = false, closeCalls = 0, startCalls = 0
-  const input: string[] = []
+  const input: string[] = [], output: string[] = []
+  const settings: { audio?: boolean; control?: boolean }[] = []
   const push = (event: PeerEvent) => {
     if (waiting) { const resolve = waiting; waiting = undefined; resolve(event) }
     else queued.push(event)
@@ -130,8 +131,10 @@ function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Prom
           active = true; started.resolve(); await options.start?.()
         },
         takeMediaFailure: () => options.failure?.() ?? null,
-        sendText: async () => { await options.ready?.() },
+        sendText: async (_label: string, text: string) => { await options.ready?.(); output.push(text) },
         sendDesktopInput: async (text: string) => { input.push(text) },
+        setDesktopAudio: async (audio: boolean) => { settings.push({ audio }) },
+        setDesktopControl: async (control: boolean) => { settings.push({ control }) },
         nextEvent: async () => {
           const event = queued.shift()
           if (event) return event
@@ -146,7 +149,7 @@ function desktopPeers(options: { start?: () => Promise<void>; ready?: () => Prom
       finally { active = false; waiting?.(null) }
     },
   }
-  return { service, push, input, opened: opened.promise, started: started.promise, closing: closing.promise, active: () => active, closeCalls: () => closeCalls, startCalls: () => startCalls }
+  return { service, push, input, output, settings, opened: opened.promise, started: started.promise, closing: closing.promise, active: () => active, closeCalls: () => closeCalls, startCalls: () => startCalls }
 }
 
 const capabilities = async () => ({ displays: [{ id: 4, width: 1280, height: 720, refreshRateHz: 60, codecs: ["h264" as const] }], audio: false })
@@ -543,6 +546,35 @@ test("duplicate local desktop starts preserve the running capture and input cont
   assert.deepEqual(fake.input, [input])
   await client.call("close", { sessionId: offer.sessionId })
   assert.equal(fake.active(), false)
+})
+
+test("local desktop settings change on the live channel without restarting capture", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-live-settings-"))
+  const fake = desktopPeers({ close: async () => {} })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+  await starting
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await fake.opened
+  await client.call("start", { sessionId: offer.sessionId, displayId: 4, control: false })
+  const send = (value: object) => fake.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from(JSON.stringify(value)) })
+  send({ type: "configure", requestId: 1, audio: false, control: true })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(fake.output.at(-1)!), { type: "configured", requestId: 1, control: true })
+  send({ type: "key", code: "KeyA", pressed: true })
+  send({ type: "configure", requestId: 2, audio: false, control: false })
+  send({ type: "key", code: "KeyA", pressed: false })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(JSON.parse(fake.output.at(-1)!), { type: "configured", requestId: 2, control: false })
+  assert.deepEqual(fake.settings, [{ audio: false }, { control: true }, { audio: false }, { control: false }])
+  assert.deepEqual(fake.input, ['{"type":"key","code":"KeyA","pressed":true}'])
+  assert.equal(fake.startCalls(), 1)
+  assert.equal(fake.closeCalls(), 0)
+  assert.equal(fake.active(), true)
 })
 
 for (const primaryEncoder of [true, false]) {

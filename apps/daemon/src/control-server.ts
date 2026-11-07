@@ -336,9 +336,12 @@ class ControlConnection {
         this.#sessions.set(sessionId, owned)
         try {
           const peer = await owned.peer
-          if (request.method === "offer") owned.input = new DesktopInputChannel(peer, () => {
-            if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
-          })
+          if (request.method === "offer") {
+            const authorize = () => {
+              if (this.#sessions.get(sessionId) !== owned || this.#closing) throw new Error("Desktop session is closed")
+            }
+            owned.input = new DesktopInputChannel(peer, authorize, authorize)
+          }
           if (request.method === "terminalOffer") {
             owned.terminal = new TerminalChannel(
               this.#terminals,
@@ -384,7 +387,7 @@ class ControlConnection {
             ...(maxWidth === undefined ? {} : { maxWidth, maxHeight }),
             ...(control === undefined ? {} : { control }) })
           assertLive()
-          if (control) await owned.input!.enable()
+          await owned.input!.started(control === true)
           assertLive()
           owned.desktopStart = "started"
         } catch (error) {

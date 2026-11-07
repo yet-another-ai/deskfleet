@@ -156,8 +156,13 @@ impl From<rtc::PeerEvent> for PeerEvent {
 #[napi]
 pub struct NativePeer {
     peer: Arc<rtc::Peer>,
-    desktop: Mutex<Option<DesktopStream>>,
+    desktop: Mutex<Option<DesktopSession>>,
     input: Mutex<Option<InputWorker>>,
+}
+
+struct DesktopSession {
+    stream: DesktopStream,
+    display_id: u32,
 }
 
 /// Create a transport without accessing a display or initializing an encoder.
@@ -318,6 +323,7 @@ impl NativePeer {
         if desktop.is_some() {
             return Err(native_error("desktop stream is already started"));
         }
+        let display_id = config.display_id;
         let input = if config.control.unwrap_or(false) {
             Some(
                 InputWorker::start(config.display_id)
@@ -344,9 +350,42 @@ impl NativePeer {
                 return Err(native_error(error));
             }
         };
-        *desktop = Some(stream);
+        *desktop = Some(DesktopSession { stream, display_id });
         *self.input.lock().await = input;
         Ok(())
+    }
+
+    /// Toggle control of the streaming display after checking the peer's grant.
+    #[napi]
+    pub async fn set_desktop_control(&self, enabled: bool) -> Result<()> {
+        // Serialize with capture startup and shutdown so a late enable cannot
+        // leave an input worker alive after its stream has closed.
+        let desktop = self.desktop.lock().await;
+        let desktop = desktop
+            .as_ref()
+            .ok_or_else(|| native_error("desktop stream is not started"))?;
+        if self.peer.is_closed() {
+            return Err(native_error("peer is closed"));
+        }
+        let mut input = self.input.lock().await;
+        if enabled {
+            if input.is_none() {
+                *input = Some(
+                    InputWorker::start(desktop.display_id)
+                        .await
+                        .map_err(native_error)?,
+                );
+            }
+        } else if let Some(worker) = input.take() {
+            worker.stop().await.map_err(native_error)?;
+        }
+        Ok(())
+    }
+
+    /// Toggle this peer's negotiated audio without changing shared capture.
+    #[napi]
+    pub fn set_desktop_audio(&self, enabled: bool) -> Result<()> {
+        self.peer.set_audio_enabled(enabled).map_err(native_error)
     }
 
     /// Apply a desktop DataChannel message after the daemon checks its control grant.
@@ -372,8 +411,8 @@ impl NativePeer {
             Some(input) => input.stop().await.map_err(native_error),
             None => Ok(()),
         };
-        if let Some(stream) = desktop.take() {
-            stream.stop().await.map_err(native_error)?;
+        if let Some(desktop) = desktop.take() {
+            desktop.stream.stop().await.map_err(native_error)?;
         }
         input
     }
@@ -387,7 +426,7 @@ impl NativePeer {
             None => Ok(()),
         };
         let media = match desktop.take() {
-            Some(stream) => stream.stop().await.map_err(native_error),
+            Some(desktop) => desktop.stream.stop().await.map_err(native_error),
             None => Ok(()),
         };
         let transport = self.peer.close().await.map_err(native_error);

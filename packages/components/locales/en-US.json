@@ -820,7 +820,7 @@
     "disconnect": "Disconnect",
     "retry": "Refresh displays",
     "settings": "Stream settings",
-    "settingsLocked": "Disconnect to change these settings.",
+    "settingsFailed": "Could not apply desktop settings",
     "moveControls": "Move controls",
     "display": "Display",
     "displayOption": "Display {id} · {width} × {height}",

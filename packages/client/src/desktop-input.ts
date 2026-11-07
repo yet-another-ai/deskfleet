@@ -1,3 +1,5 @@
+import type { DesktopErrorReason } from "./desktop-media.ts"
+
 /** Desktop input travels over the desktop peer's reliable, ordered DataChannel. */
 export const DESKTOP_INPUT_CHANNEL = "deskfleet-input"
 
@@ -16,4 +18,16 @@ export type DesktopInputMessage =
   | { type: "secureAttention" }
   | { type: "releaseAll" }
 
-export type DesktopInputReply = { type: "ready" } | { type: "error"; error: string }
+/** Live settings share the ordered channel so disabling control follows held-key releases. */
+export interface DesktopSettingsMessage {
+  type: "configure"
+  requestId: number
+  audio: boolean
+  control: boolean
+}
+
+export type DesktopInputReply =
+  | { type: "ready" }
+  | { type: "error"; error: string }
+  | { type: "configured"; requestId: number; control: boolean }
+  | { type: "configurationError"; requestId: number; control: boolean; error: string; reason?: DesktopErrorReason }

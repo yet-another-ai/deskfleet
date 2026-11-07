@@ -285,6 +285,101 @@ async fn headless_peers_exchange_binary_and_text_then_close() {
 }
 
 #[tokio::test]
+async fn audio_can_mute_and_resume_on_the_same_track_with_elapsed_rtp_time() {
+    use webrtc::media_stream::track_remote::TrackRemoteEvent;
+
+    let config = PeerConfig {
+        audio: true,
+        ..Default::default()
+    };
+    let sender = Peer::new(config.clone()).await.unwrap();
+    let viewer = Peer::new(config).await.unwrap();
+    connect(&sender, &viewer).await;
+    let opus = Bytes::from_static(&[0xf8, 0xff, 0xfe]);
+    let duration = Duration::from_millis(20);
+    sender.write_audio(opus.clone(), duration).await.unwrap();
+    let track = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(receiver) = viewer.pc.get_receivers().await.first() {
+                break Arc::clone(receiver.track());
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("first audio packet should create its remote track");
+    let next_packet = || async {
+        loop {
+            if let Some(TrackRemoteEvent::OnRtpPacket(packet)) = track.poll().await {
+                break packet;
+            }
+        }
+    };
+    let first = tokio::time::timeout(Duration::from_secs(5), next_packet())
+        .await
+        .unwrap();
+
+    sender.set_audio_enabled(false).unwrap();
+    for _ in 0..3 {
+        sender.write_audio(opus.clone(), duration).await.unwrap();
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), next_packet())
+            .await
+            .is_err(),
+        "muted samples must not reach the remote track"
+    );
+    // The DataChannel and transport stay available throughout the mute.
+    sender
+        .send_text("operations", "still connected")
+        .await
+        .unwrap();
+    assert_eq!(next_data(&viewer).await.1.as_ref(), b"still connected");
+
+    sender.set_audio_enabled(true).unwrap();
+    sender.write_audio(opus.clone(), duration).await.unwrap();
+    let resumed = tokio::time::timeout(Duration::from_secs(5), next_packet())
+        .await
+        .unwrap();
+    assert_eq!(resumed.payload, opus);
+    assert_eq!(resumed.header.ssrc, first.header.ssrc);
+    assert_eq!(
+        resumed
+            .header
+            .timestamp
+            .wrapping_sub(first.header.timestamp),
+        4 * 960,
+        "the 48 kHz clock must include all three muted 20 ms samples"
+    );
+    assert_eq!(
+        resumed
+            .header
+            .sequence_number
+            .wrapping_sub(first.header.sequence_number),
+        1,
+        "muting must not appear as packet loss"
+    );
+    let (sender_closed, viewer_closed) = tokio::join!(sender.close(), viewer.close());
+    sender_closed.unwrap();
+    viewer_closed.unwrap();
+}
+
+#[tokio::test]
+async fn enabling_audio_requires_a_negotiated_track_and_an_open_peer() {
+    let peer = Peer::new(PeerConfig::default()).await.unwrap();
+    peer.set_audio_enabled(false).unwrap();
+    assert!(matches!(
+        peer.set_audio_enabled(true),
+        Err(PeerError::MissingTrack("audio"))
+    ));
+    peer.close().await.unwrap();
+    assert!(matches!(
+        peer.set_audio_enabled(false),
+        Err(PeerError::Closed)
+    ));
+}
+
+#[tokio::test]
 async fn media_tracks_send_h265_and_opus_without_capture() {
     use webrtc::media_stream::track_remote::TrackRemoteEvent;
     let config = PeerConfig {

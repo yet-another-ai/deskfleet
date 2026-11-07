@@ -13,13 +13,24 @@ export class TestInputChannel {
   readyState: RTCDataChannelState = "connecting"
   bufferedAmount = 0
   onmessage: ((event: { data: string }) => void) | null = null
+  onopen: (() => void) | null = null
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
   send = vi.fn((_message: string) => {})
   close = vi.fn(() => { this.readyState = "closed" })
-  ready(): void {
+  open(): void {
     this.readyState = "open"
+    this.onopen?.()
+  }
+  ready(): void {
+    this.open()
     this.onmessage?.({ data: JSON.stringify({ type: "ready" }) })
+  }
+  configured(requestId: number, control: boolean): void {
+    this.onmessage?.({ data: JSON.stringify({ type: "configured", requestId, control }) })
+  }
+  configurationError(requestId: number, control: boolean, error: string, reason?: string): void {
+    this.onmessage?.({ data: JSON.stringify({ type: "configurationError", requestId, control, error, reason }) })
   }
 }
 

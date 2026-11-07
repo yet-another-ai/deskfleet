@@ -117,6 +117,15 @@ impl SampleTrack {
         }
         Ok(())
     }
+
+    /// Muting suppresses packets while preserving their place in the RTP clock.
+    pub(super) async fn skip_sample(&self, duration: Duration) {
+        let mut packetizer = self.packetizer.lock().await;
+        let advance = packetizer
+            .clock
+            .advance(None, duration, self.codec.clock_rate);
+        packetizer.inner.skip_samples(advance);
+    }
 }
 
 struct SamplePacketizer {
