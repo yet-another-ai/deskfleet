@@ -190,6 +190,51 @@ test("desktop streaming grant alone cannot enable or send control", async contex
   assert.deepEqual(f.input, [])
 })
 
+for (const audio of [false, true]) {
+  test(`desktop startup sets initial audio delivery to ${audio} before capture`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const operations: unknown[] = []
+    f.native.setDesktopAudio = enabled => { operations.push({ audio: enabled }) }
+    f.native.startDesktop = async options => { operations.push({ capture: options }) }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [], options: { audio: true } })
+    await f.peers.start("peer", { displayId: 7, audio })
+    assert.deepEqual(operations, [{ audio }, { capture: { displayId: 7 } }])
+    assert.equal(f.closeCalls(), 0)
+  })
+}
+
+test("a streaming-only grant can change audio but denied control keeps the same desktop peer", { timeout: 5_000 }, async context => {
+  const f = fixture(); context.after(() => f.peers.closeAll())
+  const audio: boolean[] = [], control: boolean[] = []
+  f.native.setDesktopAudio = async enabled => { audio.push(enabled) }
+  f.native.setDesktopControl = async enabled => { control.push(enabled) }
+  let reply!: (text: string) => void
+  const sendText = f.native.sendText.bind(f.native)
+  f.native.sendText = async (label, text) => { await sendText(label, text); reply(text) }
+  const configure = async (requestId: number, audio: boolean, control: boolean) => {
+    const response = new Promise<string>(resolve => { reply = resolve })
+    f.push({ kind: "data", label: "deskfleet-input", isString: true, data: Buffer.from(JSON.stringify({ type: "configure", requestId, audio, control })) })
+    return JSON.parse(await response)
+  }
+  await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [] })
+  f.push({ kind: "dataChannelOpen", label: "deskfleet-input" })
+  await f.peers.start("peer", { displayId: 7, control: false })
+  assert.deepEqual(await configure(1, true, false), { type: "configured", requestId: 1, control: false })
+  const denied = await configure(2, false, true)
+  assert.equal(denied.type, "configurationError")
+  assert.equal(denied.requestId, 2)
+  assert.equal(denied.control, false)
+  assert.match(denied.error, /does not allow/)
+  assert.deepEqual(audio, [true])
+  assert.deepEqual(control, [false])
+  assert.deepEqual(await configure(3, false, false), { type: "configured", requestId: 3, control: false })
+  assert.deepEqual(audio, [true, false])
+  assert.deepEqual(f.negotiation, ["create", "answer"])
+  assert.equal(f.starts.length, 1)
+  assert.equal(f.closeCalls(), 0)
+  assert.deepEqual(f.input, [])
+})
+
 test("desktop control binds the capture display and expires before further input", async context => {
   const f = fixture(); context.after(() => f.peers.closeAll())
   await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream", "desktop:control"] }, iceServers: [] })

@@ -27,7 +27,7 @@ const props = withDefaults(defineProps<{ machineId: string; visible?: boolean; i
 const { t } = useI18n()
 const fleet = useFleetStore()
 const connection = useDesktopConnection(platformClient.desktop)
-const { state, failure, stream, codec: activeCodec } = connection
+const { state, failure, settingsFailure, stream, codec: activeCodec } = connection
 const machine = computed(() => fleet.findMachine(props.machineId))
 const local = computed(() => props.machineId === fleet.targetId)
 const capabilities = shallowRef<DesktopCapabilities | null>(null)
@@ -36,8 +36,8 @@ const discoveryError = shallowRef<unknown>(null)
 const nativeError = shallowRef<unknown>(null)
 const nativeOpening = ref(false)
 const displayId = ref<number | null>(null)
-const audio = ref(false)
-const control = ref(false)
+const audio = ref(true)
+const control = ref(true)
 const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
 const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
@@ -85,7 +85,6 @@ async function refresh(): Promise<void> {
     if (generation !== discoveryGeneration || !local.value) return
     capabilities.value = available
     displayId.value = available.displays.find(display => display.id === props.initialDisplayId)?.id ?? available.displays[0]?.id ?? null
-    if (!available.audio) audio.value = false
   } catch (error) {
     if (generation === discoveryGeneration) {
       discoveryError.value = error
@@ -119,7 +118,7 @@ useConnectionResume(() => {
   if (!["connection", "timeout"].includes(reason.kind) || reason.relayDeniedReason) return
   connect()
 })
-// Encoder fallback clears the stream while the next peer connects. Stay in fullscreen through that gap.
+// Automatic peer replacement clears the stream briefly. Stay in fullscreen through that gap.
 watch([() => props.visible, stream, isFullscreen, state], ([visible, media, , connectionState]) => {
   const recovering = !media && (connectionState === "connecting" || connectionState === "starting")
   if (!visible || (!media && !recovering)) void exitFullscreen()
@@ -150,11 +149,21 @@ watch([video, stream], ([element, media]) => {
   }
 }, { flush: "post" })
 
+watch([displayId, audio, control], ([, , controls], [, , previousControls]) => {
+  if (controls !== previousControls) controlPaused.value = false
+  applySettings()
+})
+
+function applySettings(): void {
+  if (!active.value || !props.visible || !local.value || loading.value || displayId.value === null) return
+  void connection.reconfigure({ displayId: displayId.value, codecs: codecs.value, audio: audio.value && capabilities.value?.audio === true, audioAvailable: capabilities.value?.audio === true, liveSettings: true, control: control.value })
+}
+
 function connect(): void {
   if (!canConnect.value || displayId.value === null || codecs.value.length === 0) return
   nativeError.value = null
   controlPaused.value = false
-  void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value, control: control.value })
+  void connection.connect({ displayId: displayId.value, codecs: codecs.value, audio: audio.value && capabilities.value?.audio === true, audioAvailable: capabilities.value?.audio === true, liveSettings: true, control: control.value })
 }
 
 function connectWithoutControl(): void {
@@ -250,7 +259,7 @@ const errorDescription = computed(() => {
         :tabindex="inputEnabled ? 0 : -1"
         :title="inputEnabled ? t('desktop.controlHint') : undefined"
         :aria-label="t('desktop.video')"
-        :muted="!audio"
+        :muted="!audio || !capabilities?.audio"
         autoplay
         playsinline
       />
@@ -315,20 +324,22 @@ const errorDescription = computed(() => {
         <!-- Stay inside the fullscreen stage, including nested select portals. -->
         <PopoverPortal :to="stage ?? undefined">
         <PopoverContent :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
+          <ErrorNotice v-if="settingsFailure" :title="t('desktop.settingsFailed')" :error="settingsFailure.error ?? settingsFailure.detail">
+            <UiButton size="sm" @click="applySettings">{{ t("errors.retry") }}</UiButton>
+          </ErrorNotice>
           <label v-if="capabilities?.displays.length" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
             {{ t("desktop.display") }}
-            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map(display => ({ value: String(display.id), label: t('desktop.displayOption', { id: display.id, width: display.width, height: display.height }) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" :disabled="active" @update:model-value="displayId = Number($event)" />
+            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map(display => ({ value: String(display.id), label: t('desktop.displayOption', { id: display.id, width: display.width, height: display.height }) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
           </label>
           <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
-            <UiCheckbox v-model="audio" :disabled="active" />
+            <UiCheckbox v-model="audio" data-desktop-audio />
             {{ t("desktop.audio") }}
           </label>
           <label class="flex items-center gap-2 text-[13px]">
-            <UiCheckbox v-model="control" data-desktop-control :disabled="active" />
+            <UiCheckbox v-model="control" data-desktop-control />
             {{ t("desktop.control") }}
           </label>
-          <p v-if="active" class="m-0 text-xs text-ui-text-muted">{{ t("desktop.settingsLocked") }}</p>
         </PopoverContent>
         </PopoverPortal>
       </div>

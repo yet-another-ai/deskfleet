@@ -1223,7 +1223,8 @@ catalogs. Inactive or hidden tabs and paused previews stop their streams; closin
 the Session releases its adapters. Changing Sessions resets the scope. The compact
 Session view exposes the same panel and only streams while it is selected.
 Opening a preview selects that machine and display in Remote control, where
-the full desktop connects and input control remains an explicit choice.
+the full desktop connects with mouse/keyboard control and supported system audio
+enabled by default. Viewers can change these settings while connected.
 Tools mount when first visited and retain their connections while switching tabs.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, and machine details from

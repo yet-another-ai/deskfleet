@@ -465,10 +465,27 @@ Offline machines, unavailable capture, and individual connection failures remain
 visible in the panel. Pausing, selecting another tab, or hiding the page closes
 its preview peers; returning resumes them. Leaving the Session disposes its
 machine adapters. Changing Sessions restores the Session-machine scope. Selecting
-a preview opens that display in the normal viewer without preview limits. Input
-control still requires the viewer's explicit control selection.
-Codec and audio are chosen when creating the peer. Stop the stream before
-restarting with changed desktop settings; create a new peer to change codecs.
+a preview opens that display in the normal viewer without preview limits, with
+mouse/keyboard control and supported system audio enabled by default.
+Display, system audio, and control settings remain editable while connecting or
+streaming. Full viewers negotiate supported audio and a settings/input channel
+when connecting. Audio and control changes use that existing channel without
+replacing the peer or interrupting video. Capture startup snapshots the latest
+audio and control settings after negotiation; initial audio delivery is set
+before capture starts, including when the negotiated audio track starts muted.
+Audio off mutes local playback and
+stops audio delivery to that peer; the negotiated track and shared capture remain
+available for immediate resumption. Disabling control stops the input worker and
+releases held input; enabling it creates a worker for the current display after
+checking the peer's control grant.
+Changing displays automatically closes the previous peer and negotiates a
+replacement, waiting for cleanup to release input ownership. An incompatible
+display reports a settings error while keeping the current stream; selecting a
+compatible display can still switch automatically. That selection error remains
+visible until a valid selection or disconnect; replies and codec fallback for
+the current stream cannot dismiss it. Disconnecting or
+leaving the viewer cancels pending changes. Fullscreen and an intentional control
+pause survive display changes; explicitly changing control clears that pause.
 
 ## Daemon integration
 
@@ -496,7 +513,8 @@ Electron client and open **Remote control → Desktop**. Refresh capabilities if
 choose a display, then connect. The viewer selects AV1, then HEVC, then H.264
 from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
-needs Screen Recording permission; system audio can be enabled explicitly.
+needs Screen Recording permission; supported system audio is enabled by default
+and can be switched off or on while connected.
 Windows supports NVENC video and the hardware H.264 fallback described above.
 Linux Wayland and X11 support the negotiated AV1, HEVC, or H.264 video and optional
 mouse/keyboard control. Wayland uses the local Portal grant; X11 uses access to
@@ -776,11 +794,14 @@ separate from the shallow presentation policy.
 
 ## Mouse and keyboard control
 
-Select **Mouse and keyboard control** before connecting to control the
-selected display. Viewing is the default. Click the video to focus keyboard
-input; the surrounding application keeps its normal keyboard behavior when the
-video is not focused. The toolbar can pause/resume input without stopping the
-video. Disconnect to change the control setting.
+**Mouse and keyboard control** is enabled by default for the selected display.
+Click the video to focus keyboard input; the surrounding application keeps its
+normal keyboard behavior when the video is not focused. The toolbar can
+pause/resume input without stopping the video. Changing the control setting
+while connected updates the current peer; disabling it releases held input.
+The daemon acknowledges each settings request on the ordered input channel and
+checks stream and control authorization separately. A rejected settings change
+reports an error without closing the video connection.
 
 The viewer sends JSON events on the reliable, ordered `deskfleet-input`
 DataChannel. `pointerMove` and `pointerButton` use normalized display coordinates

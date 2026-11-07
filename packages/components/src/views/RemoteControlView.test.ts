@@ -187,8 +187,6 @@ test.each([{ tab: 0, name: "Terminal" }, { tab: 2, name: "Files" }, { tab: 3, na
     await flushPromises()
     await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
     await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
-    await wrapper.get('[role="checkbox"]').trigger("click")
-    await wrapper.get("[data-desktop-control]").trigger("click")
     await wrapper.get('[aria-label="Stream settings"]').trigger("click"); await flushPromises()
     await connectButton(wrapper).trigger("click")
     await flushPromises()

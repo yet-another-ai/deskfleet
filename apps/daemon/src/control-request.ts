@@ -21,6 +21,7 @@ function uint(value: unknown, label: string, positive = false): void {
 
 function desktopOptions(params: Record<string, unknown>): void {
   uint(params.displayId, "display ID")
+  if (params.audio !== undefined && typeof params.audio !== "boolean") throw new Error("Invalid desktop audio setting")
   if (params.control !== undefined && typeof params.control !== "boolean") throw new Error("Invalid desktop control setting")
   if (params.fps !== undefined) uint(params.fps, "frame rate", true)
   if (params.bitrateBps !== undefined) uint(params.bitrateBps, "bitrate", true)
@@ -41,6 +42,7 @@ export function validateRelayedDesktopStart(value: unknown): Omit<DesktopStart, 
   const options = { displayId: params.displayId, fps: params.fps ?? undefined, bitrateBps: params.bitrateBps ?? undefined,
     ...(params.maxWidth == null ? {} : { maxWidth: params.maxWidth }),
     ...(params.maxHeight == null ? {} : { maxHeight: params.maxHeight }),
+    ...(params.audio === undefined || params.audio === null ? {} : { audio: params.audio }),
     ...(params.control === undefined || params.control === null ? {} : { control: params.control }) }
   desktopOptions(options)
   return options as Omit<DesktopStart, "sessionId">

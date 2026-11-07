@@ -208,7 +208,9 @@ export class AuthorizedPeers {
           }
         },
       })
-      if (purpose === "desktop") owned.input = new DesktopInputChannel(peer, () => { this.#live(params.peerId, "desktop:control") })
+      if (purpose === "desktop") owned.input = new DesktopInputChannel(peer,
+        () => { this.#live(params.peerId, "desktop:stream") },
+        () => { this.#live(params.peerId, "desktop:control") })
       if (purpose === "ports") {
         this.#live(params.peerId, "ports:forward")
         await peer.enablePortForwarding(Date.parse(owned.authorization.expiresAt))
@@ -371,9 +373,12 @@ export class AuthorizedPeers {
       // Keep the pool captured at admission even if this registration is rebound
       // while the peer negotiates. Clients cannot choose the sharing scope.
       const streams = owned.desktopStreams!
-      await native.startDesktop(options, streams.pool ??= createDesktopStreamPool())
+      const { audio, ...capture } = options
+      // Set delivery before capture can produce its first audio packet.
+      if (audio !== undefined) native.setDesktopAudio(audio)
+      await native.startDesktop(capture, streams.pool ??= createDesktopStreamPool())
       this.#live(id, "desktop:stream")
-      if (options.control) await owned.input!.enable()
+      await owned.input!.started(options.control === true)
       this.#live(id, "desktop:stream")
       owned.desktopStart = "started"
     } catch (error) {

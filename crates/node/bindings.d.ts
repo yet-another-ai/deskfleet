@@ -47,6 +47,10 @@ export declare class NativePeer {
   takeMediaFailure(): MediaFailure | null
   /** Capture and encode entirely in Rust; call only after authorizing desktop access. */
   startDesktop(config: DesktopConfig, pool?: DesktopStreamPool | undefined | null): Promise<void>
+  /** Toggle control of the streaming display after checking the peer's grant. */
+  setDesktopControl(enabled: boolean): Promise<void>
+  /** Toggle this peer's negotiated audio without changing shared capture. */
+  setDesktopAudio(enabled: boolean): void
   /** Apply a desktop DataChannel message after the daemon checks its control grant. */
   sendDesktopInput(message: string): Promise<void>
   stopDesktop(): Promise<void>
