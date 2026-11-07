@@ -88,6 +88,28 @@ occurrence counts; it retains individual user-action and unknown failures.
 Electron permits only the DSN's origin through its renderer Content Security Policy. The
 [error-reporting guide](error-reporting.md) owns configuration and collected data.
 
+All product-owned TypeScript JSON API calls use `packages/client/src/api-request.ts`,
+backed by Ky. Web/Electron account requests, daemon backend requests, and the
+loopback MCP gateway share timeout, retry, JSON decoding, and error normalization.
+The transport retains HTTP status, API error codes, supported recovery reasons,
+and bounded diagnostics; business callers decide how to present or act on them.
+Streaming MCP connections remain with the MCP SDK, binary assets use their
+resource transports, and the Rust backend's external HTTP clients use reqwest.
+
+GET/HEAD requests retry transient network failures, per-attempt timeouts, and
+HTTP 408/429/500/502/503/504 at most twice. Ky owns exponential backoff and
+`Retry-After` handling. Reads default to five seconds per attempt and fifteen
+seconds total, including waits and response decoding. Network configuration
+keeps its five-second total budget and also retries transient route 404s.
+Writes default to a single attempt with a 65-second deadline, allowing the
+backend's 60-second RPC/negotiation deadline to return a structured error.
+Operations with explicit shorter deadlines keep them. Retry eligibility does not
+change these timeout budgets. Admission writes opt into retries using their
+stable operation IDs and generations; generic RPC, MCP tools,
+authentication, checkout, and peer mutations are not automatically replayed.
+Catalog/history synchronization retains its own durable retry mechanism.
+Caller cancellation and daemon shutdown stop active requests and backoff waits.
+
 ### Multiple API instances
 
 API instances share one PostgreSQL database and the same public service origin.

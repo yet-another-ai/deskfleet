@@ -13,6 +13,7 @@ test("reports once at the browser API boundary, preserving private fields and sy
     const error = await client.teams().catch(error => error)
     expect(error).toBeInstanceOf(CentralRequestError)
     expect(error.diagnostics).toMatchObject({ transport: "browser_fetch", route: "/api/teams" })
+    expect(fetch).toHaveBeenCalledTimes(3)
     expect(report).toHaveBeenCalledExactlyOnceWith(error)
     unsubscribe()
   } finally { client.dispose() }

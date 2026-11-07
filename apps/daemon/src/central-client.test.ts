@@ -139,8 +139,9 @@ test("read and signaling RPCs do not republish catalogs; resource events still s
   const posts: string[] = []
   const published = new EventEmitter()
   context.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
-    posts.push(String(url))
-    published.emit(new URL(String(url)).pathname)
+    const address = url instanceof Request ? url.url : String(url)
+    posts.push(address)
+    published.emit(new URL(address).pathname)
     return Response.json({ lastEventSeq: "1" })
   })
   let catalogChanged = () => {}, providersChanged = () => {}, terminalsChanged = () => {}, schedulesChanged = () => {}
@@ -566,8 +567,9 @@ test("a late rejection of a retired token cannot revoke a re-enrolled Team", asy
   const credentials = { serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "old-token" }
   await writeFile(join(directory, "central.json"), JSON.stringify(credentials))
   context.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
-    if (String(input).endsWith("/api/daemon/entitlements")) return delayed
-    if (String(input).endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: { id: "machine", teamId: "team", originId: "origin", localMachineId: "local" } })
+    const address = input instanceof Request ? input.url : String(input)
+    if (address.endsWith("/api/daemon/entitlements")) return delayed
+    if (address.endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: { id: "machine", teamId: "team", originId: "origin", localMachineId: "local" } })
     return Response.json({ lastEventSeq: "0" })
   })
   const central = new CentralClient(directory, linkOperations(), {} as ControlPeers)
@@ -582,4 +584,72 @@ test("a late rejection of a retired token cannot revoke a re-enrolled Team", asy
   await rejection
   assert.equal(central.status().revoked, false)
   assert.equal(JSON.parse(await readFile(join(directory, "central.json"), "utf8")).token, "new-token")
+})
+
+async function httpClient(context: import("node:test").TestContext, request: typeof fetch) {
+  const directory = await mkdtemp(join(tmpdir(), "df-http-retry-"))
+  silentSockets(context)
+  context.mock.method(globalThis, "fetch", request)
+  await writeFile(join(directory, "central.json"), JSON.stringify({
+    serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "secret",
+  }))
+  const central = new CentralClient(directory, linkOperations(), {} as ControlPeers)
+  context.after(async () => { await central.close(); await rm(directory, { recursive: true, force: true }) })
+  await central.init()
+  return central
+}
+
+test("quota reads and idempotent admission writes retry transient failures with the same request", async context => {
+  for (const method of ["GET", "POST"] as const) {
+    await context.test(method, async context => {
+      const path = method === "GET" ? "/api/daemon/entitlements" : "/api/daemon/session-admissions"
+      const body = method === "POST" ? { operationId: "operation", kind: "create" } : undefined
+      const requests: { method: string; authorization: string | null; body: unknown }[] = []
+      const expected = method === "GET" ? { maxTurnsPerSession: 30 } : { admissionId: "operation", generation: "operation", status: "reserved", sessionId: null }
+      const central = await httpClient(context, async input => {
+        assert.ok(input instanceof Request)
+        if (!input.url.endsWith(path)) return Response.json({ lastEventSeq: "0" })
+        requests.push({ method: input.method, authorization: input.headers.get("authorization"), body: input.body ? await input.json() : undefined })
+        if (requests.length === 1) throw new TypeError("fetch failed", { cause: Object.assign(new Error("Connection reset"), { code: "ECONNRESET" }) })
+        if (requests.length === 2) return Response.json({ error: { message: "Temporarily unavailable" } }, { status: 503, headers: { "Retry-After": "0" } })
+        return Response.json(expected)
+      })
+      assert.deepEqual(await central.quotaRequest(method, path, body), expected)
+      assert.deepEqual(requests, Array.from({ length: 3 }, () => ({ method, authorization: "Bearer secret", body })))
+      assert.equal(central.status().revoked, false)
+    })
+  }
+})
+
+test("MCP calls, delegation checks, and final synchronization do not retry transient HTTP failures", async context => {
+  const requests: string[] = []
+  const central = await httpClient(context, async input => {
+    assert.ok(input instanceof Request)
+    requests.push(new URL(input.url).pathname)
+    return Response.json({ error: { message: "Temporarily unavailable" } }, { status: 503 })
+  })
+  await assert.rejects(central.remoteMcp({ userId: "user", deviceId: "device", sessionId: "session", operation: "machines", arguments: {} }), { status: 503, message: "Temporarily unavailable" })
+  await assert.rejects(central.authorizeDelegation({ kind: "user", userId: "user", deviceId: "device" }), { status: 503, message: "Temporarily unavailable" })
+  await central.close()
+  assert.deepEqual(requests, ["/api/daemon/mcp", "/api/daemon/authorize-delegation", "/api/daemon/catalog"])
+  assert.equal(central.status().revoked, false)
+})
+
+test("closing the daemon cancels a quota retry before another request is sent", async context => {
+  let started!: () => void
+  const firstRequest = new Promise<void>(resolve => { started = resolve })
+  let requests = 0
+  const central = await httpClient(context, async input => {
+    assert.ok(input instanceof Request)
+    if (!input.url.endsWith("/api/daemon/entitlements")) return Response.json({ lastEventSeq: "0" })
+    requests++
+    started()
+    return Response.json({ error: { message: "Temporarily unavailable" } }, { status: 503, headers: { "Retry-After": "1" } })
+  })
+  const pending = central.quotaRequest("GET", "/api/daemon/entitlements")
+  const rejection = assert.rejects(pending, { name: "AbortError" })
+  await firstRequest
+  await central.close()
+  await rejection
+  assert.equal(requests, 1)
 })

@@ -1683,6 +1683,7 @@
     "turnsLeft": "此 Session 已无剩余轮数 | 此 Session 剩余 1 / {limit} 轮 | 此 Session 剩余 {remaining} / {limit} 轮",
     "inheritedTurns": "其中 {count} 轮继承自来源 Session",
     "resumeHint": "待发送内容已保留，Team 升级后可重试。",
+    "retryHint": "待发送内容已保留，请稍后重试。",
     "upgradePlan": "升级套餐", "plansAndBilling": "套餐与账单",
     "viewPlans": "查看套餐",
     "manageGrant": "管理授权",

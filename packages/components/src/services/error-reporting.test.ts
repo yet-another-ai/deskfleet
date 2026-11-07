@@ -237,14 +237,18 @@ test("enriches an unhandled central rejection with the same operation identity",
 test("the Web adapter reports handled HTTP and decoding failures with bounded diagnostics", async () => {
   initializeErrorReporting("web")
   const fetch = vi.fn<typeof globalThis.fetch>()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "private-code", message: "private-response" } }), { status: 503 }))
-    .mockResolvedValueOnce(new Response("<html>private-response</html>"))
+    .mockImplementation(async () => new Response(JSON.stringify({ error: { code: "private-code", message: "private-response" } }), { status: 503 }))
   vi.stubGlobal("fetch", fetch)
   const adapter = await browserClient("https://fleet.example", captureCentralRequestError)
   try {
     await adapter.central!.teams().catch(() => {})
+    await flushSdk()
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(events()).toHaveLength(1)
+    fetch.mockImplementation(async () => new Response("<html>private-response</html>"))
     await adapter.central!.teams().catch(() => {})
     await flushSdk()
+    expect(fetch).toHaveBeenCalledTimes(4)
     expect(events()).toHaveLength(2)
     expect(events().map(event => event.exception?.values?.[0]?.value)).toEqual(["GET /api/teams — HTTP 503", "GET /api/teams — decode"])
     expect(events()[0]?.contexts?.central_request).toMatchObject({ transport: "browser_fetch", kind: "http", status: 503 })
@@ -298,13 +302,19 @@ test("background summaries reach the real SDK and user requests keep every occur
   initializeErrorReporting("web")
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(false)
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
-  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => { throw new TypeError("Failed to fetch") }))
+  const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("Failed to fetch"))
+  vi.stubGlobal("fetch", fetch)
   const adapter = await browserClient("https://fleet.example", captureCentralRequestError)
   const automatic = withCentralRequestTrigger(adapter.central!, "background")
   const user = withCentralRequestTrigger(automatic, "user")
   try {
-    for (let index = 0; index < 3; index++) await automatic.teams().catch(() => {})
+    for (let index = 0; index < 3; index++) {
+      const pending = automatic.teams().catch(() => {})
+      await vi.advanceTimersByTimeAsync(1_000)
+      await pending
+    }
     await flushSdk()
+    expect(fetch).toHaveBeenCalledTimes(9)
     expect(events()).toHaveLength(1)
     expect(events()[0]?.contexts?.central_request).toMatchObject({ trigger: "background", online: false, visibility: "hidden" })
     expect(events()[0]?.level).toBe("warning")
@@ -313,8 +323,13 @@ test("background summaries reach the real SDK and user requests keep every occur
     expect(events()).toHaveLength(2)
     expect(events()[1]?.contexts?.request_repetition).toEqual({ occurrences: 2, window_ms: 60_000, summary: true })
     expect(events()[1]?.fingerprint).toEqual(events()[0]?.fingerprint)
-    for (let index = 0; index < 2; index++) await user.teams().catch(() => {})
+    for (let index = 0; index < 2; index++) {
+      const pending = user.teams().catch(() => {})
+      await vi.advanceTimersByTimeAsync(1_000)
+      await pending
+    }
     await flushSdk()
+    expect(fetch).toHaveBeenCalledTimes(15)
     expect(events().filter(event => event.tags?.["central.trigger"] === "user")).toHaveLength(2)
   } finally { (adapter.central as HttpCentralClient).dispose() }
 })

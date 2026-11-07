@@ -1683,6 +1683,7 @@
     "turnsLeft": "No turns left in this Session | 1 turn left of {limit} in this Session | {remaining} turns left of {limit} in this Session",
     "inheritedTurns": "{count} carried over from the source Session",
     "resumeHint": "Queued input is kept. Retry it after the Team upgrades.",
+    "retryHint": "Queued input is kept. Please retry later.",
     "upgradePlan": "Upgrade plan", "plansAndBilling": "Plans & billing",
     "viewPlans": "View plans",
     "manageGrant": "Manage grant",

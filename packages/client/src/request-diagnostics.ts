@@ -114,7 +114,9 @@ export class HttpError extends CentralRequestError {
   readonly status: number
   readonly reason?: DesktopErrorReason
   readonly code?: string
-  constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string, diagnostics?: CentralRequestDiagnostics, options?: ErrorOptions) {
+  /** Local response metadata; excluded from the serialized diagnostic contract. */
+  readonly response?: Response
+  constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string, diagnostics?: CentralRequestDiagnostics, options?: ErrorOptions & { response?: Response }) {
     const apiErrorCode = typeof code === "string" && apiErrorCodes.has(code) ? code : undefined
     super(message, {
       ...(diagnostics ?? requestDiagnostics(undefined, { method: "unknown", path: "", elapsedMs: 0, kind: "http", status })),
@@ -124,6 +126,7 @@ export class HttpError extends CentralRequestError {
     this.status = status
     this.reason = reason
     this.code = code
+    this.response = options?.response
   }
 }
 

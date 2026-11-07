@@ -60,6 +60,7 @@ test("Free stops at 30 concurrent submissions, retains backlog without a loop, a
   const f = await setup(t); f.quotas.limit = 30
   await Promise.all(Array.from({ length: 32 }, (_, i) => f.submit(String(i))))
   const paused = await until(f.read, value => !!value.session.turnLimitReason)
+  assert.equal(paused.session.turnLimitCode, "turn_limit_reached")
   assert.equal(consumedTurns(paused), 30)
   assert.equal(f.provider.prompts, 30)
   assert.equal(paused.inputs.filter(input => input.state === "pending").length, 2)
@@ -74,6 +75,7 @@ test("Free stops at 30 concurrent submissions, retains backlog without a loop, a
   const resumed = await until(f.read, value => value.inputs.every(input => input.state === "delivered"))
   assert.equal(consumedTurns(resumed), 32)
   assert.equal(resumed.session.turnLimitReason, undefined)
+  assert.equal(resumed.session.turnLimitCode, undefined)
   await f.restart(); f.quotas.limit = 30
   await f.submit()
   assert.equal(consumedTurns(await until(f.read, value => !!value.session.turnLimitReason)), 32)
@@ -94,12 +96,51 @@ test("pre-dispatch failures do not consume, lost provider responses do, and offl
   f.provider.fail = false; f.quotas.available = false
   await f.submit("offline")
   const offline = await until(f.read, value => !!value.session.turnLimitReason)
+  assert.equal(offline.session.turnLimitCode, "authority_unavailable")
   assert.equal(consumedTurns(offline), 1)
   assert.equal(offline.inputs.at(-1)?.state, "pending")
   assert.equal(f.provider.prompts, 1)
   f.quotas.available = true
   await f.submit("online")
   assert.equal(consumedTurns(await until(f.read, value => value.inputs.at(-1)?.state === "delivered")), 3)
+})
+
+test("entitlement failures preserve unconsumed input for an explicit retry without reporting a plan limit", async t => {
+  for (const failure of ["timeout", "invalid response"] as const) {
+    await t.test(failure, async t => {
+      const f = await setup(t)
+      let recovered = false, checks = 0
+      const reason = failure === "timeout" ? "The operation was aborted due to timeout" : "Invalid Team turn allowance"
+      const authority = new CentralAgentQuotas(async () => {
+        checks++
+        if (recovered) return { maxTurnsPerSession: 30 }
+        if (failure === "timeout") throw new DOMException(reason, "TimeoutError")
+        return {}
+      })
+      f.quotas.turnLimit = () => authority.turnLimit()
+      await f.submit("Keep this input")
+      const paused = await until(f.read, value => !!value.session.turnLimitReason)
+      assert.equal(paused.session.turnLimitCode, "authority_unavailable")
+      assert.equal(paused.session.turnLimitReason, reason)
+      assert.equal(consumedTurns(paused), 0)
+      assert.equal(f.provider.prompts, 0)
+      const pending = paused.inputs[0]!
+      assert.equal(pending.state, "pending")
+      assert.equal(pending.error, reason)
+      assert.deepEqual(pending.content, [{ type: "text", text: "Keep this input" }])
+      await delay(100)
+      assert.equal(checks, 1, "an unavailable authority must not trigger a retry loop")
+      recovered = true
+      await f.sessions.handle("_deskfleet/input/retry", { sessionId: f.source.session.id, inputId: pending.id, operationId: randomUUID() }, f.sessions.actor())
+      const resumed = await until(f.read, value => value.inputs[0]?.state === "delivered")
+      assert.equal(consumedTurns(resumed), 1)
+      assert.equal(f.provider.prompts, 1)
+      assert.equal(checks, 2)
+      assert.equal(resumed.session.turnLimitCode, undefined)
+      assert.equal(resumed.session.turnLimitReason, undefined)
+      assert.deepEqual(resumed.inputs[0]!.content, pending.content)
+    })
+  }
 })
 
 test("Team capacity reserves before allocation, archive releases, restore reserves a new generation, and delete releases", async t => {

@@ -9,6 +9,11 @@
     "./tools": "./src/tools.ts",
     "./client": "./src/client.ts"
   },
-  "bin": { "deskfleet-mcp": "./src/main.ts" },
-  "dependencies": { "@modelcontextprotocol/sdk": "1.32.2" }
+  "bin": {
+    "deskfleet-mcp": "./src/main.ts"
+  },
+  "dependencies": {
+    "@deskfleet/client": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2"
+  }
 }

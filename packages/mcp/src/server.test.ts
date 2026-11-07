@@ -62,11 +62,28 @@ test("the bridge refuses non-loopback credential destinations and redirects", as
   for (const endpoint of ["https://example.com/mcp", "http://localhost:123/mcp", "http://127.0.0.1:123/other", "http://u:p@127.0.0.1:123/mcp"]) {
     assert.throws(() => gatewayInvoker(endpoint, "secret"))
   }
-  const invoke = gatewayInvoker("http://127.0.0.1:123/mcp", "secret", async (_url, options) => {
-    assert.equal(options?.redirect, "error")
-    return new Response(JSON.stringify({ error: "Access revoked" }), { status: 403 })
+  const invoke = gatewayInvoker("http://127.0.0.1:123/mcp", "secret", async input => {
+    assert.ok(input instanceof Request)
+    assert.equal(input.redirect, "error")
+    return Response.json({ error: "Access revoked" }, { status: 403 })
   })
   await assert.rejects(invoke("deskfleet_context", {}), /Access revoked/)
+})
+
+test("the gateway never repeats tool calls after a transport or server failure", async () => {
+  for (const failure of ["network", "server"] as const) {
+    let calls = 0
+    const invoke = gatewayInvoker("http://127.0.0.1:123/mcp", "secret", async input => {
+      calls++
+      assert.ok(input instanceof Request)
+      assert.equal(input.headers.get("authorization"), "Bearer secret")
+      assert.deepEqual(await input.json(), { name: "deskfleet_schedule_run", arguments: { scheduleId: "12" } })
+      if (failure === "network") throw new TypeError("fetch failed")
+      return Response.json({ error: "Temporarily unavailable" }, { status: 503 })
+    })
+    await assert.rejects(invoke("deskfleet_schedule_run", { scheduleId: "12" }), failure === "network" ? /fetch failed/ : /Temporarily unavailable/)
+    assert.equal(calls, 1)
+  }
 })
 
 test("remote tools are discoverable and retain the remote MCP result, including isError", async t => {

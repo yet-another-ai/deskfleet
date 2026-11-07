@@ -1,6 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { AgentSnapshot, TurnLimitCode } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
@@ -15,12 +15,12 @@ let session: AccountSession | undefined
 beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(async () => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; await router.replace("/") })
 
-async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string) {
+async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string, turnLimitCode?: TurnLimitCode) {
   const fake = fakeCentral()
   fake.central.billing.mockResolvedValue({ ...billingFixture(), plan: "free", limits: { maxActiveSessions: 3, maxTurnsPerSession, maxMembers: 3, turnBytes: 0 } })
   session = createAccountSession(fake.central)
   await flushPromises()
-  const snapshot = { session: { id: "30", inheritedTurnCount, turnLimitReason }, turns: Array.from({ length: consumed }, () => ({ consumed: true })) } as unknown as AgentSnapshot
+  const snapshot = { session: { id: "30", inheritedTurnCount, turnLimitReason, turnLimitCode }, turns: Array.from({ length: consumed }, () => ({ consumed: true })) } as unknown as AgentSnapshot
   view = mount(SessionAllowance, { props: { snapshot }, global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } } })
   await flushPromises()
   return { fake, snapshot }
@@ -44,23 +44,40 @@ test("the last few turns warn and link to the Team's plans", async () => {
 })
 
 test("a paused Session shows the daemon's reason and that queued input is kept", async () => {
-  await mountWith(30, 0, 30, "This Session has used its 30 Free turns.")
+  await mountWith(30, 0, 30, "This Session has used its 30 Free turns.", "turn_limit_reached")
   expect(view!.get('[role="status"]').text()).toContain("This Session has used its 30 Free turns.")
   expect(view!.text()).toContain("Queued input is kept.")
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["session_turn_allowance_viewed", { state: "blocked", used_turns: 30 }],
-    ["session_turn_allowance_viewed", { state: "reached", used_turns: 30, turn_limit: 30 }],
+    ["session_turn_allowance_viewed", { state: "reached", used_turns: 30 }],
   ])
   await view!.get("button").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.path).toBe("/team/settings/plans"))
   expect(trackEvent).toHaveBeenLastCalledWith("session_turn_plans_clicked", { source: "reached" })
 })
 
-test.each([30, null])("an authority failure with turn limit %s records blocked rather than exhausted", async limit => {
-  await mountWith(limit, 0, 1, "The entitlement service is unavailable")
+test.each([1, 30, null])("an authority failure with turn limit %s shows retry guidance without an upgrade", async limit => {
+  await mountWith(limit, 0, 1, "The operation was aborted due to timeout", "authority_unavailable")
+  expect(view!.get('[role="status"]').text()).toContain("The operation was aborted due to timeout")
+  expect(view!.text()).toContain("Queued input is kept. Please retry later.")
+  expect(view!.text()).not.toMatch(/upgrade|View plans/i)
+  expect(view!.find("button").exists()).toBe(false)
   expect(trackEvent).toHaveBeenCalledExactlyOnceWith("session_turn_allowance_viewed", { state: "blocked", used_turns: 1 })
-  await view!.get("button").trigger("click")
-  expect(trackEvent).toHaveBeenLastCalledWith("session_turn_plans_clicked", { source: "blocked" })
+})
+
+test("an unclassified admission error never implies an upgrade", async () => {
+  await mountWith(30, 0, 30, "The entitlement service is unavailable")
+  expect(view!.text()).toContain("Queued input is kept. Please retry later.")
+  expect(view!.find("button").exists()).toBe(false)
+  expect(trackEvent).toHaveBeenCalledExactlyOnceWith("session_turn_allowance_viewed", { state: "blocked", used_turns: 30 })
+})
+
+test("a confirmed limit offers plans even when the billing query fails", async () => {
+  const { fake } = await mountWith(30, 0, 30, "This Session has used its 30 Free turns.", "turn_limit_reached")
+  fake.central.billing.mockRejectedValue(new Error("Network unavailable"))
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(view!.text()).toContain("Retry it after the Team upgrades.")
+  expect(view!.get("button").text()).toBe("View plans")
 })
 
 test("turn warnings count each boundary once per Session across snapshots and focus refreshes", async () => {

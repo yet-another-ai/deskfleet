@@ -99,6 +99,11 @@ Unknown response codes are omitted. The code survives Electron IPC without
 exporting response bodies, and does not change existing issue fingerprints.
 A non-JSON HTTP error retains its HTTP status; malformed successful JSON is a
 decoding failure. Response-body connection failures retain their transport cause.
+The shared Ky transport normalizes failures only after its configured recovery
+attempts finish. Intermediate retries do not produce separate error reports.
+Ky network errors retain their original runtime cause; timeout messages omit the
+request URL. Local HTTP errors retain response headers for credential checks,
+but the Response object never enters the serialized diagnostic envelope.
 
 The main process returns a plain success/error envelope through Electron IPC and
 the preload context bridge. The renderer reconstructs the diagnostic Error,

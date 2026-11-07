@@ -61,7 +61,8 @@ async function fixture(context: TestContext, agentProvider?: AgentProvider) {
   context.mock.property(globalThis, "WebSocket", ControlSocket as unknown as typeof WebSocket)
   let identity = { originId: "", machineId: "" }
   context.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
-    if (String(input).endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: {
+    const url = input instanceof Request ? input.url : String(input)
+    if (url.endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: {
       id: "machine", teamId: "team", originId: identity.originId, localMachineId: identity.machineId,
     } })
     return Response.json({ lastEventSeq: "0" })
