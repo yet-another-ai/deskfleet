@@ -106,19 +106,22 @@ test("release publication verifies every generated package asset", () => {
 })
 
 test("builds installable deb and rpm packages from desktop archives", { skip: !buildable }, async context => {
+  const architecture = process.arch === "arm64" ? "arm64" : "x64"
+  const debArchitecture = architecture === "x64" ? "amd64" : "arm64"
+  const rpmArchitecture = architecture === "x64" ? "x86_64" : "aarch64"
   const directory = fixture(context)
-  const filename = archive(directory)
+  const filename = archive(directory, architecture)
   const output = join(directory, "release")
   const results = await packageLinuxRelease(directory, output, [filename])
   assert.deepEqual(results.map(result => result.file), [
-    "deskfleet-1.2.3-linux-amd64.deb",
-    "deskfleet-1.2.3-linux-x86_64.rpm",
+    linuxPackageFilename("1.2.3", "deb", architecture),
+    linuxPackageFilename("1.2.3", "rpm", architecture),
   ])
   assert.deepEqual(readdirSync(output).sort(), results.map(result => result.file).sort())
 
-  const deb = join(output, "deskfleet-1.2.3-linux-amd64.deb")
+  const deb = join(output, linuxPackageFilename("1.2.3", "deb", architecture))
   assert.equal(execFileSync("dpkg-deb", ["--field", deb, "Version"], { encoding: "utf8" }).trim(), "1.2.3")
-  assert.equal(execFileSync("dpkg-deb", ["--field", deb, "Architecture"], { encoding: "utf8" }).trim(), "amd64")
+  assert.equal(execFileSync("dpkg-deb", ["--field", deb, "Architecture"], { encoding: "utf8" }).trim(), debArchitecture)
   const contents = execFileSync("dpkg-deb", ["--contents", deb], { encoding: "utf8" })
   for (const member of [
     "./usr/bin/deskfleet",
@@ -133,8 +136,8 @@ test("builds installable deb and rpm packages from desktop archives", { skip: !b
   ]) assert.ok(contents.includes(member), member)
   assert.match(contents, /^-rwsr-xr-x .*\.\/usr\/lib\/deskfleet\/chrome-sandbox$/m)
 
-  const rpm = join(output, "deskfleet-1.2.3-linux-x86_64.rpm")
-  assert.equal(execFileSync("rpm", ["-qp", "--queryformat", "%{VERSION}|%{ARCH}", rpm], { encoding: "utf8" }), "1.2.3|x86_64")
+  const rpm = join(output, linuxPackageFilename("1.2.3", "rpm", architecture))
+  assert.equal(execFileSync("rpm", ["-qp", "--queryformat", "%{VERSION}|%{ARCH}", rpm], { encoding: "utf8" }), `1.2.3|${rpmArchitecture}`)
   const files = execFileSync("rpm", ["-qlp", rpm], { encoding: "utf8" })
   for (const member of [
     "/usr/bin/deskfleet",
@@ -146,13 +149,15 @@ test("builds installable deb and rpm packages from desktop archives", { skip: !b
 })
 
 test("builds a prerelease rpm with ordering-safe metadata", { skip: !buildable || !available("rpm") }, async context => {
+  const architecture = process.arch === "arm64" ? "arm64" : "x64"
+  const rpmArchitecture = architecture === "x64" ? "x86_64" : "aarch64"
   const directory = fixture(context, "1.2.3-rc.1")
-  const filename = archive(directory, "arm64", "1.2.3-rc.1")
+  const filename = archive(directory, architecture, "1.2.3-rc.1")
   const output = join(directory, "release")
   await packageLinuxRelease(directory, output, [filename], { formats: ["rpm"] })
-  const rpm = join(output, "deskfleet-1.2.3-rc.1-linux-aarch64.rpm")
-  assert.equal(execFileSync("rpm", ["-qp", "--queryformat", "%{VERSION}|%{ARCH}", rpm], { encoding: "utf8" }).split("|")[0],
-    "1.2.3~rc.1")
+  const rpm = join(output, linuxPackageFilename("1.2.3-rc.1", "rpm", architecture))
+  assert.equal(execFileSync("rpm", ["-qp", "--queryformat", "%{VERSION}|%{ARCH}", rpm], { encoding: "utf8" }),
+    `1.2.3~rc.1|${rpmArchitecture}`)
   assert.ok(existsSync(rpm))
 })
 
