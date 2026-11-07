@@ -517,8 +517,14 @@ and Web application. `nix/server.nix` uses Crane to build the selected server
 package with a separate Cargo dependency derivation. Its source filter keeps
 workspace metadata and the backend's actual sources, including embedded SQL.
 `nix/web.nix` fetches the filtered pnpm workspace dependencies with a fixed hash
-and builds the browser bundle offline. Toolchain versions follow `mise.toml` and
-the locked download metadata in `mise.lock`.
+and builds the browser bundle offline. That hash covers the root manifest,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/`, and the Web, component, and
+daemon package manifests; the classifier therefore treats them as packaging
+inputs. Toolchain versions follow `mise.toml` and the locked download metadata in
+`mise.lock`, which `nix/toolchain.nix` reads for the Node and pnpm builds, so the
+classifier includes those files too. Refresh the hash whenever a dependency or
+toolchain input changes, otherwise the image build stops at a fixed-output hash
+mismatch.
 
 `nix/server-image.nix` uses `dockerTools.buildLayeredImage` to include the runtime
 closure, CA certificates, interactive Bash, coreutils, and independent server

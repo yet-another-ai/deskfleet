@@ -100,11 +100,25 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     ".github/workflows/nix-server.yml",
     "flake.nix",
     "flake.lock",
+    // `nix/web.nix` hashes these pnpm dependency inputs.
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "patches/pi-acp@0.0.34.patch",
+    "apps/web/package.json",
+    "apps/daemon/package.json",
+    "packages/client/package.json",
+    "packages/components/package.json",
+    // `nix/toolchain.nix` reads the mise toolchain metadata.
+    "mise.toml",
+    "mise.lock",
   ]) assert.equal(isPackagingPath(file), true, file)
   for (const file of [
     "apps/desktop/src/main/index.ts",
     "apps/desktop/scripts/dev.ts",
     "apps/desktop/README.md",
+    "apps/web/src/App.vue",
+    "apps/web/README.md",
     "scripts/check.ts",
     ".github/workflows/ci.yml",
   ]) assert.equal(isPackagingPath(file), false, file)
@@ -158,6 +172,15 @@ test("classifies draft PRs and packaging-related changes", context => {
   const desktopPackaging = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: desktopPackaging } }
+  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+
+  // A dependency change that only updates the pnpm lockfile must still run the
+  // packaging build: the Nix Web derivation hashes that lockfile, and a stale
+  // hash fails only after the image build starts.
+  save("pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+  const lockfileSha = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: lockfileSha } }
   }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // Packaging change in Draft PR still skips release build until ready
