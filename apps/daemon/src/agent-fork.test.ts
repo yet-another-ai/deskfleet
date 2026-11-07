@@ -78,13 +78,26 @@ async function until(read: () => Promise<AgentSnapshot>, ready: (snapshot: Agent
   throw new Error("Agent state did not settle")
 }
 
+async function forkAfterTurn(fork: (operationId: ReturnType<typeof randomUUID>) => Promise<AgentSnapshot>) {
+  // A completed turn is persisted before runtime cleanup and its final backlog
+  // check finish. Rejected operation IDs keep their result, so each attempt is new.
+  for (let n = 0; n < 300; n++) {
+    const operationId = randomUUID()
+    try { return { snapshot: await fork(operationId), operationId } }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== "Wait for the current Agent operation before forking") throw error
+    }
+    await delay(10)
+  }
+  throw new Error("Agent remained busy after turn completion")
+}
+
 test("fork creates an independent conversation, history and owned context, and retries reuse it", async t => {
   const f = await setup(t)
   assert.equal(f.source.session.capabilities?.fork, true)
   await f.sessions.handle("_deskfleet/input/submit", { sessionId: f.source.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Remember this" }], delivery: "backlog" }, f.actor)
   const original = await until(() => f.sessions.journal.read(f.source.session.id), value => value.turns.at(-1)?.state === "completed")
-  const operationId = randomUUID()
-  const child = await f.fork("worktree", operationId)
+  const { snapshot: child, operationId } = await forkAfterTurn(operationId => f.fork("worktree", operationId))
   assert.equal(child.session.lifecycle, "ready")
   assert.notEqual(child.session.id, original.session.id)
   assert.notEqual(child.session.providerSessionId, original.session.providerSessionId)
@@ -104,7 +117,9 @@ test("fork creates an independent conversation, history and owned context, and r
   assert.equal(child.turns.length, 0)
   await f.sessions.handle("_deskfleet/input/submit", { sessionId: child.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Continue fork" }], delivery: "backlog" }, f.actor)
   await until(() => f.sessions.journal.read(child.session.id), value => value.turns.at(-1)?.state === "completed")
-  const grandchild = await f.sessions.handle("_deskfleet/session/fork", { sessionId: child.session.id, operationId: randomUUID(), context: "directory" }, f.actor) as AgentSnapshot
+  const { snapshot: grandchild } = await forkAfterTurn(operationId => f.sessions.handle("_deskfleet/session/fork", {
+    sessionId: child.session.id, operationId, context: "directory",
+  }, f.actor) as Promise<AgentSnapshot>)
   assert.equal(grandchild.session.inheritedTurnCount, 2, "fork-of-fork includes inherited and own dispatched turns")
   assert.ok(child.runs.at(-1)!.generation > original.runs.at(-1)!.generation)
   assert.equal((await f.fork("worktree", operationId)).session.id, child.session.id)
