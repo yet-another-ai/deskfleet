@@ -26,9 +26,10 @@ export default defineConfig({
     define: { __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false },
   },
   head: [
-    ["link", { rel: "icon", href: "/favicon.ico", sizes: "any" }],
-    ["link", { rel: "icon", href: "/favicon-32x32.png", type: "image/png", sizes: "32x32" }],
+    ["link", { rel: "icon", href: "/logo.svg", type: "image/svg+xml" }],
     ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+    ["link", { rel: "icon", href: "/favicon-32x32.png", type: "image/png", sizes: "32x32" }],
+    ["link", { rel: "alternate icon", href: "/favicon.ico" }],
     ["link", { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" }],
     ["meta", { name: "theme-color", content: "#17191f" }],
     ["meta", { property: "og:type", content: "website" }],
