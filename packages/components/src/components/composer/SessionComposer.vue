@@ -85,8 +85,8 @@ const availableMachines = computed(() => {
     ? list
     : [{ id: current.id, name: current.name, online: current.online, local: current.local }, ...list]
 })
-function selectMachine(machineId: string): void {
-  if (!machineId || machineId === props.location?.machine.id) return
+function selectMachine(machineId: unknown): void {
+  if (typeof machineId !== "string" || !machineId || machineId === props.location?.machine.id) return
   account?.selectMachine(machineId)
   emit("selectMachine", machineId)
 }
@@ -98,8 +98,8 @@ const availableWorkspaces = computed(() => {
   if (!workspace) return workspaces
   return workspaces.some(item => item.id === workspace.id) ? workspaces : [workspace, ...workspaces]
 })
-function selectWorkspace(workspaceId: string): void {
-  if (!workspaceId || workspaceId === props.location?.workspace?.id) return
+function selectWorkspace(workspaceId: unknown): void {
+  if (typeof workspaceId !== "string" || !workspaceId || workspaceId === props.location?.workspace?.id) return
   fleet.targetWorkspace(workspaceId)
   emit("selectWorkspace", workspaceId)
 }
