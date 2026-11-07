@@ -56,8 +56,8 @@ function edit(provider: AgentProviderConfig): void {
 async function save(provider: AgentProviderInput): Promise<void> {
   const initial = editor.value?.initial
   if (initial) {
-    const { name, binaryPath, env, icon } = provider
-    await platformClient.providers.update(initial.id, { name, binaryPath, env, icon })
+    const { name, binaryPath, env, icon, inheritShellEnvironment } = provider
+    await platformClient.providers.update(initial.id, { name, binaryPath, env, icon, ...(inheritShellEnvironment ? { inheritShellEnvironment } : {}) })
   } else await platformClient.providers.create(provider)
   await refresh()
 }

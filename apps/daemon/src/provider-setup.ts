@@ -6,6 +6,7 @@ import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
 import { dshAccountProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { providerEnvironment } from "./provider-environment.ts"
+import { loadShellEnvironment } from "./shell-environment.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
@@ -24,6 +25,7 @@ interface ProbeDependencies {
   run?: ProbeCommand
   executable?: (path: string) => Promise<boolean>
   timeoutMs?: number
+  shellEnvironment?: (signal?: AbortSignal) => Promise<Record<string, string>>
 }
 
 interface Context {
@@ -37,9 +39,13 @@ interface Context {
   executable: (path: string) => Promise<boolean>
 }
 
-function context(input: AgentProviderInput, dependencies: ProbeDependencies, signal?: AbortSignal): Context {
+async function context(input: AgentProviderInput, dependencies: ProbeDependencies, signal?: AbortSignal): Promise<Context> {
   const platform = dependencies.platform ?? process.platform
-  const env = Object.fromEntries([...Object.entries(dependencies.env ?? process.env), ...Object.entries(providerEnvironment(input, dependencies.directory, platform))]
+  const shellEnv = input.inheritShellEnvironment
+    ? await (dependencies.shellEnvironment ? dependencies.shellEnvironment(signal) : loadShellEnvironment(undefined, signal))
+    : {}
+  signal?.throwIfAborted()
+  const env = Object.fromEntries([...Object.entries(dependencies.env ?? process.env), ...Object.entries(shellEnv), ...Object.entries(providerEnvironment(input, dependencies.directory, platform))]
     .map(([key, value]) => [platform === "win32" ? key.toUpperCase() : key, value]))
   const path = platform === "win32" ? win32 : posix
   const home = dependencies.home ?? (platform === "win32" ? env.USERPROFILE : env.HOME) ?? homedir()
@@ -232,7 +238,7 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
 
 async function probe(input: AgentProviderInput, dependencies: ProbeDependencies, signal: AbortSignal): Promise<ProviderProbeResult> {
   const provider = providerInput(input)
-  const ctx = context(provider, dependencies, signal)
+  const ctx = await context(provider, dependencies, signal)
   const installation = await installer(provider.template, ctx)
   const base = {
     auth: "unknown" as const, installable: typeof installation !== "string", loginAvailable: false,
@@ -305,7 +311,7 @@ export class ProviderSetup {
 
   async install(input: AgentProviderInput): Promise<TerminalSummary> {
     const provider = providerInput(input)
-    const ctx = context(provider, this.#dependencies)
+    const ctx = await context(provider, this.#dependencies)
     const launch = await installer(provider.template, ctx)
     if (typeof launch === "string") throw new Error(launch)
     return this.#run({ ...launch, env: ctx.env, cwd: ctx.home }, `${provider.name} installation`)
@@ -315,7 +321,7 @@ export class ProviderSetup {
     const provider = providerInput(input)
     if (provider.template === "acp") throw new Error("Configure authentication through your custom ACP provider.")
     const result = await this.probe(provider)
-    const ctx = context(provider, this.#dependencies)
+    const ctx = await context(provider, this.#dependencies)
     if (provider.template === "deepseek-harness") {
       if (provider.binaryPath) throw new Error("Use the bundled DeepSeek Harness to sign in, or configure credentials for your external CLI.")
       if (result.status !== "found") throw new Error("The bundled DeepSeek runtime is unavailable. Reinstall DeskFleet before signing in.")

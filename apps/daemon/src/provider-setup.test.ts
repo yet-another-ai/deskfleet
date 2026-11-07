@@ -20,11 +20,13 @@ function fixture(options: {
   files?: string[]; platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv
   directory?: string
   answer?: ProbeCommand
+  shellEnvironment?: () => Promise<Record<string, string>>
 } = {}) {
   const calls: { command: string; args: string[]; env: NodeJS.ProcessEnv; cwd: string }[] = []
   const runs: TerminalRun[] = []
   const dependencies = {
     directory: options.directory,
+    shellEnvironment: options.shellEnvironment,
     platform: options.platform ?? "linux" as NodeJS.Platform,
     arch: "x64", env: options.env ?? { PATH: "/tools" }, home: options.platform === "win32" ? "C:\\Users\\someone" : "/home/someone", cwd: "/working",
     executable: async (path: string) => (options.files ?? []).includes(path),
@@ -63,6 +65,24 @@ test("probe resolves the merged PATH and reports only version and auth state", a
   assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["login", "status"]])
   assert.equal(f.calls[1]!.env.CODEX_HOME, "/account")
   assert.equal(f.calls[1]!.cwd, "/home/someone")
+})
+
+test("provider setup uses the shell environment with manual overrides for detection, login, and installation", async () => {
+  const f = fixture({ files: ["/shell/codex", "/bin/bash"],
+    shellEnvironment: async () => ({ PATH: "/shell", ACCOUNT: "shell", SHELL_ONLY: "present" }),
+    answer: async (_command, args) => args[0] === "--version" ? result("codex-cli 1.2.3") : result("Logged in using ChatGPT"),
+  })
+  const provider = input("codex", { inheritShellEnvironment: true, env: { ACCOUNT: "manual", EXTRA: "added" } })
+  assert.equal((await f.setup.probe(provider)).binaryPath, "/shell/codex")
+  assert.equal(f.calls[0]!.env.ACCOUNT, "manual")
+  assert.equal(f.calls[0]!.env.SHELL_ONLY, "present")
+  await f.setup.login(provider)
+  assert.equal(f.runs[0]!.env?.PATH, "/shell")
+  assert.equal(f.runs[0]!.env?.ACCOUNT, "manual")
+  assert.equal(f.runs[0]!.env?.EXTRA, "added")
+  await f.setup.install(provider)
+  assert.equal(f.runs[1]!.env?.PATH, "/shell")
+  assert.equal(f.runs[1]!.env?.ACCOUNT, "manual")
 })
 
 test("probe also finds an official user install outside the daemon PATH", async () => {

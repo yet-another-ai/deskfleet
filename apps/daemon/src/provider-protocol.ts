@@ -13,6 +13,8 @@ export interface AgentProviderSettings {
   /** Optional bundled icon slug; omission uses the template's default icon. */
   icon?: string
   binaryPath?: string
+  /** Load exported variables from the user's interactive login shell. */
+  inheritShellEnvironment?: boolean
   env: Record<string, string>
 }
 
@@ -88,7 +90,7 @@ export function validateProviderId(value: unknown): asserts value is string {
 /** Normalize blank binary paths to the template default at the execution boundary. */
 export function providerSettings(value: unknown): AgentProviderSettings {
   const settings = object(value)
-  if (Object.keys(settings).some(key => !["name", "icon", "binaryPath", "env"].includes(key))) {
+  if (Object.keys(settings).some(key => !["name", "icon", "binaryPath", "inheritShellEnvironment", "env"].includes(key))) {
     throw new Error("Only provider settings can be edited; the template is fixed")
   }
   if (typeof settings.name !== "string" || !settings.name.trim() || settings.name.length > 256 || settings.name.includes("\0")) {
@@ -100,6 +102,9 @@ export function providerSettings(value: unknown): AgentProviderSettings {
   if (settings.binaryPath !== undefined && (typeof settings.binaryPath !== "string" || settings.binaryPath.length > 4096 || settings.binaryPath.includes("\0"))) {
     throw new Error("Invalid provider binary path")
   }
+  if (settings.inheritShellEnvironment !== undefined && typeof settings.inheritShellEnvironment !== "boolean") {
+    throw new Error("Invalid shell environment setting")
+  }
   const env = object(settings.env)
   for (const [key, value] of Object.entries(env)) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)) throw new Error("Invalid environment variable name")
@@ -110,6 +115,7 @@ export function providerSettings(value: unknown): AgentProviderSettings {
     name: settings.name.trim(),
     ...(settings.icon !== undefined ? { icon: settings.icon } : {}),
     ...(binaryPath ? { binaryPath } : {}),
+    ...(settings.inheritShellEnvironment ? { inheritShellEnvironment: true } : {}),
     env: Object.fromEntries(Object.entries(env)) as Record<string, string>,
   }
 }

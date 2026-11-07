@@ -15,6 +15,7 @@ import { ompProvider } from "./agents/omp.ts"
 import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
 import { providerEnvironment } from "./provider-environment.ts"
+import { loadShellEnvironment } from "./shell-environment.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
@@ -148,8 +149,18 @@ export class AgentProviders {
 
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
+    const actualProvider = this.#providerByTemplate[record.template]
+    const provider: AgentProvider = record.inheritShellEnvironment ? {
+      id: actualProvider.id,
+      connect: async (config, client) => {
+        const shell = await loadShellEnvironment(undefined, client.signal)
+        client.signal?.throwIfAborted()
+        const env = commandEnvironment({ ...shell, ...providerEnvironment(record, this.#directory) }, this.#commandDirectory)
+        return actualProvider.connect({ ...config, env }, client)
+      },
+    } : actualProvider
     return {
-      provider: this.#providerByTemplate[record.template],
+      provider,
       config: {
         name: record.name,
         binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined

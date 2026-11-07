@@ -316,3 +316,13 @@ test("an invalid executable offers installation of a usable CLI without offering
   expect(login).not.toHaveBeenCalled()
   expect(view.find("[data-provider-terminal]").exists()).toBe(true)
 })
+
+test("reprobes when shell environment inheritance changes", async () => {
+  vi.useFakeTimers()
+  const { view, probe } = render()
+  await flushPromises()
+  await view.setProps({ provider: { ...provider, inheritShellEnvironment: true } })
+  await vi.advanceTimersByTimeAsync(300)
+  expect(probe).toHaveBeenCalledTimes(2)
+  expect(probe).toHaveBeenLastCalledWith({ ...provider, inheritShellEnvironment: true })
+})

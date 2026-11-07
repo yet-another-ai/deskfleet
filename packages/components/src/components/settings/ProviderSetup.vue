@@ -97,7 +97,7 @@ async function probe(installed = false): Promise<void> {
   }
 }
 
-watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled, props.provider != null] as const, (value, previous) => {
+watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON.stringify(props.provider?.env), props.disabled, props.provider != null, props.provider?.inheritShellEnvironment] as const, (value, previous) => {
   if (previous && value.every((item, index) => item === previous[index])) return
   if (finishing.value && operation.value?.kind === "install" && value[1] === result.value?.binaryPath) return
   // An invalid environment row drops the provider until its name is valid. Keep the last probe and rediscover when it returns.
@@ -110,7 +110,7 @@ watchImmediate(() => [props.provider?.template, props.provider?.binaryPath, JSON
   }
   // Test connection disables this card without changing the launch settings it is checking.
   // Cancel the debounce too: the timer would otherwise call probe while disabled and leave probing set.
-  if (previous && value[0] === previous[0] && value[1] === previous[1] && value[2] === previous[2] && value[4] === previous[4] && value[3] !== previous[3]) {
+  if (previous && value[0] === previous[0] && value[1] === previous[1] && value[2] === previous[2] && value[4] === previous[4] && value[5] === previous[5] && value[3] !== previous[3]) {
     cancelProbe()
     probing.value = false
     return
