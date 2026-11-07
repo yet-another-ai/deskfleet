@@ -112,7 +112,7 @@ let
     '';
     passthru = {
       majorVersion = lib.versions.major versions.pnpm;
-      # fetchPnpmDeps also uses Node to normalize pnpm's dependency database.
+      # pnpm install hooks also use Node while materializing the dependency store.
       nodejs-slim = nodejs;
     };
     meta = {
