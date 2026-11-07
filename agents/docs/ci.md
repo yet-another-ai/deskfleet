@@ -10,15 +10,16 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 
 - `.github/workflows/ci.yml` handles pull requests, pushes to `main`, manual
   runs, and a daily full run at 03:17 UTC. It classifies the changed files with
-  the hosted runner's Node, calls Test, Build, and Nix server, and combines their
-  results in `Gate`. Pull requests without packaging changes skip release packaging
-  (`Build` and the experimental Nix image), relying on `Test` to validate code
-  changes and leaving the smoke build to `main`. Draft pull requests run static
-  checks only, automatically triggering the full runtime test suite upon
-  `ready_for_review`. Configure
-  `Gate` under the `CI` workflow as the required status check in repository
-  branch protection. Successful push and manual runs on `main` then deploy the
-  product website to GitHub Pages.
+  the hosted runner's Node, then runs Test in parallel with packaging jobs
+  (`Build` and the experimental Nix server image) when classification requests a
+  build. `Linux packages` still waits on `Build` because it downloads the same-run
+  desktop archive artifact. `Gate` requires every selected job to succeed.
+  Pull requests without packaging changes skip release packaging, relying on
+  `Test` to validate code changes and leaving the smoke build to `main`. Draft
+  pull requests run static checks only, automatically triggering the full runtime
+  test suite upon `ready_for_review`. Configure `Gate` under the `CI` workflow as
+  the required status check in repository branch protection. Successful push and
+  manual runs on `main` then deploy the product website to GitHub Pages.
 - `.github/workflows/test.yml` runs a staged test pipeline. Fast `Static checks`
   and the desktop/Web/website builds run first on Linux with `mise run ci:check:static`.
   Platform tests and backend integration jobs wait for static checks to pass
@@ -97,7 +98,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   release publication and excluded from daily CI.
 - `.github/workflows/nix-server.yml` builds the experimental server and Web image
   from source with the root flake, loads it, and runs the existing server image
-  smoke test. It runs alongside Build after Test succeeds, under the same
+  smoke test. It runs in parallel with Test and Build under the same
   packaging-change gate, and its result is required by `Gate`. It follows the
   native Linux smoke/full matrix and uploads each tested image as
   `deskfleet-server-nix-<platform>` for three days. These images do not replace

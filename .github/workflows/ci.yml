@@ -67,9 +67,11 @@ jobs:
 
   build:
     name: Build
-    needs: [changes, test]
-    # Stage packaging after a successful Test; failed or cancelled tests skip Build.
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.test.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    # Run in parallel with Test. #390 staged Build after Test; that serialization
+    # is rolled back so packaging smoke can overlap runtime tests. Classification
+    # still skips Build when docs-only or when packaging paths are unchanged.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.run_build == 'true' }}
     uses: ./.github/workflows/build.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -78,8 +80,10 @@ jobs:
 
   nix_server:
     name: Nix server
-    needs: [changes, test]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.test.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    # Independent of Test (same packaging gate as Build). Source image build does
+    # not consume Test artifacts.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.run_build == 'true' }}
     uses: ./.github/workflows/nix-server.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -88,8 +92,10 @@ jobs:
 
   linux_packages:
     name: Linux packages
-    needs: [changes, test, build]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    # True dependency: downloads deskfleet-desktop-* from Build. Does not wait on
+    # Test; once Build finishes, DEB/RPM validation can overlap remaining tests.
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.build.result == 'success' && needs.changes.outputs.run_build == 'true' }}
     uses: ./.github/workflows/linux-packages.yml
     with:
       smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
@@ -115,7 +121,9 @@ jobs:
           LINUX_PACKAGES_RESULT: ${{ needs.linux_packages.result }}
         run: |
           expected_build=success
-          if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false" || "$TEST_RESULT" != "success") ]]; then
+          # Packaging skip is classification-driven only. Test failure must not
+          # rewrite expected packaging results now that Build runs independently.
+          if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false") ]]; then
             expected_build=skipped
           fi
           if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_build" || "$LINUX_PACKAGES_RESULT" != "$expected_build" ]]; then
