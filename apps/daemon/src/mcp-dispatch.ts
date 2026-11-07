@@ -1,5 +1,6 @@
 import type { AgentActor } from "./agent-protocol.ts"
 import type { MachineOperations } from "./machine-operations.ts"
+import { dispatchRemoteFiles, dispatchRemoteFileTransfer } from "./mcp-files.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
 import type { RemoteMcpOperation, RemoteMcpRequest } from "../../../crates/protocol/control.ts"
 
@@ -25,14 +26,20 @@ export async function dispatchMcp(
   const source = await operations.agents.requireActive(scope.sessionId)
   if (source.session.workspaceId !== scope.workspaceId) throw new Error("MCP delegation scope no longer exists")
   if (method.startsWith("remoteMcp/")) {
-    const operation = method.slice("remoteMcp/".length) as RemoteMcpOperation
-    if (!["machines", "machine", "sessions", "session", "history", "mcpServers", "mcpTools", "mcpCall"].includes(operation)) throw new Error("Unsupported remote MCP operation")
+    const operation = method.slice("remoteMcp/".length)
+    if (!["machines", "machine", "sessions", "session", "history", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
     if (!remote || actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("Remote Agent delegation is unavailable")
     const { machineId, ...args } = params
     if (operation !== "machines" && (typeof machineId !== "string" || !machineId)) throw new Error("A target machine is required")
     if (operation === "machines" && machineId !== undefined) throw new Error("Machine discovery takes no target")
-    return remote({ userId: actor.userId, deviceId: actor.deviceId, sessionId: scope.sessionId, operation,
-      ...(typeof machineId === "string" ? { machineId } : {}), arguments: args })
+    const { userId, deviceId } = actor
+    const callRemote = (remoteOperation: RemoteMcpOperation, remoteArgs: Record<string, unknown>) =>
+      remote({ userId, deviceId, sessionId: scope.sessionId, operation: remoteOperation, ...(typeof machineId === "string" ? { machineId } : {}), arguments: remoteArgs })
+    if (operation === "files") return dispatchRemoteFiles(args, callRemote)
+    if (operation === "fileUpload" || operation === "fileDownload") {
+      return dispatchRemoteFileTransfer(operation === "fileUpload" ? "upload" : "download", machineId as string, args, callRemote)
+    }
+    return callRemote(operation as RemoteMcpOperation, args)
   }
   if (method === "catalogList") {
     const catalog = await operations.catalog.native.snapshot()
