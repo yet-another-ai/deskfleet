@@ -253,19 +253,22 @@ function workflowScript(job: string): string {
   return block.replace(/^ {10}/gm, "")
 }
 
-test("packaging jobs require a successful Test", () => {
+test("packaging jobs run independently of Test and only Linux packages waits on Build", () => {
   const yaml = workflowYaml("../.github/workflows/ci.yml")
   for (const name of ["build", "nix_server"]) {
     const job = yaml.match(new RegExp(`^  ${name}:[\\s\\S]*?(?=^  [a-z])`, "m"))?.[0]
     assert.ok(job, `Missing ${name} job`)
-    assert.match(job, /needs:\s*\[changes,\s*test\]/)
-    assert.match(job, /needs\.test\.result\s*==\s*'success'/)
+    assert.match(job, /needs:\s*changes\b/)
+    assert.doesNotMatch(job, /needs:\s*\[[^\]]*test/)
+    assert.doesNotMatch(job, /needs\.test\.result/)
+    assert.match(job, /needs\.changes\.outputs\.run_build\s*==\s*'true'/)
   }
   const linuxPackages = yaml.match(/^  linux_packages:[\s\S]*?(?=^  [a-z])/m)?.[0]
   assert.ok(linuxPackages, "Missing linux_packages job")
-  assert.match(linuxPackages, /needs:\s*\[changes,\s*test,\s*build\]/)
-  assert.match(linuxPackages, /needs\.test\.result\s*==\s*'success'/)
+  assert.match(linuxPackages, /needs:\s*\[changes,\s*build\]/)
+  assert.doesNotMatch(linuxPackages, /needs\.test\.result/)
   assert.match(linuxPackages, /needs\.build\.result\s*==\s*'success'/)
+  assert.match(linuxPackages, /needs\.changes\.outputs\.run_build\s*==\s*'true'/)
 })
 
 test("failed classification keeps the full Test matrix and backend jobs", () => {
@@ -311,6 +314,7 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
   }
   for (const state of ["failure", "cancelled", "skipped"]) {
     assert.equal(expected({ CHANGES_RESULT: state }), false, `changes=${state}`)
+    assert.equal(expected({ TEST_RESULT: state }), false, `test=${state} with packaging success`)
     assert.equal(expected({ TEST_RESULT: state, BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false, `test=${state}`)
   }
   for (const state of [{ DOCS_ONLY: "true" }, { RUN_BUILD: "false" }]) {
@@ -319,6 +323,12 @@ test("actual Gate accepts only successful required jobs and explicitly allowed s
     assert.equal(expected({ ...state, BUILD_RESULT: "success", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false,
       `unexpected build: ${JSON.stringify(state)}`)
   }
+  // Test failure no longer forces packaging into the skipped expectation.
+  assert.equal(
+    expected({ TEST_RESULT: "failure", BUILD_RESULT: "success", NIX_SERVER_RESULT: "success", LINUX_PACKAGES_RESULT: "success" }),
+    false,
+    "independent packaging success cannot hide a Test failure",
+  )
 })
 
 test("classifier process failure or missing output cannot skip CI", { skip: process.platform === "win32" }, context => {

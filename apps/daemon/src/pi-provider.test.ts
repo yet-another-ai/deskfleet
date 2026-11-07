@@ -29,8 +29,22 @@ async function fixture(t: TestContext, auth = "configured") {
       try { process.kill(event.pid, "SIGKILL") } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
       }
+      // Windows keeps directory handles until the process fully exits.
+      const deadline = Date.now() + 2_000
+      while (Date.now() < deadline) {
+        try {
+          process.kill(event.pid, 0)
+          await delay(20)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") break
+          throw error
+        }
+      }
     }
-    await rm(directory, { recursive: true, force: true })
+    // Hosted Windows runners intermittently return EBUSY while antivirus or the
+    // just-killed child still holds workspace files; bound retries instead of
+    // leaving temporary trees behind or failing unrelated assertions.
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
   const cwd = join(directory, "workspace")
   const agentDirectory = join(directory, "pi-agent")
@@ -128,7 +142,7 @@ test("Pi runs the bundled ACP bridge with its configured CLI and continues saved
   await pi.exited(launches[1]!.pid as number)
 })
 
-test("Pi CLI fixture survives a closed output pipe until adapter disposal", { timeout: 5_000 }, async t => {
+test("Pi CLI fixture survives a closed output pipe until adapter disposal", { timeout: 10_000 }, async t => {
   const pi = await fixture(t)
   const child = spawn(process.execPath, [fileURLToPath(new URL("./fixtures/pi-rpc-agent.ts", import.meta.url))], {
     env: { ...process.env, ...pi.env, PI_ACP_PI_COMMAND: pi.binaryPath }, cwd: pi.cwd,
@@ -137,7 +151,10 @@ test("Pi CLI fixture survives a closed output pipe until adapter disposal", { ti
   const exited = once(child, "close")
   const stderr: Buffer[] = []
   child.stderr.on("data", chunk => stderr.push(chunk))
-  t.after(async () => { child.kill("SIGKILL"); await exited })
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    await exited.catch(() => {})
+  })
   const outputClosed = once(child.stdout, "close")
   child.stdout.destroy()
   await outputClosed
@@ -154,7 +171,13 @@ test("Pi CLI fixture survives a closed output pipe until adapter disposal", { ti
   ])
   assert.equal(observed, "output-closed")
   assert.equal(child.exitCode, null)
-  if (process.platform !== "win32") {
+  // Stop the fixture child before directory cleanup. On Windows the child's cwd
+  // lock previously caused EBUSY during fixture teardown when this branch skipped
+  // shutdown and left the process running until a late SIGKILL raced with rm.
+  if (process.platform === "win32") {
+    child.kill("SIGKILL")
+    await exited
+  } else {
     child.kill("SIGTERM")
     await exited
     await pi.exited(child.pid!)
