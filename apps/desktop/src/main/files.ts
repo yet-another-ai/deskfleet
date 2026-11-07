@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
 import type { CentralApi } from "@deskfleet/client/central"
-import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, type FileAttachmentUploadRequest, type FileConflict, type FileLocation, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
+import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, FILES_RESOURCE_PROGRESS_EVENT, type FileAttachmentUploadRequest, type FileConflict, type FileLocation, type FileReadResourceProgress, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { createNativeFileEndpoint } from "./files-peer.ts"
 import { WindowFiles } from "./files-controller.ts"
@@ -39,7 +39,7 @@ function attachmentUpload(value: unknown): FileAttachmentUploadRequest {
 }
 
 /** Validate the narrow main-process bridge; the renderer never receives a raw filesystem API. */
-export async function invokeFiles(api: FilesApi, method: unknown, args: unknown): Promise<unknown> {
+export async function invokeFiles(api: FilesApi, method: unknown, args: unknown, onResourceProgress?: (requestId: string, progress: FileReadResourceProgress) => void): Promise<unknown> {
   if (typeof method !== "string" || !Array.isArray(args)) throw new Error("Invalid file operation")
   switch (method) {
     case "list": return api.list(target(args[0]), args[1] === undefined ? undefined : text(args[1]))
@@ -53,7 +53,12 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown)
     case "cancel": return api.cancel(text(args[0]))
     case "retry": return api.retry(text(args[0]), conflict(args[1]))
     case "resolveResource": return api.resolveResource(resource(args[0]))
-    case "readResource": return api.readResource(resource(args[0]))
+    case "readResource": {
+      const requestId = args[1] === undefined ? undefined : text(args[1])
+      return requestId && onResourceProgress
+        ? api.readResource(resource(args[0]), { onProgress: progress => onResourceProgress(requestId, progress) })
+        : api.readResource(resource(args[0]))
+    }
     case "saveResource": return api.saveResource(resource(args[0]))
     case "uploadAttachment": {
       if (!api.uploadAttachment) throw new Error("Attachment upload is unavailable")
@@ -135,7 +140,13 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
   })
   ipcMain.handle(FILES_IPC_CHANNEL, async (event, method: unknown, args: unknown) => {
     if (!isDesktopMediaSender(event)) throw new Error("File IPC is restricted to the main renderer")
-    return invokeFiles(owner(event.sender), method, args)
+    const contents = event.sender
+    const current = owner(contents)
+    return invokeFiles(current, method, args, (requestId, progress) => {
+      if (owners.get(contents) === current && !contents.isDestroyed()) {
+        contents.send(FILES_RESOURCE_PROGRESS_EVENT, { requestId, ...progress })
+      }
+    })
   })
   return {
     async close() {

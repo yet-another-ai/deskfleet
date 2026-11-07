@@ -87,17 +87,43 @@ test("opens a directory on the session machine without prompting for a download"
   view.unmount()
 })
 
-test("previews a file and downloads only on explicit action", async () => {
-  const resolveResource = vi.fn().mockResolvedValue({ name: "main.vue", path: "/work/main.vue", kind: "file" })
-  const readResource = vi.fn().mockResolvedValue({ name: "main.vue", data: new TextEncoder().encode("hello"), mimeType: "application/octet-stream" })
+test("shows loading progress while reading, hides download until loaded, and triggers a browser download on explicit action", async () => {
+  const downloads: { href: string; filename: string }[] = []
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function(this: HTMLAnchorElement) {
+    downloads.push({ href: this.href, filename: this.download })
+  })
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:main-vue")
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+  let finishRead!: (value: { name: string; data: Uint8Array; mimeType: string }) => void
+  let reportProgress!: (progress: { transferredBytes: number; totalBytes: number }) => void
+  const resolveResource = vi.fn().mockResolvedValue({ name: "main.vue", path: "/work/main.vue", kind: "file", size: 100 })
+  const readResource = vi.fn((_req: FileResourceRequest, options?: { onProgress?: (progress: { transferredBytes: number; totalBytes: number }) => void }) => {
+    reportProgress = progress => options?.onProgress?.(progress)
+    return new Promise<{ name: string; data: Uint8Array; mimeType: string }>(resolve => { finishRead = resolve })
+  })
   const saveResource = vi.fn().mockResolvedValue("job")
   const view = render({ resolveResource, readResource, saveResource })
   await flushPromises()
+  expect(view.findAll("button").find(button => button.text() === "Download")).toBeUndefined()
+  expect(view.get('[role="progressbar"]').attributes("aria-valuenow")).toBe("0")
+  reportProgress({ transferredBytes: 45, totalBytes: 100 })
+  await flushPromises()
+  expect(view.get('[role="progressbar"]').attributes("aria-valuenow")).toBe("45")
+  expect(view.text()).toContain("45%")
+
+  finishRead({ name: "main.vue", data: new TextEncoder().encode("hello"), mimeType: "application/octet-stream" })
+  await flushPromises()
+  expect(view.find('[role="progressbar"]').exists()).toBe(false)
   expect(view.text()).toContain("hello")
-  expect(saveResource).not.toHaveBeenCalled()
+  expect(downloads).toEqual([])
   await view.findAll("button").find(button => button.text() === "Download")!.trigger("click")
-  expect(saveResource).toHaveBeenCalledWith(request)
+  expect(downloads).toEqual([{ href: "blob:main-vue", filename: "main.vue" }])
+  expect(saveResource).not.toHaveBeenCalled()
   view.unmount()
+  expect(revokeUrl).toHaveBeenCalledWith("blob:main-vue")
+  click.mockRestore()
+  createUrl.mockRestore()
+  revokeUrl.mockRestore()
 })
 
 test("shows resolution errors without requesting a destination", async () => {
@@ -123,7 +149,7 @@ test.each([
   expect(scroll).toHaveBeenCalledExactlyOnceWith({ block: "center" })
   expect(scroll.mock.contexts[0]).toBe(view.get("pre .bg-ui-hover").element)
   expect(resolveResource).toHaveBeenCalledWith(selected)
-  expect(readResource).toHaveBeenCalledWith(selected)
+  expect(readResource).toHaveBeenCalledWith(selected, { onProgress: expect.any(Function) })
   view.unmount()
 })
 
@@ -149,12 +175,17 @@ test.each(["main.ts#L20", "main.ts#L3-L2", "literal%23L2", "literal%3A2"])("does
 })
 
 test("renders media, line-highlighted code, and workspace authorization errors inside a preview tab", async () => {
+  const downloads: { href: string; filename: string }[] = []
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function(this: HTMLAnchorElement) {
+    downloads.push({ href: this.href, filename: this.download })
+  })
   const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:clip")
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
   const resolveResource = vi.fn().mockResolvedValue({ name: "clip.mp4", path: "/work/clip.mp4", kind: "file" })
   const readResource = vi.fn().mockResolvedValue({ name: "clip.mp4", data: new Uint8Array([1, 2, 3]), mimeType: "video/mp4" })
+  const saveResource = vi.fn()
   const mediaView = mount(AgentResourceViewer, {
-    props: { api: { resolveResource, readResource } as unknown as FilesApi, request: { ...request, uri: "file:///work/clip.mp4" }, mode: "tab" },
+    props: { api: { resolveResource, readResource, saveResource } as unknown as FilesApi, request: { ...request, uri: "file:///work/clip.mp4" }, mode: "tab" },
     global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } },
     attachTo: document.body,
   })
@@ -163,8 +194,14 @@ test("renders media, line-highlighted code, and workspace authorization errors i
   expect(mediaView.get("video").attributes("src")).toBe("blob:clip")
   expect(mediaView.find("pre code").exists()).toBe(false)
   expect(create).toHaveBeenCalledOnce()
+  await mediaView.get('[data-preview-action="more"]').trigger("click")
+  await flushPromises()
+  await mediaView.get('[data-preview-action="download"]').trigger("click")
+  expect(downloads).toEqual([{ href: "blob:clip", filename: "clip.mp4" }])
+  expect(saveResource).not.toHaveBeenCalled()
   mediaView.unmount()
   expect(revoke).toHaveBeenCalledWith("blob:clip")
+  click.mockRestore()
 
   const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
   const codeView = mount(AgentResourceViewer, {

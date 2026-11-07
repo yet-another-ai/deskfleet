@@ -12,6 +12,12 @@ test.each<FileTarget>([
   { kind: "local", grantId: "session-preview-grant" },
 ])("previews and downloads with cloneable requests from reactive $kind context", async target => {
   const original = client.files
+  const downloads: { href: string; filename: string }[] = []
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function(this: HTMLAnchorElement) {
+    downloads.push({ href: this.href, filename: this.download })
+  })
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:file")
+  const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
   const context = ref<AgentResourceContext>({ target, sessionId: "session" })
   const resolveResource = vi.fn(async (request: FileResourceRequest) => {
     structuredClone(request)
@@ -36,13 +42,18 @@ test.each<FileTarget>([
     expect(view.get("pre").text()).toBe("content")
     const expected = { target, sessionId: "session", uri: "/file.txt" }
     expect(resolveResource).toHaveBeenCalledExactlyOnceWith(expected)
-    expect(readResource).toHaveBeenCalledExactlyOnceWith(expected)
+    expect(readResource).toHaveBeenCalledExactlyOnceWith(expected, { onProgress: expect.any(Function) })
     await view.findAll("button").find(button => button.text() === "Download")!.trigger("click")
     await flushPromises()
-    expect(saveResource).toHaveBeenCalledExactlyOnceWith(expected)
+    expect(downloads).toEqual([{ href: "blob:file", filename: "file.txt" }])
+    expect(saveResource).not.toHaveBeenCalled()
     expect(view.find('[role="alert"]').exists()).toBe(false)
   } finally {
     view.unmount()
+    expect(revokeUrl).toHaveBeenCalledWith("blob:file")
+    click.mockRestore()
+    createUrl.mockRestore()
+    revokeUrl.mockRestore()
     client.files = original
   }
 })

@@ -29,6 +29,9 @@ export function filePathToUri(path: string): string {
   return `file:///${clean.split("/").map(encodeURIComponent).join("/")}`
 }
 
+export interface FileReadResourceProgress { transferredBytes: number; totalBytes: number }
+export interface FileReadResourceOptions { onProgress?: (progress: FileReadResourceProgress) => void }
+
 export interface FilesApi {
   list(target: FileTarget, path?: string): Promise<FileListing>
   /** A browser grants access to a local directory; desktop opens a native directory chooser. */
@@ -40,9 +43,11 @@ export interface FilesApi {
   onChanged(listener: (transfers: FileTransfer[]) => void): () => void
   resolveResource(request: FileResourceRequest): Promise<FileEntry>
   /** Bounded image/text preview; larger files use saveResource and the streaming transfer queue. */
-  readResource(request: FileResourceRequest): Promise<{ data: Uint8Array; name: string; mimeType: string }>
+  readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string }>
   saveResource(request: FileResourceRequest): Promise<string | null>
   uploadAttachment?(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult>
 }
 export const FILES_IPC_CHANNEL = "deskfleet:files"
 export const FILES_CHANGED_EVENT = "deskfleet:files-changed"
+export const FILES_RESOURCE_PROGRESS_EVENT = "deskfleet:files-resource-progress"
+

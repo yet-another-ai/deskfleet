@@ -254,3 +254,21 @@ test("saving a resource carries the selected destination grant into the queue", 
   expect(await manager.saveResource({ target, sessionId: "session", uri: "report.txt" })).toBe("saved")
   expect(enqueue).toHaveBeenCalledExactlyOnceWith({ source: { target, path: await realpath(file) }, destination: { target: { kind: "local", grantId: "destination" }, path: destination }, kind: "file" })
 })
+
+test("reading a resource reports byte progress across chunks", async () => {
+  const { source } = await fixture()
+  const payload = Buffer.alloc(150_000, 0x61)
+  await writeFile(join(source, "large.txt"), payload)
+  const endpoint = new FilesService(async () => source)
+  const manager = new FileTransferManager({ endpoint: async () => endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  const updates: Array<{ transferredBytes: number; totalBytes: number }> = []
+  const result = await manager.readResource({ target: { kind: "local" }, sessionId: "session", uri: "large.txt" }, {
+    onProgress: progress => updates.push(progress),
+  })
+  expect(result.data.byteLength).toBe(150_000)
+  expect(updates[0]).toEqual({ transferredBytes: 0, totalBytes: 150_000 })
+  expect(updates.at(-1)).toEqual({ transferredBytes: 150_000, totalBytes: 150_000 })
+  expect(updates.length).toBeGreaterThan(2)
+})
+
