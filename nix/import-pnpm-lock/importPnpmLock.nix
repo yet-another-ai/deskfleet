@@ -1,9 +1,10 @@
 # Vendored and adapted from importPnpmLock.nix (MIT):
 # https://github.com/Scrumplex/importPnpmLock.nix
+#
+# Parses pnpm-lock.yaml in pure Nix (no IFD) so `nix flake check --all-systems`
+# can instantiate both Linux architectures on either host.
 {
   lib,
-  runCommand,
-  yq-go,
   mitm-cache,
   config,
 }:
@@ -18,19 +19,78 @@ let
     "9.0"
   ];
 
-  importYAMLDocuments =
-    file:
-    let
-      json =
-        runCommand "${pname}-pnpm-lock.json"
-          {
-            nativeBuildInputs = [ yq-go ];
+  # pnpm-lock.yaml is YAML, which Nix cannot importJSON. The lockfile we commit
+  # only uses single-line package keys and `resolution: {integrity: ...}`
+  # entries under `packages:`, so a line scan is enough and stays IFD-free.
+  lines = lib.splitString "\n" (builtins.readFile lockFile);
+
+  packageKeyMatch = builtins.match "  ('([^']+)'|\"([^\"]+)\"|([^[:space:]:]+)):";
+  integrityMatch = builtins.match "    resolution: [{]integrity: (.*)[}]";
+  lockfileVersionMatch = builtins.match "lockfileVersion: ['\"]?([^'\"]+)['\"]?";
+  topLevelKeyMatch = builtins.match "([A-Za-z][^:]*):";
+
+  packageNameFromMatch =
+    m:
+    if m == null then
+      null
+    else if builtins.elemAt m 1 != null then
+      builtins.elemAt m 1
+    else if builtins.elemAt m 2 != null then
+      builtins.elemAt m 2
+    else
+      builtins.elemAt m 3;
+
+  isPackageKey = name: name != null && builtins.match ".+@.+" name != null;
+
+  parsed =
+    builtins.foldl'
+      (
+        state: line:
+        let
+          versionHit = lockfileVersionMatch line;
+          keyHit = packageNameFromMatch (packageKeyMatch line);
+          integrityHit = integrityMatch line;
+          topLevelHit = topLevelKeyMatch line;
+        in
+        if state.lockfileVersion == null && versionHit != null then
+          state // { lockfileVersion = builtins.head versionHit; }
+        else if line == "packages:" then
+          state
+          // {
+            inPackages = true;
+            current = null;
           }
-          ''
-            yq --output-format json eval-all '[.]' ${file} > $out
-          '';
-    in
-    lib.importJSON json;
+        else if state.inPackages && topLevelHit != null && builtins.head topLevelHit != "packages" then
+          # Left the packages section for another top-level mapping (e.g. snapshots).
+          state
+          // {
+            inPackages = false;
+            current = null;
+          }
+        else if state.inPackages && isPackageKey keyHit then
+          state // { current = keyHit; }
+        else if state.inPackages && state.current != null && integrityHit != null then
+          state
+          // {
+            packages = state.packages // {
+              ${state.current} = {
+                resolution = {
+                  integrity = builtins.head integrityHit;
+                };
+              };
+            };
+            current = null;
+          }
+        else
+          state
+      )
+      {
+        lockfileVersion = null;
+        inPackages = false;
+        current = null;
+        packages = { };
+      }
+      lines;
 
   splitName = builtins.match "^(@?[^@]+)@(.+)$";
 
@@ -63,9 +123,6 @@ let
     else
       url;
 
-  documents = importYAMLDocuments lockFile;
-  data = lib.last documents;
-
   mapPackageToMitmCacheEntry =
     name: package:
     let
@@ -89,10 +146,8 @@ let
       hash = integrity;
     };
 
-  # Directory resolutions are workspace packages already present in src.
-  filterPackageEntry = _: package: (package.resolution or { }).type or null != "directory";
-
-  lockFileVersion = data.lockfileVersion or null;
+  lockFileVersion = parsed.lockfileVersion;
+  packages = parsed.packages;
 in
 assert lib.assertMsg (lockFileVersion != null) ''
   lockFile ${toString lockFile} does not look like a supported lock file.
@@ -105,11 +160,11 @@ assert lib.assertMsg (builtins.elem lockFileVersion supportedLockFileVersions) '
 
   Found version ${lockFileVersion}
 '';
-assert lib.assertMsg (data ? packages) ''
+assert lib.assertMsg (packages != { }) ''
   File ${toString lockFile} does not contain a list of locked packages.
   Is it a valid lock file?
 '';
 mitm-cache.fetch {
   name = "${pname}-pnpm-mitm-cache-${version}";
-  data = lib.mapAttrs' mapPackageToMitmCacheEntry (lib.filterAttrs filterPackageEntry data.packages);
+  data = lib.mapAttrs' mapPackageToMitmCacheEntry packages;
 }

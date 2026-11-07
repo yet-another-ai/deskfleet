@@ -517,9 +517,10 @@ and Web application. `nix/server.nix` uses Crane to build the selected server
 package with a separate Cargo dependency derivation. Its source filter keeps
 workspace metadata and the backend's actual sources, including embedded SQL.
 `nix/web.nix` installs the filtered `@deskfleet/web...` workspace offline from
-`pnpm-lock.yaml` package integrity hashes (via `nix/import-pnpm-lock`), then
-builds the browser bundle. Lockfile updates change those fetch inputs directly;
-there is no aggregate fixed-output dependency hash to refresh. The classifier
+`pnpm-lock.yaml` package integrity hashes (via `nix/import-pnpm-lock`'s pure
+Nix lockfile parse and `mitm-cache` fetches), then builds the browser bundle.
+Lockfile updates change those fetch inputs directly; there is no aggregate
+fixed-output dependency hash to refresh and no YAML import-from-derivation. The classifier
 treats the root manifest, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/`,
 and the Web, component, and daemon package manifests as packaging inputs so the
 image build still runs when they change. Toolchain versions follow `mise.toml`
