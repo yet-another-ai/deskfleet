@@ -143,8 +143,7 @@ impl AndroidViewer {
     }
 
     fn needs_render(&self) -> bool {
-        self.renderer.is_some()
-            && (self.redraw || self.frames.lock().is_ok_and(|q| !q.is_empty()))
+        self.renderer.is_some() && (self.redraw || self.frames.lock().is_ok_and(|q| !q.is_empty()))
     }
 
     fn handle(&mut self, cmd: RenderCommand) -> Result<bool, Error> {
@@ -159,7 +158,11 @@ impl AndroidViewer {
                 self.shutdown.send_replace(true);
                 return Ok(true);
             }
-            RenderCommand::SurfaceAttached { window, width, height } => {
+            RenderCommand::SurfaceAttached {
+                window,
+                width,
+                height,
+            } => {
                 let size = PhysicalSize::new(width.max(1), height.max(1));
                 self.renderer = Some(pollster::block_on(Renderer::new(window, size))?);
                 self.redraw = true;
@@ -197,21 +200,43 @@ impl AndroidViewer {
         let Some(renderer) = self.renderer.as_ref() else {
             return Ok(());
         };
-        let Some((x, y)) = normalized_point(pos, renderer.surface_size(), renderer.video_size, kind == 2) else {
+        let Some((x, y)) =
+            normalized_point(pos, renderer.surface_size(), renderer.video_size, kind == 2)
+        else {
             return Ok(());
         };
         match kind {
             0 => self.input.send(InputEvent::PointerMove { x, y })?,
             1 => {
                 self.input.send(InputEvent::PointerMove { x, y })?;
-                self.input.send(InputEvent::PointerButton { button: 0, pressed: true, x, y })?;
+                self.input.send(InputEvent::PointerButton {
+                    button: 0,
+                    pressed: true,
+                    x,
+                    y,
+                })?;
             }
-            2 => self.input.send(InputEvent::PointerButton { button: 0, pressed: false, x, y })?,
+            2 => self.input.send(InputEvent::PointerButton {
+                button: 0,
+                pressed: false,
+                x,
+                y,
+            })?,
             3 | 4 => {
                 let button = if kind == 3 { 0 } else { 2 };
                 self.input.send(InputEvent::PointerMove { x, y })?;
-                self.input.send(InputEvent::PointerButton { button, pressed: true, x, y })?;
-                self.input.send(InputEvent::PointerButton { button, pressed: false, x, y })?;
+                self.input.send(InputEvent::PointerButton {
+                    button,
+                    pressed: true,
+                    x,
+                    y,
+                })?;
+                self.input.send(InputEvent::PointerButton {
+                    button,
+                    pressed: false,
+                    x,
+                    y,
+                })?;
             }
             5 => self.input.send(InputEvent::Wheel {
                 delta_x: delta.0.clamp(-10_000., 10_000.),
@@ -226,14 +251,24 @@ impl AndroidViewer {
         let Some(renderer) = &mut self.renderer else {
             return Ok(());
         };
-        if !self.redraw && self.frames.lock().map_err(|_| "decoded queue poisoned")?.is_empty() {
+        if !self.redraw
+            && self
+                .frames
+                .lock()
+                .map_err(|_| "decoded queue poisoned")?
+                .is_empty()
+        {
             return Ok(());
         }
         let Some(output) = renderer.acquire()? else {
             std::thread::sleep(Duration::from_millis(2));
             return Ok(());
         };
-        renderer.upload_next(&self.frames, &mut self.submitted, &mut self.last_ready_age_ms)?;
+        renderer.upload_next(
+            &self.frames,
+            &mut self.submitted,
+            &mut self.last_ready_age_ms,
+        )?;
         renderer.draw(output)?;
         self.redraw = false;
         if self.last_stats.elapsed() >= Duration::from_secs(1) {
@@ -300,13 +335,17 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
             let (input, inputs) = input_queue::channel();
             let (shutdown, shutdown_rx) = watch::channel(false);
             let (render_tx, render_rx) = mpsc::unbounded_channel();
-            let notifier = AndroidNotifier { tx: render_tx.clone() };
+            let notifier = AndroidNotifier {
+                tx: render_tx.clone(),
+            };
 
             let render_frames = Arc::clone(&frames);
             let render_shutdown = shutdown.clone();
             let render_thread = std::thread::Builder::new()
                 .name("android viewer render".into())
-                .spawn(move || AndroidViewer::new(render_frames, input, render_shutdown).run(render_rx))
+                .spawn(move || {
+                    AndroidViewer::new(render_frames, input, render_shutdown).run(render_rx)
+                })
                 .ok();
 
             let runtime_shutdown = shutdown.clone();
@@ -314,11 +353,22 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
             let runtime_thread = std::thread::Builder::new()
                 .name("android viewer session".into())
                 .spawn(move || {
-                    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread().enable_all().build() else {
-                        let _ = protocol::emit(json!({"type":"error", "error":"failed to create Tokio runtime"}));
+                    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
+                        .enable_all()
+                        .build()
+                    else {
+                        let _ = protocol::emit(
+                            json!({"type":"error", "error":"failed to create Tokio runtime"}),
+                        );
                         return;
                     };
-                    if let Err(error) = runtime.block_on(session::run(commands, inputs, frames, notifier, shutdown_rx)) {
+                    if let Err(error) = runtime.block_on(session::run(
+                        commands,
+                        inputs,
+                        frames,
+                        notifier,
+                        shutdown_rx,
+                    )) {
                         let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
                     }
                     runtime_shutdown.send_replace(true);
@@ -354,7 +404,10 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
         .with_env(|_env| -> Result<(), jni::errors::Error> {
             match serde_json::from_str::<Command>(&command_json.to_string()) {
                 Ok(command) => {
-                    let tx = active_slot().lock().ok().and_then(|g| g.as_ref().map(|s| s.commands_tx.clone()));
+                    let tx = active_slot()
+                        .lock()
+                        .ok()
+                        .and_then(|g| g.as_ref().map(|s| s.commands_tx.clone()));
                     if let Some(tx) = tx {
                         let _ = tx.blocking_send(command);
                     }
@@ -394,7 +447,9 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
         .with_env(|env| -> Result<(), jni::errors::Error> {
             if !surface.is_null() {
                 // SAFETY: `env.get_raw()` is the active JNIEnv pointer and `surface` is a live `Surface`.
-                let window = unsafe { NativeWindow::from_surface(env.get_raw().cast(), surface.as_raw().cast()) };
+                let window = unsafe {
+                    NativeWindow::from_surface(env.get_raw().cast(), surface.as_raw().cast())
+                };
                 if let Some(window) = window {
                     send_render(RenderCommand::SurfaceAttached {
                         window,
