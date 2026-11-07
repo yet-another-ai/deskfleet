@@ -240,11 +240,13 @@ through the flake's `lib.mkPackages { system; webConfig; }` function; see
 output contains the matching JavaScript and maps for a separate upload. The
 image always excludes maps, and upload credentials never enter a derivation.
 
-After dependency or toolchain changes, refresh the root flake inputs as needed
-with `nix flake update`. Update the Web dependency hash in `nix/web.nix` by setting
-it to `lib.fakeHash`, building `.#web.pnpmDeps`, and copying the reported hash.
-Verify it on both Linux architectures before accepting the update. The flake
-under `nix/` remains the separate prebuilt desktop release template.
+After toolchain or flake-input changes, refresh the root flake inputs as needed
+with `nix flake update`. Web dependencies follow `pnpm-lock.yaml` package
+integrity hashes, so lockfile maintenance does not require a separate aggregate
+hash update in `nix/web.nix`. Verify `nix build .#web` and
+`nix build .#server-image` on Linux before accepting a lockfile or toolchain
+change that affects the image. The flake under `nix/` remains the separate
+prebuilt desktop release template.
 
 ## Authentication and API
 

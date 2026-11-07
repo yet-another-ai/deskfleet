@@ -35,12 +35,14 @@
           };
           toolchain = builtins.fromTOML (builtins.readFile ./mise.toml);
           webToolchain = pkgs.callPackage ./nix/toolchain.nix { };
+          pnpmLock = pkgs.callPackage ./nix/import-pnpm-lock { };
           rust = pkgs.rust-bin.stable.${toolchain.tools.rust.version}.minimal;
           craneLib = (crane.mkLib pkgs).overrideToolchain rust;
           server = pkgs.callPackage ./nix/server.nix { inherit craneLib; };
           web = pkgs.callPackage ./nix/web.nix {
             inherit webConfig;
             inherit (webToolchain) nodejs pnpm;
+            inherit (pnpmLock) importPnpmLock iplConfigHook;
           };
           server-image = pkgs.callPackage ./nix/server-image.nix { inherit server web; };
         in

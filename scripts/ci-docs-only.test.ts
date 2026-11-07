@@ -100,7 +100,7 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     ".github/workflows/nix-server.yml",
     "flake.nix",
     "flake.lock",
-    // `nix/web.nix` hashes these pnpm dependency inputs.
+    // `nix/web.nix` installs from these pnpm dependency inputs.
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -175,8 +175,7 @@ test("classifies draft PRs and packaging-related changes", context => {
   }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // A dependency change that only updates the pnpm lockfile must still run the
-  // packaging build: the Nix Web derivation hashes that lockfile, and a stale
-  // hash fails only after the image build starts.
+  // packaging build: the Nix Web derivation installs from that lockfile.
   save("pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
   const lockfileSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
