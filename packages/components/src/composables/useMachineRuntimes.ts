@@ -17,7 +17,7 @@ export interface MachineRuntime {
   state: ReturnType<typeof createPinia>
   api: DeskfleetDesktopApi
   refreshCatalog(): void
-  updateMachine(machine: Machine): void
+  updateMachine(machine: Machine, rosterRefreshed?: boolean): void
   mount(component: Component, root: Element): () => void
   dispose(): void
 }
@@ -41,10 +41,10 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
   const owner = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id]))
   watch(owner, (_, previous) => { void clearConversationOwner(previous) })
   watch(identity, () => { for (const id of opened.keys()) release(id) }, { flush: "sync" })
-  watch(() => session.machines.value.map(machine => ({ ...machine })), machines => {
+  watch(() => [session.machines.value.map(machine => ({ ...machine })), session.machineRosterVersion.value] as const, ([machines, version], [, previousVersion]) => {
     for (const [id, runtime] of opened) {
       const machine = machines.find(value => value.id === id)
-      if (machine) runtime.updateMachine(machine)
+      if (machine) runtime.updateMachine(machine, version !== undefined && version !== previousVersion)
       else release(id)
     }
   })
@@ -62,7 +62,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
         if (!enrollment) return previous
         return session.localMachineId.value === machine.id && enrollment.teamId === machine.teamId
       }
-      const remote = remoteMachineClient(host, session.central, machine, { local: isLocal(false) })
+      const remote = remoteMachineClient(host, session.central, machine, { local: isLocal(false), rosterReady: session.machineRosterVersion.value !== undefined })
       const cache = createConversationCache(owner.value, JSON.stringify([machine.teamId, machine.id]))
       const state = createPinia()
       const views = new Set<() => void>()

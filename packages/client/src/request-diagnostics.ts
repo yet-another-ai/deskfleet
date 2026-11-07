@@ -13,6 +13,7 @@ export interface CentralRequestDiagnostics {
   transport: RequestTransport
   phase: "fetch" | "response_body"
   status?: number
+  apiErrorCode?: string
   trigger?: RequestTrigger
   online?: boolean
   visibility?: "visible" | "hidden"
@@ -70,6 +71,11 @@ const errorCodes = new Set([
   "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "UND_ERR_SOCKET", "UND_ERR_CONNECT",
   "UND_ERR_DESTROYED", "UND_ERR_ABORTED",
 ])
+// Only fixed API failure codes belong in telemetry; response bodies may contain private values.
+const apiErrorCodes = new Set([
+  "invalid_request", "unauthorized", "forbidden", "internal", "not_found", "conflict", "rate_limited",
+  "machine_offline", "daemon_timeout", "daemon_error", "turn_service_unavailable",
+])
 const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])
 
 function errorName(value: unknown): string {
@@ -109,7 +115,11 @@ export class HttpError extends CentralRequestError {
   readonly reason?: DesktopErrorReason
   readonly code?: string
   constructor(status: number, message: string, reason?: DesktopErrorReason, code?: string, diagnostics?: CentralRequestDiagnostics, options?: ErrorOptions) {
-    super(message, diagnostics ?? requestDiagnostics(undefined, { method: "unknown", path: "", elapsedMs: 0, kind: "http", status }), options)
+    const apiErrorCode = typeof code === "string" && apiErrorCodes.has(code) ? code : undefined
+    super(message, {
+      ...(diagnostics ?? requestDiagnostics(undefined, { method: "unknown", path: "", elapsedMs: 0, kind: "http", status })),
+      ...(apiErrorCode ? { apiErrorCode } : {}),
+    }, options)
     this.name = "Error"
     this.status = status
     this.reason = reason

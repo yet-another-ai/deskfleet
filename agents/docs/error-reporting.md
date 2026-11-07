@@ -92,6 +92,11 @@ Unknown routes or cause codes do not expand the collection automatically.
 Diagnostics distinguish `network`, `timeout`, `cancelled`, `http`, and `decode`,
 identify `node_fetch` or `browser_fetch`, record whether the failure occurred
 during `fetch` or `response_body`, and include HTTP status when a response exists.
+HTTP errors also retain allowlisted API error codes in `central.api_error_code`
+and `central_request.api_error_code`, including `machine_offline`, `daemon_timeout`,
+`daemon_error`, and `turn_service_unavailable`, plus the fixed core API codes.
+Unknown response codes are omitted. The code survives Electron IPC without
+exporting response bodies, and does not change existing issue fingerprints.
 A non-JSON HTTP error retains its HTTP status; malformed successful JSON is a
 decoding failure. Response-body connection failures retain their transport cause.
 
@@ -133,7 +138,7 @@ alone does not establish that a request runs in the background.
 Only handled background network/timeouts, HTTP 429, and HTTP 5xx are collapsed.
 The first error is sent immediately. Matching failures within the next minute
 increment a counter; a timer sends their summary even if the burst has stopped.
-The key uses the bounded operation/cause fingerprint and visibility state,
+The key uses the bounded operation/cause fingerprint, allowlisted API error code, and visibility state,
 without machine, team, or session IDs. This keeps hidden and visible failures in
 separate summaries even though they belong to the same Sentry issue. Each renderer owns at most 128 active
 buckets; eviction, `pagehide`, and SDK shutdown flush pending counts. Account

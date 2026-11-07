@@ -1,6 +1,6 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import type { LocalEnrollment } from "@deskfleet/client/central"
+import type { LocalEnrollment, Machine } from "@deskfleet/client/central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
 import { reportingCentral } from "@deskfleet/client/reporting-central"
 import { fakeCentral, machineFixture } from "../test/central.ts"
@@ -213,6 +213,33 @@ test("reconnecting refreshes missed roster changes and this computer's enrollmen
   expect(session.machineId.value).toBe("other")
   expect(session.localMachineId.value).toBeUndefined()
   expect(session.canEnrollLocal.value).toBe(true)
+})
+
+test("a roster from before reconnect cannot complete reconciliation while the new reload is pending", async () => {
+  const original = machineFixture("mine", "team-1", "This computer")
+  const fake = fakeCentral({ machines: [original] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const version = session.machineRosterVersion.value
+  const stale = Promise.withResolvers<Machine[]>()
+  vi.mocked(fake.central.machines).mockReturnValueOnce(stale.promise)
+  const oldRefresh = session.refreshMachines()
+  await flushPromises()
+  const status = await fake.central.status()
+  const pendingStatus = Promise.withResolvers<typeof status>()
+  vi.mocked(fake.central.status).mockReturnValueOnce(pendingStatus.promise)
+  fake.emit({ type: "connection", connected: false })
+  fake.emit({ type: "connection", connected: true })
+  stale.resolve([{ ...original, name: "Stale name" }])
+  await oldRefresh
+  expect(session.machineRosterVersion.value).toBeUndefined()
+  expect(session.machine.value?.name).toBe(original.name)
+
+  original.online = false
+  pendingStatus.resolve(status)
+  await flushPromises()
+  expect(session.machineRosterVersion.value).toBeGreaterThan(version!)
+  expect(session.machine.value?.online).toBe(false)
 })
 
 test("a slow machine list for a Team the user already left is discarded", async () => {

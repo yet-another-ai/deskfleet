@@ -28,6 +28,8 @@ export interface AccountSession {
   team: ComputedRef<Team | undefined>
   members: Ref<TeamMember[]>
   machines: Ref<Machine[]>
+  /** Undefined while signaling needs reconciliation; advances after a complete roster read. */
+  machineRosterVersion: Ref<number | undefined>
   machineId: Ref<string | undefined>
   machine: ComputedRef<Machine | undefined>
   /** Team-wide search survives switching a result into another machine's surface. */
@@ -79,6 +81,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const teamId = ref<string>()
   const members = ref<TeamMember[]>([])
   const machines = ref<Machine[]>([])
+  const machineRosterVersion = ref<number>()
   const machineId = ref<string>()
   const searchPath = ref("/search")
   const localStatus = ref<LocalMachineStatus>()
@@ -117,6 +120,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     const list = selected ? await api.machines(selected) : []
     if (revision !== machinesRevision) return
     machines.value = list
+    machineRosterVersion.value = revision
     // Keep the current machine; otherwise open this computer, then any reachable machine.
     const candidates = [preferred, machineId.value, localMachineId.value]
     machineId.value = candidates.find(id => list.some(value => value.id === id))
@@ -133,6 +137,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     const loadSite = api.site().then(value => { site.value = value })
     if (!account.value.user) {
       ++machinesRevision
+      machineRosterVersion.value = undefined
       ++membersRevision
       teams.value = []; teamId.value = undefined; machines.value = []; machineId.value = undefined
       members.value = []
@@ -230,6 +235,9 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   const unsubscribe = central.onEvent(event => {
     if (event.type === "accountChanged") void background(reload)
     else if (event.type === "connection") {
+      // A response started before this connection change cannot repair missed presence.
+      ++machinesRevision
+      machineRosterVersion.value = undefined
       connected.value = event.connected
       if (event.connected) void background(reload)
     } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
@@ -241,7 +249,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   void background(reload).finally(() => { ready.value = true; if (initialNotice) notice.value = initialNotice })
 
   return {
-    central, ready, account, site, teams, teamId, team, members, machines, machineId, machine, searchPath, localStatus, enrollment, localMachineId, canEnrollLocal,
+    central, ready, account, site, teams, teamId, team, members, machines, machineRosterVersion, machineId, machine, searchPath, localStatus, enrollment, localMachineId, canEnrollLocal,
     connected, notice, dialog, reload,
     refreshMachines,
     async signIn() { await user.login(); await reload(user) },

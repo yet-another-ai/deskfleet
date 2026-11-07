@@ -1,11 +1,13 @@
 import { flushPromises } from "@vue/test-utils"
 import { getClient } from "@deskfleet/client/platform"
+import type { Machine } from "@deskfleet/client/central"
 import { createPinia, disposePinia } from "pinia"
 import { defineComponent, effectScope, h, nextTick } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { useAppearanceStore } from "../stores/appearance.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import { useTerminalsStore } from "../stores/terminals.ts"
 import { agentSnapshot } from "../test/agent.ts"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { createAccountSession } from "./useAccountSession.ts"
@@ -175,6 +177,86 @@ test("reconnect refreshes every retained catalog and conversation when roster me
   expect(f.closePeer).not.toHaveBeenCalled()
 })
 
+test.each([false, true])("reconnect waits for a fresh roster before refreshing terminals (online=%s)", async online => {
+  const f = await fixture()
+  f.first.online = true
+  await f.session.refreshMachines()
+  const shells = [{ id: "shell1", title: "shell", cwd: "/code", cols: 80, rows: 24, status: "running" }]
+  const rpc = vi.fn(async () => shells)
+  Object.assign(f.central, { rpc })
+  const runtime = f.runtimes.open(f.first)
+  mountFleet(runtime)
+  const terminals = useTerminalsStore(runtime.state)
+  await terminals.refresh()
+  expect(terminals.sessions).toEqual(shells)
+  rpc.mockClear()
+
+  const roster = Promise.withResolvers<Machine[]>()
+  vi.mocked(f.central.machines).mockReturnValueOnce(roster.promise)
+  f.emit({ type: "connection", connected: false })
+  f.emit({ type: "connection", connected: true })
+  await flushPromises()
+  // An unrelated presence update runs the runtime watcher too; it is not a fresh roster.
+  f.emit({ type: "presence", teamId: "team-1", machineId: "m2", online: true })
+  await flushPromises()
+  await terminals.refresh()
+  expect(rpc).not.toHaveBeenCalled()
+  expect(terminals.sessions).toEqual(shells)
+
+  f.first.online = online
+  roster.resolve(f.state.machines.map(machine => ({ ...machine })))
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledTimes(online ? 1 : 0)
+  if (online) expect(rpc).toHaveBeenCalledWith("team-1", "m1", "terminalList", {})
+  expect(terminals.sessions).toEqual(shells)
+  expect(terminals.error).toBeNull()
+})
+
+test("a machine first opened during reconnect also waits for the fresh roster", async () => {
+  const f = await fixture()
+  f.second.online = true
+  await f.session.refreshMachines()
+  const rpc = vi.fn(async () => [])
+  Object.assign(f.central, { rpc })
+  const roster = Promise.withResolvers<Machine[]>()
+  vi.mocked(f.central.machines).mockReturnValueOnce(roster.promise)
+  f.emit({ type: "connection", connected: false })
+  f.emit({ type: "connection", connected: true })
+  await flushPromises()
+  const runtime = f.runtimes.open(f.session.machines.value.find(machine => machine.id === "m2")!)
+  mountFleet(runtime)
+  await useTerminalsStore(runtime.state).refresh()
+  expect(rpc).not.toHaveBeenCalled()
+
+  f.second.online = false
+  roster.resolve(f.state.machines.map(machine => ({ ...machine })))
+  await flushPromises()
+  expect(rpc).not.toHaveBeenCalled()
+  expect(runtime.api.agent.history!.available()).toBe(false)
+})
+
+test("a failed reconnect roster keeps terminals cached until a later successful refresh", async () => {
+  const f = await fixture()
+  f.first.online = true
+  await f.session.refreshMachines()
+  const rpc = vi.fn(async () => [])
+  Object.assign(f.central, { rpc })
+  const runtime = f.runtimes.open(f.first)
+  mountFleet(runtime)
+  vi.mocked(f.central.machines).mockRejectedValueOnce(new Error("Roster unavailable"))
+  f.emit({ type: "connection", connected: false })
+  f.emit({ type: "connection", connected: true })
+  await flushPromises()
+  await useTerminalsStore(runtime.state).refresh()
+  expect(rpc).not.toHaveBeenCalled()
+  expect(f.session.notice.value).toBe("Roster unavailable")
+
+  await f.session.refreshMachines()
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("team-1", "m1", "terminalList", {})
+  expect(f.session.notice.value).toBeUndefined()
+})
+
 test("a roster refresh reconciles an inactive machine after missed presence without closing its peer", async () => {
   const f = await fixture()
   const first = f.runtimes.open(f.first)
@@ -193,18 +275,18 @@ test("a roster refresh reconciles an inactive machine after missed presence with
   expect(first.api.agent.history!.available()).toBe(true)
   expect(await first.api.desktop.target()).toMatchObject({ name: "Renamed first", online: true })
   expect(first.api.target!.lastSeen).toBe("2026-10-29T12:00:00Z")
-  expect(changed).toHaveBeenCalledTimes(2)
+  expect(changed).toHaveBeenCalledOnce()
   expect(f.closePeer).not.toHaveBeenCalled()
   await f.session.refreshMachines()
   await flushPromises()
-  expect(changed).toHaveBeenCalledTimes(2)
+  expect(changed).toHaveBeenCalledOnce()
 
   // Both the direct event and the account's in-place roster update reach this
   // adapter, but the catalog needs only one refresh for the presence change.
   f.emit({ type: "presence", teamId: "team-1", machineId: "m1", online: false })
   await flushPromises()
   expect(first.api.agent.history!.available()).toBe(false)
-  expect(changed).toHaveBeenCalledTimes(3)
+  expect(changed).toHaveBeenCalledTimes(2)
   expect(f.closePeer).not.toHaveBeenCalled()
 })
 

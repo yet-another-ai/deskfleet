@@ -114,6 +114,14 @@ finish within 2 seconds, and reconnect with bounded backoff starting at 1 second
 The daemon reports `connected` false as soon as the link is declared dead, so a
 lost link cannot leave a machine offline until its process restarts.
 
+After client signaling reconnects, opened machine adapters wait for the account's
+shared machine roster read before refreshing their catalog, history, providers,
+and terminal list. Presence notifications and renames do not complete that read.
+Terminal lists retain their cached entries while reconciliation is pending or the
+machine is offline; unchanged online machines still refresh after reconciliation.
+Roster reads started before a signaling connection change are discarded. This
+reconciliation preserves already authorized peers and their live streams.
+
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
 alone cannot time out a stale socket. Heartbeat traffic is skipped while the
 page is hidden. Returning to a visible page, restoring a page from the

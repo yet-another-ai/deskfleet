@@ -23,7 +23,7 @@ const management = new Set<string>([
 const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
 
 /** One opened machine owns this adapter until its account/Team scope is released. */
-export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine): void; setLocal(local: boolean): void; dispose(): void } {
+export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean; rosterReady?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine, rosterRefreshed?: boolean): void; setLocal(local: boolean): void; dispose(): void } {
   const user = withCentralRequestTrigger(central, "user")
   const automatic = withCentralRequestTrigger(central, "background")
   let local = options.local === true && host.platform !== "web"
@@ -35,6 +35,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   const providerEvents = new Set<() => void>()
   let disposed = false
   let online = machine.online
+  let awaitingRoster = options.rosterReady === false
   // The central catalog carries the Team's current name for the machine, including later renames.
   let name = machine.name
   let knownTerminals: TerminalSummary[] = []
@@ -56,12 +57,15 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
       }
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
-    } else if ((event.type === "catalogChanged" && event.teamId === machine.teamId && event.machineId === machine.id) || (event.type === "connection" && event.connected)) {
-      // Reconnect can miss catalog updates even when the machine's roster metadata is unchanged.
-      refreshCatalog(event.type === "catalogChanged" ? event.sessionId : undefined)
+    } else if (event.type === "connection") {
+      // The account reloads the roster after reconnect. Cached presence must not
+      // trigger a terminal RPC before that shared read has completed.
+      awaitingRoster = true
+    } else if (event.type === "catalogChanged" && event.teamId === machine.teamId && event.machineId === machine.id) {
+      refreshCatalog(event.sessionId)
     } else if (event.type === "presence" && event.teamId === machine.teamId && event.machineId === machine.id) {
       online = event.online
-      for (const listener of catalogEvents) listener()
+      if (!awaitingRoster) for (const listener of catalogEvents) listener()
     }
   })
   const connectChannel = (purpose: "agent" | "terminal") => (sessionId: string) => {
@@ -181,7 +185,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       },
     },
     terminal: {
-      ...signaling("terminal"), list: async () => online ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
+      ...signaling("terminal"), list: async () => online && !awaitingRoster ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
       multiplexed: !local && !!messageChannel("terminal"),
       dial: options => userRpc("terminalDial", options), hangup: terminalId => userRpc("terminalHangup", { terminalId }),
       onSessionEvent: () => () => {},
@@ -215,18 +219,22 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     refreshCatalog,
     // A refreshed roster repairs presence events missed during signaling loss,
     // without replacing the adapter or revoking its still-authorized peers.
-    updateMachine(value) {
+    updateMachine(value, rosterRefreshed = false) {
+      const refresh = awaitingRoster && rosterRefreshed
+      if (refresh) awaitingRoster = false
       if (supportsMachineMux(machine) !== supportsMachineMux(value)) muxUnsupported = false
       machine = value
       api.agent.connectChannel = messageChannel("agent")
       api.terminal.connectChannel = messageChannel("terminal")
       api.terminal.multiplexed = !local && !!api.terminal.connectChannel
       const lastSeen = value.lastSeenAt ?? undefined
-      if (online === value.online && name === value.name && api.target!.lastSeen === lastSeen) return
+      if (!refresh && online === value.online && name === value.name && api.target!.lastSeen === lastSeen) return
       online = value.online
       name = value.name
       api.target!.lastSeen = lastSeen
-      for (const listener of catalogEvents) listener()
+      // Even unchanged metadata can hide catalog/history changes missed offline.
+      if (refresh) refreshCatalog()
+      else if (!awaitingRoster) for (const listener of catalogEvents) listener()
     },
     // The surface detaches its viewers first; management subscriptions and caches stay in place.
     setLocal(value) {
