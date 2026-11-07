@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
-import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
+import { answerAntigravityQuestion, answerVendorQuestion, isAntigravityQuestionPermission, VENDOR_QUESTION_METHODS } from "./questions.ts"
 import { AcpModelReasoning } from "./reasoning-effort.ts"
 import { AcpSessionModes } from "./session-modes.ts"
 import { createAcpFilesystem } from "./filesystem.ts"
@@ -160,6 +160,14 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       await client.completeElicitation?.(params)
     })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params, signal }) => {
+      if (isAntigravityQuestionPermission(params)) {
+        try {
+          return await answerAntigravityQuestion(params, client.requestElicitation, signal)
+        } catch (error) {
+          connection.close(error)
+          throw error
+        }
+      }
       if (!client.requestPermission) return { outcome: { outcome: "cancelled" } }
       try {
         return await client.requestPermission(params, signal)
