@@ -4,7 +4,7 @@ import { expect, test, vi } from "vitest"
 import { reactive, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
-import { agentSnapshot } from "../../test/agent.ts"
+import { agentElicitation, agentPermission, agentSnapshot } from "../../test/agent.ts"
 import type { AgentSessionSummary, MachineSummary } from "../../stores/fleet-types.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -179,7 +179,7 @@ test("a workspace terminal on another machine opens that machine's terminal rout
   wrapper.unmount()
 })
 
-test("session rows show a working indicator while a live turn is projected", async () => {
+test("session rows distinguish working, permission, and question indicators", async () => {
   const { wrapper } = await setup({
     sessions: [{ id: "machine-session", title: "Machine chat", provider: "Codex", archiveState: "active" }],
     workspaces: [{
@@ -197,13 +197,21 @@ test("session rows show a working indicator while a live turn is projected", asy
   const working = wrapper.findAll("[data-session-working]")
   expect(working).toHaveLength(1)
   expect(working[0]!.attributes("role")).toBe("status")
+  expect(working[0]!.attributes("data-session-working")).toBe("working")
+  expect(working[0]!.get("svg").classes()).toContain("animate-spin")
   expect(working[0]!.text()).toContain("Working")
   expect(wrapper.get('a[href="/sessions/workspace-session"]').find("[data-session-working]").exists()).toBe(true)
   expect(wrapper.find('a[href="/sessions/machine-session"] [data-session-working]').exists()).toBe(false)
-  agents.views["workspace-session"] = {
-    ...agents.views["workspace-session"]!,
-    snapshot: { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] },
-  }
+
+  agents.views["workspace-session"]!.snapshot = { ...live, elicitations: [agentElicitation({ sessionId: "workspace-session", state: "pending" })] }
+  await flushPromises()
+  expect(wrapper.get('[data-session-working="question"] svg').classes()).toContain("animate-bounce")
+
+  agents.views["workspace-session"]!.snapshot = { ...live, permissions: [agentPermission({ sessionId: "workspace-session", state: "pending" })], elicitations: [agentElicitation({ sessionId: "workspace-session", state: "pending" })] }
+  await flushPromises()
+  expect(wrapper.get('[data-session-working="permission"] svg').classes()).toContain("animate-bounce")
+
+  agents.views["workspace-session"]!.snapshot = { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] }
   await flushPromises()
   expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
   wrapper.unmount()

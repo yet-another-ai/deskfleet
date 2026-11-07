@@ -158,10 +158,22 @@ test("unread completion compares durable sequence numbers without losing integer
   expect(sessionCanMarkUnread({ lastCompletedSeq: "not-a-sequence", lastReadSeq: "1" })).toBe(false)
 })
 
-test.each(["starting", "running", "cancelling"] as const)("snapshotIsWorking is true for a %s turn", state => {
+test.each(["starting", "running", "cancelling"] as const)("snapshotIsWorking projects a %s turn", state => {
   const snapshot = agentSnapshot()
   snapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state, startedAt: "now" }]
-  expect(snapshotIsWorking(snapshot)).toBe(true)
+  expect(snapshotIsWorking(snapshot)).toBe("working")
+})
+test("snapshotIsWorking prioritizes pending permissions over pending questions and live turns", () => {
+  const snapshot = agentSnapshot()
+  snapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  snapshot.elicitations = [agentElicitation({ state: "pending" })]
+  expect(snapshotIsWorking(snapshot)).toBe("question")
+  snapshot.permissions = [agentPermission({ state: "pending" })]
+  expect(snapshotIsWorking(snapshot)).toBe("permission")
+  snapshot.permissions = [agentPermission({ state: "resolved", optionId: "allow" })]
+  expect(snapshotIsWorking(snapshot)).toBe("question")
+  snapshot.elicitations = [agentElicitation({ state: "resolved", response: { action: "accept", content: {} } })]
+  expect(snapshotIsWorking(snapshot)).toBe("working")
 })
 test.each(["completed", "cancelled", "interrupted", "failed"] as const)("snapshotIsWorking is false for a %s turn", state => {
   const snapshot = agentSnapshot()

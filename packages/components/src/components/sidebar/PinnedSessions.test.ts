@@ -9,7 +9,7 @@ import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import { usePullRequestsStore } from "../../stores/pull-requests.ts"
-import { agentSnapshot } from "../../test/agent.ts"
+import { agentElicitation, agentPermission, agentSnapshot } from "../../test/agent.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import PinnedSessions from "./PinnedSessions.vue"
 
@@ -181,7 +181,7 @@ test("unpinning the final row removes the empty Pinned section", async () => {
   expect(pins.items).toEqual([])
 })
 
-test("pinned rows show a working indicator for the selected machine's live turn", async () => {
+test("pinned rows show working, permission, and question indicators for the selected machine", async () => {
   const { pins, agents, machineId } = await render()
   pins.pin(machineId, "30", "Cached title"); await flushPromises()
   expect(row(machineId).find("[data-session-working]").exists()).toBe(false)
@@ -190,11 +190,18 @@ test("pinned rows show a working indicator for the selected machine's live turn"
   agents.views["30"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
   await flushPromises()
   expect(row(machineId).get("[data-session-working]").attributes("role")).toBe("status")
+  expect(row(machineId).get("[data-session-working]").attributes("data-session-working")).toBe("working")
   expect(row(machineId).get("[data-session-working]").text()).toContain("Working")
-  agents.views["30"] = {
-    ...agents.views["30"]!,
-    snapshot: { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] },
-  }
+
+  agents.views["30"]!.snapshot = { ...live, elicitations: [agentElicitation({ state: "pending" })] }
+  await flushPromises()
+  expect(row(machineId).get("[data-session-working]").attributes("data-session-working")).toBe("question")
+
+  agents.views["30"]!.snapshot = { ...live, permissions: [agentPermission({ state: "pending" })] }
+  await flushPromises()
+  expect(row(machineId).get("[data-session-working]").attributes("data-session-working")).toBe("permission")
+
+  agents.views["30"]!.snapshot = { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] }
   await flushPromises()
   expect(row(machineId).find("[data-session-working]").exists()).toBe(false)
 })
@@ -239,12 +246,16 @@ test("pinned unread results follow each machine's metadata and yield to the work
 })
 
 
-test("another machine's pinned session follows its own running and completed snapshots", async () => {
+test("another machine's pinned session follows its own running, pending, and completed snapshots", async () => {
   const { pins, remoteSnapshot } = await render(true)
   remoteSnapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
   pins.pin("second", "30", "Remote title")
   await flushPromises()
-  expect(row("second").find("[data-session-working]").exists()).toBe(true)
+  expect(row("second").get("[data-session-working]").attributes("data-session-working")).toBe("working")
+  remoteSnapshot.permissions = [agentPermission({ state: "pending" })]
+  await pins.refresh(); await flushPromises()
+  expect(row("second").get("[data-session-working]").attributes("data-session-working")).toBe("permission")
+  remoteSnapshot.permissions = []
   remoteSnapshot.turns[0]!.state = "completed"
   remoteSnapshot.session.lastCompletedSeq = "8"
   await pins.refresh(); await flushPromises()

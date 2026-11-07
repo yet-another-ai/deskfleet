@@ -325,3 +325,17 @@ test.each(["starting", "running", "cancelling", "completed", "failed", "cancelle
   f.central.sessions = vi.fn(async () => [{ session: { id: "1" }, turns: [{ id: "turn", state }] }] as never)
   expect(await f.remote.api.agent.history!.list()).toEqual([{ id: "1", working: ["starting", "running", "cancelling"].includes(state) }])
 })
+
+test("catalog activity distinguishes pending permissions and questions from running turns", async () => {
+  const f = fixture()
+  f.central.sessions = vi.fn(async () => [
+    { session: { id: "1" }, turns: [{ id: "turn", state: "running" }], permissions: [{ id: "p1", state: "pending" }], elicitations: [{ id: "e1", state: "pending" }] },
+    { session: { id: "2" }, turns: [{ id: "turn", state: "running" }], permissions: [{ id: "p1", state: "resolved" }], elicitations: [{ id: "e1", state: "pending" }] },
+    { session: { id: "3" }, turns: [{ id: "turn", state: "running" }], permissions: [{ id: "p1", state: "resolved" }], elicitations: [{ id: "e1", state: "resolved" }] },
+  ] as never)
+  expect(await f.remote.api.agent.history!.list()).toEqual([
+    { id: "1", working: "permission" },
+    { id: "2", working: "question" },
+    { id: "3", working: true },
+  ])
+})

@@ -1,5 +1,5 @@
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
-import { snapshotIsWorking } from "../services/agent-conversation.ts"
+import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
 import { useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { computed, hasInjectionContext, onScopeDispose, ref, watch } from "vue"
@@ -19,10 +19,10 @@ export interface PinnedSessionItem extends PinnedSession, Pick<AgentSessionRecor
   online: boolean
   archiveState?: AgentSessionRecord["archiveState"]
   context?: AgentSessionRecord["context"]
-  working: boolean
+  working: SessionActivity | false
   loaded: boolean
 }
-type Metadata = Pick<AgentSessionRecord, "title" | "archiveState" | "context" | "lastCompletedSeq" | "lastReadSeq"> & { working: boolean }
+type Metadata = Pick<AgentSessionRecord, "title" | "archiveState" | "context" | "lastCompletedSeq" | "lastReadSeq"> & { working: SessionActivity | false }
 const key = (machineId: string, sessionId: string) => JSON.stringify([machineId, sessionId])
 
 /** Personal device preferences; central machine IDs qualify machine-local Session IDs. */
