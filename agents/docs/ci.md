@@ -516,15 +516,16 @@ The repository-root `flake.nix` and `flake.lock` own source builds for the serve
 and Web application. `nix/server.nix` uses Crane to build the selected server
 package with a separate Cargo dependency derivation. Its source filter keeps
 workspace metadata and the backend's actual sources, including embedded SQL.
-`nix/web.nix` fetches the filtered pnpm workspace dependencies with a fixed hash
-and builds the browser bundle offline. That hash covers the root manifest,
-`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/`, and the Web, component, and
-daemon package manifests; the classifier therefore treats them as packaging
-inputs. Toolchain versions follow `mise.toml` and the locked download metadata in
-`mise.lock`, which `nix/toolchain.nix` reads for the Node and pnpm builds, so the
-classifier includes those files too. Refresh the hash whenever a dependency or
-toolchain input changes, otherwise the image build stops at a fixed-output hash
-mismatch.
+`nix/web.nix` installs the filtered `@deskfleet/web...` workspace offline from
+`pnpm-lock.yaml` package integrity hashes (via `nix/import-pnpm-lock`'s pure
+Nix lockfile parse and `mitm-cache` fetches), then builds the browser bundle.
+Lockfile updates change those fetch inputs directly; there is no aggregate
+fixed-output dependency hash to refresh and no YAML import-from-derivation. The classifier
+treats the root manifest, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/`,
+and the Web, component, and daemon package manifests as packaging inputs so the
+image build still runs when they change. Toolchain versions follow `mise.toml`
+and the locked download metadata in `mise.lock`, which `nix/toolchain.nix` reads
+for the Node and pnpm builds, so the classifier includes those files too.
 
 `nix/server-image.nix` uses `dockerTools.buildLayeredImage` to include the runtime
 closure, CA certificates, interactive Bash, coreutils, and independent server
@@ -546,7 +547,7 @@ cache is published; the runners can substitute upstream packages, while the
 project's cold source build remains part of this experiment. Compare compressed
 image size, cold/warm build time, and changed layer bytes before treating this
 path as a release optimization. See the [server guide](../../apps/server/README.md#experimental-nix-source-image)
-for local commands and dependency-hash updates.
+for local commands and lockfile-driven Web dependency installs.
 
 ## Documentation-only changes
 

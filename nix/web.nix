@@ -3,8 +3,8 @@
   stdenvNoCC,
   nodejs,
   pnpm,
-  fetchPnpmDeps,
-  pnpmConfigHook,
+  importPnpmLock,
+  iplConfigHook,
   source ? ../.,
   webConfig ? { },
 }:
@@ -23,10 +23,6 @@ let
     (source + /packages/client/package.json)
     (source + /packages/components/package.json)
   ];
-  dependencySource = lib.fileset.toSource {
-    root = source;
-    fileset = dependencyFiles;
-  };
   sourceMaps = webConfig.sourcemaps or false;
 in
 assert lib.assertMsg (
@@ -61,20 +57,19 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     ];
   };
 
-  pnpmWorkspaces = [ "@deskfleet/web..." ];
-  pnpmDeps = fetchPnpmDeps {
-    pname = "deskfleet-web";
-    inherit pnpm;
-    inherit (finalAttrs) pnpmWorkspaces;
-    src = dependencySource;
-    fetcherVersion = 5;
-    hash = "sha256-H1UAxc7Kpd4fkeQYiFuStacphluPIjiRPxIUp8tBbpk=";
+  # Each lockfile package is fetched by its registry integrity. Lockfile updates
+  # change those inputs directly; there is no aggregate fixed-output hash to refresh.
+  mitmCache = importPnpmLock {
+    inherit (finalAttrs) pname version;
+    lockFile = source + /pnpm-lock.yaml;
   };
+
+  pnpmInstallFlags = [ "--filter=@deskfleet/web..." ];
 
   nativeBuildInputs = [
     nodejs
     pnpm
-    pnpmConfigHook
+    iplConfigHook
   ];
 
   # These are client-public settings. Upload credentials stay outside Nix builds.
