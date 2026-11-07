@@ -311,6 +311,7 @@ to check module initialization order as well as file sizes.
 | `mise -E development run dev` | Run both services with the local Compose database, local mail, and TURN settings |
 | `mise run dev:seed` | Create the default verified Site Admin in the local Compose development database; preserve existing accounts |
 | `mise run backend:dev` | Run only the Actix Web API; add `-E development` for local Compose settings |
+| `mise run backend:image:nix` | Build the experimental server and Web container from source; requires Nix on Linux |
 | `mise run backend:test` | Run real PostgreSQL and Valkey integration tests using `TEST_DATABASE_URL` and `TEST_REDIS_URL` |
 | `mise run backend:smoke` | Exercise owned authentication, two enrolled daemons, native WebRTC, and synchronized history |
 | `mise run backend:smoke-clients` | Drive the built Web and Electron clients through login and remote execution; use `xvfb-run -a` on headless Linux |

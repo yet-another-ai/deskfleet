@@ -76,10 +76,20 @@ jobs:
     permissions:
       contents: read
 
+  nix_server:
+    name: Nix server
+    needs: [changes, test]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.test.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    uses: ./.github/workflows/nix-server.yml
+    with:
+      smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    permissions:
+      contents: read
+
   gate:
     name: Gate
     if: ${{ always() }}
-    needs: [changes, test, build]
+    needs: [changes, test, build, nix_server]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -91,13 +101,14 @@ jobs:
           RUN_BUILD: ${{ needs.changes.outputs.run_build }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          NIX_SERVER_RESULT: ${{ needs.nix_server.result }}
         run: |
           expected_build=success
           if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false" || "$TEST_RESULT" != "success") ]]; then
             expected_build=skipped
           fi
-          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" ]]; then
-            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT)."
+          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_build" ]]; then
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT)."
             exit 1
           fi
 

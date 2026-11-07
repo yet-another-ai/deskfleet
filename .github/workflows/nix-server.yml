@@ -1,0 +1,70 @@
+name: Nix server
+
+on:
+  workflow_call:
+    inputs:
+      smoke_build:
+        description: Build Linux x64 only for ordinary PR and main CI runs.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-server-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  server:
+    name: Nix server image (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"}]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install locked Node for smoke checks
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.25
+          install_args: --locked node
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+        with:
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Evaluate both Linux architectures
+        run: nix flake check --no-build --all-systems
+
+      - name: Build the server and Web image from source
+        run: nix build .#server-image --print-build-logs --out-link result-server-image
+
+      - name: Verify the source-built image
+        run: |
+          docker load --input result-server-image
+          image_tag=$(nix eval --raw .#server-image.imageTag)
+          mise exec node -- node scripts/smoke-server-image.ts "deskfleet-server:$image_tag"
+
+      # Experimental images remain downloadable without replacing the official
+      # Dockerfile-based release or inheriting production frontend settings.
+      - name: Stage the experimental image
+        run: cp result-server-image deskfleet-server-nix-${{ matrix.platform }}.tar.gz
+
+      - name: Upload the experimental image
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-server-nix-${{ matrix.platform }}
+          path: deskfleet-server-nix-${{ matrix.platform }}.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3

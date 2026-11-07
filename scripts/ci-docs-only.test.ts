@@ -93,6 +93,9 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "scripts/stage-native-binaries.ts",
     "packaging/aur/PKGBUILD.in",
     ".github/workflows/build.yml",
+    ".github/workflows/nix-server.yml",
+    "flake.nix",
+    "flake.lock",
   ]) assert.equal(isPackagingPath(file), true, file)
   for (const file of [
     "apps/desktop/src/main/index.ts",
@@ -224,12 +227,14 @@ function workflowScript(job: string): string {
   return block.replace(/^ {10}/gm, "")
 }
 
-test("Build requires a successful Test before packaging", () => {
+test("packaging jobs require a successful Test", () => {
   const yaml = workflowYaml("../.github/workflows/ci.yml")
-  const build = yaml.match(/^  build:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
-  assert.ok(build, "Missing Build job")
-  assert.match(build, /needs:\s*\[changes,\s*test\]/)
-  assert.match(build, /needs\.test\.result\s*==\s*'success'/)
+  for (const name of ["build", "nix_server"]) {
+    const job = yaml.match(new RegExp(`^  ${name}:[\\s\\S]*?(?=^  [a-z])`, "m"))?.[0]
+    assert.ok(job, `Missing ${name} job`)
+    assert.match(job, /needs:\s*\[changes,\s*test\]/)
+    assert.match(job, /needs\.test\.result\s*==\s*'success'/)
+  }
 })
 
 test("failed classification keeps the full Test matrix and backend jobs", () => {
@@ -253,14 +258,14 @@ test("failed classification keeps the full Test matrix and backend jobs", () => 
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
   const results = ["success", "failure", "cancelled", "skipped"]
-  for (const changes of results) for (const tests of results) for (const build of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
+  for (const changes of results) for (const tests of results) for (const build of results) for (const nixServer of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
     const result = spawnSync("bash", ["-c", script], {
-      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, DOCS_ONLY: docs, RUN_BUILD: runBuild }
+      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_SERVER_RESULT: nixServer, DOCS_ONLY: docs, RUN_BUILD: runBuild }
     })
     const allowSkip = docs === "true" || runBuild === "false" || tests !== "success"
     assert.equal(result.status === 0, changes === "success" && tests === "success"
-      && build === (allowSkip ? "skipped" : "success"),
-      JSON.stringify({ changes, tests, build, docs, runBuild }))
+      && build === (allowSkip ? "skipped" : "success") && nixServer === (allowSkip ? "skipped" : "success"),
+      JSON.stringify({ changes, tests, build, nixServer, docs, runBuild }))
   }
 })
 
