@@ -39,7 +39,7 @@ export function isPackagingPath(path: string): boolean {
     /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
     /^(?:apps\/(?:web|daemon)|packages\/(?:client|components))\/package\.json$/u.test(path) ||
     // `nix/toolchain.nix` reads both files to build the Node and pnpm tools.
-    /^(?:mise\.toml|mise\.lock)$/u.test(path) ||
+    /^(?:mise\.toml|mise\.ci\.toml|mise\.lock)$/u.test(path) ||
     path.startsWith("patches/") ||
     /^apps\/desktop\/electron-builder(?:\.release)?\.yml$/u.test(path) ||
     path.startsWith("apps/desktop/build/") ||
@@ -59,7 +59,7 @@ export function hasMatchingChanges(raw: string, matcher: (path: string) => boole
 export function isPlatformPath(path: string): boolean {
   return path.endsWith(".rs") ||
     /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|packages\/client|packages\/mcp|packages\/dsh-runtime|vendor)\//u.test(path) ||
-    /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
+    /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.ci\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
     /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
     path.startsWith(".config/build-env/") ||
     path.startsWith("patches/")
@@ -68,7 +68,7 @@ export function isPlatformPath(path: string): boolean {
 export function isBackendPath(path: string): boolean {
   return path.endsWith(".rs") ||
     /^(?:apps\/server|apps\/daemon|apps\/desktop|crates|packages\/mcp|packages\/client|packages\/dsh-runtime|vendor)\//u.test(path) ||
-    /^(?:Cargo\.toml|Cargo\.lock|compose\.yaml|mise\.toml|mise\.lock|package\.json|pnpm-lock\.yaml)$/u.test(path) ||
+    /^(?:Cargo\.toml|Cargo\.lock|compose\.yaml|mise\.toml|mise\.ci\.toml|mise\.lock|package\.json|pnpm-lock\.yaml)$/u.test(path) ||
     /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
     path.startsWith(".config/build-env/") ||
     path.startsWith("patches/")

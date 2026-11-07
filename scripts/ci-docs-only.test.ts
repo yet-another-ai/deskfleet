@@ -112,6 +112,8 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     // `nix/toolchain.nix` reads the mise toolchain metadata.
     "mise.toml",
     "mise.lock",
+    // CI release profile overrides.
+    "mise.ci.toml",
   ]) assert.equal(isPackagingPath(file), true, file)
   for (const file of [
     "apps/desktop/src/main/index.ts",
@@ -198,8 +200,10 @@ test("platform and backend detectors cover shared actions and build-env paths", 
     ".github/actions/setup-build/action.yml",
     ".config/build-env/macos.toml",
     ".config/build-env/linux.toml",
+    ".github/actions/setup-mise/action.yml",
     ".github/workflows/test.yml",
     "mise.toml",
+    "mise.ci.toml",
     "packages/client/src/file-transfers.ts",
     "packages/mcp/src/index.ts",
   ]) {

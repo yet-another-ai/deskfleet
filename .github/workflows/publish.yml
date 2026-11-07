@@ -26,10 +26,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Validate tag against package versions
         id: release
@@ -94,10 +94,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Download desktop installers
         uses: actions/download-artifact@v8

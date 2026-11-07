@@ -31,12 +31,6 @@ on:
 permissions:
   contents: read
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: "1"
-  # Disable incremental compilation so sccache can cache every rustc invocation.
-  CARGO_INCREMENTAL: "0"
-
 jobs:
   package:
     name: Build (${{ matrix.platform }})
@@ -55,21 +49,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Use faster release profile for packaging builds
-        shell: bash
-        run: |
-          {
-            echo "CARGO_PROFILE_RELEASE_LTO=false"
-            echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16"
-            echo "CARGO_PROFILE_RELEASE_DEBUG=0"
-            echo "CARGO_PROFILE_RELEASE_STRIP=symbols"
-          } >> "$GITHUB_ENV"
-
       - name: Disable MSVC PDB generation for release builds
         if: runner.os == 'Windows'
         shell: pwsh
-        # rustc still passes /DEBUG with debug=0 and strip=symbols on MSVC.
-        # Match this release profile without requiring vendored OpenSSL's PDB.
+        # rustc still passes /DEBUG with mise.ci.toml's debug=0 and
+        # strip=symbols on MSVC. Match that release profile without requiring
+        # vendored OpenSSL's PDB.
         run: '"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS=-C link-arg=/DEBUG:NONE" >> $env:GITHUB_ENV'
 
       - name: Set up build environment
