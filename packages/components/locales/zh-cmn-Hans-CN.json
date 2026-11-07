@@ -658,6 +658,10 @@
       "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
       "directory": "直接在工作区目录中工作，包括未提交的更改"
     },
+    "machine": "机器",
+    "machineChoice": "机器：{machine}",
+    "workspace": "工作区",
+    "workspaceChoice": "工作区：{workspace}",
     "baseBranch": "基础分支",
     "baseBranchChoice": "基础分支：{branch}",
     "prepare": {

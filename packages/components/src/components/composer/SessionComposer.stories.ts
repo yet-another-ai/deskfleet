@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import { ref } from "vue"
+import { computed, provide, ref } from "vue"
+import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
 import type { ComposerAttachment } from "../../services/composer-attachments.ts"
 import type { ComposerMention } from "../../services/composer-mentions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
@@ -31,6 +32,14 @@ const sampleWorkspace: WorkspaceSummary = {
   terminals: [],
 }
 
+const secondaryWorkspace: WorkspaceSummary = {
+  id: "ws-2",
+  name: "deskfleet-docs",
+  directories: [{ path: "/workspace/deskfleet-docs" }],
+  sessions: [],
+  terminals: [],
+}
+
 const sampleMachine: MachineSummary = {
   id: "machine-1",
   name: "MacBook Pro (Studio)",
@@ -39,8 +48,29 @@ const sampleMachine: MachineSummary = {
   desktop: true,
   terminals: [],
   sessions: [],
-  workspaces: [sampleWorkspace],
+  workspaces: [sampleWorkspace, secondaryWorkspace],
 }
+
+const remoteWorkspace: WorkspaceSummary = {
+  id: "ws-remote-1",
+  name: "cloud-control-plane",
+  directories: [{ path: "/srv/cloud-control-plane" }],
+  sessions: [],
+  terminals: [],
+}
+
+const remoteMachine: MachineSummary = {
+  id: "machine-2",
+  name: "Linux Build Server",
+  local: false,
+  online: true,
+  desktop: false,
+  terminals: [],
+  sessions: [],
+  workspaces: [remoteWorkspace],
+}
+
+const sampleMachines: MachineSummary[] = [sampleMachine, remoteMachine]
 
 const newSessionTarget: SessionTarget = {
   machine: sampleMachine,
@@ -117,21 +147,39 @@ const meta = {
   render: (args) => ({
     components: { SessionComposer },
     setup() {
+      const location = ref(args.location)
       const draft = ref(args.modelValue ?? "")
       const attachments = ref<ComposerAttachment[]>([...(args.attachments ?? [])])
       const mentions = ref<ComposerMention[]>([...(args.mentions ?? [])])
       const context = ref(args.context ?? "directory")
       const baseBranch = ref(args.baseBranch ?? "main")
-      return { args, draft, attachments, mentions, context, baseBranch }
+      function selectMachine(machineId: string): void {
+        const machine = sampleMachines.find(item => item.id === machineId)
+        if (machine) location.value = { machine, workspace: machine.workspaces[0] }
+      }
+      function selectWorkspace(workspaceId: string): void {
+        if (!location.value) return
+        const workspace = location.value.machine.workspaces.find(item => item.id === workspaceId)
+        if (workspace) location.value = { ...location.value, workspace }
+      }
+      provide(accountSessionKey, {
+        machines: ref(sampleMachines.map(machine => ({ id: machine.id, teamId: "team-1", name: machine.name, online: machine.online }))),
+        localMachineId: computed(() => sampleMachine.id),
+        selectMachine,
+      } as unknown as AccountSession)
+      return { args, location, draft, attachments, mentions, context, baseBranch, selectMachine, selectWorkspace }
     },
     template: `
       <SessionComposer
         v-bind="args"
+        :location="location"
         v-model="draft"
         v-model:attachments="attachments"
         v-model:mentions="mentions"
         v-model:context="context"
         v-model:base-branch="baseBranch"
+        @select-machine="selectMachine"
+        @select-workspace="selectWorkspace"
       />
     `,
   }),

@@ -28,7 +28,7 @@ jobs:
       - name: Install locked Node
         uses: jdx/mise-action@v5
         with:
-          version: 2026.10.25
+          version: 2026.11.3
           install_args: --locked node
 
       - name: Validate tag against package versions
@@ -96,7 +96,7 @@ jobs:
       - name: Install locked Node
         uses: jdx/mise-action@v5
         with:
-          version: 2026.10.25
+          version: 2026.11.3
           install_args: --locked node
 
       - name: Download desktop installers

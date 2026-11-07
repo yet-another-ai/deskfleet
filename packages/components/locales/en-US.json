@@ -658,6 +658,10 @@
       "worktree": "Isolated Git checkouts from each directory's committed HEAD",
       "directory": "Work in the Workspace's directories, including uncommitted changes"
     },
+    "machine": "Machine",
+    "machineChoice": "Machine: {machine}",
+    "workspace": "Workspace",
+    "workspaceChoice": "Workspace: {workspace}",
     "baseBranch": "Base branch",
     "baseBranchChoice": "Base branch: {branch}",
     "prepare": {

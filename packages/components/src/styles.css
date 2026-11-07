@@ -40,6 +40,10 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+:where(html, body):has(#root),
+#root {
   overflow: clip;
 }
 
