@@ -15,17 +15,6 @@ inputs:
     required: false
     default: "false"
 
-outputs:
-  electron-path:
-    description: Electron package download directory for this runner.
-    value: ${{ steps.cache-paths.outputs.electron-path }}
-  electron-cache-key:
-    description: Primary key for the Electron download cache.
-    value: ${{ steps.electron-downloads.outputs.cache-primary-key }}
-  electron-cache-hit:
-    description: Whether the Electron download cache restored an exact match.
-    value: ${{ steps.electron-downloads.outputs.cache-hit }}
-
 runs:
   using: composite
   steps:
@@ -78,7 +67,7 @@ runs:
       run: |
         node --input-type=module <<'EOF'
         import { execFileSync } from "node:child_process"
-        import { appendFileSync } from "node:fs"
+        import { appendFileSync, readFileSync } from "node:fs"
         import { homedir, platform } from "node:os"
         import { join } from "node:path"
 
@@ -92,9 +81,14 @@ runs:
           : platform() === "win32"
             ? join(localAppData, "electron", "Cache")
             : join(home, ".cache", "electron")
+        // Key Electron downloads by the locked Electron version, not the whole
+        // lockfile: unrelated dependency updates must not refetch the archive.
+        const electronVersion = readFileSync("pnpm-lock.yaml", "utf8").match(/^  electron@([^:(\s]+):$/m)?.[1]
+        if (!electronVersion) throw new Error("pnpm-lock.yaml does not lock electron")
         appendFileSync(output, `cargo-home=${cargoHome}\n`)
         appendFileSync(output, `pnpm-store=${pnpmStore}\n`)
         appendFileSync(output, `electron-path=${electron}\n`)
+        appendFileSync(output, `electron-version=${electronVersion}\n`)
         EOF
 
     - name: Restore Cargo downloads
@@ -116,11 +110,11 @@ runs:
       run: cargo fetch --locked
 
     - name: Save Cargo downloads
-      # Pull requests read main's entry through the base-branch fallback.
-      # Their merge-ref copy would spend the repository cache quota.
+      # Pull requests and tags read main's entry through the base-branch
+      # fallback. Their own copies would only spend the repository cache quota.
       if: >-
         inputs.cache-rust-build != 'true' &&
-        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+        github.ref == 'refs/heads/main' &&
         steps.cargo-downloads.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
@@ -143,18 +137,38 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: ${{ steps.cache-paths.outputs.electron-path }}
-        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-        restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-paths.outputs.electron-version }}
 
     - name: Install workspace dependencies
       shell: bash
       run: mise run install
 
+    # A store restored through the prefix fallback still holds every package
+    # of the older lockfile. Drop packages this checkout no longer uses so the
+    # saved entry tracks the current lockfile instead of growing with each update.
+    - name: Prune pnpm store
+      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
+      shell: bash
+      run: mise exec -- pnpm store prune
+
     - name: Save pnpm store
-      if: >-
-        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-        steps.pnpm-store.outputs.cache-hit != 'true'
+      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: ${{ steps.cache-paths.outputs.pnpm-store }}
         key: ${{ steps.pnpm-store.outputs.cache-primary-key }}
+
+    # Electron's install script is disabled in pnpm-workspace.yaml; jobs fetch
+    # the archive on first use. Fetch it here on a main miss so every OS gets
+    # an entry, whichever job happens to need Electron later.
+    - name: Download Electron for the cache
+      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
+      shell: bash
+      run: mise exec -- pnpm --filter @deskfleet/desktop exec install-electron
+
+    - name: Save Electron downloads
+      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.cache-paths.outputs.electron-path }}
+        key: ${{ steps.electron-downloads.outputs.cache-primary-key }}

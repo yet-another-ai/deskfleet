@@ -196,15 +196,6 @@ jobs:
           sudo chown root:root "$electron_sandbox"
           sudo chmod 4755 "$electron_sandbox"
 
-      - name: Save Electron downloads
-        if: >-
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-          steps.setup_build.outputs.electron-cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.setup_build.outputs.electron-path }}
-          key: ${{ steps.setup_build.outputs.electron-cache-key }}
-
       - name: Run the built Web and Electron clients
         run: xvfb-run -a mise run backend:smoke-clients
 
