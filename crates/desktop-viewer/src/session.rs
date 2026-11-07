@@ -1,21 +1,30 @@
 //! Control/signaling and transport never wait for the window's presentation queue.
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android"
+))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android"
+))]
 use std::time::{Duration, Instant};
 
 use deskfleet_input::InputEvent;
 use deskfleet_native::rtc::{Peer, PeerConfig, PeerEvent, PeerState, VideoCodec, VideoReceiver};
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
-use winit::event_loop::EventLoopProxy;
 
 use crate::input_queue;
 use crate::protocol::{self, Candidate, Command};
 use crate::queue::FrameQueue;
-use crate::{Error, Frame, WindowEvent};
+use crate::{Error, Frame, WindowEvent, WindowNotifier};
 
 pub(crate) type Frames = Arc<Mutex<FrameQueue<Frame>>>;
 
@@ -23,7 +32,7 @@ pub(crate) async fn run(
     mut commands: mpsc::Receiver<Command>,
     mut input: input_queue::Receiver,
     frames: Frames,
-    proxy: EventLoopProxy<WindowEvent>,
+    proxy: WindowNotifier,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), Error> {
     let codecs = tokio::task::spawn_blocking(supported_codecs).await??;
@@ -154,17 +163,22 @@ pub(crate) async fn run(
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android"
+))]
 async fn receive(
     mut receiver: VideoReceiver,
     frames: Frames,
-    proxy: EventLoopProxy<WindowEvent>,
+    proxy: WindowNotifier,
     shutdown: &mut watch::Receiver<bool>,
     width: u32,
     height: u32,
 ) -> Result<(), Error> {
     let codec = receiver.codec();
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "android")))]
     let _ = (width, height);
     let (packets, mut incoming) = mpsc::channel(32);
     let keyframe = Arc::new(AtomicBool::new(false));
@@ -191,6 +205,13 @@ async fn receive(
         )?;
         #[cfg(target_os = "macos")]
         let decoder = crate::macos_decoder::RtpVideoDecoder::with_codec(first.payload_type, codec)?;
+        #[cfg(target_os = "android")]
+        let decoder = crate::android_decoder::RtpVideoDecoder::with_codec(
+            first.payload_type,
+            codec,
+            width,
+            height,
+        )?;
         let mut pending = Some(first);
         let mut announced = false;
         while !stop.load(Ordering::Acquire) {
@@ -279,16 +300,21 @@ async fn receive(
     result
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android"
+)))]
 async fn receive(
     _receiver: VideoReceiver,
     _frames: Frames,
-    _proxy: EventLoopProxy<WindowEvent>,
+    _proxy: WindowNotifier,
     _shutdown: &mut watch::Receiver<bool>,
     _width: u32,
     _height: u32,
 ) -> Result<(), Error> {
-    Err("native desktop decoding is supported on Linux, Windows, and macOS".into())
+    Err("native desktop decoding is supported on Linux, Windows, macOS, and Android".into())
 }
 
 fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
@@ -299,6 +325,10 @@ fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
     #[cfg(target_os = "macos")]
     {
         crate::macos_decoder::supported_codecs()
+    }
+    #[cfg(target_os = "android")]
+    {
+        crate::android_decoder::supported_codecs()
     }
     #[cfg(target_os = "linux")]
     {
@@ -311,7 +341,12 @@ fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
             })
             .collect())
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "android"
+    )))]
     {
         Ok(Vec::new())
     }

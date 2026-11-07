@@ -3,6 +3,7 @@ packages:
   - apps/desktop
   - crates/node
   - apps/web
+  - packages/capacitor-native-desktop
   - packages/client
   - packages/components
   - packages/dsh-runtime

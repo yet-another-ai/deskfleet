@@ -1,18 +1,26 @@
 //! Map native window input to the existing physical-key desktop contract.
 
+#[cfg(not(target_os = "android"))]
 use deskfleet_input::InputEvent;
+#[cfg(not(target_os = "android"))]
 use winit::dpi::{PhysicalPosition, PhysicalSize};
+#[cfg(not(target_os = "android"))]
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+#[cfg(not(target_os = "android"))]
 use winit::keyboard::{KeyCode, PhysicalKey};
 
+#[cfg(target_os = "android")]
+use crate::renderer::PhysicalSize;
 use crate::renderer::viewport;
 
+#[cfg(not(target_os = "android"))]
 #[derive(Default)]
 pub(crate) struct Input {
     pub(crate) enabled: bool,
     cursor: Option<PhysicalPosition<f64>>,
 }
 
+#[cfg(not(target_os = "android"))]
 impl Input {
     pub(crate) fn event(
         &mut self,
@@ -88,8 +96,18 @@ impl Input {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn point(
     position: PhysicalPosition<f64>,
+    size: PhysicalSize<u32>,
+    video: (u32, u32),
+    clamp: bool,
+) -> Option<(f64, f64)> {
+    normalized_point((position.x, position.y), size, video, clamp)
+}
+
+pub(crate) fn normalized_point(
+    position: (f64, f64),
     size: PhysicalSize<u32>,
     video: (u32, u32),
     clamp: bool,
@@ -101,15 +119,15 @@ fn point(
     if width == 0. || height == 0. {
         return None;
     }
-    let x = (position.x - left) / width;
-    let y = (position.y - top) / height;
+    let x = (position.0 - left) / width;
+    let y = (position.1 - top) / height;
     if !clamp && (!(0. ..=1.).contains(&x) || !(0. ..=1.).contains(&y)) {
         return None;
     }
     Some((x.clamp(0., 1.), y.clamp(0., 1.)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::*;
 

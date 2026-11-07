@@ -92,16 +92,7 @@ impl Viewer {
         let Some(output) = renderer.acquire()? else {
             return Ok(());
         };
-        let frame = self
-            .frames
-            .lock()
-            .map_err(|_| "decoded queue poisoned")?
-            .pop();
-        if let Some(frame) = frame {
-            renderer.upload(&frame)?;
-            self.last_ready_age_ms = frame.ready_at.elapsed().as_secs_f64() * 1000.;
-            self.submitted += 1;
-        }
+        renderer.upload_next(&self.frames, &mut self.submitted, &mut self.last_ready_age_ms)?;
         renderer.draw(output, presentation)?;
         tracing::debug!(
             submitted = self.submitted,

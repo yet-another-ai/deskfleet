@@ -105,7 +105,28 @@ impl From<IceCandidate> for Candidate {
     }
 }
 
+use std::sync::{Mutex, OnceLock};
+
+type Emitter = Box<dyn Fn(String) -> io::Result<()> + Send + Sync>;
+
+static EMITTER: OnceLock<Mutex<Option<Emitter>>> = OnceLock::new();
+
+#[cfg(target_os = "android")]
+pub(crate) fn set_emitter(emitter: Option<Emitter>) {
+    if let Ok(mut guard) = EMITTER.get_or_init(|| Mutex::new(None)).lock() {
+        *guard = emitter;
+    }
+}
+
 pub(crate) fn emit(event: serde_json::Value) -> io::Result<()> {
+    if let Some(mutex) = EMITTER.get()
+        && let Ok(guard) = mutex.lock()
+        && let Some(emitter) = guard.as_ref()
+    {
+        let payload = serde_json::to_string(&event)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        return emitter(payload);
+    }
     let mut out = io::stdout().lock();
     serde_json::to_writer(&mut out, &event)?;
     out.write_all(b"\n")?;
