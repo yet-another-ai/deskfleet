@@ -395,7 +395,7 @@ test("bundled DeepSeek login bridges the Electron host into a Windows terminal",
   assert.match(f.runs[0]!.args!.join(" "), /login/u)
 })
 
-test("Windows login carrier hides pasted callback input and forwards cancellation", { skip: process.platform !== "win32", timeout: 20_000 }, async () => {
+test("Windows login carrier hides pasted callback input and forwards cancellation", { skip: process.platform !== "win32", timeout: 60_000 }, async () => {
   const runtime = sourceDshRuntime(import.meta.url)
   const dependency = createRequire(createRequire(runtime.entryPoint).resolve("@deepseek-ai/dsh-subprocess-local"))
   const pty = dependency("node-pty") as { spawn(command: string, args: string[], options: { env: NodeJS.ProcessEnv; cwd: string }): {
@@ -411,14 +411,19 @@ test("Windows login carrier hides pasted callback input and forwards cancellatio
     const terminal = pty.spawn(launch.command, launch.args ?? [], { env: launch.env ?? {}, cwd: process.cwd() })
     let output = ""
     let sent = false
-    const timeout = setTimeout(() => terminal.destroy(), 8_000)
+    let timedOut = false
+    // ConPTY, PowerShell, and the child all start under the full suite's CI load.
+    const timeout = setTimeout(() => { timedOut = true; terminal.destroy() }, 20_000)
     try {
       const exited = new Promise<{ exitCode: number }>(resolve => terminal.onExit(resolve))
       terminal.onData(text => {
         output += text
         if (!sent && output.includes("LOGIN_READY")) { sent = true; terminal.write(input) }
       })
-      assert.equal((await exited).exitCode, expected)
+      const { exitCode } = await exited
+      const diagnostic = `Windows login carrier (${sent ? "input sent" : "waiting for LOGIN_READY"}): ${JSON.stringify(output)}`
+      assert.equal(timedOut, false, `Timed out after 20 seconds. ${diagnostic}`)
+      assert.equal(exitCode, expected, diagnostic)
       assert.equal(sent, true)
       assert.doesNotMatch(output, /fixture-private-callback/u)
       if (expected === 0) assert.match(output, /LOGIN_RECEIVED/u)
