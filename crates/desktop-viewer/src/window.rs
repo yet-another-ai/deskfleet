@@ -92,7 +92,11 @@ impl Viewer {
         let Some(output) = renderer.acquire()? else {
             return Ok(());
         };
-        renderer.upload_next(&self.frames, &mut self.submitted, &mut self.last_ready_age_ms)?;
+        renderer.upload_next(
+            &self.frames,
+            &mut self.submitted,
+            &mut self.last_ready_age_ms,
+        )?;
         renderer.draw(output, presentation)?;
         tracing::debug!(
             submitted = self.submitted,

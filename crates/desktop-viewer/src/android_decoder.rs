@@ -70,7 +70,12 @@ impl RtpVideoDecoder {
         codec.configure(&format, None, MediaCodecDirection::Decoder)?;
         codec.start()?;
         let layout = OutputLayout::from_format(&codec.output_format(), width, height);
-        tracing::info!(?video, width, height, "Android MediaCodec viewer decoder started");
+        tracing::info!(
+            ?video,
+            width,
+            height,
+            "Android MediaCodec viewer decoder started"
+        );
         Ok(Self(RefCell::new(Decoder {
             codec,
             assembler: Assembler::for_codec(payload_type, video),
@@ -122,8 +127,12 @@ fn fmt_usize(format: &MediaFormat, key: &str) -> Option<usize> {
 
 impl OutputLayout {
     fn from_format(format: &MediaFormat, fallback_width: u32, fallback_height: u32) -> Self {
-        let raw_w = fmt_usize(format, "width").filter(|&v| v > 0).unwrap_or(fallback_width as usize);
-        let raw_h = fmt_usize(format, "height").filter(|&v| v > 0).unwrap_or(fallback_height as usize);
+        let raw_w = fmt_usize(format, "width")
+            .filter(|&v| v > 0)
+            .unwrap_or(fallback_width as usize);
+        let raw_h = fmt_usize(format, "height")
+            .filter(|&v| v > 0)
+            .unwrap_or(fallback_height as usize);
         let crop_left = fmt_usize(format, "crop-left").unwrap_or(0);
         let crop_top = fmt_usize(format, "crop-top").unwrap_or(0);
         let width = fmt_usize(format, "crop-right")
@@ -138,10 +147,14 @@ impl OutputLayout {
             width,
             height,
             stride: fmt_usize(format, "stride").unwrap_or(raw_w).max(raw_w),
-            slice_height: fmt_usize(format, "slice-height").unwrap_or(raw_h).max(raw_h),
+            slice_height: fmt_usize(format, "slice-height")
+                .unwrap_or(raw_h)
+                .max(raw_h),
             crop_left,
             crop_top,
-            color_format: format.i32("color-format").unwrap_or(COLOR_FORMAT_YUV420_SEMIPLANAR),
+            color_format: format
+                .i32("color-format")
+                .unwrap_or(COLOR_FORMAT_YUV420_SEMIPLANAR),
             bt709: format.i32("color-standard") == Some(1),
             full_range: format.i32("color-range") == Some(1),
         }
@@ -157,9 +170,9 @@ impl Decoder {
             self.pending = self.assembler.poll(Instant::now());
         }
         if let Some(unit) = &self.pending {
-            let ticks = self
-                .last_timestamp
-                .map_or(0, |prev| self.ticks + u64::from(unit.timestamp.wrapping_sub(prev)));
+            let ticks = self.last_timestamp.map_or(0, |prev| {
+                self.ticks + u64::from(unit.timestamp.wrapping_sub(prev))
+            });
             let pts_us = u64::try_from(u128::from(ticks) * 1_000_000 / 90_000)?;
             if let DequeuedInputBufferResult::Buffer(mut input) =
                 self.codec.dequeue_input_buffer(Duration::ZERO)?
@@ -202,7 +215,9 @@ impl Decoder {
                         .buffer()
                         .get(offset..offset.saturating_add(size))
                         .ok_or("MediaCodec output buffer slice out of bounds")?;
-                    let frame = (size > 0).then(|| decode_yuv_to_rgba(slice, self.format)).transpose()?;
+                    let frame = (size > 0)
+                        .then(|| decode_yuv_to_rgba(slice, self.format))
+                        .transpose()?;
                     self.codec.release_output_buffer(output, false)?;
                     if frame.is_some() {
                         return Ok(frame);
@@ -253,10 +268,16 @@ fn decode_yuv_to_rgba(data: &[u8], layout: OutputLayout) -> Result<Frame, Error>
             let luma = i32::from(luma_row[src_x]) - luma_offset;
             let (u, v) = if planar {
                 let cx = cy * uv_stride + src_x / 2;
-                (i32::from(chroma_data[cx]) - 128, i32::from(chroma_data[u_plane_size + cx]) - 128)
+                (
+                    i32::from(chroma_data[cx]) - 128,
+                    i32::from(chroma_data[u_plane_size + cx]) - 128,
+                )
             } else {
                 let cx = cy * stride + (src_x & !1);
-                (i32::from(chroma_data[cx]) - 128, i32::from(chroma_data[cx + 1]) - 128)
+                (
+                    i32::from(chroma_data[cx]) - 128,
+                    i32::from(chroma_data[cx + 1]) - 128,
+                )
             };
             let dst = &mut pixels[(y * width + x) * 4..][..4];
             dst[0] = ((scale * luma + red * v + 128) >> 8).clamp(0, 255) as u8;
