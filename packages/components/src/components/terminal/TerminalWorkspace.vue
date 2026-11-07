@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiTabTitle from "../common/UiTabTitle.vue"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import { Bot, Circle, CircleAlert, CircleStop, LoaderCircle, Plus, SquareTerminal, Unplug, X } from "@lucide/vue"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
@@ -95,7 +96,7 @@ onMounted(() => {
           v-for="(terminal, index) in terminals"
           :key="terminal.id"
           role="presentation"
-          class="group flex h-full max-w-56 shrink-0 items-center border-r border-ui-border ui-motion"
+          class="ui-tab-size group flex h-full shrink-0 items-center border-r border-ui-border ui-motion"
           :class="activeId === terminal.id ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover hover:text-ui-text'"
         >
           <button
@@ -118,7 +119,7 @@ onMounted(() => {
             @keydown.delete.prevent="hangup(terminal.id)"
           >
             <component :is="terminal.kind === 'acp' ? Bot : SquareTerminal" :size="13" class="shrink-0" aria-hidden="true" />
-            <span class="truncate">{{ tabName(terminal.id, index) }}</span>
+            <UiTabTitle>{{ tabName(terminal.id, index) }}</UiTabTitle>
             <span v-if="terminal.kind === 'acp'" class="shrink-0 text-[10px] text-ui-text-muted">{{ t('terminal.readOnly') }}</span>
           </TabsTrigger>
           <button
