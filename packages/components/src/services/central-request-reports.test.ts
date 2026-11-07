@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { centralRequestFailure, type RequestFailureKind, type RequestTrigger } from "@deskfleet/client/request-diagnostics"
+import { centralRequestFailure, HttpError, type RequestFailureKind, type RequestTrigger } from "@deskfleet/client/request-diagnostics"
 import { CentralRequestReports } from "./central-request-reports.ts"
 
 afterEach(() => { vi.useRealTimers() })
@@ -63,4 +63,21 @@ test("bounds active buckets and flushes counts on eviction and shutdown", () => 
   reports.flush()
   expect(vi.getTimerCount()).toBe(0)
   expect(emit.mock.calls.reduce((count, [, repetition]) => count + repetition.occurrences, 0)).toBe(258)
+})
+
+test("background summaries keep API-coded failures separate from unclassified HTTP errors", () => {
+  vi.useFakeTimers()
+  const emit = vi.fn()
+  const reports = new CentralRequestReports(emit)
+  for (const code of ["machine_offline", undefined, "machine_offline", undefined, undefined]) {
+    const error = new HttpError(503, "request failed", undefined, code)
+    error.diagnostics.trigger = "background"
+    reports.capture(error)
+  }
+  expect(emit).toHaveBeenCalledTimes(2)
+  reports.flush()
+  const summaries = emit.mock.calls.filter(([, repetition]) => repetition.summary)
+  expect(summaries.map(([error, repetition]) => [error.diagnostics.apiErrorCode, repetition.occurrences])).toEqual([
+    ["machine_offline", 1], [undefined, 2],
+  ])
 })

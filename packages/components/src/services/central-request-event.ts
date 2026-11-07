@@ -14,7 +14,7 @@ export function centralRequestFingerprint(diagnostics: CentralRequestDiagnostics
 export function prepareCentralRequest(event: Event, hint: EventHint): Event | null {
   const error = hint.originalException
   if (!(error instanceof CentralRequestError)) return event
-  const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, transport, trigger = "unknown", online, visibility } = error.diagnostics
+  const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, apiErrorCode, transport, trigger = "unknown", online, visibility } = error.diagnostics
   if (kind === "cancelled") return null
   const { codes, failure } = failureIdentity(error.diagnostics)
   const exception = event.exception?.values?.at(-1)
@@ -29,13 +29,14 @@ export function prepareCentralRequest(event: Event, hint: EventHint): Event | nu
     "central.transport": transport, "central.method": method, "central.route": route,
     "central.failure_kind": kind, "central.phase": phase, "central.trigger": trigger,
     ...(status !== undefined ? { "central.status": String(status) } : {}),
+    ...(apiErrorCode ? { "central.api_error_code": apiErrorCode } : {}),
     ...(rpcMethod ? { "central.rpc_method": rpcMethod } : {}),
     ...(codes[0] ? { "central.cause_code": codes[0] } : {}),
     ...(online !== undefined ? { "central.online": String(online) } : {}),
     ...(visibility ? { "central.visibility": visibility } : {}),
   }
   event.contexts = { ...event.contexts, central_request: {
-    method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs, transport, kind, phase, status, trigger, online, visibility,
+    method, route, rpc_method: rpcMethod, elapsed_ms: elapsedMs, transport, kind, phase, status, api_error_code: apiErrorCode, trigger, online, visibility,
     causes: causes.map(cause => [cause.name, cause.code, cause.syscall].filter(Boolean).join(": ")),
   } }
   return event

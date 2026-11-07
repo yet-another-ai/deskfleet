@@ -98,7 +98,7 @@ test("a refreshed machine reconciles missed presence without replacing its peer"
   f.emit({ type: "connection", connected: false })
   const updated = { ...f.machine, online: true, name: "Renamed remote", lastSeenAt: "2026-10-29T12:00:00Z" }
   f.central.machines = vi.fn(async () => [updated])
-  f.remote.updateMachine(updated)
+  f.remote.updateMachine(updated, true)
   expect(f.remote.api.agent.history!.available()).toBe(true)
   expect(await f.remote.api.desktop.target()).toMatchObject({ name: updated.name, online: true })
   expect(f.remote.api.target!.lastSeen).toBe(updated.lastSeenAt)

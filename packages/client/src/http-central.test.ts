@@ -223,9 +223,21 @@ test("collects paginated billing Teams while retaining the administration array 
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))
-  await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable" })
+  await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 503, message: "target machine is unavailable", diagnostics: { apiErrorCode: "machine_offline" } })
   f.fetch.mockResolvedValueOnce(new Response("Bad Gateway", { status: 502, statusText: "Bad Gateway" }))
   await expect(f.client.catalog("team", "remote7")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" })
+})
+
+test("HTTP response codes are allowlisted before crossing the diagnostic boundary", async () => {
+  const f = setup()
+  for (const code of ["daemon_timeout", "daemon_error", "turn_service_unavailable", "private-token"] as const) {
+    f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code, message: "request failed" } }), { status: 503 }))
+    const failure = await f.client.rpc("team", "machine", "terminalList", {}).catch(error => error)
+    if (!(failure instanceof HttpError)) throw failure
+    expect(failure.code).toBe(code)
+    expect(serializeCentralRequestError(failure)?.diagnostics.apiErrorCode).toBe(code === "private-token" ? undefined : code)
+    expect(JSON.stringify(serializeCentralRequestError(failure))).not.toContain("private-token")
+  }
 })
 
 test("fetch failures retain request context and a caller stack before Electron serialization", async () => {
