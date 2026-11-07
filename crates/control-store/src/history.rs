@@ -11,10 +11,14 @@ use sea_orm::{
     },
 };
 
+mod cleanup;
 mod command_storage;
 mod event_storage;
 mod lifecycle;
+mod purge;
 mod sync;
+pub use cleanup::{LegacyHistoryCounts, LegacyHistoryCursor};
+pub use purge::PurgedHistoryCounts;
 use serde_json::{Value, json};
 
 impl ControlStore {

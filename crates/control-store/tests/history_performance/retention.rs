@@ -236,10 +236,13 @@ async fn soft_delete_migration_waits_for_a_versioned_inventory() {
     }
     // Reproduce the old schema with an inventory that no longer includes Session 1.
     let tx = f.store.database().begin().await.unwrap();
+    tx.execute_unprepared(include_str!("../../src/history_purge_down.sql"))
+        .await
+        .unwrap();
     tx.execute_unprepared(include_str!("../../src/history_retention_down.sql"))
         .await
         .unwrap();
-    tx.execute_unprepared("DELETE FROM cp_migrations WHERE version=28")
+    tx.execute_unprepared("DELETE FROM cp_migrations WHERE version IN (28,31)")
         .await
         .unwrap();
     tx.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,

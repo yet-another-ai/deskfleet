@@ -17,6 +17,7 @@ pub mod schema;
 mod search;
 pub mod signaling_limits;
 mod site;
+mod storage_cleanup;
 mod team_turn;
 mod teams;
 mod turn_settings;
@@ -24,6 +25,7 @@ mod turn_usage;
 
 pub use cloudflare_turn::{CloudflareTurnConfig, CloudflareTurnUsageQuery};
 pub use github_app::{GithubAppAccess, GithubAppGrant, GithubAppStatus, GithubAppTokens};
+pub use history::{LegacyHistoryCounts, LegacyHistoryCursor, PurgedHistoryCounts};
 pub use identity::normalize_email;
 pub use machines::MachineRegistration;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
@@ -80,13 +82,18 @@ pub struct MachineAuth {
 
 impl ControlStore {
     pub async fn connect(url: &str) -> Result<Self> {
+        let store = Self::open(url).await?;
+        schema::migrate(&store.db).await?;
+        Ok(store)
+    }
+
+    async fn open(url: &str) -> Result<Self> {
         if !url.starts_with("postgres://") && !url.starts_with("postgresql://") {
             return Err(Error::Invalid(
                 "the central server requires a PostgreSQL DATABASE_URL",
             ));
         }
         let db = Database::connect(url).await?;
-        schema::migrate(&db).await?;
         Ok(Self { db, hosted: false })
     }
     pub fn with_hosted_mode(mut self, hosted: bool) -> Self {
