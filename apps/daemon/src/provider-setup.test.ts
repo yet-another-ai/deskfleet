@@ -85,6 +85,43 @@ test("provider setup uses the shell environment with manual overrides for detect
   assert.equal(f.runs[1]!.env?.ACCOUNT, "manual")
 })
 
+test("shell startup has a separate budget from provider detection", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  const f = fixture({
+    files: ["/shell/codex", "/bin/bash"],
+    shellEnvironment: () => new Promise(resolve => setTimeout(() => resolve({ PATH: "/shell" }), 4_500)),
+    answer: (_command, args) => new Promise(resolve => setTimeout(() => resolve(
+      args[0] === "--version" ? result("codex-cli 1.2.3") : result("Logged in using ChatGPT"),
+    ), 2_900)),
+  })
+  const pending = f.setup.probe(input("codex", { inheritShellEnvironment: true }))
+  const checked = assert.doesNotReject(async () => {
+    const found = await pending
+    assert.equal(found.status, "found")
+    assert.equal(found.binaryPath, "/shell/codex")
+    assert.equal(found.auth, "authenticated")
+  })
+  await nextTurn()
+  context.mock.timers.tick(4_500)
+  await nextTurn()
+  context.mock.timers.tick(2_900)
+  await nextTurn()
+  context.mock.timers.tick(2_900)
+  await checked
+})
+
+test("the extended detection deadline still aborts shell startup", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] })
+  let signal: AbortSignal | undefined
+  const pending = probeProvider(input("codex", { inheritShellEnvironment: true }), {
+    shellEnvironment: value => { signal = value; return new Promise(() => {}) },
+  })
+  const checked = assert.rejects(pending, /detection timed out/u)
+  context.mock.timers.tick(15_000)
+  await checked
+  assert.equal(signal?.aborted, true)
+})
+
 test("probe also finds an official user install outside the daemon PATH", async () => {
   const f = fixture({ files: ["/home/someone/.local/bin/codex", "/bin/bash"], answer: async (_command, args) =>
     args[0] === "--version" ? result("codex-cli 1.2.3") : result("Not logged in", 1) })

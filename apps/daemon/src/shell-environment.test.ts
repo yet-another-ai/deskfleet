@@ -3,6 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
+import type { TerminalSessions } from "./terminals.ts"
+import { AcpTerminals } from "./agents/terminals.ts"
 import { AgentProviders } from "./agent-providers.ts"
 import { loadShellEnvironment } from "./shell-environment.ts"
 
@@ -38,6 +40,50 @@ test("shell exports supplement the daemon environment and provider values overri
   assert.equal(reopened.get(record.id).inheritShellEnvironment, true)
   await reopened.update(record.id, { name: "Fixture", env: {} })
   assert.equal(reopened.get(record.id).inheritShellEnvironment, undefined)
+})
+
+test("shell-enabled ACP terminals receive provider variables and respect command overrides", { skip: process.platform === "win32" }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-shell-terminal-"))
+  const shell = join(directory, "shell")
+  await writeFile(shell, '#!/bin/sh\nexport PATH=/shell/bin SHELL_ONLY=shell OVERRIDE=shell\nexec /bin/sh -c "$2"\n', { mode: 0o755 })
+  const previous = process.env.SHELL
+  process.env.SHELL = shell
+  t.after(async () => {
+    if (previous === undefined) delete process.env.SHELL
+    else process.env.SHELL = previous
+    await rm(directory, { recursive: true, force: true })
+  })
+  for (const commandDirectory of [undefined, "/bundled"]) {
+    const launched: Array<{ env?: Record<string, string> }> = []
+    const sessions = {
+      async run(options: { env?: Record<string, string> }) { launched.push(options); return {} },
+      async stop() {},
+    } as unknown as TerminalSessions
+    const registry = new AgentProviders(join(directory, commandDirectory ? "bundled" : "plain"), {
+      id: "fixture",
+      async connect(config, client) {
+        assert.ok(client.terminals)
+        const terminals = new AcpTerminals(client.terminals, () => {})
+        await terminals.create({ sessionId: "session", command: "example" })
+        await terminals.create({ sessionId: "session", command: "example", env: [
+          { name: "PATH", value: "/command/bin" }, { name: "OVERRIDE", value: "command" },
+        ] })
+        await terminals.close()
+        assert.equal(launched[0]?.env?.PATH, commandDirectory ? "/bundled:/shell/bin" : "/shell/bin")
+        assert.equal(launched[0]?.env?.SHELL_ONLY, "shell")
+        assert.equal(launched[0]?.env?.OVERRIDE, "manual")
+        assert.equal(launched[1]?.env?.PATH, commandDirectory ? "/bundled:/command/bin" : "/command/bin")
+        assert.equal(launched[1]?.env?.OVERRIDE, "command")
+        assert.equal(launched[1]?.env?.SHELL_ONLY, "shell")
+        assert.equal(config.env?.OVERRIDE, "manual")
+        throw new Error("fixture connected")
+      },
+    }, commandDirectory)
+    await registry.init()
+    const record = await registry.create({ template: "codex", name: "Fixture", inheritShellEnvironment: true, env: { OVERRIDE: "manual" } })
+    const { provider, config } = registry.resolve(record.id)
+    await assert.rejects(provider.connect(config, { onUpdate() {}, terminals: { sessions, cwd: directory, commandDirectory } }), /fixture connected/u)
+  }
 })
 
 test("shell failures keep startup output private and cancellation interrupts loading", { skip: process.platform === "win32" }, async t => {

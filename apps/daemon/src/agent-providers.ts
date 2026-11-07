@@ -43,6 +43,7 @@ export class AgentProviders {
   readonly #path: string
   readonly #commandDirectory?: string
   readonly #providerByTemplate: Record<AgentProviderTemplateId, AgentProvider>
+  readonly #shellProviderByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #listeners = new Set<() => void>()
   #providers: AgentProviderConfig[] = []
   #revision = randomUUID()
@@ -63,6 +64,18 @@ export class AgentProviders {
       antigravity: antigravityProvider,
       acp: acpProvider,
     }
+    this.#shellProviderByTemplate = Object.fromEntries(
+      Object.entries(this.#providerByTemplate).map(([template, actualProvider]) => [template, {
+        id: actualProvider.id,
+        async connect(config: AgentConfig, client: Parameters<AgentProvider["connect"]>[1]) {
+          const shell = await loadShellEnvironment(undefined, client.signal)
+          client.signal?.throwIfAborted()
+          const env = commandEnvironment({ ...shell, ...config.env }, config.commandDirectory)
+          const terminals = client.terminals ? { ...client.terminals, env } : undefined
+          return actualProvider.connect({ ...config, env }, { ...client, ...(terminals ? { terminals } : {}) })
+        },
+      }]),
+    ) as Record<AgentProviderTemplateId, AgentProvider>
   }
 
   async init(): Promise<void> {
@@ -149,23 +162,15 @@ export class AgentProviders {
 
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
-    const actualProvider = this.#providerByTemplate[record.template]
-    const provider: AgentProvider = record.inheritShellEnvironment ? {
-      id: actualProvider.id,
-      connect: async (config, client) => {
-        const shell = await loadShellEnvironment(undefined, client.signal)
-        client.signal?.throwIfAborted()
-        const env = commandEnvironment({ ...shell, ...providerEnvironment(record, this.#directory) }, this.#commandDirectory)
-        return actualProvider.connect({ ...config, env }, client)
-      },
-    } : actualProvider
+    const provider = (record.inheritShellEnvironment ? this.#shellProviderByTemplate : this.#providerByTemplate)[record.template]
     return {
       provider,
       config: {
         name: record.name,
         binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
           : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
-        env: commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
+        env: record.inheritShellEnvironment ? providerEnvironment(record, this.#directory)
+          : commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
       },
     }

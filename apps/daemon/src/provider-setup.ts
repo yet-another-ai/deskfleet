@@ -6,7 +6,7 @@ import { posix, win32 } from "node:path"
 import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
 import { dshAccountProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { providerEnvironment } from "./provider-environment.ts"
-import { loadShellEnvironment } from "./shell-environment.ts"
+import { loadShellEnvironment, SHELL_ENVIRONMENT_TIMEOUT_MS } from "./shell-environment.ts"
 import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
@@ -224,13 +224,16 @@ async function deepseekAuthentication(ctx: Context): Promise<ProviderProbeResult
 /** Find the binary on the executing machine without initializing ACP or starting a login. */
 export async function probeProvider(input: AgentProviderInput, dependencies: ProbeDependencies = {}): Promise<ProviderProbeResult> {
   const controller = new AbortController()
+  const probeTimeout = input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000
+  // Shell startup has its own bounded budget; preserve the full detection budget after it.
+  const timeout = dependencies.timeoutMs ?? (probeTimeout + (input.inheritShellEnvironment ? SHELL_ENVIRONMENT_TIMEOUT_MS : 0))
   let timer: ReturnType<typeof setTimeout>
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       const error = new Error("Provider detection timed out. Check the executable path and try again.")
       controller.abort(error)
       reject(error)
-    }, dependencies.timeoutMs ?? (input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000))
+    }, timeout)
   })
   try { return await Promise.race([probe(input, dependencies, controller.signal), deadline]) }
   finally { clearTimeout(timer!); controller.abort() }

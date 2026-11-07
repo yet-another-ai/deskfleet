@@ -4,6 +4,7 @@ import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 const marker = "DESKFLEET_SHELL_ENVIRONMENT_START"
+export const SHELL_ENVIRONMENT_TIMEOUT_MS = 5_000
 
 /** Read exports after shell startup without interpreting startup output as variables. */
 export async function loadShellEnvironment(shell?: string, signal?: AbortSignal): Promise<Record<string, string>> {
@@ -13,7 +14,7 @@ export async function loadShellEnvironment(shell?: string, signal?: AbortSignal)
     const executable = shell || process.env.SHELL || userInfo().shell
     if (!executable) throw new Error("Shell unavailable")
     const { stdout } = await execFileAsync(executable, ["-ilc", `printf '\\0${marker}\\0'; /usr/bin/env -0`], {
-      timeout: 5_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal,
+      timeout: SHELL_ENVIRONMENT_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024, windowsHide: true, signal,
     })
     const start = stdout.lastIndexOf(`\0${marker}\0`)
     if (start < 0) throw new Error("Shell did not return its environment")
