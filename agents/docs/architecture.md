@@ -1383,8 +1383,18 @@ in the inventory and do not soft-delete them. Migration 28 waits for a versioned
 inventory rather than guessing deletions from an old unordered catalog.
 
 Immutable local command receipts remain. Central soft deletion retains content
-for a future periodic purge; this release does not physically erase conversation,
-tool, or audit rows. Usage and billing history remain durable. Keep machine
+until an operator runs `deskfleet-server storage cleanup --apply --deleted-before
+<RFC3339>`. The command removes eligible conversation, command, and search content
+in bounded transactions, then clears the large snapshot while retaining its
+Session tombstone and sequence watermarks. Catalog/history ingestion still rejects
+the tombstone, including after a stale catalog reintroduces its ID. The AI usage
+projection skips deleted snapshots so removing content cannot erase usage facts;
+admissions and billing history remain durable. The same command normalizes legacy
+full-snapshot command receipts using the ingestion projection. Preview mode opens
+an existing schema without migrations. Optional vacuum is a separate final phase;
+ordinary vacuum enables reuse, while explicit full vacuum rewrites tables under
+exclusive locks. See [storage cleanup operations](self-hosted.md#storage-cleanup).
+Keep machine
 private keys and application credentials out of history and logs. Electron renderers stay
 sandboxed, with narrow preload interfaces; agent output and repository content
 are untrusted display data.

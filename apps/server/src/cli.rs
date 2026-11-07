@@ -3,8 +3,9 @@ use deskfleet_control_store::ControlStore;
 use std::io;
 
 mod seed;
+mod storage;
 
-const USAGE: &str = "usage: deskfleet-server [dev-seed | site-admin list | site-admin grant <user-id> | site-admin revoke <user-id>]\n\nRun without arguments to start the HTTP server. Operations commands require DATABASE_URL. Site administrator commands require an existing user's UUID from /api/me. dev-seed creates a verified development administrator with documented credentials; it is only available in debug builds.";
+const USAGE: &str = "usage: deskfleet-server [dev-seed | site-admin list | site-admin grant <user-id> | site-admin revoke <user-id>]\n       deskfleet-server storage cleanup [--apply] [--deleted-before <RFC3339>] [--batch-size <1..1000>] [--vacuum <standard|full>]\n\nRun without arguments to start the HTTP server. Operations commands require DATABASE_URL. Site administrator commands require an existing user's UUID from /api/me. dev-seed creates a verified development administrator with documented credentials; it is only available in debug builds. Storage cleanup previews counts by default without writes or migrations; --apply compacts legacy snapshot receipts and --deleted-before additionally purges deleted Session content. --vacuum requires --apply; full takes exclusive table locks and requires extra disk space.";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -14,6 +15,7 @@ enum Command {
     List,
     Grant(String),
     Revoke(String),
+    Storage(storage::Options),
 }
 
 fn parse(args: &[String]) -> io::Result<Command> {
@@ -23,6 +25,19 @@ fn parse(args: &[String]) -> io::Result<Command> {
         [seed] if seed == "dev-seed" => Command::Seed,
         [group, help] if group == "site-admin" && matches!(help.as_str(), "--help" | "-h") => {
             Command::Help
+        }
+        [group, help] if group == "storage" && matches!(help.as_str(), "--help" | "-h") => {
+            Command::Help
+        }
+        [group, action, help]
+            if group == "storage"
+                && action == "cleanup"
+                && matches!(help.as_str(), "--help" | "-h") =>
+        {
+            Command::Help
+        }
+        [group, action, options @ ..] if group == "storage" && action == "cleanup" => {
+            Command::Storage(storage::parse(options)?)
         }
         [group, action] if group == "site-admin" && action == "list" => Command::List,
         [group, action, id] if group == "site-admin" && action == "grant" => {
@@ -67,6 +82,16 @@ pub async fn run(args: &[String]) -> io::Result<bool> {
         .ok()
         .filter(|url| !url.is_empty())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "DATABASE_URL is required"))?;
+    if let Command::Storage(options) = command {
+        let store = ControlStore::connect_for_cleanup(&url)
+            .await
+            .map_err(io::Error::other)?;
+        let result = storage::run(&store, options).await;
+        let closed = store.close().await.map_err(io::Error::other);
+        result?;
+        closed?;
+        return Ok(true);
+    }
     let store = ControlStore::connect(&url)
         .await
         .map_err(io::Error::other)?;
@@ -107,7 +132,9 @@ pub async fn run(args: &[String]) -> io::Result<bool> {
                 }
             );
         }
-        Command::Serve | Command::Help => unreachable!("handled before connecting"),
+        Command::Serve | Command::Help | Command::Storage(_) => {
+            unreachable!("handled before connecting")
+        }
     }
     store.close().await.map_err(io::Error::other)?;
     Ok(true)
@@ -147,6 +174,25 @@ mod tests {
             vec!["site-admin", "list", "extra"],
             vec!["--unknown"],
             vec!["dev-seed", "extra"],
+        ] {
+            assert!(parse(&arguments(&args)).is_err());
+        }
+    }
+
+    #[test]
+    fn storage_cleanup_is_explicit_and_supports_help_without_options() {
+        assert!(matches!(
+            parse(&arguments(&["storage", "cleanup"])).unwrap(),
+            Command::Storage(options) if !options.apply
+        ));
+        assert_eq!(
+            parse(&arguments(&["storage", "cleanup", "--help"])).unwrap(),
+            Command::Help
+        );
+        for args in [
+            vec!["storage"],
+            vec!["storage", "purge"],
+            vec!["storage", "cleanup", "--apply", "--help"],
         ] {
             assert!(parse(&arguments(&args)).is_err());
         }

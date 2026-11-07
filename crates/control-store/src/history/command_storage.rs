@@ -1,23 +1,24 @@
 //! Snapshot command results are references, not another copy of conversation data.
 use serde_json::{Value, json};
 
+pub(super) const SNAPSHOT_METHODS: [&str; 10] = [
+    "_deskfleet/session/create",
+    "_deskfleet/session/fork",
+    "_deskfleet/session/rename",
+    "_deskfleet/session/read",
+    "_deskfleet/session/unread",
+    "_deskfleet/session/switch-agent",
+    "_deskfleet/session/resume",
+    "_deskfleet/session/stop",
+    "_deskfleet/session/archive",
+    "_deskfleet/session/restore",
+];
+
 pub(super) fn compact(command: &mut Value) {
     let Some(method) = command.get("method").and_then(Value::as_str) else {
         return;
     };
-    if !matches!(
-        method,
-        "_deskfleet/session/create"
-            | "_deskfleet/session/fork"
-            | "_deskfleet/session/rename"
-            | "_deskfleet/session/read"
-            | "_deskfleet/session/unread"
-            | "_deskfleet/session/switch-agent"
-            | "_deskfleet/session/resume"
-            | "_deskfleet/session/stop"
-            | "_deskfleet/session/archive"
-            | "_deskfleet/session/restore"
-    ) {
+    if !SNAPSHOT_METHODS.contains(&method) {
         return;
     }
     if let Some(id) = command

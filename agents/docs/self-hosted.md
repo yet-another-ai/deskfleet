@@ -749,6 +749,70 @@ into the new server, and point `DATABASE_URL` at that read-write instance. The
 development Compose volume is pinned to PostgreSQL 18 for this reason; a
 production major upgrade has the same constraint.
 
+### Storage cleanup
+
+`deskfleet-server storage cleanup` uses `DATABASE_URL` directly and does not start
+HTTP or run migrations. Upgrade the server normally first; the command requires
+migration 31. Its default mode only reads candidate counts and allocated database
+bytes, so it can run with a database role that has read access:
+
+```sh
+deskfleet-server storage cleanup
+```
+
+Preview evaluates JSON predicates and can scan large history tables.
+
+Every cleanup targets legacy command receipts that contain a full Session
+snapshot. Applying it replaces those result copies with the Session reference
+used by current releases, in both command rows and command events:
+
+```sh
+deskfleet-server storage cleanup --apply --batch-size 100
+```
+
+To also remove retained content from Sessions deleted before an explicit cutoff,
+preview that cutoff and then apply it. The timestamp must include a timezone
+and uses a strict earlier-than comparison:
+
+```sh
+deskfleet-server storage cleanup --deleted-before 2026-11-01T00:00:00Z
+deskfleet-server storage cleanup --apply --deleted-before 2026-11-01T00:00:00Z
+```
+
+This permanently removes the selected deleted Sessions' snapshots, events,
+command receipts, and search content. It retains their tombstones so stale
+daemon uploads cannot revive them. Live and archived Sessions remain intact,
+and AI usage, TURN accounting, and Session admissions stay durable. Omitting
+`--deleted-before` does not purge deleted Sessions. Keep a database dump
+if that content must remain recoverable.
+
+Each batch commits independently; the default batch size is 100 and the accepted
+range is 1–1000. Legacy compaction processes at most that many rows across events
+and commands in each batch. Deleted-content purge processes one Session at a
+time and removes at most that many rows from each content table in a batch.
+Compaction keeps a keyset cursor within the run so later batches continue past
+the scanned prefix. Interrupted cleanup can be rerun. Progress goes to stderr;
+stdout contains a JSON report with before/after candidate counts, applied row
+counts, and database size. Counts can change while daemons are synchronizing.
+Allocated database bytes include indexes and free space and do not estimate how
+many bytes the candidates will release.
+
+Cleanup makes old row versions eligible for PostgreSQL vacuuming. Add
+`--vacuum standard` to run ordinary `VACUUM` on the affected history tables after
+cleanup, or let autovacuum handle them. Ordinary vacuum makes pages reusable;
+it generally does not shrink the database files. To return that space to the
+filesystem, schedule a maintenance window and request `VACUUM FULL` explicitly:
+
+```sh
+deskfleet-server storage cleanup --apply --deleted-before 2026-11-01T00:00:00Z --vacuum full
+```
+
+`VACUUM FULL` takes an exclusive lock on each table while rewriting it, blocks
+access to that table, and needs additional disk space for the replacement table
+and indexes. Both vacuum modes require `--apply` and suitable PostgreSQL
+maintenance privileges. Neither mode purges TURN records or changes their
+existing retention policy.
+
 ## Clients and machines
 
 Build Electron and the headless daemon for each computer that will execute

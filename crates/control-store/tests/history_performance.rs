@@ -8,6 +8,13 @@ use serde_json::{Value, json};
 #[path = "history_performance/retention.rs"]
 mod retention;
 
+#[path = "history_performance/cleanup.rs"]
+mod cleanup;
+#[path = "history_performance/cleanup_operations.rs"]
+mod cleanup_operations;
+#[path = "history_performance/purge.rs"]
+mod purge;
+
 struct Fixture {
     store: ControlStore,
     database: DatabaseConnection,
