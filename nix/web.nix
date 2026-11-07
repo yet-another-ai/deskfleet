@@ -68,7 +68,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     inherit (finalAttrs) pnpmWorkspaces;
     src = dependencySource;
     fetcherVersion = 5;
-    hash = "sha256-H1UAxc7Kpd4fkeQYiFuStacphluPIjiRPxIUp8tBbpk=";
+    hash = "sha256-MGfTHqXOiQnbMxPXeZ/XXpticWWUtqrsFDsAs1zTUgs=";
   };
 
   nativeBuildInputs = [
