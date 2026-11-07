@@ -222,12 +222,17 @@ test("workspace New session chooses that workspace before opening the composer a
     await wrapper.get("[data-composer-workspace]").trigger("click")
     await flushPromises()
     await wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]').find(item => item.text() === "storefront")!.trigger("click")
-    await new Promise(resolve => setTimeout(resolve, 0))
-    await flushPromises()
-    expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
-    await wrapper.get("[data-composer-machine]").trigger("click")
-    await flushPromises()
-    expect(wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').map(item => item.text())).toEqual(["test-host", "build-server Offline"])
+    await vi.waitFor(() => {
+      expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
+      expect(wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')).toHaveLength(0)
+    })
+    await vi.waitFor(async () => {
+      if (!wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').length) {
+        await wrapper.get("[data-composer-machine]").trigger("click")
+        await flushPromises()
+      }
+      expect(wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').map(item => item.text())).toEqual(["test-host", "build-server Offline"])
+    })
     await wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').find(item => item.text().includes("build-server"))!.trigger("click")
     await flushPromises()
     expect(selectMachine).toHaveBeenCalledExactlyOnceWith("remote-1")
