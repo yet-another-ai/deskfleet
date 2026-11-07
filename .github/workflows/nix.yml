@@ -33,7 +33,7 @@ jobs:
       - name: Install locked Node for packaging and smoke checks
         uses: jdx/mise-action@v5
         with:
-          version: 2026.10.25
+          version: 2026.11.3
           install_args: --locked node
 
       - name: Download the desktop application payload from Build
