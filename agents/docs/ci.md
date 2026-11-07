@@ -20,18 +20,27 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   test suite upon `ready_for_review`. Configure `Gate` under the `CI` workflow as
   the required status check in repository branch protection. Successful push and
   manual runs on `main` then deploy the product website to GitHub Pages.
-- `.github/workflows/test.yml` runs a staged test pipeline. Fast `Static checks`
-  and the desktop/Web/website builds run first on Linux with `mise run ci:check:static`.
-  Platform tests and backend integration jobs wait for static checks to pass
-  (`needs: static`), providing fast-fail feedback before running on expensive
-  runners. Furthermore, pull requests filter runtime test jobs by changed paths:
+  A new pull request push cancels that pull request's previous run; runs on
+  `main` and the daily run are never cancelled, so every main commit finishes
+  and saves its caches. The reusable workflows declare no concurrency groups of
+  their own. After each run on `main`, `Prune caches` deletes superseded cache
+  entries, as described under [Toolchains and caches](#toolchains-and-caches).
+- `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
+  the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
+  rustfmt, cargo-shear, script tests, the Rust skills harness check, and the Web
+  and website type checks. Platform tests and backend integration jobs wait for
+  it (`needs: preflight`), providing fast-fail feedback before running on
+  expensive runners. `Static checks` runs beside them with
+  `mise run ci:check:static`: Clippy, the type checks that need the native
+  addon, and the desktop, Web, and website builds. Test fails if either job
+  fails, so `Gate` requires both. Furthermore, pull requests filter runtime test jobs by changed paths:
   cross-platform matrix checks (macOS arm64 and Windows x64) run only when
   native/cross-platform paths are modified (`crates/`, `apps/desktop/`, `apps/daemon/`,
   `*.rs`, root build configs, workflows, scripts, or patches), running Linux x64 only
   for frontend-only changes; backend integration tests run only when backend, server,
   database, or shared protocol files are touched (`apps/server/`, `crates/`, `compose.yaml`,
   etc.). Pushes to `main`, daily scheduled runs, and manual dispatches always run the
-  full matrix and all integration suites. Once static checks pass, active platform
+  full matrix and all integration suites. Once Preflight passes, active platform
   tests run in parallel. Linux uses `mise run test`, including the renderer Vitest
   project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
   script, and desktop main/shared/client checks, without repeating the happy-dom renderer
@@ -68,17 +77,22 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   packaging or distribution configurations change (`packaging/**`, `nix/**`,
   root flake files, packaging scripts, or packaging workflow files). Daily
   scheduled, manual, and tagged release runs use the full platform matrix.
+  Smoke builds package only the Linux `tar.gz` desktop payload, which Linux
+  packages and Nix consume; the full matrix keeps every configured target,
+  including AppImages.
   Desktop Nix packaging follows Build's Linux matrix during releases so it only
-  downloads archives produced in the same run. The daily CI, Test, Build, and
-  Nix server concurrency groups are independent of main pushes, so
-  frequent merges do not cancel full-platform validation.
-  Packaging keeps Cargo's parallel release codegen: 16 units,
-  LTO off, no debug info, and stripped symbols. Windows packaging additionally
+  downloads archives produced in the same run.
+  `mise.ci.toml` gives CI release builds Cargo's parallel release codegen: 16
+  units, LTO off, no debug info, and stripped symbols. Windows packaging additionally
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
   overriding rustc's `/DEBUG` default so vendored OpenSSL does not require a PDB
-  during release linking. This applies only to Build jobs; test and development
-  builds keep their debug information. Each target packages and verifies the
+  during release linking. Each target packages and verifies the
   standalone SEA daemon.
+  Build runs on `ubuntu-24.04` and `ubuntu-24.04-arm`, while every other Linux
+  job uses the newest hosted image, `ubuntu-26.04` or `ubuntu-26.04-arm`. The
+  build image sets the glibc floor of the released binaries, and
+  `scripts/check-linux-release.ts` installs the packages on Ubuntu 24.04.
+  `ubuntu-latest` lags new images, so workflows name the version.
   The same matrix packages Electron installers and Linux desktop archives and
   smoke-tests the bundled server container on each native Linux runner. The
   Publish caller enables production configuration and macOS signing. PR, main,
@@ -114,10 +128,13 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   Ubuntu and Fedora containers, then uploads the validated packages. CI runs the
   x64 variant after packaging builds; Publish validates both architectures and
   includes the uploaded packages in the draft release.
-- `.github/actions/setup-build/action.yml` installs locked tools and dependencies
-  and configures shared caches for the Test and Build workflows. The locked
-  toolchain install retries once after a transient failure: hosted macOS runners
-  have SIGKILL'd rustup during the first attempt.
+- `.github/actions/setup-mise/action.yml` is the only place that installs mise
+  and its locked tools. Jobs that need only Node pass `tools: node`. It selects
+  the CI mise environment and retries the install once after a transient
+  failure: hosted macOS runners have SIGKILL'd rustup during the first attempt.
+- `.github/actions/setup-build/action.yml` calls setup-mise, then installs the
+  workspace and configures shared caches for the Test and Build workflows. It
+  writes a cache restore summary for each job.
 
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
 server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
@@ -626,26 +643,54 @@ pending-question recovery, plus the independent-connection ownership test. These
 cover persistence while behavior-only fixtures keep file creation and migration
 I/O out of IPC and lifecycle timeout budgets.
 
-Static and test jobs may restore the Cargo target cache. Build jobs use Cargo
-download caches without restoring compiled targets. The setup action fetches
-the locked crates and installs the workspace before saving those download caches,
-so a main or tag miss stores the populated entry.
+`.github/actions/setup-mise` sets `MISE_ENV=ci`, which loads `mise.ci.toml`
+on top of `mise.toml`. It holds the CI-only Cargo settings: no incremental
+state, line-table debug info for dev and test builds, and the faster release
+profile above. mise-action exports them to later steps, so plain `cargo`
+steps see the same environment as `mise run`. Reproduce a CI build locally
+with `mise -E ci run <task>`.
 
-Cache keys include the runner OS and architecture. The pnpm store and the
-Electron package download directory also include the `pnpm-lock.yaml` hash.
-Cargo downloads include the `Cargo.lock` hash. Each key has a same-platform
-restore prefix. `pnpm install` does not download Electron. The shared setup
-restores `@electron/get`'s default cache, and the PostgreSQL job saves it after
-`install-electron` on main and tags. Installed `node_modules` directories are
-rebuilt from the lockfile.
+Only pushes and runs on `main` save caches. Pull requests and tags restore
+main's entries through the base-branch fallback, so their own copies would
+only spend the repository's 10 GB quota. Every save skips an exact hit.
 
-All jobs use sccache 0.19.0 through the pinned `sccache-action` release.
-Its directory is local to the job and is not stored in the GitHub Actions
-cache. One Actions object per compilation filled the repository quota and
-evicted the Windows Cargo target cache. `SCCACHE_LOG` is `warn`. Cargo target
-caches are still saved from main only.
+| Cache | Key | Writer |
+| --- | --- | --- |
+| mise tools | mise-action's key: OS, mise version, `MISE_ENV`, requested tools, and `mise.lock` | Every job on `main`; Node-only jobs have their own entry |
+| Cargo target | rust-cache's key: role, OS, architecture, Rust toolchain, `CARGO_*`/`RUST*` environment, and lockfiles | One job per role on `main` |
+| Cargo downloads | OS, architecture, and `Cargo.lock` | Jobs without a target role |
+| pnpm store | OS, architecture, and `pnpm-lock.yaml` | Every setup-build job on `main` |
+| Electron | OS, architecture, and the locked Electron version | Every setup-build job on `main` |
 
-`mise run ci:report:sccache` reports cache hit, miss, write, and error counters.
+Cargo target caches are keyed by role, not by job, so jobs that compile the
+same profiles and features share one entry per OS:
+
+| Role | Jobs | Saves |
+| --- | --- | --- |
+| `static` | Static checks | Yes |
+| `test` | Tests on each platform; the PostgreSQL job restores Linux's entry | Tests only |
+| `release` | Build | Main smoke build only |
+
+Preflight caches only Cargo downloads. Tagged production builds restore no
+target directory, so a release never reuses outputs from an unrelated build.
+rust-cache saves after a failed test as well, because the build outputs are
+still valid. CI does not use sccache: one Actions cache object per compilation
+filled the quota and evicted the target caches.
+
+The pnpm store and Cargo downloads fall back to the newest same-platform entry.
+Before saving, `pnpm store prune` removes packages that the current lockfile no
+longer uses, so the store tracks the lockfile instead of growing with every
+update. Installed `node_modules` directories are rebuilt from the lockfile.
+`pnpm install` does not download Electron. On a main miss, setup-build runs
+`install-electron` and saves the archive on every OS, whichever job later
+launches Electron.
+
+After every run on `main`, `Prune caches` runs `scripts/ci-prune-caches.ts`.
+It deletes caches saved outside `main`, then groups main's entries by key
+without their input hashes and versions and keeps the newest of each group.
+Superseded entries are removed instead of waiting for LRU eviction, which could
+remove a live entry first. Run it locally with `GITHUB_REPOSITORY` and
+`GITHUB_TOKEN` set and `--dry-run` to list what it would delete.
 
 Heron's Nix, coverage upload, Playwright, plug-in SDK, signing, and symbol-upload
 jobs are not part of this workflow. DeskFleet keeps the orchestrator, the reusable
