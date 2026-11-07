@@ -1,7 +1,12 @@
 import assert from "node:assert/strict"
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import type { MachineOperations } from "./machine-operations.ts"
 import { dispatchMcp } from "./mcp-dispatch.ts"
+import { writeRemoteAgentSettings } from "./remote-agent-settings.ts"
+import { RemoteMcp } from "./remote-mcp.ts"
 
 const actor = { kind: "user" as const, userId: "creator", deviceId: "login" }
 const scope = { sessionId: "1", workspaceId: "10" }
@@ -104,3 +109,76 @@ test("cross-machine tools bind the initiating Session and actor while the target
   await assert.rejects(dispatchMcp(operations, "remoteMcp/machines", {}, actor, scope, remote), /archived/)
   assert.equal(requests.length, 1)
 })
+
+test("cross-machine file tools reuse FilesService and FileTransferManager with live read/operate authorization", async t => {
+  const { operations } = fixture()
+  const root = await mkdtemp(join(tmpdir(), "df-mcp-files-"))
+  const localDir = join(root, "local"), remoteDir = join(root, "remote"), downloadDir = join(root, "download"), settingsDir = join(root, "settings")
+  await Promise.all([mkdir(join(localDir, "saves", "empty"), { recursive: true }), mkdir(remoteDir), mkdir(downloadDir), mkdir(settingsDir)])
+  const payload = Buffer.from(Array.from({ length: 200_003 }, (_, index) => index % 251))
+  await writeFile(join(localDir, "saves", "world.sav"), payload)
+  await writeFile(join(localDir, "profile.lua"), "return { name = 'Lemon' }\n")
+
+  const targetService = new RemoteMcp(settingsDir, operations)
+  t.after(async () => { targetService.close(); await rm(root, { recursive: true, force: true }) })
+  const delegatedActor = { ...actor, sourceMachine: { id: "source", originId: "origin" } }
+  const remote = (request: { sessionId: string; operation: string; arguments: Record<string, unknown> }) =>
+    targetService.handle("remoteMcp", {
+      source: { teamId: "team", machineId: "source", sessionId: request.sessionId },
+      operation: request.operation,
+      arguments: request.arguments,
+    }, delegatedActor, { teamId: "team", machineId: "target" })
+
+  // Read-only access permits listing, stat, and downloading, but rejects uploading.
+  await writeRemoteAgentSettings(settingsDir, { allowRead: true, allowOperate: false })
+  await assert.rejects(
+    dispatchMcp(operations, "remoteMcp/fileUpload", { machineId: "target", sourcePath: join(localDir, "profile.lua"), destinationDirectory: remoteDir }, actor, scope, remote),
+    /operate/,
+  )
+  assert.deepEqual(await readdir(remoteDir), [])
+
+  // Operate access permits uploading files and directories with conflict policies.
+  await writeRemoteAgentSettings(settingsDir, { allowRead: false, allowOperate: true })
+  const uploadedFile = await dispatchMcp(operations, "remoteMcp/fileUpload", {
+    machineId: "target", sourcePath: join(localDir, "profile.lua"), destinationDirectory: remoteDir,
+  }, actor, scope, remote) as { name: string; kind: string; transferredBytes: number; skipped: boolean }
+  assert.equal(uploadedFile.name, "profile.lua")
+  assert.equal(uploadedFile.kind, "file")
+  assert.equal(uploadedFile.skipped, false)
+
+  await assert.rejects(
+    dispatchMcp(operations, "remoteMcp/fileUpload", { machineId: "target", sourcePath: join(localDir, "profile.lua"), destinationDirectory: remoteDir, conflict: "ask" }, actor, scope, remote),
+    /already exists/,
+  )
+  const skippedFile = await dispatchMcp(operations, "remoteMcp/fileUpload", {
+    machineId: "target", sourcePath: join(localDir, "profile.lua"), destinationDirectory: remoteDir, conflict: "skip",
+  }, actor, scope, remote) as { skipped: boolean }
+  assert.equal(skippedFile.skipped, true)
+
+  const uploadedFolder = await dispatchMcp(operations, "remoteMcp/fileUpload", {
+    machineId: "target", sourcePath: join(localDir, "saves"), destinationDirectory: remoteDir, conflict: "replace",
+  }, actor, scope, remote) as { name: string; kind: string; transferredBytes: number }
+  assert.equal(uploadedFolder.name, "saves")
+  assert.equal(uploadedFolder.kind, "directory")
+  assert.equal(uploadedFolder.transferredBytes, payload.byteLength)
+
+  // Listing and stat work under read or operate permission.
+  await writeRemoteAgentSettings(settingsDir, { allowRead: true, allowOperate: false })
+  const listed = await dispatchMcp(operations, "remoteMcp/files", { machineId: "target", path: remoteDir }, actor, scope, remote) as { entries: { name: string; kind: string }[] }
+  assert.deepEqual(listed.entries.map(entry => ({ name: entry.name, kind: entry.kind })), [
+    { name: "saves", kind: "directory" },
+    { name: "profile.lua", kind: "file" },
+  ])
+  const statted = await dispatchMcp(operations, "remoteMcp/files", { machineId: "target", operation: "stat", path: join(remoteDir, "saves", "world.sav") }, actor, scope, remote) as { size: number }
+  assert.equal(statted.size, payload.byteLength)
+
+  // Downloading copies the remote folder back into the local destination directory.
+  const downloaded = await dispatchMcp(operations, "remoteMcp/fileDownload", {
+    machineId: "target", sourcePath: join(remoteDir, "saves"), destinationDirectory: downloadDir,
+  }, actor, scope, remote) as { transferredBytes: number; skipped: boolean }
+  assert.equal(downloaded.transferredBytes, payload.byteLength)
+  assert.equal(downloaded.skipped, false)
+  assert.deepEqual(await readFile(join(downloadDir, "saves", "world.sav")), payload)
+  assert.deepEqual(await readdir(join(downloadDir, "saves", "empty")), [])
+})
+

@@ -20,6 +20,7 @@
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
-    "pi-acp": "0.0.34"
+    "pi-acp": "0.0.34",
+    "zod": "4.6.7"
   }
 }

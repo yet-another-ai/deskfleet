@@ -14,6 +14,8 @@ pub enum RemoteMcpOperation {
     McpServers,
     McpTools,
     McpCall,
+    FilesRead,
+    FilesWrite,
 }
 
 #[derive(Debug, Deserialize, TS)]

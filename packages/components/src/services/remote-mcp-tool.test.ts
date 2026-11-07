@@ -78,3 +78,43 @@ test("activity detection never reads screenshot output", () => {
   Object.defineProperty(call, "content", { get() { throw new Error("Should not read images") } })
   expect(isRemoteMcpTool(call)).toBe(true)
 })
+
+test("normalizes remote file list, stat, upload, and download tools into remote cards", () => {
+  expect(remoteMcpTool({
+    toolCallId: "files-list",
+    title: "mcp.deskfleet.deskfleet_remote_files",
+    rawInput: { machineId: "machine-3", path: "C:\\Games\\TransportFever3" },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_files",
+    action: "list C:\\Games\\TransportFever3",
+    images: [],
+    isError: false,
+  })
+  expect(remoteMcpTool({
+    toolCallId: "files-upload",
+    title: "mcp__deskfleet__deskfleet_remote_file_upload",
+    rawInput: { machineId: "machine-3", sourcePath: "/Users/lemonneko/profile.lua", destinationDirectory: "C:\\Games\\TransportFever3" },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_file_upload",
+    action: "upload /Users/lemonneko/profile.lua → C:\\Games\\TransportFever3",
+    images: [],
+    isError: false,
+  })
+  expect(remoteMcpTool({
+    toolCallId: "files-download",
+    title: "deskfleet_remote_file_download",
+    rawInput: { server: "deskfleet", tool: "deskfleet_remote_file_download", arguments: { machineId: "machine-3", sourcePath: "C:\\Games\\TransportFever3\\save", destinationDirectory: "/Users/lemonneko/backup" } },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_file_download",
+    action: "download C:\\Games\\TransportFever3\\save → /Users/lemonneko/backup",
+    images: [],
+    isError: false,
+  })
+})
+
