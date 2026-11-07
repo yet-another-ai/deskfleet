@@ -22,7 +22,8 @@ let
   # pnpm-lock.yaml is YAML, which Nix cannot load as JSON. The lockfile we commit
   # only uses single-line package keys and `resolution: {integrity: ...}`
   # entries under `packages:`, so a line scan is enough and stays IFD-free.
-  lines = lib.splitString "\n" (builtins.readFile lockFile);
+  # Strip CR so Windows checkouts of the lockfile still parse.
+  lines = map (lib.removeSuffix "\r") (lib.splitString "\n" (builtins.readFile lockFile));
 
   packageKeyMatch = builtins.match "  ('([^']+)'|\"([^\"]+)\"|([^[:space:]:]+)):";
   integrityMatch = builtins.match "    resolution: [{]integrity: (.*)[}]";

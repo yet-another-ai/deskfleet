@@ -23,7 +23,8 @@ function parseLockfilePackages(text: string): { version: string | null; packages
       throw new LockfileParseError(`Package ${current} has no single-line integrity resolution (${context}).`)
     }
   }
-  for (const line of text.split("\n")) {
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/\r$/u, "")
     const versionMatch = /^lockfileVersion:\s*['"]?([^'"]+)['"]?\s*$/u.exec(line)
     if (version === null && versionMatch) version = versionMatch[1] ?? null
     if (line === "packages:") {
@@ -91,13 +92,15 @@ test("Web Nix deps stay lockfile-driven without aggregate FOD hash or IFD", () =
 })
 
 test("pnpm-lock.yaml matches the pure Nix parser's integrity-only package contract", () => {
-  const { version, packages } = parseLockfilePackages(lockfile)
-  assert.equal(version, "9.0")
-  assert.ok(packages.size > 0, "expected locked packages")
-  for (const [name, integrity] of packages) {
-    assert.match(name, /.+@.+/u)
-    assert.doesNotMatch(name, /\(/u, `peer-suffixed keys need Nix parser updates: ${name}`)
-    assert.match(integrity, /^sha512-/u, name)
+  for (const text of [lockfile, lockfile.replaceAll("\n", "\r\n")]) {
+    const { version, packages } = parseLockfilePackages(text)
+    assert.equal(version, "9.0")
+    assert.ok(packages.size > 0, "expected locked packages")
+    for (const [name, integrity] of packages) {
+      assert.match(name, /.+@.+/u)
+      assert.doesNotMatch(name, /\(/u, `peer-suffixed keys need Nix parser updates: ${name}`)
+      assert.match(integrity, /^sha512-/u, name)
+    }
   }
 })
 
