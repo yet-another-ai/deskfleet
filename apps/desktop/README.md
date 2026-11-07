@@ -453,6 +453,15 @@ requests administrator approval to install or start it. Skipping or
 canceling approval leaves sign-in available, and installation can be retried
 from the welcome page or Settings → Permissions. An already running service
 needs no further approval.
+Linux also offers a separate **AI computer access** step for AUV screenshots and
+mouse/keyboard input. **Authorize AUV** opens AUV's own desktop authorization
+dialogs before an Agent needs those capabilities. Settings → Permissions keeps
+the same controls available after setup, including reauthorization. Opening
+either page, refreshing, or returning focus only checks status. AUV authorization
+is independent of DeskFleet's native remote-desktop permissions, including on X11.
+The status **AUV authorization saved** means both restore records exist; it is
+not a live permission check. A desktop that cannot save consent reports that
+limitation, and revoked or expired access can require authorization again.
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Startup
 starts or reuses the local Agent when its saved preference is enabled. macOS
@@ -634,6 +643,22 @@ the same compiled app. The archive includes Electron, the native addon, and the
 bundled daemon and ACP adapters. It is the reusable input for distribution
 packages: Nix patches runtime paths and installs it without rebuilding Rust or
 JavaScript. Future deb, rpm, or AUR packaging can consume the same archive.
+
+Before starting the local Agent, Linux desktop startup runs the bundled
+`auv doctor --portal-setup` to install or refresh the user's
+`ai.moeru.auv.desktop` identity. This covers both the AUV MCP server and CLI,
+including development builds and executable paths changed by app updates.
+Setup installs desktop metadata only. Welcome and Settings → Permissions run
+`auv doctor --portal-setup --portal-authorize --json` on an explicit authorization
+action; silent checks use `auv doctor --json`. Both use AUV's default user state
+directory, shared by ordinary local CLI and MCP calls across working directories.
+The host aborts any pending doctor process when quitting. Explicitly selected
+AUV daemon Runners own separate state; clipboard authorization is also separate
+in the pinned AUV version.
+Setup failures are logged without preventing the app or local Agent from starting.
+For an already-running version without this setup, run
+`auv doctor --portal-setup` using its bundled executable to resolve
+`App info not found for 'ai.moeru.auv'`.
 
 Tagged releases use `electron-builder.release.yml` on macOS. This overlay
 requires Developer ID signing and Apple notarization; missing credentials or

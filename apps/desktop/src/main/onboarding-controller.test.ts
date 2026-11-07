@@ -3,12 +3,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import type { LocalNetworkAccessRequest } from "../../../../packages/client/src/onboarding.ts"
+import type { AuvPermissionsState, LocalNetworkAccessRequest } from "../../../../packages/client/src/onboarding.ts"
 import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const macPermissions = { permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }
-const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility"] }
+const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility", "auv"] }
+const auvPermissions = { permissionSteps: ["auv"] }
 const windowsPermissions = { permissionSteps: ["windowsDesktopService"] }
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -33,7 +34,11 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
     get: vi.fn(async () => serviceState),
     setEnabled: vi.fn(async (_enabled: boolean) => ({ ...serviceState, installed: true, running: true })),
   }
-  const options = { path, platform, localAgent, localNetwork, windowsDesktopService }
+  const auv = {
+    get: vi.fn(async (): Promise<AuvPermissionsState> => ({ status: "not-requested" })),
+    request: vi.fn(async (): Promise<AuvPermissionsState> => ({ status: "saved" })),
+  }
+  const options = { path, platform, localAgent, localNetwork, windowsDesktopService, auv }
   return { ...options, controller: new OnboardingController(options), restart: () => new OnboardingController(options) }
 }
 
@@ -136,7 +141,8 @@ test("Linux guides screen and input access, reuses startup authorization, and re
   expect(await f.controller.advancePermission("screenCapture")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "accessibility" })
   const resumed = f.restart()
   expect(await resumed.get()).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "accessibility" })
-  expect(await resumed.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "account" })
+  expect(await resumed.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "auv" })
+  expect(await resumed.advancePermission("auv")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "account" })
   expect(await resumed.complete()).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "complete" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
@@ -149,7 +155,7 @@ test("Linux welcome retries or defers desktop permissions without adding Full Di
   expect(await f.controller.advancePermission("screenCapture")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "accessibility" })
   await f.controller.requestPermission("accessibility")
   expect(f.localAgent.requestPermission).toHaveBeenLastCalledWith("accessibility")
-  expect(await f.controller.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "account" })
+  expect(await f.controller.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "auv" })
 })
 
 test("Windows silently checks the optional service and installs only on an explicit welcome action", async () => {
@@ -376,13 +382,16 @@ test("invalid persisted progress is reported", async () => {
 })
 
 
-test.each(["x11", null] as const)("Linux %s skips consent using the connected daemon backend", async backend => {
+test.each(["x11", null] as const)("Linux %s skips native consent and retains independent AUV guidance", async backend => {
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = backend
-  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account", linuxDesktopBackend: backend })
+  expect(await f.controller.get()).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: backend })
+  expect(await f.controller.permissions()).toEqual({ auv: { status: "not-requested" } })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
   expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
-  expect(await f.controller.complete()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: backend })
+  await f.controller.advancePermission("auv")
+  expect(f.auv.request).not.toHaveBeenCalled()
+  expect(await f.controller.complete()).toEqual({ ...auvPermissions, step: "complete", linuxDesktopBackend: backend })
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
 })
 
@@ -390,11 +399,11 @@ test("switching from Wayland to X11 skips saved Portal consent steps", async () 
   const f = await fixture("linux")
   await writeFile(f.path, JSON.stringify({ step: "accessibility" }))
   f.localAgent.state.linuxDesktopBackend = "x11"
-  expect(await f.restart().get()).toEqual({ permissionSteps: [], step: "account", linuxDesktopBackend: "x11" })
+  expect(await f.restart().get()).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: "x11" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })
 
-test("a permission refresh that reconnects to X11 normalizes and persists the account step", async () => {
+test("a permission refresh that reconnects to X11 normalizes and persists the AUV step", async () => {
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
@@ -406,9 +415,10 @@ test("a permission refresh that reconnects to X11 normalizes and persists the ac
     return { linuxDesktopBackend: "x11", fullDiskAccessPermission: { status: "not-required" }, screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } }
   })
   expect(await f.controller.permissions()).toMatchObject({ linuxDesktopBackend: "x11" })
-  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account", linuxDesktopBackend: "x11" })
-  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
-  expect(await f.controller.complete()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
+  expect(await f.controller.get()).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: "x11" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "auv" })
+  await f.controller.advancePermission("auv")
+  expect(await f.controller.complete()).toEqual({ ...auvPermissions, step: "complete", linuxDesktopBackend: "x11" })
 })
 
 
@@ -420,7 +430,7 @@ test("a temporarily disconnected Wayland daemon preserves its saved permission s
   f.localAgent.state.error = "Local Agent disconnected"
   expect(await f.restart().get()).toEqual({ ...waylandPermissions, step: "accessibility" })
   expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "accessibility" })
-  expect(await f.restart().advancePermission("accessibility")).toEqual({ permissionSteps: [], step: "account" })
+  expect(await f.restart().advancePermission("accessibility")).toEqual({ ...auvPermissions, step: "auv" })
 })
 
 test("a fresh Linux Agent does not assume Wayland Portal steps before hello", async () => {
@@ -428,21 +438,74 @@ test("a fresh Linux Agent does not assume Wayland Portal steps before hello", as
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
   f.localAgent.state.error = "Daemon startup failed"
-  expect(await f.controller.get()).toEqual({ permissionSteps: [], step: "account" })
-  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
+  expect(await f.controller.get()).toEqual({ ...auvPermissions, step: "auv" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "auv" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
-  expect(await f.controller.complete()).toEqual({ permissionSteps: [], step: "complete" })
+  await f.controller.advancePermission("auv")
+  expect(await f.controller.complete()).toEqual({ ...auvPermissions, step: "complete" })
 })
 
-test("X11 hello after a missing-backend Portal step lets Skip reach account", async () => {
+test("X11 hello after a missing-backend Portal step lets Skip reach AUV guidance", async () => {
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = undefined
   await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
   const controller = f.restart()
   expect(await controller.get()).toEqual({ ...waylandPermissions, step: "screenCapture" })
   f.localAgent.state.linuxDesktopBackend = "x11"
-  expect(await controller.advancePermission("screenCapture")).toEqual({ permissionSteps: [], step: "account", linuxDesktopBackend: "x11" })
-  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "account" })
-  await expect(controller.requestPermission("screenCapture")).rejects.toThrow("permission step")
-  expect(await controller.complete()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
+  expect(await controller.advancePermission("screenCapture")).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: "x11" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "auv" })
+  await expect(controller.requestPermission("screenCapture")).rejects.toThrow("step has changed")
+  await controller.advancePermission("auv")
+  expect(await controller.complete()).toEqual({ ...auvPermissions, step: "complete", linuxDesktopBackend: "x11" })
+})
+
+test("AUV welcome checks silently, requests its own authorization, and resumes its step", async () => {
+  const f = await fixture("linux")
+  await f.controller.advancePermission("screenCapture")
+  await f.controller.advancePermission("accessibility")
+  expect(await f.restart().get()).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "auv" })
+  expect(await f.controller.permissions()).toEqual({ auv: { status: "not-requested" } })
+  expect(f.auv.request).not.toHaveBeenCalled()
+  expect(await f.controller.requestPermission("auv")).toEqual({ auv: { status: "saved" } })
+  expect(f.auv.request).toHaveBeenCalledOnce()
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+  expect((await f.restart().get()).step).toBe("auv")
+  expect((await f.controller.advancePermission("auv")).step).toBe("account")
+})
+
+test("completed Linux setup exposes AUV without restarting welcome or authorizing on refresh", async () => {
+  const f = await fixture("linux")
+  await writeFile(f.path, JSON.stringify({ step: "complete" }))
+  f.auv.get.mockResolvedValue({ status: "saved" })
+  expect((await f.controller.get()).step).toBe("complete")
+  expect(await f.controller.permissions()).toMatchObject({ auv: { status: "saved" }, screenCapturePermission: { status: "denied" } })
+  expect(f.auv.request).not.toHaveBeenCalled()
+  await f.controller.requestPermission("auv")
+  expect(f.auv.request).toHaveBeenCalledOnce()
+  expect((await f.restart().get()).step).toBe("complete")
+})
+
+test("pending AUV authorization cannot be duplicated or skipped and failure can be retried", async () => {
+  const f = await fixture("linux")
+  await writeFile(f.path, JSON.stringify({ step: "auv" }))
+  let finish!: (state: AuvPermissionsState) => void
+  f.auv.request.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const request = f.controller.requestPermission("auv")
+  await vi.waitFor(() => expect(f.auv.request).toHaveBeenCalledOnce())
+  await expect(f.controller.requestPermission("auv")).rejects.toThrow("changing state")
+  await expect(f.controller.advancePermission("auv")).rejects.toThrow("changing state")
+  finish({ status: "error", error: "Authorization cancelled" })
+  expect(await request).toEqual({ auv: { status: "error", error: "Authorization cancelled" } })
+  expect((await f.restart().get()).step).toBe("auv")
+  expect(await f.controller.requestPermission("auv")).toEqual({ auv: { status: "saved" } })
+})
+
+test.each(["darwin", "win32"] as const)("%s cannot request the Linux AUV authorization", async platform => {
+  const f = await fixture(platform)
+  await writeFile(f.path, JSON.stringify({ step: "complete" }))
+  await f.controller.permissions()
+  await expect(f.controller.requestPermission("auv")).rejects.toThrow("unavailable")
+  expect(f.auv.get).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
 })

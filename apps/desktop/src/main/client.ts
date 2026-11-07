@@ -9,7 +9,8 @@ import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRunti
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
-import { resolveAuvPath } from "./auv.ts"
+import { prepareAuv } from "./auv.ts"
+import { AuvPermissionsController } from "./auv-permissions-controller.ts"
 import { desktopDaemonDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
@@ -77,11 +78,13 @@ function start(): void {
     process.once("SIGTERM", () => lifecycle.quit())
     // Logging out or shutting down must not wait on a client hidden in the tray.
     powerMonitor.on("shutdown", () => lifecycle.quit())
+    const auvPath = await prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
+    const auv = process.platform === "linux" ? new AuvPermissionsController(auvPath) : undefined
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
       createLocalAgentRuntime({
         directory: desktopDaemonDirectory(),
-        auvPath: resolveAuvPath({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }),
+        auvPath,
       }),
       publishLocalAgentState,
     )
@@ -89,7 +92,7 @@ function start(): void {
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
-      windowsDesktopService,
+      windowsDesktopService, auv,
       localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
       established: () => establishedDesktopProfile(userData),
     })
@@ -104,6 +107,7 @@ function start(): void {
     let closing: Promise<void> | undefined
     let servicesClosed = false
     const closeServices = (): Promise<void> => {
+      auv?.close()
       notificationMonitor.close()
       notifications.close()
       closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close()]).then(results => {

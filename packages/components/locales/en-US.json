@@ -128,6 +128,20 @@
     "restart": "After changing this permission, fully quit and reopen DeskFleet so its local Agent uses the new access.",
     "waylandShared": "Screen sharing and mouse and keyboard control use the same desktop authorization."
   },
+  "auvPermissions": {
+    "description": "Allow AI agents to take screenshots and use the mouse and keyboard through AUV.",
+    "instructions": "Choose the screen and allow remote control in the desktop authorization dialog.",
+    "savedHint": "Authorization is saved for future AUV sessions. The desktop may ask again if access expires or is revoked.",
+    "request": "Authorize AUV",
+    "retry": "Authorize AUV again",
+    "skip": "You can authorize AUV later in Settings → Permissions.",
+    "status": {
+      "not-requested": "AUV has not been authorized",
+      "requesting": "Waiting for AUV authorization…",
+      "saved": "AUV authorization saved",
+      "error": "AUV authorization was not saved"
+    }
+  },
   "updatesSettings": {
     "title": "Updates",
     "description": "Check for a newer version of DeskFleet and install it when you’re ready.",
@@ -1390,6 +1404,7 @@
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
       "accessibility": "Mouse and keyboard control",
+      "auv": "AI computer access",
       "windowsDesktopService": "Remote control while locked",
       "account": "Your account"
     },

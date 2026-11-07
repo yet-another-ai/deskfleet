@@ -28,6 +28,8 @@ test("welcome IPC accepts only the main renderer and known permission actions", 
   expect(f.controller.requestPermission).toHaveBeenLastCalledWith("localNetwork")
   await f.invoke(f.event, "requestPermission", "windowsDesktopService")
   expect(f.controller.requestPermission).toHaveBeenLastCalledWith("windowsDesktopService")
+  await f.invoke(f.event, "requestPermission", "auv")
+  expect(f.controller.requestPermission).toHaveBeenLastCalledWith("auv")
   await f.invoke(f.event, "advancePermission", "windowsDesktopService")
   expect(f.controller.advancePermission).toHaveBeenCalledExactlyOnceWith("windowsDesktopService")
   await f.invoke(f.event, "openLocalNetworkSettings")
@@ -39,7 +41,7 @@ test("welcome IPC accepts only the main renderer and known permission actions", 
   await expect(f.invoke({ ...f.event, senderFrame: { url: BUNDLED_RENDERER_URL } } as IpcMainInvokeEvent, "get")).rejects.toThrow("main renderer")
   f.mainFrame.url = "https://example.org/"
   await expect(f.invoke(f.event, "requestPermission", "windowsDesktopService")).rejects.toThrow("main renderer")
-  expect(f.controller.requestPermission).toHaveBeenCalledTimes(3)
+  expect(f.controller.requestPermission).toHaveBeenCalledTimes(4)
   await expect(f.invoke(f.event, "openLocalNetworkSettings")).rejects.toThrow("main renderer")
   expect(f.controller.openLocalNetworkSettings).toHaveBeenCalledOnce()
   await expect(f.invoke(f.event, "get")).rejects.toThrow("main renderer")

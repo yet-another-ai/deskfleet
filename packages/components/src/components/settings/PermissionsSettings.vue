@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { DESKTOP_ONBOARDING_PERMISSIONS, onboardingPermissions, type OnboardingPermission, type OnboardingPermissionsState } from "@deskfleet/client/onboarding"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
-import { FolderOpen, Monitor, MousePointer2, Network, RefreshCw, RotateCcw } from "@lucide/vue"
+import { Bot, FolderOpen, Monitor, MousePointer2, Network, RefreshCw, RotateCcw } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
+import AuvPermissionControls from "../common/AuvPermissionControls.vue"
 import WindowsDesktopServiceSettings from "./WindowsDesktopServiceSettings.vue"
 
 const client = usePlatformClient()
@@ -20,26 +21,27 @@ const permissionSteps = ref<readonly SystemPermission[]>([])
 const permissions = ref<OnboardingPermissionsState>({})
 const backend = ref<DesktopPermissionsState["linuxDesktopBackend"]>()
 const refreshing = ref(false)
-const pending = ref(false)
+const pending = ref<SystemPermission>()
 const error = ref<string>()
 let revision = 0
-const busy = computed(() => refreshing.value || pending.value)
+const busy = computed(() => refreshing.value || pending.value !== undefined)
 const wayland = computed(() => client.platform === "linux" && backend.value === "wayland")
 const sharedRequest = computed(() => wayland.value && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
-const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2 }
+const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, auv: Bot }
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const details = (kind: SystemPermission) => `welcome.${wayland.value ? "wayland" : "permissions"}.${kind}`
-const label = (kind: SystemPermission) => t(wayland.value ? `${details(kind)}.title` : `welcome.steps.${kind}`)
-const desktopPermission = (kind: SystemPermission) => kind === "localNetwork" ? undefined : permissions.value[`${kind}Permission`]
+const label = (kind: SystemPermission) => t(wayland.value && kind !== "auv" ? `${details(kind)}.title` : `welcome.steps.${kind}`)
+const desktopPermission = (kind: SystemPermission) => kind === "localNetwork" || kind === "auv" ? undefined : permissions.value[`${kind}Permission`]
 const granted = (kind: SystemPermission) => ["granted", "not-required"].includes(desktopPermission(kind)?.status ?? "")
-const requesting = (kind: SystemPermission) => sharedRequest.value || desktopPermission(kind)?.status === "requesting"
-const canRequest = (kind: SystemPermission) => !busy.value && !granted(kind) && !requesting(kind)
-  && (!wayland.value || desktopPermission(kind)?.status !== "checking")
+const requesting = (kind: SystemPermission) => kind === "auv" ? permissions.value.auv?.status === "requesting" : sharedRequest.value || desktopPermission(kind)?.status === "requesting"
+const canRequest = (kind: SystemPermission) => !busy.value && !requesting(kind) && (kind === "auv" || !granted(kind)
+  && (!wayland.value || desktopPermission(kind)?.status !== "checking"))
 const canRestart = client.platform === "darwin" && !!client.application
 
 function accept(value: OnboardingPermissionsState, requestedRevision: number): void {
-  // Local network attempts belong to the host and never arrive in daemon events.
+  // Host permission results remain valid when daemon events arrive during the read.
   if (value.localNetwork !== undefined) permissions.value.localNetwork = value.localNetwork
+  if (value.auv !== undefined) permissions.value.auv = value.auv
   if (revision !== requestedRevision) return
   permissions.value = { ...permissions.value, ...value }
   if (value.linuxDesktopBackend !== undefined) {
@@ -71,21 +73,21 @@ function refreshAll(): void {
 
 async function requestPermission(kind: SystemPermission): Promise<void> {
   if (!onboarding || !canRequest(kind)) return
-  pending.value = true
+  pending.value = kind
   error.value = undefined
   const requestedRevision = ++revision
   try { accept(await onboarding.requestPermission(kind), requestedRevision) }
   catch (reason) { error.value = message(reason) }
-  finally { pending.value = false }
+  finally { pending.value = undefined }
 }
 
 async function openLocalNetworkSettings(): Promise<void> {
   if (!onboarding || busy.value) return
-  pending.value = true
+  pending.value = "localNetwork"
   error.value = undefined
   try { await onboarding.openLocalNetworkSettings() }
   catch (reason) { error.value = message(reason) }
-  finally { pending.value = false }
+  finally { pending.value = undefined }
 }
 
 function restartApplication(): void {
@@ -134,23 +136,34 @@ onBeforeUnmount(() => { unsubscribe?.() })
           <component :is="icons[kind]" :size="17" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <h2 :id="`permission-${kind}`" class="m-0 text-sm font-medium">{{ label(kind) }}</h2>
         </div>
-        <p class="m-0 mt-2 text-[13px] leading-relaxed text-ui-text-muted">{{ t(`${details(kind)}.description`) }}</p>
-        <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(`${details(kind)}.${wayland ? 'instructions' : 'path'}`) }}</p>
-        <p v-if="kind === 'localNetwork'" class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.permissions.localNetwork.instructions") }}</p>
-        <p v-else class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t(wayland ? "permissionsSettings.waylandShared" : "permissionsSettings.restart") }}</p>
-        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <p role="status" class="m-0 text-[13px]" :class="granted(kind) ? 'text-ui-success' : 'text-ui-text-muted'">
-            {{ t(kind === 'localNetwork' ? `welcome.permissions.localNetwork.status.${permissions.localNetwork ?? 'not-requested'}` : wayland && requesting(kind) ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${desktopPermission(kind)?.status ?? 'checking'}`) }}
-          </p>
-          <div class="flex flex-wrap gap-2">
-            <template v-if="kind === 'localNetwork'">
-              <UiButton v-if="permissions.localNetwork !== 'not-required'" type="button" :disabled="busy" @click="requestPermission(kind)">{{ t("welcome.permissions.localNetwork.request") }}</UiButton>
-              <UiButton type="button" :disabled="busy" @click="openLocalNetworkSettings">{{ t("welcome.permissions.localNetwork.openSettings") }}</UiButton>
-            </template>
-            <UiButton v-else-if="!granted(kind)" type="button" :disabled="!canRequest(kind)" @click="requestPermission(kind)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+        <AuvPermissionControls
+          v-if="kind === 'auv'"
+          :state="permissions.auv"
+          :pending="pending === 'auv'"
+          :refreshing="refreshing"
+          :disabled="busy"
+          @request="requestPermission('auv')"
+          @refresh="refresh"
+        />
+        <template v-else>
+          <p class="m-0 mt-2 text-[13px] leading-relaxed text-ui-text-muted">{{ t(`${details(kind)}.description`) }}</p>
+          <p class="m-0 mt-3 text-xs leading-relaxed text-ui-text-muted">{{ t(`${details(kind)}.${wayland ? 'instructions' : 'path'}`) }}</p>
+          <p v-if="kind === 'localNetwork'" class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.permissions.localNetwork.instructions") }}</p>
+          <p v-else class="m-0 mt-2 text-xs leading-relaxed text-ui-text-muted">{{ t(wayland ? "permissionsSettings.waylandShared" : "permissionsSettings.restart") }}</p>
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p role="status" class="m-0 text-[13px]" :class="granted(kind) ? 'text-ui-success' : 'text-ui-text-muted'">
+              {{ t(kind === 'localNetwork' ? `welcome.permissions.localNetwork.status.${permissions.localNetwork ?? 'not-requested'}` : wayland && requesting(kind) ? 'welcome.wayland.requesting' : `welcome.permissionStatus.${desktopPermission(kind)?.status ?? 'checking'}`) }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <template v-if="kind === 'localNetwork'">
+                <UiButton v-if="permissions.localNetwork !== 'not-required'" type="button" :disabled="busy" @click="requestPermission(kind)">{{ t("welcome.permissions.localNetwork.request") }}</UiButton>
+                <UiButton type="button" :disabled="busy" @click="openLocalNetworkSettings">{{ t("welcome.permissions.localNetwork.openSettings") }}</UiButton>
+              </template>
+              <UiButton v-else-if="!granted(kind)" type="button" :disabled="!canRequest(kind)" @click="requestPermission(kind)">{{ t(wayland ? "welcome.wayland.retry" : "welcome.openSettings") }}</UiButton>
+            </div>
           </div>
-        </div>
-        <p v-if="desktopPermission(kind)?.error" role="alert" class="m-0 mt-3 break-words text-[13px] text-ui-danger">{{ desktopPermission(kind)?.error }}</p>
+          <p v-if="desktopPermission(kind)?.error" role="alert" class="m-0 mt-3 break-words text-[13px] text-ui-danger">{{ desktopPermission(kind)?.error }}</p>
+        </template>
       </section>
     </div>
   </template>
