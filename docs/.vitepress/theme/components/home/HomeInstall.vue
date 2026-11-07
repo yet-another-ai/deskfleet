@@ -9,7 +9,7 @@ import InstallMethodIcon from "./InstallMethodIcon.vue"
 import PlatformIcon from "./PlatformIcon.vue"
 import SegmentedControl from "./SegmentedControl.vue"
 import { useRevealOnce } from "./home-motion.ts"
-import { desktopInstallMethods, fetchLatestRelease, findDownload, findNixDownload, formatSize, releasesPage, type DesktopInstallMethod, type InstallMode, type InstallPlatform } from "./home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findDownload, findLinuxPackage, findNixDownload, formatSize, releasesPage, type DesktopInstallMethod, type InstallMode, type InstallPlatform } from "./home-downloads.ts"
 import { homeCopy, homeLocalePath } from "./home-locales.ts"
 
 const props = withDefaults(defineProps<{ locale?: AppLocale }>(), { locale: "en-US" })
@@ -33,6 +33,8 @@ const methodOptions = computed(() => availableMethods.value.map(value => ({
   value,
   label: value === "homebrew" ? t.value.homebrew : value === "nix" ? t.value.nix
     : value === "aur" ? t.value.aur
+    : value === "deb" ? t.value.deb
+    : value === "rpm" ? t.value.rpm
     : value === "archive" ? ".tar.gz"
     : platform.value === "macos" ? ".dmg" : platform.value === "linux" ? t.value.appImage : ".exe",
 })))
@@ -67,6 +69,8 @@ const description = computed(() => {
   if (mode.value === "headless") return platform.value === "windows" ? t.value.headlessWindowsDescription : t.value.headlessDescription
   if (platform.value === "macos") return t.value.dmgDescription
   if (platform.value === "windows") return t.value.windowsDescription
+  if (method.value === "deb") return t.value.debDescription
+  if (method.value === "rpm") return t.value.rpmDescription
   return method.value === "archive" ? t.value.desktopArchiveDescription : t.value.appImageDescription
 })
 const formatLocale = computed(() => intlLocale(props.locale))
@@ -78,13 +82,17 @@ const downloadTitle = computed(() => {
 })
 const packageFormat = computed(() => {
   if (mode.value === "headless") return t.value.tarArchive
+  if (method.value === "deb") return ".deb"
+  if (method.value === "rpm") return ".rpm"
   if (method.value === "archive") return t.value.tarArchive
   if (platform.value === "macos") return t.value.dmgInstaller
   if (platform.value === "windows") return t.value.installer
   return "AppImage"
 })
 const primary = computed(() => {
-  const file = findDownload(release.value, mode.value, platform.value, "x64", downloadFormat.value)
+  const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
+    ? findLinuxPackage(release.value, method.value, "x64")
+    : findDownload(release.value, mode.value, platform.value, "x64", downloadFormat.value)
   return {
     title: downloadTitle.value,
     detail: `${packageFormat.value} · ${platform.value === "macos" ? "Apple Silicon" : "x64"}`,
@@ -94,7 +102,9 @@ const primary = computed(() => {
 })
 const alternatives = computed(() => {
   if (platform.value === "linux") {
-    const file = findDownload(release.value, mode.value, "linux", "arm64", downloadFormat.value)
+    const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
+      ? findLinuxPackage(release.value, method.value, "arm64")
+      : findDownload(release.value, mode.value, "linux", "arm64", downloadFormat.value)
     return [{
       title: downloadTitle.value,
       detail: `${packageFormat.value} · arm64`,

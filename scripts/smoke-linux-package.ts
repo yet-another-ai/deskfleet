@@ -12,13 +12,21 @@ const [output, ...options] = process.argv.slice(2)
 const layouts = options.filter(option => option.startsWith("--layout="))
 assert.ok(output && layouts.length === 1 && options.every(option => option === "--gui" || option === layouts[0])
   && options.filter(option => option === "--gui").length <= 1,
-"Usage: node scripts/smoke-linux-package.ts <package-root> --layout=arch|nix [--gui]")
+"Usage: node scripts/smoke-linux-package.ts <package-root> --layout=arch|nix|deb|rpm [--gui]")
 const layout = layouts[0]?.slice("--layout=".length)
-assert.ok(layout === "arch" || layout === "nix", "Package layout must be arch or nix")
+const packageLayouts = {
+  arch: { executable: "usr/bin/deskfleet", resources: "opt/deskfleet/resources" },
+  nix: { executable: "bin/deskfleet", resources: "lib/deskfleet/resources" },
+  deb: { executable: "usr/bin/deskfleet", resources: "usr/lib/deskfleet/resources" },
+  rpm: { executable: "usr/bin/deskfleet", resources: "usr/lib/deskfleet/resources" },
+} as const
+assert.ok(layout === "arch" || layout === "nix" || layout === "deb" || layout === "rpm",
+  "Package layout must be arch, nix, deb, or rpm")
 assert.equal(process.platform, "linux", "The package smoke supports Linux")
 const packagePath = await realpath(output)
-const executable = join(packagePath, layout === "arch" ? "usr/bin/deskfleet" : "bin/deskfleet")
-const resources = join(packagePath, layout === "arch" ? "opt/deskfleet/resources" : "lib/deskfleet/resources")
+const packageLayout = packageLayouts[layout as keyof typeof packageLayouts]
+const executable = join(packagePath, packageLayout.executable)
+const resources = join(packagePath, packageLayout.resources)
 const entry = join(resources, "app.asar", "out", "main", "index.js")
 const addon = join(resources, "app.asar.unpacked", "out", "main", "deskfleet.node")
 const manifest = JSON.parse(await readFile(new URL("../apps/daemon/package.json", import.meta.url), "utf8")) as {

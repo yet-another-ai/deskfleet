@@ -3,7 +3,8 @@
 DeskFleet follows [Heron's CI structure](https://github.com/minori-live/heron/blob/main/agents/docs/ci.md):
 one orchestrator, reusable Test, Build, and Nix server workflows, a shared setup
 action, and a stable `Gate` result for branch protection. Desktop Nix and AUR
-package validation are dedicated release workflows called by `publish.yml`.
+package validation are dedicated release workflows called by `publish.yml`;
+DEB/RPM validation also runs after packaging builds in `ci.yml`.
 
 ## Workflow ownership
 
@@ -84,8 +85,9 @@ package validation are dedicated release workflows called by `publish.yml`.
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  calls Nix and AUR with the desktop archives from Build. It creates a draft
-  GitHub Release and pushes the server image after all four workflows succeed.
+  calls Nix, AUR, and Linux package validation with the desktop archives from
+  Build. It creates a draft GitHub Release and pushes the server image after all
+  five workflows succeed.
 - `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
   Build, generates a flake bundle, and checks the repackaged app under Xvfb.
   It preloads the archives into Nix's fixed-output store so checks can run before
@@ -105,6 +107,12 @@ package validation are dedicated release workflows called by `publish.yml`.
   a disposable Arch container. Publish requires it before creating the draft or
   pushing the server image. It needs no AUR credentials and is excluded from daily
   CI.
+- `.github/workflows/linux-packages.yml` repackages the same-run Linux desktop
+  archives into Debian `.deb` and RPM packages for the native architecture. It
+  installs, reinstalls, smoke-tests, and removes each package in disposable
+  Ubuntu and Fedora containers, then uploads the validated packages. CI runs the
+  x64 variant after packaging builds; Publish validates both architectures and
+  includes the uploaded packages in the draft release.
 - `.github/actions/setup-build/action.yml` installs locked tools and dependencies
   and configures shared caches for the Test and Build workflows. The locked
   toolchain install retries once after a transient failure: hosted macOS runners
@@ -170,8 +178,8 @@ accepted because it cannot be represented in a container tag.
 
 Publish calls the same Test and Build workflows used by CI, with the full
 platform matrix and mandatory macOS signing/notarization, then validates the
-Linux archives through Nix and AUR. It waits for all four before publishing. The Build
-workflow keeps read-only repository access;
+Linux archives through Nix, AUR, and DEB/RPM package installation. It waits for
+all five before publishing. The Build workflow keeps read-only repository access;
 only the release job receives `contents: write`, and only the image job receives
 `packages: write`.
 
@@ -253,10 +261,11 @@ requests or inbound connections to the hosted daemon do not establish that the
 renderer can initiate a direct peer connection.
 
 Each tag produces a **draft** GitHub Release containing the desktop installers,
-two Linux desktop archives, the `deskfleet-nix.tar.gz` flake bundle, four
-server/daemon archives, updater metadata and blockmaps. Review its generated
-notes and assets, then publish it in GitHub. Prerelease tags create prerelease
-drafts.
+two Linux desktop archives, four Linux distribution packages (`.deb` for amd64
+and arm64, `.rpm` for x86_64 and aarch64), the `deskfleet-nix.tar.gz` flake
+bundle, four server/daemon archives, updater metadata and blockmaps. Review its
+generated notes and assets, then publish it in GitHub. Prerelease tags create
+prerelease drafts.
 Reruns can replace assets on a draft; they refuse to modify an already published
 release.
 
@@ -267,13 +276,14 @@ Pages build. Drafts and prereleases do not replace the website's stable download
 failed requests and unavailable assets retain a link to GitHub Releases.
 
 The installation section groups methods by platform: Homebrew and DMG on macOS;
-the Windows installer; and AppImage, AUR, Nix, and desktop archives on Linux. The macOS
-ZIP is reserved for the updater and is not offered as a website installation method.
-Nix and Linux desktop archives appear only when the published release contains
-their assets. The Nix command uses that release's versioned flake URL. Homebrew
-uses the official tap. AUR links to the `deskfleet-bin` package page and remains
-available independently of GitHub release assets. Neither Homebrew nor AUR
-displays GitHub's release version as its own.
+the Windows installer; and AppImage, DEB, RPM, AUR, Nix, and desktop archives on
+Linux. The macOS ZIP is reserved for the updater and is not offered as a website
+installation method. DEB, RPM, Nix, and Linux desktop archives appear only when
+the published release contains their assets. The Nix command uses that release's
+versioned flake URL. Homebrew uses the official tap. AUR links to the
+`deskfleet-bin` package page and remains available independently of GitHub
+release assets. Neither Homebrew nor AUR displays GitHub's release version as its
+own.
 Headless downloads remain separate server/daemon archives. English, Chinese,
 and Japanese pages share the same selection logic and localized instructions.
 
@@ -391,6 +401,37 @@ run and review a dry run, then retry publication. A failed sync leaves the
 previous AUR package intact. The AUR repository contains the recipe and helper
 files, not the downloaded application archives.
 
+### DEB and RPM distribution
+
+Each release repackages the prebuilt Linux desktop archive into Debian and RPM
+packages instead of rebuilding the application:
+
+| Asset | Package manager | Architecture |
+| --- | --- | --- |
+| `deskfleet-<version>-linux-amd64.deb` | `apt` / `dpkg` | x86_64 |
+| `deskfleet-<version>-linux-arm64.deb` | `apt` / `dpkg` | arm64 |
+| `deskfleet-<version>-linux-x86_64.rpm` | `dnf` / `rpm` | x86_64 |
+| `deskfleet-<version>-linux-aarch64.rpm` | `dnf` / `rpm` | aarch64 |
+
+Both formats install the Electron app under `/usr/lib/deskfleet`, a
+`/usr/bin/deskfleet` launcher, the desktop entry, the icon, and license files.
+The launcher sets `DESKFLEET_LAUNCHER` for Linux autostart and unsets `APPIMAGE`
+so package-managed installs never self-update. Package managers own upgrades.
+`scripts/package-linux-release.ts` extracts and validates each versioned desktop
+archive, applies the same payload, and builds with `dpkg-deb` and `rpmbuild`.
+SemVer prereleases are translated to `~` in package versions so
+`1.2.3-rc.1` sorts before `1.2.3` in both package managers.
+
+`.github/workflows/linux-packages.yml` builds each architecture on its native
+Ubuntu runner. It then installs, reinstalls, smoke-tests, and removes the
+packages inside disposable Ubuntu 24.04 and Fedora containers. The
+installed-package smoke covers the native addon, PTY execution, bundled ACP
+adapters, DeepSeek Harness and its native FFI, the packaged renderer, the hosted
+daemon, autostart through the launcher, and disabled self-updates. Validation
+also requires `chrome-sandbox` to remain setuid root; Chromium keeps its sandbox
+enabled. The packages are unsigned, like the Windows installer. Repositories and
+users that require signatures must sign or verify them independently.
+
 ### Nix distribution
 
 Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
@@ -398,9 +439,7 @@ Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
 architecture under the existing `production` environment and packages it as both
 an AppImage and a `tar.gz`. The archive already contains the official API,
 Statsig, and Sentry configuration. Changes to those variables take effect in the
-next release.
-Distribution packaging can reuse the archive for deb, rpm, or AUR
-packages as well.
+next release. The same archive supplies the DEB, RPM, AUR, and Nix packages.
 
 Every release automatically generates `deskfleet-nix.tar.gz` from the templates
 under `nix/`. This bundle contains a flake with a locked nixpkgs input and the
@@ -440,11 +479,11 @@ wrapper, and disabled self-updates.
 On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 
-`Gate` does not include distribution packaging; Publish requires Nix and AUR
-validation before creating the draft release or publishing the server image. Nix
-reuses the configuration already compiled by Build, so it needs no production
-environment access, configuration snapshot, synchronization workflow, or
-additional token. Nix binary-cache publication is not configured.
+`Gate` includes the DEB/RPM workflow after packaging builds. Publish also requires
+Nix and AUR validation before creating the draft release or publishing the server
+image. Nix reuses the configuration already compiled by Build, so it needs no
+production environment access, configuration snapshot, synchronization workflow,
+or additional token. Nix binary-cache publication is not configured.
 
 ### Server image
 
@@ -521,10 +560,10 @@ full tier. Manual and scheduled runs use full validation. Classification uses
 the hosted runner's Node and does not install a toolchain. An older runtime or
 missing output keeps the full tier.
 
-`Gate` requires successful classification and Test. Skipped Build and Nix server
-workflows are accepted for a positively classified documentation-only change or
-pull requests without packaging changes. Failed, cancelled, or unexpectedly
-skipped required work fails the gate.
+`Gate` requires successful classification and Test. Skipped Build, Nix server,
+and Linux package workflows are accepted for a positively classified
+documentation-only change or pull requests without packaging changes. Failed,
+cancelled, or unexpectedly skipped required work fails the gate.
 
 ## Toolchains and caches
 

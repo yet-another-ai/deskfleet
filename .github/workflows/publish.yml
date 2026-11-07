@@ -74,9 +74,16 @@ jobs:
     permissions:
       contents: read
 
+  linux_packages:
+    name: Linux packages
+    needs: build
+    uses: ./.github/workflows/linux-packages.yml
+    permissions:
+      contents: read
+
   release:
     name: Create draft GitHub release
-    needs: [validate, test, build, nix, aur]
+    needs: [validate, test, build, nix, aur, linux_packages]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -96,6 +103,13 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: deskfleet-desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download Linux distribution packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: deskfleet-linux-packages-*
           path: release-assets
           merge-multiple: true
 
@@ -125,6 +139,10 @@ jobs:
             "deskfleet-$VERSION-win-x64.exe"
             "deskfleet-$VERSION-linux-x86_64.AppImage"
             "deskfleet-$VERSION-linux-arm64.AppImage"
+            "deskfleet-$VERSION-linux-amd64.deb"
+            "deskfleet-$VERSION-linux-arm64.deb"
+            "deskfleet-$VERSION-linux-x86_64.rpm"
+            "deskfleet-$VERSION-linux-aarch64.rpm"
             "deskfleet-$VERSION-linux-x64.tar.gz"
             "deskfleet-$VERSION-linux-arm64.tar.gz"
             deskfleet-nix.tar.gz
@@ -170,7 +188,7 @@ jobs:
 
   image:
     name: Publish server and Web image
-    needs: [validate, test, build, nix, aur]
+    needs: [validate, test, build, nix, aur, linux_packages]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

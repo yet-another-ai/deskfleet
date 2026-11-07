@@ -29,6 +29,12 @@ brew install --cask yet-another-ai/tap/deskfleet
   nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
   ```
   プロファイルに追加せず一時的に試す場合は、同じ URL で `nix run` を使用してください。Nix パッケージはビルド済みデスクトップアプリをインストールし、公式の DeskFleet サービスに接続します。
+- **Debian / Ubuntu と Fedora / RHEL**：[GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から対象アーキテクチャの `.deb`（`amd64` または `arm64`）または `.rpm`（`x86_64` または `aarch64`）をダウンロードし、そのファイルをインストールしてください。次の例では `<VERSION>` とアーキテクチャを、ダウンロードしたリリースに合わせて置き換えます：
+  ```sh
+  sudo apt install ./deskfleet-<VERSION>-linux-amd64.deb
+  sudo dnf install ./deskfleet-<VERSION>-linux-x86_64.rpm
+  ```
+  更新はシステムのパッケージマネージャーが管理し、これらのインストールでは AppImage の自動更新は使用されません。
 - **AppImage / アーカイブ**：[GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から対象アーキテクチャ（`x86_64` または `arm64`）の `.AppImage` または `.tar.gz` をダウンロードしてください。
 
 > [!NOTE]

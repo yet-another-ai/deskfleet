@@ -91,8 +91,12 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "apps/desktop/scripts/stage-windows-service.ts",
     "apps/desktop/scripts/stage-auv.ts",
     "scripts/stage-native-binaries.ts",
+    "scripts/package-linux-release.ts",
+    "scripts/check-linux-release.ts",
     "packaging/aur/PKGBUILD.in",
+    "packaging/linux/deb-control.in",
     ".github/workflows/build.yml",
+    ".github/workflows/linux-packages.yml",
     ".github/workflows/nix-server.yml",
     "flake.nix",
     "flake.lock",
@@ -235,6 +239,11 @@ test("packaging jobs require a successful Test", () => {
     assert.match(job, /needs:\s*\[changes,\s*test\]/)
     assert.match(job, /needs\.test\.result\s*==\s*'success'/)
   }
+  const linuxPackages = yaml.match(/^  linux_packages:[\s\S]*?(?=^  [a-z])/m)?.[0]
+  assert.ok(linuxPackages, "Missing linux_packages job")
+  assert.match(linuxPackages, /needs:\s*\[changes,\s*test,\s*build\]/)
+  assert.match(linuxPackages, /needs\.test\.result\s*==\s*'success'/)
+  assert.match(linuxPackages, /needs\.build\.result\s*==\s*'success'/)
 })
 
 test("failed classification keeps the full Test matrix and backend jobs", () => {
@@ -257,15 +266,36 @@ test("failed classification keeps the full Test matrix and backend jobs", () => 
 
 test("actual Gate accepts only successful required jobs and explicitly allowed skips", { skip: process.platform === "win32" }, () => {
   const script = workflowScript("gate")
-  const results = ["success", "failure", "cancelled", "skipped"]
-  for (const changes of results) for (const tests of results) for (const build of results) for (const nixServer of results) for (const docs of ["true", "false", ""]) for (const runBuild of ["true", "false", ""]) {
-    const result = spawnSync("bash", ["-c", script], {
-      env: { ...process.env, CHANGES_RESULT: changes, TEST_RESULT: tests, BUILD_RESULT: build, NIX_SERVER_RESULT: nixServer, DOCS_ONLY: docs, RUN_BUILD: runBuild }
-    })
-    const allowSkip = docs === "true" || runBuild === "false" || tests !== "success"
-    assert.equal(result.status === 0, changes === "success" && tests === "success"
-      && build === (allowSkip ? "skipped" : "success") && nixServer === (allowSkip ? "skipped" : "success"),
-      JSON.stringify({ changes, tests, build, nixServer, docs, runBuild }))
+  const expected = (state: NodeJS.ProcessEnv) => spawnSync("bash", ["-c", script], {
+    env: {
+      ...process.env,
+      CHANGES_RESULT: "success",
+      TEST_RESULT: "success",
+      BUILD_RESULT: "success",
+      NIX_SERVER_RESULT: "success",
+      LINUX_PACKAGES_RESULT: "success",
+      DOCS_ONLY: "false",
+      RUN_BUILD: "true",
+      ...state,
+    },
+  }).status === 0
+  assert.equal(expected({}), true, "all required jobs succeed")
+  for (const job of ["BUILD_RESULT", "NIX_SERVER_RESULT", "LINUX_PACKAGES_RESULT"]) {
+    for (const state of ["failure", "cancelled", "skipped"]) {
+      assert.equal(expected({ [job]: state }), false, `${job}=${state}`)
+      assert.equal(expected({ [job]: state, DOCS_ONLY: "true" }), false, `${job}=${state} with docs-only skip`)
+      assert.equal(expected({ [job]: state, RUN_BUILD: "false" }), false, `${job}=${state} with build skip`)
+    }
+  }
+  for (const state of ["failure", "cancelled", "skipped"]) {
+    assert.equal(expected({ CHANGES_RESULT: state }), false, `changes=${state}`)
+    assert.equal(expected({ TEST_RESULT: state, BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false, `test=${state}`)
+  }
+  for (const state of [{ DOCS_ONLY: "true" }, { RUN_BUILD: "false" }]) {
+    assert.equal(expected({ ...state, BUILD_RESULT: "skipped", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), true,
+      `allowed skip: ${JSON.stringify(state)}`)
+    assert.equal(expected({ ...state, BUILD_RESULT: "success", NIX_SERVER_RESULT: "skipped", LINUX_PACKAGES_RESULT: "skipped" }), false,
+      `unexpected build: ${JSON.stringify(state)}`)
   }
 })
 
