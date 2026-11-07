@@ -237,6 +237,14 @@ ol:has([data-message-sending="true"]) .ui-conversation-history {
   to { translate: 250% 0; }
 }
 
+/* Bound every tab in pixels, including Dockview's wrapper around custom tabs. */
+.ui-tab,
+.ui-tab-size,
+.deskfleet-windows .dv-tab {
+  min-width: 0;
+  max-width: 240px;
+}
+
 /* Tabs: the active underline grows from its center; hovering an inactive tab hints at it. */
 .ui-tab::after {
   content: "";

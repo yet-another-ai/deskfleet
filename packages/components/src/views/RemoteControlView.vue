@@ -8,6 +8,7 @@ import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
+import UiTabTitle from "../components/common/UiTabTitle.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
@@ -77,7 +78,7 @@ const activeTerminal = computed({
         v-for="tab in availableTabs" :key="tab.id" :value="tab.id"
         class="ui-tab h-9 gap-2 px-3 text-[13px]"
         :class="active === tab.id && 'ui-tab-active'"
-      ><component :is="tab.icon" :size="15" aria-hidden="true" />{{ t(tab.label) }}</TabsTrigger>
+      ><component :is="tab.icon" :size="15" class="shrink-0" aria-hidden="true" /><UiTabTitle :title="t(tab.label)">{{ t(tab.label) }}</UiTabTitle></TabsTrigger>
     </TabsList>
     <!-- Retain visited tools and their state; desktop capture stops when its tab is hidden. -->
     <TabsContent v-if="visited.has('terminal')" v-show="active === 'terminal'" value="terminal" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ui-border">
