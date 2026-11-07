@@ -470,13 +470,18 @@ mouse/keyboard control and supported system audio enabled by default.
 Display, system audio, and control settings remain editable while connecting or
 streaming. Full viewers negotiate supported audio and a settings/input channel
 when connecting. Audio and control changes use that existing channel without
-replacing the peer or interrupting video. Audio off mutes local playback and
+replacing the peer or interrupting video. Capture startup snapshots the latest
+audio and control settings after negotiation; initial audio delivery is set
+before capture starts, including when the negotiated audio track starts muted.
+Audio off mutes local playback and
 stops audio delivery to that peer; the negotiated track and shared capture remain
 available for immediate resumption. Disabling control stops the input worker and
 releases held input; enabling it creates a worker for the current display after
 checking the peer's control grant.
 Changing displays automatically closes the previous peer and negotiates a
-replacement, waiting for cleanup to release input ownership. Disconnecting or
+replacement, waiting for cleanup to release input ownership. An incompatible
+display reports a settings error while keeping the current stream; selecting a
+compatible display can still switch automatically. Disconnecting or
 leaving the viewer cancels pending changes. Fullscreen and an intentional control
 pause survive display changes; explicitly changing control clears that pause.
 

@@ -90,6 +90,15 @@ test("desktop preview settings reach the authorized peer HTTP start without the 
   expect(f.fetch).toHaveBeenCalledExactlyOnceWith("https://fleet.example/api/peers/peer1/start", expect.objectContaining({ method: "POST" }))
   expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual(settings)
 })
+test("initial audio delivery reaches the authorized peer HTTP start", async () => {
+  const f = offerHttpFixture()
+  const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch: f.fetch })
+  disposers.push(() => client.dispose())
+  f.central.startPeer = client.startPeer.bind(client)
+  await f.remote.api.desktop.prepare!("desktop")
+  await f.remote.api.desktop.start({ sessionId: "desktop", displayId: 4, audio: false, control: false })
+  expect(JSON.parse(f.fetch.mock.calls[0]![1]!.body as string)).toEqual({ displayId: 4, audio: false, control: false })
+})
 test("a refreshed machine reconciles missed presence without replacing its peer", async () => {
   const f = fixture()
   const changed = vi.fn()

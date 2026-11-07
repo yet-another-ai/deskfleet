@@ -239,6 +239,7 @@ async fn authorize_webrtc(req: &HttpRequest, s: &AppState, id: &str) -> Result<P
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Start {
     display_id: Value,
+    audio: Option<bool>,
     fps: Option<u32>,
     bitrate_bps: Option<u32>,
     max_width: Option<u32>,
@@ -266,7 +267,7 @@ pub async fn start(
     {
         return Err(ApiError::forbidden());
     }
-    Ok(web::Json(s.hub.request(&registration(&s, &authorization).await?,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"fps":b.fps,"bitrateBps":b.bitrate_bps,"maxWidth":b.max_width,"maxHeight":b.max_height,"control":b.control}),None).await?))
+    Ok(web::Json(s.hub.request(&registration(&s, &authorization).await?,"peer.start",json!({"peerId":p.as_str(),"displayId":b.display_id,"audio":b.audio,"fps":b.fps,"bitrateBps":b.bitrate_bps,"maxWidth":b.max_width,"maxHeight":b.max_height,"control":b.control}),None).await?))
 }
 pub async fn close(
     req: HttpRequest,
@@ -545,6 +546,19 @@ pub(crate) mod tests {
         assert!(controlling.control);
         assert!(
             serde_json::from_value::<Start>(json!({"displayId": 1, "control": "true"})).is_err()
+        );
+    }
+    #[test]
+    fn desktop_start_accepts_initial_audio_delivery_separately_from_negotiation() {
+        for audio in [false, true] {
+            let start: Start =
+                serde_json::from_value(json!({"displayId": 1, "audio": audio})).unwrap();
+            assert_eq!(start.audio, Some(audio));
+        }
+        let omitted: Start = serde_json::from_value(json!({"displayId": 1})).unwrap();
+        assert_eq!(omitted.audio, None);
+        assert!(
+            serde_json::from_value::<Start>(json!({"displayId": 1, "audio": "false"})).is_err()
         );
     }
     #[test]

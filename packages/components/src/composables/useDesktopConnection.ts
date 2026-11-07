@@ -286,6 +286,11 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     clearTimeout(session.timeout)
     session.timeout = setTimeout(() => fail(session, { kind: "timeout" }), DESKTOP_START_TIMEOUT_MS)
     try {
+      // Freeze live settings when capture actually starts, not when SDP begins.
+      // Later edits must compare against this request's applied settings.
+      if (session.options.control) session.start.control = true
+      else delete session.start.control
+      if (session.options.liveSettings) session.start.audio = session.options.audio
       await api.start(session.start)
       session.startSettled = true
       if (current !== session) {
@@ -298,7 +303,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       }
       clearTimeout(session.timeout)
       session.inputReady = session.startupInputReady && !!session.options.control
-      session.appliedSettings = { audio: session.options.audioAvailable ?? session.options.audio, control: !!session.start.control }
+      session.appliedSettings = { audio: session.start.audio ?? session.options.audioAvailable ?? session.options.audio, control: !!session.start.control }
       if (session.options.control && !session.inputReady) {
         session.timeout = setTimeout(() => { if (session) fail(session, { kind: "timeout" }) }, INPUT_READY_TIMEOUT_MS)
       }
@@ -468,6 +473,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   async function configure(options: DesktopConnectOptions, replace: boolean): Promise<void> {
     if (replace) {
       if (!running || (sameOptions(requestedOptions, options) && !settingsFailure.value)) return
+      if (options.codecs.length === 0) {
+        settingsFailure.value = { kind: "operation", detail: "The selected video codec is unavailable." }
+        return
+      }
       if (options.liveSettings && requestedOptions?.liveSettings && sameTransportOptions(requestedOptions, options)) {
         requestedOptions = { ...options, codecs: [...options.codecs] }
         settingsFailure.value = null

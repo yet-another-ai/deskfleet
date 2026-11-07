@@ -190,6 +190,19 @@ test("desktop streaming grant alone cannot enable or send control", async contex
   assert.deepEqual(f.input, [])
 })
 
+for (const audio of [false, true]) {
+  test(`desktop startup sets initial audio delivery to ${audio} before capture`, async context => {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const operations: unknown[] = []
+    f.native.setDesktopAudio = enabled => { operations.push({ audio: enabled }) }
+    f.native.startDesktop = async options => { operations.push({ capture: options }) }
+    await f.peers.offer({ peerId: "peer", sdp, authorization: { ...grant(), purpose: "desktop", actions: ["desktop:stream"] }, iceServers: [], options: { audio: true } })
+    await f.peers.start("peer", { displayId: 7, audio })
+    assert.deepEqual(operations, [{ audio }, { capture: { displayId: 7 } }])
+    assert.equal(f.closeCalls(), 0)
+  })
+}
+
 test("a streaming-only grant can change audio but denied control keeps the same desktop peer", { timeout: 5_000 }, async context => {
   const f = fixture(); context.after(() => f.peers.closeAll())
   const audio: boolean[] = [], control: boolean[] = []

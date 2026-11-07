@@ -391,6 +391,11 @@ test("relayed desktop starts treat JSON null as an omitted option and validate t
   assert.equal(validateRelayedDesktopStart({ displayId: 2, control: false }).control, false)
   assert.throws(() => validateRelayedDesktopStart({ displayId: 2, control: "true" }), /control setting/)
   assert.throws(() => validateControlParams("start", { sessionId: "desktop", displayId: 2, control: 1 }), /control setting/)
+  assert.equal(validateRelayedDesktopStart({ displayId: 2, audio: false }).audio, false)
+  assert.equal(validateRelayedDesktopStart({ displayId: 2, audio: true }).audio, true)
+  assert.equal(validateRelayedDesktopStart({ displayId: 2, audio: null }).audio, undefined)
+  assert.throws(() => validateRelayedDesktopStart({ displayId: 2, audio: "false" }), /audio setting/)
+  assert.throws(() => validateControlParams("start", { sessionId: "desktop", displayId: 2, audio: 0 }), /audio setting/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: null }), /display ID/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, fps: 0 }), /frame rate/)
   assert.throws(() => validateRelayedDesktopStart({ peerId: "peer", displayId: 1, bitrateBps: "fast" }), /bitrate/)
@@ -575,6 +580,23 @@ test("local desktop settings change on the live channel without restarting captu
   assert.equal(fake.startCalls(), 1)
   assert.equal(fake.closeCalls(), 0)
   assert.equal(fake.active(), true)
+})
+
+test("local desktop startup mutes audio before capture can emit packets", { timeout: 15_000 }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-initial-audio-"))
+  const fake = desktopPeers({ start: async () => { assert.deepEqual(fake.settings, [{ audio: false }]) }, close: async () => {} })
+  const starting = startControlServer(fake.service, directory, capabilities)
+  context.after(async () => { await (await starting).close(); await rm(directory, { recursive: true, force: true }) })
+  await starting
+  const discovery = await readDaemonDiscovery(directory)
+  const client = new Client(discovery.endpoint, context.signal)
+  context.after(() => client.close())
+  await client.call("hello", { token: discovery.token })
+  await client.call("offer", offer)
+  await client.call("start", { sessionId: offer.sessionId, displayId: 4, audio: false })
+  assert.equal(fake.startCalls(), 1)
+  assert.deepEqual(fake.settings, [{ audio: false }])
+  assert.equal(fake.closeCalls(), 0)
 })
 
 for (const primaryEncoder of [true, false]) {

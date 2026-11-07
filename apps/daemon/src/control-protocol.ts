@@ -47,6 +47,8 @@ export interface DesktopStart {
   sessionId: string
   displayId: number
   control?: boolean
+  /** Initial delivery on the negotiated audio track, applied before capture starts. */
+  audio?: boolean
   fps?: number
   /** Adaptive bitrate ceiling in bits/sec (default 8_000_000). */
   bitrateBps?: number

@@ -371,7 +371,7 @@ class ControlConnection {
         await (await this.#session(request.params.sessionId)).addIceCandidate(request.params.candidate)
         return null
       case "start": {
-        const { sessionId, displayId, fps, bitrateBps, maxWidth, maxHeight, control } = request.params
+        const { sessionId, displayId, fps, bitrateBps, maxWidth, maxHeight, control, audio } = request.params
         const owned = this.#sessions.get(sessionId)
         if (!owned) throw new Error("Unknown desktop session on this connection")
         if (owned.terminal || owned.agent) throw new Error("Data-only peers cannot start desktop capture")
@@ -383,6 +383,8 @@ class ControlConnection {
         }
         try {
           assertLive()
+          // Set delivery before capture can produce its first audio packet.
+          if (audio !== undefined) peer.setDesktopAudio(audio)
           await peer.startDesktop({ displayId, fps, bitrateBps,
             ...(maxWidth === undefined ? {} : { maxWidth, maxHeight }),
             ...(control === undefined ? {} : { control }) })

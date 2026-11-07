@@ -115,7 +115,7 @@ test("opening an overview preview connects the selected display with audio and c
   expect(mock.api.offer).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ audio: true }))
   peer.changeState("connected")
   await flushPromises()
-  expect(mock.api.start).toHaveBeenCalledExactlyOnceWith({ sessionId: expect.any(String), displayId: 2, control: true })
+  expect(mock.api.start).toHaveBeenCalledExactlyOnceWith({ sessionId: expect.any(String), displayId: 2, control: true, audio: true })
 })
 
 test("does not automatically connect a different display if the overview display disappeared", async () => {
@@ -365,6 +365,36 @@ test("changing displays while connected automatically negotiates the new display
   await flushPromises()
   expect(mock.api.start).toHaveBeenLastCalledWith(expect.objectContaining({ displayId: 2, control: true }))
   expect(wrapper.get("[data-desktop-codec]").text()).toBe("Video codec: H.264")
+})
+
+test("an incompatible display keeps the current stream and a valid selection can still switch automatically", async () => {
+  const capabilities = await mock.api.capabilities()
+  capabilities.displays.push({ id: 3, width: 1280, height: 720, refreshRateHz: 60, codecs: [] })
+  mock.api.capabilities.mockResolvedValue(capabilities)
+  const { wrapper, peer } = await connectDesktop()
+  const media = (wrapper.get("video").element as HTMLVideoElement).srcObject
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 3 · 1280 × 720")
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain("The selected video codec is unavailable.")
+  expect(wrapper.get('[role="status"]').text()).toBe("Connected · AV1")
+  expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBe(media)
+  expect(peer.close).not.toHaveBeenCalled()
+  expect(mock.api.close).not.toHaveBeenCalled()
+
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 1 · 1920 × 1080")
+  await flushPromises()
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  expect(mock.api.offer).toHaveBeenCalledOnce()
+  expect(peer.close).not.toHaveBeenCalled()
+
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  await flushPromises()
+  expect(peer.close).toHaveBeenCalledOnce()
+  TestPeer.instances.at(-1)!.changeState("connected")
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenLastCalledWith(expect.objectContaining({ displayId: 2 }))
+  expect(wrapper.get('[role="status"]').text()).toBe("Connected · AV1")
 })
 
 test("fullscreen keeps the desktop toolbar available and follows browser exit events", async () => {
