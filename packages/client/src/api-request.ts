@@ -44,11 +44,13 @@ function errorEnvelope(data: unknown): { message?: string; code?: string; reason
 export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}): Promise<T> {
   const requestStack = new Error().stack
   const method = (options.method ?? "GET").toUpperCase()
-  const idempotent = options.idempotent ?? ["GET", "HEAD"].includes(method)
+  const read = ["GET", "HEAD"].includes(method)
+  const idempotent = options.idempotent ?? read
   // Backend RPCs and peer negotiation may take 60 seconds. Their transport
-  // deadline leaves room for the server's structured timeout response.
-  const timeout = options.timeoutMs ?? (idempotent ? 5_000 : 65_000)
-  const totalTimeout = options.totalTimeoutMs ?? (idempotent ? 15_000 : 65_000)
+  // deadline leaves room for the server's structured timeout response. Retry
+  // eligibility does not change the operation's timeout budget.
+  const timeout = options.timeoutMs ?? (read ? 5_000 : 65_000)
+  const totalTimeout = options.totalTimeoutMs ?? (read ? 15_000 : 65_000)
   const path = new URL(url).pathname
   const started = performance.now()
   let phase: "fetch" | "response_body" = "fetch"

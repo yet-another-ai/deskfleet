@@ -47,6 +47,39 @@ test("read timeouts get fresh attempts within one fifteen-second deadline", asyn
   expect(JSON.stringify(serializeCentralRequestError(error))).not.toMatch(/fleet\.example|private-team/)
 })
 
+test("disabling retries on a read retains its five-second attempt deadline", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
+  const fetch = vi.fn<typeof globalThis.fetch>(input => {
+    const request = input as Request
+    return new Promise((_resolve, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true }))
+  })
+  const result = apiRequest("https://fleet.example/api/teams", { idempotent: false, fetch }).catch(error => error)
+  await vi.advanceTimersByTimeAsync(5_000)
+  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 5_000 } })
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(fetch).toHaveBeenCalledOnce()
+})
+
+test("enabling retries on an admission write retains its write deadline", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
+  const fetch = vi.fn<typeof globalThis.fetch>(input => {
+    const request = input as Request
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(Response.json({ admissionId: "operation" })), 20_000)
+      request.signal.addEventListener("abort", () => { clearTimeout(timer); reject(request.signal.reason) }, { once: true })
+    })
+  })
+  const result = apiRequest("https://fleet.example/api/daemon/session-admissions", {
+    method: "POST", json: { operationId: "operation", kind: "create" }, idempotent: true, fetch,
+  }).catch(error => error)
+  await vi.advanceTimersByTimeAsync(15_000)
+  expect(fetch).toHaveBeenCalledOnce()
+  expect((fetch.mock.calls[0]![0] as Request).signal.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(5_000)
+  expect(await result).toEqual({ admissionId: "operation" })
+  expect(fetch).toHaveBeenCalledOnce()
+})
+
 test("Retry-After is respected and caller cancellation interrupts the wait", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
   const fetch = vi.fn<typeof globalThis.fetch>()

@@ -52,12 +52,13 @@ function backend(context: TestContext) {
   }
   context.mock.property(globalThis, "WebSocket", Socket as unknown as typeof WebSocket)
   context.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
-    const token = new Headers(init?.headers).get("authorization")!.slice(7)
-    const path = new URL(String(input)).pathname
+    const request = new Request(input, init)
+    const token = request.headers.get("authorization")!.slice(7)
+    const path = new URL(request.url).pathname
     const registration = registrations.get(token)
     if (!registration) return Response.json({ error: { code: "machine_credential_rejected" } }, { status: 401 })
     if (path === "/api/daemon/me") return Response.json({ serverId: "server", machine: { id: "machine", ...registration } })
-    const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : {}
+    const body = request.body ? await request.json() as Record<string, unknown> : {}
     uploads.push({ token, path, body })
     const snapshot = body.snapshot as AgentSnapshot | undefined
     return Response.json({ lastEventSeq: snapshot?.session?.lastEventSeq ?? body.snapshotSeq ?? "0" })

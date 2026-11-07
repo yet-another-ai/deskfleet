@@ -103,8 +103,9 @@ seconds total, including waits and response decoding. Network configuration
 keeps its five-second total budget and also retries transient route 404s.
 Writes default to a single attempt with a 65-second deadline, allowing the
 backend's 60-second RPC/negotiation deadline to return a structured error.
-Operations with existing shorter deadlines keep them. Admission writes opt into
-retries using their stable operation IDs and generations; generic RPC, MCP tools,
+Operations with explicit shorter deadlines keep them. Retry eligibility does not
+change these timeout budgets. Admission writes opt into retries using their
+stable operation IDs and generations; generic RPC, MCP tools,
 authentication, checkout, and peer mutations are not automatically replayed.
 Catalog/history synchronization retains its own durable retry mechanism.
 Caller cancellation and daemon shutdown stop active requests and backoff waits.
