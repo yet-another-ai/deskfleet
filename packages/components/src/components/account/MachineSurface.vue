@@ -41,5 +41,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="min-h-0 flex-1" />
+  <div ref="root" class="min-h-0 flex-1 overflow-clip" />
 </template>

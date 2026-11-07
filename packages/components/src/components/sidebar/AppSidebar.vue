@@ -63,7 +63,7 @@ function refresh(): void {
 
 <template>
   <aside
-    class="relative flex shrink-0 flex-col border-r border-ui-border bg-ui-sidebar"
+    class="relative flex shrink-0 flex-col overflow-clip border-r border-ui-border bg-ui-sidebar"
     :style="{ width: compact ? '100%' : `${width}px` }"
   >
     <div

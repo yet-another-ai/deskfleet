@@ -90,7 +90,7 @@ if (props.host.onboarding) void loadOnboarding()
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-ui-canvas text-ui-text">
+  <div class="flex h-full flex-col overflow-clip bg-ui-canvas text-ui-text">
     <p v-if="site?.announcement" role="status" class="m-0 max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-b border-ui-border bg-ui-surface px-5 py-2 text-sm">{{ site.announcement }}</p>
     <template v-if="ready && onboarding">
       <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'DeskFleet'" @complete="browserNotificationOnboardingComplete = true" />
@@ -98,7 +98,7 @@ if (props.host.onboarding) void loadOnboarding()
       <!-- Only the selected route mounts here; opened machines retain their stores and peers. -->
       <MachineSurface v-else-if="machine" :key="machineScopeKey" :session="session" :machine="machine" @ready="finishBillingReturn" />
       <RouterView v-else-if="route.meta.fullWindow" />
-      <div v-else class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+      <div v-else class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-clip">
         <aside class="flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-sidebar pt-[calc(0.5rem+var(--safe-area-top,0px))] md:w-65 md:border-b-0 md:border-r md:pt-[var(--safe-area-top,0px)]">
           <div class="app-drag hidden h-12 shrink-0 md:block" />
           <TeamSwitcher v-if="teams.length" />
