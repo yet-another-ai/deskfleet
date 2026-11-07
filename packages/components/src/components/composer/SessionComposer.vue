@@ -3,7 +3,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageSquare, Monitor, Plus, Sparkles, Square, Upload, X } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X } from "@lucide/vue"
 import { useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -12,6 +12,7 @@ import { RouterLink } from "vue-router"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { GitPreparationSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
 import type { FileEntry } from "../../../../client/src/files.ts"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import {
@@ -27,7 +28,7 @@ import { commandDraft, type ComposerMention } from "../../services/composer-ment
 import { previewKindFromMime, previewKindFromUri, type PreviewDescriptor } from "../../services/preview.ts"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
-import type { SessionTarget } from "../../stores/fleet.ts"
+import { useFleetStore, type SessionTarget } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { focusPreview } from "../../stores/previews.ts"
 import AgentConfigurationSelector from "./AgentConfigurationSelector.vue"
@@ -65,10 +66,43 @@ const preparedBranches = ref<string[]>([])
 const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>>("preparationButton")
 const branchLabel = computed(() => preparedBranches.value.length
   ? t("composer.prepare.base", { branches: preparedBranches.value.join(", ") }) : baseBranch.value)
-const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: [] }>()
+const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: []; selectMachine: [machineId: string]; selectWorkspace: [workspaceId: string] }>()
 const { t } = useI18n()
+const account = useAccountSession()
 const agents = useAgentSessionsStore()
+const fleet = useFleetStore()
 const layout = useLayoutStore()
+const availableMachines = computed(() => {
+  const current = props.location?.machine
+  const list = (account?.machines.value.length ? account.machines.value : fleet.machines).map(machine => ({
+    id: machine.id,
+    name: machine.name,
+    online: machine.online,
+    local: "local" in machine ? machine.local : (machine.id === account?.localMachineId.value || (machine.id === current?.id && current.local)),
+  }))
+  if (!current) return list
+  return list.some(item => item.id === current.id)
+    ? list
+    : [{ id: current.id, name: current.name, online: current.online, local: current.local }, ...list]
+})
+function selectMachine(machineId: string): void {
+  if (!machineId || machineId === props.location?.machine.id) return
+  account?.selectMachine(machineId)
+  emit("selectMachine", machineId)
+}
+const availableWorkspaces = computed(() => {
+  const workspace = props.location?.workspace
+  const workspaces = props.location?.machine.workspaces.length
+    ? props.location.machine.workspaces
+    : fleet.machines.find(machine => machine.id === props.location?.machine.id)?.workspaces ?? []
+  if (!workspace) return workspaces
+  return workspaces.some(item => item.id === workspace.id) ? workspaces : [workspace, ...workspaces]
+})
+function selectWorkspace(workspaceId: string): void {
+  if (!workspaceId || workspaceId === props.location?.workspace?.id) return
+  fleet.targetWorkspace(workspaceId)
+  emit("selectWorkspace", workspaceId)
+}
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
@@ -266,22 +300,56 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-[calc(1.25rem+var(--safe-area-bottom,0px))]">
-    <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
-      <span class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="showTarget && location.machine.local" class="sr-only">{{ t("machine.local") }}</span></span>
+    <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-2.5 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
+      <DropdownMenuRoot v-if="showTarget" :modal="false">
+        <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :title="location.machine.local ? t('machine.local') : undefined" :aria-label="t('composer.machineChoice', { machine: location.machine.name })" data-composer-context data-composer-machine>
+          <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
+            <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
+              <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
+                <component :is="machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ machine.name }}</span>
+                <Unplug v-if="!machine.online" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-warning" :title="t('machine.offline')" aria-hidden="true" />
+                <span v-if="!machine.online" class="sr-only">{{ ` ${t("machine.offline")}` }}</span>
+                <Check v-if="machine.id === location.machine.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
+      <span v-else class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span></span>
       <template v-if="location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-        <span class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
+        <DropdownMenuRoot v-if="showTarget" :modal="false">
+          <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.workspaceChoice', { workspace: location.workspace.name })" data-composer-context data-composer-workspace>
+            <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
+              <DropdownMenuRadioGroup :model-value="location.workspace.id" @update:model-value="selectWorkspace">
+                <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
+                  <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ workspace.name }}</span>
+                  <Check v-if="workspace.id === location.workspace.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
+        <span v-else class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
       </template>
       <template v-if="showTarget && location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
-        <label class="inline-flex min-w-0 cursor-pointer select-none items-center gap-1.5 text-ui-text" :title="t(`composer.contextHint.${context}`)" data-composer-context>
+        <label class="inline-flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-ui-text" :title="t(`composer.contextHint.${context}`)" data-composer-context>
           <UiCheckbox :model-value="context === 'worktree'" :disabled="preparing || submitting" :aria-label="t('composer.contextOption.worktree')" @update:model-value="context = $event ? 'worktree' : 'directory'" />
           <span class="truncate">{{ t("composer.contextOption.worktree") }}</span>
         </label>
         <template v-if="context === 'worktree' && branchLabel && (availableBranches.length || preparedBranches.length)">
           <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
           <DropdownMenuRoot :modal="false">
-            <DropdownMenuTrigger class="inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.baseBranchChoice', { branch: branchLabel })" data-composer-branch>
+            <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.baseBranchChoice', { branch: branchLabel })" data-composer-branch>
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
