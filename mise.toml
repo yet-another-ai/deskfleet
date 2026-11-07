@@ -397,7 +397,3 @@ depends = ["rust:test"]
 [tasks."ci:check:static"]
 hide = true
 depends = ["check:static", "check:scripts", "desktop:build", "web:build", "docs:build"]
-
-[tasks."ci:report:sccache"]
-hide = true
-run = "node scripts/ci-report-sccache.ts"

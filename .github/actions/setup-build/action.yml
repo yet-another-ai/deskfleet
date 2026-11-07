@@ -6,14 +6,21 @@ inputs:
     description: Token used by mise when downloading tools from GitHub.
     required: false
     default: ""
-  cache-rust-build:
+  rust-cache:
     description: >-
-      Cache the Cargo target directory between runs. Enable for check and test
-      jobs that rebuild the same profiles; leave it disabled for release
-      packaging so the repository cache quota stays available for the compiler
-      cache.
+      Cargo target cache role, such as `static`, `test`, or `release`. Jobs
+      with the same role and OS share one entry, so give a role only to jobs
+      that build the same profiles and feature sets. Leave empty to cache only
+      Cargo downloads.
     required: false
-    default: "false"
+    default: ""
+  rust-cache-save:
+    description: >-
+      Whether this job may write its role's entry on main. Disable it for jobs
+      that only reuse another job's target directory, and for builds that would
+      add entries the quota cannot hold.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -34,32 +41,21 @@ runs:
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+    # rust-cache keys include the OS, architecture, Rust toolchain, CARGO_* and
+    # RUST* environment, and lockfiles. mise.ci.toml gives every job the same
+    # Cargo environment, so jobs of one role resolve to the same key.
     - name: Restore Cargo target directory
-      if: inputs.cache-rust-build == 'true'
+      id: rust-cache
+      if: inputs.rust-cache != ''
       uses: Swatinem/rust-cache@v2
       with:
+        shared-key: ${{ inputs.rust-cache }}
+        add-job-id-key: false
         # Warm caches come from main. Pull requests restore that baseline
-        # without competing for the repository cache quota.
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-
-    - name: Configure compiler cache
-      shell: bash
-      env:
-        CACHE_ERROR_LOG: ${{ runner.temp }}/deskfleet-sccache-errors.log
-      run: |
-        # Actions objects per compilation evict the Cargo target cache.
-        echo "SCCACHE_GHA_ENABLED=off" >> "$GITHUB_ENV"
-        printf 'SCCACHE_ERROR_LOG=%s\n' "$CACHE_ERROR_LOG" >> "$GITHUB_ENV"
-        echo "SCCACHE_LOG=warn" >> "$GITHUB_ENV"
-
-    - name: Install sccache
-      uses: mozilla-actions/sccache-action@v0.0.11
-      with:
-        version: v0.19.0
-
-    - name: Enable compiler caching
-      shell: bash
-      run: printf 'RUSTC_WRAPPER=%s\n' "${SCCACHE_PATH:-sccache}" >> "$GITHUB_ENV"
+        # without competing for the repository cache quota. A failed test
+        # leaves valid build outputs, so save them anyway.
+        save-if: ${{ github.ref == 'refs/heads/main' && inputs.rust-cache-save == 'true' }}
+        cache-on-failure: true
 
     - name: Locate Cargo, pnpm, and Electron caches
       id: cache-paths
@@ -94,7 +90,7 @@ runs:
     - name: Restore Cargo downloads
       id: cargo-downloads
       # rust-cache already caches the registry and git databases.
-      if: inputs.cache-rust-build != 'true'
+      if: inputs.rust-cache == ''
       uses: actions/cache/restore@v6
       with:
         path: |
@@ -105,7 +101,7 @@ runs:
         restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Fetch locked Rust dependencies
-      if: inputs.cache-rust-build != 'true'
+      if: inputs.rust-cache == ''
       shell: bash
       run: cargo fetch --locked
 
@@ -113,7 +109,7 @@ runs:
       # Pull requests and tags read main's entry through the base-branch
       # fallback. Their own copies would only spend the repository cache quota.
       if: >-
-        inputs.cache-rust-build != 'true' &&
+        inputs.rust-cache == '' &&
         github.ref == 'refs/heads/main' &&
         steps.cargo-downloads.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
@@ -172,3 +168,37 @@ runs:
       with:
         path: ${{ steps.cache-paths.outputs.electron-path }}
         key: ${{ steps.electron-downloads.outputs.cache-primary-key }}
+
+    # Compare cache effectiveness across runs without opening each log.
+    - name: Summarize cache restores
+      shell: bash
+      env:
+        MISE_HIT: ${{ steps.mise.outputs.cache-hit }}
+        RUST_ROLE: ${{ inputs.rust-cache }}
+        RUST_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
+        CARGO_HIT: ${{ steps.cargo-downloads.outputs.cache-hit }}
+        CARGO_MATCH: ${{ steps.cargo-downloads.outputs.cache-matched-key }}
+        PNPM_HIT: ${{ steps.pnpm-store.outputs.cache-hit }}
+        PNPM_MATCH: ${{ steps.pnpm-store.outputs.cache-matched-key }}
+        ELECTRON_HIT: ${{ steps.electron-downloads.outputs.cache-hit }}
+      run: |
+        result() {
+          if [[ "$1" == true ]]; then echo exact
+          elif [[ -n "$2" ]]; then echo "fallback \`$2\`"
+          else echo miss
+          fi
+        }
+        {
+          echo "### Cache restores: $GITHUB_JOB ($RUNNER_OS $RUNNER_ARCH)"
+          echo
+          echo "| Cache | Result |"
+          echo "| --- | --- |"
+          echo "| mise tools | $(result "$MISE_HIT") |"
+          if [[ -n "$RUST_ROLE" ]]; then
+            echo "| Cargo target (\`$RUST_ROLE\`) | $([[ "$RUST_HIT" == true ]] && echo exact || echo 'fallback or miss') |"
+          else
+            echo "| Cargo downloads | $(result "$CARGO_HIT" "$CARGO_MATCH") |"
+          fi
+          echo "| pnpm store | $(result "$PNPM_HIT" "$PNPM_MATCH") |"
+          echo "| Electron | $(result "$ELECTRON_HIT") |"
+        } >> "$GITHUB_STEP_SUMMARY"

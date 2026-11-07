@@ -62,6 +62,11 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          # Main's Linux x64 smoke build keeps a release target entry for later
+          # smoke builds; full builds only restore it, so other platforms do not
+          # take quota. Production releases build without a target cache.
+          rust-cache: ${{ !inputs.production_release && 'release' || '' }}
+          rust-cache-save: ${{ inputs.smoke_build }}
 
       - name: Build the server, daemon, Web client, and Electron bundles
         if: ${{ !inputs.production_release }}
@@ -230,7 +235,3 @@ jobs:
           path: apps/web/dist/
           if-no-files-found: error
           retention-days: 14
-
-      - name: Report shared compiler cache health
-        if: ${{ always() && steps.setup_build.outcome == 'success' }}
-        run: mise run ci:report:sccache
