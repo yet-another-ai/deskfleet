@@ -362,7 +362,7 @@ equivalent rendering work. Feature counts and the preset are recorded in results
 ### A parser extension disables incremental work
 
 The installed Markstream `2.0.21` marks any `customMarkdownIt` callback as a custom
-parser extension. In `stream-markdown-parser@1.2.22`, that flag excludes
+parser extension. In `stream-markdown-parser@1.2.25`, that flag excludes
 `md.stream.parse`, selecting synchronous `md.parse(source, env)` instead. It also
 disables stable top-level node reuse. Our callback only extends file-link
 validation, but still triggers the conservative fallback. Its identity is stable
@@ -464,7 +464,7 @@ reference definitions, nested HTML details, file destinations and unsafe schemes
 The parser also needs to know that our URL predicate is stateless. Without that,
 it conservatively disables structured-node reuse in documents containing links,
 and restoring incremental tokenization alone does not remove repeated Vue work.
-A pinned `stream-markdown-parser@1.2.22` patch exports the parser's existing
+A pinned `stream-markdown-parser@1.2.25` patch exports the parser's existing
 `registerCacheStableLinkValidator` function with its deterministic-function
 contract. Only our module-level URL predicate is registered. The patch changes
 exports and type declarations, leaving parser algorithms and conservative

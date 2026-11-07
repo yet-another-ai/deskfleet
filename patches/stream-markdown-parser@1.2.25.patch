@@ -1,17 +1,18 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 4dc3f25d96e3e2e9346fa7775b78b93f703ae4cb..427ce6bf87dbdb55d6e4c17f0ac7b267f22b1c7f 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -24453,3 +24453,4 @@ exports.toSafeMermaidSvgMarkup = toSafeMermaidSvgMarkup;
+@@ -24602,4 +24602,5 @@
+ exports.toSafeMermaidSvgMarkup = toSafeMermaidSvgMarkup;
  exports.toSafeSvgElement = toSafeSvgElement;
  exports.tokenAttrsToRecord = tokenAttrsToRecord;
- exports.tokenizeHtml = tokenizeHtml;
+-exports.tokenizeHtml = tokenizeHtml;
+\ No newline at end of file
++exports.tokenizeHtml = tokenizeHtml;
 +exports.registerCacheStableLinkValidator = registerCacheStableLinkValidator;
 diff --git a/dist/index.d.cts b/dist/index.d.cts
-index 86767e2ce0577aa2e3cc3168f7291279001b06b5..6fdf63dd8f04ed6381e55f40837b4a00d833f0c0 100644
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
-@@ -643,4 +643,11 @@ interface GetMarkdownOptions extends FactoryOptions {
+@@ -643,4 +643,11 @@
  declare function getMarkdown(msgId?: string, options?: GetMarkdownOptions): MarkdownIt;
  //#endregion
  export { AdmonitionNode, BLOCKED_HTML_TAGS, BLOCKED_HTML_TAG_NAMES, BLOCK_HTML_TAG_NAMES, BaseNode, BlockquoteNode, CheckboxInputNode, CheckboxNode, CodeBlockNode, CustomComponentAttrs, CustomComponentNode, CustomComponents, DANGEROUS_HTML_ATTRS, DANGEROUS_HTML_ATTR_NAMES, DefinitionItemNode, DefinitionListNode, ESCAPED_TEX_BRACE_COMMANDS, EXTENDED_STANDARD_HTML_TAGS, EXTENDED_STANDARD_HTML_TAG_NAMES, EmojiNode, EmphasisNode, FootnoteAnchorNode, FootnoteNode, FootnoteReferenceNode, GetMarkdownOptions, HardBreakNode, HeadingNode, HighlightNode, HtmlBlockNode, HtmlInlineNode, HtmlPolicy, HtmlPropValue, HtmlToken, INLINE_HTML_TAG_NAMES, ImageNode, InlineCodeNode, InlineNode, InsertNode, KATEX_COMMANDS, LinkNode, ListItemNode, ListNode, type MarkdownIt, MarkdownNodeSourceMap, MarkdownPluginRegistration, MarkdownRender, MarkdownToken, MarkdownTokenLite, MarkdownTokenMeta, MathBlockNode, MathInlineNode, type MathOptions, MermaidBlockNode, NON_STRUCTURING_HTML_TAGS, NON_STRUCTURING_HTML_TAG_NAMES, ParagraphNode, ParseOptions, ParsedNode, PostTransformNodesHook, ReferenceNode, SAFE_ALLOWED_HTML_TAGS, STANDARD_BLOCK_HTML_TAGS, STANDARD_HTML_TAGS, SVG_HTML_TAG_NAMES, StrikethroughNode, StrongNode, SubscriptNode, SuperscriptNode, TEX_BRACE_COMMANDS, TableCellNode, TableNode, TableRowNode, TextNode, ThematicBreakNode, TransformTokensHook, URL_HTML_ATTRS, URL_HTML_ATTR_NAMES, UnknownNode, VOID_HTML_TAGS, VOID_HTML_TAG_NAMES, VmrContainerNode, applyContainers, applyMath, clearRegisteredMarkdownPlugins, convertHtmlAttrsToProps, convertHtmlPropValue, findMatchingClose, getHtmlTagFromContent, getMarkdown, hasCompleteHtmlTagContent, hasCustomHtmlComponents, isBrokenMermaidSvg, isCustomHtmlComponentTag, isHtmlLikeTagName, isHtmlTagBlocked, isHtmlTagHardBlocked, isMathLike, isUnsafeHtmlUrl, mergeCustomHtmlTags, normalizeCustomHtmlTagName, normalizeCustomHtmlTags, normalizeStandaloneBackslashT, parseFenceToken, parseInlineTokens, parseMarkdownToStructure, processTokens, registerMarkdownPlugin, resolveCustomHtmlTags, sanitizeHtmlAttrs, sanitizeHtmlContent, sanitizeHtmlTokenAttrs, sanitizeImageSrc, sanitizeMermaidSvg, setDefaultMathOptions, shouldOpenLinkInNewTab, shouldRenderUnknownHtmlTagAsText, stripCustomHtmlWrapper, stripHtmlControlAndWhitespace, toSafeMermaidSvgMarkup, toSafeSvgElement, tokenAttrsToRecord, tokenizeHtml };
@@ -23,11 +24,11 @@ index 86767e2ce0577aa2e3cc3168f7291279001b06b5..6fdf63dd8f04ed6381e55f40837b4a00
 + */
 +export declare function registerCacheStableLinkValidator(validateLink: (url: string) => boolean): void;
  //# sourceMappingURL=index.d.cts.map
+\ No newline at end of file
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 859e510454c3e26fc604bc76a03f8dbe830879e1..a3c1f7b0c1d54a64e22eae10ccb542b179961ed7 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
-@@ -664,4 +664,11 @@ interface GetMarkdownOptions extends FactoryOptions {
+@@ -664,4 +664,11 @@
  declare function getMarkdown(msgId?: string, options?: GetMarkdownOptions): MarkdownIt;
  //#endregion
  export { AdmonitionNode, BLOCKED_HTML_TAGS, BLOCKED_HTML_TAG_NAMES, BLOCK_HTML_TAG_NAMES, BaseNode, BlockquoteNode, CheckboxInputNode, CheckboxNode, CodeBlockNode, CustomComponentAttrs, CustomComponentNode, CustomComponents, DANGEROUS_HTML_ATTRS, DANGEROUS_HTML_ATTR_NAMES, DefinitionItemNode, DefinitionListNode, ESCAPED_TEX_BRACE_COMMANDS, EXTENDED_STANDARD_HTML_TAGS, EXTENDED_STANDARD_HTML_TAG_NAMES, EmojiNode, EmphasisNode, FootnoteAnchorNode, FootnoteNode, FootnoteReferenceNode, GetMarkdownOptions, HardBreakNode, HeadingNode, HighlightNode, HtmlBlockNode, HtmlInlineNode, HtmlPolicy, HtmlPropValue, HtmlToken, INLINE_HTML_TAG_NAMES, ImageNode, InlineCodeNode, InlineNode, InsertNode, KATEX_COMMANDS, LinkNode, ListItemNode, ListNode, type MarkdownIt, MarkdownNodeSourceMap, MarkdownPluginRegistration, MarkdownRender, MarkdownToken, MarkdownTokenLite, MarkdownTokenMeta, MathBlockNode, MathInlineNode, type MathOptions, MermaidBlockNode, NON_STRUCTURING_HTML_TAGS, NON_STRUCTURING_HTML_TAG_NAMES, ParagraphNode, ParseOptions, ParsedNode, PostTransformNodesHook, ReferenceNode, SAFE_ALLOWED_HTML_TAGS, STANDARD_BLOCK_HTML_TAGS, STANDARD_HTML_TAGS, SVG_HTML_TAG_NAMES, StrikethroughNode, StrongNode, SubscriptNode, SuperscriptNode, TEX_BRACE_COMMANDS, TableCellNode, TableNode, TableRowNode, TextNode, ThematicBreakNode, TransformTokensHook, URL_HTML_ATTRS, URL_HTML_ATTR_NAMES, UnknownNode, VOID_HTML_TAGS, VOID_HTML_TAG_NAMES, VmrContainerNode, applyContainers, applyMath, clearRegisteredMarkdownPlugins, convertHtmlAttrsToProps, convertHtmlPropValue, findMatchingClose, getHtmlTagFromContent, getMarkdown, hasCompleteHtmlTagContent, hasCustomHtmlComponents, isBrokenMermaidSvg, isCustomHtmlComponentTag, isHtmlLikeTagName, isHtmlTagBlocked, isHtmlTagHardBlocked, isMathLike, isUnsafeHtmlUrl, mergeCustomHtmlTags, normalizeCustomHtmlTagName, normalizeCustomHtmlTags, normalizeStandaloneBackslashT, parseFenceToken, parseInlineTokens, parseMarkdownToStructure, processTokens, registerMarkdownPlugin, resolveCustomHtmlTags, sanitizeHtmlAttrs, sanitizeHtmlContent, sanitizeHtmlTokenAttrs, sanitizeImageSrc, sanitizeMermaidSvg, setDefaultMathOptions, shouldOpenLinkInNewTab, shouldRenderUnknownHtmlTagAsText, stripCustomHtmlWrapper, stripHtmlControlAndWhitespace, toSafeMermaidSvgMarkup, toSafeSvgElement, tokenAttrsToRecord, tokenizeHtml };
@@ -39,12 +40,14 @@ index 859e510454c3e26fc604bc76a03f8dbe830879e1..a3c1f7b0c1d54a64e22eae10ccb542b1
 + */
 +export declare function registerCacheStableLinkValidator(validateLink: (url: string) => boolean): void;
  //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
 diff --git a/dist/index.js b/dist/index.js
-index 3741cf835991c1768c82d7bfdf6df537faba471d..215002b1a86a631f7d729a4f0c0dde5e087669e5 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -24392,3 +24392,4 @@ function getMarkdown(msgId = `editor-${Date.now()}`, options = {}) {
+@@ -24541,4 +24541,5 @@
+ 
  //#endregion
  export { BLOCKED_HTML_TAGS, BLOCKED_HTML_TAG_NAMES, BLOCK_HTML_TAG_NAMES, DANGEROUS_HTML_ATTRS, DANGEROUS_HTML_ATTR_NAMES, ESCAPED_TEX_BRACE_COMMANDS, EXTENDED_STANDARD_HTML_TAGS, EXTENDED_STANDARD_HTML_TAG_NAMES, INLINE_HTML_TAG_NAMES, KATEX_COMMANDS, NON_STRUCTURING_HTML_TAGS, NON_STRUCTURING_HTML_TAG_NAMES, SAFE_ALLOWED_HTML_TAGS, STANDARD_BLOCK_HTML_TAGS, STANDARD_HTML_TAGS, SVG_HTML_TAG_NAMES, TEX_BRACE_COMMANDS, URL_HTML_ATTRS, URL_HTML_ATTR_NAMES, VOID_HTML_TAGS, VOID_HTML_TAG_NAMES, applyContainers, applyMath, clearRegisteredMarkdownPlugins, convertHtmlAttrsToProps, convertHtmlPropValue, findMatchingClose, getHtmlTagFromContent, getMarkdown, hasCompleteHtmlTagContent, hasCustomHtmlComponents, isBrokenMermaidSvg, isCustomHtmlComponentTag, isHtmlLikeTagName, isHtmlTagBlocked, isHtmlTagHardBlocked, isMathLike, isUnsafeHtmlUrl, mergeCustomHtmlTags, normalizeCustomHtmlTagName, normalizeCustomHtmlTags, normalizeStandaloneBackslashT, parseFenceToken, parseInlineTokens, parseMarkdownToStructure, processTokens, registerMarkdownPlugin, resolveCustomHtmlTags, sanitizeHtmlAttrs, sanitizeHtmlContent, sanitizeHtmlTokenAttrs, sanitizeImageSrc, sanitizeMermaidSvg, setDefaultMathOptions, shouldOpenLinkInNewTab, shouldRenderUnknownHtmlTagAsText, stripCustomHtmlWrapper, stripHtmlControlAndWhitespace, toSafeMermaidSvgMarkup, toSafeSvgElement, tokenAttrsToRecord, tokenizeHtml };
 +export { registerCacheStableLinkValidator };
  //# sourceMappingURL=index.js.map
+\ No newline at end of file
