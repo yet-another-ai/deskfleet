@@ -10,7 +10,8 @@ import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRunti
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
-import { resolveAuvPath } from "./auv.ts"
+import { prepareAuv } from "./auv.ts"
+import { AuvPermissionsController } from "./auv-permissions-controller.ts"
 import { desktopDaemonDirectory, desktopWorkspaceDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
@@ -62,6 +63,9 @@ function start(): void {
     installRendererProtocol()
     installRendererDownloadGuard()
     installDesktopMediaIpc()
+    // AUV registers its Linux desktop identity in parallel with account and IPC
+    // setup; the bundled binary needs that identity before agents can use it.
+    const auvPath = prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
     const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
@@ -83,20 +87,23 @@ function start(): void {
     powerMonitor.on("shutdown", () => lifecycle.quit())
     const daemonDirectory = desktopDaemonDirectory()
     const workspaceDirectory = desktopWorkspaceDirectory()
+    const auvBinary = await auvPath
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
       createLocalAgentRuntime({
         directory: daemonDirectory,
         workspaceDirectory,
-        auvPath: resolveAuvPath({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }),
+        auvPath: auvBinary,
       }),
       publishLocalAgentState,
     )
+    // AUV's Portal identity and consent are a Linux desktop concern.
+    const auv = process.platform === "linux" ? new AuvPermissionsController(auvBinary) : undefined
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
-      windowsDesktopService,
+      windowsDesktopService, auv,
       localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
       established: () => establishedDesktopProfile(userData),
     })
@@ -111,6 +118,7 @@ function start(): void {
     let closing: Promise<void> | undefined
     let servicesClosed = false
     const closeServices = (): Promise<void> => {
+      auv?.close()
       notificationMonitor.close()
       notifications.close()
       closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close(), speech.close()]).then(results => {

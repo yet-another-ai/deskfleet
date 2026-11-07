@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
-import { Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Network, RotateCcw, ShieldCheck } from "@lucide/vue"
+import { Bot, Check, ChevronRight, FolderOpen, KeyRound, Monitor, MousePointer2, Network, RotateCcw, ShieldCheck } from "@lucide/vue"
 import { useEventListener, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -12,6 +12,7 @@ import { DESKTOP_ONBOARDING_PERMISSIONS, type OnboardingPermission, type Onboard
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/analytics.ts"
 import BrandLogo from "../common/BrandLogo.vue"
+import AuvPermissionControls from "../common/AuvPermissionControls.vue"
 import WindowsDesktopServiceOnboarding from "./WindowsDesktopServiceOnboarding.vue"
 
 const props = defineProps<{ host: DeskfleetDesktopApi; state: OnboardingState }>()
@@ -31,25 +32,29 @@ let currentBackend = props.state.linuxDesktopBackend
 let reconcileNeeded = false
 const wayland = computed(() => props.host.platform === "linux" && (
   props.state.linuxDesktopBackend === "wayland"
-  || props.state.linuxDesktopBackend === undefined && props.state.permissionSteps.includes(step.value as OnboardingPermission)
+  || props.state.linuxDesktopBackend === undefined
+    && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => props.state.permissionSteps.includes(kind))
 ))
 const permissionSteps = computed(() => props.state.permissionSteps)
 const permission = computed(() => permissionSteps.value.find(value => value === step.value))
 const localNetwork = computed(() => permission.value === "localNetwork")
 const windowsService = computed(() => permission.value === "windowsDesktopService")
+const auv = computed(() => permission.value === "auv")
 const sharedScreens = computed(() => wayland.value && permission.value === "screenCapture")
-const currentPermission = computed(() => permission.value && permission.value !== "localNetwork" && permission.value !== "windowsDesktopService" ? permissions.value[`${permission.value}Permission`] : undefined)
+const currentPermission = computed(() => permission.value && permission.value !== "localNetwork" && permission.value !== "windowsDesktopService" && permission.value !== "auv" ? permissions.value[`${permission.value}Permission`] : undefined)
 const granted = computed(() => ["granted", "not-required"].includes(currentPermission.value?.status ?? ""))
 const requesting = computed(() => currentPermission.value?.status === "requesting" || wayland.value
   && DESKTOP_ONBOARDING_PERMISSIONS.some(kind => permissions.value[`${kind}Permission`]?.status === "requesting"))
-const canRequest = computed(() => windowsService.value
-  ? permissions.value.windowsDesktopService?.available === true && !permissions.value.windowsDesktopService.running
-  : (!granted.value || sharedScreens.value) && !requesting.value && (!wayland.value
-    || !refreshing.value && currentPermission.value?.status !== "checking"))
+const canRequest = computed(() => auv.value
+  ? permissions.value.auv?.status !== "requesting"
+  : windowsService.value
+    ? permissions.value.windowsDesktopService?.available === true && !permissions.value.windowsDesktopService.running
+    : (!granted.value || sharedScreens.value) && !requesting.value && (!wayland.value
+      || !refreshing.value && currentPermission.value?.status !== "checking"))
 const canRestart = computed(() => props.host.platform === "darwin" && !!props.host.application)
 const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
 const steps = computed<OnboardingStep[]>(() => firstRun ? ["account", "machineControl", ...permissionSteps.value] : ["account"])
-const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, account: KeyRound, machineControl: Monitor, complete: Check }
+const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, auv: Bot, account: KeyRound, machineControl: Monitor, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "screenCapture" || value === "accessibility")
@@ -147,6 +152,8 @@ async function refreshPermissions(): Promise<void> {
   } finally {
     refreshing.value = false
     await reconcileOnboarding()
+    // A backend change can move a Portal step to the host's AUV step.
+    if (step.value !== requestedStep) await refreshPermissions()
   }
 }
 
@@ -157,6 +164,7 @@ async function requestPermission(kind: OnboardingPermission): Promise<void> {
     const value = await onboarding!.requestPermission(kind)
     if (kind === "localNetwork") permissions.value.localNetwork = value.localNetwork
     if (kind === "windowsDesktopService") permissions.value.windowsDesktopService = value.windowsDesktopService
+    if (kind === "auv") permissions.value.auv = value.auv
     if (revision === permissionRevision) {
       permissions.value = value
       noteBackend(value)
@@ -240,6 +248,17 @@ onBeforeUnmount(() => { unsubscribe?.() })
             @request="requestPermission('windowsDesktopService')"
             @refresh="refreshPermissions"
             @advance="advancePermission('windowsDesktopService')"
+          />
+          <AuvPermissionControls
+            v-else-if="auv"
+            :state="permissions.auv"
+            :pending="pending"
+            :refreshing="refreshing"
+            :error="error"
+            onboarding
+            @request="requestPermission('auv')"
+            @refresh="refreshPermissions"
+            @advance="advancePermission('auv')"
           />
           <template v-else>
             <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(`${permissionMessages}.description`) }}</p>

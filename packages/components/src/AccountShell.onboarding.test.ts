@@ -29,6 +29,7 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = initia
     screenCapturePermission: { status: "denied" },
     accessibilityPermission: { status: "denied" },
     ...(platform === "win32" ? { windowsDesktopService: { available: true, installed: false, running: false } } : {}),
+    ...(platform === "linux" ? { auv: { status: "not-requested" as const } } : {}),
   }
   const listeners = new Set<(state: LocalAgentState) => void>()
   const application = { restart: vi.fn(async () => {}) }
@@ -39,8 +40,9 @@ function setup(initialStep: OnboardingStep = "fullDiskAccess", signedIn = initia
     requestPermission: vi.fn(async (kind: OnboardingPermission) => {
       if (kind === "localNetwork") permissions.localNetwork = "attempted"
       else if (kind === "windowsDesktopService") permissions.windowsDesktopService = { available: true, installed: true, running: true }
+      else if (kind === "auv") permissions.auv = { status: "saved" }
       else permissions[`${kind}Permission`] = { status: "requesting" }
-      if (platform === "linux") {
+      if (platform === "linux" && kind !== "auv") {
         permissions.screenCapturePermission = { status: "requesting" }
         permissions.accessibilityPermission = { status: "requesting" }
       }
@@ -460,10 +462,10 @@ test("Linux welcome shows the shared startup authorization and continues through
   app.mount()
   await flushPromises()
   expect(view!.findAll("ol li").map(item => item.text())).toEqual([
-    "Your account", "This machine", "Screen sharing", "Mouse and keyboard control",
+    "Your account", "This machine", "Screen sharing", "Mouse and keyboard control", "AI computer access",
   ])
   expect(view!.get("h1").text()).toBe("Screen sharing")
-  expect(view!.text()).toContain("Step 3 of 4")
+  expect(view!.text()).toContain("Step 3 of 5")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
   expect(view!.text()).not.toMatch(/macOS|System Settings|Full Disk Access|system audio|quit and reopen/u)
   for (const text of ["Authorize screen sharing", "Skip for now"]) {
@@ -479,11 +481,41 @@ test("Linux welcome shows the shared startup authorization and continues through
   await flushPromises()
   await click("Continue")
   expect(view!.get("h1").text()).toBe("Mouse and keyboard control")
-  expect(view!.text()).toContain("Step 4 of 4")
+  expect(view!.text()).toContain("Step 4 of 5")
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
+  // AUV authorization belongs to the host and remains its own step after native consent.
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  expect(view!.text()).toContain("Step 5 of 5")
+  expect(view!.get('[role="status"]').text()).toBe("AUV has not been authorized")
+  await click("Skip for now")
   expect(view!.text()).toContain("Welcome, Ada")
-  expect(app.onboarding.advancePermission.mock.calls).toEqual([["screenCapture"], ["accessibility"]])
+  expect(app.onboarding.advancePermission.mock.calls).toEqual([["screenCapture"], ["accessibility"], ["auv"]])
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
+test("Linux welcome authorizes AUV as its own step and continues after saved consent", async () => {
+  const app = setup("auv", true, "linux")
+  app.mount()
+  await flushPromises()
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  expect(view!.text()).toContain("take screenshots")
+  expect(view!.get('[role="status"]').text()).toBe("AUV has not been authorized")
+  await click("Authorize AUV")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  await click("Continue")
+  expect(app.onboarding.advancePermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(view!.text()).toContain("Welcome, Ada")
+})
+
+test.each(["darwin", "win32"] as const)("%s welcome never offers AUV authorization", async platform => {
+  const steps = onboardingPermissions(platform, undefined, true)
+  expect(steps).not.toContain("auv")
+  const app = setup(steps[0]!, true, platform)
+  app.mount()
+  await flushPromises()
+  expect(view!.text()).not.toMatch(/AUV|screenshots/u)
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })
 
@@ -550,6 +582,9 @@ test("Linux permission setup can skip unavailable sharing and resume mouse and k
   await flushPromises()
   expect(view!.get('[role="status"]').text()).toBe("Access enabled")
   await click("Continue")
+  // The host's AUV step follows the native steps and can still be deferred.
+  expect(view!.get("h1").text()).toBe("AI computer access")
+  await click("Skip for now")
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
   expect(app.fake.central.login).not.toHaveBeenCalled()
   expect(view!.text()).toContain("Welcome, Ada")

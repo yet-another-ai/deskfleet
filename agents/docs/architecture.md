@@ -952,8 +952,11 @@ Enabling starts or reuses the local Agent, then macOS guides Full Disk Access,
 screen/system-audio recording, and Accessibility. Windows offers optional remote
 control while locked. Linux Wayland guides screen sharing and keyboard/mouse
 control through its desktop authorization dialog. Linux X11 checks access to the
-existing X server and skips Portal permission steps. Linux has no Full Disk
-Access or macOS System Settings instructions.
+existing X server and skips Portal permission steps. Linux also guides AUV's own
+screen and input authorization on every backend, because its Portal requests need
+AUV's installed desktop identity. macOS and Windows need no separate AUV step;
+their AUV backends use the executable's existing TCC and Windows input grants.
+Linux has no Full Disk Access or macOS System Settings instructions.
 
 The host saves the current step and a `machine-control` flow marker in
 `onboarding.json` under its user-data directory and resumes it after restart.
@@ -967,8 +970,25 @@ the daemon. A profile with an existing account or desktop settings but no welcom
 file is treated as finished and retains its startup preference. Completed setup
 is not repeated. macOS retains permission guidance when an enabled Agent fails
 to start. Linux preserves a saved Portal step while disconnected; when a later
-hello identifies X11, the host completes the now-unneeded permission guide.
-Users can defer individual permissions without blocking unrelated Agent work.
+hello identifies X11, the host keeps AUV's applicable step and drops the
+now-unneeded Portal guide. Users can defer individual permissions without
+blocking unrelated Agent work.
+
+AUV authorization belongs to the Linux desktop host, separate from daemon
+permission events. At startup the host runs metadata-only `doctor --portal-setup`
+before exposing the bundled binary, then logs and tolerates failure so unrelated
+Agent work still starts. Welcome and Settings → Permissions invoke
+`doctor --portal-setup --portal-authorize --json` only on an explicit
+authorization action; entry, focus, and refresh use the silent `doctor --json`
+diagnostics. Authorization installs AUV's desktop identity and requests its own
+screen and input grants. Ordinary local AUV CLI and MCP operations share the
+default user Portal state across worktrees. No token is copied into Team catalogs
+or renderer state. The UI reports saved authorization from identity and restore
+records rather than asserting a live grant. Revocation, unsupported persistence,
+and AUV's separate clipboard consent can still require a later prompt. The app
+owns and aborts pending doctor helpers on quit; completed welcome progress
+remains complete. macOS and Windows construct no AUV controller, add no welcome
+step, and spawn no doctor command.
 
 Local Network access belongs to the desktop client, independently of its local
 Agent. Its welcome action calls a Rust native helper in Electron's main process.
