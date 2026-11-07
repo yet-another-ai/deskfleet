@@ -197,6 +197,10 @@ overrides, in the requested absolute cwd or the Session's first directory. The
 resulting terminal belongs to the Session's Worktree regardless of cwd. Its
 durable metadata marks it as `kind: "acp"`. ACP handles use the daemon terminal ID,
 so a tool call's `{type: "terminal", terminalId}` references the same transcript.
+When shell environment loading is enabled for the provider, command terminals
+inherit the same shell and provider variables as the Agent. Variables supplied
+by `terminal/create` override them; the bundled command directory remains on
+`PATH` when available.
 
 `terminal/output` returns a UTF-8 snapshot, retaining the requested
 `outputByteLimit` tail on character boundaries and reporting truncation. That

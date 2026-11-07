@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
+import { AgentProviders } from "./agent-providers.ts"
 import { setImmediate as nextTurn } from "node:timers/promises"
 import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 
@@ -132,6 +136,33 @@ test("warm draft choices reuse one ACP process/session and use its dependent opt
   assert.equal(fake.closes, 0)
   await probes.release("alice", params.probeId)
   await probes.release("alice", params.probeId)
+  assert.equal(fake.closes, 1)
+})
+
+test("shell-enabled providers reuse configuration probes and changing the setting replaces them", { skip: process.platform === "win32" }, async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-probe-shell-"))
+  const shell = join(directory, "shell")
+  await writeFile(shell, '#!/bin/sh\nexec /bin/sh -c "$2"\n', { mode: 0o755 })
+  const previous = process.env.SHELL
+  process.env.SHELL = shell
+  const fake = fakeProvider()
+  const providers = new AgentProviders(directory, fake.provider)
+  const probes = new AgentConfigurationProbes()
+  context.after(async () => {
+    await probes.close()
+    if (previous === undefined) delete process.env.SHELL
+    else process.env.SHELL = previous
+    await rm(directory, { recursive: true, force: true })
+  })
+  await providers.init()
+  const record = await providers.create({ template: "codex", name: "Test provider", inheritShellEnvironment: true, env: {} })
+  const selected = { ...params, provider: record.id }
+  await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
+  await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
+  assert.equal(fake.configs.length, 1, "Repeated resolutions keep the warm provider process")
+  await providers.update(record.id, { name: "Test provider", inheritShellEnvironment: false, env: {} })
+  await probes.read("alice", selected, "/workspace", providers.resolve(record.id))
+  assert.equal(fake.configs.length, 2, "Disabling shell inheritance replaces the probe")
   assert.equal(fake.closes, 1)
 })
 

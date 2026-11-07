@@ -318,7 +318,7 @@ test("resolves provider identity only from successful snapshots and keeps it thr
   agents.sessions = { [sessionId]: { ...agentSnapshot().session, id: sessionId, workspaceId, provider: "work-codex" } }
   await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(false))
   expect(store.findSession(sessionId)?.session.provider).toBeUndefined()
-  const list = vi.spyOn(platformClient.providers, "list").mockResolvedValue({ revision: "test-settings", templates: [], providers: [
+  const list = vi.spyOn(platformClient.providers, "list").mockResolvedValue({ revision: "test-settings", shellEnvironmentDefault: true, templates: [], providers: [
     { id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} },
   ] })
   await providers.refresh()
@@ -331,7 +331,7 @@ test("resolves provider identity only from successful snapshots and keeps it thr
   await providers.refresh()
   await store.refreshLocalCatalog()
   expect(store.findSession(sessionId)?.session).toMatchObject({ provider: "Renamed Codex", providerIcon: "openai", providerTemplate: "codex", providerUnavailable: false })
-  list.mockResolvedValue({ revision: "test-settings-removed", templates: [], providers: [] })
+  list.mockResolvedValue({ revision: "test-settings-removed", shellEnvironmentDefault: true, templates: [], providers: [] })
   await providers.refresh()
   await vi.waitFor(() => expect(store.findSession(sessionId)?.session.providerUnavailable).toBe(true))
   expect(store.findSession(sessionId)?.session.provider).toBeUndefined()

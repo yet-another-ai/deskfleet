@@ -267,7 +267,16 @@ MCP subprocesses launched inside separately installed provider CLIs remain owned
 by those CLIs. Interactive login terminals retain their existing behavior.
 
 A provider has a stable ID, a template, a display name, an optional icon, an
-optional binary path, and environment overrides. Icons are bundled catalog slugs;
+optional binary path, and environment overrides. On macOS and Linux, providers
+load exported variables from the user's interactive login shell by default; the
+setting can be disabled for each provider. Windows defaults to disabled because
+shell environment loading is not supported there.
+Discovery, installation, login, connection tests, and Agent launches use those
+variables over the daemon's environment; manually configured variables take
+precedence over both. Shell aliases, functions, and variables that were not
+exported are not included. Shell startup runs for each operation; failures or
+timeouts are reported instead of silently using an incomplete environment.
+Icons are bundled catalog slugs;
 omitting one uses the template's default icon. Icon selection affects display
 only and does not change execution. The Codex template runs the installed Codex CLI
 through the bundled ACP bridge; its default binary is `codex`. The Claude Code

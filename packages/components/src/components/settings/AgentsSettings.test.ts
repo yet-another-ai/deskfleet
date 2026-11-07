@@ -22,7 +22,7 @@ function render() {
 }
 beforeEach(() => {
   fleet.machines = [{ id: "local-daemon", name: "my-machine", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] }]
-  snapshot = { revision: "test-settings", templates: [...AGENT_PROVIDER_TEMPLATES], providers: [structuredClone(provider)] }
+  snapshot = { revision: "test-settings", templates: [...AGENT_PROVIDER_TEMPLATES], shellEnvironmentDefault: true, providers: [structuredClone(provider)] }
   vi.spyOn(platformClient.providers, "list").mockImplementation(async () => structuredClone(snapshot))
   vi.spyOn(platformClient.providers, "onChanged").mockImplementation(listener => { changed = listener; return unsubscribe })
   unsubscribe.mockClear()
@@ -67,7 +67,7 @@ test("adds a provider and edits its settings without sending a template change",
   await view.get('[name="provider-binary"]').setValue("/tools/my-acp")
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(create).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "Other agent", binaryPath: "/tools/my-acp", icon: undefined, env: {} })
+  expect(create).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "Other agent", binaryPath: "/tools/my-acp", icon: undefined, inheritShellEnvironment: true, env: {} })
   expect(view.find("form").exists()).toBe(false)
   await view.get('[data-provider-id="codex"] [data-provider-open]').trigger("click")
   expect(view.find("[data-provider-template-choice]").exists()).toBe(false)
@@ -78,7 +78,7 @@ test("adds a provider and edits its settings without sending a template change",
   await view.get('[data-provider-icon-choice="gemini"]').trigger("click")
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(update).toHaveBeenCalledExactlyOnceWith("codex", { name: "Renamed", binaryPath: undefined, icon: "gemini", env: { TEAM: "work" } })
+  expect(update).toHaveBeenCalledExactlyOnceWith("codex", { name: "Renamed", binaryPath: undefined, icon: "gemini", inheritShellEnvironment: true, env: { TEAM: "work" } })
   expect(view.get('[data-provider-id="codex"]').text()).toContain("Renamed")
 })
 

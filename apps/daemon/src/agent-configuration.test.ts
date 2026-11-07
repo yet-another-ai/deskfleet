@@ -372,7 +372,7 @@ test("draft configuration resolves the selected provider's current launch settin
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const providers = new AgentProviders(directory, fake.provider)
   await providers.init()
-  const configured = await providers.create({ template: "codex", name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" } })
+  const configured = await providers.create({ template: "codex", name: "Work agent", binaryPath: "/tools/codex", inheritShellEnvironment: false, env: { CODEX_HOME: "/work/agent" } })
   const service = new AgentSessions(catalog, catalog.native, fake.provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
@@ -383,7 +383,7 @@ test("draft configuration resolves the selected provider's current launch settin
   assert.equal(configuration.models?.currentValue, "second")
   assert.equal(configuration.reasoningEfforts?.currentValue, "medium")
   assert.deepEqual(fake.configs[0], { name: "Work agent", binaryPath: "/tools/codex", env: { CODEX_HOME: "/work/agent" }, cwd: directory })
-  await providers.update(configured.id, { name: "Renamed agent", binaryPath: "", env: { CODEX_HOME: "/work/updated" } })
+  await providers.update(configured.id, { name: "Renamed agent", binaryPath: "", inheritShellEnvironment: false, env: { CODEX_HOME: "/work/updated" } })
   const updated = await service.handle("_deskfleet/agent/configuration", params, service.actor()) as AgentConfiguration
   assert.deepEqual(updated.provider, { id: configured.id, name: "Renamed agent" })
   assert.deepEqual(fake.configs[1], { name: "Renamed agent", binaryPath: "codex", env: { CODEX_HOME: "/work/updated" }, cwd: directory })

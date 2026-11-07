@@ -32,7 +32,7 @@ test("retained machine stores read their injected adapters after another machine
     const snapshot = agentSnapshot()
     snapshot.session.title = `Conversation ${id}`
     const listCatalog = vi.fn(async () => catalog)
-    const listProviders = vi.fn(async (): Promise<ProviderSnapshot> => ({ revision: id, templates: [], providers: [{ id: "codex", name: `Provider ${id}`, template: "codex", env: {} }] }))
+    const listProviders = vi.fn(async (): Promise<ProviderSnapshot> => ({ revision: id, shellEnvironmentDefault: true, templates: [], providers: [{ id: "codex", name: `Provider ${id}`, template: "codex", env: {} }] }))
     const listTerminals = vi.fn(async () => [])
     const listSessions = vi.fn(async () => [snapshot.session])
     const api: DeskfleetDesktopApi = {

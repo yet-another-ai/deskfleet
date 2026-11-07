@@ -15,7 +15,7 @@ api.agent.history = {
   events: async () => [],
   snapshot: async () => { throw new Error("No conversations in the update fixture") },
 }
-api.providers.list = async () => ({ revision: "updates-smoke", templates: [], providers: [] })
+api.providers.list = async () => ({ revision: "updates-smoke", shellEnvironmentDefault: true, templates: [], providers: [] })
 api.settings.get = async () => ({ enabled: false, status: "stopped" })
 api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: false })
 api.settings.getKeepAwake = async () => ({ enabled: false })

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 import { ChevronLeft, ChevronRight, CircleCheck, CircleX, LoaderCircle, Plus, Trash2 } from "@lucide/vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger, DialogTitle, DialogDescription } from "reka-ui"
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
@@ -11,17 +12,18 @@ import ProviderIconPicker from "./ProviderIconPicker.vue"
 import ProviderSetup from "./ProviderSetup.vue"
 import UiDialog from "../common/UiDialog.vue"
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   initial?: AgentProviderConfig
   templates: AgentProviderTemplate[]
   disabled?: boolean
   machineName: string
+  shellEnvironmentDefault?: boolean
   probe(provider: AgentProviderInput): Promise<ProviderProbeResult>
   install(provider: AgentProviderInput): Promise<TerminalSummary>
   login(provider: AgentProviderInput): Promise<TerminalSummary>
   save(provider: AgentProviderInput): Promise<void>
   test(provider: AgentProviderInput): Promise<ProviderTestResult>
-}>()
+}>(), { shellEnvironmentDefault: true })
 const emit = defineEmits<{ saved: []; cancel: [] }>()
 const { t } = useI18n()
 const pathInput = useTemplateRef<HTMLInputElement>("pathInput")
@@ -32,9 +34,10 @@ const selectedTemplate = computed(() => props.templates.find(value => value.id =
 const name = ref(props.initial?.name ?? selectedTemplate.value.name)
 const binaryPath = ref(props.initial?.binaryPath ?? "")
 const icon = ref(props.initial?.icon)
+const inheritShellEnvironment = ref(props.initial?.inheritShellEnvironment ?? props.shellEnvironmentDefault)
 let nextRowId = 0
 const environment = ref(Object.entries(props.initial?.env ?? {}).map(([key, value]) => ({ id: nextRowId++, key, value })))
-const advanced = ref(!!props.initial?.binaryPath || environment.value.length > 0)
+const advanced = ref(!!props.initial?.binaryPath || environment.value.length > 0 || inheritShellEnvironment.value !== props.shellEnvironmentDefault)
 const saving = ref(false)
 const error = ref<string | null>(null)
 const testing = ref(false)
@@ -49,12 +52,14 @@ const setupProvider = computed((): AgentProviderInput | null => {
   return {
     template: template.value, name: selectedTemplate.value.name,
     binaryPath: binaryPath.value.trim() || undefined,
+    inheritShellEnvironment: inheritShellEnvironment.value,
     env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
   }
 })
 /** Names the overrides hidden inside a collapsed Advanced section. */
 const advancedSummary = computed(() => [
   ...(binaryPath.value.trim() ? [t("providers.customPath")] : []),
+  ...(inheritShellEnvironment.value !== props.shellEnvironmentDefault ? [t("providers.shellEnvironment")] : []),
   ...(environment.value.length ? [t("providers.environmentCount", environment.value.length)] : []),
 ].join(" · "))
 const testResult = ref<{ ok: true; agentName: string } | { ok: false; error: string } | null>(null)
@@ -70,11 +75,12 @@ watch(template, (value, previous) => {
   }
 })
 
-// A custom executable replaces a discovered one. Environment edits keep the last discovery until the next probe.
-watch([template, binaryPath], () => { resolvedBinaryPath.value = undefined }, { flush: "sync" })
+// A custom executable or shell environment change invalidates the discovered path.
+// Individual variable edits keep the last discovery until the next probe.
+watch([template, binaryPath, inheritShellEnvironment], () => { resolvedBinaryPath.value = undefined }, { flush: "sync" })
 // A result describes the settings it tested; any later edit makes it stale.
 // Invalidate synchronously so an edit and a Test click in one tick cannot race.
-watch([template, binaryPath, environment], () => {
+watch([template, binaryPath, environment, inheritShellEnvironment], () => {
   testRevision += 1
   testing.value = false
   testResult.value = null
@@ -116,6 +122,7 @@ function current(): AgentProviderInput | null {
     name: name.value.trim(),
     binaryPath: resolvedBinaryPath.value || binaryPath.value.trim() || undefined,
     icon: icon.value,
+    inheritShellEnvironment: inheritShellEnvironment.value,
     env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
   }
 }
@@ -222,6 +229,13 @@ onBeforeUnmount(() => { finished = true })
             <input ref="pathInput" v-model="binaryPath" name="provider-binary" class="ui-input font-mono text-[13px]" :placeholder="resolvedBinaryPath ?? selectedTemplate.defaultBinaryPath" :disabled="formDisabled" autocomplete="off" :spellcheck="false" />
             <span class="text-xs text-ui-text-muted">{{ resolvedBinaryPath ? t("providers.binaryDetected") : t("providers.binaryDefault", { binary: selectedTemplate.defaultBinaryPath }) }}</span>
           </label>
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex flex-col gap-1">
+              <label id="provider-shell-environment-label" for="provider-shell-environment">{{ t("providers.shellEnvironment") }}</label>
+              <p id="provider-shell-environment-description" class="m-0 text-xs text-ui-text-muted">{{ t("providers.shellEnvironmentDescription") }}</p>
+            </div>
+            <UiSwitch id="provider-shell-environment" v-model="inheritShellEnvironment" :disabled="formDisabled" aria-labelledby="provider-shell-environment-label" aria-describedby="provider-shell-environment-description" data-provider-shell-environment />
+          </div>
           <fieldset class="m-0 min-w-0 border-0 p-0" :disabled="formDisabled">
             <legend class="mb-1">{{ t("providers.environment") }}</legend>
             <p class="m-0 mb-2.5 text-xs text-ui-text-muted">{{ t("providers.environmentDescription") }}</p>

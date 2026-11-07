@@ -1001,6 +1001,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
     providers: {
       list: async () => ({
         revision: "storybook-rev-1",
+        shellEnvironmentDefault: true,
         templates: [...AGENT_PROVIDER_TEMPLATES],
         providers: structuredClone(profiles),
       }),

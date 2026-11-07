@@ -15,8 +15,9 @@ import { ompProvider } from "./agents/omp.ts"
 import { piProvider } from "./agents/pi.ts"
 import { launchProviderCommand } from "./provider-setup-process.ts"
 import { providerEnvironment } from "./provider-environment.ts"
+import { loadShellEnvironment } from "./shell-environment.ts"
 import {
-  AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, validateProviderId,
+  AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, shellEnvironmentEnabled, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
 } from "./provider-protocol.ts"
 
@@ -42,6 +43,7 @@ export class AgentProviders {
   readonly #path: string
   readonly #commandDirectory?: string
   readonly #providerByTemplate: Record<AgentProviderTemplateId, AgentProvider>
+  readonly #shellProviderByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #listeners = new Set<() => void>()
   #providers: AgentProviderConfig[] = []
   #revision = randomUUID()
@@ -62,6 +64,18 @@ export class AgentProviders {
       antigravity: antigravityProvider,
       acp: acpProvider,
     }
+    this.#shellProviderByTemplate = Object.fromEntries(
+      Object.entries(this.#providerByTemplate).map(([template, actualProvider]) => [template, {
+        id: actualProvider.id,
+        async connect(config: AgentConfig, client: Parameters<AgentProvider["connect"]>[1]) {
+          const shell = await loadShellEnvironment(undefined, client.signal)
+          client.signal?.throwIfAborted()
+          const env = commandEnvironment({ ...shell, ...config.env }, config.commandDirectory)
+          const terminals = client.terminals ? { ...client.terminals, env } : undefined
+          return actualProvider.connect({ ...config, env }, { ...client, ...(terminals ? { terminals } : {}) })
+        },
+      }]),
+    ) as Record<AgentProviderTemplateId, AgentProvider>
   }
 
   async init(): Promise<void> {
@@ -96,7 +110,7 @@ export class AgentProviders {
     const templates = AGENT_PROVIDER_TEMPLATES.map(template => ({ ...template,
       ...(template.id === "antigravity" && process.platform === "win32" ? { defaultBinaryPath: "agy_acp_server.exe" } : {}),
     }))
-    return { revision: this.#revision, templates, providers: structuredClone(this.#providers) }
+    return { revision: this.#revision, shellEnvironmentDefault: shellEnvironmentEnabled(undefined), templates, providers: structuredClone(this.#providers) }
   }
 
   /** Public display fields and an opaque revision may enter the central catalog replica. */
@@ -148,13 +162,16 @@ export class AgentProviders {
 
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
+    const inheritShell = shellEnvironmentEnabled(record.inheritShellEnvironment)
+    const provider = (inheritShell ? this.#shellProviderByTemplate : this.#providerByTemplate)[record.template]
     return {
-      provider: this.#providerByTemplate[record.template],
+      provider,
       config: {
         name: record.name,
         binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
           : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
-        env: commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
+        env: inheritShell ? providerEnvironment(record, this.#directory)
+          : commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),
       },
     }

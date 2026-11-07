@@ -14,6 +14,8 @@ export interface AgentTerminalContext {
   worktreeId?: string
   commandDirectory?: string
   path?: string
+  /** Provider environment for terminals opened by a shell-enabled Agent. */
+  env?: Record<string, string>
 }
 
 interface Handle {
@@ -72,7 +74,7 @@ export class AcpTerminals {
       terminalId, title: truncateGeneratedTitle([params.command, ...params.args ?? []].join(" ")),
       command: params.command, args: params.args,
       env: commandEnvironment(
-        Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])),
+        { ...this.#context.env, ...Object.fromEntries((params.env ?? []).map(({ name, value }) => [name, value])) },
         this.#context.commandDirectory,
         this.#context.path === undefined ? process.env : { PATH: this.#context.path },
       ),

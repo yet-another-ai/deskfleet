@@ -142,7 +142,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   provider.failConfiguration = failConfiguration
   const providers = new AgentProviders(daemon, provider)
   await providers.init()
-  const configured = await providers.create({ template: "codex", name: "Codex", env: {} })
+  const configured = await providers.create({ template: "codex", name: "Codex", inheritShellEnvironment: false, env: {} })
   const service = new AgentSessions(catalog, catalog.native, provider, providers, undefined, undefined, new TestAgentQuotas())
   await service.init()
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
@@ -1568,7 +1568,7 @@ test("an explicit replacement waits for a failing retry then starts with the new
 test("Sessions retain the chosen provider ID and read edited launch settings on the next run", async t => {
   const f = await setup(t)
   const configured = await f.providers.create({
-    template: "codex", name: "Work account", binaryPath: "/tools/work-codex",
+    template: "codex", name: "Work account", binaryPath: "/tools/work-codex", inheritShellEnvironment: false,
     env: { CODEX_HOME: "/work/account", TOKEN: "private-provider-value" },
   })
   const snapshot = await f.service.handle("_deskfleet/session/create", {
@@ -1582,7 +1582,7 @@ test("Sessions retain the chosen provider ID and read edited launch settings on 
     env: { CODEX_HOME: "/work/account", TOKEN: "private-provider-value" },
   })
   const launches = f.provider.configs.length
-  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "", env: { CODEX_HOME: "/work/updated" } })
+  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "", inheritShellEnvironment: false, env: { CODEX_HOME: "/work/updated" } })
   assert.equal(f.provider.configs.length, launches)
   assert.equal(f.provider.closeCount, 0)
   await f.service.handle("_deskfleet/session/stop", { sessionId, operationId: randomUUID() }, f.actor)
@@ -1626,14 +1626,14 @@ test("unknown providers cannot allocate Sessions and removing one preserves its 
 
 test("failed configuration recovery keeps the configured provider and applies its updated launch settings", async t => {
   const f = await setup(t)
-  const configured = await f.providers.create({ template: "codex", name: "Work account", binaryPath: "/tools/work-codex", env: { CODEX_HOME: "/work/account" } })
+  const configured = await f.providers.create({ template: "codex", name: "Work account", binaryPath: "/tools/work-codex", inheritShellEnvironment: false, env: { CODEX_HOME: "/work/account" } })
   const failed = await f.service.handle("_deskfleet/session/create", {
     ...f.create, operationId: randomUUID(), provider: configured.id, model: "second", reasoningEffort: "retired",
   }, f.actor) as AgentSnapshot
   const sessionId = failed.session.id
   assert.match(failed.session.error!, /Unsupported agent reasoning_effort: retired/)
   await f.service.close()
-  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "/tools/updated-codex", env: { CODEX_HOME: "/work/updated" } })
+  await f.providers.update(configured.id, { name: "Renamed account", binaryPath: "/tools/updated-codex", inheritShellEnvironment: false, env: { CODEX_HOME: "/work/updated" } })
   const restored = new AgentSessions(f.catalog, f.catalog.native, f.provider, f.providers, undefined, undefined, new TestAgentQuotas())
   await restored.init()
   t.after(() => restored.close())
