@@ -35,6 +35,13 @@ export function isPackagingPath(path: string): boolean {
     /^scripts\/(?:package-|check-(?:aur|linux-release)|smoke-linux-package|stage-native-binaries)/u.test(path) ||
     /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
     path === "apps/desktop/package.json" ||
+    // `nix/web.nix` hashes these pnpm inputs into a fixed-output derivation, so
+    // a stale dependency hash only fails once the image is built.
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
+    /^(?:apps\/(?:web|daemon)|packages\/(?:client|components))\/package\.json$/u.test(path) ||
+    // `nix/toolchain.nix` reads both files to build the Node and pnpm tools.
+    /^(?:mise\.toml|mise\.lock)$/u.test(path) ||
+    path.startsWith("patches/") ||
     /^apps\/desktop\/electron-builder(?:\.release)?\.yml$/u.test(path) ||
     path.startsWith("apps/desktop/build/") ||
     /^apps\/desktop\/scripts\/stage-/u.test(path)
