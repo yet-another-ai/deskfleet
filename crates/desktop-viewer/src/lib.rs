@@ -1,5 +1,9 @@
 //! Native desktop viewer. Network, decoding and presentation run independently.
 
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+mod android_decoder;
 #[cfg(any(target_os = "macos", test))]
 mod av1_config;
 #[cfg(test)]
@@ -9,24 +13,38 @@ mod input_queue;
 mod input_reply;
 #[cfg(target_os = "macos")]
 mod macos_decoder;
+#[cfg(not(target_os = "android"))]
 mod presentation;
 mod protocol;
 mod queue;
 mod renderer;
-#[cfg(any(target_os = "windows", target_os = "macos", test))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android",
+    test
+))]
 mod rtp_video;
 mod session;
+#[cfg(not(target_os = "android"))]
 mod window;
 #[cfg(target_os = "windows")]
 mod windows_decoder;
 
+#[cfg(not(target_os = "android"))]
 use std::io::{self, BufRead};
+#[cfg(not(target_os = "android"))]
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+#[cfg(not(target_os = "android"))]
+use std::time::Duration;
+use std::time::Instant;
 
+#[cfg(not(target_os = "android"))]
 use serde_json::json;
+#[cfg(not(target_os = "android"))]
 use tokio::sync::{mpsc, watch};
-use winit::event_loop::EventLoop;
+#[cfg(not(target_os = "android"))]
+use winit::event_loop::{EventLoop, EventLoopProxy};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -38,14 +56,24 @@ struct Frame {
 }
 
 enum WindowEvent {
-    Start { title: String, control: bool },
+    Start {
+        title: String,
+        control: bool,
+    },
     FrameReady,
     Error(String),
+    #[cfg(not(target_os = "android"))]
     Close,
 }
 
+#[cfg(not(target_os = "android"))]
+pub(crate) type WindowNotifier = EventLoopProxy<WindowEvent>;
+#[cfg(target_os = "android")]
+pub(crate) type WindowNotifier = android::AndroidNotifier;
+
 /// Open the native viewer and consume its Electron-owned JSON-lines control pipe.
 /// Must run on the process's main thread for native window event-loop ownership.
+#[cfg(not(target_os = "android"))]
 pub fn run() -> Result<(), Error> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -118,4 +146,9 @@ pub fn run() -> Result<(), Error> {
         return Err(error.into());
     }
     Ok(())
+}
+
+#[cfg(target_os = "android")]
+pub fn run() -> Result<(), Error> {
+    Err("standalone binary execution is not used on Android".into())
 }

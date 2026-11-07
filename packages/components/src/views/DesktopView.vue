@@ -22,6 +22,7 @@ import { useFeatureGate } from "../services/analytics.ts"
 const platformClient = usePlatformClient()
 const nativePresenterEnabled = useFeatureGate("native_presentor")
 const showNative = computed(() => !!platformClient.desktop.openNative && nativePresenterEnabled.value)
+const preferNativeOnConnect = computed(() => platformClient.platform === "web" && showNative.value)
 
 const props = withDefaults(defineProps<{ machineId: string; visible?: boolean; initialDisplayId?: number; autoConnect?: boolean }>(), { visible: true, autoConnect: false })
 const { t } = useI18n()
@@ -64,11 +65,13 @@ const codecs = computed(() => commonDesktopCodecs(
 const chosenCodec = computed(() => activeCodec.value ?? codecs.value[0] ?? null)
 const codecLabel = computed(() => chosenCodec.value ? desktopCodecLabel(chosenCodec.value) : "")
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
-const canConnect = computed(() => props.visible && local.value && !loading.value && !active.value && !nativeOpening.value
-  && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null)
 const canOpenNative = computed(() => showNative.value && props.visible && local.value
   && !loading.value && !active.value && !nativeOpening.value && fleet.localDesktopTarget.online
-  && capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.some(codec => ["h264", "h265", "av1"].includes(codec))))
+  && Boolean(capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.some(codec => ["h264", "h265", "av1"].includes(codec)))))
+const canConnect = computed(() => preferNativeOnConnect.value
+  ? canOpenNative.value
+  : (props.visible && local.value && !loading.value && !active.value && !nativeOpening.value
+    && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null))
 
 async function refresh(): Promise<void> {
   const generation = ++discoveryGeneration
@@ -160,6 +163,10 @@ function applySettings(): void {
 }
 
 function connect(): void {
+  if (preferNativeOnConnect.value) {
+    void openNative()
+    return
+  }
   if (!canConnect.value || displayId.value === null || codecs.value.length === 0) return
   nativeError.value = null
   controlPaused.value = false
@@ -275,7 +282,7 @@ const errorDescription = computed(() => {
           <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
           <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t(accessibilityFailure ? "desktop.retryControl" : "desktop.connect") }}</UiButton>
           <UiButton v-if="accessibilityFailure" type="button" :disabled="!canConnect" @click="connectWithoutControl">{{ t("desktop.connectWithoutControl") }}</UiButton>
-          <UiButton v-if="showNative" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
+          <UiButton v-if="showNative && !preferNativeOnConnect" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
           <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active || nativeOpening" @click="refresh">
             <RefreshCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.retry") }}
           </UiButton>

@@ -1,11 +1,30 @@
 //! GPU drawing is independent of frame selection and presentation feedback.
 
+#[cfg(not(target_os = "android"))]
 use std::sync::Arc;
 
+#[cfg(target_os = "android")]
+use ndk::native_window::NativeWindow;
+#[cfg(not(target_os = "android"))]
 use winit::{dpi::PhysicalSize, window::Window};
 
+#[cfg(not(target_os = "android"))]
 use crate::presentation::Presentation;
 use crate::{Error, Frame};
+
+#[cfg(target_os = "android")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PhysicalSize<T> {
+    pub(crate) width: T,
+    pub(crate) height: T,
+}
+
+#[cfg(target_os = "android")]
+impl<T> PhysicalSize<T> {
+    pub(crate) const fn new(width: T, height: T) -> Self {
+        Self { width, height }
+    }
+}
 
 pub(crate) struct Renderer {
     instance: wgpu::Instance,
@@ -16,14 +35,54 @@ pub(crate) struct Renderer {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     image: Option<(wgpu::Texture, wgpu::BindGroup)>,
+    #[cfg(not(target_os = "android"))]
     window: Arc<Window>,
+    #[cfg(target_os = "android")]
+    window: NativeWindow,
     pub(crate) video_size: (u32, u32),
 }
 
+#[cfg(target_os = "android")]
+#[derive(Clone, Debug)]
+struct AndroidSurfaceWindow(NativeWindow);
+
+#[cfg(target_os = "android")]
+impl wgpu::rwh::HasWindowHandle for AndroidSurfaceWindow {
+    fn window_handle(&self) -> Result<wgpu::rwh::WindowHandle<'_>, wgpu::rwh::HandleError> {
+        self.0.window_handle()
+    }
+}
+
+#[cfg(target_os = "android")]
+impl wgpu::rwh::HasDisplayHandle for AndroidSurfaceWindow {
+    fn display_handle(&self) -> Result<wgpu::rwh::DisplayHandle<'_>, wgpu::rwh::HandleError> {
+        Ok(wgpu::rwh::DisplayHandle::android())
+    }
+}
+
 impl Renderer {
+    #[cfg(not(target_os = "android"))]
     pub(crate) async fn new(window: Arc<Window>) -> Result<Self, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance.create_surface(Arc::clone(&window))?;
+        let size = window.inner_size();
+        Self::init(instance, surface, window, size).await
+    }
+
+    #[cfg(target_os = "android")]
+    pub(crate) async fn new(window: NativeWindow, size: PhysicalSize<u32>) -> Result<Self, Error> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let surface = instance.create_surface(AndroidSurfaceWindow(window.clone()))?;
+        Self::init(instance, surface, window, size).await
+    }
+
+    async fn init(
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'static>,
+        #[cfg(not(target_os = "android"))] window: Arc<Window>,
+        #[cfg(target_os = "android")] window: NativeWindow,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, Error> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 compatible_surface: Some(&surface),
@@ -38,7 +97,6 @@ impl Renderer {
                 ..Default::default()
             })
             .await?;
-        let size = window.inner_size();
         let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("no compatible window surface")?;
@@ -106,18 +164,51 @@ impl Renderer {
         self.surface.configure(&self.device, &self.config);
     }
 
+    #[cfg(target_os = "android")]
+    pub(crate) fn surface_size(&self) -> PhysicalSize<u32> {
+        PhysicalSize::new(self.config.width, self.config.height)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn current_size(&self) -> PhysicalSize<u32> {
+        self.window.inner_size()
+    }
+
+    #[cfg(target_os = "android")]
+    fn current_size(&self) -> PhysicalSize<u32> {
+        let width = u32::try_from(self.window.width().max(0)).unwrap_or(self.config.width);
+        let height = u32::try_from(self.window.height().max(0)).unwrap_or(self.config.height);
+        PhysicalSize::new(
+            if width > 0 { width } else { self.config.width },
+            if height > 0 {
+                height
+            } else {
+                self.config.height
+            },
+        )
+    }
+
     pub(crate) fn acquire(&mut self) -> Result<Option<wgpu::SurfaceTexture>, Error> {
         use wgpu::CurrentSurfaceTexture as Current;
         match self.surface.get_current_texture() {
             Current::Success(texture) | Current::Suboptimal(texture) => Ok(Some(texture)),
             Current::Timeout | Current::Occluded => Ok(None),
             Current::Outdated => {
-                self.resize(self.window.inner_size());
+                self.resize(self.current_size());
                 Ok(None)
             }
             Current::Lost => {
-                self.surface = self.instance.create_surface(Arc::clone(&self.window))?;
-                self.resize(self.window.inner_size());
+                #[cfg(not(target_os = "android"))]
+                {
+                    self.surface = self.instance.create_surface(Arc::clone(&self.window))?;
+                }
+                #[cfg(target_os = "android")]
+                {
+                    self.surface = self
+                        .instance
+                        .create_surface(AndroidSurfaceWindow(self.window.clone()))?;
+                }
+                self.resize(self.current_size());
                 Ok(None)
             }
             Current::Validation => Err("GPU surface validation failed".into()),
@@ -187,10 +278,25 @@ impl Renderer {
         Ok(())
     }
 
+    pub(crate) fn upload_next(
+        &mut self,
+        frames: &crate::session::Frames,
+        submitted: &mut u64,
+        last_ready_age_ms: &mut f64,
+    ) -> Result<(), Error> {
+        let frame = frames.lock().map_err(|_| "decoded queue poisoned")?.pop();
+        if let Some(frame) = frame {
+            self.upload(&frame)?;
+            *last_ready_age_ms = frame.ready_at.elapsed().as_secs_f64() * 1000.;
+            *submitted += 1;
+        }
+        Ok(())
+    }
+
     pub(crate) fn draw(
         &self,
         output: wgpu::SurfaceTexture,
-        presentation: &mut Presentation,
+        #[cfg(not(target_os = "android"))] presentation: &mut Presentation,
     ) -> Result<(), Error> {
         let view = output.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -212,7 +318,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             if let Some((_, image)) = &self.image {
-                let (x, y, width, height) = viewport(self.window.inner_size(), self.video_size);
+                let (x, y, width, height) = viewport(self.current_size(), self.video_size);
                 pass.set_viewport(x as f32, y as f32, width as f32, height as f32, 0., 1.);
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, image, &[]);
@@ -220,9 +326,12 @@ impl Renderer {
             }
         }
         self.queue.submit([encoder.finish()]);
-        self.window.pre_present_notify();
-        if !presentation.before_present()? {
-            return Err("presentation slot was occupied before commit".into());
+        #[cfg(not(target_os = "android"))]
+        {
+            self.window.pre_present_notify();
+            if !presentation.before_present()? {
+                return Err("presentation slot was occupied before commit".into());
+            }
         }
         self.queue.present(output);
         Ok(())
