@@ -106,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"}]') }}
+        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
     steps:
       # Rust tests can exhaust the hosted image's free disk space. DeskFleet
       # does not build Android; reclaim its SDK before restoring Cargo outputs.

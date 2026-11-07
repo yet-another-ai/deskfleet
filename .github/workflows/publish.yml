@@ -14,7 +14,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -84,7 +84,7 @@ jobs:
   release:
     name: Create draft GitHub release
     needs: [validate, test, build, nix, aur, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -189,7 +189,7 @@ jobs:
   image:
     name: Publish server and Web image
     needs: [validate, test, build, nix, aur, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read

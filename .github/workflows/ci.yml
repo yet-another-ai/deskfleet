@@ -19,7 +19,7 @@ concurrency:
 jobs:
   changes:
     name: Classify changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
@@ -106,7 +106,7 @@ jobs:
     name: Gate
     if: ${{ always() }}
     needs: [changes, test, build, nix_server, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require successful CI jobs
@@ -136,7 +136,7 @@ jobs:
     needs: [gate, test]
     # Documentation-only runs skip Build, so explicitly use Gate's result.
     if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read

@@ -50,6 +50,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux release binaries link against the build host's glibc. Keep these
+        # two builds on the oldest supported Ubuntu LTS so the packages still
+        # install on it; every other Linux job uses the newest Ubuntu image.
         include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"},{"platform":"macos-arm64","os":"macos-latest"},{"platform":"windows-x64","os":"windows-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
