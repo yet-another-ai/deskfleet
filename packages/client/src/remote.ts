@@ -178,7 +178,9 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         parallel: () => !local,
         available: () => online,
         list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({ ...snapshot.session,
-          working: snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),
+          working: snapshot.permissions?.some(permission => permission.state === "pending") ? "permission" as const
+            : snapshot.elicitations?.some(elicitation => elicitation.state === "pending") ? "question" as const
+            : snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),
         })),
         snapshot: async sessionId => (await central.session(machine.teamId, machine.id, sessionId)).snapshot,
         events: async (sessionId, after, limit) => (await central.events(machine.teamId, machine.id, sessionId, after, limit)).events,

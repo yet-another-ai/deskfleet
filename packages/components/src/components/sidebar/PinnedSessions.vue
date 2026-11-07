@@ -52,7 +52,7 @@ function open(machineId: string, sessionId: string): void {
             </SessionPresenceIcon>
             <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
             <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
-            <SessionWorkingIndicator v-if="item.working" />
+            <SessionWorkingIndicator v-if="item.working" :state="item.working" />
             <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
             <span v-if="!item.online" class="inline-flex shrink-0 items-center text-ui-warning" :title="t('machine.offline')">
               <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />

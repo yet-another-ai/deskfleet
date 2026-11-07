@@ -1,5 +1,5 @@
 import { useConversationCache } from "../services/conversation-cache.ts"
-import { snapshotIsWorking } from "../services/agent-conversation.ts"
+import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
@@ -75,7 +75,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const providers = useProvidersStore()
   const sessions = ref<Record<string, AgentSessionRecord>>({})
-  const activity = ref<Record<string, { seq: string; working: boolean }>>({})
+  const activity = ref<Record<string, { seq: string; working: SessionActivity | false }>>({})
   const views = ref<Record<string, AgentSessionView>>({})
   const drafts = ref<Record<string, string>>({})
   const draftAttachments = ref<Record<string, ComposerAttachment[]>>({})
@@ -441,7 +441,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function refreshList(): Promise<void> {
     const listedBefore = new Map(Object.values(sessions.value).map(session => [session.id, session.lastEventSeq]))
     // Catalog activity must not depend on opening every conversation's live channel.
-    const records: (AgentSessionRecord & { working?: boolean })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
+    const records: (AgentSessionRecord & { working?: boolean | SessionActivity })[] = await (api.history ? api.history.list() : call("_deskfleet/session/list", {}))
     if (disposed) return
     const listed = new Set(records.map(session => session.id))
     let catalogSessions = new Set<string>()
@@ -457,7 +457,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (deletedSessions.has(record.id)) continue
       const previous = activity.value[record.id]
       if (record.working !== undefined && (!previous || sequenceCompare(record.lastEventSeq, previous.seq) >= 0)) {
-        activity.value[record.id] = { seq: record.lastEventSeq, working: record.working }
+        activity.value[record.id] = { seq: record.lastEventSeq, working: record.working === true ? "working" : record.working }
       }
     }
     for (const current of Object.values(sessions.value)) {
@@ -471,7 +471,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     sessions.value = Object.fromEntries(received)
     for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
   }
-  function isWorking(id: string): boolean {
+  function isWorking(id: string): SessionActivity | false {
     const live = views.value[id]?.snapshot
     const summary = activity.value[id]
     if (summary && (!live || sequenceCompare(summary.seq, live.session.lastEventSeq) > 0)) return summary.working

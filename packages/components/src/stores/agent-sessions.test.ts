@@ -1122,7 +1122,7 @@ test("configuration reads require metadata while releasing a draft probe accepts
 test("catalog activity updates unopened sessions and yields only to newer live snapshots", async () => {
   const previous = platformClient.agent.history
   let seq = "1"
-  let working = true
+  let working: boolean | "working" | "permission" | "question" = "permission"
   platformClient.agent.history = {
     available: () => true,
     list: async () => [{ ...agentSnapshot().session, lastEventSeq: seq, working }],
@@ -1131,7 +1131,7 @@ test("catalog activity updates unopened sessions and yields only to newer live s
   try {
     const store = useAgentSessionsStore()
     await store.refresh()
-    expect(store.isWorking("30")).toBe(true)
+    expect(store.isWorking("30")).toBe("permission")
     expect(store.views["30"]).toBeUndefined()
     expect(mock.call).not.toHaveBeenCalled()
     const live = agentSnapshot()
@@ -1140,9 +1140,9 @@ test("catalog activity updates unopened sessions and yields only to newer live s
     expect(store.isWorking("30")).toBe(false)
     await store.refresh()
     expect(store.isWorking("30")).toBe(false)
-    seq = "3"
+    seq = "3"; working = "question"
     await store.refresh()
-    expect(store.isWorking("30")).toBe(true)
+    expect(store.isWorking("30")).toBe("question")
     seq = "4"; working = false
     await store.refresh()
     expect(store.isWorking("30")).toBe(false)
