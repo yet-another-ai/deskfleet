@@ -30,7 +30,7 @@ minimumReleaseAgeExclude:
 
 overrides:
   # The docs render the same Vue components as the desktop and Web clients.
-  'vitepress>vue': '3.6.0-rc.13'
+  'vitepress>vue': '3.6.0-rc.14'
 
 patchedDependencies:
   '@agentclientprotocol/codex-acp@2.3.0': patches/@agentclientprotocol__codex-acp@2.3.0.patch
