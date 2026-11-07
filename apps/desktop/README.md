@@ -633,7 +633,11 @@ Linux packaging produces both an AppImage and a desktop `tar.gz` archive from
 the same compiled app. The archive includes Electron, the native addon, and the
 bundled daemon and ACP adapters. It is the reusable input for distribution
 packages: Nix patches runtime paths and installs it without rebuilding Rust or
-JavaScript. Future deb, rpm, or AUR packaging can consume the same archive.
+JavaScript; AUR, DEB, and RPM repackage the same payload. `scripts/package-linux-release.ts`
+builds `.deb` (amd64/arm64) and `.rpm` (x86_64/aarch64) packages with the
+installed app under `/usr/lib/deskfleet` and a `/usr/bin/deskfleet` launcher.
+Package managers own updates, so these installs leave the AppImage updater
+disabled.
 
 Tagged releases use `electron-builder.release.yml` on macOS. This overlay
 requires Developer ID signing and Apple notarization; missing credentials or
@@ -680,12 +684,13 @@ mise exec -- pnpm --filter @deskfleet/desktop run package --config electron-buil
 ```
 
 The tagged build stages macOS arm64 DMG/ZIP, Windows x64 NSIS, and Linux x64/arm64
-AppImages and desktop archives in a draft GitHub Release. Linux archives already
-contain the public configuration compiled under the `production` environment.
-The release also includes `deskfleet-nix.tar.gz`, a generated flake bundle that
-pins these archives by versioned URL and SHA-256, together with its nixpkgs input.
-After that release is published, the website resolves the latest stable
-installers through GitHub's releases API.
+AppImages, desktop archives, `.deb` packages (amd64/arm64), and `.rpm` packages
+(x86_64/aarch64) in a draft GitHub Release. Linux archives already contain the
+public configuration compiled under the `production` environment. The release
+also includes `deskfleet-nix.tar.gz`, a generated flake bundle that pins these
+archives by versioned URL and SHA-256, together with its nixpkgs input. After
+that release is published, the website resolves the latest stable installers
+through GitHub's releases API.
 See [release workflow](../../agents/docs/ci.md) for tag validation and publishing.
 
 The static vector brand master lives in

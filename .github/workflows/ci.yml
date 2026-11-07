@@ -86,10 +86,20 @@ jobs:
     permissions:
       contents: read
 
+  linux_packages:
+    name: Linux packages
+    needs: [changes, test, build]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' && needs.changes.outputs.run_build == 'true' }}
+    uses: ./.github/workflows/linux-packages.yml
+    with:
+      smoke_build: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    permissions:
+      contents: read
+
   gate:
     name: Gate
     if: ${{ always() }}
-    needs: [changes, test, build, nix_server]
+    needs: [changes, test, build, nix_server, linux_packages]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -102,13 +112,14 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           NIX_SERVER_RESULT: ${{ needs.nix_server.result }}
+          LINUX_PACKAGES_RESULT: ${{ needs.linux_packages.result }}
         run: |
           expected_build=success
           if [[ "$CHANGES_RESULT" == "success" && ("$DOCS_ONLY" == "true" || "$RUN_BUILD" == "false" || "$TEST_RESULT" != "success") ]]; then
             expected_build=skipped
           fi
-          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_build" ]]; then
-            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT)."
+          if [[ "$CHANGES_RESULT" != "success" || "$TEST_RESULT" != "success" || "$BUILD_RESULT" != "$expected_build" || "$NIX_SERVER_RESULT" != "$expected_build" || "$LINUX_PACKAGES_RESULT" != "$expected_build" ]]; then
+            echo "::error::CI did not pass (Changes: $CHANGES_RESULT, docs-only: $DOCS_ONLY, run-build: $RUN_BUILD, Test: $TEST_RESULT, Build: $BUILD_RESULT, Nix server: $NIX_SERVER_RESULT, Linux packages: $LINUX_PACKAGES_RESULT)."
             exit 1
           fi
 

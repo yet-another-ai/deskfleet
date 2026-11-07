@@ -4,12 +4,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { desktopInstallMethods, fetchLatestRelease, findDownload, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findDownload, findLinuxPackage, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
   "deskfleet-0.2.0-linux-x64.tar.gz", "deskfleet-0.2.0-linux-arm64.tar.gz", "deskfleet-nix.tar.gz",
   "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
+  "deskfleet-0.2.0-linux-amd64.deb", "deskfleet-0.2.0-linux-arm64.deb",
+  "deskfleet-0.2.0-linux-x86_64.rpm", "deskfleet-0.2.0-linux-aarch64.rpm",
   "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
 const release: LatestRelease = {
@@ -24,8 +26,12 @@ test("download selection distinguishes installers, archives, and Linux architect
   assert.equal(findDownload(release, "headless", "windows", "arm64")?.name, "deskfleet-windows-x64.tar.gz")
   for (const arch of ["x64", "arm64"] as const) {
     const appImageArchitecture = arch === "x64" ? "x86_64" : "arm64"
+    const debArchitecture = arch === "x64" ? "amd64" : "arm64"
+    const rpmArchitecture = arch === "x64" ? "x86_64" : "aarch64"
     assert.equal(findDownload(release, "desktop", "linux", arch)?.name, `deskfleet-0.2.0-linux-${appImageArchitecture}.AppImage`)
     assert.equal(findDownload(release, "headless", "linux", arch)?.name, `deskfleet-linux-${arch}.tar.gz`)
+    assert.equal(findLinuxPackage(release, "deb", arch)?.name, `deskfleet-0.2.0-linux-${debArchitecture}.deb`)
+    assert.equal(findLinuxPackage(release, "rpm", arch)?.name, `deskfleet-0.2.0-linux-${rpmArchitecture}.rpm`)
   }
 })
 
@@ -54,6 +60,7 @@ test("release verification requires installers, packaging archives, and update m
     assert.equal(result.status, 0, result.stderr)
     for (const required of [
       `deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`,
+      `deskfleet-${version}-linux-amd64.deb`, `deskfleet-${version}-linux-aarch64.rpm`,
       `deskfleet-${version}-linux-x64.tar.gz`, `deskfleet-${version}-linux-arm64.tar.gz`, "deskfleet-nix.tar.gz",
     ]) {
       const path = join(directory, "release-assets", required)
@@ -95,7 +102,7 @@ test("installation methods follow platform support and actual published Linux as
     assert.deepEqual(desktopInstallMethods(value, "macos"), ["homebrew", "installer"])
     assert.deepEqual(desktopInstallMethods(value, "windows"), ["installer"])
   }
-  assert.deepEqual(desktopInstallMethods(release, "linux"), ["installer", "aur", "nix", "archive"])
+  assert.deepEqual(desktopInstallMethods(release, "linux"), ["installer", "deb", "rpm", "aur", "nix", "archive"])
   assert.equal(findNixDownload(release)?.url,
     "https://github.com/yet-another-ai/deskfleet/releases/download/v0.2.0/deskfleet-nix.tar.gz")
   const oldRelease = {

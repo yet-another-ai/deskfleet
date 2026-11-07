@@ -1,0 +1,67 @@
+name: Linux packages
+
+on:
+  workflow_call:
+    inputs:
+      smoke_build:
+        description: Verify Linux x64 only when Build uses the smoke matrix.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-packages-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  packages:
+    name: DEB and RPM (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"}]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install locked Node for packaging and smoke checks
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.10.25
+          install_args: --locked node
+
+      - name: Download the desktop application payload from Build
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-desktop-${{ matrix.platform }}
+          path: desktop-artifacts
+
+      - name: Install RPM packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm
+
+      - name: Build DEB and RPM packages from the same-run archive
+        run: mise exec node -- node scripts/package-linux-release.ts "$RUNNER_TEMP/linux-packages" desktop-artifacts/*.tar.gz
+
+      - name: Enable Chromium's user namespace sandbox on the runner
+        # Match AUR and Nix validation: keep Chromium's sandbox enabled in the test.
+        # Ubuntu's AppArmor restriction blocks Electron inside Docker without this.
+        run: sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install and smoke test each package in its target distribution
+        run: mise exec node -- node scripts/check-linux-release.ts "$RUNNER_TEMP/linux-packages" --gui
+
+      - name: Upload distribution packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-linux-packages-${{ matrix.platform }}
+          path: ${{ runner.temp }}/linux-packages/*
+          if-no-files-found: error
+          retention-days: 14

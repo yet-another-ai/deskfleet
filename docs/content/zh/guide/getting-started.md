@@ -29,6 +29,12 @@ brew install --cask yet-another-ai/tap/deskfleet
   nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
   ```
   如果只想临时体验而不加入 profile，可以使用相同 URL 运行 `nix run`。Nix 软件包会安装预构建的桌面应用并连接 DeskFleet 官方服务。
+- **Debian / Ubuntu 与 Fedora / RHEL**：从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载对应架构的 `.deb`（`amd64` 或 `arm64`）或 `.rpm`（`x86_64` 或 `aarch64`）安装包，然后安装下载的文件。请把示例中的 `<VERSION>` 和架构替换为该发布版本：
+  ```sh
+  sudo apt install ./deskfleet-<VERSION>-linux-amd64.deb
+  sudo dnf install ./deskfleet-<VERSION>-linux-x86_64.rpm
+  ```
+  由系统包管理器负责升级，这类安装不会使用 AppImage 自动更新。
 - **AppImage / 压缩包**：从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载对应架构（`x86_64` 或 `arm64`）的 `.AppImage` 或 `.tar.gz` 压缩包。
 
 > [!NOTE]

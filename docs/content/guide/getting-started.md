@@ -29,6 +29,17 @@ Download and run the `.exe` installer from [GitHub Releases](https://github.com/
   nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
   ```
   Use `nix run` with the same URL to launch DeskFleet without adding it to your profile. The Nix package installs the prebuilt desktop app and connects to the official DeskFleet service.
+- **Debian / Ubuntu and Fedora / RHEL**: Download the `.deb` (`amd64` or `arm64`)
+  or `.rpm` (`x86_64` or `aarch64`) package from
+  [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases), then
+  install the file you downloaded. Replace `<VERSION>` and the architecture in
+  these examples with that release:
+  ```sh
+  sudo apt install ./deskfleet-<VERSION>-linux-amd64.deb
+  sudo dnf install ./deskfleet-<VERSION>-linux-x86_64.rpm
+  ```
+  The package manager owns upgrades, and these installs do not use the AppImage
+  self-updater.
 - **AppImage / Archive**: Download the `.AppImage` or `.tar.gz` archive for `x86_64` or `arm64` from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
 
 > [!NOTE]

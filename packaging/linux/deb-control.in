@@ -1,0 +1,13 @@
+Package: deskfleet
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Delton Ding <dsh0416@gmail.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: @DEPENDS@
+Recommends: @RECOMMENDS@
+Section: devel
+Priority: optional
+Homepage: https://github.com/yet-another-ai/deskfleet
+Description: AI agents and working environments across machines
+ DeskFleet manages a team's AI agents and working environments across
+ multiple machines, including remote terminals, files, and desktops.

@@ -1,7 +1,8 @@
 export type InstallMode = "desktop" | "headless"
 export type InstallPlatform = "macos" | "windows" | "linux"
 export type LinuxArchitecture = "x64" | "arm64"
-export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix" | "aur"
+export type LinuxPackageFormat = "deb" | "rpm"
+export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix" | "aur" | LinuxPackageFormat
 
 export const releasesPage = "https://github.com/yet-another-ai/deskfleet/releases/latest"
 
@@ -64,6 +65,18 @@ export function findDownload(
   return release.files.find(file => file.name === name)
 }
 
+export function findLinuxPackage(
+  release: LatestRelease | undefined,
+  format: LinuxPackageFormat,
+  architecture: LinuxArchitecture,
+): ReleaseFile | undefined {
+  if (!release) return undefined
+  const nativeArchitecture = format === "deb"
+    ? architecture === "x64" ? "amd64" : "arm64"
+    : architecture === "x64" ? "x86_64" : "aarch64"
+  return release.files.find(file => file.name === `deskfleet-${release.version}-linux-${nativeArchitecture}.${format}`)
+}
+
 export function findNixDownload(release: LatestRelease | undefined): ReleaseFile | undefined {
   return release?.files.find(file => file.name === "deskfleet-nix.tar.gz")
 }
@@ -71,7 +84,11 @@ export function findNixDownload(release: LatestRelease | undefined): ReleaseFile
 export function desktopInstallMethods(release: LatestRelease | undefined, platform: InstallPlatform): DesktopInstallMethod[] {
   if (platform === "macos") return ["homebrew", "installer"]
   if (platform === "windows") return ["installer"]
-  const methods: DesktopInstallMethod[] = ["installer", "aur"]
+  const methods: DesktopInstallMethod[] = ["installer"]
+  for (const format of ["deb", "rpm"] as const) {
+    if (findLinuxPackage(release, format, "x64") || findLinuxPackage(release, format, "arm64")) methods.push(format)
+  }
+  methods.push("aur")
   if (findNixDownload(release)) methods.push("nix")
   if (findDownload(release, "desktop", "linux", "x64", "archive") || findDownload(release, "desktop", "linux", "arm64", "archive")) {
     methods.push("archive")

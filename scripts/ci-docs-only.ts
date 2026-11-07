@@ -32,8 +32,8 @@ export function isDocumentationDiff(raw: string): boolean {
 export function isPackagingPath(path: string): boolean {
   return /^(?:packaging|nix)\//u.test(path) ||
     /^(?:flake\.nix|flake\.lock)$/u.test(path) ||
-    /^scripts\/(?:package-|check-aur|smoke-linux-package|stage-native-binaries)/u.test(path) ||
-    /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish)\.yml$/u.test(path) ||
+    /^scripts\/(?:package-|check-(?:aur|linux-release)|smoke-linux-package|stage-native-binaries)/u.test(path) ||
+    /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
     path === "apps/desktop/package.json" ||
     /^apps\/desktop\/electron-builder(?:\.release)?\.yml$/u.test(path) ||
     path.startsWith("apps/desktop/build/") ||
