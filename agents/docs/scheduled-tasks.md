@@ -137,6 +137,9 @@ or credential.
 | `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
 | `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |
+| `deskfleet_remote_files` | Read or operate | Directory listing (including home directory and filesystem roots) or file/directory stat |
+| `deskfleet_remote_file_upload` | Operate | Upload a local file or directory to a destination directory on the target machine |
+| `deskfleet_remote_file_download` | Read or operate | Download a remote file or directory into a local destination directory |
 
 Chat displays remote MCP calls as cards with the target's name from the current
 Team directory (or its Machine ID when unavailable), the tool/action, and returned

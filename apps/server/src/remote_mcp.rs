@@ -101,7 +101,10 @@ pub async fn call(
     if machine_id == source.machine_id {
         return Err(ApiError::bad("select another machine"));
     }
-    let action = if body.operation == RemoteMcpOperation::McpCall {
+    let action = if matches!(
+        body.operation,
+        RemoteMcpOperation::McpCall | RemoteMcpOperation::FilesWrite
+    ) {
         MachineAction::Manage
     } else {
         MachineAction::Read

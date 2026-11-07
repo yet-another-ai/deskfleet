@@ -96,5 +96,8 @@ test("remote tools are discoverable and retain the remote MCP result, including 
   const tools = (await client.listTools()).tools.map(tool => tool.name)
   assert.ok(tools.includes("deskfleet_remote_machines"))
   assert.ok(tools.includes("deskfleet_remote_session_history"))
+  assert.ok(tools.includes("deskfleet_remote_files"))
+  assert.ok(tools.includes("deskfleet_remote_file_upload"))
+  assert.ok(tools.includes("deskfleet_remote_file_download"))
   assert.deepEqual(await client.callTool({ name: "deskfleet_remote_mcp_call", arguments: { machineId: "target", serverId: "server", name: "tool", arguments: {} } }), result)
 })

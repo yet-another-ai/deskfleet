@@ -1,6 +1,12 @@
 import type { ConversationTool } from "./agent-conversation.ts"
 
-const remoteToolName = "deskfleet_remote_mcp_call"
+const remoteToolNames = [
+  "deskfleet_remote_mcp_call",
+  "deskfleet_remote_files",
+  "deskfleet_remote_file_upload",
+  "deskfleet_remote_file_download",
+] as const
+type RemoteToolName = (typeof remoteToolNames)[number]
 
 export interface RemoteMcpImage {
   data: string
@@ -29,28 +35,52 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
-function remoteInput(tool: ConversationTool): Record<string, unknown> | undefined {
+function matchToolName(title: string | null | undefined): RemoteToolName | undefined {
+  if (!title) return undefined
+  return remoteToolNames.find(name =>
+    title === name
+    || new RegExp(`^mcp\\.[^.]+\\.${name}$`, "u").test(title)
+    || new RegExp(`^(?:functions\\.)?mcp__.+__${name}$`, "u").test(title),
+  )
+}
+
+function parseRemoteCall(tool: ConversationTool): Omit<RemoteMcpTool, "images" | "isError"> | undefined {
   const input = inputRecord(tool.rawInput)
   if (!input) return undefined
   // Codex wraps the MCP arguments; Claude and other ACP providers send them directly.
-  const wrapped = input.tool === remoteToolName ? inputRecord(input.arguments) : undefined
-  const named = tool.title === remoteToolName
-    || /^mcp\.[^.]+\.deskfleet_remote_mcp_call$/u.test(tool.title ?? "")
-    || /^(?:functions\.)?mcp__.+__deskfleet_remote_mcp_call$/u.test(tool.title ?? "")
-  const args = wrapped ?? (named ? input : undefined)
-  return args && text(args.machineId) && text(args.serverId) && text(args.name) ? args : undefined
+  const wrappedName = typeof input.tool === "string" && (remoteToolNames as readonly string[]).includes(input.tool)
+    ? input.tool as RemoteToolName
+    : undefined
+  const kind = wrappedName ?? matchToolName(tool.title)
+  const args = wrappedName ? inputRecord(input.arguments) : input
+  const machineId = text(args?.machineId)
+  if (!kind || !args || !machineId) return undefined
+  if (kind === "deskfleet_remote_mcp_call") {
+    const serverId = text(args.serverId), toolName = text(args.name), nested = inputRecord(args.arguments)
+    if (!serverId || !toolName) return undefined
+    return { machineId, serverId, toolName, action: text(nested?.command_id) ?? text(nested?.action) ?? text(nested?.operation) }
+  }
+  if (kind === "deskfleet_remote_files") {
+    const operation = args.operation === undefined ? "list" : text(args.operation)
+    const path = text(args.path)
+    if ((operation !== "list" && operation !== "stat") || (operation === "stat" && !path)) return undefined
+    return { machineId, serverId: "deskfleet", toolName: kind, action: path ? `${operation} ${path}` : operation }
+  }
+  const sourcePath = text(args.sourcePath), destinationDirectory = text(args.destinationDirectory)
+  if (!sourcePath || !destinationDirectory) return undefined
+  const verb = kind === "deskfleet_remote_file_upload" ? "upload" : "download"
+  return { machineId, serverId: "deskfleet", toolName: kind, action: `${verb} ${sourcePath} → ${destinationDirectory}` }
 }
 
 /** Cheap enough for activity grouping: only inspect identity and arguments, never image payloads. */
 export function isRemoteMcpTool(tool: ConversationTool): boolean {
-  return remoteInput(tool) !== undefined
+  return parseRemoteCall(tool) !== undefined
 }
 
 /** Normalize the published Codex/Claude ACP shapes without changing the original tool details. */
 export function remoteMcpTool(tool: ConversationTool): RemoteMcpTool | undefined {
-  const input = remoteInput(tool)
-  if (!input) return undefined
-  const args = inputRecord(input.arguments)
+  const base = parseRemoteCall(tool)
+  if (!base) return undefined
   const output = record(tool.rawOutput)
   const result = record(output?.result) ?? output
   const images: RemoteMcpImage[] = []
@@ -71,13 +101,6 @@ export function remoteMcpTool(tool: ConversationTool): RemoteMcpTool | undefined
   for (const block of tool.content ?? []) if (block.type === "content") addImage(block.content)
   const rawContent = Array.isArray(tool.rawOutput) ? tool.rawOutput : result?.content
   if (Array.isArray(rawContent)) for (const block of rawContent) addImage(block)
-  return {
-    machineId: input.machineId as string,
-    serverId: input.serverId as string,
-    toolName: input.name as string,
-    // AUV's invoke uses command_id; op_run uses operation. Other tools may expose action.
-    action: text(args?.command_id) ?? text(args?.action) ?? text(args?.operation),
-    images,
-    isError: tool.status === "failed" || result?.isError === true || output?.error != null,
-  }
+  const isError = tool.status === "failed" || result?.isError === true || output?.error != null
+  return { ...base, images, isError }
 }
