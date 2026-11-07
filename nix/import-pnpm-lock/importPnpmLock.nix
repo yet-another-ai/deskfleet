@@ -26,6 +26,7 @@ let
 
   packageKeyMatch = builtins.match "  ('([^']+)'|\"([^\"]+)\"|([^[:space:]:]+)):";
   integrityMatch = builtins.match "    resolution: [{]integrity: (.*)[}]";
+  resolutionMatch = builtins.match "    resolution: (.*)";
   lockfileVersionMatch = builtins.match "lockfileVersion: ['\"]?([^'\"]+)['\"]?";
   topLevelKeyMatch = builtins.match "([A-Za-z][^:]*):";
 
@@ -42,6 +43,17 @@ let
 
   isPackageKey = name: name != null && builtins.match ".+@.+" name != null;
 
+  requireNoPendingPackage =
+    state: context:
+    assert lib.assertMsg (state.current == null) ''
+      Package ${state.current} has no single-line integrity resolution (${context}).
+
+      The pure Nix pnpm lockfile parser only supports
+      `resolution: {integrity: ...}` under `packages:`.
+      Add support for this resolution shape, or provide manualEntries.
+    '';
+    state;
+
   parsed =
     builtins.foldl'
       (
@@ -50,25 +62,29 @@ let
           versionHit = lockfileVersionMatch line;
           keyHit = packageNameFromMatch (packageKeyMatch line);
           integrityHit = integrityMatch line;
+          resolutionHit = resolutionMatch line;
           topLevelHit = topLevelKeyMatch line;
         in
         if state.lockfileVersion == null && versionHit != null then
           state // { lockfileVersion = builtins.head versionHit; }
         else if line == "packages:" then
-          state
+          requireNoPendingPackage state "entering packages"
           // {
             inPackages = true;
             current = null;
           }
         else if state.inPackages && topLevelHit != null && builtins.head topLevelHit != "packages" then
           # Left the packages section for another top-level mapping (e.g. snapshots).
-          state
+          requireNoPendingPackage state "leaving packages"
           // {
             inPackages = false;
             current = null;
           }
         else if state.inPackages && isPackageKey keyHit then
-          state // { current = keyHit; }
+          requireNoPendingPackage state "starting ${keyHit}"
+          // {
+            current = keyHit;
+          }
         else if state.inPackages && state.current != null && integrityHit != null then
           state
           // {
@@ -81,6 +97,16 @@ let
             };
             current = null;
           }
+        else if state.inPackages && state.current != null && resolutionHit != null then
+          assert lib.assertMsg false ''
+            Package ${state.current} has unsupported resolution `${builtins.head resolutionHit}`.
+
+            The pure Nix pnpm lockfile parser only supports
+            `resolution: {integrity: ...}` under `packages:`.
+            Add support for this resolution shape, or provide manualEntries for
+            "${state.current}".
+          '';
+          state
         else
           state
       )
@@ -91,6 +117,8 @@ let
         packages = { };
       }
       lines;
+
+  finalized = requireNoPendingPackage parsed "end of lockfile";
 
   splitName = builtins.match "^(@?[^@]+)@(.+)$";
 
@@ -146,8 +174,8 @@ let
       hash = integrity;
     };
 
-  lockFileVersion = parsed.lockfileVersion;
-  packages = parsed.packages;
+  lockFileVersion = finalized.lockfileVersion;
+  packages = finalized.packages;
 in
 assert lib.assertMsg (lockFileVersion != null) ''
   lockFile ${toString lockFile} does not look like a supported lock file.
