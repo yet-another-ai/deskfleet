@@ -372,8 +372,13 @@ test("an incompatible display keeps the current stream and a valid selection can
   capabilities.displays.push({ id: 3, width: 1280, height: 720, refreshRateHz: 60, codecs: [] })
   mock.api.capabilities.mockResolvedValue(capabilities)
   const { wrapper, peer } = await connectDesktop()
+  peer.input.ready()
+  await flushPromises()
   const media = (wrapper.get("video").element as HTMLVideoElement).srcObject
   await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await wrapper.get("[data-desktop-audio]").trigger("click")
+  await flushPromises()
+  const pending = JSON.parse(peer.input.send.mock.calls.at(-1)![0])
   await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 3 · 1280 × 720")
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).toContain("The selected video codec is unavailable.")
@@ -381,6 +386,11 @@ test("an incompatible display keeps the current stream and a valid selection can
   expect((wrapper.get("video").element as HTMLVideoElement).srcObject).toBe(media)
   expect(peer.close).not.toHaveBeenCalled()
   expect(mock.api.close).not.toHaveBeenCalled()
+
+  peer.input.configured(pending.requestId, true)
+  await flushPromises()
+  expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 3")
+  expect(wrapper.get('[role="alert"]').text()).toContain("The selected video codec is unavailable.")
 
   await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 1 · 1920 × 1080")
   await flushPromises()

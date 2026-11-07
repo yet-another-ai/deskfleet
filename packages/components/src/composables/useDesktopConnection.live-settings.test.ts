@@ -350,3 +350,62 @@ test("an incompatible display preserves the active peer and permits a later comp
   await flushPromises()
   expect(api.start).toHaveBeenLastCalledWith(expect.objectContaining({ displayId: 1 }))
 })
+
+test.each(["configured", "configurationError", "timeout"] as const)("a pending settings %s cannot replace an incompatible-display error", async reply => {
+  vi.useFakeTimers()
+  const { connection, api } = setup()
+  await connection.connect(options)
+  const peer = TestPeer.instances[0]!
+  peer.changeState("connected")
+  peer.input.ready()
+  await flushPromises()
+  const accepted = { ...options, audio: false }
+  await connection.reconfigure(accepted)
+  await connection.reconfigure({ ...accepted, displayId: 3, codecs: [] })
+  const selectionFailure = connection.settingsFailure.value
+  expect(selectionFailure?.detail).toBe("The selected video codec is unavailable.")
+
+  if (reply === "configured") peer.input.configured(1, true)
+  else if (reply === "configurationError") peer.input.configurationError(1, true, "Audio update failed")
+  else await vi.advanceTimersByTimeAsync(10_000)
+  expect(connection.settingsFailure.value).toBe(selectionFailure)
+  expect(connection.state.value).toBe("connected")
+  expect(api.close).not.toHaveBeenCalled()
+
+  await connection.reconfigure(accepted)
+  expect(connection.settingsFailure.value).toBeNull()
+  expect(api.offer).toHaveBeenCalledTimes(1)
+})
+
+test("a queued initial connection cannot clear a newer incompatible-display error", async () => {
+  const { connection, api } = setup()
+  const connecting = connection.connect(options)
+  await connection.reconfigure({ ...options, displayId: 3, codecs: [] })
+  const selectionFailure = connection.settingsFailure.value
+  expect(selectionFailure?.detail).toBe("The selected video codec is unavailable.")
+  await connecting
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  expect(connection.settingsFailure.value).toBe(selectionFailure)
+  expect(api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
+  await connection.disconnect()
+  expect(connection.settingsFailure.value).toBeNull()
+})
+
+test("encoder fallback cannot clear a newer incompatible-display error", async () => {
+  const { connection, api, emit } = setup()
+  await connection.connect(options)
+  const closed = deferred<void>()
+  api.close.mockReturnValueOnce(closed.promise)
+  emit({ sessionId: api.offer.mock.calls[0]![0].sessionId, kind: "error", error: "Encoder failed", reason: "encoder" })
+  await connection.reconfigure({ ...options, displayId: 3, codecs: [] })
+  const selectionFailure = connection.settingsFailure.value
+  expect(selectionFailure?.detail).toBe("The selected video codec is unavailable.")
+  closed.resolve()
+  await flushPromises()
+  TestPeer.instances[1]!.changeState("connected")
+  await flushPromises()
+  expect(connection.settingsFailure.value).toBe(selectionFailure)
+  expect(connection.codec.value).toBe("h265")
+  expect(api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: 2 }))
+})

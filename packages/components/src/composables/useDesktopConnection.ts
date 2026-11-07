@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, shallowRef } from "vue"
+import { computed, onScopeDispose, ref, shallowRef } from "vue"
 import type { RelayDeniedReason } from "../../../client/src/relay.ts"
 import { PEER_SETUP_TIMEOUT_MS, createPeerDisconnectGuard, type PeerDisconnectGuard } from "../../../client/src/peer-lifecycle.ts"
 import { DESKTOP_INPUT_CHANNEL, type DesktopInputMessage, type DesktopSettingsMessage } from "../../../client/src/desktop-input.ts"
@@ -100,7 +100,10 @@ export interface DesktopConnectOptions extends Omit<DesktopStart, "sessionId"> {
 export function useDesktopConnection(api: DesktopMediaApi) {
   const state = ref<DesktopConnectionState>("idle")
   const failure = shallowRef<DesktopFailure | null>(null)
-  const settingsFailure = shallowRef<DesktopFailure | null>(null)
+  const selectionFailure = shallowRef<DesktopFailure | null>(null)
+  const sessionSettingsFailure = shallowRef<DesktopFailure | null>(null)
+  // Replies for the running stream cannot dismiss a rejected display selection.
+  const settingsFailure = computed(() => selectionFailure.value ?? sessionSettingsFailure.value)
   const stream = shallowRef<MediaStream | null>(null)
   const codec = ref<VideoCodec | null>(null)
   const inputReady = ref(false)
@@ -229,7 +232,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     session.appliedSettings = null
     session.inputReady = control && !!session.options.control
     inputReady.value = session.inputReady
-    settingsFailure.value = reason
+    sessionSettingsFailure.value = reason
     if (!sameSettings(pending, session.options)) sendSettings(session)
   }
 
@@ -239,7 +242,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
       || sameSettings(session.appliedSettings, session.options)) return
     const settings: DesktopSettingsMessage = { type: "configure", audio: session.options.audio, control: !!session.options.control, requestId: ++session.nextRequestId }
     session.configuring = settings
-    settingsFailure.value = null
+    sessionSettingsFailure.value = null
     clearTimeout(session.timeout)
     session.configurationTimeout = setTimeout(() => {
       if (current === session) settingsRejected(session, { kind: "timeout" }, session.inputReady)
@@ -322,7 +325,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     codec.value = selected
     state.value = "connecting"
     failure.value = null
-    settingsFailure.value = null
+    sessionSettingsFailure.value = null
     let session: Session | null = null
     try {
       const preferences = browserCodecPreferences(
@@ -385,7 +388,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
                 active.configuring = null
                 active.inputReady = message.control && !!active.options.control
                 inputReady.value = active.inputReady
-                settingsFailure.value = null
+                sessionSettingsFailure.value = null
                 sendSettings(active)
               }
             } else if (message.type === "error" && typeof message.error === "string") {
@@ -474,12 +477,13 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     if (replace) {
       if (!running || (sameOptions(requestedOptions, options) && !settingsFailure.value)) return
       if (options.codecs.length === 0) {
-        settingsFailure.value = { kind: "operation", detail: "The selected video codec is unavailable." }
+        selectionFailure.value = { kind: "operation", detail: "The selected video codec is unavailable." }
         return
       }
+      selectionFailure.value = null
       if (options.liveSettings && requestedOptions?.liveSettings && sameTransportOptions(requestedOptions, options)) {
         requestedOptions = { ...options, codecs: [...options.codecs] }
-        settingsFailure.value = null
+        sessionSettingsFailure.value = null
         const session = current
         if (session) {
           session.options = requestedOptions
@@ -493,12 +497,13 @@ export function useDesktopConnection(api: DesktopMediaApi) {
         return
       }
     } else if (current || running) return
+    selectionFailure.value = null
     const run = ++generation
     running = true
     requestedOptions = { ...options, codecs: [...options.codecs] }
     chain = [...options.codecs]
     failure.value = null
-    settingsFailure.value = null
+    sessionSettingsFailure.value = null
     codec.value = null
     // Keep the viewer active (and fullscreen) while releasing the old peer.
     state.value = "connecting"
@@ -553,7 +558,8 @@ export function useDesktopConnection(api: DesktopMediaApi) {
     if (session) release(session)
     state.value = "idle"
     failure.value = null
-    settingsFailure.value = null
+    selectionFailure.value = null
+    sessionSettingsFailure.value = null
     if (session) {
       try { await closePeer(session.id) }
       catch (error) {

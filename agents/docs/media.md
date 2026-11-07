@@ -481,7 +481,9 @@ checking the peer's control grant.
 Changing displays automatically closes the previous peer and negotiates a
 replacement, waiting for cleanup to release input ownership. An incompatible
 display reports a settings error while keeping the current stream; selecting a
-compatible display can still switch automatically. Disconnecting or
+compatible display can still switch automatically. That selection error remains
+visible until a valid selection or disconnect; replies and codec fallback for
+the current stream cannot dismiss it. Disconnecting or
 leaving the viewer cancels pending changes. Fullscreen and an intentional control
 pause survive display changes; explicitly changing control clears that pause.
 
