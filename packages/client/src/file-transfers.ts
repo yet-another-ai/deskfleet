@@ -1,5 +1,5 @@
 import { FILE_CHUNK_BYTES, type FileEndpoint, type FileEntry } from "../../../apps/daemon/src/files-protocol.ts"
-import { filePathToUri, type FileAttachmentUploadRequest, type FileAttachmentUploadResult, type FileConflict, type FileListing, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer, type FileTransferRequest } from "./files.ts"
+import { filePathToUri, type FileAttachmentUploadRequest, type FileAttachmentUploadResult, type FileConflict, type FileListing, type FileReadResourceOptions, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer, type FileTransferRequest } from "./files.ts"
 import { copyFileChunks } from "./file-pipeline.ts"
 
 const PREVIEW_BYTES = 16 * 1024 * 1024
@@ -209,11 +209,12 @@ export class FileTransferManager implements FilesApi {
   async resolveResource(request: FileResourceRequest): Promise<FileEntry> {
     return (await (await this.#endpoint(request.target)).call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
   }
-  async readResource(request: FileResourceRequest): Promise<{ data: Uint8Array; name: string; mimeType: string }> {
+  async readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string }> {
     const endpoint = await this.#endpoint(request.target)
     const file = (await endpoint.call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
     if (file.kind !== "file") throw new Error("Select a file to preview")
     if (file.size > PREVIEW_BYTES) throw new Error("This file is too large to preview. Download it instead.")
+    options?.onProgress?.({ transferredBytes: 0, totalBytes: file.size })
     const data = new Uint8Array(file.size)
     const { readId } = (await endpoint.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value
     let readCompleted = false
@@ -223,6 +224,7 @@ export class FileTransferManager implements FilesApi {
         const chunk = await endpoint.call("read", { path: file.path, offset, length, modifiedAt: file.modifiedAt, readId })
         if (!chunk.data || chunk.data.byteLength !== length) throw new Error("File changed while loading the preview")
         data.set(chunk.data, offset)
+        options?.onProgress?.({ transferredBytes: offset + length, totalBytes: file.size })
       }
       readCompleted = true
     } finally {

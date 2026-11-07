@@ -304,7 +304,7 @@ test("Markdown file links send cloneable requests and highlight the requested re
   expect(scroll).toHaveBeenCalledWith({ block: "center" })
   const expected = { target: { kind: "machine", machineId: "42", teamId: "7" }, sessionId: "12", uri: "./src/main.ts#L2-L3" }
   expect(resolveResource).toHaveBeenCalledExactlyOnceWith(expected)
-  expect(readResource).toHaveBeenCalledExactlyOnceWith(expected)
+  expect(readResource).toHaveBeenCalledExactlyOnceWith(expected, { onProgress: expect.any(Function) })
   expect(view.find('[role="alert"]').exists()).toBe(false)
 })
 

@@ -104,7 +104,7 @@ export class WindowFiles implements FilesApi {
   retry(id: string, conflict?: FileConflict): Promise<void> { return this.#live(() => this.#manager.retry(id, conflict)) }
   onChanged(listener: (transfers: FileTransfer[]) => void): () => void { return this.#manager.onChanged(listener) }
   resolveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.resolveResource(await this.#resource(request))) }
-  readResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.readResource(await this.#resource(request))) }
+  readResource(request: FileResourceRequest, options?: { onProgress?: (progress: { transferredBytes: number; totalBytes: number }) => void }) { return this.#live(async () => this.#manager.readResource(await this.#resource(request), options)) }
   saveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.saveResource(await this.#resource(request))) }
   uploadAttachment(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult> {
     return this.#live(async () => {

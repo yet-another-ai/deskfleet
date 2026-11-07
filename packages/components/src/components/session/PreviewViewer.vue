@@ -75,6 +75,7 @@ const isLocalResource = computed(() => !isDirectUrl.value && isFileResource(prop
 const loadedUrl = ref<string>()
 const loadedBytes = shallowRef<Uint8Array>()
 const loadedMime = ref<string>()
+const loadedName = ref<string>()
 const loadError = ref<string>()
 const registeredActions = shallowRef<PreviewToolbarAction[]>([])
 const pickingVideoColor = ref(false)
@@ -110,6 +111,7 @@ function clearLoadedUrl(): void {
   loadedUrl.value = undefined
   loadedBytes.value = undefined
   loadedMime.value = undefined
+  loadedName.value = undefined
 }
 
 function loadResource(): void {
@@ -125,6 +127,7 @@ function loadResource(): void {
     if (disposed || version !== loadGeneration) return
     const resultKind = previewKindFromMime(result.mimeType)
     if (!resultKind) throw new Error(t("files.previewUnavailable"))
+    loadedName.value = result.name
     loadedMime.value = result.mimeType
     loadedBytes.value = result.data
     loadedUrl.value = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
@@ -197,7 +200,11 @@ function locateOriginal(): void {
 }
 
 function download(): void {
-  if (client.files && request.value) void client.files.saveResource(request.value)
+  if (!url.value) return
+  const link = document.createElement("a")
+  link.href = url.value
+  link.download = loadedName.value ?? title.value
+  link.click()
 }
 
 onBeforeUnmount(() => {
@@ -226,7 +233,7 @@ onBeforeUnmount(() => {
       <PreviewToolbar
         :mode="mode"
         :actions="toolbarActions"
-        :can-download="Boolean(request && client.files)"
+        :can-download="Boolean(url)"
         :right-tab-label="rightTabLabel"
         @focus="showFocused"
         @download="download"

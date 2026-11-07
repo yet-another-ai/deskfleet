@@ -56,9 +56,9 @@ const imageUrl = ref<string>()
 const previewKind = ref<MediaPreviewKind>()
 const previewMime = ref<string>()
 const previewBytes = shallowRef<Uint8Array>()
+const loadPercent = ref<number>()
 const error = ref<string>()
 const loading = ref(true)
-const downloading = ref(false)
 let disposed = false
 async function open(): Promise<void> {
   const api = filesApi.value
@@ -72,15 +72,20 @@ async function open(): Promise<void> {
     if (disposed) return
     entry.value = result
     if (result.kind === "file") {
-      const file = await api.readResource(request)
+      if (typeof result.size === "number") loadPercent.value = 0
+      const file = await api.readResource(request, {
+        onProgress: ({ transferredBytes, totalBytes }) => {
+          if (!disposed) loadPercent.value = totalBytes ? Math.min(100, Math.floor(transferredBytes / totalBytes * 100)) : 100
+        },
+      })
       if (disposed) return
+      previewMime.value = file.mimeType
+      previewBytes.value = file.data
       const kind = !requestedLines
         ? (previewKindFromMime(file.mimeType) ?? previewKindFromUri(result.name, file.mimeType))
         : undefined
       if (kind) {
         previewKind.value = kind
-        previewMime.value = file.mimeType
-        previewBytes.value = file.data
         imageUrl.value = URL.createObjectURL(new Blob([new Uint8Array(file.data)], { type: file.mimeType }))
       } else {
         try {
@@ -98,13 +103,13 @@ async function open(): Promise<void> {
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) loading.value = false }
 }
-async function download(): Promise<void> {
-  const api = filesApi.value
-  if (downloading.value || !api) return
-  downloading.value = true
-  try { await api.saveResource(request) }
-  catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { if (!disposed) downloading.value = false }
+function download(): void {
+  if (!previewBytes.value || !entry.value) return
+  imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
+  const link = document.createElement("a")
+  link.href = imageUrl.value
+  link.download = entry.value.name
+  link.click()
 }
 function locateOriginal(): void {
   const pinia = getActivePinia()
@@ -153,10 +158,9 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             @click="locateOriginal"
           ><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton
-            v-if="entry"
+            v-if="!loading && previewBytes"
             type="button"
             data-preview-action="download"
-            :disabled="downloading"
             @click="download"
           >
             {{ t('files.downloadResource') }}
@@ -164,7 +168,15 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         </div>
       </header>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <p v-if="loading" class="m-0 p-4 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
+        <div v-if="loading" class="flex flex-col gap-2 p-4 text-sm text-ui-text-muted" role="status">
+          <div class="flex items-center justify-between gap-2">
+            <span>{{ t('folderPicker.loading') }}</span>
+            <span v-if="loadPercent !== undefined" class="text-xs tabular-nums">{{ loadPercent }}%</span>
+          </div>
+          <div v-if="loadPercent !== undefined" class="h-1 w-full overflow-hidden rounded-full bg-ui-hover" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
+            <div class="h-full bg-ui-accent transition-[width] duration-150" :style="{ width: `${loadPercent}%` }" />
+          </div>
+        </div>
         <div v-else-if="entry?.kind === 'directory' && filesApi" class="min-h-0 flex-1 overflow-auto p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </div>
@@ -180,7 +192,15 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
   </div>
   <UiDialog v-else class="w-[48rem] max-w-[calc(100vw-2rem)]" @close="emit('close')">
     <DialogTitle class="ui-dialog-title mb-3 break-all">{{ entry?.name ?? request.uri }}</DialogTitle>
-    <p v-if="loading" role="status">{{ t('folderPicker.loading') }}</p>
+    <div v-if="loading" class="flex flex-col gap-2 text-sm text-ui-text-muted" role="status">
+      <div class="flex items-center justify-between gap-2">
+        <span>{{ t('folderPicker.loading') }}</span>
+        <span v-if="loadPercent !== undefined" class="text-xs tabular-nums">{{ loadPercent }}%</span>
+      </div>
+      <div v-if="loadPercent !== undefined" class="h-1 w-full overflow-hidden rounded-full bg-ui-hover" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
+        <div class="h-full bg-ui-accent transition-[width] duration-150" :style="{ width: `${loadPercent}%` }" />
+      </div>
+    </div>
     <FileBrowserPane v-else-if="entry?.kind === 'directory' && filesApi" :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
     <PreviewViewer
       v-else-if="imageUrl && previewKind"
@@ -201,7 +221,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="entry" type="button" :disabled="downloading" @click="download">{{ t('files.downloadResource') }}</UiButton>
+      <UiButton v-if="!loading && previewBytes" type="button" @click="download">{{ t('files.downloadResource') }}</UiButton>
       <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>

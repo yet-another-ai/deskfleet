@@ -1,9 +1,10 @@
 import { ipcRenderer } from "electron"
-import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, type FilesApi, type FileTransfer } from "@deskfleet/client/files"
+import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, FILES_RESOURCE_PROGRESS_EVENT, type FileReadResourceProgress, type FilesApi, type FileTransfer } from "@deskfleet/client/files"
 
 /** Calls and transfer snapshots cross the sandbox; disk and RTC handles stay in main. */
 export function filesApi(): FilesApi {
   const invoke = <T>(method: string, ...args: unknown[]): Promise<T> => ipcRenderer.invoke(FILES_IPC_CHANNEL, method, args) as Promise<T>
+  let nextReadId = 0
   return {
     list: (target, path) => invoke("list", target, path),
     chooseLocalDirectory: () => invoke("chooseLocalDirectory"),
@@ -12,7 +13,17 @@ export function filesApi(): FilesApi {
     cancel: id => invoke("cancel", id),
     retry: (id, conflict) => invoke("retry", id, conflict),
     resolveResource: request => invoke("resolveResource", request),
-    readResource: request => invoke("readResource", request),
+    readResource: (request, options) => {
+      if (!options?.onProgress) return invoke("readResource", request)
+      const requestId = String(++nextReadId)
+      const handler = (_event: Electron.IpcRendererEvent, payload: { requestId: string } & FileReadResourceProgress) => {
+        if (payload?.requestId === requestId) options.onProgress?.({ transferredBytes: payload.transferredBytes, totalBytes: payload.totalBytes })
+      }
+      ipcRenderer.on(FILES_RESOURCE_PROGRESS_EVENT, handler)
+      return invoke<{ data: Uint8Array; name: string; mimeType: string }>("readResource", request, requestId).finally(() => {
+        ipcRenderer.removeListener(FILES_RESOURCE_PROGRESS_EVENT, handler)
+      })
+    },
     saveResource: request => invoke("saveResource", request),
     uploadAttachment: request => invoke("uploadAttachment", request),
     onChanged: listener => {
