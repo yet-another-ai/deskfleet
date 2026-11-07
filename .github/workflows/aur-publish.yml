@@ -20,7 +20,7 @@ concurrency:
 jobs:
   sync:
     if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment: production
     timeout-minutes: 30
     steps:
@@ -32,10 +32,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Select the latest stable release
         id: release

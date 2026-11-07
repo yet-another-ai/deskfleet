@@ -12,14 +12,19 @@ on:
 permissions:
   contents: read
 
+# Reusable workflows declare no concurrency of their own; their caller's group
+# covers them. A new push to a pull request replaces its running CI. Main,
+# scheduled, and manual runs are never cancelled: a cancelled job skips its
+# post steps, so it would also discard the caches only those runs write.
+# GitHub still drops an older queued run in the same group.
 concurrency:
   group: ci-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
     name: Classify changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
@@ -106,7 +111,7 @@ jobs:
     name: Gate
     if: ${{ always() }}
     needs: [changes, test, build, nix_server, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require successful CI jobs
@@ -131,12 +136,39 @@ jobs:
             exit 1
           fi
 
+  prune_caches:
+    name: Prune caches
+    needs: gate
+    # Only main writes caches, so only main's runs leave superseded entries.
+    # Run after every job has saved, whatever Gate decided.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install locked Node
+        uses: ./.github/actions/setup-mise
+        with:
+          tools: node
+          github-token: ${{ github.token }}
+
+      - name: Delete superseded and unreachable caches
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise exec node -- node scripts/ci-prune-caches.ts
+
   deploy-pages:
     name: Deploy website
     needs: [gate, test]
     # Documentation-only runs skip Build, so explicitly use Gate's result.
     if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read

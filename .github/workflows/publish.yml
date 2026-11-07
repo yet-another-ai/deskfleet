@@ -14,7 +14,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -26,10 +26,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Validate tag against package versions
         id: release
@@ -84,7 +84,7 @@ jobs:
   release:
     name: Create draft GitHub release
     needs: [validate, test, build, nix, aur, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -94,10 +94,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Download desktop installers
         uses: actions/download-artifact@v8
@@ -189,7 +189,7 @@ jobs:
   image:
     name: Publish server and Web image
     needs: [validate, test, build, nix, aur, linux_packages]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read

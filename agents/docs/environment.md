@@ -434,8 +434,9 @@ three days before ordinary updates. Lockfile maintenance delegates resolution to
 Cargo and pnpm and does not apply that release-age filter.
 
 Built-in managers cover Cargo, pnpm, Compose images, and GitHub Actions, including
-the mise and sccache action inputs. Keep Renovate's Node, pnpm, and Rust `constraints`
-aligned with `mise.toml` so lockfile generation uses the repository's tools.
+the mise version in `.github/actions/setup-mise`. Keep Renovate's Node, pnpm, and
+Rust `constraints` aligned with `mise.toml` so lockfile generation uses the
+repository's tools.
 The `renovate-config` manager's `tool-constraint` updates are disabled so these
 constraints change only with the locked toolchain; configuration migrations remain
 enabled.

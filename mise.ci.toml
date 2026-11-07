@@ -1,0 +1,18 @@
+# CI settings. `.github/actions/setup-mise` selects them with `MISE_ENV=ci`, and
+# mise-action exports them to later steps, so plain `cargo` sees the same values
+# as `mise run`. Reproduce a CI build locally with `mise -E ci run <task>`.
+[env]
+CARGO_TERM_COLOR = "always"
+RUST_BACKTRACE = "1"
+# CI builds start from a restored target directory and never reuse incremental
+# state, which would only grow the cache.
+CARGO_INCREMENTAL = "0"
+# Local builds keep full debug info. CI only needs line tables for
+# backtraces, and MSVC PDB generation is a large part of Windows build time.
+CARGO_PROFILE_DEV_DEBUG = "line-tables-only"
+CARGO_PROFILE_TEST_DEBUG = "line-tables-only"
+# Release packaging trades runtime optimization for build time.
+CARGO_PROFILE_RELEASE_LTO = "false"
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "16"
+CARGO_PROFILE_RELEASE_DEBUG = "0"
+CARGO_PROFILE_RELEASE_STRIP = "symbols"

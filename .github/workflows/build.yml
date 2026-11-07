@@ -31,16 +31,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: build-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: "1"
-  # Disable incremental compilation so sccache can cache every rustc invocation.
-  CARGO_INCREMENTAL: "0"
-
 jobs:
   package:
     name: Build (${{ matrix.platform }})
@@ -50,27 +40,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux release binaries link against the build host's glibc. Keep these
+        # two builds on the oldest supported Ubuntu LTS so the packages still
+        # install on it; every other Linux job uses the newest Ubuntu image.
         include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"},{"platform":"macos-arm64","os":"macos-latest"},{"platform":"windows-x64","os":"windows-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Use faster release profile for packaging builds
-        shell: bash
-        run: |
-          {
-            echo "CARGO_PROFILE_RELEASE_LTO=false"
-            echo "CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16"
-            echo "CARGO_PROFILE_RELEASE_DEBUG=0"
-            echo "CARGO_PROFILE_RELEASE_STRIP=symbols"
-          } >> "$GITHUB_ENV"
-
       - name: Disable MSVC PDB generation for release builds
         if: runner.os == 'Windows'
         shell: pwsh
-        # rustc still passes /DEBUG with debug=0 and strip=symbols on MSVC.
-        # Match this release profile without requiring vendored OpenSSL's PDB.
+        # rustc still passes /DEBUG with mise.ci.toml's debug=0 and
+        # strip=symbols on MSVC. Match that release profile without requiring
+        # vendored OpenSSL's PDB.
         run: '"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS=-C link-arg=/DEBUG:NONE" >> $env:GITHUB_ENV'
 
       - name: Set up build environment
@@ -78,6 +62,11 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          # Main's Linux x64 smoke build keeps a release target entry for later
+          # smoke builds; full builds only restore it, so other platforms do not
+          # take quota. Production releases build without a target cache.
+          rust-cache: ${{ !inputs.production_release && 'release' || '' }}
+          rust-cache-save: ${{ inputs.smoke_build }}
 
       - name: Build the server, daemon, Web client, and Electron bundles
         if: ${{ !inputs.production_release }}
@@ -137,7 +126,11 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           DESKFLEET_NATIVE_PREBUILT: "1"
-        run: mise exec -- pnpm --filter @deskfleet/desktop run package
+        # Linux smoke builds produce only the tar.gz payload that Linux packages
+        # and Nix consume. Full builds keep every configured target.
+        run: >-
+          mise exec -- pnpm --filter @deskfleet/desktop run package
+          ${{ inputs.smoke_build && runner.os == 'Linux' && '--linux tar.gz' || '' }}
 
       - name: Prepare macOS notarization key
         id: macos_credentials
@@ -246,7 +239,3 @@ jobs:
           path: apps/web/dist/
           if-no-files-found: error
           retention-days: 14
-
-      - name: Report shared compiler cache health
-        if: ${{ always() && steps.setup_build.outcome == 'success' }}
-        run: mise run ci:report:sccache

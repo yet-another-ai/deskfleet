@@ -49,22 +49,28 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: test-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: "1"
-  # CI-only compilation tuning. Local builds keep full debug info. CI only
-  # needs line tables for backtraces, and MSVC PDB generation is a large part
-  # of Windows build time. Incremental compilation is disabled so sccache can
-  # cache every rustc invocation.
-  CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-  CARGO_PROFILE_TEST_DEBUG: line-tables-only
-
 jobs:
+  # Checks that need no Rust compilation. They fail fast on formatting,
+  # dependency, script, and Web type errors before the platform tests start.
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Run preflight checks
+        run: mise run ci:preflight
+
+  # Clippy, native type checks, and bundle builds run beside the platform
+  # tests instead of ahead of them.
   static:
     name: Static checks
     runs-on: ubuntu-26.04
@@ -79,7 +85,7 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
-          cache-rust-build: "true"
+          rust-cache: static
 
       - name: Run static checks
         run: mise run ci:check:static
@@ -90,13 +96,9 @@ jobs:
         with:
           path: docs/.vitepress/dist
 
-      - name: Report shared compiler cache health
-        if: ${{ always() && steps.setup_build.outcome == 'success' }}
-        run: mise run ci:report:sccache
-
   checks:
     name: Tests (${{ matrix.name }})
-    needs: static
+    needs: preflight
     if: >-
       ${{ !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
@@ -106,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-24.04","test-task":"test"}]') }}
+        include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
     steps:
       # Rust tests can exhaust the hosted image's free disk space. DeskFleet
       # does not build Android; reclaim its SDK before restoring Cargo outputs.
@@ -126,7 +128,7 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
-          cache-rust-build: "true"
+          rust-cache: test
 
       - name: Run tests
         run: mise run ${{ matrix.test-task }}
@@ -144,13 +146,9 @@ jobs:
           mise exec -- cargo test -p deskfleet-x11 -p deskfleet-capture
           --locked x11_ -- --ignored --test-threads=1
 
-      - name: Report shared compiler cache health
-        if: ${{ always() && steps.setup_build.outcome == 'success' }}
-        run: mise run ci:report:sccache
-
   backend:
     name: PostgreSQL and remote backend
-    needs: static
+    needs: preflight
     if: >-
       ${{ inputs.run_backend && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
@@ -196,7 +194,10 @@ jobs:
         uses: ./.github/actions/setup-build
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
-          cache-rust-build: "true"
+          # Start from the Linux test target directory, which shares most
+          # dependencies with the backend packages, but leave writing it to Tests.
+          rust-cache: test
+          rust-cache-save: "false"
 
       - name: Run PostgreSQL and Valkey integration tests
         run: mise run backend:test
@@ -210,15 +211,6 @@ jobs:
           electron_sandbox=$(mise exec -- pnpm --filter @deskfleet/desktop exec node -p 'require.resolve("electron/dist/chrome-sandbox")')
           sudo chown root:root "$electron_sandbox"
           sudo chmod 4755 "$electron_sandbox"
-
-      - name: Save Electron downloads
-        if: >-
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-          steps.setup_build.outputs.electron-cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.setup_build.outputs.electron-path }}
-          key: ${{ steps.setup_build.outputs.electron-cache-key }}
 
       - name: Run the built Web and Electron clients
         run: xvfb-run -a mise run backend:smoke-clients
@@ -254,7 +246,3 @@ jobs:
       - name: Stop the test relay
         if: ${{ always() }}
         run: docker rm --force deskfleet-turn-test || true
-
-      - name: Report shared compiler cache health
-        if: ${{ always() && steps.setup_build.outcome == 'success' }}
-        run: mise run ci:report:sccache

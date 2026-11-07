@@ -6,78 +6,30 @@ inputs:
     description: Token used by mise when downloading tools from GitHub.
     required: false
     default: ""
-  cache-rust-build:
+  rust-cache:
     description: >-
-      Cache the Cargo target directory between runs. Enable for check and test
-      jobs that rebuild the same profiles; leave it disabled for release
-      packaging so the repository cache quota stays available for the compiler
-      cache.
+      Cargo target cache role, such as `static`, `test`, or `release`. Jobs
+      with the same role and OS share one entry, so give a role only to jobs
+      that build the same profiles and feature sets. Leave empty to cache only
+      Cargo downloads.
     required: false
-    default: "false"
-
-outputs:
-  electron-path:
-    description: Electron package download directory for this runner.
-    value: ${{ steps.cache-paths.outputs.electron-path }}
-  electron-cache-key:
-    description: Primary key for the Electron download cache.
-    value: ${{ steps.electron-downloads.outputs.cache-primary-key }}
-  electron-cache-hit:
-    description: Whether the Electron download cache restored an exact match.
-    value: ${{ steps.electron-downloads.outputs.cache-hit }}
+    default: ""
+  rust-cache-save:
+    description: >-
+      Whether this job may write its role's entry on main. Disable it for jobs
+      that only reuse another job's target directory, and for builds that would
+      add entries the quota cannot hold.
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
-    # nodejs.org throttles the darwin Node archive from GitHub-hosted macOS
-    # runners (a few KiB/s until mise's download budget expires). Rewrite only
-    # that host. mise.lock keeps the upstream URL and checksum, and mise
-    # checks the bytes it receives against that checksum.
-    - name: Mirror Node downloads on macOS
-      if: runner.os == 'macOS'
-      shell: bash
-      run: echo 'MISE_URL_REPLACEMENTS={"https://nodejs.org/dist/":"https://cdn.npmmirror.com/binaries/node/"}' >> "$GITHUB_ENV"
-
-    # Hosted macOS runners occasionally SIGKILL rustup during the first mise
-    # install (Cluster C). Retry once before failing the job; real toolchain
-    # problems still fail on the second attempt.
     - name: Install locked toolchain
       id: mise
-      continue-on-error: true
-      uses: jdx/mise-action@v5
+      uses: ./.github/actions/setup-mise
       with:
-        version: 2026.11.3
-        install_args: --locked
-        cache: true
-        # Restore main's tool cache everywhere, but let only main and tags
-        # write it. Pull-request merge refs only consume the shared cache quota.
-        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
-        # HTTP 429 is otherwise reported as a cache miss, and the job then
-        # downloads the toolchain.
-        cache_restore_retry_budget: 120s
-        cache_save_retry_budget: 120s
-        # An explicit empty input suppresses mise-action's automatic token default.
-        github_token: ${{ inputs.github-token }}
-
-    - name: Retry locked toolchain install
-      id: mise-retry
-      if: steps.mise.outcome == 'failure'
-      uses: jdx/mise-action@v5
-      with:
-        version: 2026.11.3
-        install_args: --locked
-        cache: true
-        cache_save: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && 'true' || 'false' }}
-        cache_restore_retry_budget: 120s
-        cache_save_retry_budget: 120s
-        github_token: ${{ inputs.github-token }}
-
-    - name: Require locked toolchain
-      if: steps.mise.outcome == 'failure' && steps.mise-retry.outcome != 'success'
-      shell: bash
-      run: |
-        echo "::error::Locked toolchain install failed after one retry."
-        exit 1
+        github-token: ${{ inputs.github-token }}
 
     - name: Locate LLVM for NVENC bindings
       if: runner.os == 'Windows'
@@ -89,32 +41,21 @@ runs:
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+    # rust-cache keys include the OS, architecture, Rust toolchain, CARGO_* and
+    # RUST* environment, and lockfiles. mise.ci.toml gives every job the same
+    # Cargo environment, so jobs of one role resolve to the same key.
     - name: Restore Cargo target directory
-      if: inputs.cache-rust-build == 'true'
+      id: rust-cache
+      if: inputs.rust-cache != ''
       uses: Swatinem/rust-cache@v2
       with:
+        shared-key: ${{ inputs.rust-cache }}
+        add-job-id-key: false
         # Warm caches come from main. Pull requests restore that baseline
-        # without competing for the repository cache quota.
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-
-    - name: Configure compiler cache
-      shell: bash
-      env:
-        CACHE_ERROR_LOG: ${{ runner.temp }}/deskfleet-sccache-errors.log
-      run: |
-        # Actions objects per compilation evict the Cargo target cache.
-        echo "SCCACHE_GHA_ENABLED=off" >> "$GITHUB_ENV"
-        printf 'SCCACHE_ERROR_LOG=%s\n' "$CACHE_ERROR_LOG" >> "$GITHUB_ENV"
-        echo "SCCACHE_LOG=warn" >> "$GITHUB_ENV"
-
-    - name: Install sccache
-      uses: mozilla-actions/sccache-action@v0.0.11
-      with:
-        version: v0.19.0
-
-    - name: Enable compiler caching
-      shell: bash
-      run: printf 'RUSTC_WRAPPER=%s\n' "${SCCACHE_PATH:-sccache}" >> "$GITHUB_ENV"
+        # without competing for the repository cache quota. A failed test
+        # leaves valid build outputs, so save them anyway.
+        save-if: ${{ github.ref == 'refs/heads/main' && inputs.rust-cache-save == 'true' }}
+        cache-on-failure: true
 
     - name: Locate Cargo, pnpm, and Electron caches
       id: cache-paths
@@ -122,7 +63,7 @@ runs:
       run: |
         node --input-type=module <<'EOF'
         import { execFileSync } from "node:child_process"
-        import { appendFileSync } from "node:fs"
+        import { appendFileSync, readFileSync } from "node:fs"
         import { homedir, platform } from "node:os"
         import { join } from "node:path"
 
@@ -136,15 +77,20 @@ runs:
           : platform() === "win32"
             ? join(localAppData, "electron", "Cache")
             : join(home, ".cache", "electron")
+        // Key Electron downloads by the locked Electron version, not the whole
+        // lockfile: unrelated dependency updates must not refetch the archive.
+        const electronVersion = readFileSync("pnpm-lock.yaml", "utf8").match(/^  electron@([^:(\s]+):$/m)?.[1]
+        if (!electronVersion) throw new Error("pnpm-lock.yaml does not lock electron")
         appendFileSync(output, `cargo-home=${cargoHome}\n`)
         appendFileSync(output, `pnpm-store=${pnpmStore}\n`)
         appendFileSync(output, `electron-path=${electron}\n`)
+        appendFileSync(output, `electron-version=${electronVersion}\n`)
         EOF
 
     - name: Restore Cargo downloads
       id: cargo-downloads
       # rust-cache already caches the registry and git databases.
-      if: inputs.cache-rust-build != 'true'
+      if: inputs.rust-cache == ''
       uses: actions/cache/restore@v6
       with:
         path: |
@@ -155,16 +101,16 @@ runs:
         restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Fetch locked Rust dependencies
-      if: inputs.cache-rust-build != 'true'
+      if: inputs.rust-cache == ''
       shell: bash
       run: cargo fetch --locked
 
     - name: Save Cargo downloads
-      # Pull requests read main's entry through the base-branch fallback.
-      # Their merge-ref copy would spend the repository cache quota.
+      # Pull requests and tags read main's entry through the base-branch
+      # fallback. Their own copies would only spend the repository cache quota.
       if: >-
-        inputs.cache-rust-build != 'true' &&
-        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
+        inputs.rust-cache == '' &&
+        github.ref == 'refs/heads/main' &&
         steps.cargo-downloads.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
@@ -187,18 +133,72 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: ${{ steps.cache-paths.outputs.electron-path }}
-        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-        restore-keys: electron-${{ runner.os }}-${{ runner.arch }}-
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-paths.outputs.electron-version }}
 
     - name: Install workspace dependencies
       shell: bash
       run: mise run install
 
+    # A store restored through the prefix fallback still holds every package
+    # of the older lockfile. Drop packages this checkout no longer uses so the
+    # saved entry tracks the current lockfile instead of growing with each update.
+    - name: Prune pnpm store
+      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
+      shell: bash
+      run: mise exec -- pnpm store prune
+
     - name: Save pnpm store
-      if: >-
-        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) &&
-        steps.pnpm-store.outputs.cache-hit != 'true'
+      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: ${{ steps.cache-paths.outputs.pnpm-store }}
         key: ${{ steps.pnpm-store.outputs.cache-primary-key }}
+
+    # Electron's install script is disabled in pnpm-workspace.yaml; jobs fetch
+    # the archive on first use. Fetch it here on a main miss so every OS gets
+    # an entry, whichever job happens to need Electron later.
+    - name: Download Electron for the cache
+      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
+      shell: bash
+      run: mise exec -- pnpm --filter @deskfleet/desktop exec install-electron
+
+    - name: Save Electron downloads
+      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.cache-paths.outputs.electron-path }}
+        key: ${{ steps.electron-downloads.outputs.cache-primary-key }}
+
+    # Compare cache effectiveness across runs without opening each log.
+    - name: Summarize cache restores
+      shell: bash
+      env:
+        MISE_HIT: ${{ steps.mise.outputs.cache-hit }}
+        RUST_ROLE: ${{ inputs.rust-cache }}
+        RUST_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
+        CARGO_HIT: ${{ steps.cargo-downloads.outputs.cache-hit }}
+        CARGO_MATCH: ${{ steps.cargo-downloads.outputs.cache-matched-key }}
+        PNPM_HIT: ${{ steps.pnpm-store.outputs.cache-hit }}
+        PNPM_MATCH: ${{ steps.pnpm-store.outputs.cache-matched-key }}
+        ELECTRON_HIT: ${{ steps.electron-downloads.outputs.cache-hit }}
+      run: |
+        result() {
+          if [[ "$1" == true ]]; then echo exact
+          elif [[ -n "$2" ]]; then echo "fallback \`$2\`"
+          else echo miss
+          fi
+        }
+        {
+          echo "### Cache restores: $GITHUB_JOB ($RUNNER_OS $RUNNER_ARCH)"
+          echo
+          echo "| Cache | Result |"
+          echo "| --- | --- |"
+          echo "| mise tools | $(result "$MISE_HIT") |"
+          if [[ -n "$RUST_ROLE" ]]; then
+            echo "| Cargo target (\`$RUST_ROLE\`) | $([[ "$RUST_HIT" == true ]] && echo exact || echo 'fallback or miss') |"
+          else
+            echo "| Cargo downloads | $(result "$CARGO_HIT" "$CARGO_MATCH") |"
+          fi
+          echo "| pnpm store | $(result "$PNPM_HIT" "$PNPM_MATCH") |"
+          echo "| Electron | $(result "$ELECTRON_HIT") |"
+        } >> "$GITHUB_STEP_SUMMARY"

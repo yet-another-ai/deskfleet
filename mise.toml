@@ -394,10 +394,19 @@ run = "node --test scripts/*.test.ts packages/dsh-runtime/src/*.test.ts"
 hide = true
 depends = ["rust:test"]
 
+# CI splits `check:static` and the bundle builds by cost. Preflight needs no
+# Rust compilation and gates the platform tests; the rest runs beside them.
+[tasks."ci:preflight"]
+hide = true
+depends = [
+    "check:rust-skills-harness",
+    "rust:format:check",
+    "rust:shear",
+    "check:scripts",
+    "web:typecheck",
+    "docs:typecheck",
+]
+
 [tasks."ci:check:static"]
 hide = true
-depends = ["check:static", "check:scripts", "desktop:build", "web:build", "docs:build"]
-
-[tasks."ci:report:sccache"]
-hide = true
-run = "node scripts/ci-report-sccache.ts"
+depends = ["check:types", "check:desktop-types", "rust:clippy", "desktop:build", "web:build", "docs:build"]

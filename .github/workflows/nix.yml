@@ -12,10 +12,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: nix-${{ github.event_name == 'schedule' && 'daily' || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
 jobs:
   desktop:
     name: Nix desktop (${{ matrix.platform }})
@@ -24,17 +20,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-24.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-24.04"},{"platform":"linux-arm64","os":"ubuntu-24.04-arm"}]') }}
+        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-26.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-26.04"},{"platform":"linux-arm64","os":"ubuntu-26.04-arm"}]') }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Install locked Node for packaging and smoke checks
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Download the desktop application payload from Build
         uses: actions/download-artifact@v8

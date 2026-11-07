@@ -17,10 +17,10 @@ jobs:
           persist-credentials: false
 
       - name: Install locked Node
-        uses: jdx/mise-action@v5
+        uses: ./.github/actions/setup-mise
         with:
-          version: 2026.11.3
-          install_args: --locked node
+          tools: node
+          github-token: ${{ github.token }}
 
       - name: Download the desktop application payload from Build
         uses: actions/download-artifact@v8
