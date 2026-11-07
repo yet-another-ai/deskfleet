@@ -126,7 +126,11 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           DESKFLEET_NATIVE_PREBUILT: "1"
-        run: mise exec -- pnpm --filter @deskfleet/desktop run package
+        # Linux smoke builds produce only the tar.gz payload that Linux packages
+        # and Nix consume. Full builds keep every configured target.
+        run: >-
+          mise exec -- pnpm --filter @deskfleet/desktop run package
+          ${{ inputs.smoke_build && runner.os == 'Linux' && '--linux tar.gz' || '' }}
 
       - name: Prepare macOS notarization key
         id: macos_credentials
