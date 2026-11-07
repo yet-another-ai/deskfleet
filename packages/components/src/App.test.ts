@@ -3,22 +3,24 @@ import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-uti
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import App from "./App.vue"
+import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { i18n } from "./i18n/index.ts"
 import { router } from "./router/index.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { usePinnedSessionsStore } from "./stores/pinned-sessions.ts"
 import { catalogFixture, sessionWorktreeId, mainWorktreeId, sessionId, workspaceId } from "./test/catalog.ts"
+import { fakeCentral, machineFixture } from "./test/central.ts"
 import type { LocalAgentState } from "../../client/src/local-agent.ts"
 import { agentEvent, agentSnapshot } from "./test/agent.ts"
 import OpenWithMenu from "./components/catalog/OpenWithMenu.vue"
 
 const mounted: { wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }[] = []
 const host = getClient()
-async function mountApp(path = "/", pinia = createPinia(), realPortals = false) {
+async function mountApp(path = "/", pinia = createPinia(), realPortals = false, provide?: Record<PropertyKey, unknown>) {
   await router.push(path)
   const wrapper = mount(App, {
     attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: { ...(realPortals ? {} : { Teleport: { inheritAttrs: false, template: "<slot />" } }), LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
+    global: { plugins: [pinia, router, i18n], provide, stubs: { ...(realPortals ? {} : { Teleport: { inheritAttrs: false, template: "<slot />" } }), LiveTerminal: { props: ["terminalId"], template: '<div data-terminal :data-id="terminalId" />' } } },
   })
   mounted.push({ wrapper, pinia })
   await flushPromises()
@@ -201,15 +203,38 @@ test("workspace edits update its configured directories without independent work
   expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
 })
 
-test("workspace New session chooses that workspace before opening the composer", async () => {
+test("workspace New session chooses that workspace before opening the composer and allows switching from the context bar", async () => {
   const snapshot = catalogFixture()
   snapshot.workspaces.push({ id: "2", name: "notes", worktrees: [{ id: "3", workspaceId: "2", directories: [{ path: "/notes" }] }] })
   vi.mocked(platformClient.catalog.list).mockResolvedValue(snapshot)
-  const wrapper = await mountApp()
-  await wrapper.findAll('.workspace-row button[aria-label="New session"]')[1]!.trigger("click")
-  await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
-  expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  const fake = fakeCentral({
+    machines: [machineFixture("local-daemon", "team-1", "test-host"), machineFixture("remote-1", "team-1", "build-server", false)],
+    enrollment: { configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", teamId: "team-1", machineId: "local-daemon", identity: { originId: "origin-local", machineId: "1" }, machineName: "test-host" },
+  })
+  const account = createAccountSession(fake.central)
+  await vi.waitFor(() => expect(account.ready.value).toBe(true))
+  const selectMachine = vi.spyOn(account, "selectMachine")
+  try {
+    const wrapper = await mountApp("/", createPinia(), false, { [accountSessionKey as symbol]: account })
+    await wrapper.findAll('.workspace-row button[aria-label="New session"]')[1]!.trigger("click")
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+    expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
+    await wrapper.get("[data-composer-workspace]").trigger("click")
+    await flushPromises()
+    await wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]').find(item => item.text() === "storefront")!.trigger("click")
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await flushPromises()
+    expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
+    await wrapper.get("[data-composer-machine]").trigger("click")
+    await flushPromises()
+    expect(wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').map(item => item.text())).toEqual(["test-host", "build-server Offline"])
+    await wrapper.findAll('[aria-label="Machine"] [role="menuitemradio"]').find(item => item.text().includes("build-server"))!.trigger("click")
+    await flushPromises()
+    expect(selectMachine).toHaveBeenCalledExactlyOnceWith("remote-1")
+    expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
+  } finally {
+    account.dispose()
+  }
 })
 
 test("workspace deletion requires confirmation and clears its composer target", async () => {

@@ -71,6 +71,8 @@
 html {
   background: var(--vp-c-bg);
   transition: background-color 180ms ease;
+  height: auto;
+  overflow-y: auto;
 }
 
 body {
@@ -80,6 +82,8 @@ body {
   font-family: var(--vp-font-family-base);
   font-size: 16px;
   user-select: text;
+  height: auto;
+  overflow-y: auto;
 }
 
 :root { color-scheme: light; }
