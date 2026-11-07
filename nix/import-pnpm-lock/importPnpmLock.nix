@@ -19,7 +19,7 @@ let
     "9.0"
   ];
 
-  # pnpm-lock.yaml is YAML, which Nix cannot importJSON. The lockfile we commit
+  # pnpm-lock.yaml is YAML, which Nix cannot load as JSON. The lockfile we commit
   # only uses single-line package keys and `resolution: {integrity: ...}`
   # entries under `packages:`, so a line scan is enough and stays IFD-free.
   lines = lib.splitString "\n" (builtins.readFile lockFile);
