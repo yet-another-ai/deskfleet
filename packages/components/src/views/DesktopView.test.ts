@@ -211,7 +211,6 @@ test("mobile Connect button directly opens the native desktop activity when nati
   const wrapper = await mountDesktop()
   expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
   await wrapper.get('[aria-label="Stream settings"]').trigger("click")
-  await wrapper.get("[data-desktop-control]").trigger("click")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true })
