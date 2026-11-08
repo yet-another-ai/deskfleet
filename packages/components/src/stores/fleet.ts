@@ -249,9 +249,17 @@ export const useFleetStore = defineStore("fleet", () => {
     if (index !== -1) catalog.value!.workspaces[index] = value
     reconcileTarget()
   }
-  async function deleteWorkspace(id: string): Promise<void> {
+  async function deleteWorkspace(id: string, options?: { deleteSessions?: boolean }): Promise<void> {
     requireWorkspace(id)
-    await platformClient.catalog.deleteWorkspace(id)
+    // Other rejection reasons, such as scheduled tasks, must leave Sessions in place.
+    const sessionIds = options?.deleteSessions ? findWorkspace(id)?.workspace.sessions.map(session => session.id) ?? [] : []
+    try {
+      await platformClient.catalog.deleteWorkspace(id)
+    } catch (error) {
+      if (!sessionIds.length || !(error instanceof Error) || !error.message.includes("still has active sessions")) throw error
+      for (const sessionId of sessionIds) await agents.remove(sessionId)
+      await platformClient.catalog.deleteWorkspace(id)
+    }
     catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
     reconcileTarget()
   }

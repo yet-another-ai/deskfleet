@@ -670,6 +670,8 @@
   "workspace": {
     "notFound": "このワークスペースは存在しません。", "directoryCount": "{count} 個のディレクトリ",
     "delete": "ワークスペースを削除", "deleteQuestion": "ワークスペース「{name}」とその登録情報を削除しますか？ディレクトリはディスクに残ります。",
+    "deleteSessionsQuestion": "ワークスペース「{name}」にはまだ {count} 件のセッションがあります。ワークスペースと一緒に削除しますか？進行中とアーカイブ済みのセッション、会話、管理対象のワークツリーが削除されます。ディレクトリはディスクに残ります。",
+    "confirmDeleteSessions": "まとめて削除",
     "edit": "ワークスペースを編集", "openDefaultTerminal": "デフォルトのディレクトリでターミナルを開く",
     "sessions": "セッション", "newSession": "新しいセッション",
     "noSessions": "セッションはまだありません。"

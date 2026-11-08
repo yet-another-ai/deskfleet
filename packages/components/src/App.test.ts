@@ -243,13 +243,18 @@ test("workspace New session chooses that workspace before opening the composer a
 })
 
 test("workspace deletion requires confirmation and clears its composer target", async () => {
-  const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
-  const wrapper = await mountApp()
+  const pinia = createPinia()
+  const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace")
+    .mockRejectedValueOnce(new Error(`workspace ${workspaceId} still has active sessions`))
+    .mockResolvedValue()
+  const removeSession = vi.spyOn(useAgentSessionsStore(pinia), "remove").mockResolvedValue()
+  const wrapper = await mountApp("/", pinia)
   await workspaceAction(wrapper, "Delete workspace")
   expect(remove).not.toHaveBeenCalled()
-  expect(wrapper.get('[role="dialog"]').text()).toContain("Its directories remain on disk")
-  await button(wrapper, "Confirm deletion").trigger("click")
+  expect(wrapper.get('[role="dialog"]').text()).toContain("Directories on disk stay")
+  await button(wrapper, "Delete together").trigger("click")
   await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(removeSession).toHaveBeenCalledWith(sessionId)
   expect(remove).toHaveBeenCalledWith(workspaceId)
   // Without a Workspace, the composer still targets the machine for chat.
   expect(chips(wrapper)).toEqual(["test-hostThis machine", "Codex"])
