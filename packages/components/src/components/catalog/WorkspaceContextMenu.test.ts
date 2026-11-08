@@ -80,6 +80,28 @@ test("keyboard workspace management edits the clicked workspace and restores row
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
+test("a workspace with sessions asks to delete those sessions too", async () => {
+  const { wrapper, remove, fleet } = await setup()
+  vi.spyOn(fleet, "findWorkspace").mockReturnValue({
+    machine: { id: "local-daemon", name: "host", local: true, online: true, desktop: false, sessions: [], terminals: [], workspaces: [] },
+    workspace: {
+      id: "workspace", name: "Project", directories: [], terminals: [],
+      sessions: [
+        { id: "active", title: "Active chat", archiveState: "active" },
+        { id: "archived", title: "Old chat", archiveState: "archived" },
+      ],
+    },
+  })
+  await openMenu(wrapper)
+  await menuItem("Delete workspace").trigger("click"); await flushPromises()
+  const dialog = page().get('[role="dialog"]')
+  expect(dialog.text()).toContain("2 sessions")
+  expect(dialog.text()).toContain("archived")
+  expect(dialog.text()).not.toContain("Confirm deletion")
+  await dialog.get(".ui-button-danger").trigger("click"); await flushPromises()
+  expect(remove).toHaveBeenCalledExactlyOnceWith("workspace", { deleteSessions: true })
+})
+
 test("deletion requires confirmation and retains a failed attempt for retry", async () => {
   const { wrapper, remove } = await setup()
   remove.mockRejectedValueOnce(new Error("Workspace is still in use"))

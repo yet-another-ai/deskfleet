@@ -263,6 +263,32 @@ test("Session removal keeps the workspace selected and workspace deletion reconc
   expect(store.newSessionTarget?.machine.id).toBe("local-daemon")
 })
 
+test("deleting a workspace can remove its active and archived sessions first", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, archiveState: "active" }
+  agents.sessions.archived = { ...agentSnapshot().session, id: "archived", workspaceId, archiveState: "archived", title: "Old chat" }
+  const order: string[] = []
+  vi.spyOn(agents, "remove").mockImplementation(async id => { order.push(id) })
+  vi.spyOn(platformClient.catalog, "deleteWorkspace").mockImplementation(async () => { order.push("workspace") })
+  await store.deleteWorkspace(workspaceId, { deleteSessions: true })
+  expect(order).toEqual([sessionId, "archived", "workspace"])
+  expect(store.findWorkspace(workspaceId)).toBeNull()
+})
+
+test("a session deletion failure leaves the workspace in place", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, archiveState: "archived" }
+  vi.spyOn(agents, "remove").mockRejectedValue(new Error("Worktree cleanup failed"))
+  const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
+  await expect(store.deleteWorkspace(workspaceId, { deleteSessions: true })).rejects.toThrow("Worktree cleanup failed")
+  expect(remove).not.toHaveBeenCalled()
+  expect(store.findWorkspace(workspaceId)?.workspace.id).toBe(workspaceId)
+})
+
 test("catalog notifications reconcile a selected workspace removed by another client", async () => {
   const store = setup()
   const snapshot = catalogFixture()

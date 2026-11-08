@@ -249,8 +249,14 @@ export const useFleetStore = defineStore("fleet", () => {
     if (index !== -1) catalog.value!.workspaces[index] = value
     reconcileTarget()
   }
-  async function deleteWorkspace(id: string): Promise<void> {
+  async function deleteWorkspace(id: string, options?: { deleteSessions?: boolean }): Promise<void> {
     requireWorkspace(id)
+    // The catalog rejects deletion while any Session row remains, including archived ones.
+    if (options?.deleteSessions) {
+      for (const sessionId of findWorkspace(id)?.workspace.sessions.map(session => session.id) ?? []) {
+        await agents.remove(sessionId)
+      }
+    }
     await platformClient.catalog.deleteWorkspace(id)
     catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
     reconcileTarget()

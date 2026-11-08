@@ -40,10 +40,12 @@ const pointerReference = computed(() => {
     }),
   }
 })
+const workspaceSessions = computed(() => fleet.findWorkspace(props.workspaceId)?.workspace.sessions ?? [])
 const { isLoading: pending, error, executeImmediate: remove } = useAsyncState(async () => {
   const path = route.fullPath
   const ownsPage = activeWorkspace() === props.workspaceId
-  await fleet.deleteWorkspace(props.workspaceId)
+  if (workspaceSessions.value.length) await fleet.deleteWorkspace(props.workspaceId, { deleteSessions: true })
+  else await fleet.deleteWorkspace(props.workspaceId)
   dialog.value = undefined
   if (ownsPage && path === route.fullPath && selectedMachine()) await router.replace({ name: "new-session" })
 }, undefined, { immediate: false })
@@ -111,11 +113,11 @@ defineExpose({ cursor, pointerReference })
   <WorkspaceEditDialog v-if="dialog === 'edit'" v-bind="props" @close="dialog = undefined" />
   <UiDialog v-else-if="dialog === 'delete'" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
     <DialogTitle class="ui-dialog-title">{{ t('workspace.delete') }}</DialogTitle>
-    <p class="m-0 mt-3 text-sm leading-relaxed">{{ t('workspace.deleteQuestion', { name }) }}</p>
+    <p class="m-0 mt-3 text-sm leading-relaxed">{{ workspaceSessions.length ? t('workspace.deleteSessionsQuestion', { name, count: workspaceSessions.length }, workspaceSessions.length) : t('workspace.deleteQuestion', { name }) }}</p>
     <p v-if="error" role="alert" class="mb-0 mt-3 text-sm text-ui-danger">{{ error instanceof Error ? error.message : String(error) }}</p>
     <div class="ui-dialog-actions">
       <UiButton type="button" :disabled="pending" @click="dialog = undefined">{{ t('catalog.cancel') }}</UiButton>
-      <UiButton variant="danger" type="button" :disabled="pending || disabled" @click="confirm">{{ t('catalog.confirmDelete') }}</UiButton>
+      <UiButton variant="danger" type="button" :disabled="pending || disabled" @click="confirm">{{ t(workspaceSessions.length ? 'workspace.confirmDeleteSessions' : 'catalog.confirmDelete') }}</UiButton>
     </div>
   </UiDialog>
 </template>
