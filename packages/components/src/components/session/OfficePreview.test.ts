@@ -141,6 +141,70 @@ test("retries a failed load with a fresh viewer and releases a pending viewer on
   expect(retrying.destroy).toHaveBeenCalledOnce()
 })
 
+test.each(["docx", "xlsx", "pptx"] as const)("keeps rendered %s content and controls after a background error until retry", async kind => {
+  const { view, registerActions } = render(kind)
+  await flushPromises()
+  const current = mocks.instances[0]!
+  const page = document.createElement("canvas")
+  current.host.appendChild(page)
+  current.options.onError(new Error("A later page could not be rendered"))
+  await flushPromises()
+
+  expect(view.get('[data-office-warning] [role="alert"]').text()).toBe("A later page could not be rendered")
+  expect(view.element.contains(page)).toBe(true)
+  expect(current.destroy).not.toHaveBeenCalled()
+  expect(view.find('[role="status"]').exists()).toBe(false)
+  const actions = registerActions.mock.calls.at(-1)![0]
+  expect(actions.map(action => action.id)).toEqual(kind === "xlsx" ? [] : ["zoom-in", "zoom-out", "reset"])
+  if (kind !== "xlsx") {
+    actions[0]!.onClick()
+    expect(current.zoomIn).toHaveBeenCalledOnce()
+  }
+
+  await view.get('[data-office-retry]').trigger("click")
+  await flushPromises()
+  expect(current.destroy).toHaveBeenCalledOnce()
+  expect(view.element.contains(page)).toBe(false)
+  expect(mocks.instances).toHaveLength(2)
+  expect(view.find('[data-office-warning]').exists()).toBe(false)
+  view.unmount()
+})
+
+test("background errors during loading do not finish or destroy the pending load", async () => {
+  const pending = deferred()
+  mocks.load.mockReturnValueOnce(pending.promise)
+  const { view } = render()
+  await flushPromises()
+  const current = mocks.instances[0]!
+  current.options.onError(new Error("An optional page resource is unavailable"))
+  await flushPromises()
+  expect(view.find('[role="status"]').exists()).toBe(true)
+  expect(current.destroy).not.toHaveBeenCalled()
+  pending.resolve()
+  await flushPromises()
+  expect(view.get('[data-office-warning]').text()).toContain("optional page resource")
+  expect(current.host.isConnected).toBe(true)
+  view.unmount()
+})
+
+test("fatal load rejection preserves its error when destroy reports another error", async () => {
+  const pending = deferred()
+  mocks.load.mockReturnValueOnce(pending.promise)
+  const { view, registerActions } = render("pptx")
+  await flushPromises()
+  const current = mocks.instances[0]!
+  current.destroy.mockImplementation(() => current.options.onError(new Error("Cleanup callback")))
+  pending.reject(new Error("Invalid Office archive"))
+  await flushPromises()
+  expect(current.destroy).toHaveBeenCalledOnce()
+  expect(current.host.isConnected).toBe(false)
+  expect(view.get('[role="alert"]').text()).toBe("Invalid Office archive")
+  expect(view.find('[data-office-warning]').exists()).toBe(false)
+  expect(registerActions).toHaveBeenLastCalledWith([])
+  view.unmount()
+  expect(current.destroy).toHaveBeenCalledOnce()
+})
+
 test("fetches a URL only when bytes are absent and reports an HTTP failure", async () => {
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("missing", { status: 404 }))
     .mockResolvedValueOnce(new Response(new Uint8Array([0x50, 0x4b])))

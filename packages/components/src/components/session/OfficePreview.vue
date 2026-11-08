@@ -23,6 +23,7 @@ const container = useTemplateRef<HTMLElement>("container")
 const viewer = shallowRef<OfficeViewer>()
 const loading = ref(true)
 const error = ref<string>()
+const warning = ref<string>()
 const retry = ref(0)
 
 watchEffect(() => {
@@ -45,18 +46,26 @@ watchImmediate([container, () => props.kind, () => props.src, () => props.data, 
   host.replaceChildren(surface)
   loading.value = true
   error.value = undefined
+  warning.value = undefined
 
   function dispose(): void {
-    if (viewer.value === current) viewer.value = undefined
-    current?.destroy()
+    const previous = current
     current = undefined
+    if (viewer.value === previous) viewer.value = undefined
+    previous?.destroy()
     surface.remove()
   }
   function fail(reason: unknown): void {
     if (!active) return
+    active = false
     error.value = reason instanceof Error ? reason.message : t("files.previewUnavailable")
+    warning.value = undefined
     loading.value = false
     dispose()
+  }
+  function reportWarning(reason: unknown): void {
+    // Background page/sheet errors do not invalidate already rendered content.
+    if (active) warning.value = reason instanceof Error ? reason.message : t("files.previewUnavailable")
   }
   onCleanup(() => { active = false; abort.abort(); dispose() })
 
@@ -74,7 +83,7 @@ watchImmediate([container, () => props.kind, () => props.src, () => props.data, 
       : kind === "pptx" ? (await import("@silurus/ooxml/pptx")).PptxScrollViewer
         : (await import("@silurus/ooxml/xlsx")).XlsxViewer
     if (!active) return
-    const options = { useGoogleFonts: false, enableHyperlinks: false, enableMediaPlayback: false, onError: fail }
+    const options = { useGoogleFonts: false, enableHyperlinks: false, enableMediaPlayback: false, onError: reportWarning }
     current = new Viewer(surface, options)
     viewer.value = current
     await current.load(buffer)
@@ -92,7 +101,13 @@ onBeforeUnmount(() => { registerActions?.([]) })
     class="relative min-h-64 w-full flex-1 overflow-hidden bg-white"
     :class="mode === 'inline' ? 'h-96 min-h-96' : 'h-full'"
   >
-    <div ref="container" class="absolute inset-x-0 bottom-0 top-11" />
+    <div class="absolute inset-x-0 bottom-0 top-11 flex min-h-0 flex-col">
+      <div v-if="warning && !loading && !error" data-office-warning class="flex shrink-0 items-start gap-2 border-b border-ui-border bg-ui-surface px-3 py-2">
+        <p class="m-0 min-w-0 flex-1 break-words text-xs text-ui-text-muted" role="alert">{{ warning }}</p>
+        <UiButton data-office-retry @click="retry++">{{ t('files.retry') }}</UiButton>
+      </div>
+      <div ref="container" class="min-h-0 flex-1" />
+    </div>
     <div v-if="loading" class="absolute inset-x-0 bottom-0 top-11 flex items-center justify-center bg-ui-surface p-4 text-sm text-ui-text-muted" role="status">
       {{ t('files.loadingResource') }}
     </div>
