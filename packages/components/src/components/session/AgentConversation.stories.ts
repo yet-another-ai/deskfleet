@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import type { SessionUpdate } from "@agentclientprotocol/sdk/unstable"
 import { ref } from "vue"
 import { storybookElicitation, storybookSessionEvents, storybookSessionSnapshot } from "../../../.storybook/storybook-fixtures.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import SessionComposer from "../composer/SessionComposer.vue"
 import AgentConversation from "./AgentConversation.vue"
 
@@ -114,12 +115,13 @@ export const MessageSentTransition: Story = {
   render: (args) => ({
     components: { AgentConversation, SessionComposer },
     setup() {
+      const fleet = useFleetStore()
       const events = ref([...(args.events ?? [])])
       const draft = ref("Verify the post-send spring transition.")
       function send() {
         const text = draft.value.trim()
         if (!text) return
-        const seq = String(events.value.length + 1)
+        const seq = String(events.value.length + 2)
         const createdAt = new Date().toISOString()
         draft.value = ""
         events.value = [
@@ -145,12 +147,14 @@ export const MessageSentTransition: Story = {
           },
         ]
       }
-      return { args, events, draft, send }
+      return { args, events, draft, fleet, send }
     },
     template: `
-      <div class="mx-auto flex max-w-3xl flex-col gap-6">
-        <AgentConversation v-bind="args" :events="events" />
-        <SessionComposer v-model="draft" :show-target="false" @submit="send" />
+      <div class="mx-auto flex max-w-3xl flex-col gap-6 pt-8">
+        <div class="h-56 overflow-y-auto px-2" data-session-scroll-viewport>
+          <AgentConversation v-bind="args" :events="events" />
+        </div>
+        <SessionComposer v-model="draft" :location="fleet.newSessionTarget" :show-target="false" @submit="send" />
       </div>
     `,
   }),

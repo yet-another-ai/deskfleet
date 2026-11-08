@@ -173,9 +173,6 @@ textarea {
 }
 
 /* Sent user messages morph from the composer shell into their conversation bubble. */
-ol:has([data-message-sending="true"]) .ui-conversation-history {
-  content-visibility: visible;
-}
 [data-user-message-bubble][data-message-sending="true"] {
   position: relative;
   z-index: 30;
