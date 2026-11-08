@@ -42,6 +42,8 @@ export interface AgentClient {
   /** Opt in only when the consumer projects these structured events or options. */
   capabilities?: { configOptions?: boolean; compaction?: boolean; notices?: boolean; plans?: boolean; subagents?: boolean }
   onUpdate(notification: acp.SessionNotification): void | Promise<void>
+  /** Restore known descendant ownership without publishing replayed conversation events. */
+  onSubagentSession?(sessionId: string): void
   onAuthStatus?(status: AgentAuthStatus): void | Promise<void>
   onClose?(reason: Error): void
   requestPermission?(
@@ -142,18 +144,29 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       // synchronously when that notification is read, so the flag still covers
       // the replay and is clear before any later notification is read.
       try {
+        if (replayingHistory) {
+          if (params.update.sessionUpdate === "subagent_update") {
+            if (client.capabilities?.subagents) {
+              for (const id of sessionScope.restore(params.sessionId, params.update)) client.onSubagentSession?.(id)
+            }
+            return
+          }
+          // History can reference children before their association, or sessions
+          // that no longer exist. It grants no callback access and is already in
+          // our journal. Only the root's current catalogs need restoration.
+          if (!sessionScope.isRoot(params.sessionId) || params.update.sessionUpdate !== "config_option_update"
+            && params.update.sessionUpdate !== "current_mode_update" && params.update.sessionUpdate !== "available_commands_update") return
+        }
         sessionScope.require(params.sessionId)
         if (params.update.sessionUpdate === "subagent_update") {
           if (!client.capabilities?.subagents) return
           sessionScope.associate(params.sessionId, params.update)
+          client.onSubagentSession?.(params.update.sessionId)
         }
         if (params.update.sessionUpdate === "session_message") {
           if (params.update.senderSessionId) sessionScope.require(params.update.senderSessionId)
           if (params.update.recipientSessionId) sessionScope.require(params.update.recipientSessionId)
         }
-        if (replayingHistory && params.update.sessionUpdate !== "config_option_update"
-          && params.update.sessionUpdate !== "current_mode_update" && params.update.sessionUpdate !== "available_commands_update"
-          && params.update.sessionUpdate !== "subagent_update") return
         if (!sessionScope.isRoot(params.sessionId)) {
           await client.onUpdate(params)
           return

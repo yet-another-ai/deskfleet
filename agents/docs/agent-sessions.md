@@ -969,6 +969,11 @@ titles, and usage cannot replace the root Session's controls or metadata.
 The renderer nests child activity and session messages under the owning child;
 tools and message IDs are scoped by provider Session and run. Child filesystem,
 terminal, permission, and elicitation callbacks use that same ownership check.
+During `session/load`, historical conversation and child catalog updates are
+suppressed before live ownership checks. Child declarations restore only ancestry
+that connects to the loaded root, without adding journal events. This allows
+out-of-order history while retaining strict scope checks for subsequent live
+callbacks; repeated loads do not duplicate child cards.
 
 `plan_update` and `plan_removed` maintain plans by provider plan ID, including
 item, Markdown, and file-reference content. The original `plan` update remains supported.
@@ -978,7 +983,8 @@ viewer replay and conversation forks.
 
 `_auth/status_update` and `notice` use the separate live channel. Authentication
 exposes only the provider's display identity fields; the current status is
-replayed to newly subscribed viewers and cleared when its run stops. Notices are
+replayed to newly subscribed viewers, including an explicit cleared status when
+no identity remains, and cleared when its run stops. Notices are
 live, dismissible hints and are not replayed to later subscribers. Neither kind
 enters the journal, central history synchronization, or browser conversation
 cache. Disconnect clears the viewer's live state.

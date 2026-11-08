@@ -261,12 +261,18 @@ export class AgentChannel {
           if (this.#closed) return
         }
         subscription.events = []
+        const snapshot = result as AgentSnapshot
+        // Every authorized attachment gets an authoritative identity snapshot,
+        // including absence after stop/sign-out. Queue it before enabling live
+        // forwarding so a later auth update cannot be overwritten by this clear.
+        const live: AgentLiveUpdate = this.#sessions.live?.(subscribing.sessionId) ?? {
+          sessionId: subscribing.sessionId, kind: "auth", auth: null,
+          runGeneration: Math.max(0, ...snapshot.runs.map(run => run.generation)),
+        }
+        this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: live })
         subscription.ready = true
-        const live = this.#sessions.live?.(subscribing.sessionId)
-        if (live) this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: live })
         const preview = this.#sessions.preview?.(subscribing.sessionId)
         if (preview) this.#preview(preview)
-        const snapshot = result as AgentSnapshot
         for (const permission of snapshot.permissions) {
           if ((permissionChanges.get(permission.id) ?? permission.state) === "pending") this.#permission(permission)
         }

@@ -148,10 +148,47 @@ test("announced child callbacks work during new/fork/load without admitting unkn
   })).error?.code, -32602)
   updates.length = 0
   await connection.resume({ sessionId: "saved", cwd, mcpServers: [] })
-  assert.deepEqual(updates.map(event => event.update.sessionUpdate), ["subagent_update"])
+  assert.deepEqual(updates, [])
   assert.deepEqual(await callback(connection, "saved", "fs/read_text_file", {
     sessionId: "saved-child", path: join(cwd, "opening", "saved-child.txt"),
   }), { result: { content: "saved-child\nready\n" } })
+})
+
+test("load suppresses out-of-order child history while restoring only connected descendants", { timeout: 15_000 }, async context => {
+  const updates: acp.SessionNotification[] = []
+  const restored: string[] = []
+  const { connection, cwd } = await connect(context, { capabilities: { subagents: true },
+    onUpdate: notification => { updates.push(notification) }, onSubagentSession: id => { restored.push(id) },
+  }, "replay-children")
+  for (let attempt = 0; attempt < 2; attempt++) {
+    updates.length = 0
+    restored.length = 0
+    await connection.resume({ sessionId: "saved", cwd, mcpServers: [] })
+    assert.deepEqual(updates.map(event => [event.sessionId, event.update.sessionUpdate]), [
+      ["saved", "config_option_update"], ["saved", "available_commands_update"],
+    ])
+    assert.deepEqual(restored, ["saved-child", "saved-grandchild"])
+    const path = join(cwd, "opening", "saved-grandchild.txt")
+    assert.deepEqual(await callback(connection, "saved", "fs/read_text_file", { sessionId: "saved-grandchild", path }),
+      { result: { content: "saved-grandchild\nready\n" } })
+    for (const sessionId of ["unrelated-parent", "orphan", "historical-only"]) {
+      assert.equal((await callback(connection, "saved", "fs/read_text_file", { sessionId, path })).error?.code, -32602)
+    }
+  }
+})
+
+test("live child traffic and message routes remain scoped after a history replay", { timeout: 15_000 }, async context => {
+  for (const notification of [
+    { sessionId: "orphan", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Unassociated live child" } } },
+    { sessionId: "saved", update: { sessionUpdate: "session_message", messageId: "live-message", recipientSessionId: "historical-only" } },
+  ]) {
+    let close!: (reason: Error) => void
+    const closed = new Promise<Error>(resolve => { close = resolve })
+    const { connection, cwd } = await connect(context, { capabilities: { subagents: true }, onUpdate() {}, onClose: close }, "replay-children")
+    await connection.resume({ sessionId: "saved", cwd, mcpServers: [] })
+    await connection.prompt({ sessionId: "saved", prompt, _meta: { notification: { method: "session/update", params: notification } } }).catch(() => {})
+    assert.equal((await closed as Error & { code?: number }).code, -32602)
+  }
 })
 
 test("auth notifications expose identity fields without vendor secrets", { timeout: 15_000 }, async context => {

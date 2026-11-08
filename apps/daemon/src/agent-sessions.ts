@@ -838,6 +838,7 @@ export class AgentSessions {
     await this.#runtime(sessionId).stop()
     const deleted = await this.journal.session(sessionId)
     await this.#catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId } })
+    this.journal.live.remove(sessionId)
     await this.#admissions.releaseDeleted(deleted)
     this.#runtimes.delete(sessionId)
     await this.#complete(command, null)

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { Notice } from "@agentclientprotocol/sdk/unstable"
 import type { AgentAuthStatus, AgentLiveUpdate } from "../../../packages/client/src/agent-live.ts"
 
-/** Registration-local live state. Notices are delivered once; only current auth is retained. */
+/** Registration-local live state. Notices are delivered once; the latest auth snapshot includes clears. */
 export class AgentLiveState {
   readonly #listeners = new Set<(update: AgentLiveUpdate) => void>()
   readonly #auth = new Map<string, AgentLiveUpdate & { kind: "auth" }>()
@@ -14,10 +14,11 @@ export class AgentLiveState {
 
   current(sessionId: string): AgentLiveUpdate | undefined { return this.#auth.get(sessionId) }
 
+  remove(sessionId: string): void { this.#auth.delete(sessionId) }
+
   auth(sessionId: string, runGeneration: number, auth: AgentAuthStatus | null): void {
     const update: AgentLiveUpdate & { kind: "auth" } = { sessionId, runGeneration, kind: "auth", auth }
-    if (auth) this.#auth.set(sessionId, update)
-    else this.#auth.delete(sessionId)
+    this.#auth.set(sessionId, update)
     this.#emit(update)
   }
 

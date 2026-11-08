@@ -12,12 +12,16 @@ function requireSessionId(sessionId: string): void {
 export class AcpSessionScope {
   #active?: string
   #children = new Map<string, { parent: string; cwd?: string }>()
-  #opening?: { sessionId?: string; children: Map<string, { parent: string; cwd?: string }> }
+  #opening?: {
+    sessionId?: string
+    children: Map<string, { parent: string; cwd?: string }>
+    replayedChildren: Map<string, SubagentUpdate[]>
+  }
 
   begin(expectedId?: string): void {
     if (this.#opening) throw new Error("An ACP session is already opening")
     if (expectedId !== undefined) requireSessionId(expectedId)
-    this.#opening = { sessionId: expectedId, children: new Map() }
+    this.#opening = { sessionId: expectedId, children: new Map(), replayedChildren: new Map() }
   }
 
   require(sessionId: string): void {
@@ -65,6 +69,32 @@ export class AcpSessionScope {
     children.set(child.sessionId, { parent,
       ...(child.cwd === undefined ? previous?.cwd ? { cwd: previous.cwd } : {} : child.cwd === null ? {} : { cwd: child.cwd }),
     })
+  }
+
+  /** Historical declarations may arrive out of order; only a path to the loading root grants access. */
+  restore(parent: string, child: SubagentUpdate): string[] {
+    const opening = this.#opening
+    if (!opening?.sessionId) throw new Error("ACP child history requires a known loading session")
+    requireSessionId(parent)
+    requireSessionId(child.sessionId)
+    if (parent !== opening.sessionId && !opening.children.has(parent)) {
+      const pending = opening.replayedChildren.get(parent) ?? []
+      pending.push(child)
+      opening.replayedChildren.set(parent, pending)
+      return []
+    }
+    const restored: string[] = []
+    const ready = [{ parent, child }]
+    for (const entry of ready) {
+      const known = opening.children.has(entry.child.sessionId)
+      this.associate(entry.parent, entry.child)
+      if (!known) restored.push(entry.child.sessionId)
+      const pending = opening.replayedChildren.get(entry.child.sessionId) ?? []
+      opening.replayedChildren.delete(entry.child.sessionId)
+      for (const child of pending) ready.push({ parent: entry.child.sessionId, child })
+    }
+    // Unconnected declarations remain provisional and are discarded by complete/fail.
+    return restored
   }
 
   cwd(sessionId: string): string | undefined {

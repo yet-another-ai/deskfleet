@@ -39,6 +39,7 @@ class ConfigurationProvider implements AgentProvider {
   notifyOpeningOptions = false
   openingCommands?: acp.AvailableCommand[]
   resumeCommands?: acp.AvailableCommand[]
+  resumeSubagents?: string[]
   onSetOption?: (params: acp.SetSessionConfigOptionRequest) => void
   changes: acp.SetSessionConfigOptionRequest[] = []
   prompts: { model: string; effort: string }[] = []
@@ -76,6 +77,7 @@ class ConfigurationProvider implements AgentProvider {
         this.model = "first"
         this.effort = "high"
         this.mode = "manual"
+        for (const id of this.resumeSubagents ?? []) client.onSubagentSession?.(id)
         if (this.resumeCommands) await client.onUpdate({ sessionId: "conversation", update: {
           sessionUpdate: "available_commands_update", availableCommands: this.resumeCommands,
         } })
@@ -647,6 +649,33 @@ test("provider child state stays in the parent journal without changing root con
   assert.ok(children.every(event => event.kind === "acp" && "update" in event.payload && (event.payload._meta?.deskfleet as { subagent?: boolean })?.subagent === true))
 })
 
+test("repeated resume restores child ownership without appending replayed child cards", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  await provider.client.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "subagent_update", sessionId: "child", title: "Reviewer", state: { state: "idle" },
+  } })
+  const children = async () => (await f.service.journal.history(f.sessionId, "0"))
+    .filter(event => event.kind === "acp" && "update" in event.payload
+      && (event.payload.sessionId === "child" || event.payload.update.sessionUpdate === "subagent_update"))
+  const original = await children()
+  assert.equal(original.length, 1)
+  provider.resumeSubagents = ["child"]
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await f.stop()
+    await f.resume()
+    assert.deepEqual(await children(), original)
+  }
+  const configuration = await f.configuration()
+  const title = (await f.read()).session.title
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "session_info_update", title: "Live child title" } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "config_option_update", configOptions: options("second", "low") } })
+  assert.equal((await f.read()).session.title, title)
+  assert.deepEqual(await f.configuration(), configuration)
+  assert.ok((await children()).slice(1).every(event => event.kind === "acp" && "update" in event.payload
+    && (event.payload._meta?.deskfleet as { subagent?: boolean })?.subagent === true))
+})
+
 test("stopped Sessions accept common controls addressed by provider config ID", async t => {
   const provider = new ConfigurationProvider()
   const f = await setup(t, provider, { model: "first", reasoningEffort: "low", mode: "full-access" })
@@ -678,7 +707,7 @@ test("notices remain live-only and old connections cannot restore authentication
   assert.equal(live.length, 2)
   assert.equal(f.service.live(f.sessionId)?.kind, "auth")
   await f.stop()
-  assert.equal(f.service.live(f.sessionId), undefined)
+  assert.deepEqual(f.service.live(f.sessionId), { sessionId: f.sessionId, runGeneration: 1, kind: "auth", auth: null })
   const count = live.length
   await client.onAuthStatus?.({ kind: "account", label: "Stale account" })
   await client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })
@@ -693,7 +722,7 @@ test("unexpected connection loss rejects late live updates and a resumed run pub
   const disconnected = provider.client
   await disconnected.onAuthStatus?.({ kind: "account", label: "Original account" })
   disconnected.onClose?.(new Error("connection lost"))
-  assert.equal(f.service.live(f.sessionId), undefined)
+  assert.deepEqual(f.service.live(f.sessionId), { sessionId: f.sessionId, runGeneration: 1, kind: "auth", auth: null })
   const count = live.length
   await disconnected.onAuthStatus?.({ kind: "account", label: "Stale account" })
   await disconnected.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })

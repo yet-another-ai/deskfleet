@@ -43,6 +43,27 @@ const connection = acp.agent({ name: "deskfleet-extensions-fixture" })
     return { sessionId: mode === "mismatched-id" ? "different-id" : sessionId, _meta: { request: params, content } }
   })
   .onRequest(acp.methods.agent.session.load, async ({ params, client }) => {
+    if (mode === "replay-children") {
+      const childId = `${params.sessionId}-child`
+      const grandchildId = `${params.sessionId}-grandchild`
+      const replay: acp.SessionNotification[] = [
+        { sessionId: childId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Historical child text" } } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "session_message", messageId: "historical-message", senderSessionId: grandchildId, recipientSessionId: "historical-only" } },
+        { sessionId: childId, update: { sessionUpdate: "subagent_update", sessionId: grandchildId, title: "Nested child" } },
+        { sessionId: "unrelated-parent", update: { sessionUpdate: "subagent_update", sessionId: "orphan" } },
+        { sessionId: childId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: childId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-command", description: "Historical child command" }] } },
+        { sessionId: childId, update: { sessionUpdate: "current_mode_update", currentModeId: "child-mode" } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "subagent_update", sessionId: childId, title: "Explorer", cwd: params.cwd } },
+        { sessionId: childId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: childId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-command", description: "Historical child command" }] } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "root-command", description: "Restored root command" }] } },
+      ]
+      for (const notification of replay) await client.notify(acp.methods.client.session.update, notification)
+      await openingFile(client, grandchildId, params.cwd)
+      return {}
+    }
     await announceChild(client, params.sessionId, params.cwd)
     return {}
   })

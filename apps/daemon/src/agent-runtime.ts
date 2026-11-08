@@ -311,6 +311,9 @@ export class AgentRuntime {
           ...(config.commandDirectory ? { commandDirectory: config.commandDirectory, path: commandPath(config.env ?? {}) } : {}),
         } } : {}),
         onUpdate: params => this.#update(params, run.generation),
+        onSubagentSession: id => {
+          if (this.#run?.generation === run.generation && !this.#stopping) this.#subagents.add(id)
+        },
         onAuthStatus: status => {
           if (this.#run?.generation === run.generation && !this.#stopping) this.journal.live.auth(this.sessionId, run.generation, status)
         },
