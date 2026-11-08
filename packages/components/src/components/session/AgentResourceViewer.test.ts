@@ -6,8 +6,8 @@ import { highlighter } from "../../services/code-highlight.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 
 const request: FileResourceRequest = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "src" }
-function render(api: Partial<FilesApi>, selected = request) {
-  return mount(AgentResourceViewer, { props: { api: api as FilesApi, request: selected }, global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } }, attachTo: document.body })
+function render(api: Partial<FilesApi>, selected = request, mode: "dialog" | "tab" = "dialog") {
+  return mount(AgentResourceViewer, { props: { api: api as FilesApi, request: selected, mode }, global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } }, attachTo: document.body })
 }
 
 function renderText(name: string, text: string, uri = name) {
@@ -126,11 +126,68 @@ test("shows loading progress while reading, hides download until loaded, and tri
   revokeUrl.mockRestore()
 })
 
-test("shows resolution errors without requesting a destination", async () => {
-  const saveResource = vi.fn()
-  const view = render({ resolveResource: vi.fn().mockRejectedValue(new Error("Machine offline")), saveResource })
+test.each(["dialog", "tab"] as const)("keeps oversized files downloadable through the scoped transfer queue in %s mode", async mode => {
+  const size = 17 * 1024 * 1024
+  const selected = { ...request, uri: "/work/方案.pptx" }
+  const resolveResource = vi.fn().mockResolvedValue({ name: "方案.pptx", path: selected.uri, kind: "file", size })
+  const readResource = vi.fn().mockRejectedValue(new Error("This file is too large to preview. Download it instead."))
+  const saveResource = vi.fn().mockResolvedValue("download-job")
+  const createUrl = vi.spyOn(URL, "createObjectURL")
+  const view = render({ resolveResource, readResource, saveResource }, selected, mode)
   await flushPromises()
-  expect(view.get('[role="alert"]').text()).toContain("Machine offline")
+
+  expect(view.get('[role="alert"]').text()).toContain("too large to preview")
+  expect(saveResource).not.toHaveBeenCalled()
+  await view.get('[data-preview-action="download"]').trigger("click")
+  await flushPromises()
+  expect(saveResource).toHaveBeenCalledExactlyOnceWith(selected)
+  expect(createUrl).not.toHaveBeenCalled()
+  expect(view.get('[role="alert"]').text()).toContain("too large to preview")
+  view.unmount()
+})
+
+test("shows a download authorization failure after a file resolved without bypassing the file API", async () => {
+  const resolveResource = vi.fn().mockResolvedValue({ name: "report.pptx", path: "/work/report.pptx", kind: "file", size: 17 * 1024 * 1024 })
+  const readResource = vi.fn().mockRejectedValue(new Error("This file is too large to preview. Download it instead."))
+  const saveResource = vi.fn().mockRejectedValue(new Error("File access has expired"))
+  const createUrl = vi.spyOn(URL, "createObjectURL")
+  const view = render({ resolveResource, readResource, saveResource }, request, "tab")
+  await flushPromises()
+  await view.get('[data-preview-action="download"]').trigger("click")
+  await flushPromises()
+
+  expect(saveResource).toHaveBeenCalledExactlyOnceWith(request)
+  expect(view.get('[role="alert"]').text()).toBe("File access has expired")
+  expect(createUrl).not.toHaveBeenCalled()
+  view.unmount()
+})
+
+test("downloads loaded binary files even when their preview format is unsupported", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:presentation")
+  const saveResource = vi.fn()
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "report.pptx", path: "/work/report.pptx", kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name: "report.pptx", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/octet-stream" }),
+    saveResource,
+  })
+  await flushPromises()
+
+  expect(view.find('[role="alert"]').exists()).toBe(true)
+  await view.get('[data-preview-action="download"]').trigger("click")
+  expect(click).toHaveBeenCalledOnce()
+  expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe("report.pptx")
+  expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("blob:presentation")
+  expect(saveResource).not.toHaveBeenCalled()
+  view.unmount()
+})
+
+test.each(["dialog", "tab"] as const)("shows resolution errors without offering a download in %s mode", async mode => {
+  const saveResource = vi.fn()
+  const view = render({ resolveResource: vi.fn().mockRejectedValue(new Error("File path is outside the authorized folder")), saveResource }, request, mode)
+  await flushPromises()
+  expect(view.get('[role="alert"]').text()).toContain("File path is outside the authorized folder")
+  expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
   expect(saveResource).not.toHaveBeenCalled()
   view.unmount()
 })

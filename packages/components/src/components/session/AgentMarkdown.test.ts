@@ -184,6 +184,32 @@ test("discards image completion after changing machines and keeps file links on 
   expect(resolveResource).toHaveBeenCalledWith({ ...resourceContext.value, uri: "file:///tmp/report.pdf" })
 })
 
+test("Codex Office output citations open scoped remote resources and allow binary download", async () => {
+  const path = "/work/reports/output/项目方案_12页精简版.pptx"
+  const name = "项目方案_12页精简版.pptx"
+  const data = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0])
+  const resolveResource = vi.fn().mockResolvedValue({ name, path, kind: "file", size: data.length })
+  const readResource = vi.fn().mockResolvedValue({ name, data, mimeType: "application/octet-stream" })
+  const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:presentation")
+  const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
+  const view = render({ resolveResource, readResource }, `已完成。\n\n:codex-file-citation{path="${path}" purpose="output"}`)
+  await flushPromises()
+  const link = view.get("a[data-resource-link]")
+  expect(link.text()).toBe(name)
+  expect(view.text()).not.toContain(":codex-file-citation")
+  expect(resolveResource).not.toHaveBeenCalled()
+  await link.trigger("click")
+  await flushPromises()
+  const request = { ...context().value, uri: encodeURI(path) }
+  expect(resolveResource).toHaveBeenCalledExactlyOnceWith(request)
+  expect(readResource).toHaveBeenCalledExactlyOnceWith(request, expect.objectContaining({ onProgress: expect.any(Function) }))
+  const button = view.findAll("button").find(button => button.text() === i18n.global.t("files.downloadResource"))!
+  expect(button).toBeDefined()
+  await button.trigger("click")
+  expect(download).toHaveBeenCalledOnce()
+  expect(new Uint8Array(await (create.mock.calls[0]![0] as Blob).arrayBuffer())).toEqual(data)
+})
+
 test("late image completion after unmount creates no retained URL", async () => {
   let resolve!: (value: { data: Uint8Array; name: string; mimeType: string }) => void
   const readResource = vi.fn(() => new Promise<{ data: Uint8Array; name: string; mimeType: string }>(done => { resolve = done }))
