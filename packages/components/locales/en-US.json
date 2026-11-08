@@ -1047,6 +1047,15 @@
     "collapseText": "Collapse",
     "contentType": "{type} content",
     "tool": "Tool call",
+    "toolCall": {
+      "read": "Read {target}",
+      "edit": "Edit {target}",
+      "delete": "Delete {target}",
+      "move": "Move {target}",
+      "execute": "Run {target}",
+      "search": "Search {target}",
+      "fetch": "Fetch {target}"
+    },
     "remoteMcp": {
       "details": "Call details",
       "screenshot": "{machine} · {action}"
