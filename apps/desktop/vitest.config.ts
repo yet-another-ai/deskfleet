@@ -21,7 +21,12 @@ export default defineConfig({
         test: {
           name: "main",
           environment: "node",
-          include: ["src/main/**/*.test.ts", "src/shared/**/*.test.ts", "../../packages/client/src/**/*.test.ts"],
+          include: [
+            "src/main/**/*.test.ts",
+            "src/shared/**/*.test.ts",
+            "../../packages/client/src/**/*.test.ts",
+            "../../packages/capacitor-native-desktop/src/**/*.test.ts",
+          ],
         },
       },
       {

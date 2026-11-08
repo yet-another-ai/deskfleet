@@ -194,6 +194,10 @@ description = "Build the native remote desktop window"
 wait_for = ["native:debug"]
 run = "cargo build -p deskfleet-desktop-viewer --bin deskfleet-viewer --locked"
 
+[tasks."viewer:build:android"]
+description = "Build and stage the Android native remote desktop viewer library"
+run = "node scripts/build-android-viewer.ts"
+
 [tasks."desktop:smoke-native-viewer"]
 description = "Verify native WebRTC decoding and shallow FIFO window presentation"
 depends = ["viewer:build"]
@@ -211,7 +215,7 @@ run = "pnpm --filter @deskfleet/web dev:ios"
 
 [tasks."web:dev:android"]
 description = "Run the Vue Web development server with Capacitor Android live reload"
-depends = ["install"]
+depends = ["install", "viewer:build:android"]
 run = "pnpm --filter @deskfleet/web dev:android"
 
 [tasks."web:build"]

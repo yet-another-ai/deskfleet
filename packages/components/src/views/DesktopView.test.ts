@@ -34,6 +34,7 @@ async function enableNativeViewer(): Promise<void> {
 }
 
 const originalApi = platformClient.desktop
+const originalPlatform = platformClient.platform
 let mock: ReturnType<typeof mockDesktopApi>
 const wrappers: VueWrapper[] = []
 const fullscreenCleanups: (() => void)[] = []
@@ -90,6 +91,7 @@ beforeEach(() => {
   stubWebRtc()
   mock = mockDesktopApi()
   platformClient.desktop = mock.api
+  platformClient.platform = originalPlatform
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
   const sources = new WeakMap<HTMLMediaElement, MediaProvider | null>()
   vi.spyOn(HTMLMediaElement.prototype, "srcObject", "set").mockImplementation(function (this: HTMLMediaElement, value) {
@@ -103,6 +105,7 @@ afterEach(async () => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   for (const cleanup of fullscreenCleanups.splice(0).reverse()) cleanup()
   platformClient.desktop = originalApi
+  platformClient.platform = originalPlatform
   vi.unstubAllGlobals()
   await shutdownAnalytics()
 })
@@ -198,6 +201,20 @@ test("native_presentor updates hide the action and reject a click before the DOM
   await flushPromises()
   await wrapper.get("[data-native-desktop]").trigger("click")
   expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true })
+})
+
+test("mobile Connect button directly opens the native desktop activity when native_presentor is enabled", async () => {
+  platformClient.platform = "web"
+  await enableNativeViewer()
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const wrapper = await mountDesktop()
+  expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true })
+  expect(mock.api.offer).not.toHaveBeenCalled()
 })
 
 test("discovers displays without capturing, then connects with the automatic codec", async () => {
