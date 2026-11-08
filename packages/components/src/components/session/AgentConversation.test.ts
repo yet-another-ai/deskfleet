@@ -85,3 +85,19 @@ test("only the final response offers a fork, including responses split by steeri
   await wrapper.setProps({ events, canFork: false })
   expect(wrapper.find('[aria-label="Fork session"]').exists()).toBe(false)
 })
+
+test("live notices and authentication status stay outside replayed conversation history", async () => {
+  const snapshot = agentSnapshot()
+  const events = [agentEvent(1, "acp", { sessionId: "provider", update: { sessionUpdate: "notice", severity: "error", title: "Historical notice" } })]
+  wrapper = mount(AgentConversation, { props: { snapshot, events, notices: [{ id: "live", severity: "warning", title: "Current warning", description: "Provider guidance" }] },
+    slots: { live: '<div data-auth-status>Connected with account</div>' }, global: { plugins: [i18n] } })
+  expect(wrapper.get("ol").text()).not.toContain("warning")
+  expect(wrapper.text()).not.toContain("Historical notice")
+  expect(wrapper.get("[data-live-notices]").text()).toContain("Current warning")
+  expect(wrapper.get("[data-auth-status]").element.closest("ol")).toBeNull()
+  await wrapper.get("[data-live-notices] button").trigger("click")
+  expect(wrapper.emitted("dismissNotice")).toEqual([["live"]])
+  await wrapper.setProps({ notices: [], events: [...events] })
+  expect(wrapper.find("[data-live-notices]").exists()).toBe(false)
+  expect(wrapper.text()).not.toContain("Historical notice")
+})

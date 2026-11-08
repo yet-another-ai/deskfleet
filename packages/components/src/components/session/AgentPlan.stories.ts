@@ -18,3 +18,11 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Default: Story = {}
+
+export const CancelledTodo: Story = {
+  args: { entries: [
+    { content: "Inspect provider capabilities", status: "completed" },
+    { content: "Replace the existing session store", status: "completed", _meta: { cursor: { status: "cancelled" } } },
+    { content: "Keep the current ownership model", status: "in_progress" },
+  ] },
+}

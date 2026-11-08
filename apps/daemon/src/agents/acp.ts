@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
+import type { AgentAuthStatus } from "@deskfleet/client/agent-live"
+import { agentAuthStatus, AUTH_STATUS_UPDATE_METHOD } from "./auth-status.ts"
+import { CursorNotifications, CURSOR_NOTIFICATION_METHODS } from "./cursor-notifications.ts"
 import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
 import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
 import { AcpModelReasoning } from "./reasoning-effort.ts"
@@ -36,7 +39,12 @@ export interface AgentProcess {
 export interface AgentClient {
   signal?: AbortSignal
   terminals?: AgentTerminalContext
+  /** Opt in only when the consumer projects these structured events or options. */
+  capabilities?: { configOptions?: boolean; compaction?: boolean; notices?: boolean; plans?: boolean; subagents?: boolean }
   onUpdate(notification: acp.SessionNotification): void | Promise<void>
+  /** Restore known descendant ownership without publishing replayed conversation events. */
+  onSubagentSession?(sessionId: string): void
+  onAuthStatus?(status: AgentAuthStatus): void | Promise<void>
   onClose?(reason: Error): void
   requestPermission?(
     params: acp.RequestPermissionRequest,
@@ -126,17 +134,43 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const exited = new Promise<void>(resolve => child.once("close", () => resolve()))
   let providerSessionId: string | undefined
   const sessionScope = new AcpSessionScope()
+  const cursor = new CursorNotifications()
   const filesystem = createAcpFilesystem(id => sessionScope.require(id))
-  const terminals = client.terminals ? new AcpTerminals(client.terminals, id => sessionScope.require(id)) : undefined
+  const terminals = client.terminals ? new AcpTerminals(client.terminals, id => sessionScope.require(id), id => sessionScope.cwd(id)) : undefined
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
   let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
       // session/load replays history before its response. This handler runs
       // synchronously when that notification is read, so the flag still covers
       // the replay and is clear before any later notification is read.
-      if (replayingHistory && params.update.sessionUpdate !== "config_option_update"
-        && params.update.sessionUpdate !== "current_mode_update" && params.update.sessionUpdate !== "available_commands_update") return
       try {
+        if (replayingHistory) {
+          if (params.update.sessionUpdate === "subagent_update") {
+            if (client.capabilities?.subagents) {
+              for (const id of sessionScope.restore(params.sessionId, params.update)) client.onSubagentSession?.(id)
+            }
+            return
+          }
+          // History can reference children before their association, or sessions
+          // that no longer exist. It grants no callback access and is already in
+          // our journal. Only the root's current catalogs need restoration.
+          if (!sessionScope.isRoot(params.sessionId) || params.update.sessionUpdate !== "config_option_update"
+            && params.update.sessionUpdate !== "current_mode_update" && params.update.sessionUpdate !== "available_commands_update") return
+        }
+        sessionScope.require(params.sessionId)
+        if (params.update.sessionUpdate === "subagent_update") {
+          if (!client.capabilities?.subagents) return
+          sessionScope.associate(params.sessionId, params.update)
+          client.onSubagentSession?.(params.update.sessionId)
+        }
+        if (params.update.sessionUpdate === "session_message") {
+          if (params.update.senderSessionId) sessionScope.require(params.update.senderSessionId)
+          if (params.update.recipientSessionId) sessionScope.require(params.update.recipientSessionId)
+        }
+        if (!sessionScope.isRoot(params.sessionId)) {
+          await client.onUpdate(params)
+          return
+        }
         const notified = sessionModes.notification(params)
         if (notified.update.sessionUpdate !== "config_option_update") {
           await client.onUpdate(notified)
@@ -157,6 +191,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       await client.completeElicitation?.(params)
     })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params, signal }) => {
+      sessionScope.require(params.sessionId)
       if (!client.requestPermission) return { outcome: { outcome: "cancelled" } }
       try {
         return await client.requestPermission(params, signal)
@@ -166,8 +201,10 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       }
     })
     .onRequest(acp.methods.client.elicitation.create, async ({ params, signal }) => {
-      if (!client.requestElicitation || !("sessionId" in params)
+      const sessionId = "sessionId" in params && typeof params.sessionId === "string" ? params.sessionId : undefined
+      if (!client.requestElicitation || !sessionId
         || (acp.CreateElicitationRequest.isUrl(params) && !client.completeElicitation)) return { action: "cancel" }
+      sessionScope.require(sessionId)
       try {
         return await client.requestElicitation(params, signal)
       } catch (error) {
@@ -175,6 +212,27 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
+  if (client.onAuthStatus) {
+    clientApp = clientApp.onNotification(AUTH_STATUS_UPDATE_METHOD, (params: unknown) => params, async ({ params }) => {
+      try {
+        const status = agentAuthStatus(params)
+        if (status) await client.onAuthStatus!(status)
+      } catch (error) {
+        connection.close(error)
+      }
+    })
+  }
+  for (const method of CURSOR_NOTIFICATION_METHODS) {
+    clientApp = clientApp.onNotification(method, (params: unknown) => params, async ({ params }) => {
+      if (!providerSessionId || method === "cursor/update_todos" && !client.capabilities?.plans) return
+      try {
+        const notification = cursor.update(method, params, providerSessionId, client.terminals?.cwd ?? launch.cwd)
+        if (notification) await client.onUpdate(notification)
+      } catch (error) {
+        connection.close(error)
+      }
+    })
+  }
   if (terminals) {
     clientApp = clientApp
       .onRequest(acp.methods.client.terminal.create, ({ params, signal }) => terminals.create(params, signal))
@@ -184,7 +242,10 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       .onRequest(acp.methods.client.terminal.release, ({ params, signal }) => terminals.release(params, signal))
   }
   if (client.requestElicitation) {
-    const requestElicitation = client.requestElicitation
+    const requestElicitation: NonNullable<AgentClient["requestElicitation"]> = (params, signal) => {
+      if ("sessionId" in params && typeof params.sessionId === "string") sessionScope.require(params.sessionId)
+      return client.requestElicitation!(params, signal)
+    }
     for (const method of VENDOR_QUESTION_METHODS) {
       clientApp = clientApp.onRequest(method, (params: unknown) => params, async ({ params, signal }) => {
         try {
@@ -259,6 +320,13 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.11.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
+        session: {
+          ...(client.capabilities?.configOptions ? { configOptions: { boolean: {} } } : {}),
+          ...(client.capabilities?.compaction ? { compaction: {} } : {}),
+          ...(client.capabilities?.notices ? { notices: {} } : {}),
+        },
+        ...(client.capabilities?.plans ? { plan: {} } : {}),
+        ...(client.capabilities?.subagents ? { subagents: {} } : {}),
         fs: { readTextFile: true, writeTextFile: true },
         ...(terminals ? { terminal: true } : { terminal: false }),
         ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),

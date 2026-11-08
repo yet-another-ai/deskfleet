@@ -33,6 +33,20 @@ function nativeConfiguration(mode = "acceptEdits", model = "sequoia", effort = "
     ] },
   }
 }
+function genericConfiguration(fast = false, agent = "general"): AgentConfiguration {
+  return {
+    ...nativeConfiguration(),
+    configOptions: [
+      { id: "model", name: "Model", category: "model", type: "select", currentValue: "sequoia", options: [
+        { group: "featured", name: "Featured models", options: [{ value: "sequoia", name: "Sequoia" }, { value: "orbit", name: "Orbit" }] },
+      ] },
+      { id: "fast", name: "Fast mode", description: "Faster responses.", category: "model_config", type: "boolean", currentValue: fast },
+      { id: "agent", name: "Specialist", description: "Choose an agent.", type: "select", currentValue: agent, options: [
+        { group: "available", name: "Available specialists", options: [{ value: "general", name: "General" }, { value: "reviewer", name: "Reviewer", description: "Review changes." }] },
+      ] },
+    ],
+  }
+}
 function deferredConfiguration() {
   let resolve!: (value: AgentConfiguration) => void
   let reject!: (reason: Error) => void
@@ -96,6 +110,49 @@ test("opens a compact configuration menu and dynamically populates checked subme
   await row(view, "model").trigger("keydown", { key: "ArrowRight" }); await flushPromises()
   expect(document.activeElement).toBe(options(view)[0]!.element)
   expect(view.find("select").exists()).toBe(false)
+})
+
+test("provider boolean and grouped custom selectors retain metadata and confirmed draft choices", async () => {
+  const api = vi.mocked(agents.agentConfiguration).mockResolvedValueOnce(genericConfiguration())
+  const view = render()
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(content(view).findAll('[data-agent-config-id="model"]')).toHaveLength(0)
+  expect(content(view).get('[data-agent-config-id="fast"]').attributes("aria-checked")).toBe("false")
+  expect(content(view).get('[data-agent-config-id="fast"]').text()).toContain("Faster responses.")
+  await row(view, "model").trigger("click")
+  expect(content(view).text()).toContain("Featured models")
+  await row(view, "model").trigger("click")
+  const pending = deferredConfiguration()
+  api.mockReturnValueOnce(pending.promise)
+  await content(view).get('[data-agent-config-id="fast"]').trigger("click"); await flushPromises()
+  expect(api.mock.calls.at(-1)![0]).toMatchObject({ configValues: { fast: true }, restore: { configValues: { fast: false, agent: "general" } } })
+  expect(content(view).get('[data-agent-config-id="fast"]').attributes("aria-checked")).toBe("false")
+  expect(content(view).get('[data-agent-config-id="agent"]').attributes("data-disabled")).toBeDefined()
+  pending.resolve(genericConfiguration(true)); await flushPromises()
+  expect(content(view).get('[data-agent-config-id="fast"]').attributes("aria-checked")).toBe("true")
+  expect(agents.draftConfiguration.configValues).toEqual({ fast: true, agent: "general" })
+  api.mockResolvedValueOnce(genericConfiguration(true, "reviewer"))
+  await content(view).get('[data-agent-config-id="agent"]').trigger("click"); await flushPromises()
+  expect(content(view).text()).toContain("Available specialists")
+  expect(content(view).text()).toContain("Review changes.")
+  await content(view).get('[role="menuitemradio"][data-value="reviewer"]').trigger("click"); await flushPromises()
+  expect(api.mock.calls.at(-1)![0]).toMatchObject({ configValues: { agent: "reviewer" }, restore: { configValues: { fast: true, agent: "general" } } })
+  expect(agents.draftConfiguration.configValues).toEqual({ fast: true, agent: "reviewer" })
+})
+
+test("generic live changes use the audited Session configuration API and retain false values", async () => {
+  agents.configurations["30"] = genericConfiguration(true)
+  vi.spyOn(agents, "sessionConfiguration").mockResolvedValue(agents.configurations["30"]!)
+  const configure = vi.spyOn(agents, "configureSession").mockImplementation(async id => {
+    agents.configurations[id] = genericConfiguration(false)
+    return agents.configurations[id]!
+  })
+  const view = render(); await view.setProps({ sessionId: "30" })
+  await trigger(view).trigger("click"); await flushPromises()
+  await content(view).get('[data-agent-config-id="fast"]').trigger("click"); await flushPromises()
+  expect(configure).toHaveBeenCalledExactlyOnceWith("30", { configValues: { fast: false } })
+  expect(content(view).get('[data-agent-config-id="fast"]').attributes("aria-checked")).toBe("false")
+  expect(agents.agentConfiguration).not.toHaveBeenCalled()
 })
 
 test("controlled draft configuration discovers and edits form-local choices without changing composer defaults", async () => {

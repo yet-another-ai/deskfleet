@@ -104,7 +104,7 @@ export function scheduleInput(value: unknown): ScheduleInput {
     if (target.configuration !== undefined) {
       const config = scheduleObject(target.configuration)
       validateAgentConfigurationSelection(config)
-      parsed.configuration = Object.fromEntries(["model", "reasoningEffort", "mode"].filter(key => config[key] !== undefined).map(key => [key, config[key]]))
+      parsed.configuration = Object.fromEntries(["model", "reasoningEffort", "mode", "configValues"].filter(key => config[key] !== undefined).map(key => [key, config[key]]))
     }
   } else throw new Error("Invalid schedule target")
   return { title: nonempty(input.title, "title", 200), prompt: nonempty(input.prompt, "prompt", 100_000), workspaceId: input.workspaceId as string,

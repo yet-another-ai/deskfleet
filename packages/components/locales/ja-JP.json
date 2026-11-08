@@ -697,6 +697,31 @@
     "showHidden": "隠し項目を表示", "select": "選択したファイルを添付"
   },
   "agent": {
+    "protocol": {
+      "planCancelled": "キャンセル済み",
+      "compaction": "コンテキスト圧縮",
+      "compactionStates": {
+        "in_progress": "コンテキストを圧縮中",
+        "completed": "コンテキストを圧縮しました",
+        "failed": "圧縮に失敗しました",
+        "cancelled": "圧縮をキャンセルしました",
+        "unknown": "圧縮状態の更新"
+      },
+      "subagent": "サブエージェント",
+      "subagentStates": {
+        "running": "作業中",
+        "idle": "待機中",
+        "requires_action": "入力が必要",
+        "unknown": "状態不明"
+      },
+      "sessionMessage": "エージェントメッセージ",
+      "messageRoute": "{sender} → {recipient}",
+      "session": "セッション",
+      "userMessage": "ユーザーメッセージ",
+      "authentication": "エージェントの認証状態",
+      "chatAboutPlan": "この計画について相談",
+      "skipInterview": "質問をスキップ"
+    },
     "conversation": "会話",
     "usage": {
       "title": "セッションの使用量", "context": "コンテキスト使用量",

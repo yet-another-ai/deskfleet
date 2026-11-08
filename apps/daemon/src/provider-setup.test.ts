@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { createRequire } from "node:module"
 import { join } from "node:path"
 import { test } from "node:test"
 import { setImmediate as nextTurn } from "node:timers/promises"
 import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
+import { createTerminal } from "@deskfleet/native"
 import type { AgentProviderInput } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
 import { probeProvider, ProviderSetup } from "./provider-setup.ts"
@@ -453,39 +453,38 @@ test("bundled DeepSeek login bridges the Electron host into a Windows terminal",
   assert.match(f.runs[0]!.args!.join(" "), /login/u)
 })
 
-test("Windows login carrier hides pasted callback input and forwards cancellation", { skip: process.platform !== "win32", timeout: 60_000 }, async () => {
-  const runtime = sourceDshRuntime(import.meta.url)
-  const dependency = createRequire(createRequire(runtime.entryPoint).resolve("@deepseek-ai/dsh-subprocess-local"))
-  const pty = dependency("node-pty") as { spawn(command: string, args: string[], options: { env: NodeJS.ProcessEnv; cwd: string }): {
-    onData(listener: (text: string) => void): void
-    onExit(listener: (event: { exitCode: number }) => void): void
-    write(text: string): void
-    destroy(): void
-  } }
+test("Windows login carrier hides pasted callback input and forwards cancellation through the native terminal", { skip: process.platform !== "win32", timeout: 60_000 }, async () => {
   for (const [input, expected] of [["fixture-private-callback\r", 0], ["\u0003", 130]] as const) {
     const script = "let input = ''; process.stdout.write('LOGIN_READY'); process.stdin.on('data', data => { input += data; if (input.includes(String.fromCharCode(3))) process.exit(130); if (/[\\r\\n]/.test(input)) { process.stdout.write('LOGIN_RECEIVED'); process.exit(0); } })"
     const launch = interactiveProviderProcess({ command: process.execPath, args: ["-e", script],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }, "win32", true)
-    const terminal = pty.spawn(launch.command, launch.args ?? [], { env: launch.env ?? {}, cwd: process.cwd() })
+    // ProviderSetup uses this terminal; node-pty is only a private DSH dependency
+    // with a separate ConPTY process-exit and output-draining implementation.
+    const terminal = await createTerminal({ ...launch, cwd: process.cwd(), cols: 100, rows: 24,
+      env: Object.fromEntries(Object.entries(launch.env ?? {}).filter((entry): entry is [string, string] => entry[1] !== undefined)) })
     let output = ""
     let sent = false
-    let timedOut = false
-    // ConPTY, PowerShell, and the child all start under the full suite's CI load.
-    const timeout = setTimeout(() => { timedOut = true; terminal.destroy() }, 20_000)
+    let timeout: NodeJS.Timeout | undefined
+    const diagnostic = () => `Windows login carrier (${sent ? "input sent" : "waiting for LOGIN_READY"}): ${JSON.stringify(output)}`
     try {
-      const exited = new Promise<{ exitCode: number }>(resolve => terminal.onExit(resolve))
-      terminal.onData(text => {
-        output += text
-        if (!sent && output.includes("LOGIN_READY")) { sent = true; terminal.write(input) }
-      })
-      const { exitCode } = await exited
-      const diagnostic = `Windows login carrier (${sent ? "input sent" : "waiting for LOGIN_READY"}): ${JSON.stringify(output)}`
-      assert.equal(timedOut, false, `Timed out after 20 seconds. ${diagnostic}`)
-      assert.equal(exitCode, expected, diagnostic)
+      const exited = (async () => {
+        for (;;) {
+          const event = await terminal.nextEvent()
+          assert.ok(event, `Terminal ended without an exit event. ${diagnostic()}`)
+          if (event.kind === "error") throw new Error(event.error)
+          if (event.data) output += event.data.toString("utf8")
+          if (!sent && output.includes("LOGIN_READY")) { sent = true; await terminal.write(Buffer.from(input)) }
+          if (event.kind === "exit") return event.exitCode
+        }
+      })()
+      const exitCode = await Promise.race([exited, new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timed out after 20 seconds. ${diagnostic()}`)), 20_000)
+      })])
+      assert.equal(exitCode, expected, diagnostic())
       assert.equal(sent, true)
       assert.doesNotMatch(output, /fixture-private-callback/u)
       if (expected === 0) assert.match(output, /LOGIN_RECEIVED/u)
-    } finally { clearTimeout(timeout); terminal.destroy() }
+    } finally { clearTimeout(timeout); await terminal.close() }
   }
 })
 

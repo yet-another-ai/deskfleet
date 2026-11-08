@@ -977,6 +977,31 @@
     "select": "Attach selected"
   },
   "agent": {
+    "protocol": {
+      "planCancelled": "Cancelled",
+      "compaction": "Context compaction",
+      "compactionStates": {
+        "in_progress": "Compacting context",
+        "completed": "Context compacted",
+        "failed": "Compaction failed",
+        "cancelled": "Compaction cancelled",
+        "unknown": "Compaction update"
+      },
+      "subagent": "Subagent",
+      "subagentStates": {
+        "running": "Working",
+        "idle": "Idle",
+        "requires_action": "Needs input",
+        "unknown": "Status unavailable"
+      },
+      "sessionMessage": "Agent message",
+      "messageRoute": "{sender} → {recipient}",
+      "session": "Session",
+      "userMessage": "User message",
+      "authentication": "Agent authentication",
+      "chatAboutPlan": "Discuss this plan",
+      "skipInterview": "Skip interview"
+    },
     "conversation": "Conversation",
     "usage": {
       "title": "Session usage",

@@ -892,6 +892,9 @@ The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The Claude
 Code template connects Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp).
+Both bundled adapters advertise strict steering with an idle `promptRequired`
+outcome, so the daemon retains ownership of any new turn. The Codex patch
+implements that boundary; the Claude patch advertises its existing implementation.
 The Cursor template launches the installed Cursor CLI directly as `agent acp`;
 Cursor speaks ACP and does not use a bundled adapter. The process starts in the
 Session worktree's first directory. Cursor ACP loads project skills, rules, and
@@ -899,9 +902,12 @@ subagents from that launch directory; the `session/new` working directory still
 selects file tools. After initialization it
 calls `authenticate` with `cursor_login` when Cursor advertises that method,
 except during connection tests, which use credentials loaded at CLI startup.
+Cursor's question and plan requests use shared elicitation decisions; its todo,
+task, and image notifications become structured conversation activity.
 The Grok template launches the installed Grok CLI directly as `grok agent stdio`.
 It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise with
-`cached_token` after `grok login`.
+`cached_token` after `grok login`. Grok's plan-interview discussion and skip
+actions use the same audited question flow as ordinary answers.
 The Oh My Pi template launches the installed `omp` CLI directly as `omp acp`,
 using its existing provider credentials. Its native ACP server supplies session
 configuration and supports client filesystem, terminal, and MCP integration.
@@ -966,8 +972,7 @@ release, and expose only read-only output to human viewers. The terminal
 message transport carries their output without copying it into conversation history.
 
 ACP capability negotiation determines which operations an adapter supports.
-Pi is a further integration candidate. Managed
-sessions, imported history, resumed sessions, and attachment to an existing CLI
+Managed sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
 
@@ -979,16 +984,28 @@ the sole ACP client toward each provider process.
 Credentials remain on the executing machine. ACP approval callbacks do not confine
 agents that execute tools directly.
 
-The composer discovers model, reasoning, and mode choices from the provider through the
-same ACP facade. Draft discovery uses a temporary provider session in
-the Workspace's default directory without creating a managed Session or Worktree.
+Structured plans, context compactions, child-agent activity, and session messages
+are projections of this same journal. Provider child Session IDs remain scoped
+to their declaring parent and connection; they do not allocate separate
+DeskFleet Workspaces or Worktrees. Their original provider IDs are retained, and
+child updates cannot replace the root Session's configuration, title, command
+catalog, or usage. Transient authentication status and user notices travel through
+a separate live channel and are excluded from the journal and history caches.
+
+The composer discovers model, reasoning, mode, and additional select or boolean
+options from the provider through the same ACP facade. Provider labels, categories,
+and option groups are retained; unknown categories remain usable. Draft discovery
+uses a temporary provider session in the Workspace's default directory without
+creating a managed Session or Worktree.
 Session creation applies the selected configuration before delivering prompts;
 existing Session controls change these choices between turns on that Session's
 provider connection. A Session's provider identity changes only through an
 explicit Agent switch between turns, which starts a fresh provider conversation
 without transferring prior context; clients warn about the lost prompt cache.
 Configuration options and confirmed changes use the existing ACP event journal
-so attached viewers can follow them.
+so attached viewers can follow them. Arbitrary option values are restored with
+the common controls on resume, fork, and draft-probe replacement; explicit model
+changes accept the new model's dependent defaults.
 
 Composer completions share this provider discovery for `/` commands and supported
 `$` skill invocations. `@` file search runs on the target daemon across the

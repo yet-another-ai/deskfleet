@@ -106,7 +106,7 @@ test("fork history preserves resolved conversation without copying live domain r
   const events = await f.history(f.childId)
   assert.deepEqual(events.map(event => event.kind), ["input", "acp", "permission", "acp", "elicitation", "acp"])
   assert.ok(events.every(event => event.sessionId === f.childId && !event.commandId && !event.inputId && !event.turnId))
-  assert.ok(events.every(event => "sessionId" in event.payload && event.payload.sessionId === f.childId))
+  assert.ok(events.every(event => "sessionId" in event.payload && event.payload.sessionId === (event.kind === "acp" ? "provider-source" : f.childId)))
   const entries = projectConversation(events, child)
   assert.deepEqual(entries.map(entry => entry.kind), ["input", "message", "tool", "elicitation", "message"])
   assert.equal(entries[2]?.kind === "tool" ? entries[2].permission?.state : undefined, "resolved")
@@ -212,4 +212,25 @@ test("fork history excludes accepted URLs still awaiting completion and keeps fi
   assert.deepEqual(entries.map(entry => entry.elicitation.id), ["completed", "declined", "cancelled", "answered-form"])
   assert.equal(entries[0]?.elicitation.completedAt, now)
   assert.deepEqual(child.elicitations, [])
+})
+
+test("fork retains structured activity and opaque provider IDs for child lanes", async context => {
+  const f = await fixture(context)
+  const events = [
+    f.acp({ sessionUpdate: "plan_update", plan: { type: "markdown", planId: "plan", content: "Review the implementation" } }),
+    f.acp({ sessionUpdate: "subagent_update", sessionId: "reviewer", title: "Reviewer", state: { state: "idle" } }),
+    f.journal.event(f.sourceId, "acp", { sessionId: "reviewer", _meta: { deskfleet: { subagent: true } }, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Review complete" } } }, { runGeneration: 1 }),
+    f.acp({ sessionUpdate: "compaction_update", compactionId: "compact", status: "completed" }),
+  ]
+  await f.journal.commit(await f.journal.read(f.sourceId), { events,
+    runs: [{ sessionId: f.sourceId, generation: 1, state: "stopped", startedAt: timestamp(), endedAt: timestamp() }],
+  })
+  await copyForkHistory(f.journal, await f.journal.read(f.sourceId), f.childId)
+  const history = (await f.history(f.childId)).filter(event => event.kind === "acp")
+  assert.deepEqual(history.map(event => event.payload), events.map(event => event.payload))
+  assert.ok(history.every(event => event.sessionId === f.childId))
+  const entries = projectConversation(history, await f.journal.read(f.childId))
+  assert.deepEqual(entries.map(entry => entry.kind), ["structured_plan", "subagent", "compaction"])
+  const reviewer = entries.find(entry => entry.kind === "subagent")
+  assert.equal(reviewer?.kind === "subagent" && reviewer.steps[0]?.kind, "message")
 })

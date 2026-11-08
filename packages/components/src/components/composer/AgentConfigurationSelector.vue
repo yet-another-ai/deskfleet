@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
+import { DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentChoice, AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
+import AgentConfigOptionMenu from "./AgentConfigOptionMenu.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import { useProvidersStore } from "../../stores/providers.ts"
@@ -30,7 +31,7 @@ const pendingProvider = ref<string>()
 const pendingProviderName = computed(() => providers.providers.find(provider => provider.id === pendingProvider.value)?.name ?? pendingProvider.value)
 const currentProviderName = computed(() => selectedProvider.value?.name ?? providerId.value ?? "")
 const providerUnavailable = computed(() => !!(props.sessionId || props.providerId) && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
+const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
 watch(configuration, value => emit("configuration", value), { immediate: true })
@@ -38,7 +39,25 @@ defineExpose({ discover })
 const root = useTemplateRef<{ $el: HTMLElement }>("root")
 type Control = "agent" | "model" | "reasoning" | "mode"
 interface ConfigurationControl { id: Control; label: string; value?: string; name?: string; options: AgentChoice[]; disabled: boolean }
-const active = ref<Control | null>(null)
+const active = ref<string | null>(null)
+const extraOptions = computed(() => {
+  const current = configuration.value
+  const primary = new Set([current?.models?.id, current?.reasoningEfforts?.id, current?.modes?.id])
+  return current?.configOptions?.filter(option => !primary.has(option.id)) ?? []
+})
+
+function optionGroups(control: ConfigurationControl) {
+  const id = control.id === "model" ? configuration.value?.models?.id
+    : control.id === "reasoning" ? configuration.value?.reasoningEfforts?.id
+      : control.id === "mode" ? configuration.value?.modes?.id : undefined
+  const raw = configuration.value?.configOptions?.find(option => option.id === id)
+  if (raw?.type === "select" && raw.options.some(row => "group" in row)) {
+    return raw.options.map(row => "group" in row ? {
+      id: row.group, name: row.name, options: row.options.flatMap(value => control.options.filter(option => option.id === value.value)),
+    } : { id: row.value, name: undefined, options: control.options.filter(option => option.id === row.value) })
+  }
+  return [{ id: control.id, name: undefined, options: control.options }]
+}
 
 function effortName(value: string, fallback?: string): string {
   return te(`composer.efforts.${value}`) ? t(`composer.efforts.${value}`) : fallback ?? value
@@ -94,7 +113,7 @@ async function confirmSwitch(): Promise<void> {
         <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 w-64" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
+        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 max-h-[var(--reka-popper-available-height)] w-72 overflow-y-auto" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
           <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
             <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
               <span>{{ control.label }}</span>
@@ -105,7 +124,9 @@ async function confirmSwitch(): Promise<void> {
             <DropdownMenuPortal>
               <DropdownMenuSubContent data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto" loop>
                 <DropdownMenuRadioGroup :model-value="control.value">
-                  <DropdownMenuRadioItem v-for="option in control.options" :key="option.id" as="button" type="button" :value="option.id" :data-value="option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(control.id, option.id)">
+                  <template v-for="group in optionGroups(control)" :key="group.id">
+                    <DropdownMenuLabel v-if="group.name" class="px-2.5 py-1.5 text-xs font-medium text-ui-text-muted">{{ group.name }}</DropdownMenuLabel>
+                  <DropdownMenuRadioItem v-for="option in group.options" :key="option.id" as="button" type="button" :value="option.id" :data-value="option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(control.id, option.id)">
                     <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
                     <span class="min-w-0 flex-1 text-left">
                       <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
@@ -113,10 +134,13 @@ async function confirmSwitch(): Promise<void> {
                     </span>
                     <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
                   </DropdownMenuRadioItem>
+                  </template>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
+          <DropdownMenuSeparator v-if="extraOptions.length" class="-mx-1 my-1 h-px bg-ui-border" />
+          <AgentConfigOptionMenu v-for="option in extraOptions" :key="option.id" :option="option" :open="active === `config:${option.id}`" :disabled="disabled || loading || !sessionReady" @update:open="active = $event ? `config:${option.id}` : active === `config:${option.id}` ? null : active" @change="changeConfigOption(option.id, $event)" />
           <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
           <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
             <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>

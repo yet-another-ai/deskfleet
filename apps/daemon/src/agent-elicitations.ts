@@ -8,6 +8,7 @@ interface RuntimeState {
   turnId?: string
   running: boolean
   connected: boolean
+  ownsSession?(providerSessionId: string): boolean
 }
 interface PendingElicitation {
   signal: AbortSignal
@@ -52,7 +53,7 @@ export class AgentElicitations {
     try {
       const saved = await this.#journal.serial(this.#sessionId, async () => {
         const snapshot = await this.#journal.read(this.#sessionId)
-        if (providerSessionId !== snapshot.session.providerSessionId || !this.#isLive(elicitation, snapshot)) return false
+        if ((providerSessionId !== snapshot.session.providerSessionId && !this.#state().ownsSession?.(providerSessionId)) || !this.#isLive(elicitation, snapshot)) return false
         if (url?.completedAt) elicitation.completedAt = url.completedAt
         await this.#journal.commit(snapshot, { elicitations: [elicitation], events: [this.#journal.event(this.#sessionId, "elicitation", elicitation)] })
         return true
@@ -83,7 +84,7 @@ export class AgentElicitations {
       const previous = snapshot.elicitations.find(row => row.id === url.id)
       if (!previous) return // Creation will include the completion observed above.
       if (!acp.CreateElicitationRequest.isUrl(previous.request) || !("sessionId" in previous.request)
-        || previous.request.sessionId !== snapshot.session.providerSessionId || previous.runGeneration !== generation
+        || (previous.request.sessionId !== snapshot.session.providerSessionId && !this.#state().ownsSession?.(previous.request.sessionId)) || previous.runGeneration !== generation
         || previous.completedAt || previous.state !== "pending" && previous.response?.action !== "accept") return
       const completed = { ...previous, completedAt: url.completedAt }
       await this.#journal.commit(snapshot, { elicitations: [completed], events: [this.#journal.event(this.#sessionId, "elicitation", completed)] })
