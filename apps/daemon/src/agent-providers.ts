@@ -107,9 +107,7 @@ export class AgentProviders {
   }
 
   snapshot(): ProviderSnapshot {
-    const templates = AGENT_PROVIDER_TEMPLATES.map(template => ({ ...template,
-      ...(template.id === "antigravity" && process.platform === "win32" ? { defaultBinaryPath: "agy_acp_server.exe" } : {}),
-    }))
+    const templates = AGENT_PROVIDER_TEMPLATES.map(template => ({ ...template }))
     return { revision: this.#revision, shellEnvironmentDefault: shellEnvironmentEnabled(undefined), templates, providers: structuredClone(this.#providers) }
   }
 
@@ -168,8 +166,7 @@ export class AgentProviders {
       provider,
       config: {
         name: record.name,
-        binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined
-          : record.template === "antigravity" && process.platform === "win32" ? "agy_acp_server.exe" : template.defaultBinaryPath),
+        binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined : template.defaultBinaryPath),
         env: inheritShell ? providerEnvironment(record, this.#directory)
           : commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),

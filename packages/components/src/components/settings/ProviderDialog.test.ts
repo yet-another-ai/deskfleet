@@ -53,7 +53,7 @@ test.each([
   ["pi", "Pi Coding Agent", "pi", "pi"],
   ["omp", "Oh My Pi", "omp", "pi"],
   ["deepseek-harness", "DeepSeek Harness", "dsh", "deepseek"],
-  ["antigravity", "Antigravity", "agy_acp_server.par", "antigravity"],
+  ["antigravity", "Antigravity", "agy", "antigravity"],
 ] as const)("the %s template defaults to its installed CLI and mark", async (template, name, binary, mark) => {
   const { view, save } = await render()
   await pick(view, template)

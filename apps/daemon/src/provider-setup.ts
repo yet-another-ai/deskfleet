@@ -3,11 +3,9 @@ import { constants } from "node:fs"
 import { access, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
-import { antigravityInstallDirectory, antigravityInstaller } from "./antigravity-install.ts"
 import { dshAccountProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
 import { providerEnvironment } from "./provider-environment.ts"
 import { loadShellEnvironment, SHELL_ENVIRONMENT_TIMEOUT_MS } from "./shell-environment.ts"
-import { antigravityLoginProcess } from "./agents/antigravity.ts"
 import { AGENT_PROVIDER_TEMPLATES, providerInput, shellEnvironmentEnabled, type AgentProviderInput, type AgentProviderTemplateId, type ProviderProbeResult } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand } from "./provider-setup-process.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
@@ -71,7 +69,6 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   if (template === "codex" && env.CODEX_INSTALL_DIR) directories.push(env.CODEX_INSTALL_DIR)
   if (template === "grok" && env.GROK_BIN_DIR) directories.push(env.GROK_BIN_DIR)
   if (template === "omp" && env.PI_INSTALL_DIR) directories.push(env.PI_INSTALL_DIR)
-  if (template === "antigravity") directories.push(antigravityInstallDirectory(ctx))
   directories.push(path.join(home, ".local", "bin"))
   if (template === "grok") directories.push(path.join(home, ".grok", "bin"))
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
@@ -82,6 +79,7 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
     if (template === "cursor") directories.push(path.join(local, "cursor-agent"))
     if (template === "omp") directories.push(path.join(local, "omp"))
+    if (template === "antigravity") directories.push(path.join(local, "agy", "bin"))
   } else directories.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin")
   return directories
 }
@@ -122,12 +120,12 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
       win32.join(ctx.env.SYSTEMROOT ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0"),
     ])
     if (!shell) return "PowerShell is required to run the official installer."
-    if (template === "antigravity") return antigravityInstaller({ ...ctx, shell })
     if (template === "omp") return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       "$ErrorActionPreference = 'Stop'; & ([scriptblock]::Create((Invoke-RestMethod 'https://omp.sh/install.ps1'))) -Binary; if ($LASTEXITCODE) { exit $LASTEXITCODE }"] }
     const url = template === "codex" ? "https://chatgpt.com/codex/install.ps1"
       : template === "claude-code" ? "https://claude.ai/install.ps1"
-        : template === "pi" ? "https://pi.dev/install.ps1" : "https://cursor.com/install?win32=true"
+        : template === "pi" ? "https://pi.dev/install.ps1"
+          : template === "antigravity" ? "https://antigravity.google/cli/install.ps1" : "https://cursor.com/install?win32=true"
     return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       `$ErrorActionPreference = 'Stop'; Invoke-RestMethod '${url}' | Invoke-Expression; if ($LASTEXITCODE) { exit $LASTEXITCODE }`] }
   }
@@ -140,12 +138,12 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     ? await findCommand("bash", { ...ctx, env: { ...ctx.env, PATH: "" } }, bashDirectories)
     : await findCommand("bash", ctx, bashDirectories)
   if (!shell) return ctx.platform === "win32" ? "Git for Windows is required to install Grok." : "Bash is required to run the official installer."
-  if (template === "antigravity") return antigravityInstaller({ ...ctx, shell })
   if (template === "omp") return { command: shell, args: ["-o", "pipefail", "-c", "curl -fsSL 'https://omp.sh/install' | sh -s -- --binary"] }
   const url = template === "codex" ? "https://chatgpt.com/codex/install.sh"
     : template === "claude-code" ? "https://claude.ai/install.sh"
       : template === "cursor" ? "https://cursor.com/install"
-        : template === "pi" ? "https://pi.dev/install.sh" : "https://x.ai/cli/install.sh"
+        : template === "pi" ? "https://pi.dev/install.sh"
+          : template === "antigravity" ? "https://antigravity.google/cli/install.sh" : "https://x.ai/cli/install.sh"
   return { command: shell, args: ["-o", "pipefail", "-c", `curl -fsSL '${url}' | ${template === "codex" || template === "pi" ? "sh" : "bash"}`] }
 }
 
@@ -154,22 +152,13 @@ function text(output: string): string {
 }
 
 async function identity(template: AgentProviderTemplateId, binary: string, ctx: Context): Promise<string | undefined> {
-  if (template === "antigravity" && ctx.platform === "win32"
-    && /^agy_acp_server(?:\.exe)?$/iu.test(ctx.path.basename(binary))
-    && await ctx.executable(ctx.path.join(ctx.path.dirname(binary), "localharness_external.exe"))) {
-    return "Antigravity ACP"
-  }
   const result = await ctx.run(binary, ["--version"], ctx.env, ctx.home)
   if (result.code !== 0) return undefined
   const version = text(`${result.stdout}\n${result.stderr}`)
-  if (template === "antigravity") {
-    if (!/agy_acp_server|\bAGY ACP Server\b/iu.test(version)) return undefined
-    const label = version.match(/^Build label:\s*(.+)$/mu)?.[1]
-    return label ? `Antigravity ${label.slice(0, 180)}` : "Antigravity ACP"
-  }
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
     : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu
-      : template === "omp" ? /\bomp\b|Oh My Pi/iu : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu : /\bgrok\b/iu
+      : template === "omp" ? /\bomp\b|Oh My Pi/iu : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu
+        : template === "antigravity" ? /\bagy\b|Antigravity/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
     // Some CLIs print just a version; their help identifies the provider.
     const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
@@ -266,7 +255,6 @@ async function probe(input: AgentProviderInput, dependencies: ProbeDependencies,
     return { ...base, status: "invalid", message: "The bundled DeepSeek runtime could not report its version. Retry detection or reinstall DeskFleet." }
   }
   const commands = provider.binaryPath ? [provider.binaryPath] : provider.template === "cursor" ? ["cursor-agent", "agent"]
-    : provider.template === "antigravity" && ctx.platform === "win32" ? ["agy_acp_server.exe"]
     : [AGENT_PROVIDER_TEMPLATES.find(template => template.id === provider.template)!.defaultBinaryPath]
   let invalid = false
   let message: string | undefined
@@ -332,13 +320,10 @@ export class ProviderSetup {
       return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)
     }
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
-    if (provider.template === "antigravity") {
-      return this.#run({ ...antigravityLoginProcess(result.binaryPath, ctx.env, ctx.platform), cwd: ctx.home }, `${provider.name} sign in`)
-    }
     // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]
-      : provider.template === "cursor" ? ["login"] : provider.template === "pi" ? []
-        : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
+      : provider.template === "cursor" ? ["login"] : provider.template === "antigravity" ? ["acp", "--login"]
+        : provider.template === "pi" ? [] : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
     const launch = launchProviderCommand(result.binaryPath, args,
       provider.template === "cursor" ? { ...ctx.env, NO_OPEN_BROWSER: "1" } : ctx.env, ctx.platform)
     return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)

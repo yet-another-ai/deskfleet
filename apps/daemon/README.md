@@ -246,7 +246,7 @@ mise exec -- node apps/daemon/src/main.ts agent grok --check
 mise exec -- node apps/daemon/src/main.ts agent pi --check
 mise exec -- node apps/daemon/src/main.ts agent omp --check
 mise exec -- node apps/daemon/src/main.ts agent deepseek-harness --check
-mise exec -- node apps/daemon/src/main.ts agent antigravity --binary-path /path/to/agy_acp_server.par --check
+mise exec -- node apps/daemon/src/main.ts agent antigravity --check
 ```
 
 `--check` initializes ACP and exits without creating a session or sending a
@@ -259,7 +259,7 @@ Agent configuration uses these common options:
 | Option | Meaning |
 | --- | --- |
 | `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, or `agy_acp_server.par` (`agy_acp_server.exe` on Windows) on PATH |
+| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, or `agy` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -321,17 +321,13 @@ checks. `mise run dsh:stage` prepares `apps/daemon/dist/dsh` for standalone
 distribution; `mise run dsh:smoke` verifies that payload. To check the installed
 source runtime, run `mise exec -- node packages/dsh-runtime/smoke.ts`.
 
-Antigravity runs Google's standalone ACP runtime, `agy_acp_server.par` on macOS
-and Linux or `agy_acp_server.exe` on Windows. Linux launches add `--uid=`.
-Settings downloads the pinned runtime and matching `localharness_external`
-from Google, verifies the package's SHA-256, and saves the resolved executable
-path. For CLI use, pass that path with `--binary-path` and keep the matching
-harness beside it. Settings offers **Log in** through Antigravity's ACP `authenticate` flow; for
-standalone CLI use without Settings, authenticate through an ACP client on the
-same machine first. Its default profile settings are at
-`~/.gemini/antigravity-acp/settings.json`, with `GEMINI_HOME` selecting the profile
-root. Discovery leaves authentication unknown; **Test Connection** opens a
-session using existing credentials. See
+Antigravity uses native ACP: the daemon runs `` `<binary> acp` `` with `agy` as
+the default executable. Settings installs the CLI through Google's official
+installer and runs `agy acp --login` for interactive sign-in. For standalone CLI
+use without Settings, run `agy` or `agy acp --login` on the same machine first.
+Its default profile configuration is at `~/.gemini/antigravity-cli/settings.json`,
+with `GEMINI_HOME` selecting the profile root. Discovery leaves authentication
+unknown. **Test Connection** opens a session with existing credentials. See
 [provider configuration](../../agents/docs/agent-sessions.md#provider-configuration)
 for installation locations and supported platforms.
 

@@ -152,48 +152,6 @@ function grokOutcome(questions: ParsedQuestion[], response: acp.CreateElicitatio
     : { outcome: "accepted" as const, answers }
 }
 
-function parseAntigravityPermission(params: acp.RequestPermissionRequest): ParsedQuestions | undefined {
-  if (!isRecord(params) || !isRecord(params.toolCall) || params.toolCall.kind != null) return undefined
-  const sessionId = text(params.sessionId)
-  const toolCallId = text(params.toolCall.toolCallId)
-  const title = text(params.toolCall.title)
-  if (!sessionId || !toolCallId?.startsWith("interaction_") || !title || !Array.isArray(params.options) || params.options.length === 0) return undefined
-  const choices: Option[] = []
-  for (const item of params.options) {
-    if (!isRecord(item) || item.kind !== "allow_once") return undefined
-    const value = text(item.optionId)
-    const label = text(item.name)
-    if (!value || !label) return undefined
-    choices.push({ value, label })
-  }
-  if (new Set(choices.map(option => option.value)).size !== choices.length) return undefined
-  const question: ParsedQuestion = { id: title, title, multiple: false, options: choices }
-  return { questions: [question], request: form(sessionId, toolCallId, title, [question]) }
-}
-
-/**
- * Antigravity's ACP adapter wraps `ask_question` entries as `interaction_*`
- * permission prompts whose options are all `allow_once` choices. Real tool and
- * workspace-trust permission prompts include a `reject_once` option.
- */
-export function isAntigravityQuestionPermission(params: acp.RequestPermissionRequest): boolean {
-  return parseAntigravityPermission(params) !== undefined
-}
-
-export async function answerAntigravityQuestion(
-  params: acp.RequestPermissionRequest,
-  ask: ((request: acp.CreateElicitationRequest, signal: AbortSignal) => Promise<acp.CreateElicitationResponse>) | undefined,
-  signal: AbortSignal,
-): Promise<acp.RequestPermissionResponse> {
-  const parsed = parseAntigravityPermission(params)
-  if (!parsed || !ask) return { outcome: { outcome: "cancelled" } }
-  const response = await ask(parsed.request, signal)
-  if (!acp.CreateElicitationResponse.isAccept(response)) return { outcome: { outcome: "cancelled" } }
-  const question = parsed.questions[0]!
-  const values = selected(question, response.content?.[question.id])
-  return values?.[0] ? { outcome: { outcome: "selected", optionId: values[0] } } : { outcome: { outcome: "cancelled" } }
-}
-
 /**
  * Translates a vendor question into a session form and the form result back
  * into that vendor's response. A request that cannot be shown is cancelled.

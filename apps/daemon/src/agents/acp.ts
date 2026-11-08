@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
-import { answerAntigravityQuestion, answerVendorQuestion, isAntigravityQuestionPermission, VENDOR_QUESTION_METHODS } from "./questions.ts"
+import { answerVendorQuestion, VENDOR_QUESTION_METHODS } from "./questions.ts"
 import { AcpModelReasoning } from "./reasoning-effort.ts"
 import { AcpSessionModes } from "./session-modes.ts"
 import { createAcpFilesystem } from "./filesystem.ts"
@@ -128,11 +128,6 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   const sessionScope = new AcpSessionScope()
   const filesystem = createAcpFilesystem(id => sessionScope.require(id))
   const terminals = client.terminals ? new AcpTerminals(client.terminals, id => sessionScope.require(id)) : undefined
-  const fs = {
-    readTextFile: options.clientCapabilities?.fs?.readTextFile ?? true,
-    writeTextFile: options.clientCapabilities?.fs?.writeTextFile ?? true,
-    ...(options.clientCapabilities?.fs?._meta ? { _meta: options.clientCapabilities.fs._meta } : {}),
-  }
   const rememberSession = (sessionId: string | undefined) => { if (sessionId) providerSessionId = sessionId }
   let clientApp = acp.client({ name: "deskfleet" })
     .onNotification(acp.methods.client.session.update, async ({ params }) => {
@@ -156,18 +151,12 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         connection.close(error)
       }
     })
+    .onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
+    .onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
     .onNotification(acp.methods.client.elicitation.complete, async ({ params }) => {
       await client.completeElicitation?.(params)
     })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params, signal }) => {
-      if (isAntigravityQuestionPermission(params)) {
-        try {
-          return await answerAntigravityQuestion(params, client.requestElicitation, signal)
-        } catch (error) {
-          connection.close(error)
-          throw error
-        }
-      }
       if (!client.requestPermission) return { outcome: { outcome: "cancelled" } }
       try {
         return await client.requestPermission(params, signal)
@@ -186,12 +175,6 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
         throw error
       }
     })
-  if (fs.readTextFile) {
-    clientApp = clientApp.onRequest(acp.methods.client.fs.readTextFile, ({ params, signal }) => filesystem.readTextFile(params, signal))
-  }
-  if (fs.writeTextFile) {
-    clientApp = clientApp.onRequest(acp.methods.client.fs.writeTextFile, ({ params, signal }) => filesystem.writeTextFile(params, signal))
-  }
   if (terminals) {
     clientApp = clientApp
       .onRequest(acp.methods.client.terminal.create, ({ params, signal }) => terminals.create(params, signal))
@@ -242,11 +225,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     child.stdin!.end()
     connection.close()
     // Give adapters time to stop their own agent subprocesses after stdin EOF.
-    // Windows agy_acp_server deadlocks in asyncio stdout wait_closed() after stdin EOF.
-    const shutdownMs = process.platform === "win32" && /agy_acp_server/iu.test(launch.command)
-      ? (client.signal?.aborted ? 0 : 150)
-      : 10_000
-    const timeout = setTimeout(() => forceKillProcess(child), shutdownMs)
+    const timeout = setTimeout(() => forceKillProcess(child), 10_000)
     timeout.unref()
     closing = Promise.allSettled([exited.finally(() => clearTimeout(timeout)), terminals?.close()]).then(results => {
       for (const result of results) if (result.status === "rejected") throw result.reason
@@ -280,7 +259,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
       clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.11.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
-        fs,
+        fs: { readTextFile: true, writeTextFile: true },
         ...(terminals ? { terminal: true } : { terminal: false }),
         ...(client.requestElicitation ? { elicitation: { form: {}, ...(client.completeElicitation ? { url: {} } : {}) } } : {}),
       },
