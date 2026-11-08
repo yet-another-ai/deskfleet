@@ -208,5 +208,16 @@ async fn request_validation_and_cancellation_are_bounded() {
             .unwrap()
             .is_empty()
     );
+    store.grant_site_admin(&target).await.unwrap();
+    let own = store
+        .request_account_deletion(&target, "Self review")
+        .await
+        .unwrap();
+    assert!(matches!(
+        store
+            .review_account_deletion(&target, own["id"].as_str().unwrap(), true, None)
+            .await,
+        Err(Error::Conflict(_))
+    ));
     cleanup(store, db, schema).await;
 }
