@@ -53,6 +53,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       (lib.fileset.fileFilter (file: lib.hasSuffix "-protocol.ts" file.name) (source + /apps/daemon/src))
       (source + /apps/daemon/src/agent-command-results.ts)
       (source + /apps/daemon/src/agents/plans.ts)
+      (source + /apps/daemon/src/agents/questions.ts)
       (source + /apps/daemon/src/files-wire.ts)
       (source + /apps/daemon/src/titles.ts)
       (source + /crates/protocol/control.ts)
