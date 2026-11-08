@@ -8,6 +8,7 @@ import { useAccountSession } from "../composables/useAccountSession.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { usePinnedSessionsStore } from "./pinned-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
 
 export interface WorkspaceLocation {
@@ -257,7 +258,12 @@ export const useFleetStore = defineStore("fleet", () => {
       await platformClient.catalog.deleteWorkspace(id)
     } catch (error) {
       if (!sessionIds.length || !(error instanceof Error) || !error.message.includes("still has active sessions")) throw error
-      for (const sessionId of sessionIds) await agents.remove(sessionId)
+      // Deletion skips archive, so pins would otherwise keep navigating to removed Sessions.
+      const pins = usePinnedSessionsStore()
+      for (const sessionId of sessionIds) {
+        await agents.remove(sessionId)
+        pins.unpin(targetId, sessionId)
+      }
       await platformClient.catalog.deleteWorkspace(id)
     }
     catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
