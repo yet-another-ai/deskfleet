@@ -351,33 +351,23 @@ test("Pi rejects an unrelated executable with a bare version", async () => {
   assert.equal(value.loginAvailable, false)
 })
 
-test("Antigravity discovers managed runtimes and reads build metadata without starting login", async () => {
-  for (const [platform, env, binary, shell] of [
-    ["linux", { PATH: "" }, "/home/someone/.local/share/deskfleet/providers/antigravity/agy_acp_server.par", "/bin/bash"],
-    ["darwin", { PATH: "", XDG_DATA_HOME: "/custom/data" }, "/custom/data/deskfleet/providers/antigravity/agy_acp_server.par", "/bin/bash"],
-    ["win32", { PATH: "C:\\tools", LOCALAPPDATA: "C:\\Local" }, "C:\\Local\\DeskFleet\\providers\\antigravity\\agy_acp_server.exe", "C:\\tools\\pwsh.exe"],
+test("Antigravity discovers official CLI locations, migrates legacy server paths, and validates bare versions with help output", async () => {
+  for (const [platform, env, binary, shell, legacyPath] of [
+    ["linux", { PATH: "" }, "/home/someone/.local/bin/agy", "/bin/bash", "/home/someone/.local/share/deskfleet/providers/antigravity/agy_acp_server.par"],
+    ["darwin", { PATH: "" }, "/home/someone/.local/bin/agy", "/bin/bash", "/Users/someone/.local/share/deskfleet/providers/antigravity/agy_acp_server.par"],
+    ["win32", { PATH: "C:\\tools", LOCALAPPDATA: "C:\\Local" }, "C:\\Local\\agy\\bin\\agy.exe", "C:\\tools\\pwsh.exe", "C:\\Local\\deskfleet\\providers\\antigravity\\agy_acp_server.exe"],
   ] as const) {
-    const f = fixture({ platform, env, files: [binary, shell], answer: async () => result("Build timestamp: yesterday\nBuilt as //cloud/developer_experience/antigravity_extensions/acp_server:_agy_acp_server_bin\nBuild label: 1.4.5") })
-    assert.deepEqual(await f.setup.probe(input("antigravity")), {
-      status: "found", binaryPath: binary, version: "Antigravity 1.4.5", auth: "unknown", installable: true, loginAvailable: true,
+    const f = fixture({ platform, env, files: [binary, shell], answer: async (_command, args) =>
+      args[0] === "--version" ? result("1.5.3") : result("Usage of agy:\n  acp  Start the Agent Client Protocol (ACP) stdio server") })
+    assert.deepEqual(await f.setup.probe(input("antigravity", { binaryPath: legacyPath })), {
+      status: "found", binaryPath: binary, version: "1.5.3", auth: "unknown", installable: true, loginAvailable: true,
     })
-    assert.deepEqual(f.calls.map(call => call.args), [["--version"]])
-    await f.setup.install(input("antigravity"))
+    assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+    await f.setup.install(input("antigravity", { binaryPath: legacyPath }))
     assert.equal(f.runs[0]!.command, shell)
-    assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/dl\.google\.com\/agy-extensions\/releases\//u)
-    await f.setup.login(input("antigravity"))
-    assert.ok(f.runs[1]!.args?.includes("--antigravity-login"))
-    assert.equal(f.runs[1]!.env?.DESKFLEET_ANTIGRAVITY_BINARY, binary)
-    assert.equal(f.runs.length, 2)
+    assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/antigravity\.google\/cli\/install\.(?:sh|ps1)/u)
+    assert.equal(f.runs.length, 1)
   }
-})
-
-test("Antigravity rejects the ordinary CLI instead of offering an incompatible login command", async () => {
-  const f = fixture({ files: ["/tools/agy"], answer: async () => result("Antigravity CLI 1.4.10") })
-  const value = await f.setup.probe(input("antigravity", { binaryPath: "/tools/agy" }))
-  assert.equal(value.status, "invalid")
-  assert.equal(value.loginAvailable, false)
-  assert.deepEqual(f.calls.map(call => call.args), [["--version"]])
 })
 
 test("Pi discovers configured managed installs and npm global prefixes", async () => {
@@ -409,7 +399,7 @@ test("official installers start dedicated terminals and do not start login or AC
   for (const [template, url] of [
     ["codex", "https://chatgpt.com/codex/install.sh"], ["claude-code", "https://claude.ai/install.sh"],
     ["cursor", "https://cursor.com/install"], ["grok", "https://x.ai/cli/install.sh"], ["pi", "https://pi.dev/install.sh"],
-    ["omp", "https://omp.sh/install"],
+    ["omp", "https://omp.sh/install"], ["antigravity", "https://antigravity.google/cli/install.sh"],
   ] as const) {
     const f = fixture({ files: ["/bin/bash"] })
     const terminal = await f.setup.install(input(template, { binaryPath: "/missing/old", env: { TOKEN: "sensitive-value" } }))
@@ -505,6 +495,7 @@ test("login launches only the selected provider's dedicated login command", asyn
     ["claude-code", "claude", "2.1.200 (Claude Code)", ["auth", "login"]],
     ["cursor", "cursor-agent", "Cursor 2026.10.22", ["login"]],
     ["grok", "grok", "grok 0.1.0", ["login", "--device-auth"]],
+    ["antigravity", "agy", "Antigravity CLI 1.5.3", ["acp", "--login"]],
   ] as const) {
     const f = fixture({ files: [`/tools/${executable}`], answer: async () => result(version) })
     await f.setup.login(input(template))

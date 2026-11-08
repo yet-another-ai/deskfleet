@@ -80,7 +80,7 @@ export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
   { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" },
   { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp" },
   { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
-  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy_acp_server.par" },
+  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
 
@@ -93,7 +93,9 @@ export function validateProviderId(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(value)) throw new Error("Invalid provider ID")
 }
 
-/** Normalize blank binary paths to the template default at the execution boundary. */
+const LEGACY_ANTIGRAVITY_BINARY = /(?:^|[/\\])agy_acp_server(?:\.(?:par|exe))?$/iu
+
+/** Normalize blank or retired legacy binary paths to the template default at the execution boundary. */
 export function providerSettings(value: unknown): AgentProviderSettings {
   const settings = object(value)
   if (Object.keys(settings).some(key => !["name", "icon", "binaryPath", "inheritShellEnvironment", "env"].includes(key))) {
@@ -116,7 +118,8 @@ export function providerSettings(value: unknown): AgentProviderSettings {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)) throw new Error("Invalid environment variable name")
     if (typeof value !== "string" || value.includes("\0")) throw new Error("Environment variable values must be strings without null characters")
   }
-  const binaryPath = settings.binaryPath?.trim() as string | undefined
+  const rawBinaryPath = settings.binaryPath?.trim() as string | undefined
+  const binaryPath = rawBinaryPath && !LEGACY_ANTIGRAVITY_BINARY.test(rawBinaryPath) ? rawBinaryPath : undefined
   return {
     name: settings.name.trim(),
     ...(settings.icon !== undefined ? { icon: settings.icon } : {}),

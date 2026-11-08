@@ -925,10 +925,9 @@ credential is stored, unless an API key is configured. API-key configurations ke
 credential availability, not a network validation of the account or key. The ACP
 server itself still advertises no interactive authenticate methods. Explicit
 external executables keep their own launch and credential setup.
-The Antigravity template launches Google's standalone ACP runtime and its matching
-local harness. The daemon downloads and verifies the platform package on explicit
-installation, keeps both executables in its provider directory, and uses existing
-Antigravity credentials. Its runtime has no CLI login command.
+The Antigravity template launches Google's Antigravity CLI (`agy acp`) and uses
+its cached local credentials. Settings installs the CLI through Google's official
+installer and runs `agy acp --login` for terminal sign-in.
 The shared
 `AgentProvider` interface accepts a user-facing name, an optional binary path,
 and environment overrides. Provider-specific code selects the process; the
@@ -940,8 +939,7 @@ Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
 paths use the bundled DeepSeek runtime or the template default (`codex`, `claude`,
-`agent`, `grok`, `pi`, `omp`,
-`agy_acp_server.par` / `agy_acp_server.exe`, or `acp-agent`), and configured environment
+`agent`, `grok`, `pi`, `omp`, `agy`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
 the machine's executable discovery, installation, and login actions. The

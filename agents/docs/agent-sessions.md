@@ -342,26 +342,19 @@ credential setup and have no built-in login action; clear the path to use the bu
 Bundled version detection allows 30 seconds for cold startup. Timeouts and
 launch failures surface as detection errors rather than missing installations.
 
-The Antigravity template runs Google's standalone
-[Antigravity ACP runtime](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json)
-directly: `agy_acp_server.par` on macOS and Linux, or `agy_acp_server.exe` on
-Windows. Linux launches add `--uid=` as specified by the registry. The matching
-`localharness_external` executable stays beside the runtime; a configured path
-also sets `ANTIGRAVITY_HARNESS_PATH` unless overridden in the provider environment.
-Settings downloads version `1.4.5` from Google for x64 or arm64 on all three
-platforms and verifies the registry's pinned SHA-256 before extraction. The
-installation directory is `$XDG_DATA_HOME/deskfleet/providers/antigravity`,
-defaulting to `~/.local/share/deskfleet/providers/antigravity`; Windows uses
-`%LOCALAPPDATA%\DeskFleet\providers\antigravity`.
-The runtime has no noninteractive credential-status command, so discovery
-leaves authentication unknown. Its **Log in** action starts the runtime in a
-setup terminal, clears prior cached credentials when `logout` is advertised,
-and runs the selected `authenticate` method.
-The runtime uses the profile under `GEMINI_HOME`, with settings at
-`~/.gemini/antigravity-acp/settings.json` by default. **Test Connection** uses
-those existing credentials and reports authentication required when absent.
-DeskFleet disables `clientCapabilities.fs` for Antigravity so the harness uses
-its native file tools and diff edits.
+The Antigravity template runs Google's native
+[Antigravity CLI ACP server](https://antigravity.google/docs/cli/acp/) with
+`` `<binary> acp` `` and `agy` as the default executable. Settings installs the
+CLI from Google's official installer (`https://antigravity.google/cli/install.sh`
+on macOS and Linux, or `https://antigravity.google/cli/install.ps1` on Windows).
+Discovery checks `PATH`, `~/.local/bin` on macOS and Linux, and
+`%LOCALAPPDATA%\agy\bin` on Windows.
+The CLI has no noninteractive credential-status command, so discovery leaves
+authentication unknown. Its **Log in** action runs `agy acp --login` in a setup
+terminal for interactive Google sign-in.
+The CLI uses the profile under `GEMINI_HOME`, with configuration at
+`~/.gemini/antigravity-cli/settings.json` by default. **Test Connection** uses
+existing credentials and reports authentication required when absent.
 
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
@@ -383,7 +376,7 @@ environment overrides in a collapsed Advanced section unless the provider
 already overrides either.
 
 Missing built-in providers offer **Install**, using the vendor's official installer
-or the Antigravity runtime download on supported platforms. Installed providers
+on supported platforms. Installed providers
 offer **Reinstall** to repeat installation for updates or repairs, regardless of
 sign-in status. **Log in** is a separate action once a CLI with interactive login
 support is found.

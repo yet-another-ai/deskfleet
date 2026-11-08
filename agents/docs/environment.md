@@ -413,9 +413,8 @@ uses those exposed modules directly instead of the native loader's
 Electron-version-specific ABI bridge; the upstream loader shape checks remain.
 Ordinary Node launches retain the upstream native loader path. Keep both host
 smoke checks when updating dsh or Electron.
-Antigravity uses a separate native ACP runtime with its matching local harness;
-Settings downloads the pinned Google package and verifies its SHA-256 for the
-executing machine. Pi's official installer can
+Antigravity uses the native ACP server in Google's `agy` CLI (`agy acp`).
+Settings installs it through Google's official installer. Pi's official installer can
 provide its required Node.js runtime; the bundled adapter does not include Pi.
 Oh My Pi uses native ACP; Settings installs its standalone binary through the
 official `omp.sh` installer without requiring a separate Bun runtime.
