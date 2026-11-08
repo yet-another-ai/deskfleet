@@ -92,7 +92,7 @@ async fn approval_anonymizes_the_account_and_revokes_access() {
     assert!(peers.is_empty());
     assert!(
         !store
-            .session_is_active(session["id"].as_str().unwrap())
+            .session_is_active(session["sessionId"].as_str().unwrap())
             .await
             .unwrap()
     );
