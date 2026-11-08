@@ -284,9 +284,12 @@ template runs the installed Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp);
 its default binary is `claude`. The Cursor template runs the installed
 [Cursor CLI](https://cursor.com/docs/cli/acp) directly as `agent acp`; its default
-binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
-`CURSOR_AUTH_TOKEN`, before starting a session. When a session can ask the user
-a question, `cursor/ask_question` is answered through that form.
+binary is `agent`. Each process starts in the Session worktree's first directory,
+because Cursor ACP loads project skills, rules, and subagents from its launch
+directory. The `session/new` working directory still selects file tools. One
+process serves one project, and each run starts its own. Sign in with `agent login`,
+or set `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`, before starting a session. When a
+session can ask the user a question, `cursor/ask_question` is answered through that form.
 `cursor/create_plan` becomes the same shared approval surface with Accept,
 Reject, and Cancel mapped to Cursor's nested `accepted` / `rejected` /
 `cancelled` outcomes. Cursor's notification methods (`cursor/update_todos`,

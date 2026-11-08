@@ -8,7 +8,12 @@ export const CURSOR_ACP_ARGUMENT = "acp"
 export const CURSOR_AUTH_METHOD = "cursor_login"
 
 export function cursorProcess(config: AgentConfig): AgentProcess {
-  return launchProviderCommand(config.binaryPath || "agent", [CURSOR_ACP_ARGUMENT], config.env)
+  // Cursor ACP reads project skills, rules, and subagents from this process
+  // directory. The session/new cwd selects file tools and does not replace it.
+  return {
+    ...launchProviderCommand(config.binaryPath || "agent", [CURSOR_ACP_ARGUMENT], config.env),
+    ...(config.cwd ? { cwd: config.cwd } : {}),
+  }
 }
 
 /**

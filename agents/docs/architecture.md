@@ -893,7 +893,10 @@ The Codex template connects Codex CLI through the bundled
 Code template connects Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp).
 The Cursor template launches the installed Cursor CLI directly as `agent acp`;
-Cursor speaks ACP and does not use a bundled adapter. After initialization it
+Cursor speaks ACP and does not use a bundled adapter. The process starts in the
+Session worktree's first directory. Cursor ACP loads project skills, rules, and
+subagents from that launch directory; the `session/new` working directory still
+selects file tools. After initialization it
 calls `authenticate` with `cursor_login` when Cursor advertises that method,
 except during connection tests, which use credentials loaded at CLI startup.
 The Grok template launches the installed Grok CLI directly as `grok agent stdio`.

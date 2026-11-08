@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -208,7 +208,7 @@ test("Claude Code runs its bundled adapter with the installed CLI and added vari
   assert.equal(provider.id, "claude-code")
   const connection = await provider.connect(config, { onUpdate() {} })
   t.after(() => connection.close())
-  assert.deepEqual(connection.initialization._meta?.launch, { args: ["--claude-agent-acp"], claudeCodeExecutable: "/opt/claude" })
+  assert.deepEqual(connection.initialization._meta?.launch, { args: ["--claude-agent-acp"], cwd: process.cwd(), claudeCodeExecutable: "/opt/claude" })
   assert.equal((connection.initialization._meta?.environment as { extra?: string }).extra, "work")
   await connection.close()
 })
@@ -228,13 +228,15 @@ test("Cursor launches agent acp, authenticates, and continues through session/lo
   })
   const { provider, config } = registry.resolve(configured.id)
   const updates: acp.SessionNotification[] = []
-  const connection = await provider.connect(config, { onUpdate(update) { updates.push(update) } })
+  const connection = await provider.connect({ ...config, cwd: directory }, { onUpdate(update) { updates.push(update) } })
   t.after(() => connection.close())
   assert.equal(connection.initialization.agentInfo?.name, "cursor-agent")
   assert.deepEqual(connection.initialization.authMethods?.map(method => method.id), ["cursor_login"])
   assert.equal(connection.initialization.agentCapabilities?.loadSession, true)
   assert.equal(connection.initialization.agentCapabilities?.sessionCapabilities?.resume, undefined)
-  assert.deepEqual((connection.initialization._meta?.launch as { args?: string[] }).args, ["acp"])
+  const launch = connection.initialization._meta?.launch as { args?: string[]; cwd?: string }
+  assert.deepEqual(launch.args, ["acp"])
+  assert.equal(launch.cwd, await realpath(directory))
   assert.equal((connection.initialization._meta?.clientCapabilities as { _meta?: { parameterizedModelPicker?: boolean } } | undefined)?._meta?.parameterizedModelPicker, true)
   const created = await connection.newSession({ cwd: directory, mcpServers: [] })
   assert.equal(created._meta?.authenticated, true)

@@ -160,7 +160,7 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
           LANG: process.env.LANG,
           extra: process.env.DESKFLEET_TEST_VALUE,
         },
-        launch: { args: process.argv.slice(2), claudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE },
+        launch: { args: process.argv.slice(2), cwd: process.cwd(), claudeCodeExecutable: process.env.CLAUDE_CODE_EXECUTABLE },
       },
     }
   })
