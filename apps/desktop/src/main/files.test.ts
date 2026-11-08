@@ -5,13 +5,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, type FileListing, type FilesApi, type FileTarget } from "@deskfleet/client/files"
+import { FilesService } from "../../../daemon/src/files-service.ts"
 
-vi.mock("electron", () => ({ app: { getPath: vi.fn() }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn() } }))
+vi.mock("electron", () => ({ app: { getPath: vi.fn() }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn() }, shell: { openPath: vi.fn() } }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./files-peer.ts", () => ({ createNativeFileEndpoint: vi.fn() }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 import { DaemonClient } from "./daemon-client.ts"
-import { BrowserWindow, dialog, ipcMain } from "electron"
+import { BrowserWindow, dialog, ipcMain, shell } from "electron"
+import { createNativeFileEndpoint } from "./files-peer.ts"
 import { installFiles, invokeFiles, localSessionAttachmentDirectory, localSessionDirectory } from "./files.ts"
 
 test("file bridge accepts explicit endpoints and rejects malformed write requests", async () => {
@@ -36,6 +38,16 @@ test("file bridge forwards opaque grants and rejects malformed grant identifiers
   await expect(invokeFiles(api, "list", [{ kind: "local", grantId: "bad\0token" }])).rejects.toThrow("identifier")
 })
 
+test("native open accepts only a validated scoped resource request", async () => {
+  const openResource = vi.fn(async () => {})
+  const api = { openResource } as unknown as FilesApi
+  const request = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "file:///work/report.docx" }
+  await invokeFiles(api, "openResource", [{ ...request, canOpen: true, path: "/untrusted" }])
+  expect(openResource).toHaveBeenCalledExactlyOnceWith(request)
+  await expect(invokeFiles(api, "openResource", [{ ...request, uri: "bad\0path" }])).rejects.toThrow("path")
+  await expect(invokeFiles({} as FilesApi, "openResource", [request])).rejects.toThrow("unavailable")
+})
+
 class TestContents extends EventEmitter {
   destroyed = false
   readonly send = vi.fn()
@@ -53,7 +65,10 @@ async function hostFixture() {
   fileRoots.push(root)
   await writeFile(join(root, "visible.txt"), "selected")
   let accountEvent!: (event: CentralEvent) => void
-  const central = { onEvent: vi.fn((listener: (event: CentralEvent) => void) => { accountEvent = listener; return vi.fn() }) } as unknown as CentralApi
+  const central = {
+    status: vi.fn(async () => ({ serverUrl: "https://fleet.example", user: { id: "user" }, siteAdmin: false })),
+    onEvent: vi.fn((listener: (event: CentralEvent) => void) => { accountEvent = listener; return vi.fn() }),
+  } as unknown as CentralApi
   const host = installFiles(central)
   fileHosts.push(host)
   const handler = vi.mocked(ipcMain.handle).mock.calls.at(-1)![1] as unknown as (event: { sender: TestContents }, method: string, args: unknown[]) => Promise<unknown>
@@ -119,4 +134,24 @@ test("local Session resources require an explicit authorized Team and Machine ta
   await expect(localSessionDirectory("1")).rejects.toThrow("authorized Team and Machine")
   await expect(localSessionAttachmentDirectory("1")).rejects.toThrow("authorized Team and Machine")
   expect(DaemonClient.connect).not.toHaveBeenCalled()
+})
+
+test("native open verifies this daemon registration and forwards its resolved path to the OS", async () => {
+  const f = await hostFixture(), contents = new TestContents()
+  const endpoint = new FilesService(async () => f.root)
+  vi.mocked(createNativeFileEndpoint).mockReturnValue(endpoint as unknown as ReturnType<typeof createNativeFileEndpoint>)
+  const call = vi.fn(async () => ({ machineName: "This computer", registrations: [{
+    configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", teamId: "team", machineId: "machine",
+    identity: { originId: "origin", machineId: "local-database-id" }, machineName: "This computer",
+  }] }))
+  const close = vi.fn()
+  vi.mocked(DaemonClient.connect).mockResolvedValue({ call, close } as unknown as Awaited<ReturnType<typeof DaemonClient.connect>>)
+  vi.mocked(shell.openPath).mockResolvedValueOnce("").mockResolvedValueOnce("No application is associated with this file")
+  const request = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "visible.txt:2" }
+  await f.request(contents, "openResource", request)
+  expect(call).toHaveBeenCalledWith("centralStatus", {})
+  expect(close).toHaveBeenCalledOnce()
+  expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(join(f.root, "visible.txt"))
+  await expect(f.request(contents, "openResource", request)).rejects.toThrow("No application")
+  expect(close).toHaveBeenCalledTimes(2)
 })

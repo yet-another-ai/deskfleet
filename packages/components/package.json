@@ -19,6 +19,7 @@
     "@proj-airi/chromatic": "^2.0.1",
     "@sentry/vue": "11.10.0",
     "@shikijs/stream": "4.6.0",
+    "@silurus/ooxml": "0.89.7",
     "@statsig/js-client": "3.33.7",
     "@tresjs/cientos": "^5.10.1",
     "@tresjs/core": "^5.10.1",

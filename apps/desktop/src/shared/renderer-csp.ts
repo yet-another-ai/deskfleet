@@ -6,21 +6,26 @@ export const CSP_PLACEHOLDER = "__DESKFLEET_CONTENT_SECURITY_POLICY__"
 export function rendererContentSecurityPolicy(production: boolean, statsigEnabled = false, sentryDsn?: string): string {
   const sentry = parseSentryDsn(sentryDsn)
   const connectSources = [
-    ...(production ? [] : ["'self'", "ws://127.0.0.1:5173"]),
+    "'self'",
+    "blob:",
+    "data:",
+    ...(production ? [] : ["ws://127.0.0.1:5173"]),
     ...(statsigEnabled ? STATSIG_CONNECT_ORIGINS : []),
     ...(sentry ? [sentry.origin] : []),
   ]
   return [
     "default-src 'none'",
-    // xterm's image decoders compile bundled WebAssembly modules.
+    // Terminal image decoders and Office previews compile bundled WebAssembly.
     "script-src 'self' 'wasm-unsafe-eval'",
+    // Office parsers run in module Workers constructed from bundled source.
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     // User avatars come from Gravatar.
     "img-src 'self' data: blob: https://gravatar.com",
     "font-src 'self' data:",
     "media-src 'self' blob:",
-    // API traffic stays in main; configured telemetry runs in the renderer.
-    `connect-src ${connectSources.length ? connectSources.join(" ") : "'none'"}`,
+    // Fetch bundled WASM and in-memory previews; API traffic stays in main.
+    `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",
     "frame-src 'none'",
     "form-action 'none'",

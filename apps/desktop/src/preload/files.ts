@@ -20,11 +20,12 @@ export function filesApi(): FilesApi {
         if (payload?.requestId === requestId) options.onProgress?.({ transferredBytes: payload.transferredBytes, totalBytes: payload.totalBytes })
       }
       ipcRenderer.on(FILES_RESOURCE_PROGRESS_EVENT, handler)
-      return invoke<{ data: Uint8Array; name: string; mimeType: string }>("readResource", request, requestId).finally(() => {
+      return invoke<Awaited<ReturnType<FilesApi["readResource"]>>>("readResource", request, requestId).finally(() => {
         ipcRenderer.removeListener(FILES_RESOURCE_PROGRESS_EVENT, handler)
       })
     },
     saveResource: request => invoke("saveResource", request),
+    openResource: request => invoke("openResource", request),
     uploadAttachment: request => invoke("uploadAttachment", request),
     onChanged: listener => {
       const handler = (_event: Electron.IpcRendererEvent, transfers: FileTransfer[]) => listener(transfers)

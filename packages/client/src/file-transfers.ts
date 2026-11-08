@@ -10,22 +10,35 @@ interface ManifestEntry { file: FileEntry; relative: string }
 
 function mimeType(name: string): string {
   const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase()
-  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/vnd.microsoft.icon", svg: "image/svg+xml", mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", weba: "audio/webm", glb: "model/gltf-binary", gltf: "model/gltf+json", stl: "model/stl", obj: "model/obj", fbx: "model/vnd.fbx", "3mf": "model/3mf", pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain" } as Record<string, string>)[extension] ?? "application/octet-stream"
+  return ({
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/vnd.microsoft.icon", svg: "image/svg+xml", mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", weba: "audio/webm", glb: "model/gltf-binary", gltf: "model/gltf+json", stl: "model/stl", obj: "model/obj", fbx: "model/vnd.fbx", "3mf": "model/3mf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain",
+  } as Record<string, string>)[extension] ?? "application/octet-stream"
 }
 
 /** The app/account owns this queue; closing a view never interrupts a transfer. */
 export class FileTransferManager implements FilesApi {
   readonly #factory: (target: FileTarget) => Promise<FileEndpoint>
   readonly #choose: () => Promise<FileListing | null>
+  readonly #unlimitedPreview?: (target: FileTarget) => Promise<boolean>
   readonly #endpoints = new Map<string, Promise<FileEndpoint>>()
   readonly #jobs: Job[] = []
   readonly #listeners = new Set<(transfers: FileTransfer[]) => void>()
   #draining: Promise<void> | undefined
   #closed = false
 
-  constructor(options: { endpoint(target: FileTarget): Promise<FileEndpoint>; chooseLocalDirectory(): Promise<FileListing | null> }) {
+  constructor(options: {
+    endpoint(target: FileTarget): Promise<FileEndpoint>
+    chooseLocalDirectory(): Promise<FileListing | null>
+    /** Host-owned policy; callers cannot raise the preview limit through FilesApi. */
+    unlimitedPreview?(target: FileTarget): Promise<boolean>
+  }) {
     this.#factory = options.endpoint
     this.#choose = options.chooseLocalDirectory
+    this.#unlimitedPreview = options.unlimitedPreview
   }
 
   async #endpoint(target: FileTarget): Promise<FileEndpoint> {
@@ -213,7 +226,7 @@ export class FileTransferManager implements FilesApi {
     const endpoint = await this.#endpoint(request.target)
     const file = (await endpoint.call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
     if (file.kind !== "file") throw new Error("Select a file to preview")
-    if (file.size > PREVIEW_BYTES) throw new Error("This file is too large to preview. Download it instead.")
+    if (file.size > PREVIEW_BYTES && !await this.#unlimitedPreview?.(request.target)) throw new Error("This file is too large to preview. Download it instead.")
     options?.onProgress?.({ transferredBytes: 0, totalBytes: file.size })
     const data = new Uint8Array(file.size)
     const { readId } = (await endpoint.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value

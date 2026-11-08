@@ -1,10 +1,13 @@
 import katex from "katex"
 import type { InjectionKey } from "vue"
+import type { FileResourceRequest } from "../../../../../client/src/files.ts"
 
 export interface LoadedImage {
   url?: string
   data?: Uint8Array
   mimeType?: string
+  canOpen?: boolean
+  request?: FileResourceRequest
   error?: string
   refCount: number
 }
