@@ -158,9 +158,16 @@ test("remote operations preserve pending and resolved permission information", a
   expect(view.text()).not.toContain("Awaiting approval")
 })
 
-test("ordinary tools keep the existing collapsed rendering", () => {
+test("ordinary tools keep the existing collapsed rendering and show localized targets", async () => {
   const view = render({ toolCallId: "read", title: "Read settings", rawInput: { path: "settings.json" } })
   expect(view.find("[data-remote-mcp-card]").exists()).toBe(false)
   expect(view.text()).toBe("Read settings")
   expect(view.get("button").attributes("aria-expanded")).toBe("false")
+
+  await view.setProps({ tool: { toolCallId: "read-file", title: "Running view_file", kind: "read", rawInput: { file_path: "/Users/dev/session-worktrees/65/repo-0/src/settings.ts" } } })
+  expect(view.text()).toBe("Read src/settings.ts")
+  await view.setProps({ tool: { toolCallId: "edit-file", title: "Editing files", kind: "edit", content: [{ type: "diff", path: "src/App.vue", newText: "<template />" }] } })
+  expect(view.text()).toBe("Edit src/App.vue")
+  await view.setProps({ tool: { toolCallId: "run-cmd", title: "\"pnpm test\"", kind: "execute", rawInput: { command: "/bin/zsh -lc \"pnpm test\"" } } })
+  expect(view.text()).toBe("Run pnpm test")
 })
