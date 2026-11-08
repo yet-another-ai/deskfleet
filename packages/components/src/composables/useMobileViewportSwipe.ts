@@ -1,7 +1,7 @@
 import { useEventListener, usePointerSwipe, useRafFn } from "@vueuse/core"
 import { ref, watch, type Ref } from "vue"
 
-const PANNABLE_SELECTOR = "[data-mermaid-canvas], [data-preview-kind=\"image\"] [data-preview-canvas], [data-preview-kind=\"model\"] [data-preview-canvas]"
+const PANNABLE_SELECTOR = "[data-mermaid-canvas], [data-preview-kind=\"image\"] [data-preview-canvas], [data-preview-kind=\"model\"] [data-preview-canvas], [data-office-preview]"
 
 /** Content-area horizontal swipes navigate between views while yielding to pannable canvases. */
 export function useMobileViewportSwipe(options: {
@@ -65,7 +65,8 @@ export function useMobileViewportSwipe(options: {
     pointerTypes: ["touch"],
     onSwipeStart(event) {
       const pannable = event.target instanceof Element ? event.target.closest<HTMLElement>(PANNABLE_SELECTOR) : null
-      pannable?.setPointerCapture?.(event.pointerId)
+      // Office widgets own their child canvas and control gestures.
+      if (!pannable?.hasAttribute("data-office-preview")) pannable?.setPointerCapture?.(event.pointerId)
       canceled = !options.enabled() || !event.isPrimary || !!pannable
       if (canceled) return
       pause()

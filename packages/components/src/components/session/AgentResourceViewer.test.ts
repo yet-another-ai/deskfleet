@@ -164,11 +164,11 @@ test("shows a download authorization failure after a file resolved without bypas
 
 test("downloads loaded binary files even when their preview format is unsupported", async () => {
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
-  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:presentation")
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:archive")
   const saveResource = vi.fn()
   const view = render({
-    resolveResource: vi.fn().mockResolvedValue({ name: "report.pptx", path: "/work/report.pptx", kind: "file" }),
-    readResource: vi.fn().mockResolvedValue({ name: "report.pptx", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/octet-stream" }),
+    resolveResource: vi.fn().mockResolvedValue({ name: "archive.zip", path: "/work/archive.zip", kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name: "archive.zip", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/octet-stream" }),
     saveResource,
   })
   await flushPromises()
@@ -176,8 +176,8 @@ test("downloads loaded binary files even when their preview format is unsupporte
   expect(view.find('[role="alert"]').exists()).toBe(true)
   await view.get('[data-preview-action="download"]').trigger("click")
   expect(click).toHaveBeenCalledOnce()
-  expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe("report.pptx")
-  expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("blob:presentation")
+  expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe("archive.zip")
+  expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("blob:archive")
   expect(saveResource).not.toHaveBeenCalled()
   view.unmount()
 })

@@ -10,7 +10,13 @@ interface ManifestEntry { file: FileEntry; relative: string }
 
 function mimeType(name: string): string {
   const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase()
-  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/vnd.microsoft.icon", svg: "image/svg+xml", mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", weba: "audio/webm", glb: "model/gltf-binary", gltf: "model/gltf+json", stl: "model/stl", obj: "model/obj", fbx: "model/vnd.fbx", "3mf": "model/3mf", pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain" } as Record<string, string>)[extension] ?? "application/octet-stream"
+  return ({
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", bmp: "image/bmp", ico: "image/vnd.microsoft.icon", svg: "image/svg+xml", mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", weba: "audio/webm", glb: "model/gltf-binary", gltf: "model/gltf+json", stl: "model/stl", obj: "model/obj", fbx: "model/vnd.fbx", "3mf": "model/3mf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain",
+  } as Record<string, string>)[extension] ?? "application/octet-stream"
 }
 
 /** The app/account owns this queue; closing a view never interrupts a transfer. */

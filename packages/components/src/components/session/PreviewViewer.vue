@@ -10,7 +10,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, isFileResource, type AgentResourceContext } from "../../services/agent-resources.ts"
 import {
-  previewKindFromMime,
+  previewKindFromUri,
   registerPreviewActionsKey,
   resolvePreviewKind,
   type PreviewKind,
@@ -33,6 +33,7 @@ import MermaidViewer from "./MermaidViewer.vue"
 import PreviewToolbar from "./PreviewToolbar.vue"
 
 const ModelPreview = defineAsyncComponent(() => import("./ModelPreview.vue"))
+const OfficePreview = defineAsyncComponent(() => import("./OfficePreview.vue"))
 
 const props = withDefaults(defineProps<{
   kind?: PreviewKind
@@ -87,7 +88,7 @@ provide(registerPreviewActionsKey, actions => {
 })
 
 const kind = computed<PreviewKind>(() =>
-  resolvePreviewKind(props.content, props.kind, loadedMime.value ?? props.mimeType),
+  resolvePreviewKind(loadedName.value ?? props.content, props.kind, loadedMime.value ?? props.mimeType),
 )
 const toolbarActions = computed<PreviewToolbarAction[]>(() =>
   kind.value === "video"
@@ -125,7 +126,7 @@ function loadResource(): void {
   }
   void client.files.readResource(request.value).then(result => {
     if (disposed || version !== loadGeneration) return
-    const resultKind = previewKindFromMime(result.mimeType)
+    const resultKind = previewKindFromUri(result.name, result.mimeType)
     if (!resultKind) throw new Error(t("files.previewUnavailable"))
     loadedName.value = result.name
     loadedMime.value = result.mimeType
@@ -151,8 +152,10 @@ function previewSource(): PreviewSource {
 
 function descriptor() {
   const hostUri = root.value?.closest<HTMLElement>("[data-preview]")?.dataset.preview
+  const usesSourceFile = kind.value === "model"
+    || (props.data !== undefined && (kind.value === "docx" || kind.value === "xlsx" || kind.value === "pptx"))
   const localSourceContent = props.resourceRequest?.uri
-    ?? (isLocalResource.value ? props.content : (kind.value === "model" && hostUri && isFileResource(hostUri) ? hostUri : undefined))
+    ?? (isLocalResource.value ? props.content : (usesSourceFile && hostUri && isFileResource(hostUri) ? hostUri : undefined))
   return {
     kind: kind.value,
     content: localSourceContent ?? url.value ?? props.content,
@@ -254,6 +257,13 @@ onBeforeUnmount(() => {
         :data="loadedBytes ?? props.data"
         :mime-type="loadedMime ?? props.mimeType"
         :filename="isLocalResource ? props.content : (props.title || props.content)"
+        :mode="mode"
+      />
+      <OfficePreview
+        v-else-if="kind === 'docx' || kind === 'xlsx' || kind === 'pptx'"
+        :kind="kind"
+        :src="url"
+        :data="loadedBytes ?? props.data"
         :mode="mode"
       />
       <div

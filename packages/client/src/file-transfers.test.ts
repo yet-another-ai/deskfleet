@@ -157,7 +157,10 @@ test.each([
   ["before.MP4", "video/mp4", [0, 0, 0, 24]],
   ["after.webm", "video/webm", [0x1a, 0x45, 0xdf, 0xa3]],
   ["audio.mp3", "audio/mpeg", [0xff, 0xfb]],
-])("reads %s resources with their media MIME type", async (name, mimeType, bytes) => {
+  ["报告.DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", [0x50, 0x4b, 0x03, 0x04]],
+  ["预算.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", [0x50, 0x4b, 0x03, 0x04]],
+  ["方案.PPTX", "application/vnd.openxmlformats-officedocument.presentationml.presentation", [0x50, 0x4b, 0x03, 0x04]],
+])("reads %s resources with their preview MIME type", async (name, mimeType, bytes) => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-resource-"))
   cleanups.push(() => rm(directory, { recursive: true, force: true }))
   const endpoint = new FilesService(async () => directory)

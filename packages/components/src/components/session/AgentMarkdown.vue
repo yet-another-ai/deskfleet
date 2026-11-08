@@ -69,7 +69,7 @@ function load(uri: string, refCount = 1): void {
   }
   void files.readResource({ ...current, uri }).then(result => {
     if (disposed || images.get(uri) !== value) return
-    // Markdown embeds share PreviewViewer's image, audio, video, and 3D model support.
+    // Markdown embeds share PreviewViewer's media, 3D model, and Office support.
     if (!previewKindFromMime(result.mimeType)) {
       throw new Error(t("files.previewUnavailable"))
     }

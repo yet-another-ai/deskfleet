@@ -228,8 +228,8 @@ retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
 part of the path. In a Session view, clicking any resource link opens a right-side
 preview tab (or mobile preview view) first and resolves workspace authorization
-and file type inside that tab: supported image, audio, video, and 3D model files
-(without line references) render in the shared media/model previewer, directories
+and file type inside that tab: supported image, audio, video, 3D model, and modern
+Office files (without line references) render in the shared previewer, directories
 open in a file browser, and text or line-referenced files render as syntax-highlighted
 code (falling back to a dialog when session preview tabs are unavailable). Text previews use the shared Shiki highlighter
 for recognized filenames, with the same light/dark colors as Markdown code blocks.
@@ -241,6 +241,19 @@ Text previews highlight the whole line for
 separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
 Other authorized files can be downloaded from that tab or dialog.
+
+Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` previews use
+`@silurus/ooxml` to parse the downloaded bytes locally with bundled WASM and
+render them in the client. Word pages and slides use a scrolling viewer; Excel
+includes worksheet tabs. The previews are read-only. Spreadsheet formulas display
+their saved cached results without recalculation, and PowerPoint animation
+playback is not provided. Complex layouts and unavailable fonts can differ from
+Office. Legacy `.doc`, `.xls`, and `.ppt` files remain download-only.
+The viewers disable Google Fonts, external hyperlink interaction, and embedded
+media playback. Electron permits same-origin WASM fetches, in-memory Blob/data
+previews, and bundled Blob Workers through its renderer CSP; other network origins
+still require the existing explicit configuration. Parsing receives a copy of the file bytes so
+Worker transfers cannot detach the bytes retained for downloading.
 
 Codex `:codex-file-citation{path="..." purpose="output"}` markers render as
 filename links through the same resource path. The quoted path is parsed before
