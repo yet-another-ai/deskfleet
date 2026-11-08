@@ -1,25 +1,15 @@
-//! GPU drawing is independent of frame selection and presentation feedback.
+//! Android GPU drawing is independent of frame selection.
 
-#[cfg(not(target_os = "android"))]
-use std::sync::Arc;
-
-#[cfg(target_os = "android")]
 use ndk::native_window::NativeWindow;
-#[cfg(not(target_os = "android"))]
-use winit::{dpi::PhysicalSize, window::Window};
 
-#[cfg(not(target_os = "android"))]
-use crate::presentation::Presentation;
 use crate::{Error, Frame};
 
-#[cfg(target_os = "android")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct PhysicalSize<T> {
     pub(crate) width: T,
     pub(crate) height: T,
 }
 
-#[cfg(target_os = "android")]
 impl<T> PhysicalSize<T> {
     pub(crate) const fn new(width: T, height: T) -> Self {
         Self { width, height }
@@ -35,25 +25,19 @@ pub(crate) struct Renderer {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     image: Option<(wgpu::Texture, wgpu::BindGroup)>,
-    #[cfg(not(target_os = "android"))]
-    window: Arc<Window>,
-    #[cfg(target_os = "android")]
     window: NativeWindow,
     pub(crate) video_size: (u32, u32),
 }
 
-#[cfg(target_os = "android")]
 #[derive(Clone, Debug)]
 struct AndroidSurfaceWindow(NativeWindow);
 
-#[cfg(target_os = "android")]
 impl wgpu::rwh::HasWindowHandle for AndroidSurfaceWindow {
     fn window_handle(&self) -> Result<wgpu::rwh::WindowHandle<'_>, wgpu::rwh::HandleError> {
         self.0.window_handle()
     }
 }
 
-#[cfg(target_os = "android")]
 impl wgpu::rwh::HasDisplayHandle for AndroidSurfaceWindow {
     fn display_handle(&self) -> Result<wgpu::rwh::DisplayHandle<'_>, wgpu::rwh::HandleError> {
         Ok(wgpu::rwh::DisplayHandle::android())
@@ -61,15 +45,6 @@ impl wgpu::rwh::HasDisplayHandle for AndroidSurfaceWindow {
 }
 
 impl Renderer {
-    #[cfg(not(target_os = "android"))]
-    pub(crate) async fn new(window: Arc<Window>) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let surface = instance.create_surface(Arc::clone(&window))?;
-        let size = window.inner_size();
-        Self::init(instance, surface, window, size).await
-    }
-
-    #[cfg(target_os = "android")]
     pub(crate) async fn new(window: NativeWindow, size: PhysicalSize<u32>) -> Result<Self, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance.create_surface(AndroidSurfaceWindow(window.clone()))?;
@@ -79,8 +54,7 @@ impl Renderer {
     async fn init(
         instance: wgpu::Instance,
         surface: wgpu::Surface<'static>,
-        #[cfg(not(target_os = "android"))] window: Arc<Window>,
-        #[cfg(target_os = "android")] window: NativeWindow,
+        window: NativeWindow,
         size: PhysicalSize<u32>,
     ) -> Result<Self, Error> {
         let adapter = instance
@@ -164,17 +138,10 @@ impl Renderer {
         self.surface.configure(&self.device, &self.config);
     }
 
-    #[cfg(target_os = "android")]
     pub(crate) fn surface_size(&self) -> PhysicalSize<u32> {
         PhysicalSize::new(self.config.width, self.config.height)
     }
 
-    #[cfg(not(target_os = "android"))]
-    fn current_size(&self) -> PhysicalSize<u32> {
-        self.window.inner_size()
-    }
-
-    #[cfg(target_os = "android")]
     fn current_size(&self) -> PhysicalSize<u32> {
         let width = u32::try_from(self.window.width().max(0)).unwrap_or(self.config.width);
         let height = u32::try_from(self.window.height().max(0)).unwrap_or(self.config.height);
@@ -198,16 +165,9 @@ impl Renderer {
                 Ok(None)
             }
             Current::Lost => {
-                #[cfg(not(target_os = "android"))]
-                {
-                    self.surface = self.instance.create_surface(Arc::clone(&self.window))?;
-                }
-                #[cfg(target_os = "android")]
-                {
-                    self.surface = self
-                        .instance
-                        .create_surface(AndroidSurfaceWindow(self.window.clone()))?;
-                }
+                self.surface = self
+                    .instance
+                    .create_surface(AndroidSurfaceWindow(self.window.clone()))?;
                 self.resize(self.current_size());
                 Ok(None)
             }
@@ -293,11 +253,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub(crate) fn draw(
-        &self,
-        output: wgpu::SurfaceTexture,
-        #[cfg(not(target_os = "android"))] presentation: &mut Presentation,
-    ) -> Result<(), Error> {
+    pub(crate) fn draw(&self, output: wgpu::SurfaceTexture) -> Result<(), Error> {
         let view = output.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
@@ -326,13 +282,6 @@ impl Renderer {
             }
         }
         self.queue.submit([encoder.finish()]);
-        #[cfg(not(target_os = "android"))]
-        {
-            self.window.pre_present_notify();
-            if !presentation.before_present()? {
-                return Err("presentation slot was occupied before commit".into());
-            }
-        }
         self.queue.present(output);
         Ok(())
     }

@@ -1,7 +1,6 @@
 //! Physical DOM codes mapped to the macOS virtual-key positions in HIToolbox/Events.h.
 
-pub(super) fn keycode(code: &str) -> Option<u16> {
-    Some(match code {
+key_mapping! { u16;
         "KeyA" => 0x00,
         "KeyS" => 0x01,
         "KeyD" => 0x02,
@@ -105,7 +104,7 @@ pub(super) fn keycode(code: &str) -> Option<u16> {
         "F10" => 0x6d,
         "F12" => 0x6f,
         "F15" => 0x71,
-        "Help" | "Insert" => 0x72,
+        "Insert" | "Help" => 0x72,
         "Home" => 0x73,
         "PageUp" => 0x74,
         "Delete" => 0x75,
@@ -118,8 +117,6 @@ pub(super) fn keycode(code: &str) -> Option<u16> {
         "ArrowRight" => 0x7c,
         "ArrowDown" => 0x7d,
         "ArrowUp" => 0x7e,
-        _ => return None,
-    })
 }
 
 /// Index the two sides separately; releasing one must retain the other's flag.

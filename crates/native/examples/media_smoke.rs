@@ -2,6 +2,7 @@
 //! Set DESKFLEET_SMOKE_CAPTURE=1 to stream the first display instead of the fixture.
 //! Set DESKFLEET_SMOKE_HARDWARE=1 and DESKFLEET_SMOKE_CODEC to encode generated pixels.
 //! Set DESKFLEET_SMOKE_WINDOWS_SERVICE=1 to require the installed service for capture.
+//! Set DESKFLEET_SMOKE_REPORT_INPUT=1 to report received input as JSON without OS injection.
 
 #[path = "media_smoke/hardware.rs"]
 mod hardware;
@@ -35,10 +36,28 @@ struct Candidate {
     username_fragment: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FixtureInput {
+    Event(deskfleet_input::InputEvent),
+    Settings(FixtureSettings),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum FixtureSettings {
+    Configure {
+        #[serde(rename = "requestId")]
+        request_id: u64,
+        control: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let capture = std::env::var("DESKFLEET_SMOKE_CAPTURE").as_deref() == Ok("1");
     let hardware = std::env::var("DESKFLEET_SMOKE_HARDWARE").as_deref() == Ok("1");
+    let report_input = std::env::var("DESKFLEET_SMOKE_REPORT_INPUT").as_deref() == Ok("1");
     let audio =
         !capture && !hardware && std::env::var("DESKFLEET_SMOKE_VIDEO_ONLY").as_deref() != Ok("1");
     let require_service = std::env::var("DESKFLEET_SMOKE_WINDOWS_SERVICE").as_deref() == Ok("1");
@@ -143,7 +162,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Some(PeerEvent::Data { label, data, is_string }) if label == "deskfleet-input" => {
                         if !is_string { return Err("binary desktop input".into()); }
-                        let _: deskfleet_input::InputEvent = serde_json::from_slice(&data)?;
+                        match serde_json::from_slice::<FixtureInput>(&data)? {
+                            FixtureInput::Event(event) if report_input => println!("{}", json!({ "kind": "input", "event": event })),
+                            FixtureInput::Event(_) => {},
+                            FixtureInput::Settings(FixtureSettings::Configure { request_id, control }) => {
+                                peer.send_text(&label, &json!({"type":"configured", "requestId":request_id, "control":control}).to_string()).await?;
+                            }
+                        }
                     }
                     Some(PeerEvent::Data { label, data, is_string }) => {
                         if is_string {

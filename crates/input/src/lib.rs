@@ -7,13 +7,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+#[macro_use]
+mod physical_keys;
+pub use physical_keys::NativeKeyCode;
+
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(any(target_os = "macos", test))]
+mod macos_keys;
 #[cfg(target_os = "macos")]
 use macos::PlatformInput;
 #[cfg(target_os = "windows")]
 mod windows;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 mod windows_keys;
 #[cfg(target_os = "windows")]
 use windows::PlatformInput;

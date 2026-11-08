@@ -41,6 +41,15 @@ runs:
         }
         "LIBCLANG_PATH=$llvmBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+    - name: Install native viewer build libraries
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends \
+          pkg-config libfontconfig1-dev libfreetype6-dev \
+          libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libwayland-dev
+
     # rust-cache keys include the OS, architecture, Rust toolchain, CARGO_* and
     # RUST* environment, and lockfiles. mise.ci.toml gives every job the same
     # Cargo environment, so jobs of one role resolve to the same key.

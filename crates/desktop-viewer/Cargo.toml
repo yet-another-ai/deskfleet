@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-desktop-viewer"
-description = "Native remote desktop window with shallow FIFO presentation"
+description = "Native remote desktop viewer with NSH/GPUI desktop controls"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,21 +22,30 @@ bytes.workspace = true
 rtc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "io-std"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-wgpu = "30.0.1"
-pollster = "1.0"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-winit = "0.30.13"
+gpui = { package = "gpui-fast", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
+nsh-core = "=0.4.0"
+nsh-base = { version = "=0.4.0", default-features = false }
+nsh-platform-gpui = { version = "=0.4.0", default-features = false }
+async-channel = "2"
+image = { version = "0.25", default-features = false }
+raw-window-handle = { version = "0.6", features = ["std"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22.4"
 ndk = { version = "0.9.0", features = ["media", "nativewindow", "api-level-26"] }
+wgpu = "30.0.1"
+pollster = "1.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+block2.workspace = true
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSView", "NSWindow", "NSResponder", "block2"] }
 objc2-core-foundation = { workspace = true, features = [
     "CFNumber", "CFString", "CFDictionary", "CFData",
 ] }
@@ -61,14 +70,19 @@ windows = { workspace = true, features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 deskfleet-linux-media.workspace = true
-wayland-client = "0.31.15"
-wayland-protocols = { version = "0.32.13", features = ["client"] }
-wayland-backend = { version = "0.3.17", features = ["client_system", "dlopen"] }
 nix = { workspace = true, features = ["poll"] }
+wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
+wayland-client = "0.31"
+x11rb.workspace = true
+xkbcommon = "0.8"
 
 [lints]
 workspace = true

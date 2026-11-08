@@ -13,6 +13,8 @@
   cups,
   dbus,
   expat,
+  fontconfig,
+  freetype,
   gdk-pixbuf,
   glib,
   gtk3,
@@ -52,6 +54,8 @@ let
     cups
     dbus
     expat
+    fontconfig
+    freetype
     gdk-pixbuf
     glib
     gtk3

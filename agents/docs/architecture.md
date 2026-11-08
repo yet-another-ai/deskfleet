@@ -27,6 +27,16 @@ and GPU presentation. The machine daemon continues running inside Electron's
 main process. Native viewer closure releases that viewing session without
 changing the daemon's lifetime.
 
+The native desktop viewer uses a GPUI host with a pure-Rust NSH floating
+toolbar. Its video scene and toolbar share one window compositor; decoded pixels
+stay in Rust and never pass through the NSH engine. The toolbar uses the shared
+desktop translations and theme, with display selection, control settings,
+pause/resume, full screen, and disconnect/reconnect. One viewer process keeps
+its window while Electron replaces or stops the receiving peer. Per-window
+platform hooks forward physical keyboard positions through the existing input
+contract. The [native viewer guide](media.md) records runtime validation and
+GPUI presentation measurement limits.
+
 ## Components
 
 ```mermaid
@@ -51,7 +61,7 @@ flowchart LR
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
-| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and shallow FIFO presentation | Rust / winit / wgpu; platform H.264, HEVC, and AV1 decoding |
+| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and bounded decoded-frame queue | Rust / NSH / GPUI; platform H.264, HEVC, and AV1 decoding |
 | Web application | Frontend for catalog, history, and browser-supported remote access, served by the central server or an independent static host | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 
@@ -1179,7 +1189,10 @@ operation routing use the authenticated control plane. Chromium receives media
 into a standard HTML video element. Linux, Windows, and macOS Electron clients
 also offer a separate native H.264/HEVC/AV1 window. Electron owns its Team grant and
 signaling over private control pipes; the Rust viewer owns receive, decode,
-input, and GPU presentation. Its lifetime is independent of the hosted daemon.
+input, and GPU presentation. Display changes, control settings, and reconnects
+replace the peer inside the same native window; disconnect releases the peer
+and leaves the window ready to reconnect. Its lifetime is independent of the
+hosted daemon.
 Within each Machine registration, a native desktop stream pool shares capture
 and encoding for matching display, codec, audio, and quality parameters across
 viewing peers. Peer authorization and transport remain independent; releasing
@@ -1484,7 +1497,7 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 | `deskfleet-desktop-service` | Thin Windows service executable in `apps/desktop-service`, hosting native desktop workers |
-| `deskfleet-desktop-viewer` | Native H.264/HEVC/AV1 receive/decode, shallow FIFO presentation, and remote input; thin viewer executable |
+| `deskfleet-desktop-viewer` | Native H.264/HEVC/AV1 receive/decode, bounded decoded-frame queue, NSH/GPUI desktop presentation, and remote input; thin viewer executable |
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,

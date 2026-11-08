@@ -2,8 +2,7 @@
 
 use crate::{InputError, Result};
 
-pub(super) fn scan_code(code: &str) -> Result<(u16, bool)> {
-    let (scan, extended) = match code {
+key_mapping! { (u16, bool);
         "Escape" => (0x01, false),
         "Digit1" => (0x02, false),
         "Digit2" => (0x03, false),
@@ -125,9 +124,10 @@ pub(super) fn scan_code(code: &str) -> Result<(u16, bool)> {
         "MetaLeft" => (0x5b, true),
         "MetaRight" => (0x5c, true),
         "ContextMenu" => (0x5d, true),
-        _ => return Err(InputError::UnsupportedKey),
-    };
-    Ok((scan, extended))
+}
+
+pub(super) fn scan_code(code: &str) -> Result<(u16, bool)> {
+    keycode(code).ok_or(InputError::UnsupportedKey)
 }
 
 #[cfg(test)]

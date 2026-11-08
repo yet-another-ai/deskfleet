@@ -28,139 +28,202 @@ use crate::{Error, Frame, WindowEvent, WindowNotifier};
 
 pub(crate) type Frames = Arc<Mutex<FrameQueue<Frame>>>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PeerExit {
+    Stop,
+    Close,
+}
+
+/// A consumed lifecycle command must survive an error reported during teardown.
+pub(crate) struct PeerOutcome {
+    pub(crate) exit: Option<PeerExit>,
+    pub(crate) result: Result<(), Error>,
+}
+
 pub(crate) async fn run(
-    mut commands: mpsc::Receiver<Command>,
-    mut input: input_queue::Receiver,
+    commands: mpsc::Receiver<Command>,
+    input: input_queue::Receiver,
+    frames: Frames,
+    proxy: WindowNotifier,
+    shutdown: watch::Receiver<bool>,
+) -> Result<(), Error> {
+    crate::session_manager::run(commands, input, frames, proxy, shutdown).await
+}
+
+pub(crate) async fn run_peer(
+    start: Command,
+    codecs: &[VideoCodec],
+    commands: &mut mpsc::Receiver<Command>,
+    input: &mut input_queue::Receiver,
     frames: Frames,
     proxy: WindowNotifier,
     mut shutdown: watch::Receiver<bool>,
-) -> Result<(), Error> {
-    let codecs = tokio::task::spawn_blocking(supported_codecs).await??;
-    protocol::emit(
-        json!({"type":"capabilities", "codecs":codecs.iter().copied().map(protocol::Codec::from).collect::<Vec<_>>()}),
-    )?;
-    let start = tokio::select! {
-        _ = shutdown.changed() => return Ok(()),
-        command = commands.recv() => command,
-    };
-    if matches!(start, Some(Command::Close) | None) {
-        return Ok(());
-    }
-    let Some(Command::Start {
-        title,
-        ice_servers,
-        relay_only,
-        control,
-        codec,
-        width,
-        height,
-    }) = start
-    else {
-        return Err("expected viewer start command".into());
-    };
-    let codec = VideoCodec::from(codec);
-    if !codecs.contains(&codec) || width == 0 || height == 0 {
-        return Err("unsupported viewer codec or invalid display dimensions".into());
-    }
-    let peer = Arc::new(
-        Peer::new_video_receiver(PeerConfig {
-            video: Some(codec),
-            audio: false,
+) -> PeerOutcome {
+    let mut exit = None;
+    let result = async {
+        let Command::Start {
+            title,
+            ice_servers,
             relay_only,
-            ice_servers: ice_servers.into_iter().map(Into::into).collect(),
-        })
-        .await?,
-    );
-    let result: Result<(), Error> = async {
-        if control { peer.create_data_channel("deskfleet-input".into()).await?; }
-        let offer = peer.create_offer().await?;
-        protocol::emit(json!({"type":"offer", "sdp":offer}))?;
-        let receiver = peer.take_video_receiver()?;
-        let decode_proxy = proxy.clone();
-        let mut decode_shutdown = shutdown.clone();
-        let decode = tokio::spawn(async move {
-            let result = receive(receiver, frames, decode_proxy.clone(), &mut decode_shutdown, width, height).await;
-            if let Err(error) = &result {
-                let _ = protocol::emit(json!({"type":"error", "reason":"decoder", "error":error.to_string()}));
-                let _ = decode_proxy.send_event(WindowEvent::Error(error.to_string()));
-            }
-            result
-        });
-        let _ = proxy.send_event(WindowEvent::Start { title, control });
-        let mut input_open = false;
-        let mut input_ready = false;
-        let mut answered = false;
-        let mut connected = false;
-        let loop_result: Result<(), Error> = async {
-            loop {
-                tokio::select! {
-                    _ = shutdown.changed() => break,
-                    command = commands.recv() => match command {
-                        Some(Command::Answer { sdp }) => {
-                            if answered { return Err("viewer already applied an answer".into()); }
-                            peer.accept_answer(sdp).await?;
-                            answered = true;
-                            protocol::emit(json!({"type":"answerApplied"}))?;
-                        },
-                        Some(Command::Candidate { candidate }) => peer.add_ice_candidate(candidate.into()).await?,
-                        Some(Command::Close) | None => break,
-                        Some(Command::Start { .. }) => return Err("viewer already started".into()),
-                    },
-                    event = input.recv(), if control => {
-                        if let Some(event) = event? {
-                            if input_open && input_ready {
-                                peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
-                            }
-                        } else { break; }
-                    },
-                    event = peer.next_event() => match event? {
-                        Some(PeerEvent::IceCandidate(Some(candidate))) => {
-                            protocol::emit(json!({"type":"candidate", "candidate":Candidate::from(candidate)}))?;
-                        }
-                        Some(PeerEvent::StateChanged(PeerState::Connected)) if !connected => {
-                            connected = true;
-                            protocol::emit(json!({"type":"connected"}))?;
-                        }
-                        Some(PeerEvent::StateChanged(PeerState::Disconnected)) => {
-                            connected = false;
-                            protocol::emit(json!({"type":"disconnected"}))?;
-                        }
-                        Some(PeerEvent::StateChanged(PeerState::Failed | PeerState::Closed)) => {
-                            return Err("native WebRTC connection ended".into());
-                        }
-                        Some(PeerEvent::DataChannelOpen { label }) if label == "deskfleet-input" => input_open = true,
-                        Some(PeerEvent::DataChannelClosed { label }) if control && label == "deskfleet-input" => {
-                            input_open = false;
-                            return Err("desktop input channel closed".into());
-                        },
-                        Some(PeerEvent::Data { label, data, is_string }) if control && label == "deskfleet-input" => {
-                            crate::input_reply::ready(&data, is_string)?;
-                            input_ready = true;
-                            protocol::emit(json!({"type":"inputReady"}))?;
-                        },
-                        Some(PeerEvent::Error { message, .. }) => return Err(message.into()),
-                        None => break,
-                        _ => {},
-                    },
+            mut control,
+            codec,
+            width,
+            height,
+        } = start
+        else {
+            return Err("expected viewer start command".into());
+        };
+        let codec = VideoCodec::from(codec);
+        if !codecs.contains(&codec) || width == 0 || height == 0 {
+            return Err("unsupported viewer codec or invalid display dimensions".into());
+        }
+        let peer = Arc::new(
+            Peer::new_video_receiver(PeerConfig {
+                video: Some(codec),
+                audio: false,
+                relay_only,
+                ice_servers: ice_servers.into_iter().map(Into::into).collect(),
+            })
+            .await?,
+        );
+        let result: Result<(), Error> = async {
+            // Negotiate input once so the settings checkbox can enable it without
+            // interrupting the video. Authorization still gates every input event.
+            peer.create_data_channel("deskfleet-input".into()).await?;
+            let offer = peer.create_offer().await?;
+            protocol::emit(json!({"type":"offer", "sdp":offer}))?;
+            let receiver = peer.take_video_receiver()?;
+            let decode_proxy = proxy.clone();
+            let (decode_stop, mut decode_shutdown) = watch::channel(false);
+            let decode = tokio::spawn(async move {
+                let result = receive(receiver, frames, decode_proxy.clone(), &mut decode_shutdown, width, height).await;
+                if let Err(error) = &result {
+                    let _ = protocol::emit(json!({"type":"error", "reason":"decoder", "error":error.to_string()}));
                 }
+                result
+            });
+            let _ = proxy.send_event(WindowEvent::Start { title, control, codec: codec.into() });
+            let mut input_open = false;
+            let mut input_ready = false;
+            let mut configuration = crate::input_configuration::Configuration::default();
+            let mut deferred_configuration = None;
+            let mut answered = false;
+            let mut connected = false;
+            let loop_result: Result<(), Error> = async {
+                loop {
+                    tokio::select! {
+                        _ = shutdown.changed() => { exit = Some(PeerExit::Close); break; },
+                        command = commands.recv() => match command {
+                            Some(Command::Answer { sdp }) => {
+                                if answered { return Err("viewer already applied an answer".into()); }
+                                peer.accept_answer(sdp).await?;
+                                answered = true;
+                                protocol::emit(json!({"type":"answerApplied"}))?;
+                            },
+                            Some(Command::Candidate { candidate }) => peer.add_ice_candidate(candidate.into()).await?,
+                            Some(Command::Close) | None => { exit = Some(PeerExit::Close); break; },
+                            Some(Command::Stop) => { exit = Some(PeerExit::Stop); break; },
+                            Some(Command::SetControl { control: enabled }) => {
+                                // Always release before changing authorization on the ordered channel.
+                                if input_open {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await?;
+                                }
+                                control = false;
+                                let message = configuration.request(enabled)?;
+                                if input_open {
+                                    peer.send_text("deskfleet-input", &message).await?;
+                                } else {
+                                    deferred_configuration = Some(message);
+                                }
+                            },
+                            Some(Command::Ui { state }) => crate::session_manager::ui(&proxy, state),
+                            Some(Command::Start { .. }) => return Err("viewer already started".into()),
+                        },
+                        event = input.recv() => {
+                            if let Some(event) = event? {
+                                if control && input_open && input_ready {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
+                                }
+                            } else { break; }
+                        },
+                        _ = tokio::time::sleep_until(configuration.deadline()), if configuration.pending() => {
+                            configuration.timeout()?;
+                            deferred_configuration = None;
+                            control = false;
+                        },
+                        event = peer.next_event() => match event? {
+                            Some(PeerEvent::IceCandidate(Some(candidate))) => {
+                                protocol::emit(json!({"type":"candidate", "candidate":Candidate::from(candidate)}))?;
+                            }
+                            Some(PeerEvent::StateChanged(PeerState::Connected)) if !connected => {
+                                connected = true;
+                                protocol::emit(json!({"type":"connected"}))?;
+                                #[cfg(not(target_os = "android"))]
+                                let _ = proxy.send_event(WindowEvent::Connected(true));
+                            }
+                            Some(PeerEvent::StateChanged(PeerState::Disconnected)) => {
+                                connected = false;
+                                protocol::emit(json!({"type":"disconnected"}))?;
+                                #[cfg(not(target_os = "android"))]
+                                let _ = proxy.send_event(WindowEvent::Connected(false));
+                            }
+                            Some(PeerEvent::StateChanged(PeerState::Failed | PeerState::Closed)) => {
+                                return Err("native WebRTC connection ended".into());
+                            }
+                            Some(PeerEvent::DataChannelOpen { label }) if label == "deskfleet-input" => {
+                                input_open = true;
+                                if let Some(message) = deferred_configuration.take() {
+                                    peer.send_text("deskfleet-input", &message).await?;
+                                }
+                            },
+                            Some(PeerEvent::DataChannelClosed { label }) if control && label == "deskfleet-input" => {
+                                input_open = false;
+                                return Err("desktop input channel closed".into());
+                            },
+                            Some(PeerEvent::Data { label, data, is_string }) if label == "deskfleet-input" => {
+                                use crate::input_reply::Reply;
+                                match crate::input_reply::parse(&data, is_string)? {
+                                    Reply::Ready => {
+                                        input_ready = true;
+                                        protocol::emit(json!({"type":"inputReady"}))?;
+                                        #[cfg(not(target_os = "android"))]
+                                        let _ = proxy.send_event(WindowEvent::InputReady);
+                                    }
+                                    Reply::Error { error } => return Err(error.into()),
+                                    Reply::Configured { request_id, control: enabled } => {
+                                        if configuration.reply(request_id, enabled, None)? { control = enabled; input_ready = true; }
+                                    }
+                                    Reply::ConfigurationError { request_id, control: enabled, error } => {
+                                        if configuration.reply(request_id, enabled, Some(error))? { control = enabled; input_ready = true; }
+                                    }
+                                }
+                            },
+                            Some(PeerEvent::Error { message, .. }) => return Err(message.into()),
+                            None => return Err("native WebRTC connection ended".into()),
+                            _ => {},
+                        },
+                    }
+                }
+                Ok(())
+            }.await;
+            if input_open {
+                let _ = peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await;
             }
+            decode_stop.send_replace(true);
+            let closed = peer.close().await;
+            let decoded = decode.await;
+            loop_result?;
+            closed?;
+            decoded??;
             Ok(())
         }.await;
-        if input_open {
-            let _ = peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await;
-        }
+        // Also close if negotiation failed before entering the command loop.
         let closed = peer.close().await;
-        let decoded = decode.await;
-        loop_result?;
+        result?;
         closed?;
-        decoded??;
         Ok(())
     }.await;
-    // Also close if negotiation failed before entering the command loop.
-    let closed = peer.close().await;
-    result?;
-    closed?;
-    Ok(())
+    PeerOutcome { exit, result }
 }
 
 #[cfg(any(
@@ -317,7 +380,7 @@ async fn receive(
     Err("native desktop decoding is supported on Linux, Windows, macOS, and Android".into())
 }
 
-fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
+pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
     #[cfg(target_os = "windows")]
     {
         crate::windows_decoder::supported_codecs()

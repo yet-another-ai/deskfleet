@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { ViewerCommand, ViewerEvent, ViewerProcess } from "./native-desktop-session.ts"
 
-/** The pipe carries signaling only; decoded pixels never leave the Rust process. */
+/** The pipe carries signaling and UI state; decoded pixels stay in Rust. */
 export function spawnDesktopViewer(executable: string, receive: (event: ViewerEvent) => void): ViewerProcess {
   const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
   const lines = createInterface({ input: child.stdout })
@@ -24,7 +24,8 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
     resolveExit()
     if (!closing && (code !== 0 || signal)) {
       report(new Error(`Native desktop exited (${signal ?? code ?? "unknown"})${diagnostics.trim() ? `: ${diagnostics.trim()}` : ""}`))
-    } else receive({ type: "closed" })
+    }
+    receive({ type: "closed" })
   })
   lines.on("line", line => {
     if (closing) return
@@ -46,7 +47,16 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
           if (typeof value.error !== "string") throw new Error("Invalid native desktop error")
           if (value.reason !== undefined && value.reason !== "decoder") throw new Error("Invalid native desktop error reason")
           break
-        case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "closeRequested": case "closed": case "stats": break
+        case "selectDisplay":
+          if (typeof value.displayId !== "number" || !Number.isSafeInteger(value.displayId) || value.displayId < 0) throw new Error("Invalid native desktop display")
+          break
+        case "setControl":
+          if (typeof value.control !== "boolean") throw new Error("Invalid native desktop control option")
+          break
+        case "controlConfigured":
+          if (typeof value.control !== "boolean" || (value.error !== undefined && typeof value.error !== "string")) throw new Error("Invalid native desktop control acknowledgement")
+          break
+        case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "stopped": case "reconnect": case "disconnect": case "closeRequested": case "closed": case "stats": break
         default: throw new Error("Unknown native desktop response")
       }
       receive(event as ViewerEvent)
