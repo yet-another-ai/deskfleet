@@ -78,7 +78,9 @@ membership, resource access, or Site Admin authority.
    the request with an optional review note. Approval anonymizes the retained
    identity, disables sign-in, clears credentials and Team memberships, revokes
    machine registrations and peer access, and keeps Team-owned machinery and
-   audit history. Team owners must transfer ownership before approval.
+   audit history. Team owners must transfer ownership before approval. Site
+   administrators can also provision verified password accounts; creation
+   requires recent authentication and is audited without credential material.
 
 GitHub login identifies an account by GitHub’s stable user ID; Google login uses
 Google’s stable `sub` identifier. Every sign-in through either provider requires

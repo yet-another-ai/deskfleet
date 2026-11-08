@@ -91,6 +91,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     registrationPolicy: vi.fn(async () => ({ registrationEnabled: true })),
     updateRegistration: vi.fn(async (_enabled: boolean) => {}),
     users: vi.fn(async (_query: string) => []),
+    createUser: vi.fn(async (input: { name: string; email: string; password: string }) => ({ id: "user-created", name: input.name, email: input.email, disabled: false })),
     disableUser: vi.fn(async (_userId: string, _disabled: boolean) => {}),
     sendEmailCode: vi.fn(async () => ({ challengeId: "challenge", expiresIn: 600, retryAfter: 60 })),
     verifyEmailCode: vi.fn(async () => {}),

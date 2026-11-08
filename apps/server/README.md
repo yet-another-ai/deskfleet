@@ -376,6 +376,12 @@ independent of Team creation. Site administrators can search accounts through
 `PATCH /api/admin/users/{id}/disabled`. Disablement blocks login and later
 delegated authorization; changing these policies requires recent authentication.
 
+Site administrators can provision a mailbox-verified password account with
+`POST /api/admin/users` (`name`, `email`, `password`). No verification email is
+sent. The password follows the normal 15–128 character policy, the operation
+requires recent authentication, and the audit record omits credentials.
+Duplicate addresses return `conflict`.
+
 Signed-in users may request deletion with `POST /api/auth/account-deletion`,
 inspect the latest request, or cancel a pending request through the same route.
 Site administrators list pending requests with
