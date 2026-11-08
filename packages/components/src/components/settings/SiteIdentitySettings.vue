@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Search } from "@lucide/vue"
+import { DialogDescription, DialogTitle } from "reka-ui"
 import { useAsyncState } from "@vueuse/core"
 import { ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
@@ -7,6 +8,8 @@ import type { SiteAdministrationApi } from "@deskfleet/client/central"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import UiButton from "../common/UiButton.vue"
+import UiDialog from "../common/UiDialog.vue"
+import UiField from "../common/UiField.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import SettingsRow from "./SettingsRow.vue"
@@ -21,6 +24,11 @@ const searching = ref(false)
 const pending = ref<string>()
 const actionError = ref<string>()
 const disabling = ref<User>()
+const creating = ref(false)
+const createPending = ref(false)
+const createError = ref<string>()
+const created = ref<User>()
+const draft = ref({ name: "", email: "", password: "" })
 const { state: policy, error: policyError } = useAsyncState(() => props.api.registrationPolicy(), undefined)
 // The server returns at most this many matches.
 const resultLimit = 50
@@ -50,6 +58,27 @@ async function setDisabled(user: User, disabled: boolean): Promise<void> {
   await props.confirmed(() => props.api.disableUser(user.id, disabled))
   user.disabled = disabled
 }
+function openCreate(): void {
+  draft.value = { name: "", email: "", password: "" }
+  createError.value = undefined
+  creating.value = true
+}
+async function createAccount(): Promise<void> {
+  if (createPending.value) return
+  createPending.value = true
+  createError.value = undefined
+  try {
+    const user = await props.confirmed(() => props.api.createUser({
+      name: draft.value.name.trim(),
+      email: draft.value.email.trim(),
+      password: draft.value.password,
+    }))
+    created.value = user
+    results.value = { query: user.email, users: [user] }
+    creating.value = false
+  } catch (reason) { createError.value = failureMessage(reason) }
+  finally { createPending.value = false }
+}
 </script>
 
 <template>
@@ -63,6 +92,11 @@ async function setDisabled(user: User, disabled: boolean): Promise<void> {
         <UiSwitch v-if="policy" :model-value="policy.registrationEnabled" :aria-labelledby="`${id}-registration`" name="public-registration" :disabled="!!pending" @update:model-value="setRegistration" />
       </SettingsRow>
     </div>
+    <div class="mt-4 flex flex-wrap items-start justify-between gap-3">
+      <p class="m-0 max-w-xl text-[13px] text-ui-text-muted">{{ t("siteAdmin.createAccountDescription") }}</p>
+      <UiButton class="shrink-0" :disabled="!!pending" @click="openCreate">{{ t("siteAdmin.createAccount") }}</UiButton>
+    </div>
+    <p v-if="created" role="status" class="m-0 mt-2 text-sm text-ui-text-muted">{{ t("siteAdmin.accountCreated", { email: created.email }) }}</p>
     <form class="mt-4 flex gap-2" role="search" @submit.prevent="search">
       <div class="relative min-w-0 flex-1">
         <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ui-text-faint" aria-hidden="true" />
@@ -87,6 +121,20 @@ async function setDisabled(user: User, disabled: boolean): Promise<void> {
       <p v-if="results.users.length >= resultLimit" class="m-0 mt-2 text-xs text-ui-text-muted">{{ t("siteAdmin.resultLimit", { count: resultLimit }) }}</p>
     </template>
   </section>
+  <UiDialog v-if="creating" class="w-[28rem]" described :prevent-close="createPending" @close="creating = false">
+    <DialogTitle class="ui-dialog-title">{{ t("siteAdmin.createAccountTitle") }}</DialogTitle>
+    <DialogDescription class="ui-dialog-description">{{ t("siteAdmin.createAccountDescription") }}</DialogDescription>
+    <form class="mt-5 flex flex-col gap-4" @submit.prevent="createAccount">
+      <UiField v-model="draft.name" :label="t('siteAdmin.createAccountName')" name="new-account-name" autocomplete="off" maxlength="200" required :disabled="createPending" autofocus />
+      <UiField v-model="draft.email" :label="t('siteAdmin.createAccountEmail')" name="new-account-email" type="email" autocomplete="off" maxlength="254" required :disabled="createPending" />
+      <UiField v-model="draft.password" :label="t('siteAdmin.createAccountPassword')" name="new-account-password" type="password" autocomplete="new-password" minlength="15" maxlength="128" required :disabled="createPending" :hint="t('siteAdmin.createAccountPasswordHint')" />
+      <p v-if="createError" role="alert" class="m-0 text-sm text-ui-danger">{{ createError }}</p>
+      <div class="ui-dialog-actions mt-2">
+        <UiButton :disabled="createPending" @click="creating = false">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton type="submit" variant="primary" :loading="createPending">{{ t("siteAdmin.createAccount") }}</UiButton>
+      </div>
+    </form>
+  </UiDialog>
   <ConfirmDialog
     v-if="disabling"
     :title="t('siteAdmin.disableTitle', { name: disabling.name })"

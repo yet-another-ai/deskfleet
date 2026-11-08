@@ -19,6 +19,8 @@ export type { SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurn
 export type TeamRole = "owner" | "admin" | "member"
 export type Team = Omit<WireTeam, "role"> & { role: TeamRole }
 export interface TeamMember { userId: string; name: string; email?: string | null; role: TeamRole }
+export interface AdminAccount { id: string; name: string; email: string; disabled: boolean }
+export interface CreateAccountInput { name: string; email: string; password: string }
 export interface TeamUsage { relayedBytes: string; activeSessionCount: number; memberCount: number }
 export type Machine = Omit<WireMachine, "capabilities" | "lastSeenAt"> & { capabilities: Record<string, unknown>; lastSeenAt?: WireMachine["lastSeenAt"] }
 export interface LocalEnrollment {
@@ -62,7 +64,8 @@ export interface SiteAdministrationApi {
   reviewDeletionRequest(id: string, approve: boolean, note?: string): Promise<void>
   registrationPolicy(): Promise<{ registrationEnabled: boolean }>
   updateRegistration(enabled: boolean): Promise<void>
-  users(query: string): Promise<Array<{ id: string; name: string; email: string; disabled: boolean }>>
+  users(query: string): Promise<AdminAccount[]>
+  createUser(input: CreateAccountInput): Promise<AdminAccount>
   disableUser(userId: string, disabled: boolean): Promise<void>
   /** Confirms recent authentication with a password, or a Passkey when omitted. */
   reauthenticate(password?: string): Promise<void>

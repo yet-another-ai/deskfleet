@@ -111,6 +111,7 @@ pub fn configure(config: &mut web::ServiceConfig) {
             web::patch().to(account::disabled),
         )
         .route("/admin/users", web::get().to(account::users))
+        .route("/admin/users", web::post().to(account::create_user))
         .route(
             "/admin/account-deletion-requests",
             web::get().to(account::deletion_requests),

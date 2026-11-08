@@ -102,6 +102,29 @@ test.each([false, true])("Enterprise confirmation identifies the selected same-n
   expect(central.setManualGrant).toHaveBeenCalledExactlyOnceWith("team-2", "enterprise", null, "Support request")
 })
 
+test("creating a verified account submits trimmed identity fields and shows the result", async () => {
+  const { central } = fakeCentral()
+  central.createUser.mockResolvedValue({ id: "user-created", name: "New User", email: "newuser@example.test", disabled: false })
+  view = mount(SiteIdentitySettings, { props: { api: central, confirmed }, global: { plugins: [i18n] }, attachTo: document.body })
+  await flushPromises()
+  await button(view, "Create account").trigger("click")
+  await flushPromises()
+  const dialog = body().get('[role="dialog"]')
+  await dialog.get('input[name="new-account-name"]').setValue("  New User  ")
+  await dialog.get('input[name="new-account-email"]').setValue("  newuser@example.test  ")
+  await dialog.get('input[name="new-account-password"]').setValue("a-very-long-test-password")
+  await button(dialog, "Create account").trigger("click")
+  await flushPromises()
+  expect(central.createUser).toHaveBeenCalledExactlyOnceWith({
+    name: "New User",
+    email: "newuser@example.test",
+    password: "a-very-long-test-password",
+  })
+  expect(view.text()).toContain("Account newuser@example.test created.")
+  expect(view.get('[data-account-id="user-created"]').text()).toContain("New User")
+  expect(body().find('[role="dialog"]').exists()).toBe(false)
+})
+
 test("disabling an account is confirmed first; enabling it again is immediate", async () => {
   const { central } = fakeCentral()
   central.users.mockResolvedValue([{ id: "user-2", name: "Bob", email: "bob@example.test", disabled: false }] as never)

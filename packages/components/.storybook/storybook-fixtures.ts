@@ -675,6 +675,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev", disabled: false },
       { id: "user-3", name: "Alan Turing", email: "alan@deskfleet.dev", disabled: true },
     ],
+    createUser: async (input: { name: string; email: string; password: string }) => ({ id: `user-${input.email}`, name: input.name, email: input.email, disabled: false }),
     disableUser: async () => {},
     sendEmailCode: async () => ({ challengeId: "challenge", expiresIn: 600, retryAfter: 60 }),
     verifyEmailCode: async () => {},

@@ -244,6 +244,15 @@ test("requests one administration Team page with its search filter and cursor", 
   await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=20&search=design+team&cursor=team%2Fprev")
 })
 
+test("creates an account through the administration route", async () => {
+  const f = setup()
+  const account = { id: "user-new", name: "New User", email: "newuser@example.test", disabled: false }
+  f.responses.push(account)
+  expect(await f.client.createUser({ name: "New User", email: "newuser@example.test", password: "a-very-long-test-password" })).toEqual(account)
+  const request = await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/users", { method: "POST" })
+  expect(JSON.parse((await requestBodies.get(request))!)).toEqual({ name: "New User", email: "newuser@example.test", password: "a-very-long-test-password" })
+})
+
 test("lists and reviews account deletion requests", async () => {
   const f = setup()
   const page = { requests: [{ id: "10", reason: "Moving on", status: "pending", requestedAt: "2026-11-08T00:00:00.000Z", user: { id: "user-2", name: "Grace", email: "grace@example.test" } }], nextCursor: "10" }

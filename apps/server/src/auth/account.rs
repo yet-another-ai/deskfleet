@@ -169,6 +169,13 @@ pub(super) async fn disabled(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct NewAccount {
+    name: String,
+    email: String,
+    password: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct DeletionRequest {
     reason: String,
 }
@@ -203,6 +210,27 @@ pub(super) async fn users(
             .find_accounts(&auth.user.id, &query.query)
             .await?
     )))
+}
+pub(super) async fn create_user(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<NewAccount>,
+) -> Result<web::Json<Value>> {
+    let auth = recent(&req, &state).await?;
+    if !state.store.is_site_admin(&auth.user.id).await? {
+        return Err(ApiError::forbidden());
+    }
+    let hash = super::passwords::hash(&state, body.password.clone()).await?;
+    let user = state
+        .store
+        .create_account(&auth.user.id, &body.email, &body.name, &hash)
+        .await?;
+    Ok(web::Json(json!({
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "disabled": false
+    })))
 }
 pub(super) async fn deletion_request(
     req: HttpRequest,
