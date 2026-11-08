@@ -1,9 +1,11 @@
-import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
+import { BrowserWindow, dialog, ipcMain, shell, type WebContents } from "electron"
 import type { CentralApi } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, FILES_IPC_CHANNEL, FILES_RESOURCE_PROGRESS_EVENT, type FileAttachmentUploadRequest, type FileConflict, type FileLocation, type FileReadResourceProgress, type FileResourceRequest, type FilesApi, type FileTarget, type FileTransfer } from "@deskfleet/client/files"
 import { isDesktopMediaSender } from "./desktop-media.ts"
 import { createNativeFileEndpoint } from "./files-peer.ts"
 import { WindowFiles } from "./files-controller.ts"
+import { isLocalFileTarget } from "./files-local.ts"
+import { DaemonClient } from "./daemon-client.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid file operation")
@@ -60,6 +62,10 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown,
         : api.readResource(resource(args[0]))
     }
     case "saveResource": return api.saveResource(resource(args[0]))
+    case "openResource": {
+      if (!api.openResource) throw new Error("Opening local files is unavailable")
+      return api.openResource(resource(args[0]))
+    }
     case "uploadAttachment": {
       if (!api.uploadAttachment) throw new Error("Attachment upload is unavailable")
       return api.uploadAttachment(attachmentUpload(args[0]))
@@ -98,6 +104,15 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
     if (!window) throw new Error("File operation requires a window")
     manager = new WindowFiles({
       remoteEndpoint: async target => createNativeFileEndpoint(central, target),
+      isLocalTarget: target => isLocalFileTarget(central, async () => {
+        const daemon = await DaemonClient.connect(() => {}, () => {})
+        try { return await daemon.call("centralStatus", {}) }
+        finally { daemon.close() }
+      }, target),
+      openPath: async path => {
+        const error = await shell.openPath(path)
+        if (error) throw new Error(error)
+      },
       sessionDirectory: localSessionDirectory,
       sessionAttachmentDirectory: localSessionAttachmentDirectory,
       chooseDirectory: async () => {

@@ -67,7 +67,9 @@ function load(uri: string, refCount = 1): void {
     value.error = t("files.resourceUnavailable")
     return
   }
-  void files.readResource({ ...current, uri }).then(result => {
+  const request = { ...current, target: { ...current.target }, uri }
+  value.request = request
+  void files.readResource(request).then(result => {
     if (disposed || images.get(uri) !== value) return
     // Markdown embeds share PreviewViewer's media, 3D model, and Office support.
     if (!previewKindFromMime(result.mimeType)) {
@@ -75,6 +77,7 @@ function load(uri: string, refCount = 1): void {
     }
     value.mimeType = result.mimeType
     value.data = result.data
+    value.canOpen = result.canOpen
     value.url = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
   }).catch(reason => {
     if (images.get(uri) === value) value.error = reason instanceof Error ? reason.message : String(reason)

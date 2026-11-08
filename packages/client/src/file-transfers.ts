@@ -23,15 +23,22 @@ function mimeType(name: string): string {
 export class FileTransferManager implements FilesApi {
   readonly #factory: (target: FileTarget) => Promise<FileEndpoint>
   readonly #choose: () => Promise<FileListing | null>
+  readonly #unlimitedPreview?: (target: FileTarget) => Promise<boolean>
   readonly #endpoints = new Map<string, Promise<FileEndpoint>>()
   readonly #jobs: Job[] = []
   readonly #listeners = new Set<(transfers: FileTransfer[]) => void>()
   #draining: Promise<void> | undefined
   #closed = false
 
-  constructor(options: { endpoint(target: FileTarget): Promise<FileEndpoint>; chooseLocalDirectory(): Promise<FileListing | null> }) {
+  constructor(options: {
+    endpoint(target: FileTarget): Promise<FileEndpoint>
+    chooseLocalDirectory(): Promise<FileListing | null>
+    /** Host-owned policy; callers cannot raise the preview limit through FilesApi. */
+    unlimitedPreview?(target: FileTarget): Promise<boolean>
+  }) {
     this.#factory = options.endpoint
     this.#choose = options.chooseLocalDirectory
+    this.#unlimitedPreview = options.unlimitedPreview
   }
 
   async #endpoint(target: FileTarget): Promise<FileEndpoint> {
@@ -219,7 +226,7 @@ export class FileTransferManager implements FilesApi {
     const endpoint = await this.#endpoint(request.target)
     const file = (await endpoint.call("resolve", { sessionId: request.sessionId, uri: request.uri })).value
     if (file.kind !== "file") throw new Error("Select a file to preview")
-    if (file.size > PREVIEW_BYTES) throw new Error("This file is too large to preview. Download it instead.")
+    if (file.size > PREVIEW_BYTES && !await this.#unlimitedPreview?.(request.target)) throw new Error("This file is too large to preview. Download it instead.")
     options?.onProgress?.({ transferredBytes: 0, totalBytes: file.size })
     const data = new Uint8Array(file.size)
     const { readId } = (await endpoint.call("openRead", { path: file.path, modifiedAt: file.modifiedAt })).value

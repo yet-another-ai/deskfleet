@@ -1,4 +1,5 @@
 import { type Component, type InjectionKey } from "vue"
+import type { FileResourceRequest } from "../../../client/src/files.ts"
 
 export type OfficePreviewKind = "docx" | "xlsx" | "pptx"
 export type PreviewKind = "mermaid" | "image" | "audio" | "video" | "model" | OfficePreviewKind
@@ -27,6 +28,32 @@ export interface PreviewDescriptor {
   alt?: string
   mimeType?: string
   source?: PreviewSource
+  resourceRequest?: FileResourceRequest
+}
+
+/** Local grants belong to one renderer document and cannot authorize another window. */
+export function previewResourceRequestToQuery(request?: FileResourceRequest): Record<string, string | undefined> {
+  const machine = request?.target.kind === "machine" ? request.target : undefined
+  return {
+    fileTarget: machine ? "machine" : undefined,
+    fileTeamId: machine?.teamId,
+    fileMachineId: machine?.machineId,
+    fileSessionId: machine ? request?.sessionId : undefined,
+    fileUri: machine ? request?.uri : undefined,
+  }
+}
+
+/** Keep explicit scope on navigation; main/the daemon still authorize every request. */
+export function previewResourceRequestFromQuery(get: (key: string) => unknown): FileResourceRequest | undefined {
+  if (get("fileTarget") !== "machine") return undefined
+  const text = (key: string) => {
+    const value = get(key)
+    return typeof value === "string" && value.length > 0 && value.length <= 32768 && !value.includes("\0") ? value : undefined
+  }
+  const teamId = text("fileTeamId"), machineId = text("fileMachineId")
+  const sessionId = text("fileSessionId"), uri = text("fileUri")
+  if (!teamId || !machineId || !sessionId || !uri) return undefined
+  return { target: { kind: "machine", teamId, machineId }, sessionId, uri }
 }
 
 export function isPannablePreview(kind: PreviewKind): boolean {

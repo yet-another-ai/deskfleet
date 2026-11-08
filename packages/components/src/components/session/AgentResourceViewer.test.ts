@@ -182,6 +182,27 @@ test("downloads loaded binary files even when their preview format is unsupporte
   view.unmount()
 })
 
+test.each(["dialog", "tab"] as const)("opens local unsupported files instead of downloading in %s mode", async mode => {
+  const openResource = vi.fn().mockRejectedValue(new Error("No application is associated with this file"))
+  const saveResource = vi.fn()
+  const createUrl = vi.spyOn(URL, "createObjectURL")
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name: "archive.zip", path: "/work/archive.zip", kind: "file", canOpen: true }),
+    readResource: vi.fn().mockResolvedValue({ name: "archive.zip", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/zip", canOpen: true }),
+    openResource, saveResource,
+  }, request, mode)
+  await flushPromises()
+  expect(view.get('[role="alert"]').text()).toContain("open it in another application")
+  expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
+  await view.get('[data-preview-action="open"]').trigger("click")
+  await flushPromises()
+  expect(openResource).toHaveBeenCalledExactlyOnceWith(request)
+  expect(saveResource).not.toHaveBeenCalled()
+  expect(createUrl).not.toHaveBeenCalled()
+  expect(view.get('[role="alert"]').text()).toBe("No application is associated with this file")
+  view.unmount()
+})
+
 test.each(["dialog", "tab"] as const)("shows resolution errors without offering a download in %s mode", async mode => {
   const saveResource = vi.fn()
   const view = render({ resolveResource: vi.fn().mockRejectedValue(new Error("File path is outside the authorized folder")), saveResource }, request, mode)

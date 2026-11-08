@@ -2,7 +2,7 @@ import { getActivePinia } from "pinia"
 import { nextTick, ref } from "vue"
 import type { RouteLocationNormalizedLoadedGeneric } from "vue-router"
 import { router } from "../router/index.ts"
-import { resolvePreviewKind, type PreviewDescriptor, type PreviewSource } from "../services/preview.ts"
+import { previewResourceRequestFromQuery, previewResourceRequestToQuery, resolvePreviewKind, type PreviewDescriptor, type PreviewSource } from "../services/preview.ts"
 import { useLayoutStore, type ResourceWindowItem } from "./layout.ts"
 
 export interface PreviewLocateRequest extends PreviewSource {
@@ -31,6 +31,7 @@ export async function focusPreview(item: PreviewDescriptor): Promise<void> {
       previewKind: item.kind,
       previewTitle: item.title || undefined,
       previewMime: item.mimeType || undefined,
+      ...previewResourceRequestToQuery(item.resourceRequest),
     },
   })
 }
@@ -50,6 +51,7 @@ export function focusedPreviewFromRoute(
   const entryId = query("previewEntry")
   const itemId = query("previewItem")
   const kind = resolvePreviewKind(content, explicitKind, mimeType)
+  const resourceRequest = previewResourceRequestFromQuery(key => route.query[key])
   const source: PreviewSource = {
     ...(typeof route.params.sessionId === "string" && route.params.sessionId ? { sessionId: route.params.sessionId } : {}),
     ...(entryId ? { entryId } : {}),
@@ -61,6 +63,7 @@ export function focusedPreviewFromRoute(
     ...(title ? { title } : {}),
     ...(mimeType ? { mimeType } : {}),
     source,
+    ...(resourceRequest ? { resourceRequest } : {}),
   }
 }
 
@@ -128,6 +131,7 @@ export async function locatePreviewInMainView(content: string, source?: PreviewS
         previewKind: undefined,
         previewTitle: undefined,
         previewMime: undefined,
+        ...previewResourceRequestToQuery(),
       },
     })
   }

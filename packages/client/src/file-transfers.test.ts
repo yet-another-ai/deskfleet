@@ -275,3 +275,29 @@ test("reading a resource reports byte progress across chunks", async () => {
   expect(updates.length).toBeGreaterThan(2)
 })
 
+test.each([{ kind: "local" } as const, remote])("default previews retain the size limit for $kind targets", async target => {
+  const { source } = await fixture()
+  await writeFile(join(source, "large.txt"), Buffer.alloc(16 * 1024 * 1024 + 1))
+  const service = new FilesService(async () => source)
+  const call = vi.spyOn(service, "call")
+  const manager = new FileTransferManager({ endpoint: async () => service, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+  await expect(manager.readResource({ target, sessionId: "session", uri: "large.txt" })).rejects.toThrow("too large to preview")
+  expect(call.mock.calls.map(([method]) => method)).toEqual(["resolve"])
+})
+
+test("the host may remove the preview limit only for its verified local target", async () => {
+  const { source } = await fixture()
+  const size = 16 * 1024 * 1024 + 1
+  await writeFile(join(source, "large.txt"), Buffer.alloc(size, 0x61))
+  const local = { kind: "machine", machineId: "this-machine", teamId: "team" } as const
+  const unlimitedPreview = vi.fn(async (target: FileTarget) => target.kind === "machine" && target.machineId === local.machineId && target.teamId === local.teamId)
+  const manager = new FileTransferManager({ endpoint: async () => new FilesService(async () => source), chooseLocalDirectory: async () => null, unlimitedPreview })
+  cleanups.push(() => manager.close())
+  const result = await manager.readResource({ target: local, sessionId: "session", uri: "large.txt" })
+  expect(result.data.byteLength).toBe(size)
+  expect(result.data.at(-1)).toBe(0x61)
+  expect(unlimitedPreview).toHaveBeenCalledWith(local)
+  await expect(manager.readResource({ target: remote, sessionId: "session", uri: "large.txt" })).rejects.toThrow("too large to preview")
+})
+

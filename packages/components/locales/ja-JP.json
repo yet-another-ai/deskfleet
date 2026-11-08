@@ -971,6 +971,7 @@
     "cancel": "キャンセル", "keepBoth": "両方を保持",
     "skip": "スキップ", "replace": "置き換え",
     "loadingResource": "画像を読み込み中…", "imageUnavailable": "画像を表示できません",
+    "openResource": "開く", "previewUnavailableLocal": "このファイルはプレビューできません。別のアプリで開くことができます。",
     "previewUnavailable": "このファイルはプレビューできません。ダウンロードして確認してください。", "downloadResource": "ダウンロード",
     "resourceUnavailable": "このリソースは利用できません。対象のマシンに接続して、もう一度お試しください。", "notImage": "このファイルは画像として表示できません。",
     "state": {
