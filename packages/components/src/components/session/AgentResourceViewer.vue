@@ -103,8 +103,13 @@ async function open(): Promise<void> {
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) loading.value = false }
 }
-function download(): void {
-  if (!previewBytes.value || !entry.value) return
+async function download(): Promise<void> {
+  if (entry.value?.kind !== "file") return
+  if (!previewBytes.value) {
+    try { await filesApi.value?.saveResource(request) }
+    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+    return
+  }
   imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
   const link = document.createElement("a")
   link.href = imageUrl.value
@@ -158,7 +163,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             @click="locateOriginal"
           ><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton
-            v-if="!loading && previewBytes"
+            v-if="!loading && entry?.kind === 'file'"
             type="button"
             data-preview-action="download"
             @click="download"
@@ -221,7 +226,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="!loading && previewBytes" type="button" @click="download">{{ t('files.downloadResource') }}</UiButton>
+      <UiButton v-if="!loading && entry?.kind === 'file'" type="button" data-preview-action="download" @click="download">{{ t('files.downloadResource') }}</UiButton>
       <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>

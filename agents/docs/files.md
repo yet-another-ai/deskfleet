@@ -242,6 +242,12 @@ separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
 Other authorized files can be downloaded from that tab or dialog.
 
+Codex `:codex-file-citation{path="..." purpose="output"}` markers render as
+filename links through the same resource path. The quoted path is parsed before
+Markdown typography and formatting can alter it; the marker cannot select a
+different Team, Machine, or Session. Code examples and escaped markers stay
+literal, and incomplete streamed markers become links only after they close.
+
 Markdown embeds such as `![Clip](./clip.mp4)` use the shared media viewer for
 supported image, audio, video, and 3D model MIME types. Files are fetched through the same
 authenticated file endpoint and rendered using typed Blob URLs, which are
@@ -251,8 +257,11 @@ codec support. Raw HTML `<video>` tags remain escaped.
 BMP uses `image/bmp`; ICO uses `image/vnd.microsoft.icon`, with the legacy
 `image/x-icon` type also accepted for previews.
 Preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
-The download action selects a local destination and creates a normal queue
-item. Loading failures retain a visible retry action.
+The download action saves already loaded bytes through a browser download,
+including files with unsupported preview formats. If the file resolves but its
+preview cannot load, the action remains available and selects a local destination
+for a normal transfer queue item. That transfer rechecks file access through the
+same scoped file endpoint. Media loading failures retain a visible retry action.
 
 The daemon resolves filesystem references only. It does not proxy HTTP URLs,
 remote `localhost` services, arbitrary network resources, or port-forwarded web
