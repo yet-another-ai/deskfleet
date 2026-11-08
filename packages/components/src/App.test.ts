@@ -244,7 +244,9 @@ test("workspace New session chooses that workspace before opening the composer a
 
 test("workspace deletion requires confirmation and clears its composer target", async () => {
   const pinia = createPinia()
-  const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
+  const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace")
+    .mockRejectedValueOnce(new Error(`workspace ${workspaceId} still has active sessions`))
+    .mockResolvedValue()
   const removeSession = vi.spyOn(useAgentSessionsStore(pinia), "remove").mockResolvedValue()
   const wrapper = await mountApp("/", pinia)
   await workspaceAction(wrapper, "Delete workspace")

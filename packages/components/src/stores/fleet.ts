@@ -251,13 +251,15 @@ export const useFleetStore = defineStore("fleet", () => {
   }
   async function deleteWorkspace(id: string, options?: { deleteSessions?: boolean }): Promise<void> {
     requireWorkspace(id)
-    // The catalog rejects deletion while any Session row remains, including archived ones.
-    if (options?.deleteSessions) {
-      for (const sessionId of findWorkspace(id)?.workspace.sessions.map(session => session.id) ?? []) {
-        await agents.remove(sessionId)
-      }
+    // Other rejection reasons, such as scheduled tasks, must leave Sessions in place.
+    const sessionIds = options?.deleteSessions ? findWorkspace(id)?.workspace.sessions.map(session => session.id) ?? [] : []
+    try {
+      await platformClient.catalog.deleteWorkspace(id)
+    } catch (error) {
+      if (!sessionIds.length || !(error instanceof Error) || !error.message.includes("still has active sessions")) throw error
+      for (const sessionId of sessionIds) await agents.remove(sessionId)
+      await platformClient.catalog.deleteWorkspace(id)
     }
-    await platformClient.catalog.deleteWorkspace(id)
     catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
     reconcileTarget()
   }
