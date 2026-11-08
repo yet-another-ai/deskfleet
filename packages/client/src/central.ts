@@ -2,6 +2,7 @@ import type { RelayDeniedReason } from "./relay.ts"
 import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
@@ -57,6 +58,8 @@ export interface SiteAdministrationApi {
   updateCloudflareTurnSettings(settings: CloudflareTurnSettingsUpdate): Promise<CloudflareTurnSettings>
   billingTeams(query?: AdminTeamBillingQuery): Promise<AdminTeamBillingPage>
   setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string): Promise<void>
+  deletionRequests(query?: AccountDeletionRequestQuery): Promise<AccountDeletionRequestPage>
+  reviewDeletionRequest(id: string, approve: boolean, note?: string): Promise<void>
   registrationPolicy(): Promise<{ registrationEnabled: boolean }>
   updateRegistration(enabled: boolean): Promise<void>
   users(query: string): Promise<Array<{ id: string; name: string; email: string; disabled: boolean }>>

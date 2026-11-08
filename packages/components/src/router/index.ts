@@ -50,6 +50,12 @@ export const router = createRouter({
           component: () => import("../components/settings/EnterpriseTeams.vue"),
           meta: { recentAuthentication: true },
         },
+        {
+          path: "deletion-requests",
+          name: "site-admin-deletion-requests",
+          component: () => import("../components/settings/SiteDeletionRequests.vue"),
+          meta: { recentAuthentication: true },
+        },
       ],
     },
     {

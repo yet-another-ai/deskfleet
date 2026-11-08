@@ -374,6 +374,17 @@ independent of Team creation. Site administrators can search accounts through
 `PATCH /api/admin/users/{id}/disabled`. Disablement blocks login and later
 delegated authorization; changing these policies requires recent authentication.
 
+Signed-in users may request deletion with `POST /api/auth/account-deletion`,
+inspect the latest request, or cancel a pending request through the same route.
+Site administrators list pending requests with
+`GET /api/admin/account-deletion-requests` and review them with
+`POST /api/admin/account-deletion-requests/{id}/review`. Approval anonymizes the
+retained identity row, disables sign-in, clears credentials, Team memberships,
+and machine registrations, and revokes peer access. Team ownership must be
+transferred before approval, and Team-owned machines, history, and audit records
+are retained. Rejections keep the account active and may include a note for the
+user.
+
 Machine removal leaves Team membership intact. A removed installation must
 prepare a fresh empty data directory and origin before enrolling again, including
 when returning to the same Team; the old machine's credentials and origin cannot
@@ -382,7 +393,8 @@ be reused. Old replicas stay scoped to the removed central machine ID.
 The `/api` routes cover:
 
 - `/auth/config`, `/auth/register`, `/auth/verify`, `/auth/login`, recovery,
-  password/email changes, Passkey management, login-session inspection/revocation.
+  password/email changes, Passkey management, login-session inspection/revocation,
+  and account deletion requests.
 - `/auth/github/start`, `/auth/github/callback`, `/auth/google/start`,
   `/auth/google/callback` for optional provider login.
 - `/auth/start`, `/auth/desktop/complete`, `/auth/exchange`, `/auth/logout`, `/me`.

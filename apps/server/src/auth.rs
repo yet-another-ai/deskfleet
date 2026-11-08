@@ -95,10 +95,30 @@ pub fn configure(config: &mut web::ServiceConfig) {
         )
         .route("/auth/registration", web::patch().to(account::registration))
         .route(
+            "/auth/account-deletion",
+            web::get().to(account::deletion_request),
+        )
+        .route(
+            "/auth/account-deletion",
+            web::post().to(account::request_deletion),
+        )
+        .route(
+            "/auth/account-deletion",
+            web::delete().to(account::cancel_deletion),
+        )
+        .route(
             "/admin/users/{id}/disabled",
             web::patch().to(account::disabled),
         )
         .route("/admin/users", web::get().to(account::users))
+        .route(
+            "/admin/account-deletion-requests",
+            web::get().to(account::deletion_requests),
+        )
+        .route(
+            "/admin/account-deletion-requests/{id}/review",
+            web::post().to(account::review_deletion),
+        )
         .route("/auth/passkeys", web::get().to(passkeys::list))
         .route(
             "/auth/passkeys/register/options",

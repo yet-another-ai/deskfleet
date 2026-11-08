@@ -666,6 +666,8 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       return { teams, nextCursor: null }
     },
     setManualGrant: async () => {},
+    deletionRequests: async () => ({ requests: [], nextCursor: null }),
+    reviewDeletionRequest: async () => {},
     registrationPolicy: async () => ({ registrationEnabled }),
     updateRegistration: async (enabled: boolean) => { registrationEnabled = enabled },
     users: async () => [

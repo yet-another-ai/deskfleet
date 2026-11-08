@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheck, Cloud, RadioTower, Settings2, Users } from "@lucide/vue"
+import { BadgeCheck, Cloud, RadioTower, Settings2, UserX, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRoute } from "vue-router"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
@@ -29,6 +29,7 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
         <SidebarLink :to="{ name: 'site-admin-turn' }" :icon="RadioTower" :label="t('siteAdmin.turnTitle')" replace />
         <SidebarLink :to="{ name: 'site-admin-cloudflare-turn' }" :icon="Cloud" :label="t('siteAdmin.cloudflareTurnTitle')" replace />
         <SidebarLink :to="{ name: 'site-admin-manual-grants' }" :icon="BadgeCheck" :label="t('billing.enterpriseTeams')" replace />
+        <SidebarLink :to="{ name: 'site-admin-deletion-requests' }" :icon="UserX" :label="t('siteAdmin.deletionRequests')" replace />
       </template>
     </template>
     <template v-if="session?.account.value.siteAdmin && api">

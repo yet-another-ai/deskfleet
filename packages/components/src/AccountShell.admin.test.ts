@@ -24,6 +24,7 @@ beforeAll(async () => {
     import("./components/settings/TurnSettings.vue"),
     import("./components/settings/CloudflareTurnSettings.vue"),
     import("./components/settings/EnterpriseTeams.vue"),
+    import("./components/settings/SiteDeletionRequests.vue"),
     import("./views/NewSessionView.vue"),
     import("./components/account/MachineSurface.vue"),
   ])
@@ -116,7 +117,7 @@ test("administration navigation opens one settings section at a time", async () 
   await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(fake.central.turnSettings).not.toHaveBeenCalled()
   const nav = page().get('nav[aria-label="Settings sections"]')
-  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants"])
+  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants", "Deletion requests"])
   await nav.findAll("a").find(link => link.text() === "Accounts")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Accounts"))
   expect(router.currentRoute.value.path).toBe("/admin/accounts")
@@ -132,6 +133,9 @@ test("administration navigation opens one settings section at a time", async () 
   await nav.findAll("a").find(link => link.text() === "Manual grants")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Manual grants"))
   expect(fake.central.billingTeams).toHaveBeenCalledOnce()
+  await nav.findAll("a").find(link => link.text() === "Deletion requests")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Deletion requests"))
+  expect(fake.central.deletionRequests).toHaveBeenCalledOnce()
 })
 
 test("an ordinary Team admin has no site menu entry and direct navigation never loads admin settings", async () => {

@@ -271,7 +271,7 @@ impl ControlStore {
     }
 }
 
-fn credential_mutation() -> sea_orm::UpdateMany<users::Entity> {
+pub(super) fn credential_mutation() -> sea_orm::UpdateMany<users::Entity> {
     users::Entity::update_many()
         .col_expr(
             users::Column::CredentialVersion,
@@ -283,7 +283,10 @@ fn credential_mutation() -> sea_orm::UpdateMany<users::Entity> {
         )
 }
 
-async fn revoke(db: &impl ConnectionTrait, user_id: &str) -> Result<Vec<PeerAuthorization>> {
+pub(super) async fn revoke(
+    db: &impl ConnectionTrait,
+    user_id: &str,
+) -> Result<Vec<PeerAuthorization>> {
     sessions::Entity::update_many()
         .col_expr(sessions::Column::Revoked, Expr::val(true))
         .filter(sessions::Column::UserId.eq(user_id))

@@ -244,6 +244,17 @@ test("requests one administration Team page with its search filter and cursor", 
   await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=20&search=design+team&cursor=team%2Fprev")
 })
 
+test("lists and reviews account deletion requests", async () => {
+  const f = setup()
+  const page = { requests: [{ id: "10", reason: "Moving on", status: "pending", requestedAt: "2026-11-08T00:00:00.000Z", user: { id: "user-2", name: "Grace", email: "grace@example.test" } }], nextCursor: "10" }
+  f.responses.push(page, {})
+  expect(await f.client.deletionRequests({ limit: 20, cursor: "9" })).toEqual(page)
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/account-deletion-requests?limit=20&cursor=9")
+  await f.client.reviewDeletionRequest("10", true, "Account verified")
+  const request = await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/account-deletion-requests/10/review", { method: "POST" })
+  expect(JSON.parse((await requestBodies.get(request))!)).toEqual({ approve: true, note: "Account verified" })
+})
+
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {
   const f = setup()
   f.fetch.mockImplementation(async () => new Response(JSON.stringify({ error: { code: "machine_offline", message: "target machine is unavailable" } }), { status: 503 }))

@@ -73,7 +73,12 @@ membership, resource access, or Site Admin authority.
 6. Inspect login sessions and revoke the current session, another session, or
    all sessions. Login devices are distinct from enrolled Machines.
 7. Support account disablement, revoking existing login sessions/peer access and
-   preventing new sessions and authorization of later delegated work.
+   preventing new sessions and authorization of later delegated work. Users can
+   also request account deletion, and a site administrator approves or rejects
+   the request with an optional review note. Approval anonymizes the retained
+   identity, disables sign-in, clears credentials and Team memberships, revokes
+   machine registrations and peer access, and keeps Team-owned machinery and
+   audit history. Team owners must transfer ownership before approval.
 
 GitHub login identifies an account by GitHub’s stable user ID; Google login uses
 Google’s stable `sub` identifier. Every sign-in through either provider requires
@@ -521,10 +526,13 @@ turn consumption, explicit backlog retry, and usage under Enterprise.
 [Stripe operations](stripe.md) documents the exact Portal configuration, webhook,
 reconciliation, and test/live setup.
 
-Prices and currency must be selected when creating Stripe offers. Account closure,
-Team closure while subscribed, retention, and automated refund/dispute policies
-are outside this first release. Existing account disablement and Team resource
-permissions remain separate from subscription payment state.
+Prices and currency must be selected when creating Stripe offers. Account deletion
+uses the reviewed request workflow above and retains the anonymized identity row,
+Team resources, and audit records for referential integrity; physical purge and
+automated retention policy are outside this first release. Team closure while
+subscribed, retention, and automated refund/dispute policies also remain outside
+this release. Existing account disablement and Team resource permissions remain
+separate from subscription payment state.
 
 ## Delivery and verification
 

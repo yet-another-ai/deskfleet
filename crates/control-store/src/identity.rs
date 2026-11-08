@@ -1,6 +1,7 @@
 //! Verified account identity; authentication credentials never identify Teams.
 mod challenges;
 mod credentials;
+mod deletion;
 mod email_authentication;
 mod maintenance;
 mod oauth;
@@ -253,6 +254,7 @@ impl ControlStore {
         Ok(cp_users::Entity::find()
             .filter(grams(Expr::col(cp_users::Column::Name)).concat(grams(Expr::col(cp_users::Column::Email))).contains(grams(Expr::val(query))))
             .filter(contains(cp_users::Column::Email).or(contains(cp_users::Column::Name)))
+            .filter(cp_users::Column::DeletedAt.is_null())
             .order_by_asc(cp_users::Column::Email).limit(50).all(&self.db).await?.into_iter()
             .map(|row| json!({"id":row.id,"name":row.name,"email":row.email,"disabled":row.disabled})).collect())
     }

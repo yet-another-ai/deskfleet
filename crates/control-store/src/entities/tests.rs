@@ -10,6 +10,11 @@ async fn entity_mappings_match_migrated_schema() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
     let store = ControlStore::connect(&url).await.unwrap();
     let db = store.database();
+    cp_account_deletion_requests::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_account_deletion_requests mapping");
     cp_auth_limits::Entity::find()
         .limit(0)
         .all(db)
