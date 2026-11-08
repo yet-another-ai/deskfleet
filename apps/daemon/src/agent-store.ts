@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { compactCommandEvent, compactCommandResult } from "./agent-command-results.ts"
+import { AgentLiveState } from "./agent-live.ts"
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
   AgentPreview, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
@@ -36,6 +37,7 @@ export function requireActiveSession(session: AgentSessionRecord): void {
 
 /** The journal's queue orders commits, never the lifetime of an ACP request. */
 export class AgentJournal {
+  readonly live = new AgentLiveState()
   readonly native: AgentPersistence
   readonly #queues = new Map<string, Promise<unknown>>()
   readonly #listeners = new Set<(event: AgentEvent) => void>()

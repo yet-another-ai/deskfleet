@@ -68,6 +68,7 @@ test("agent configuration comes from ACP, flattens groups, and applies model bef
     models: { id: "chosen-model", currentValue: "second", options: [{ id: "first", name: "First model" }, { id: "second", name: "Second model" }] },
     reasoningEfforts: { id: "effort", currentValue: "medium", options: [{ id: "low", name: "low" }, { id: "medium", name: "medium" }] },
     modes: null,
+    configOptions: options("second", "medium"),
   })
   assert.equal(fake.closed, 1)
 })

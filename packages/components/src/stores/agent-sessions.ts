@@ -1,4 +1,7 @@
 import { useConversationCache } from "../services/conversation-cache.ts"
+import { useAgentLiveState } from "../composables/useAgentLiveState.ts"
+import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
+import type { AgentLiveUpdate } from "../../../client/src/agent-live.ts"
 import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
@@ -20,7 +23,7 @@ import { AgentClient, type AgentConnectionState, type AgentNotification } from "
 import { captureAnalyticsContext } from "../services/analytics.ts"
 import type { SessionCapacityDetails } from "../services/entitlement-events.ts"
 
-export interface AgentSelection { provider: string; model?: string; reasoningEffort?: string; mode?: string }
+export interface AgentSelection { provider: string; model?: string; reasoningEffort?: string; mode?: string; configValues?: Record<string, string | boolean> }
 
 export interface AgentSessionView {
   snapshot: AgentSnapshot | null
@@ -62,6 +65,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const platformClient = usePlatformClient()
   const api = platformClient.agent
   const cache = useConversationCache()
+  const live = useAgentLiveState()
   const cacheDirty = new Set<string>()
   const cacheTimer = useTimeoutFn(persistConversations, 1000, { immediate: false })
   function persistConversations(): void {
@@ -240,7 +244,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         unclassifiedCommands.delete(event.sessionId)
         commandSequences.set(event.sessionId, event.seq)
       }
-      if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "config_option_update"
+      if (event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload) && event.payload.update.sessionUpdate === "config_option_update"
         && sequenceCompare(event.seq, configurationSequences.get(event.sessionId) ?? "0") > 0) {
         const providerId = sessions.value[event.sessionId]?.provider ?? configurations.value[event.sessionId]?.provider.id
         const provider = providers.providers.find(provider => provider.id === providerId)
@@ -249,7 +253,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         } : undefined) }
         configurationSequences.set(event.sessionId, event.seq)
       }
-      if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "available_commands_update"
+      if (event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload) && event.payload.update.sessionUpdate === "available_commands_update"
         && sequenceCompare(event.seq, commandSequences.get(event.sessionId) ?? "0") > 0) {
         projectCommands(event.sessionId, event.payload.update.availableCommands)
         commandSequences.set(event.sessionId, event.seq)
@@ -340,6 +344,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       connectionGeneration++
       gitSubscriptions.clear()
       sessionPresence.value = {}
+      live.clear()
       for (const pending of permissionRequests.values()) pending.resolve({ outcome: { outcome: "cancelled" } })
       permissionRequests.clear()
     }
@@ -351,6 +356,9 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
         && ["agent_message_chunk", "agent_thought_chunk"].includes(event.payload.update.sessionUpdate)) {
         if (!displayTimer.isPending.value) displayTimer.start()
       } else flushDisplay()
+    } else if (notification.method === "_deskfleet/session/live") {
+      const update = notification.params as AgentLiveUpdate
+      if (!deletedSessions.has(update.sessionId)) live.receive(update)
     } else if (notification.method === "_deskfleet/session/preview") {
       const preview = notification.params as AgentPreview
       if (!deletedSessions.has(preview.sessionId) && previews.receive(preview)) {
@@ -746,7 +754,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const revisions = workspaceId && context === "worktree" && baseRevisions ? cloneFnJSON(baseRevisions) : undefined
     const branch = !revisions && workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
     const params: Omit<AgentMethods["_deskfleet/session/create"]["params"], "operationId"> = {
-      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode,
+      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
     }
     const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
       if (pending) {
@@ -889,6 +897,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     journals.delete(sessionId)
     journalTails.delete(sessionId)
     previews.delete(sessionId)
+    live.remove(sessionId)
     visiblePreviews.delete(sessionId)
   }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
@@ -920,5 +929,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, configurations, agentConfiguration, releaseAgentConfiguration, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

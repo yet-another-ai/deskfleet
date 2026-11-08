@@ -1,5 +1,6 @@
 import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
-import type { AgentTerminalOutput, ConversationEntry, ConversationTool } from "./agent-conversation.ts"
+import { isSubagentNotification } from "@deskfleet/client/agent-session-scope"
+import type { AgentTerminalOutput, CompactionEntry, ConversationEntry, ConversationStep, ConversationTool, SessionMessageEntry, StructuredPlanEntry, SubagentEntry } from "./agent-conversation.ts"
 
 type Content = AgentInput["content"]
 type MessageEntry = Extract<ConversationEntry, { kind: "message" }>
@@ -10,6 +11,18 @@ interface TerminalProjection {
   references: Set<string>
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)
+const scopedId = (generation: number | undefined, sessionId: string, id = "") => JSON.stringify([generation ?? 0, sessionId, id])
+
+/** Append streamed text without changing the persisted content blocks. */
+function appendContent(content: Content, block: Content[number]): void {
+  const last = content.at(-1)
+  if (last?.type === "text" && block.type === "text") last.text += block.text
+  else content.push({ ...block })
+}
+
+function patch<T extends object>(target: T, update: T, fields: readonly (keyof T)[]): void {
+  for (const field of fields) if (field in update) target[field] = update[field]
+}
 
 /** Provider-owned terminals arrive as ACP v1 metadata, without terminal/create. */
 function updateTerminalProjection(state: TerminalProjection, tool: ConversationTool, meta: unknown): void {
@@ -71,24 +84,53 @@ function createReduction(snapshot: AgentSnapshot) {
   const elicitations = new Map(snapshot.elicitations.map(elicitation => [elicitation.id, elicitation]))
   const seenElicitations = new Set<string>()
   const messages = new Map<string, MessageEntry>()
+  const messageScopes = new Map<MessageEntry, string>()
   const tools = new Map<string, ToolEntry>()
   const terminals = new Map<ToolEntry, TerminalProjection>()
   const plans = new Map<string, PlanEntry>()
+  const structuredPlans = new Map<string, StructuredPlanEntry>()
+  const compactions = new Map<string, CompactionEntry>()
+  const sessionMessages = new Map<string, SessionMessageEntry>()
+  const subagents = new Map<string, SubagentEntry>()
+  const owners = new Map<ConversationEntry, SubagentEntry>()
+  const removed = new Set<ConversationEntry>()
   // A reconnect can restore a pending question before its journal page arrives.
   const fallback: ConversationEntry[] = snapshot.elicitations.map(elicitation => ({
     id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId,
+    providerSessionId: "sessionId" in elicitation.request && typeof elicitation.request.sessionId === "string" ? elicitation.request.sessionId : undefined,
   }))
   let initial = true
-  function add(entry: ConversationEntry): void {
+  function changed(entry: ConversationEntry): void {
+    dirty.add(entry)
+    const owner = owners.get(entry)
+    if (owner) changed(owner)
+  }
+  function add(entry: ConversationEntry, owner?: SubagentEntry): void {
     indices.set(entry, entries.length)
     entries.push(entry)
-    dirty.add(entry)
+    if (owner && entry.kind !== "input" && entry.kind !== "turn") {
+      owners.set(entry, owner)
+      owner.steps.push(entry)
+    }
+    changed(entry)
+  }
+  function childOwner(generation: number | undefined, sessionId: string, turnId: string | undefined, marked: boolean): SubagentEntry | undefined {
+    const key = scopedId(generation, sessionId)
+    let child = subagents.get(key)
+    if (!child && marked) {
+      child = { id: `subagent-${key}`, kind: "subagent", session: { sessionId }, steps: [], turnId }
+      subagents.set(key, child)
+      add(child)
+    }
+    return child
   }
   function append(event: AgentEvent): void {
     if (event.kind === "elicitation") {
       const elicitation = elicitations.get((event.payload as AgentElicitation).id) ?? event.payload as AgentElicitation
       if (!seenElicitations.has(elicitation.id)) {
-        add({ id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId ?? event.turnId })
+        const providerSessionId = "sessionId" in elicitation.request && typeof elicitation.request.sessionId === "string" ? elicitation.request.sessionId : undefined
+        add({ id: `elicitation-${elicitation.id}`, kind: "elicitation", elicitation, turnId: elicitation.turnId ?? event.turnId, providerSessionId },
+          providerSessionId ? childOwner(elicitation.runGeneration, providerSessionId, event.turnId, isSubagentNotification(elicitation.request)) : undefined)
         seenElicitations.add(elicitation.id)
       }
       return
@@ -108,44 +150,68 @@ function createReduction(snapshot: AgentSnapshot) {
     }
     if (event.kind === "permission") {
       const permission = permissions.get((event.payload as AgentPermission).id) ?? event.payload as AgentPermission
-      const key = `${permission.runGeneration}:${permission.request.toolCall.toolCallId}`
+      const providerSessionId = permission.request.sessionId
+      const key = scopedId(permission.runGeneration, providerSessionId, permission.request.toolCall.toolCallId)
       let entry = tools.get(key)
       if (!entry) {
-        entry = { id: `tool-${key}`, kind: "tool", tool: { ...permission.request.toolCall }, turnId: permission.turnId ?? event.turnId }
-        add(entry)
+        entry = { id: `tool-${key}`, kind: "tool", tool: { ...permission.request.toolCall }, turnId: permission.turnId ?? event.turnId, providerSessionId }
+        add(entry, childOwner(permission.runGeneration, providerSessionId, event.turnId, isSubagentNotification(permission.request)))
         tools.set(key, entry)
       }
       entry.permission = permission
-      dirty.add(entry)
+      changed(entry)
       return
     }
-    if (event.kind !== "acp" || !record(event.payload) || !record(event.payload.update)) return
+    if (event.kind !== "acp" || !record(event.payload) || !record(event.payload.update) || typeof event.payload.sessionId !== "string") return
     const update = event.payload.update
-    if (update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "agent_thought_chunk") {
+    const providerSessionId = event.payload.sessionId
+    const scope = scopedId(event.runGeneration, providerSessionId)
+    const entityId = (id: string) => scopedId(event.runGeneration, providerSessionId, id)
+    // A history page can start after the parent's association. Keep marked child
+    // output out of the parent answer until older history supplies its metadata.
+    const owner = childOwner(event.runGeneration, providerSessionId, event.turnId,
+      isSubagentNotification(event.payload))
+    if (update.sessionUpdate === "subagent_update" && typeof update.sessionId === "string") {
+      const childKey = scopedId(event.runGeneration, update.sessionId)
+      let entry = subagents.get(childKey)
+      if (!entry) {
+        entry = { id: `subagent-${childKey}`, kind: "subagent", session: { sessionId: update.sessionId }, steps: [], turnId: event.turnId, providerSessionId }
+        subagents.set(childKey, entry)
+        add(entry, owner)
+      } else if (owner && !owners.has(entry)) {
+        owners.set(entry, owner)
+        owner.steps.push(entry)
+        owner.steps.sort((left, right) => indices.get(left)! - indices.get(right)!)
+      }
+      entry.providerSessionId = providerSessionId
+      patch(entry.session, update as SubagentEntry["session"], ["title", "description", "state", "capabilities", "cwd", "additionalDirectories", "_meta"])
+      changed(entry)
+      return
+    }
+    if (update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "agent_thought_chunk" || owner && update.sessionUpdate === "user_message_chunk") {
       if (!record(update.content) || typeof update.content.type !== "string") return
-      const role = update.sessionUpdate === "agent_thought_chunk" ? "thought" : "assistant"
+      const role = update.sessionUpdate === "agent_thought_chunk" ? "thought" : update.sessionUpdate === "user_message_chunk" ? "user" : "assistant"
       const meta = record(update._meta) && record(update._meta.deskfleet) ? update._meta.deskfleet : undefined
       const messageId = typeof update.messageId === "string" ? update.messageId : typeof meta?.messageId === "string" ? meta.messageId : undefined
-      const key = messageId ? `${event.runGeneration ?? 0}:${role}:${messageId}` : undefined
-      const previous = entries.at(-1)
-      let entry = key ? messages.get(key) : previous?.kind === "message" && previous.role === role && previous.turnId === event.turnId ? previous : undefined
+      const key = messageId ? entityId(`${role}:${messageId}`) : undefined
+      const previous = owner ? owner.steps.at(-1) : entries.at(-1)
+      let entry = key ? messages.get(key) : previous?.kind === "message" && previous.role === role && previous.turnId === event.turnId && messageScopes.get(previous) === scope ? previous : undefined
       if (!entry) {
-        entry = { id: `message-${event.seq}`, kind: "message", role, content: [], turnId: event.turnId }
-        add(entry)
+        entry = { id: `message-${event.seq}`, kind: "message", role, content: [], turnId: event.turnId, providerSessionId, ...(messageId ? { messageId } : {}) }
+        add(entry, owner)
+        messageScopes.set(entry, scope)
         if (key) messages.set(key, entry)
       }
       const content = update.content as Content[number]
-      const last = entry.content.at(-1)
-      if (last?.type === "text" && content.type === "text") last.text += content.text
-      else entry.content.push({ ...content })
-      dirty.add(entry)
+      appendContent(entry.content, content)
+      changed(entry)
     } else if (update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") {
       if (typeof update.toolCallId !== "string") return
-      const key = `${event.runGeneration ?? 0}:${update.toolCallId}`
+      const key = entityId(update.toolCallId)
       let entry = tools.get(key)
       if (!entry) {
-        entry = { id: `tool-${key}`, kind: "tool", tool: { toolCallId: update.toolCallId }, turnId: event.turnId }
-        add(entry)
+        entry = { id: `tool-${key}`, kind: "tool", tool: { toolCallId: update.toolCallId }, turnId: event.turnId, providerSessionId }
+        add(entry, owner)
         tools.set(key, entry)
       }
       for (const field of ["title", "kind", "status", "content", "rawInput", "rawOutput", "locations"] as const) {
@@ -154,20 +220,70 @@ function createReduction(snapshot: AgentSnapshot) {
       let terminalState = terminals.get(entry)
       if (!terminalState) { terminalState = { outputs: new Map(), references: new Set() }; terminals.set(entry, terminalState) }
       updateTerminalProjection(terminalState, entry.tool, update._meta)
-      dirty.add(entry)
+      changed(entry)
     } else if (update.sessionUpdate === "plan" && Array.isArray(update.entries)) {
-      const key = event.turnId ?? `run-${event.runGeneration ?? 0}`
+      const key = entityId(event.turnId ?? "")
       let entry = plans.get(key)
-      if (!entry) { entry = { id: `plan-${event.seq}`, kind: "plan", entries: [], turnId: event.turnId }; add(entry); plans.set(key, entry) }
-      entry.entries = update.entries.filter(record).map(value => ({ content: String(value.content ?? ""), status: String(value.status ?? "pending") }))
-      dirty.add(entry)
+      if (!entry) { entry = { id: `plan-${event.seq}`, kind: "plan", entries: [], turnId: event.turnId, providerSessionId }; add(entry, owner); plans.set(key, entry) }
+      entry.entries = update.entries.filter(record).map(value => ({ content: String(value.content ?? ""), status: String(value.status ?? "pending"), ...(record(value._meta) ? { _meta: value._meta } : {}) }))
+      changed(entry)
+    } else if (update.sessionUpdate === "plan_update" && record(update.plan) && typeof update.plan.planId === "string") {
+      const key = entityId(update.plan.planId)
+      let entry = structuredPlans.get(key)
+      if (!entry) {
+        entry = { id: `plan-${event.seq}`, kind: "structured_plan", plan: update.plan as StructuredPlanEntry["plan"], turnId: event.turnId, providerSessionId }
+        add(entry, owner)
+        structuredPlans.set(key, entry)
+      }
+      entry.plan = update.plan as StructuredPlanEntry["plan"]
+      changed(entry)
+    } else if (update.sessionUpdate === "plan_removed" && typeof update.planId === "string") {
+      const key = entityId(update.planId)
+      const entry = structuredPlans.get(key)
+      if (entry) { removed.add(entry); structuredPlans.delete(key); changed(entry) }
+    } else if ((update.sessionUpdate === "compaction_update" || update.sessionUpdate === "compaction_summary_chunk") && typeof update.compactionId === "string") {
+      const key = entityId(update.compactionId)
+      let entry = compactions.get(key)
+      if (!entry) {
+        entry = { id: `compaction-${event.seq}`, kind: "compaction", compaction: { compactionId: update.compactionId, status: "in_progress" }, turnId: event.turnId, providerSessionId }
+        add(entry, owner)
+        compactions.set(key, entry)
+      }
+      if (update.sessionUpdate === "compaction_update") {
+        patch(entry.compaction, update as CompactionEntry["compaction"], ["status", "error", "_meta"])
+        if ("summary" in update) entry.compaction.summary = Array.isArray(update.summary) ? update.summary.map(block => ({ ...block })) as Content : null
+      } else if (record(update.content)) {
+        appendContent(entry.compaction.summary ??= [], update.content as Content[number])
+      }
+      changed(entry)
+    } else if ((update.sessionUpdate === "session_message" || update.sessionUpdate === "session_message_chunk") && typeof update.messageId === "string") {
+      const key = entityId(update.messageId)
+      let entry = sessionMessages.get(key)
+      if (!entry) {
+        entry = { id: `session-message-${event.seq}`, kind: "session_message", message: { messageId: update.messageId }, turnId: event.turnId, providerSessionId }
+        add(entry, owner)
+        sessionMessages.set(key, entry)
+      }
+      if (update.sessionUpdate === "session_message") {
+        patch(entry.message, update as SessionMessageEntry["message"], ["senderSessionId", "recipientSessionId", "senderMessageId", "recipientMessageId", "_meta"])
+        if ("content" in update) entry.message.content = Array.isArray(update.content) ? update.content.map(block => ({ ...block })) as Content : null
+      } else if (record(update.content)) {
+        appendContent(entry.message.content ??= [], update.content as Content[number])
+      }
+      changed(entry)
     }
   }
   function publish(): ConversationEntry[] {
     if (!initial && !dirty.size) return result
     initial = false
     published = published.slice()
-    for (const entry of dirty) {
+    const restored = fallback.filter((entry): entry is Extract<ConversationStep, { kind: "elicitation" }> => entry.kind === "elicitation" && !seenElicitations.has(entry.elicitation.id))
+    for (const question of restored) if (question.providerSessionId) {
+      childOwner(question.elicitation.runGeneration, question.providerSessionId, question.turnId, isSubagentNotification(question.elicitation.request))
+    }
+    const restoredOwner = (entry: typeof restored[number]) => entry.providerSessionId ? subagents.get(scopedId(entry.elicitation.runGeneration, entry.providerSessionId)) : undefined
+    function publishEntry(entry: ConversationEntry): ConversationEntry {
+      if (!dirty.has(entry)) return published[indices.get(entry)!]!
       let value: ConversationEntry
       if (entry.kind === "message") value = { ...entry, content: entry.content.map(block => ({ ...block })) }
       else if (entry.kind === "tool") {
@@ -175,11 +291,22 @@ function createReduction(snapshot: AgentSnapshot) {
         const terminalState = terminals.get(entry)
         if (terminalState) applyTerminalProjection(tool, terminalState)
         value = { ...entry, tool }
+      } else if (entry.kind === "subagent") {
+        value = { ...entry, session: { ...entry.session }, steps: [
+          ...entry.steps.filter(step => !removed.has(step)).map(step => publishEntry(step) as ConversationStep),
+          ...restored.filter(question => restoredOwner(question) === entry),
+        ] }
+      } else if (entry.kind === "compaction") {
+        value = { ...entry, compaction: { ...entry.compaction, summary: entry.compaction.summary?.map(block => ({ ...block })) ?? entry.compaction.summary } }
+      } else if (entry.kind === "session_message") {
+        value = { ...entry, message: { ...entry.message, content: entry.message.content?.map(block => ({ ...block })) ?? entry.message.content } }
       } else value = { ...entry }
       published[indices.get(entry)!] = value
+      dirty.delete(entry)
+      return value
     }
-    dirty.clear()
-    result = [...published, ...fallback.filter(entry => entry.kind === "elicitation" && !seenElicitations.has(entry.elicitation.id))]
+    for (const entry of dirty) publishEntry(entry)
+    result = [...published.filter((_, index) => !owners.has(entries[index]!) && !removed.has(entries[index]!)), ...restored.filter(question => !restoredOwner(question))]
     return result
   }
   return { append, publish }

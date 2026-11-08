@@ -168,13 +168,13 @@ test("opening and editing a scheduled task keeps composer defaults unchanged and
   const selector = wrapper.getComponent(ConfigurationStub)
   expect(selector.props("selection")).toEqual({ provider: "codex", model: "review-model", reasoningEffort: "high" })
   expect(agents.draftConfiguration).toEqual(defaults)
-  const edited = { provider: "codex", model: "schedule-model", reasoningEffort: "high", mode: "plan" }
+  const edited = { provider: "codex", model: "schedule-model", reasoningEffort: "high", mode: "plan", configValues: { fast: false, agent: "reviewer" } }
   selector.vm.$emit("update:selection", edited)
   await flushPromises()
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
-    scheduleId: "schedule-1", changes: { ...input, target: { kind: "new", provider: "codex", context: "worktree", configuration: { model: "schedule-model", reasoningEffort: "high", mode: "plan" } } },
+    scheduleId: "schedule-1", changes: { ...input, target: { kind: "new", provider: "codex", context: "worktree", configuration: { model: "schedule-model", reasoningEffort: "high", mode: "plan", configValues: { fast: false, agent: "reviewer" } } } },
   })
   expect(agents.draftConfiguration).toEqual(defaults)
   expect(localStorage.getItem("deskfleet.agent-configuration")).toBe(persisted)

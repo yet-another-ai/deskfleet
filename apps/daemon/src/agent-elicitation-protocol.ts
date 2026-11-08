@@ -1,4 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk/unstable"
+import { grokPlanInterview, grokPlanOutcome } from "./agents/questions.ts"
 
 /** Browser flows are opened only by the user, and only for web URLs. */
 export function elicitationUrl(request: acp.CreateElicitationRequest): URL | undefined {
@@ -59,6 +60,11 @@ export function validateElicitationResponse(request: acp.CreateElicitationReques
   if (!value || typeof value !== "object" || !("action" in value)) throw new Error("Invalid question response")
   if (value.action === "decline" || value.action === "cancel") return { action: value.action }
   if (value.action !== "accept") throw new Error("Invalid question response")
+  const interviewOutcome = grokPlanOutcome(value)
+  if (interviewOutcome) {
+    if (!grokPlanInterview(request) || "content" in value && value.content != null) throw new Error("Invalid plan interview response")
+    return { action: "accept", _meta: { deskfleet: { grokOutcome: interviewOutcome } } }
+  }
   if (acp.CreateElicitationRequest.isUrl(request)) {
     if (!elicitationUrl(request) || "content" in value && value.content != null) throw new Error("Invalid URL question response")
     return { action: "accept" }

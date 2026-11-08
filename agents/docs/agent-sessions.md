@@ -289,9 +289,12 @@ binary is `agent`. Sign in with `agent login`, or set `CURSOR_API_KEY` or
 a question, `cursor/ask_question` is answered through that form.
 `cursor/create_plan` becomes the same shared approval surface with Accept,
 Reject, and Cancel mapped to Cursor's nested `accepted` / `rejected` /
-`cancelled` outcomes. Cursor's notification methods (`cursor/update_todos`,
-`cursor/task`, `cursor/generate_image`) are not implemented; unrecognized
-requests receive JSON-RPC method not found. The Grok template runs
+`cancelled` outcomes. Cursor's `cursor/update_todos` notifications become an
+ID-addressed plan, retaining merge/replacement semantics. `cursor/task` becomes
+tool activity, and `cursor/generate_image` can include a file resource link in
+that activity. These notifications belong to the connection's current provider
+Session; a task notification alone does not declare a child Session.
+Unrecognized requests receive JSON-RPC method not found. The Grok template runs
 the installed [Grok CLI](https://docs.x.ai/build/cli/headless-scripting) directly
 as `grok agent stdio`; its default binary is `grok`. After initialization it
 calls `authenticate` with `xai.api_key` when `XAI_API_KEY` is set and that method
@@ -738,10 +741,12 @@ selecting actor and observed turn, claims the input, and reserves dispatch while
 the provider answers. Competing delivery attempts fail and leave the unconsumed
 input available for explicit retry.
 
-### Codex steering boundary
+### Strict steering boundary
 
-The pinned `@agentclientprotocol/codex-acp` 2.2.2 package has a repository patch
-for strict steering. It advertises both `_meta.steering.supported` and
+The pinned `@agentclientprotocol/codex-acp` 2.3.0 package has a repository patch
+for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.100.0
+already implements the same idle behavior; its patch advertises that support.
+Both advertise `_meta.steering.supported` and
 `_meta.steering.supportsPromptRequired`. The request is `_session/steering` with
 `_meta.steering.idleBehavior: "promptRequired"`; DeskFleet also includes its
 delivery command ID under `_meta.deskfleet`.
@@ -812,8 +817,10 @@ scoped to the session this connection most recently opened or prompted. An
 answered form becomes Cursor's nested `{ outcome: { outcome: "answered", answers } }`
 result, using option ids, or Grok's `{ outcome: "accepted", answers }` map of
 question text to selected labels. Decline is Cursor `skipped` and Grok
-`cancelled`; cancel is `cancelled` for both. Grok's plan-mode outcomes
-`chat_about_this` and `skip_interview` are not separate actions.
+`cancelled`; cancel is `cancelled` for both. Grok's plan interviews also offer
+`chat_about_this` and `skip_interview` as explicit actions. They carry no form
+answers, are validated only for a plan interview, and use the same shared,
+audited elicitation decision path.
 
 Cursor's `cursor/create_plan` uses the same elicitation persistence and
 `_deskfleet/elicitation/respond` path. The request carries the plan markdown and
@@ -937,17 +944,44 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/elicitation/respond` | Validate and audit an answer or dismissal of a shared user question |
 | `_deskfleet/session/event` | Deliver committed domain and original ACP events |
 | `_deskfleet/session/preview` | Display uncommitted text with a transient stream ID, durable base sequence, and chunk offsets |
+| `_deskfleet/session/live` | Deliver transient provider authentication status and user notices; never append them to conversation history |
 | `_deskfleet/command/get` | Read the receipt/outcome after response loss |
 | `_deskfleet/session/resume`, `/stop` | Explicit provider lifecycle operations; input submission also resumes |
 | `_deskfleet/session/archive`, `/restore` | Backend management operations; reclaim/recreate generated checkouts, preserve history, and require an online daemon |
 | `_deskfleet/session/delete` | Delete local Session records and owned resources, including retained worktree refs; the archived Sessions page requires hold confirmation |
 | `_deskfleet/session/rename` | Rename an active or archived Session through management RPC or ACP; preserve execution and record the customized title |
 
-ACP notifications, including provider Session IDs, are carried in journal
-events and projected once by the renderer. Mode metadata is normalized as
+Conversation ACP notifications, including provider Session IDs, are carried in
+journal events and projected once by the renderer. Mode metadata is normalized as
 described below. The facade advertises only supported
 methods. Managed creation may omit a Workspace; directory context then uses the home
 directory as `cwd`. Otherwise a Workspace's directories determine `cwd`.
+
+Managed providers opt into boolean configuration, structured plans, compaction,
+notices, and subagent updates. A known provider Session can announce a child with
+`subagent_update` before that child's callbacks or updates arrive. Ownership stays
+within the same provider connection and run; unknown or reassigned children are
+rejected. Child provider IDs remain distinct from DeskFleet Session IDs and do
+not allocate new Workspace or Worktree resources. Child events keep their
+original provider IDs in the owning DeskFleet Session's journal, with a daemon
+marker identifying descendant notifications. Child configuration, commands,
+titles, and usage cannot replace the root Session's controls or metadata.
+The renderer nests child activity and session messages under the owning child;
+tools and message IDs are scoped by provider Session and run. Child filesystem,
+terminal, permission, and elicitation callbacks use that same ownership check.
+
+`plan_update` and `plan_removed` maintain plans by provider plan ID, including
+item, Markdown, and file-reference content. The original `plan` update remains supported.
+`compaction_update` and `compaction_summary_chunk` retain compaction status and
+summary content by compaction ID. These are journal projections and survive
+viewer replay and conversation forks.
+
+`_auth/status_update` and `notice` use the separate live channel. Authentication
+exposes only the provider's display identity fields; the current status is
+replayed to newly subscribed viewers and cleared when its run stops. Notices are
+live, dismissible hints and are not replayed to later subscribers. Neither kind
+enters the journal, central history synchronization, or browser conversation
+cache. Disconnect clears the viewer's live state.
 
 Git reads require a ready Session and resolve its owned Worktree through the
 catalog, including captured paths for directory Sessions. They do not accept
@@ -976,6 +1010,24 @@ choices. The daemon scopes it to the verified user and login session, and checks
 the provider, Workspace directory, and launch settings on each request. Requests
 without a probe ID remain one-shot discoveries.
 
+The same menu exposes every additional advertised select or boolean option,
+retaining the provider's name, description, category, and option groups. This
+includes collaboration mode, Fast mode, Ultracode, or an agent profile when the
+provider offers them. Categories help place the common controls; unknown or
+missing categories do not hide an option. Discovery and managed connections
+advertise boolean configuration support; a boolean setter sends a boolean value
+with ACP's `type: "boolean"` discriminator.
+
+`configOptions` carries the full confirmed catalog. Creation, configuration, and
+scheduled-task selections may supply `configValues`, a map of provider config
+IDs to strings or booleans, alongside the common model/reasoning/mode aliases.
+The daemon checks each value against the latest returned catalog, applies the
+common controls first, then the other selected values, and retains the provider's
+confirmed response. Supplying the same option through an alias and its config ID
+is rejected. Draft probe replacement, resume, and fork restore these selections,
+including explicit `false` values. An explicit model replacement accepts that
+model's dependent defaults instead of restoring obsolete extra options.
+
 An existing Session switches Agents only when a user confirms the change. The
 composer warns that the replacement Agent starts a new conversation: its prompt
 cache cannot be reused and earlier context is not transferred, while DeskFleet
@@ -983,8 +1035,8 @@ keeps the existing transcript for display. A switch requires a ready Session
 between turns with no pending approvals or questions. The daemon stops the
 current provider, clears `providerSessionId` and capabilities, records
 `configurationSinceSeq`, and starts the replacement. Model, reasoning, mode,
-and command choices recorded before that sequence belong to the previous Agent
-and are not reapplied.
+additional option, and command choices recorded before that sequence belong to
+the previous Agent and are not reapplied.
 
 Public provider metadata includes a random registry revision that changes only
 when settings change or the daemon reloads them. The UI uses that revision for

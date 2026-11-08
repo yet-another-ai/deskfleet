@@ -19,6 +19,7 @@ import SessionComposer from "../components/composer/SessionComposer.vue"
 import SessionAllowance from "../components/session/SessionAllowance.vue"
 import AgentBacklog from "../components/session/AgentBacklog.vue"
 import AgentConversation from "../components/session/AgentConversation.vue"
+import AgentAuthStatus from "../components/session/AgentAuthStatus.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentOutline from "../components/session/AgentOutline.vue"
 import ReadingSpotlight from "../components/session/ReadingSpotlight.vue"
@@ -333,7 +334,9 @@ async function checkOperation(operationId: string): Promise<void> {
         <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
           <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
           <template v-else-if="snapshot">
-            <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" />
+            <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
+              <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
+            </AgentConversation>
             <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
           </template>
         </div>

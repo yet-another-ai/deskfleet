@@ -7,6 +7,7 @@ import { useI18n } from "vue-i18n"
 import type { AgentElicitation } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { elicitationUrl, validateElicitationResponse } from "../../../../../apps/daemon/src/agent-elicitation-protocol.ts"
 import { cursorPlanApproval } from "../../../../../apps/daemon/src/agents/plans.ts"
+import { grokPlanInterview, grokPlanOutcome } from "../../../../../apps/daemon/src/agents/questions.ts"
 import { elicitationContent, elicitationDefaults, elicitationForm, elicitationInputType, type ElicitationField, type ElicitationValue } from "../../services/agent-elicitation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import AgentActor from "./AgentActor.vue"
@@ -18,6 +19,8 @@ const props = defineProps<{ elicitation: AgentElicitation; disabled?: boolean }>
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
 const plan = computed(() => cursorPlanApproval(props.elicitation.request))
+const interview = computed(() => grokPlanInterview(props.elicitation.request))
+const interviewOutcome = computed(() => grokPlanOutcome(props.elicitation.response))
 const form = computed(() => elicitationForm(props.elicitation.request))
 const url = computed(() => elicitationUrl(props.elicitation.request))
 const pending = computed(() => props.elicitation.state === "pending")
@@ -74,6 +77,15 @@ function openUrl(event: MouseEvent): void {
   if (disabled.value || !url.value) { event.preventDefault(); return }
   // The anchor opens only on this consent click, never on receipt or completion.
   void respond("accept")
+}
+async function interviewAction(outcome: "chat_about_this" | "skip_interview"): Promise<void> {
+  if (disabled.value) return
+  failed.value = false
+  try {
+    await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, {
+      action: "accept", _meta: { deskfleet: { grokOutcome: outcome } },
+    })
+  } catch { failed.value = true }
 }
 const status = computed(() => props.elicitation.state === "cancelled" || props.elicitation.response?.action === "cancel" ? "cancelled"
   : props.elicitation.response?.action === "decline" ? "declined"
@@ -133,6 +145,8 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
       <p v-if="invalid" role="alert" class="m-0 text-ui-danger">{{ t('agent.questions.invalid') }}</p>
       <p v-if="failed || operation?.error" role="alert" class="m-0 text-ui-warning">{{ t('agent.operationPending') }}</p>
       <div class="flex flex-wrap justify-end gap-2">
+        <UiButton v-if="interview" type="button" data-testid="elicitation-chat-plan" :disabled="disabled" @click="interviewAction('chat_about_this')">{{ t('agent.protocol.chatAboutPlan') }}</UiButton>
+        <UiButton v-if="interview" type="button" data-testid="elicitation-skip-interview" :disabled="disabled" @click="interviewAction('skip_interview')">{{ t('agent.protocol.skipInterview') }}</UiButton>
         <UiButton type="button" data-testid="elicitation-cancel" :disabled="disabled" @click="respond('cancel')">{{ t('agent.questions.cancel') }}</UiButton>
         <UiButton type="button" data-testid="elicitation-decline" :disabled="disabled" @click="respond('decline')">{{ t('agent.questions.decline') }}</UiButton>
         <a v-if="url" :href="disabled ? undefined : url.href" target="_blank" rel="noopener noreferrer" data-testid="elicitation-open-url" class="ui-button-primary" :aria-disabled="disabled" :tabindex="disabled ? -1 : undefined" @click="openUrl">{{ t('agent.questions.openUrl', { host: url.host }) }}</a>
@@ -140,6 +154,7 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
       </div>
     </form>
     <a v-else-if="url && elicitation.response?.action === 'accept' && !elicitation.completedAt" :href="url.href" target="_blank" rel="noopener noreferrer" class="ui-button mt-3" data-testid="elicitation-reopen-url">{{ t('agent.questions.openUrl', { host: url.host }) }}</a>
+    <p v-else-if="interviewOutcome" class="m-0 mt-3" data-testid="elicitation-interview-outcome">{{ t(interviewOutcome === 'chat_about_this' ? 'agent.protocol.chatAboutPlan' : 'agent.protocol.skipInterview') }}</p>
     <dl v-else-if="answers.length" class="m-0 mt-3 flex flex-col gap-2">
       <div v-for="answer in answers" :key="answer.id"><dt class="text-xs text-ui-text-muted">{{ answer.title }}</dt><dd class="m-0 whitespace-pre-wrap break-words">{{ answer.text }}</dd></div>
     </dl>

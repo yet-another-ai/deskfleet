@@ -43,13 +43,15 @@ async function abortable<T>(pending: Promise<T>, signal?: AbortSignal): Promise<
 export class AcpTerminals {
   readonly #context: AgentTerminalContext
   readonly #requireSession: (sessionId: string) => void
+  readonly #sessionCwd?: (sessionId: string) => string | undefined
   readonly #handles = new Map<string, Handle>()
   #closed = false
   #closing?: Promise<void>
 
-  constructor(context: AgentTerminalContext, requireSession: (sessionId: string) => void) {
+  constructor(context: AgentTerminalContext, requireSession: (sessionId: string) => void, sessionCwd?: (sessionId: string) => string | undefined) {
     this.#context = context
     this.#requireSession = requireSession
+    this.#sessionCwd = sessionCwd
   }
 
   checkpoint(): Set<string> { return new Set(this.#handles.keys()) }
@@ -63,7 +65,7 @@ export class AcpTerminals {
     this.#requireSession(params.sessionId)
     if (this.#closed) throw acp.RequestError.invalidParams({ details: "ACP terminals are closed" })
     signal?.throwIfAborted()
-    const cwd = params.cwd ?? this.#context.cwd
+    const cwd = params.cwd ?? this.#sessionCwd?.(params.sessionId) ?? this.#context.cwd
     if (!isAbsolute(cwd)) throw acp.RequestError.invalidParams({ details: "Terminal working directory must be absolute" })
     const outputByteLimit = params.outputByteLimit ?? undefined
     if (outputByteLimit !== undefined && (!Number.isSafeInteger(outputByteLimit) || outputByteLimit < 0)) {

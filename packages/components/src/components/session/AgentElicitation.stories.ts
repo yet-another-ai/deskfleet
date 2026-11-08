@@ -55,3 +55,10 @@ export const ResolvedAccepted: Story = {
     },
   },
 }
+
+export const GrokPlanInterview: Story = {
+  args: { elicitation: {
+    ...storybookElicitation,
+    request: { ...storybookElicitation.request, _meta: { deskfleet: { grokPlanInterview: true } } },
+  } },
+}

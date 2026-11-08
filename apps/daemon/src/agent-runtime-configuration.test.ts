@@ -627,3 +627,82 @@ test("a running turn blocks an Agent switch", async t => {
   } finally { release() }
   await until(f.read, state => state.turns[0]?.state === "completed")
 })
+
+test("provider child state stays in the parent journal without changing root configuration or title", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const before = await f.read()
+  const initial = await f.configuration()
+  await provider.client.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "subagent_update", sessionId: "child", title: "Reviewer", state: { state: "running" },
+  } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "session_info_update", title: "Child title" } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "config_option_update", configOptions: options("second", "low") } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-only", description: "Child command" }] } })
+  assert.equal((await f.read()).session.title, before.session.title)
+  assert.deepEqual(await f.configuration(), initial)
+  const history = await f.service.journal.history(f.sessionId, "0")
+  const children = history.filter(event => event.kind === "acp" && "update" in event.payload && event.payload.sessionId === "child")
+  assert.equal(children.length, 3)
+  assert.ok(children.every(event => event.kind === "acp" && "update" in event.payload && (event.payload._meta?.deskfleet as { subagent?: boolean })?.subagent === true))
+})
+
+test("stopped Sessions accept common controls addressed by provider config ID", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider, { model: "first", reasoningEffort: "low", mode: "full-access" })
+  await f.stop()
+  provider.changes = []
+  const model = await f.configure({ configValues: { model: "second" } })
+  assert.equal(model.models?.currentValue, "second")
+  assert.equal(model.reasoningEfforts?.currentValue, "high", "A generic model edit accepts the new model's default effort")
+  assert.equal(model.modes?.currentValue, "full-access")
+  assert.ok(!provider.changes.some(change => change.configId === "effort"), "The previous effort is not restored before a replacement model")
+  await f.stop()
+  const mode = await f.configure({ configValues: { "permission-mode": "manual", effort: "low" } })
+  assert.equal(mode.models?.currentValue, "second")
+  assert.equal(mode.modes?.currentValue, "manual")
+  assert.equal(mode.reasoningEfforts?.currentValue, "low")
+})
+
+test("notices remain live-only and old connections cannot restore authentication", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const live: unknown[] = []
+  const release = f.service.onLive(update => live.push(update))
+  t.after(release)
+  const client = provider.client
+  const before = (await f.read()).session.lastEventSeq
+  await client.onAuthStatus?.({ kind: "account", label: "Signed in" })
+  await client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Rate limit" } })
+  assert.equal((await f.read()).session.lastEventSeq, before)
+  assert.equal(live.length, 2)
+  assert.equal(f.service.live(f.sessionId)?.kind, "auth")
+  await f.stop()
+  assert.equal(f.service.live(f.sessionId), undefined)
+  const count = live.length
+  await client.onAuthStatus?.({ kind: "account", label: "Stale account" })
+  await client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })
+  assert.equal(live.length, count)
+})
+
+test("unexpected connection loss rejects late live updates and a resumed run publishes its own status", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const live: unknown[] = []
+  t.after(f.service.onLive(update => live.push(update)))
+  const disconnected = provider.client
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Original account" })
+  disconnected.onClose?.(new Error("connection lost"))
+  assert.equal(f.service.live(f.sessionId), undefined)
+  const count = live.length
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Stale account" })
+  await disconnected.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })
+  assert.equal(live.length, count)
+  await f.service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.service.actor())
+  assert.deepEqual((await f.read()).runs.map(run => run.state), ["interrupted", "running"])
+  await provider.client.onAuthStatus?.({ kind: "api_key", label: "New account" })
+  const current = f.service.live(f.sessionId)
+  assert.equal(current?.kind === "auth" && current.auth?.label, "New account")
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Old generation" })
+  assert.deepEqual(f.service.live(f.sessionId), current)
+})

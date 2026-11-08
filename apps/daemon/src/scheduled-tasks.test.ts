@@ -9,7 +9,7 @@ import { ScheduledTasks } from "./scheduled-tasks.ts"
 
 const actor: AgentActor = { kind: "user", userId: "user-1", deviceId: "login-1" }
 const input: ScheduleInput = { title: "Review changes", prompt: "Review yesterday's commits", workspaceId: "1", enabled: true,
-  target: { kind: "new", provider: "codex", context: "directory", configuration: { model: "model-a", mode: "readonly" } }, trigger: { kind: "interval", minutes: 5 } }
+  target: { kind: "new", provider: "codex", context: "directory", configuration: { model: "model-a", mode: "readonly", configValues: { "fast-mode": false, collaboration_mode: "plan" } } }, trigger: { kind: "interval", minutes: 5 } }
 
 function snapshot(id: string, workspaceId = "1"): AgentSnapshot {
   return { session: { id, workspaceId, title: "Scheduled", provider: "codex", context: "directory", lifecycle: "ready", archiveState: "active", lastEventSeq: "0", createdAt: "2026-10-26T00:00:00Z", updatedAt: "2026-10-26T00:00:00Z" },
@@ -78,6 +78,7 @@ test("scheduled dispatch persists configuration, queues the prompt, and records 
   assert.equal(f.calls.length, 2)
   assert.equal(f.calls[0]!.params.model, "model-a")
   assert.equal(f.calls[0]!.params.mode, "readonly")
+  assert.deepEqual(f.calls[0]!.params.configValues, { "fast-mode": false, collaboration_mode: "plan" })
   assert.deepEqual(f.calls[1]!.params.content, [{ type: "text", text: input.prompt }])
   assert.equal(f.calls[1]!.params.delivery, "backlog")
   assert.equal(f.authorizations.length, 1)

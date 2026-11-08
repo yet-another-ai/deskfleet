@@ -975,6 +975,31 @@
     "select": "添加所选文件"
   },
   "agent": {
+    "protocol": {
+      "planCancelled": "已取消",
+      "compaction": "上下文压缩",
+      "compactionStates": {
+        "in_progress": "正在压缩上下文",
+        "completed": "上下文已压缩",
+        "failed": "压缩失败",
+        "cancelled": "压缩已取消",
+        "unknown": "压缩状态更新"
+      },
+      "subagent": "子 Agent",
+      "subagentStates": {
+        "running": "工作中",
+        "idle": "空闲",
+        "requires_action": "需要输入",
+        "unknown": "状态未知"
+      },
+      "sessionMessage": "Agent 消息",
+      "messageRoute": "{sender} → {recipient}",
+      "session": "会话",
+      "userMessage": "用户消息",
+      "authentication": "Agent 登录状态",
+      "chatAboutPlan": "讨论此计划",
+      "skipInterview": "跳过访谈"
+    },
     "conversation": "对话",
     "usage": {
       "title": "会话用量",

@@ -1,5 +1,5 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { AgentComposerCommands } from "./agent-composer-commands.ts"
@@ -11,17 +11,36 @@ export async function applyAgentConfiguration(
   changed: (options: acp.SessionConfigOption[]) => void | Promise<void> = () => {},
   force = false,
 ): Promise<acp.SessionConfigOption[]> {
-  for (const step of [
+  selection = normalizeAgentConfigurationSelection(selection, options)
+  const steps = [
     { value: selection.model, errorId: "model", find: (current: acp.SessionConfigOption[]) => selectAgentOption(current, "model", "model") },
     { value: selection.reasoningEffort, errorId: "reasoning_effort", find: selectReasoningEffort },
     { value: selection.mode, errorId: "mode", find: (current: acp.SessionConfigOption[]) => selectAgentOption(current, "mode", "mode") },
-  ]) {
+  ]
+  for (const step of steps) {
     if (step.value === undefined) continue
     const option = step.find(options)
     if (!option || !option.options.some(choice => choice.id === step.value)) throw new Error(`Unsupported agent ${step.errorId}: ${step.value}`)
     if (force || option.currentValue !== step.value) {
       options = (await agent.setConfigOption({ sessionId, configId: option.id, value: step.value }, options)).configOptions
       // A successful response replaces historical metadata with live state.
+      force = false
+      await changed(options)
+    }
+  }
+  // Every response is authoritative: an earlier option can replace the catalog
+  // and change the valid values of the next option.
+  for (const [configId, value] of Object.entries(selection.configValues ?? {})) {
+    const option = options.find(option => option.id === configId)
+    if (!option || (option.type === "boolean" ? typeof value !== "boolean"
+      : typeof value !== "string" || !option.options.flatMap(row => "group" in row ? row.options : [row]).some(choice => choice.value === value))) {
+      throw new Error(`Unsupported agent configuration: ${configId}`)
+    }
+    if (force || option.currentValue !== value) {
+      const request: acp.SetSessionConfigOptionRequest = typeof value === "boolean"
+        ? { sessionId, configId, type: "boolean", value }
+        : { sessionId, configId, value }
+      options = (await agent.setConfigOption(request, options)).configOptions
       force = false
       await changed(options)
     }
@@ -54,6 +73,7 @@ export async function readAgentConfiguration(
     signal.addEventListener("abort", aborted, { once: true })
   })
   const connecting = Promise.resolve().then(() => provider.connect({ ...config, cwd }, {
+    capabilities: { configOptions: true },
     onUpdate({ update }) {
       if (update.sessionUpdate === "config_option_update") notifiedOptions = update.configOptions
       if (update.sessionUpdate === "available_commands_update") commands.update(update.availableCommands)

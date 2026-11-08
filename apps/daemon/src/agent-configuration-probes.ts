@@ -133,6 +133,7 @@ export class AgentConfigurationProbes {
     const discovery = (async () => {
       if (!probe.connection) {
         probe.connecting = Promise.resolve().then(() => launch.provider.connect({ ...launch.config, cwd }, {
+          capabilities: { configOptions: true },
           signal,
           onUpdate({ update }) {
             if (probe.retired) return

@@ -167,6 +167,8 @@ export class AgentSessions {
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
   onPreview(listener: (preview: AgentPreview) => void): () => void { return this.journal.onPreview(listener) }
+  onLive(listener: (update: import("../../../packages/client/src/agent-live.ts").AgentLiveUpdate) => void): () => void { return this.journal.live.onUpdate(listener) }
+  live(sessionId: string): import("../../../packages/client/src/agent-live.ts").AgentLiveUpdate | undefined { return this.journal.live.current(sessionId) }
   onPresence(listener: (update: SessionPresenceUpdate) => void): () => void { return this.#presence.onChange(listener) }
   presence(): SessionPresenceUpdate[] { return this.#presence.snapshot() }
 

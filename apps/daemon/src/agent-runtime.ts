@@ -7,7 +7,7 @@ import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./a
 import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSessionRecord, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
-import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { AgentComposerCommands } from "./agent-composer-commands.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
 import { withRestoredSessionMode } from "./agents/session-modes.ts"
@@ -16,6 +16,7 @@ import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
+import { subagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -60,6 +61,7 @@ export class AgentRuntime {
   #recovering?: Promise<void>
   #delivery?: Promise<void>
   readonly #permissions = new Map<string, (response: acp.RequestPermissionResponse) => void>()
+  readonly #subagents = new Set<string>()
   readonly #discoveries = new Set<{ controller: AbortController; signal: AbortSignal; pending: Promise<AgentConfiguration> }>()
 
   constructor(journal: AgentJournal, catalog: DaemonCatalog, resolveProvider: ResolveAgentProvider, sessionId: string, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
@@ -74,6 +76,7 @@ export class AgentRuntime {
       generation: this.#run?.generation, turnId: this.#active?.turn.id,
       running: this.running && (!this.#active || this.#endingTurn !== this.#active.turn.id),
       connected: this.running,
+      ownsSession: id => this.#subagents.has(id),
     }))
   }
 
@@ -150,6 +153,10 @@ export class AgentRuntime {
     if (available.models && saved.selection.model !== undefined) available.models.currentValue = saved.selection.model
     if (available.reasoningEfforts && saved.selection.reasoningEffort !== undefined) available.reasoningEfforts.currentValue = saved.selection.reasoningEffort
     if (available.modes && saved.selection.mode !== undefined) available.modes.currentValue = saved.selection.mode
+    for (const option of available.configOptions ?? []) {
+      const value = saved.selection.configValues?.[option.id]
+      if (typeof value === typeof option.currentValue) Object.assign(option, { currentValue: value })
+    }
     return available
   }
 
@@ -264,11 +271,14 @@ export class AgentRuntime {
     if (snapshot.session.lifecycle !== "ready" && !(forkSource && snapshot.session.lifecycle === "provisioning")) throw new Error("Session is not available for execution")
     await this.#active?.completion
     const savedConfiguration = await savedAgentConfiguration(this.journal, this.sessionId)
+    if (selection) selection = normalizeAgentConfigurationSelection(selection, savedConfiguration.options)
     // Changing models accepts the new model's default effort while preserving
     // the Session's mode. The provider can reconcile that mode with the model.
     const requested = selection?.model !== undefined
       ? { ...selection, mode: selection.mode ?? savedConfiguration.selection.mode }
       : { ...savedConfiguration.selection, ...selection }
+    requested.configValues = selection?.model !== undefined ? selection.configValues
+      : { ...savedConfiguration.selection.configValues, ...selection?.configValues }
     const availableConfiguration = this.#availableConfiguration
     this.#availableConfiguration = undefined
     const catalog = await this.#catalog.native.snapshot()
@@ -284,6 +294,8 @@ export class AgentRuntime {
       await this.journal.commit(current, { runs: [run], events: [this.journal.event(this.sessionId, "run", run)] })
     })
     this.#run = run
+    this.#subagents.clear()
+    this.journal.live.auth(this.sessionId, run.generation, null)
     this.#commands?.close()
     this.#commands = new AgentComposerCommands()
     try {
@@ -293,13 +305,19 @@ export class AgentRuntime {
       this.#providerName = config.name
       this.#providerKind = provider.id
       const connection = await provider.connect({ ...config, cwd: worktree.directories[0].path }, {
+        capabilities: { configOptions: true, compaction: true, notices: true, plans: true, subagents: true },
         ...(this.#terminals ? { terminals: {
           sessions: this.#terminals, cwd: worktree.directories[0].path, worktreeId: worktree.id,
           ...(config.commandDirectory ? { commandDirectory: config.commandDirectory, path: commandPath(config.env ?? {}) } : {}),
         } } : {}),
         onUpdate: params => this.#update(params, run.generation),
+        onAuthStatus: status => {
+          if (this.#run?.generation === run.generation && !this.#stopping) this.journal.live.auth(this.sessionId, run.generation, status)
+        },
         requestPermission: (params, signal) => this.#permission(params, signal, run.generation),
-        requestElicitation: (params, signal) => this.elicitations.request(params, signal, run.generation),
+        requestElicitation: (params, signal) => this.elicitations.request(
+          "sessionId" in params && typeof params.sessionId === "string" && this.#subagents.has(params.sessionId) ? subagentNotification(params) : params,
+          signal, run.generation),
         completeElicitation: params => this.elicitations.complete(params, run.generation),
         onClose: error => this.#connectionLost(error, run.generation),
       })
@@ -373,6 +391,7 @@ export class AgentRuntime {
       void this.pump()
     } catch (error) {
       this.#stopping = true
+      this.journal.live.auth(this.sessionId, run.generation, null)
       this.#commands?.close()
       this.#releaseMcp()
       await this.#connection?.close().catch(() => {})
@@ -390,14 +409,30 @@ export class AgentRuntime {
   }
 
   async #update(params: acp.SessionNotification, generation: number): Promise<void> {
+    if (this.#run?.generation !== generation || this.#stopping) return
+    if (params.update.sessionUpdate === "subagent_update") this.#subagents.add(params.update.sessionId)
+    if (params.update.sessionUpdate === "notice") {
+      this.journal.live.notice(this.sessionId, generation, params.sessionId, params.update)
+      return
+    }
+    const child = this.#subagents.has(params.sessionId)
     if ((params.update.sessionUpdate === "agent_message_chunk" || params.update.sessionUpdate === "agent_thought_chunk")
       && params.update.content.type === "text") {
       const connection = this.#connection
-      await this.journal.stream(this.journal.event(this.sessionId, "acp", params, {
+      await this.journal.stream(this.journal.event(this.sessionId, "acp", child ? subagentNotification(params) : params, {
         runGeneration: generation, turnId: this.#active?.turn.id,
       }), error => {
         console.error("Could not persist Agent text", error)
         if (this.#connection === connection) void connection?.close().catch(() => {})
+      })
+      return
+    }
+    if (child) {
+      await this.journal.serial(this.sessionId, async () => {
+        if (this.#run?.generation !== generation || this.#stopping) return
+        await this.journal.commit(await this.journal.session(this.sessionId), { events: [
+          this.journal.event(this.sessionId, "acp", subagentNotification(params), { runGeneration: generation, turnId: this.#active?.turn.id }),
+        ] })
       })
       return
     }
@@ -438,7 +473,8 @@ export class AgentRuntime {
   async #permission(request: acp.RequestPermissionRequest, signal: AbortSignal, generation: number): Promise<acp.RequestPermissionResponse> {
     const permission: AgentPermission = {
       id: await this.journal.id(), sessionId: this.sessionId, runGeneration: generation,
-      turnId: this.#active?.turn.id, request, state: "pending", createdAt: timestamp(),
+      turnId: this.#active?.turn.id, request: this.#subagents.has(request.sessionId) ? subagentNotification(request) : request,
+      state: "pending", createdAt: timestamp(),
     }
     let resolve!: (response: acp.RequestPermissionResponse) => void
     const result = new Promise<acp.RequestPermissionResponse>(done => { resolve = done })
@@ -705,6 +741,8 @@ export class AgentRuntime {
 
   #connectionLost(error: Error, generation: number): void {
     if (this.#run?.generation !== generation || this.#stopping) return
+    this.#stopping = true
+    this.journal.live.auth(this.sessionId, generation, null)
     this.#releaseMcp()
     this.#commands?.close()
     this.#connection = undefined
@@ -736,6 +774,7 @@ export class AgentRuntime {
   }
   async #stopRun(): Promise<void> {
     this.#stopping = true
+    if (this.#run) this.journal.live.auth(this.sessionId, this.#run.generation, null)
     this.#commands?.close()
     this.#releaseMcp()
     const discoveries = [...this.#discoveries]

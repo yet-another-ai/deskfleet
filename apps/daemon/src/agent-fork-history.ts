@@ -2,7 +2,10 @@ import type { SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import type { AgentElicitation, AgentEvent, AgentEventDraft, AgentInput, AgentPermission, AgentRun, AgentSnapshot } from "./agent-protocol.ts"
 import type { AgentJournal } from "./agent-store.ts"
 
-const conversationUpdates = new Set(["agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update"])
+const conversationUpdates = new Set([
+  "agent_message_chunk", "agent_thought_chunk", "user_message_chunk", "tool_call", "tool_call_update", "plan", "plan_update", "plan_removed",
+  "compaction_update", "compaction_summary_chunk", "subagent_update", "session_message", "session_message_chunk",
+])
 
 /** Copy an idle source's transcript once, before starting the new Session's provider. */
 export async function copyForkHistory(journal: AgentJournal, source: AgentSnapshot, childId: string): Promise<void> {
@@ -37,7 +40,8 @@ export async function copyForkHistory(journal: AgentJournal, source: AgentSnapsh
     } else if (event.kind === "acp") {
       const notification = event.payload as SessionNotification
       if (!conversationUpdates.has(notification.update.sessionUpdate)) return
-      payload = { ...notification, sessionId: childId }
+      // Provider IDs link child lanes and message routes; the outer event owns the DeskFleet Session.
+      payload = notification
     } else {
       return
     }

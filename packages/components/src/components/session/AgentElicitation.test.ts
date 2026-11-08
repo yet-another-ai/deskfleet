@@ -158,3 +158,21 @@ test("restored pending questions stay visible inside the active response and sto
   expect(view.get('[data-testid="agent-elicitation"]').text()).toContain("Declined · Grace")
   expect(view.find('[data-testid="elicitation-submit"]').exists()).toBe(false)
 })
+
+test("Grok interview actions submit their own outcomes without requiring form answers", async () => {
+  const store = useAgentSessionsStore()
+  const respond = vi.spyOn(store, "respondToElicitation").mockResolvedValue()
+  const elicitation = agentElicitation()
+  elicitation.request._meta = { deskfleet: { grokPlanInterview: true } }
+  const view = render(elicitation)
+  await view.get('[data-testid="elicitation-chat-plan"]').trigger("click")
+  expect(respond).toHaveBeenLastCalledWith("30", "80", { action: "accept", _meta: { deskfleet: { grokOutcome: "chat_about_this" } } })
+  await view.get('[data-testid="elicitation-skip-interview"]').trigger("click")
+  const response = { action: "accept" as const, _meta: { deskfleet: { grokOutcome: "skip_interview" } } }
+  expect(respond).toHaveBeenLastCalledWith("30", "80", response)
+  await view.setProps({ elicitation: { ...elicitation, state: "resolved", response } })
+  expect(view.get('[data-testid="elicitation-interview-outcome"]').text()).toBe("Skip interview")
+  expect(view.find("form").exists()).toBe(false)
+  await view.setProps({ elicitation: agentElicitation() })
+  expect(view.find('[data-testid="elicitation-chat-plan"]').exists()).toBe(false)
+})

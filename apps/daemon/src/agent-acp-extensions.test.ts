@@ -117,3 +117,74 @@ test("ACP advertises URL elicitation only with its completion handler and forwar
     })
   }
 })
+
+test("structured capabilities are advertised only when their consumer opts in", async context => {
+  for (const enabled of [false, true]) {
+    const { connection } = await connect(context, { onUpdate() {}, capabilities: {
+      configOptions: enabled, notices: enabled, compaction: enabled, plans: enabled, subagents: enabled,
+    } })
+    const caps = connection.initialization._meta?.clientCapabilities as acp.ClientCapabilities
+    assert.deepEqual(caps.session, enabled ? { configOptions: { boolean: {} }, notices: {}, compaction: {} } : {})
+    assert.deepEqual(caps.plan, enabled ? {} : undefined)
+    assert.deepEqual(caps.subagents, enabled ? {} : undefined)
+  }
+})
+
+test("announced child callbacks work during new/fork/load without admitting unknown sessions", async context => {
+  const updates: acp.SessionNotification[] = []
+  const { connection, cwd } = await connect(context, { capabilities: { subagents: true },
+    onUpdate: notification => { updates.push(notification) }, requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+  }, "children")
+  const source = await connection.newSession({ cwd, mcpServers: [] })
+  assert.ok(updates.some(event => event.sessionId === `${source.sessionId}-child`))
+  const forked = await connection.forkSession!({ cwd, mcpServers: [], sessionId: source.sessionId })
+  const childId = `${forked.sessionId}-child`
+  const path = join(cwd, "opening", `${childId}.txt`)
+  assert.deepEqual(await callback(connection, forked.sessionId, "fs/read_text_file", { sessionId: childId, path }),
+    { result: { content: `${childId}\nready\n` } })
+  assert.equal((await callback(connection, forked.sessionId, "fs/read_text_file", { sessionId: `${source.sessionId}-child`, path })).error?.code, -32602)
+  assert.equal((await callback(connection, forked.sessionId, "session/request_permission", {
+    sessionId: "unannounced", toolCall: { toolCallId: "tool" }, options: [],
+  })).error?.code, -32602)
+  updates.length = 0
+  await connection.resume({ sessionId: "saved", cwd, mcpServers: [] })
+  assert.deepEqual(updates.map(event => event.update.sessionUpdate), ["subagent_update"])
+  assert.deepEqual(await callback(connection, "saved", "fs/read_text_file", {
+    sessionId: "saved-child", path: join(cwd, "opening", "saved-child.txt"),
+  }), { result: { content: "saved-child\nready\n" } })
+})
+
+test("auth notifications expose identity fields without vendor secrets", { timeout: 15_000 }, async context => {
+  const received: unknown[] = []
+  let receive!: () => void
+  const receivedStatus = new Promise<void>(resolve => { receive = resolve })
+  const { connection, cwd } = await connect(context, { onUpdate() {}, onAuthStatus: status => { received.push(status); receive() } })
+  const { sessionId } = await connection.newSession({ cwd, mcpServers: [] })
+  await connection.prompt({ sessionId, prompt, _meta: { notification: { method: "_auth/status_update", params: {
+    authStatus: { kind: "account", label: "Account", detail: "Signed in", account: { email: "a@example.com", plan: "Pro", token: "secret" }, vendor: { token: "secret" } },
+  } } } })
+  await receivedStatus
+  assert.deepEqual(received, [{ kind: "account", label: "Account", detail: "Signed in", account: { email: "a@example.com", plan: "Pro" } }])
+})
+
+test("Cursor notifications reach the active session as structured events", { timeout: 15_000 }, async context => {
+  const updates: acp.SessionNotification[] = []
+  let receive!: () => void
+  const receivedUpdates = new Promise<void>(resolve => { receive = resolve })
+  const { connection, cwd } = await connect(context, { capabilities: { plans: true },
+    onUpdate: notification => { updates.push(notification); if (updates.length === 3) receive() },
+  })
+  const { sessionId } = await connection.newSession({ cwd, mcpServers: [] })
+  for (const notification of [
+    { method: "cursor/update_todos", params: { toolCallId: "todos-1", merge: false,
+      todos: [{ id: "task-1", content: "Inspect routes", status: "pending" }] } },
+    { method: "cursor/task", params: { toolCallId: "task-call-1", description: "Inspect routes", prompt: "Find all routes", subagentType: "explore" } },
+    { method: "cursor/generate_image", params: { toolCallId: "image-1", description: "Architecture", filePath: join(cwd, "architecture.png") } },
+  ]) await connection.prompt({ sessionId, prompt, _meta: { notification } })
+  await receivedUpdates
+  assert.deepEqual(updates.map(event => [event.sessionId, event.update.sessionUpdate]), [
+    [sessionId, "plan_update"], [sessionId, "tool_call"], [sessionId, "tool_call"],
+  ])
+  assert.equal(updates[1]!.update.sessionUpdate === "tool_call" && updates[1]!.update.toolCallId, "task-call-1")
+  assert.equal(updates[2]!.update.sessionUpdate === "tool_call" && updates[2]!.update.toolCallId, "image-1")
+})
