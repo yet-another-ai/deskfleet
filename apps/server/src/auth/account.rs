@@ -169,6 +169,24 @@ pub(super) async fn disabled(
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct DeletionRequest {
+    reason: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct DeletionRequestsQuery {
+    cursor: Option<String>,
+    limit: Option<usize>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct DeletionReview {
+    approve: bool,
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Search {
     #[serde(default)]
     query: String,
@@ -185,4 +203,68 @@ pub(super) async fn users(
             .find_accounts(&auth.user.id, &query.query)
             .await?
     )))
+}
+pub(super) async fn deletion_request(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+) -> Result<web::Json<Value>> {
+    let auth = user(&req, &state).await?;
+    Ok(web::Json(json!({
+        "request": state.store.account_deletion_request(&auth.user.id).await?
+    })))
+}
+pub(super) async fn request_deletion(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<DeletionRequest>,
+) -> Result<web::Json<Value>> {
+    let auth = recent(&req, &state).await?;
+    Ok(web::Json(
+        state
+            .store
+            .request_account_deletion(&auth.user.id, &body.reason)
+            .await?,
+    ))
+}
+pub(super) async fn cancel_deletion(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse> {
+    let auth = recent(&req, &state).await?;
+    state.store.cancel_account_deletion(&auth.user.id).await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+pub(super) async fn deletion_requests(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    query: web::Query<DeletionRequestsQuery>,
+) -> Result<web::Json<Value>> {
+    let auth = user(&req, &state).await?;
+    Ok(web::Json(
+        state
+            .store
+            .account_deletion_requests(
+                &auth.user.id,
+                query.cursor.as_deref(),
+                query.limit.unwrap_or(20),
+            )
+            .await?,
+    ))
+}
+pub(super) async fn review_deletion(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    id: web::Path<String>,
+    body: web::Json<DeletionReview>,
+) -> Result<HttpResponse> {
+    let auth = recent(&req, &state).await?;
+    let (user_id, peers) = state
+        .store
+        .review_account_deletion(&auth.user.id, &id, body.approve, body.note.as_deref())
+        .await?;
+    if body.approve {
+        state.hub.revoke(peers, "account_deleted").await?;
+        state.hub.disconnect_user(&user_id).await?;
+    }
+    Ok(HttpResponse::NoContent().finish())
 }

@@ -183,7 +183,7 @@
     "dataNote": "エージェントが報告し、同期された使用量に基づきます。未報告分は合計トークン数に含まれません。入力・出力・キャッシュの分類は各エージェントの報告に従い、重複する場合があります。利用状況は、トークン使用量が報告された期間を集計します。日付には {timeZone} を使用します。"
   },
   "siteAdmin": {
-    "title": "サイト管理", "description": "この DeskFleet サイトの設定を管理します。",
+    "title": "サイト管理", "generalTitle": "サイト設定", "description": "この DeskFleet サイトの設定を管理します。",
     "forbidden": "サイト管理者権限が必要です。", "siteName": "サイト名",
     "termsOfServiceUrl": "利用規約の URL", "privacyTermsUrl": "プライバシー規約の URL",
     "termsDescription": "HTTP または HTTPS で始まる完全な URL を指定してください。新規アカウントの登録には、設定された規約への同意が必要です。URL を空欄にすると、そのリンクは表示されません。", "announcement": "お知らせ",
@@ -217,7 +217,20 @@
     "registration": "一般ユーザーの登録", "registrationDescription": "メールアドレスを認証したユーザーは誰でもアカウントを作成できます。",
     "disabled": "無効", "noAccounts": "「{query}」に一致するアカウントはありません。",
     "resultLimit": "最初の {count} 件を表示しています。検索条件を絞り込んでください。", "disableTitle": "{name} のアカウントを無効にしますか？",
-    "disableDescription": "このユーザーのログインセッションとピアアクセスは失効し、スケジュールされたタスクの実行も許可されなくなります。チームのマシンとデータは保持されます。"
+    "disableDescription": "このユーザーのログインセッションとピアアクセスは失効し、スケジュールされたタスクの実行も許可されなくなります。チームのマシンとデータは保持されます。",
+    "deletionRequests": "削除申請",
+    "deletionRequestsDescription": "アカウントの完全削除待ちの申請を確認します。承認するとサインインが無効になり、プロフィールは匿名化されます。チームのマシンと共有作業は保持されます。",
+    "noDeletionRequests": "保留中のアカウント削除申請はありません。",
+    "pending": "保留中",
+    "requestedAt": "{date} に申請",
+    "approveDeletion": "削除を承認",
+    "rejectDeletion": "却下",
+    "approveDeletionTitle": "{name} のアカウントを削除しますか？",
+    "approveDeletionDescription": "{name} はサインアウトされ、認証情報とチームメンバーシップが削除され、プロフィールは匿名化されます。チームの所有権は先に移譲する必要があります。この操作は元に戻せません。",
+    "rejectDeletionTitle": "{name} の削除申請を却下しますか？",
+    "rejectDeletionDescription": "{name} はアカウントを保持し、入力されていればメモを確認できます。",
+    "reviewNote": "確認メモ（任意）",
+    "reviewNoteHint": "却下時はアカウントに共有され、承認時は決定とともに保存されます。"
   },
   "mcpServers": {
     "machines": "MCP サーバーのマシン",
@@ -1119,7 +1132,22 @@
     "revoke": "ログアウト", "revokeTitle": "このデバイスからログアウトしますか？",
     "revokeCurrentTitle": "このブラウザーからログアウトしますか？", "revokeDescription": "再度ログインが必要になります。マシンや実行中の作業には影響しません。",
     "revokeAll": "すべてからログアウト", "revokeAllTitle": "すべてからログアウトしますか？",
-    "revokeAllDescription": "このブラウザーを含むすべてのブラウザーとデスクトップアプリで、再度ログインが必要になります。マシンや実行中の作業には影響しません。"
+    "revokeAllDescription": "このブラウザーを含むすべてのブラウザーとデスクトップアプリで、再度ログインが必要になります。マシンや実行中の作業には影響しません。",
+    "deleteAccount": "アカウント削除",
+    "deleteAccountDescription": "アカウント削除を申請します。変更前にサイト管理者が申請を確認します。承認するとサインインが無効になり、認証情報とチームメンバーシップが削除され、プロフィールは匿名化されます。チームのマシンと共有作業は保持されます。",
+    "deleteAccountReason": "削除理由",
+    "deleteAccountReasonRequired": "アカウント削除の理由を入力してください。",
+    "deleteAccountOwnership": "管理者が承認する前に、所有しているチームの所有権を移譲してください。チームのマシンと共有作業はアカウントと一緒に削除されません。",
+    "deleteAccountPending": "{date} に申請済み。サイト管理者の確認待ちです。",
+    "deleteAccountRejected": "{date} に申請済み。サイト管理者が申請を拒否しました。",
+    "deleteAccountApproved": "このアカウントは削除済みです。",
+    "deleteAccountReviewNote": "メモ：{note}",
+    "requestAccountDeletion": "削除を申請",
+    "submitDeletionRequest": "申請を送信",
+    "deleteAccountTitle": "アカウント削除を申請",
+    "cancelDeletionRequest": "申請を取り消す",
+    "cancelDeletionTitle": "アカウント削除の申請を取り消しますか？",
+    "cancelDeletionDescription": "アカウントは有効なままで、後で再度申請できます。"
   },
   "billing": {
     "comparison": {
@@ -1176,9 +1204,10 @@
     "retryHint": "待機中の入力は保持されます。しばらくしてから再試行してください。",
     "upgradePlan": "プランをアップグレード", "plansAndBilling": "プランと請求",
     "viewPlans": "プランを見る", "enterpriseTeams": "手動ライセンス", "manageGrant": "ライセンスを管理", "manualGrantHint": "手動ライセンスは期限までプランを上書きします。サブスクリプションの請求は続きます。", "grantPlan": "プラン", "removeGrant": "ライセンスを取り消す", "manualGrantSubscription": "手動ライセンスの有効期間中も {plan} の請求は続きます。", "grantNoExpiry": "無期限", "grantExpiry": "有効期限（空欄は無期限）", "grantReason": "内部記録用の理由", "saveGrant": "保存", "grantReasonRequired": "内部記録用の理由を入力してください。", "grantExpiryInvalid": "未来の有効期限を選択してください。",
-    "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チーム名またはオーナーアカウントで絞り込み",
+    "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チーム名またはオーナーアカウントで検索",
     "teamOwnerAccount": "オーナー：{name}（{email}）",
-    "noTeams": "チームがありません。", "noMatchingTeams": "条件に一致するチームがありません。",
+    "noTeams": "チームがありません。", "noMatchingTeams": "検索条件に一致するチームがありません。",
+    "pagination": "手動ライセンスのページ送り", "previousPage": "前のページ", "nextPage": "次のページ", "pageNumber": "{page} ページ",
     "noSubscription": "有料サブスクリプションなし", "subscriptionPlan": "{plan} サブスクリプション",
     "grantEnterprise": "Enterprise を付与", "revokeEnterprise": "Enterprise を取り消す",
     "grantTitle": "{team} に Enterprise を付与しますか？", "grantDescription": "取り消すまで、すべての利用枠が無制限になります。",

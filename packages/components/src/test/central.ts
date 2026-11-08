@@ -1,5 +1,6 @@
 import { vi } from "vitest"
-import type { AdminTeamBilling, TeamBilling } from "../../../client/src/billing.ts"
+import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
+import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
@@ -83,8 +84,10 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     billing: vi.fn(async (_teamId: string) => billingFixture({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     checkout: vi.fn(async (_teamId: string, _plan: "go" | "pro", _requestId: string, _interval?: "month" | "year") => {}),
     billingPortal: vi.fn(async (_teamId: string) => {}),
-    billingTeams: vi.fn(async (): Promise<AdminTeamBilling[]> => []),
+    billingTeams: vi.fn(async (_query?: AdminTeamBillingQuery): Promise<AdminTeamBillingPage> => ({ teams: [], nextCursor: null })),
     setManualGrant: vi.fn(async (_teamId: string, _plan: "free" | "go" | "pro" | "enterprise" | null, _expiresAt: number | null, _reason: string) => {}),
+    deletionRequests: vi.fn(async (): Promise<AccountDeletionRequestPage> => ({ requests: [], nextCursor: null })),
+    reviewDeletionRequest: vi.fn(async (_id: string, _approve: boolean, _note?: string) => {}),
     registrationPolicy: vi.fn(async () => ({ registrationEnabled: true })),
     updateRegistration: vi.fn(async (_enabled: boolean) => {}),
     users: vi.fn(async (_query: string) => []),

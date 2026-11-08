@@ -96,7 +96,7 @@ impl ControlStore {
     }
 }
 
-fn escape_like(query: &str) -> String {
+pub(super) fn escape_like(query: &str) -> String {
     query
         .replace('\\', "\\\\")
         .replace('%', "\\%")

@@ -184,6 +184,11 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 31).await?;
     }
+    if !version_present(&tx, 32).await? {
+        tx.execute_unprepared(include_str!("account_deletion.sql"))
+            .await?;
+        record_version(&tx, 32).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -196,6 +201,11 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 32).await? {
+        tx.execute_unprepared(include_str!("account_deletion_down.sql"))
+            .await?;
+        remove_version(&tx, 32).await?;
+    }
     if version_present(&tx, 31).await? {
         tx.execute_unprepared(include_str!("history_purge_down.sql"))
             .await?;

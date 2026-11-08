@@ -5,7 +5,7 @@ import { configureClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate } from "@deskfleet/client/central"
-import type { TeamBilling } from "@deskfleet/client/billing"
+import type { AdminTeamBilling, TeamBilling } from "@deskfleet/client/billing"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "@deskfleet/client/ai-usage"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace } from "@deskfleet/client/catalog"
 import type { FileEntry, FileListing, FileTransfer } from "@deskfleet/client/files"
@@ -656,11 +656,18 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       }
       return { ...cloudflareTurn }
     },
-    billingTeams: async () => [
-      { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },
-      { id: "team-2", name: "Design Systems", owner: { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev" }, billing: { ...structuredClone(storybookBilling), plan: "free", enterpriseOverride: true } },
-    ],
+    billingTeams: async query => {
+      const needle = query?.search?.trim().toLocaleLowerCase()
+      const all: AdminTeamBilling[] = [
+        { id: "team-1", name: "Core Engineering", owner: { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev" }, billing: structuredClone(storybookBilling) },
+        { id: "team-2", name: "Design Systems", owner: { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev" }, billing: { ...structuredClone(storybookBilling), plan: "free", enterpriseOverride: true } },
+      ]
+      const teams = all.filter(team => !needle || [team.name, team.owner.name, team.owner.email].some(value => value.toLocaleLowerCase().includes(needle)))
+      return { teams, nextCursor: null }
+    },
     setManualGrant: async () => {},
+    deletionRequests: async () => ({ requests: [], nextCursor: null }),
+    reviewDeletionRequest: async () => {},
     registrationPolicy: async () => ({ registrationEnabled }),
     updateRegistration: async (enabled: boolean) => { registrationEnabled = enabled },
     users: async () => [
