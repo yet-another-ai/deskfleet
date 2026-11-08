@@ -1,7 +1,7 @@
 import type { RelayDeniedReason } from "./relay.ts"
 import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
+import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
@@ -55,7 +55,7 @@ export interface SiteAdministrationApi {
   updateTurnSettings(settings: TurnSettings): Promise<TurnSettings>
   cloudflareTurnSettings(): Promise<CloudflareTurnSettings>
   updateCloudflareTurnSettings(settings: CloudflareTurnSettingsUpdate): Promise<CloudflareTurnSettings>
-  billingTeams(): Promise<AdminTeamBilling[]>
+  billingTeams(query?: AdminTeamBillingQuery): Promise<AdminTeamBillingPage>
   setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string): Promise<void>
   registrationPolicy(): Promise<{ registrationEnabled: boolean }>
   updateRegistration(enabled: boolean): Promise<void>

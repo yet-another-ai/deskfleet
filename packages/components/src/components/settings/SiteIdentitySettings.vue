@@ -53,8 +53,10 @@ async function setDisabled(user: User, disabled: boolean): Promise<void> {
 </script>
 
 <template>
-  <section :aria-labelledby="`${id}-title`" class="mt-10">
-    <h2 :id="`${id}-title`" class="ui-section-title mb-2">{{ t("siteAdmin.accounts") }}</h2>
+  <header class="mb-8">
+    <h1 class="ui-page-title">{{ t("siteAdmin.accounts") }}</h1>
+  </header>
+  <section>
     <div class="ui-card">
       <SettingsRow :label="t('siteAdmin.registration')" :label-id="`${id}-registration`">
         <template #description>{{ policyError ? failureMessage(policyError) : t("siteAdmin.registrationDescription") }}</template>

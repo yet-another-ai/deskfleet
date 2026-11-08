@@ -7,6 +7,8 @@ declare module "vue-router" {
     titleKey?: string
     /** The page draws its own navigation in place of the sidebar and details panel. */
     fullWindow?: boolean
+    /** The section asks for recent identity proof before changing protected data. */
+    recentAuthentication?: boolean
   }
 }
 
@@ -16,10 +18,39 @@ export const router = createRouter({
   routes: [
     {
       path: "/admin",
-      name: "site-admin",
       beforeEnter: () => client.platform === "web" ? true : "/",
       component: () => import("../views/SiteAdminView.vue"),
       meta: { fullWindow: true },
+      children: [
+        { path: "", name: "site-admin", redirect: { name: "site-admin-settings" } },
+        {
+          path: "settings",
+          name: "site-admin-settings",
+          component: () => import("../components/settings/SiteSettings.vue"),
+        },
+        {
+          path: "accounts",
+          name: "site-admin-accounts",
+          component: () => import("../components/settings/SiteIdentitySettings.vue"),
+          meta: { recentAuthentication: true },
+        },
+        {
+          path: "turn",
+          name: "site-admin-turn",
+          component: () => import("../components/settings/TurnSettings.vue"),
+        },
+        {
+          path: "cloudflare-turn",
+          name: "site-admin-cloudflare-turn",
+          component: () => import("../components/settings/CloudflareTurnSettings.vue"),
+        },
+        {
+          path: "manual-grants",
+          name: "site-admin-manual-grants",
+          component: () => import("../components/settings/EnterpriseTeams.vue"),
+          meta: { recentAuthentication: true },
+        },
+      ],
     },
     {
       path: "/",

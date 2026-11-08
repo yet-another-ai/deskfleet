@@ -2,10 +2,14 @@ use super::{period_at, profile, summary_value, usage_query};
 use crate::entities::{
     cp_billing_profiles as profiles, cp_members as members, cp_teams as teams, cp_users as users,
 };
+use crate::search::escape_like;
 use crate::{ControlStore, Error, Result, now_ms, resource_id};
 use sea_orm::ConnectionTrait;
 use sea_orm::DeriveIden;
-use sea_orm::sea_query::{Asterisk, Expr, ExprTrait, Func, JoinType, OnConflict, Order, Query};
+use sea_orm::sea_query::{
+    Asterisk, Cond, Expr, ExprTrait, Func, JoinType, OnConflict, Order, Query,
+    extension::postgres::PgExpr,
+};
 
 #[derive(Clone, Copy, DeriveIden)]
 enum Period {
@@ -30,6 +34,7 @@ impl ControlStore {
         &self,
         user_id: &str,
         cursor: Option<&str>,
+        search: Option<&str>,
         limit: usize,
     ) -> Result<AdminBillingPage> {
         if !self.is_site_admin(user_id).await? {
@@ -37,16 +42,46 @@ impl ControlStore {
         }
         let after = cursor.map(resource_id).transpose()?.unwrap_or(0);
         let limit = limit.clamp(1, 100);
+        let mut teams_query = Query::select()
+            .column(teams::Column::Id)
+            .from(teams::Entity)
+            .and_where(Expr::col(teams::Column::Id).gt(after))
+            .order_by(teams::Column::Id, Order::Asc)
+            .limit((limit + 1) as u64)
+            .to_owned();
+        if let Some(search) = search.map(str::trim).filter(|value| !value.is_empty()) {
+            let pattern = format!("%{}%", escape_like(search));
+            let owner = Query::select()
+                .expr(Expr::val(1))
+                .from(members::Entity)
+                .join(
+                    JoinType::InnerJoin,
+                    users::Entity,
+                    Expr::col((users::Entity, users::Column::Id))
+                        .eq(Expr::col((members::Entity, members::Column::UserId))),
+                )
+                .and_where(
+                    Expr::col((members::Entity, members::Column::TeamId))
+                        .eq(Expr::col((teams::Entity, teams::Column::Id))),
+                )
+                .and_where(Expr::col((members::Entity, members::Column::Role)).eq("owner"))
+                .cond_where(
+                    Cond::any()
+                        .add(Expr::col((users::Entity, users::Column::Name)).ilike(pattern.clone()))
+                        .add(
+                            Expr::col((users::Entity, users::Column::Email)).ilike(pattern.clone()),
+                        ),
+                )
+                .to_owned();
+            teams_query.cond_where(
+                Cond::any()
+                    .add(Expr::col(teams::Column::Name).ilike(pattern))
+                    .add(Expr::exists(owner)),
+            );
+        }
         let mut ids = self
             .db
-            .query_all(
-                Query::select()
-                    .column(teams::Column::Id)
-                    .from(teams::Entity)
-                    .and_where(Expr::col(teams::Column::Id).gt(after))
-                    .order_by(teams::Column::Id, Order::Asc)
-                    .limit((limit + 1) as u64),
-            )
+            .query_all(&teams_query)
             .await?
             .into_iter()
             .map(|row| row.try_get::<i64>("", "id"))

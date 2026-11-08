@@ -183,7 +183,7 @@
     "dataNote": "エージェントが報告し、同期された使用量に基づきます。未報告分は合計トークン数に含まれません。入力・出力・キャッシュの分類は各エージェントの報告に従い、重複する場合があります。利用状況は、トークン使用量が報告された期間を集計します。日付には {timeZone} を使用します。"
   },
   "siteAdmin": {
-    "title": "サイト管理", "description": "この DeskFleet サイトの設定を管理します。",
+    "title": "サイト管理", "generalTitle": "サイト設定", "description": "この DeskFleet サイトの設定を管理します。",
     "forbidden": "サイト管理者権限が必要です。", "siteName": "サイト名",
     "termsOfServiceUrl": "利用規約の URL", "privacyTermsUrl": "プライバシー規約の URL",
     "termsDescription": "HTTP または HTTPS で始まる完全な URL を指定してください。新規アカウントの登録には、設定された規約への同意が必要です。URL を空欄にすると、そのリンクは表示されません。", "announcement": "お知らせ",
@@ -1147,9 +1147,10 @@
     "retryHint": "待機中の入力は保持されます。しばらくしてから再試行してください。",
     "upgradePlan": "プランをアップグレード", "plansAndBilling": "プランと請求",
     "viewPlans": "プランを見る", "enterpriseTeams": "手動ライセンス", "manageGrant": "ライセンスを管理", "manualGrantHint": "手動ライセンスは期限までプランを上書きします。サブスクリプションの請求は続きます。", "grantPlan": "プラン", "removeGrant": "ライセンスを取り消す", "manualGrantSubscription": "手動ライセンスの有効期間中も {plan} の請求は続きます。", "grantNoExpiry": "無期限", "grantExpiry": "有効期限（空欄は無期限）", "grantReason": "内部記録用の理由", "saveGrant": "保存", "grantReasonRequired": "内部記録用の理由を入力してください。", "grantExpiryInvalid": "未来の有効期限を選択してください。",
-    "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チーム名またはオーナーアカウントで絞り込み",
+    "enterpriseHint": "チームのすべての利用枠を無制限にします。Stripe サブスクリプションは解約も一時停止もされません。", "filterTeams": "チーム名またはオーナーアカウントで検索",
     "teamOwnerAccount": "オーナー：{name}（{email}）",
-    "noTeams": "チームがありません。", "noMatchingTeams": "条件に一致するチームがありません。",
+    "noTeams": "チームがありません。", "noMatchingTeams": "検索条件に一致するチームがありません。",
+    "pagination": "手動ライセンスのページ送り", "previousPage": "前のページ", "nextPage": "次のページ", "pageNumber": "{page} ページ",
     "noSubscription": "有料サブスクリプションなし", "subscriptionPlan": "{plan} サブスクリプション",
     "grantEnterprise": "Enterprise を付与", "revokeEnterprise": "Enterprise を取り消す",
     "grantTitle": "{team} に Enterprise を付与しますか？", "grantDescription": "取り消すまで、すべての利用枠が無制限になります。",

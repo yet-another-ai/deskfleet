@@ -1,21 +1,18 @@
 <script setup lang="ts">
-import { ShieldCheck } from "@lucide/vue"
+import { BadgeCheck, Cloud, RadioTower, Settings2, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
+import { RouterView, useRoute } from "vue-router"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useRecentAuthentication } from "../composables/useRecentAuthentication.ts"
 import { router } from "../router/index.ts"
 import ReauthDialog from "../components/auth/ReauthDialog.vue"
+import SidebarLink from "../components/sidebar/SidebarLink.vue"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
-import SiteIdentitySettings from "../components/settings/SiteIdentitySettings.vue"
-import EnterpriseTeams from "../components/settings/EnterpriseTeams.vue"
-import SiteSettings from "../components/settings/SiteSettings.vue"
-import TurnSettings from "../components/settings/TurnSettings.vue"
-import CloudflareTurnSettings from "../components/settings/CloudflareTurnSettings.vue"
 
 const client = usePlatformClient()
-
 const { t } = useI18n()
+const route = useRoute()
 const session = useAccountSession()
 const api = client.platform === "web" ? client.siteAdministration : undefined
 // Account policy and Enterprise changes need a fresh identity proof.
@@ -26,14 +23,18 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
 <template>
   <SettingsLayout @back="router.replace('/')">
     <template #nav>
-      <span class="ui-nav-item ui-nav-active px-2.5"><ShieldCheck :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("siteAdmin.title") }}</span>
+      <template v-if="session?.account.value.siteAdmin && api">
+        <SidebarLink :to="{ name: 'site-admin-settings' }" :icon="Settings2" :label="t('siteAdmin.generalTitle')" replace />
+        <SidebarLink :to="{ name: 'site-admin-accounts' }" :icon="Users" :label="t('siteAdmin.accounts')" replace />
+        <SidebarLink :to="{ name: 'site-admin-turn' }" :icon="RadioTower" :label="t('siteAdmin.turnTitle')" replace />
+        <SidebarLink :to="{ name: 'site-admin-cloudflare-turn' }" :icon="Cloud" :label="t('siteAdmin.cloudflareTurnTitle')" replace />
+        <SidebarLink :to="{ name: 'site-admin-manual-grants' }" :icon="BadgeCheck" :label="t('billing.enterpriseTeams')" replace />
+      </template>
     </template>
     <template v-if="session?.account.value.siteAdmin && api">
-      <SiteSettings :api="api" />
-      <TurnSettings :api="api" />
-      <CloudflareTurnSettings :api="api" />
-      <SiteIdentitySettings :api="api" :confirmed="recent.confirmed" />
-      <EnterpriseTeams :api="api" :confirmed="recent.confirmed" />
+      <RouterView v-slot="{ Component }">
+        <component :is="Component" :api="api" v-bind="route.meta.recentAuthentication ? { confirmed: recent.confirmed } : {}" />
+      </RouterView>
       <ReauthDialog v-if="recent.prompting.value" :reauthenticate="reauthenticate" :send-email-code="() => api!.sendEmailCode()" :verify-email-code="(challenge, code) => api!.verifyEmailCode(challenge, code)" :authentication-methods="() => api!.authenticationMethods()" @settle="recent.settle" />
     </template>
     <template v-else>

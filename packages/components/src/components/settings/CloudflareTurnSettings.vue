@@ -55,9 +55,11 @@ function submit(): void {
 </script>
 
 <template>
-  <section class="mt-8" :aria-labelledby="`${id}-title`">
-    <h2 :id="`${id}-title`" class="ui-section-title mb-2">{{ t("siteAdmin.cloudflareTurnTitle") }}</h2>
-    <p class="m-0 mb-4 text-[13px] text-ui-text-muted">{{ t("siteAdmin.cloudflareTurnDescription") }}</p>
+  <header class="mb-8">
+    <h1 :id="`${id}-title`" class="ui-page-title">{{ t("siteAdmin.cloudflareTurnTitle") }}</h1>
+    <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("siteAdmin.cloudflareTurnDescription") }}</p>
+  </header>
+  <section :aria-labelledby="`${id}-title`">
     <p v-if="loading" role="status" class="text-sm text-ui-text-muted">{{ t("welcome.loading") }}</p>
     <div v-else-if="loadError">
       <p role="alert" class="text-sm text-ui-danger">{{ message(loadError) }}</p>

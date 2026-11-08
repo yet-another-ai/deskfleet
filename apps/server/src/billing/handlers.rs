@@ -88,6 +88,7 @@ async fn portal(
 #[derive(Deserialize)]
 struct AdminTeamsQuery {
     cursor: Option<String>,
+    search: Option<String>,
     limit: Option<usize>,
 }
 async fn admin_teams(
@@ -101,6 +102,7 @@ async fn admin_teams(
             .admin_billing_teams(
                 &user.user.id,
                 query.cursor.as_deref(),
+                query.search.as_deref(),
                 query.limit.unwrap_or(100)
             )
             .await?

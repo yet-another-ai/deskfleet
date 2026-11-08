@@ -19,6 +19,11 @@ beforeEach(() => { pinia = createPinia(); configureClient({ ...host, platform: "
 beforeAll(async () => {
   await Promise.all([
     import("./views/SiteAdminView.vue"),
+    import("./components/settings/SiteSettings.vue"),
+    import("./components/settings/SiteIdentitySettings.vue"),
+    import("./components/settings/TurnSettings.vue"),
+    import("./components/settings/CloudflareTurnSettings.vue"),
+    import("./components/settings/EnterpriseTeams.vue"),
     import("./views/NewSessionView.vue"),
     import("./components/account/MachineSurface.vue"),
   ])
@@ -54,12 +59,10 @@ test("a site administrator without any Team opens administration from the accoun
   await page().get('button[aria-label="Ada"]').trigger("click")
   await button("Site administration").trigger("click")
   await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
-  expect(router.currentRoute.value.path).toBe("/admin")
-  expect(page().get("h1").text()).toBe("Site administration")
+  expect(router.currentRoute.value.path).toBe("/admin/settings")
+  expect(page().get("h1").text()).toBe("Site settings")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()
-  expect(fake.central.turnSettings).toHaveBeenCalledOnce()
-  expect(page().find('form[aria-labelledby] input[name^="turn-url-"]').exists()).toBe(false)
-  expect(page().text()).toContain("No TURN servers configured.")
+  expect(fake.central.turnSettings).not.toHaveBeenCalled()
   await page().get('[name="site-name"]').setValue("  Studio fleet  ")
   await page().get('[name="announcement"]').setValue("Maintenance on Sunday")
   await page().get('[name="terms-of-service-url"]').setValue("  https://example.test/terms  ")
@@ -87,7 +90,7 @@ test("a site administrator without any Team opens administration from the accoun
 
 test("terms URLs can be configured independently and cleared without changing other site settings", async () => {
   const fake = fakeCentral({ siteAdmin: true, teams: [], site: { termsOfServiceUrl: "https://example.test/terms" } })
-  await router.push("/admin")
+  await router.push("/admin/settings")
   mountShell(fake)
   await flushPromises()
   expect(page().get<HTMLInputElement>('[name="terms-of-service-url"]').element.value).toBe("https://example.test/terms")
@@ -104,6 +107,31 @@ test("terms URLs can be configured independently and cleared without changing ot
   await flushPromises()
   expect(fake.state.site.termsOfServiceUrl).toBe("")
   expect(fake.state.site.privacyTermsUrl).toBe("")
+})
+
+test("administration navigation opens one settings section at a time", async () => {
+  const fake = fakeCentral({ siteAdmin: true, teams: [] })
+  await router.push("/admin")
+  mountShell(fake)
+  await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
+  expect(fake.central.turnSettings).not.toHaveBeenCalled()
+  const nav = page().get('nav[aria-label="Settings sections"]')
+  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants"])
+  await nav.findAll("a").find(link => link.text() === "Accounts")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Accounts"))
+  expect(router.currentRoute.value.path).toBe("/admin/accounts")
+  expect(fake.central.registrationPolicy).toHaveBeenCalledOnce()
+  expect(fake.central.turnSettings).not.toHaveBeenCalled()
+  await nav.findAll("a").find(link => link.text() === "TURN servers")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("TURN servers"))
+  expect(fake.central.turnSettings).toHaveBeenCalledOnce()
+  expect(fake.central.cloudflareTurnSettings).not.toHaveBeenCalled()
+  await nav.findAll("a").find(link => link.text() === "Cloudflare TURN")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Cloudflare TURN"))
+  expect(fake.central.cloudflareTurnSettings).toHaveBeenCalledOnce()
+  await nav.findAll("a").find(link => link.text() === "Manual grants")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Manual grants"))
+  expect(fake.central.billingTeams).toHaveBeenCalledOnce()
 })
 
 test("an ordinary Team admin has no site menu entry and direct navigation never loads admin settings", async () => {
@@ -185,6 +213,6 @@ test("direct administration navigation is preserved when an existing machine mou
   await router.push("/admin")
   mountShell(fake)
   await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
-  expect(router.currentRoute.value.path).toBe("/admin")
+  expect(router.currentRoute.value.path).toBe("/admin/settings")
   expect(fake.central.siteSettings).toHaveBeenCalledOnce()
 })

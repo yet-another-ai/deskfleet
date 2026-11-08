@@ -236,14 +236,12 @@ test("ordinary reads retry transient network and server failures through the sha
   for (let index = 1; index <= 3; index++) await expectRequest(f.fetch, index, "https://fleet.example/api/teams", { method: "GET" })
 })
 
-test("collects paginated billing Teams while retaining the administration array API", async () => {
+test("requests one administration Team page with its search filter and cursor", async () => {
   const f = setup()
-  const first = { id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }
-  const second = { id: "second", name: "Design team", owner: { id: "bob", name: "Bob", email: "bob@example.test" } }
-  f.responses.push({ teams: [first], nextCursor: "team/a?b" }, { teams: [second], nextCursor: null })
-  expect(await f.client.billingTeams()).toEqual([first, second])
-  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=100")
-  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/teams?limit=100&cursor=team%2Fa%3Fb")
+  const page = { teams: [{ id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }], nextCursor: "team/a?b" }
+  f.responses.push(page)
+  expect(await f.client.billingTeams({ cursor: "team/prev", limit: 20, search: " design team " })).toEqual(page)
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=20&search=design+team&cursor=team%2Fprev")
 })
 
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {

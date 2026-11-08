@@ -29,3 +29,14 @@ export interface AdminTeamBilling {
   owner: { id: string; name: string; email: string }
   billing: TeamBilling
 }
+export interface AdminTeamBillingPage {
+  teams: AdminTeamBilling[]
+  nextCursor: string | null
+}
+export interface AdminTeamBillingQuery {
+  /** The last Team ID of the previous page. Omit for the first page. */
+  cursor?: string
+  /** Matches the Team name or the owner's name or email. */
+  search?: string
+  limit?: number
+}

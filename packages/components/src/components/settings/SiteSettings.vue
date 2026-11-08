@@ -50,7 +50,7 @@ function submit(): void {
 
 <template>
   <header class="mb-8">
-    <h1 class="ui-page-title">{{ t("siteAdmin.title") }}</h1>
+    <h1 class="ui-page-title">{{ t("siteAdmin.generalTitle") }}</h1>
     <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("siteAdmin.description") }}</p>
   </header>
   <p v-if="loading" role="status" class="text-sm text-ui-text-muted">{{ t("welcome.loading") }}</p>
