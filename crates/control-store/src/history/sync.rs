@@ -112,6 +112,13 @@ impl ControlStore {
         .await?;
         let mut watermark = row.try_get::<i64>("", "event_seq")?;
         let current_snapshot_seq = row.try_get::<i64>("", "snapshot_seq")?;
+        if let Some(snapshot) = &snapshot
+            && bound >= current_snapshot_seq
+            && let Some(generation) = snapshot["session"]["admissionGeneration"].as_str()
+        {
+            self.bind_session_admission(&tx, machine, session_id, generation)
+                .await?;
+        }
         if snapshot.is_none() && current_snapshot_seq < bound {
             return Err(Error::Conflict("history snapshot is missing"));
         }

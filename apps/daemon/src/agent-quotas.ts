@@ -9,8 +9,7 @@ export interface SessionAdmission {
 }
 export interface AdmissionRequest {
   operationId: string
-  kind: "create" | "fork" | "restore"
-  sessionId?: string
+  kind: "create" | "fork"
 }
 export interface AgentQuotaAuthority {
   turnLimit(): Promise<number | null>
@@ -130,9 +129,7 @@ export class SessionAdmissions {
     this.#active.add(command.operationId)
     try {
       await this.reconcile()
-      const receipt = await this.#authority.reserve({ operationId: command.operationId, kind,
-        ...(kind === "restore" ? { sessionId: command.sessionId } : {}),
-      })
+      const receipt = await this.#authority.reserve({ operationId: command.operationId, kind })
       if (receipt.generation !== command.operationId || receipt.status === "released") throw new Error("This Session admission is no longer available")
       let session: AgentSessionRecord
       try { session = await allocate(receipt.generation) }
@@ -164,7 +161,6 @@ export class SessionAdmissions {
     const generation = session.admissionGeneration
     if (!generation) return
     await this.#authority.confirm(generation, session.id)
-    if (session.archiveState === "archived") await this.#authority.release(generation, session.id)
   }
 
   reconcile(): Promise<void> {

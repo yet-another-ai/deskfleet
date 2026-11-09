@@ -308,7 +308,7 @@ async fn postgres_roles_tokens_replication_and_revocation() {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
-async fn postgres_team_usage_counts_current_members_and_durable_session_admissions() {
+async fn postgres_team_usage_counts_current_members_and_retained_sessions() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
     let store = ControlStore::connect(&url).await.unwrap();
     let issuer = format!("https://usage-fixture/{}", uuid::Uuid::new_v4());
@@ -398,7 +398,7 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
     }
     assert_eq!(
         usage_counts(store.team_usage(&member.id, &team.id).await.unwrap()),
-        json!({"relayedBytes":"0", "activeSessionCount":3, "memberCount":2})
+        json!({"relayedBytes":"0", "activeSessionCount":4, "memberCount":2})
     );
     assert_eq!(
         usage_counts(store.team_usage(&admin.id, &other.id).await.unwrap()),
@@ -406,7 +406,7 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
     );
     // Archive, reject an older active snapshot, then restore the same Session.
     for (seq, archive_state, expected) in
-        [("1", "archived", 2), ("0", "active", 2), ("2", "active", 3)]
+        [("1", "archived", 4), ("0", "active", 4), ("2", "active", 4)]
     {
         let mut state = snapshot("1", seq);
         state["session"]["archiveState"] = json!(archive_state);
@@ -423,16 +423,6 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
                 )
                 .await
                 .unwrap();
-        } else if seq == "2" {
-            let generation = uuid::Uuid::new_v4().to_string();
-            store
-                .reserve_session(&machines[0].id, &generation, "restore", Some("1"))
-                .await
-                .unwrap();
-            store
-                .confirm_session_admission(&machines[0].id, &generation, &generation, "1")
-                .await
-                .unwrap();
         }
         assert_eq!(
             store.team_usage(&admin.id, &team.id).await.unwrap()["activeSessionCount"],
@@ -445,7 +435,7 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
         .unwrap();
     assert_eq!(
         store.team_usage(&admin.id, &team.id).await.unwrap()["activeSessionCount"],
-        2
+        3
     );
     store
         .change_member(&admin.id, &team.id, &member.id, None)
@@ -453,7 +443,7 @@ async fn postgres_team_usage_counts_current_members_and_durable_session_admissio
         .unwrap();
     assert_eq!(
         usage_counts(store.team_usage(&admin.id, &team.id).await.unwrap()),
-        json!({"relayedBytes":"0", "activeSessionCount":2, "memberCount":1})
+        json!({"relayedBytes":"0", "activeSessionCount":3, "memberCount":1})
     );
     assert!(matches!(
         store.team_usage(&member.id, &team.id).await,

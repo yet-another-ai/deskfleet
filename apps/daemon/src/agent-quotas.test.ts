@@ -143,7 +143,7 @@ test("entitlement failures preserve unconsumed input for an explicit retry witho
   }
 })
 
-test("Team capacity reserves before allocation, archive releases, restore reserves a new generation, and delete releases", async t => {
+test("Team capacity counts archived Sessions, restore retains admission at capacity, and delete releases", async t => {
   const quotas = new TestAgentQuotas(); quotas.capacity = 3
   const f = await setup(t, quotas)
   const results = await Promise.allSettled([f.create(), f.create(), f.create()])
@@ -151,25 +151,37 @@ test("Team capacity reserves before allocation, archive releases, restore reserv
   assert.equal((await f.sessions.journal.list()).length, 3)
   const original = f.source.session.admissionGeneration!
   await f.transition("archive")
-  assert.equal(quotas.admissions.get(original)?.status, "released")
+  assert.equal(quotas.admissions.get(original)?.status, "committed")
+  await assert.rejects(f.create(), /Team Session allowance reached/u)
   await f.transition("restore")
   const restored = await f.read()
-  assert.notEqual(restored.session.admissionGeneration, original)
+  assert.equal(restored.session.admissionGeneration, original)
   assert.equal(quotas.admissions.get(restored.session.admissionGeneration!)?.status, "committed")
-  await quotas.release(original, restored.session.id)
-  assert.equal((await quotas.list()).length, 3, "stale releases cannot free a restored Session")
+  assert.equal((await quotas.list()).length, 3)
   await f.transition("delete")
   assert.equal((await quotas.list()).length, 2)
+  await f.create()
+  assert.equal((await quotas.list()).length, 3)
 })
 
-test("rearchiving at full Team capacity preserves archived state without reserving or occupying capacity", async t => {
+test("restoring an existing archive whose admission was released does not reserve again", async t => {
+  const f = await setup(t)
+  const generation = f.source.session.admissionGeneration!
+  await f.transition("archive")
+  await f.quotas.release(generation, f.source.session.id)
+  f.quotas.reserve = async () => { throw new Error("Restore must not reserve capacity") }
+  await f.restart()
+  await f.transition("restore")
+  assert.equal((await f.read()).session.archiveState, "active")
+  assert.equal((await f.read()).session.admissionGeneration, generation)
+})
+
+test("rearchiving at full Team capacity preserves archived state and existing occupancy", async t => {
   const quotas = new TestAgentQuotas(); quotas.capacity = 1
   const f = await setup(t, quotas)
   const generation = f.source.session.admissionGeneration!
   await f.transition("archive")
   const archived = (await f.read()).session
-  const other = await f.create()
-  const replacement = other.session.admissionGeneration!
   let reservations = 0, cleanups = 0, sessionEvents = 0
   const reserve = quotas.reserve.bind(quotas)
   quotas.reserve = async request => { reservations++; return reserve(request) }
@@ -177,7 +189,7 @@ test("rearchiving at full Team capacity preserves archived state without reservi
   f.catalog.archiveSessionWorktree = async sessionId => {
     cleanups++
     assert.equal((await f.read()).session.archiveState, "archived")
-    assert.equal(quotas.admissions.get(generation)?.status, "released")
+    assert.equal(quotas.admissions.get(generation)?.status, "committed")
     assert.equal((await quotas.list()).length, 1)
     await cleanup(sessionId)
   }
@@ -193,29 +205,28 @@ test("rearchiving at full Team capacity preserves archived state without reservi
   assert.equal(cleanups, 1)
   assert.equal(sessionEvents, 0)
   assert.equal(reservations, 0)
-  assert.equal(quotas.admissions.get(generation)?.status, "released")
-  assert.equal(quotas.admissions.get(replacement)?.status, "committed")
+  assert.equal(quotas.admissions.get(generation)?.status, "committed")
   assert.equal((await quotas.list()).length, 1)
 })
 
-test("a fresh archive operation retries a failed release without reopening the archived Session", async t => {
+test("a fresh archive operation retries a failed confirmation without reopening the archived Session", async t => {
   for (const applied of [false, true]) {
-    await t.test(applied ? "release applied but response lost" : "release failed before applying", async t => {
+    await t.test(applied ? "confirmation applied but response lost" : "confirmation failed before applying", async t => {
       const f = await setup(t)
       const generation = f.source.session.admissionGeneration!
-      const release = f.quotas.release.bind(f.quotas)
+      const confirm = f.quotas.confirm.bind(f.quotas)
       let attempts = 0
-      f.quotas.release = async (generation, sessionId) => {
+      f.quotas.confirm = async (generation, sessionId) => {
         if (++attempts === 1) {
-          if (applied) await release(generation, sessionId)
-          throw new Error("Archive release interrupted")
+          if (applied) await confirm(generation, sessionId)
+          throw new Error("Archive confirmation interrupted")
         }
-        await release(generation, sessionId)
+        await confirm(generation, sessionId)
       }
-      await assert.rejects(f.transition("archive"), /Archive release interrupted/u)
+      await assert.rejects(f.transition("archive"), /Archive confirmation interrupted/u)
       const archived = (await f.read()).session
       assert.equal(archived.archiveState, "archived")
-      assert.equal(f.quotas.admissions.get(generation)?.status, applied ? "released" : "committed")
+      assert.equal(f.quotas.admissions.get(generation)?.status, "committed")
       let cleanups = 0, sessionEvents = 0
       const cleanup = f.catalog.archiveSessionWorktree.bind(f.catalog)
       f.catalog.archiveSessionWorktree = async sessionId => {
@@ -235,8 +246,8 @@ test("a fresh archive operation retries a failed release without reopening the a
       assert.equal(cleanups, 1)
       assert.equal(sessionEvents, 0)
       assert.equal(attempts, 2)
-      assert.equal(f.quotas.admissions.get(generation)?.status, "released")
-      assert.equal((await f.quotas.list()).length, 0)
+      assert.equal(f.quotas.admissions.get(generation)?.status, "committed")
+      assert.equal((await f.quotas.list()).length, 1)
     })
   }
 })
@@ -251,12 +262,12 @@ test("a lost confirmation or release is reconciled from durable local outcomes, 
   await f.sessions.reconcileAdmissions()
   assert.equal((await quotas.list())[0]?.status, "committed")
   quotas.release = async () => { throw new Error("Offline release") }
-  await assert.rejects(f.transition("archive"), /Offline release/)
+  await f.transition("archive")
   assert.equal((await f.read()).session.archiveState, "archived")
   assert.equal((await quotas.list()).length, 1)
   quotas.release = release
   await f.restart()
-  assert.equal((await quotas.list()).length, 0)
+  assert.equal((await quotas.list()).length, 1)
   await f.transition("restore")
   quotas.release = async () => { throw new Error("Offline deletion release") }
   await f.transition("delete")

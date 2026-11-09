@@ -218,8 +218,8 @@ and checkout cleanup succeeds.
 Cleanup failures remain retryable. There is no queued offline archive or
 background cleanup of previously archived checkouts in this release; an explicit
 archive request can reclaim a previously archived Session's retained checkouts.
-That request keeps the Session archived throughout cleanup and retries any pending
-quota release; it does not reopen admission or restart resource closure.
+That request keeps the Session archived throughout cleanup and retains its quota
+slot; it does not reopen execution admission or restart resource closure.
 
 Restore recreates generated checkouts at the same paths and saved committed HEADs,
 then returns the same Session to active use without starting the provider,
@@ -231,9 +231,10 @@ Reading an archived Session cannot trigger implicit resume or terminal creation.
 Archive state must be durable and synchronized, distinct from provider process
 state. Archived Sessions retain their Workspace ownership and Worktree records.
 
-The target quota model releases an unarchived-Session slot only on completed
-archive. Restore requires fresh Team capacity admission, and neither operation
-resets consumed turns or inherited usage.
+The active Session quota counts every non-deleted Session, including archived
+Sessions. Archive retains its slot, restore does not require another slot, and
+deletion releases the slot. Archive and restore preserve consumed turns and
+inherited usage.
 
 Archive cannot reuse Session destruction or terminal hangup, both of which delete
 retained records and history. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
@@ -446,8 +447,9 @@ JSON-RPC request IDs are distinct.
 Leaving and rejoining the same Team retains the catalog origin, Session IDs,
 conversation history, and admission generations. The backend reactivates the
 existing registration and rotates its execution credential. Retained admissions
-stop counting while the registration is revoked; rejoining checks them against
-current Team capacity and can fail with `active_session_limit`. After reconnection,
+stop counting while the registration is revoked; rejoining checks retained
+non-deleted Sessions and live admissions against current Team capacity and can
+fail with `active_session_limit`. After reconnection,
 the daemon reconciles those same receipts against durable Session outcomes.
 
 Every mutation has a client-generated UUID `operationId` and a daemon-assigned

@@ -1336,7 +1336,7 @@
     "turnRemoveDescription": "URL 和共享密钥将被删除。新连接将根据套餐使用站点的中继。",
     "relayedTraffic": "转发的流量",
     "activeSessions": "活跃会话",
-    "activeSessionsHint": "尚未归档的会话。",
+    "activeSessionsHint": "尚未删除的会话，包括已归档的会话。",
     "usageMembers": "团队人数",
     "usageMembersHint": "包含所有者、管理员和成员，不含待接受的邀请。",
     "unlimited": "无限额度",
@@ -1816,7 +1816,7 @@
     "empty": "没有找到结果",
     "emptyHint": "试试其他关键词，或搜索全部类型。",
     "start": "查找对话或计划任务",
-    "startHint": "搜索标题、已发送的消息、已结束回合的智能体回复和计划任务提示词。不包含已归档的对话。",
+    "startHint": "搜索标题、已发送的消息、已结束回合的智能体回复和计划任务提示词，包括已归档的对话。",
     "loading": "正在搜索…",
     "more": "加载更多",
     "untitled": "未命名对话"

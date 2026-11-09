@@ -183,7 +183,7 @@ pub struct AgentSessionRecord {
     /// Consumption captured from the source when this Session was forked.
     #[serde(default)]
     pub inherited_turn_count: u32,
-    /// Central admission generation; replaced only when restoring an archive.
+    /// Central admission generation retained until the Session is deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admission_generation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

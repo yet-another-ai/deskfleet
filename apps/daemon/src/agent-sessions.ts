@@ -783,12 +783,9 @@ export class AgentSessions {
         const snapshot = await this.journal.read(sessionId)
         if (snapshot.session.archiveState === "archiving") throw new Error("Finish archiving this Session before restoring it")
         if (snapshot.session.archiveState === "active") return
-        await this.#admissions.allocate(command, "restore", async admissionGeneration => {
-          await this.#catalog.restoreSessionWorktree(sessionId)
-          const session = { ...snapshot.session, admissionGeneration, archiveState: "active" as const, updatedAt: timestamp() }
-          await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
-          return session
-        })
+        await this.#catalog.restoreSessionWorktree(sessionId)
+        const session = { ...snapshot.session, archiveState: "active" as const, updatedAt: timestamp() }
+        await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
       })
       const snapshot = await this.journal.read(sessionId)
       await this.#admissions.synchronize(snapshot.session)

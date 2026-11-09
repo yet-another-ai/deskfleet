@@ -29,7 +29,7 @@ struct Cursor {
 }
 
 impl ControlStore {
-    /// Search one Team's active conversations and synchronized schedules.
+    /// Search one Team's non-deleted conversations and synchronized schedules.
     ///
     /// # Errors
     /// Rejects nonmembers, invalid queries/cursors, and database failures.
