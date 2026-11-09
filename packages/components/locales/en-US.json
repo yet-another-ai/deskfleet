@@ -717,6 +717,8 @@
     "unavailable": "Unavailable",
     "loadingConfiguration": "Reading configuration from the agent…",
     "reloadConfiguration": "Reload from agent",
+    "yolo": "YOLO",
+    "yoloHint": "Auto-approve agent permission requests in this session",
     "efforts": {
       "none": "None",
       "minimal": "Minimal",

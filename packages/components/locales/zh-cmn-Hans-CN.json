@@ -717,6 +717,8 @@
     "unavailable": "不可用",
     "loadingConfiguration": "正在从 Agent 读取配置…",
     "reloadConfiguration": "从 Agent 重新加载",
+    "yolo": "YOLO",
+    "yoloHint": "在此会话中自动批准 Agent 的权限请求",
     "efforts": {
       "none": "无",
       "minimal": "最低",
