@@ -62,7 +62,7 @@ backpressure.
 | Platform | Capture | Video encoder | System audio |
 | --- | --- | --- | --- |
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
-| Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264 fallback, subject to GPU/driver support | Unsupported |
+| Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264/H.265/AV1 fallback, subject to GPU/driver support | Unsupported |
 | Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support | Unsupported |
 | Linux X11 | RandR / GetImage with XFixes cursor | Same GStreamer hardware encoders as Wayland | Unsupported |
 
@@ -80,9 +80,9 @@ The capability response attaches codecs to each display. Desktop Settings
 shows the codec the viewer will use and updates it when the selected display
 changes. The viewer picks the first codec in AV1, HEVC, H.264 order that both
 that display and the browser can use. It does not offer a codec menu.
-Encoding first tries NVENC on that device. If H.264 startup
-fails, it tries hardware Media Foundation transforms on the same adapter.
-There is no software encoder fallback. H.265 and AV1 remain NVENC-only.
+Encoding first tries NVENC on that device. If NVENC startup
+fails, it tries hardware Media Foundation transforms for the same codec on the
+same adapter. There is no software encoder fallback.
 Changing the negotiated codec requires a new peer. If the video encoder fails
 while starting, while waiting for its first packet, or mid-session, the viewer
 closes that peer and negotiates the next common codec. Permission, missing
@@ -122,22 +122,25 @@ configuration is separate.
 
 The Media Foundation backend converts BGRA to limited-range BT.709 NV12 on the
 GPU and supplies retained D3D11 textures to the asynchronous hardware encoder.
-It requires a D3D11-aware H.264 hardware MFT and a compatible video processor.
-It uses bounded input buffering, low-latency settings, and requested keyframes.
+It requires a D3D11-aware H.264, H.265, or AV1 hardware MFT and a compatible
+video processor.
+It uses bounded input buffering, low-latency configuration, and requested keyframes.
 An unsupported optional force-keyframe property is logged without aborting frame
 submission. The capture worker retains the latest owned frame so PLI/FIR can
-request a new keyframe even when the desktop stops changing; repeated submissions
+request a new keyframe even when the desktop stops changing. Repeated submissions
 receive increasing timestamps. At most four MF inputs are in flight and one
 latest sample waits for input capacity.
 Polling keeps these bounded samples through gaps in hardware output, without an
 output inactivity deadline. Explicit flush/drain operations remain time-bounded.
-Enumeration reports candidate codec support; starting the selected display's
-stream verifies its actual device, dimensions, and profile.
+Codec discovery opens a probe session on the display adapter. Starting the
+stream for the selected display makes sure that its dimensions and bitstream
+headers match the configuration.
 
 For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
 `auto` (default), `nvenc`, or `media-foundation` before starting the process.
 An explicit backend never falls back to another encoder. `media-foundation`
-advertises only H.264. This also allows testing MF on a machine with NVENC.
+advertises the codecs that have a working hardware MFT on the display adapter.
+This also allows testing MF on a machine with NVENC.
 With the Windows desktop service installed, this diagnostic setting belongs to
 the service's environment; changing only the user daemon's environment does not
 change the service workers' encoder selection.
@@ -515,7 +518,7 @@ from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; supported system audio is enabled by default
 and can be switched off or on while connected.
-Windows supports NVENC video and the hardware H.264 fallback described above.
+Windows supports NVENC video and the hardware Media Foundation fallback described above.
 Linux Wayland and X11 support the negotiated AV1, HEVC, or H.264 video and optional
 mouse/keyboard control. Wayland uses the local Portal grant; X11 uses access to
 the existing X server.
