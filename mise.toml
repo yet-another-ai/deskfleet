@@ -198,6 +198,10 @@ run = "cargo build -p deskfleet-desktop-viewer --bin deskfleet-viewer --locked"
 description = "Build and stage the Android native remote desktop viewer library"
 run = "node scripts/build-android-viewer.ts"
 
+[tasks."viewer:build:ios"]
+description = "Build and stage the iOS native remote desktop viewer XCFramework"
+run = "node scripts/build-ios-viewer.ts"
+
 [tasks."desktop:smoke-native-viewer"]
 description = "Verify native WebRTC decoding and shallow FIFO window presentation"
 depends = ["viewer:build"]
@@ -210,7 +214,7 @@ run = "pnpm --filter @deskfleet/web dev"
 
 [tasks."web:dev:ios"]
 description = "Run the Vue Web development server with Capacitor iOS live reload"
-depends = ["install"]
+depends = ["install", "viewer:build:ios"]
 run = "pnpm --filter @deskfleet/web dev:ios"
 
 [tasks."web:dev:android"]

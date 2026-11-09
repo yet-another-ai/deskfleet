@@ -150,11 +150,11 @@ impl From<IceCandidate> for Candidate {
 
 use std::sync::{Mutex, OnceLock};
 
-type Emitter = Box<dyn Fn(String) -> io::Result<()> + Send + Sync>;
+pub(crate) type Emitter = Box<dyn Fn(String) -> io::Result<()> + Send + Sync>;
 
 static EMITTER: OnceLock<Mutex<Option<Emitter>>> = OnceLock::new();
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub(crate) fn set_emitter(emitter: Option<Emitter>) {
     if let Ok(mut guard) = EMITTER.get_or_init(|| Mutex::new(None)).lock() {
         *guard = emitter;
