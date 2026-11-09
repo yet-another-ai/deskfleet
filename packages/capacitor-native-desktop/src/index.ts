@@ -9,8 +9,6 @@ import {
 } from "@deskfleet/client/native-desktop-session"
 
 export interface NativeDesktopCapacitorPlugin {
-  startAuthCallback(): Promise<{ callbackUrl: string }>
-  waitForAuthCallback(options: { authorizationUrl: string }): Promise<{ code: string }>
   openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>

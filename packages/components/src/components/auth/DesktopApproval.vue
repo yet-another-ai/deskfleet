@@ -16,6 +16,7 @@ const { t } = useI18n()
 const recent = useRecentAuthentication()
 const pending = ref(false)
 const error = ref<string>()
+const completedReturnTo = ref<string>()
 
 async function run(action: () => Promise<void>): Promise<void> {
   if (pending.value) return
@@ -25,8 +26,13 @@ async function run(action: () => Promise<void>): Promise<void> {
   finally { pending.value = false }
 }
 function approve(): void {
+  if (completedReturnTo.value) {
+    location.assign(completedReturnTo.value)
+    return
+  }
   void run(async () => {
     const { returnTo } = await recent.confirmed(() => props.account.completeDesktop(props.attempt!))
+    completedReturnTo.value = returnTo
     location.assign(returnTo)
   })
 }

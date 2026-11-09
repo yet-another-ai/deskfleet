@@ -57,20 +57,6 @@ async function openCapacitorExternal(url: string): Promise<void> {
 }
 
 async function authorizeCapacitor(client: HttpCentralClient): Promise<void> {
-  if (Capacitor.getPlatform() === "android") {
-    const { callbackUrl } = await NativeDesktopPlugin.startAuthCallback()
-    const result = await client.authorizationUrl(callbackUrl)
-    const parsed = new URL(result.authorizationUrl)
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      throw new Error("Invalid authorization URL")
-    }
-    const { code } = await NativeDesktopPlugin.waitForAuthCallback({
-      authorizationUrl: parsed.toString(),
-    })
-    await client.exchange(code, result.loginVerifier)
-    return
-  }
-
   const result = await client.authorizationUrl(CUSTOM_AUTH_CALLBACK_URL)
   const parsed = new URL(result.authorizationUrl)
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {

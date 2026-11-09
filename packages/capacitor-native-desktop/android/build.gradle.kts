@@ -28,5 +28,4 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.core:core-ktx:1.19.1")
-    testImplementation("junit:junit:4.13.2")
 }
