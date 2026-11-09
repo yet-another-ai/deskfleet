@@ -115,13 +115,13 @@ async fn free_seats_and_session_admissions_are_atomic_and_generation_safe() {
             .unwrap()["status"],
         "released"
     );
-    let restored = uuid::Uuid::new_v4().to_string();
+    let replacement = uuid::Uuid::new_v4().to_string();
     store
-        .reserve_session(&machine, &restored, "restore", Some("1"))
+        .reserve_session(&machine, &replacement, "create", None)
         .await
         .unwrap();
     store
-        .confirm_session_admission(&machine, &restored, &restored, "1")
+        .confirm_session_admission(&machine, &replacement, &replacement, "2")
         .await
         .unwrap();
     store
@@ -134,7 +134,7 @@ async fn free_seats_and_session_admissions_are_atomic_and_generation_safe() {
     );
     assert!(
         store
-            .cancel_session_admission(&machine, &restored, &restored)
+            .cancel_session_admission(&machine, &replacement, &replacement)
             .await
             .is_err()
     );
@@ -151,6 +151,104 @@ async fn free_seats_and_session_admissions_are_atomic_and_generation_safe() {
     );
     store.revoke_machine(&owner, &machine).await.unwrap();
     assert!(store.session_admissions(&machine).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn retained_sessions_count_once_until_deleted_even_when_admission_responses_are_lost() {
+    let (store, owner, team, machine) = fixture().await;
+    let archived = uuid::Uuid::new_v4().to_string();
+    let unconfirmed = uuid::Uuid::new_v4().to_string();
+    let pending = uuid::Uuid::new_v4().to_string();
+    for (generation, session_id) in [(&archived, "1"), (&unconfirmed, "2")] {
+        store
+            .reserve_session(&machine, generation, "create", None)
+            .await
+            .unwrap();
+        store
+            .sync_history(
+                &machine,
+                session_id,
+                json!({"session":{"id":session_id,"lastEventSeq":"0","archiveState":"archived","admissionGeneration":generation}}),
+                vec![],
+                vec![],
+            )
+            .await
+            .unwrap();
+    }
+    // Previously archived Sessions may already have released their admission.
+    store
+        .confirm_session_admission(&machine, &archived, &archived, "1")
+        .await
+        .unwrap();
+    store
+        .release_session_admission(&machine, "1", &archived)
+        .await
+        .unwrap();
+    store
+        .reserve_session(&machine, &pending, "fork", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&owner, &team).await.unwrap()["activeSessionCount"],
+        3
+    );
+    assert_eq!(
+        store.billing_summary(&team).await.unwrap()["usage"]["activeSessionCount"],
+        3
+    );
+    assert!(matches!(
+        store
+            .reserve_session(&machine, &uuid::Uuid::new_v4().to_string(), "create", None)
+            .await,
+        Err(deskfleet_control_store::Error::Conflict(
+            "active_session_limit"
+        ))
+    ));
+    assert!(matches!(
+        store
+            .reserve_session(
+                &machine,
+                &uuid::Uuid::new_v4().to_string(),
+                "restore",
+                Some("1")
+            )
+            .await,
+        Err(deskfleet_control_store::Error::Invalid(
+            "invalid session admission"
+        ))
+    ));
+    let receipts = store.session_admissions(&machine).await.unwrap();
+    assert_eq!(
+        receipts
+            .iter()
+            .find(|receipt| receipt["generation"] == unconfirmed)
+            .unwrap()["sessionId"],
+        "2",
+        "history durably associates a reservation after lost confirmation"
+    );
+    // A complete inventory proves deletion even if releasing its receipt fails.
+    store
+        .save_catalog(&machine, "1", json!({"sessionIds":["1"]}), json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&owner, &team).await.unwrap()["activeSessionCount"],
+        2
+    );
+    store
+        .reserve_session(&machine, &uuid::Uuid::new_v4().to_string(), "create", None)
+        .await
+        .unwrap();
+    store
+        .save_catalog(&machine, "2", json!({"sessionIds":[]}), json!({}))
+        .await
+        .unwrap();
+    assert_eq!(
+        store.team_usage(&owner, &team).await.unwrap()["activeSessionCount"],
+        2,
+        "only unresolved allocations remain after the retained Sessions are deleted"
+    );
 }
 
 #[tokio::test]

@@ -1336,7 +1336,7 @@
     "turnRemoveDescription": "The URLs and shared secret are deleted. New connections use the site’s relay, subject to your plan.",
     "relayedTraffic": "Relayed traffic",
     "activeSessions": "Active Sessions",
-    "activeSessionsHint": "Sessions that have not been archived.",
+    "activeSessionsHint": "Sessions that have not been deleted, including archived sessions.",
     "usageMembers": "Team members",
     "usageMembersHint": "Owner, admins, and members, excluding pending invitations.",
     "unlimited": "Unlimited",
@@ -1816,7 +1816,7 @@
     "empty": "No results",
     "emptyHint": "Try another phrase or search all result types.",
     "start": "Find a conversation or schedule",
-    "startHint": "Search titles, sent messages, completed agent responses, and schedule prompts. Archived chats are excluded.",
+    "startHint": "Search titles, sent messages, completed agent responses, and schedule prompts, including archived chats.",
     "loading": "Searching…",
     "more": "Load more",
     "untitled": "Untitled chat"

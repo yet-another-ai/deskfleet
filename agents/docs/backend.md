@@ -19,7 +19,7 @@ ownership and explicit Site Admin boundary.
 
 - Prioritize the officially hosted service and replace OIDC with owned accounts,
   public email/password registration, Passkeys, and optional GitHub and Google OAuth login.
-- Make Team the subscription boundary. Free limits members, unarchived Sessions,
+- Make Team the subscription boundary. Free limits members, non-deleted Sessions,
   and per-Session turns and has no TURN. Go/Pro remove those quantity limits and
   provide distinct monthly TURN allowances. Only Site Admin can assign the
   unlimited Enterprise override. Exact rules are owned by the
@@ -94,9 +94,9 @@ ownership and explicit Site Admin boundary.
   release does not need a legacy resource/history import flow.
 - Re-enrollment after administrator removal reactivates the same Team association,
   catalog origin, and directory while rotating its execution token. It retains
-  Workspaces, Sessions, and history. Reactivation checks retained Session
-  admissions against the Team's current capacity and can fail with
-  `active_session_limit`. Another Team receives a separate catalog and runtime
+  Workspaces, Sessions, and history. Reactivation checks retained non-deleted
+  Sessions and live admissions against the Team's current capacity and can fail
+  with `active_session_limit`. Another Team receives a separate catalog and runtime
   under the same public Machine ID; its existing work remains running.
 - Upgrade existing enrolled data in place: migrate central Machine rows into
   shared identities and Team registrations, and adopt the daemon's existing

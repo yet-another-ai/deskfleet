@@ -628,10 +628,10 @@ retained. Active registrations cannot be overwritten by a new token. Adding a
 different Team creates a separate empty catalog under the same public Machine ID.
 
 Revoked registrations retain their durable Session admission receipts but do not
-occupy Team capacity. Reactivation checks the retained admissions together with
-the Team's currently active admissions under the same Team lock used for new
-Session creation. It fails with `active_session_limit` if restoring them would
-exceed the current plan. Reconnected daemon reconciliation confirms or releases
+occupy Team capacity. Reactivation checks retained non-deleted Sessions and live
+admissions together with the Team's current usage under the same Team lock used
+for new Session creation. It fails with `active_session_limit` if reactivating
+them would exceed the current plan. Reconnected daemon reconciliation confirms or releases
 the original generations from its durable local outcomes.
 
 Authenticated backend management exposes catalog queries, Workspace
@@ -1349,10 +1349,11 @@ their media bytes. File previews, file transfer, and remote desktop media stay
 on their existing daemon/peer paths.
 
 Search spans the selected Team's Machines using central synchronized data. It
-matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
-Task titles and prompts. Results retain their owning Machine and Workspace;
-conversation matches link to the message that contains the text. Team membership,
-machine revocation, current catalog inventory, and archive state are checked
+matches non-deleted Chat titles, sent user messages, and Agent replies, including
+archived Chats, plus Scheduled Task titles and prompts. Results retain their
+owning Machine and Workspace; conversation matches link to the message that
+contains the text. Team membership,
+machine revocation, current catalog inventory, and deletion state are checked
 before results are returned. Previously synchronized content remains searchable
 while its Machine is offline. Scheduled Task snapshots are read-only replicas;
 their execution and mutation remain owned by the daemon.

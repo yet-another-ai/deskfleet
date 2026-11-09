@@ -10,13 +10,14 @@ import SessionView from "./SessionView.vue"
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose(); localStorage.clear() })
 
-test("a search result waits for history, opens a collapsed assistant message, and locates another message in the same session", async () => {
+test.each(["active", "archived"] as const)("a search result in an %s session waits for history, opens a collapsed assistant message, and locates another message", async archiveState => {
   const pinia = createPinia()
   setActivePinia(pinia)
   cleanup.push(() => disposePinia(pinia))
   const agents = useAgentSessionsStore()
   vi.spyOn(agents, "open").mockResolvedValue()
   const snapshot = agentSnapshot()
+  snapshot.session.archiveState = archiveState
   const input = agentInput({ state: "delivered", turnId: "70" })
   snapshot.inputs = [input]
   snapshot.turns = [{ id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "completed", startedAt: "2026-10-31T12:00:00Z", endedAt: "2026-10-31T12:01:00Z" }]

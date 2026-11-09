@@ -146,16 +146,18 @@ pub(super) fn search(
         .cond_where(
             Cond::any()
                 .add(
-                    chat.and(session_field("{session,archiveState}").eq("active"))
-                        .and(Expr::col((sessions::Entity, sessions::Column::DeletedAt)).is_null())
-                        .and(
-                            Expr::col((catalogs::Entity, catalogs::Column::Snapshot))
-                                .get_json_field(Expr::Constant("sessionIds".into()))
-                                .binary(
-                                    BinOper::Custom("?"),
-                                    Expr::col((documents::Entity, documents::Column::ResourceId)),
-                                ),
-                        ),
+                    chat.and(
+                        Expr::col((sessions::Entity, sessions::Column::SessionId)).is_not_null(),
+                    )
+                    .and(Expr::col((sessions::Entity, sessions::Column::DeletedAt)).is_null())
+                    .and(
+                        Expr::col((catalogs::Entity, catalogs::Column::Snapshot))
+                            .get_json_field(Expr::Constant("sessionIds".into()))
+                            .binary(
+                                BinOper::Custom("?"),
+                                Expr::col((documents::Entity, documents::Column::ResourceId)),
+                            ),
+                    ),
                 )
                 .add(schedule.and(
                     Expr::col((schedules::Entity, schedules::Column::ScheduleId)).is_not_null(),
