@@ -19,7 +19,11 @@ use objc2_core_video::{
 use objc2_video_toolbox::{
     VTDecodeFrameFlags, VTDecodeInfoFlags, VTDecompressionOutputCallbackRecord,
     VTDecompressionSession, VTSessionSetProperty, kVTDecompressionPropertyKey_RealTime,
-    kVTVideoDecoderBadDataErr, kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
+    kVTVideoDecoderBadDataErr,
+};
+#[cfg(target_os = "macos")]
+use objc2_video_toolbox::{
+    kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
     kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder,
 };
 
@@ -217,26 +221,35 @@ impl Decoder {
 impl Session {
     fn new(parameters: &buffers::Parameters, hardware: bool) -> Result<Self, Error> {
         let format = parameters.format()?;
+        #[cfg(target_os = "macos")]
+        let specification = {
+            // SAFETY: These immutable framework constants have process lifetime.
+            let (specification_key, enabled) = unsafe {
+                (
+                    if hardware {
+                        kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
+                    } else {
+                        kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder
+                    },
+                    if hardware {
+                        objc2_core_foundation::kCFBooleanTrue
+                    } else {
+                        objc2_core_foundation::kCFBooleanFalse
+                    }
+                    .ok_or("missing CoreFoundation boolean")?,
+                )
+            };
+            CFDictionary::<CFString, CFBoolean>::from_slices(&[specification_key], &[enabled])
+        };
+        #[cfg(target_os = "ios")]
+        let (_, specification) = (hardware, CFDictionary::<CFString, CFBoolean>::empty());
         // SAFETY: These immutable framework constants have process lifetime.
-        let (specification_key, enabled, pixel_format_key, realtime) = unsafe {
+        let (pixel_format_key, realtime) = unsafe {
             (
-                if hardware {
-                    kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder
-                } else {
-                    kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder
-                },
-                if hardware {
-                    objc2_core_foundation::kCFBooleanTrue
-                } else {
-                    objc2_core_foundation::kCFBooleanFalse
-                }
-                .ok_or("missing CoreFoundation boolean")?,
                 kCVPixelBufferPixelFormatTypeKey,
                 kVTDecompressionPropertyKey_RealTime,
             )
         };
-        let specification =
-            CFDictionary::<CFString, CFBoolean>::from_slices(&[specification_key], &[enabled]);
         let pixel_format = CFNumber::new_i64(i64::from(kCVPixelFormatType_32BGRA));
         let attributes = CFDictionary::<CFString, CFNumber>::from_slices(
             &[pixel_format_key],
