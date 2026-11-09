@@ -21,7 +21,7 @@ const formatDate = (value: string | number) => new Intl.DateTimeFormat(intlLocal
 </script>
 
 <template>
-  <div class="min-h-full bg-ui-canvas text-ui-text">
+  <div class="h-full overflow-y-auto bg-ui-canvas text-ui-text">
     <header class="border-b border-ui-border">
       <div class="mx-auto flex h-14 max-w-2xl items-center justify-between gap-4 px-4">
         <a href="/" class="flex items-center gap-2.5 text-[15px] font-semibold"><BrandLogo :size="24" decorative />DeskFleet</a>
