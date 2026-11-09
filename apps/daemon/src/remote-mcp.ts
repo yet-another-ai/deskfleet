@@ -4,6 +4,7 @@ import type { RemoteMcpOperation } from "../../../crates/protocol/control.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import { FilesService } from "./files-service.ts"
 import type { MachineOperations } from "./machine-operations.ts"
+import { createMcpSession, sendMcpSession } from "./mcp-dispatch.ts"
 import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
@@ -48,7 +49,7 @@ export class RemoteMcp {
     const authorize = async () => {
       this.#closing.signal.throwIfAborted()
       const current = await readRemoteAgentSettings(this.#directory)
-      if (operation === "mcpCall" || operation === "filesWrite") {
+      if (operation === "sessionCreate" || operation === "sessionSend" || operation === "mcpCall" || operation === "filesWrite") {
         if (!current.allowOperate) throw new Error("This machine does not allow other machines' Agents to operate it")
       } else if (operation === "mcpServers" || operation === "mcpTools" || operation === "filesRead") {
         if (!current.allowRead && !current.allowOperate) throw new Error("This machine does not allow remote Agent access")
@@ -71,6 +72,10 @@ export class RemoteMcp {
           afterSeq: z.string().regex(/^[0-9]+$/u, "afterSeq must be a nonnegative sequence string"),
           limit: z.number().int().min(1).max(200).optional(),
         }).parse(params), actor)
+      case "sessionCreate":
+        return createMcpSession(this.#operations.agents, params, actor)
+      case "sessionSend":
+        return sendMcpSession(this.#operations.agents, params, actor)
       case "mcpServers":
         z.strictObject({}).parse(params)
         return this.#operations.mcpServers?.snapshot().servers.filter(server => server.enabled).map(({ id, name, transport }) => ({ id, name, transport })) ?? []

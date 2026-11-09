@@ -103,7 +103,10 @@ pub async fn call(
     }
     let action = if matches!(
         body.operation,
-        RemoteMcpOperation::McpCall | RemoteMcpOperation::FilesWrite
+        RemoteMcpOperation::SessionCreate
+            | RemoteMcpOperation::SessionSend
+            | RemoteMcpOperation::McpCall
+            | RemoteMcpOperation::FilesWrite
     ) {
         MachineAction::Manage
     } else {

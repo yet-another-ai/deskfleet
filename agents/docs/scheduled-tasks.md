@@ -98,10 +98,10 @@ Each built-in grant binds the initiating user, machine, Workspace, and Session.
 Calls recheck current Team membership and the issuing Session's active state.
 Provider shutdown, failed startup, archive, and daemon shutdown retire the
 grant. Tools expose the scoped catalog, public provider identities, Session
-state/history, and schedule list/create/update/delete/run operations. Generated
+state/history/creation/prompting, and schedule list/create/update/delete/run operations. Generated
 arguments cannot replace the actor, select a different Workspace, or retrieve
-provider launch secrets. The separate remote tools below extend discovery to
-other machines without expanding the local Workspace delegation.
+provider launch secrets. The separate remote tools below extend discovery and
+operation to other machines without expanding the local Workspace delegation.
 
 ## Cross-machine Agent access
 
@@ -134,6 +134,8 @@ or credential.
 | `deskfleet_remote_sessions` | Read | Sessions, optionally filtered by Workspace |
 | `deskfleet_remote_session` | Read | Session state and conversation snapshot |
 | `deskfleet_remote_session_history` | Read | Recorded event pages, using `afterSeq` and a limit of 1–200 |
+| `deskfleet_remote_session_create` | Operate | Create a Session (in a Workspace or the remote home directory) and optionally submit its initial prompt |
+| `deskfleet_remote_session_send` | Operate | Submit a backlog or steer prompt to a remote Session |
 | `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
 | `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |
@@ -161,10 +163,11 @@ replacing the tool's result or original error.
 An in-progress tool can already have side effects when a deadline expires or
 permission changes; no automatic retry is performed.
 
-Remote tools cannot invoke the built-in DeskFleet server, its schedule mutations,
-Agent prompts, steering, or approvals. Direct cross-machine Agent messaging is
-reserved for later work. Configured third-party MCP tools execute with the
-target OS user's existing authority when operate permission is enabled.
+`deskfleet_remote_mcp_call` cannot invoke the built-in DeskFleet server, its
+schedule mutations, or permission approvals; cross-machine Session creation and
+prompting use the dedicated remote Session tools above. Configured third-party
+MCP tools execute with the target OS user's existing authority when operate
+permission is enabled.
 
 Requests and results pass through the existing backend management transport and
 its transient cross-instance inbox, within that transport's size and time limits.
