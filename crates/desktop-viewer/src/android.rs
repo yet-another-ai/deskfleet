@@ -8,9 +8,13 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use deskfleet_input::InputEvent;
+#[cfg(target_os = "android")]
 use jni::objects::{JClass, JObject, JString, JValue};
+#[cfg(target_os = "android")]
 use jni::sys::{jdouble, jint};
+#[cfg(target_os = "android")]
 use jni::{EnvUnowned, jni_sig, jni_str};
+#[cfg(target_os = "android")]
 use ndk::native_window::NativeWindow;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
@@ -19,6 +23,8 @@ use crate::input::normalized_point;
 use crate::input_queue;
 use crate::protocol::{self, Command};
 use crate::queue::FrameQueue;
+#[cfg(target_os = "ios")]
+use crate::renderer::NativeWindow;
 use crate::renderer::{PhysicalSize, Renderer};
 use crate::session::{self, Frames};
 use crate::{Error, WindowEvent};
@@ -153,11 +159,6 @@ impl AndroidViewer {
                 self.control = control;
             }
             RenderCommand::Window(WindowEvent::FrameReady) => {}
-            RenderCommand::Window(WindowEvent::Error(error)) => {
-                let _ = protocol::emit(json!({"type":"error", "error":error}));
-                self.shutdown.send_replace(true);
-                return Ok(true);
-            }
             RenderCommand::SurfaceAttached {
                 window,
                 width,
@@ -299,6 +300,95 @@ fn send_render(cmd: RenderCommand) {
     }
 }
 
+fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
+    if let Ok(mut guard) = active_slot().lock()
+        && let Some(mut previous) = guard.take()
+    {
+        previous.stop();
+    }
+    protocol::set_emitter(Some(emitter));
+
+    let frames = Arc::new(Mutex::new(FrameQueue::default()));
+    let (commands_tx, commands) = mpsc::channel(32);
+    let (input, inputs) = input_queue::channel();
+    let (shutdown, shutdown_rx) = watch::channel(false);
+    let (render_tx, render_rx) = mpsc::unbounded_channel();
+    let notifier = AndroidNotifier {
+        tx: render_tx.clone(),
+    };
+
+    let render_frames = Arc::clone(&frames);
+    let render_shutdown = shutdown.clone();
+    let render_thread = std::thread::Builder::new()
+        .name("android viewer render".into())
+        .spawn(move || AndroidViewer::new(render_frames, input, render_shutdown).run(render_rx))
+        .ok();
+
+    let runtime_shutdown = shutdown.clone();
+    let runtime_render_tx = render_tx.clone();
+    let runtime_thread = std::thread::Builder::new()
+        .name("android viewer session".into())
+        .spawn(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+            else {
+                let _ = protocol::emit(
+                    json!({"type":"error", "error":"failed to create Tokio runtime"}),
+                );
+                return;
+            };
+            if let Err(error) = runtime.block_on(session::run(
+                commands,
+                inputs,
+                frames,
+                notifier,
+                shutdown_rx,
+            )) {
+                let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
+            }
+            runtime_shutdown.send_replace(true);
+            let _ = runtime_render_tx.send(RenderCommand::Stop);
+            runtime.shutdown_timeout(Duration::from_secs(2));
+            let _ = protocol::emit(json!({"type":"closed"}));
+        })
+        .ok();
+
+    if let Ok(mut guard) = active_slot().lock() {
+        *guard = Some(ActiveSession {
+            commands_tx,
+            render_tx,
+            shutdown,
+            render_thread,
+            runtime_thread,
+        });
+    }
+}
+
+fn send_command(raw: &str) {
+    match serde_json::from_str::<Command>(raw) {
+        Ok(command) => {
+            let tx = active_slot()
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|s| s.commands_tx.clone()));
+            if let Some(tx) = tx {
+                let _ = tx.blocking_send(command);
+            }
+        }
+        Err(error) => {
+            let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
+        }
+    }
+}
+
+fn stop_session() {
+    if let Some(mut session) = active_slot().lock().ok().and_then(|mut g| g.take()) {
+        session.stop();
+    }
+}
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeStart<
     'local,
@@ -309,14 +399,9 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 ) {
     unowned_env
         .with_env(|env| -> Result<(), jni::errors::Error> {
-            if let Ok(mut guard) = active_slot().lock()
-                && let Some(mut previous) = guard.take()
-            {
-                previous.stop();
-            }
             let vm = env.get_java_vm()?;
             let callback_ref = env.new_global_ref(callback)?;
-            protocol::set_emitter(Some(Box::new(move |payload: String| {
+            start_session(Box::new(move |payload: String| {
                 vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
                     let jstr = JString::from_str(env, &payload)?;
                     env.call_method(
@@ -328,70 +413,13 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
                     Ok(())
                 })
                 .map_err(|error| io::Error::other(error.to_string()))
-            })));
-
-            let frames = Arc::new(Mutex::new(FrameQueue::default()));
-            let (commands_tx, commands) = mpsc::channel(32);
-            let (input, inputs) = input_queue::channel();
-            let (shutdown, shutdown_rx) = watch::channel(false);
-            let (render_tx, render_rx) = mpsc::unbounded_channel();
-            let notifier = AndroidNotifier {
-                tx: render_tx.clone(),
-            };
-
-            let render_frames = Arc::clone(&frames);
-            let render_shutdown = shutdown.clone();
-            let render_thread = std::thread::Builder::new()
-                .name("android viewer render".into())
-                .spawn(move || {
-                    AndroidViewer::new(render_frames, input, render_shutdown).run(render_rx)
-                })
-                .ok();
-
-            let runtime_shutdown = shutdown.clone();
-            let runtime_render_tx = render_tx.clone();
-            let runtime_thread = std::thread::Builder::new()
-                .name("android viewer session".into())
-                .spawn(move || {
-                    let Ok(runtime) = tokio::runtime::Builder::new_multi_thread()
-                        .enable_all()
-                        .build()
-                    else {
-                        let _ = protocol::emit(
-                            json!({"type":"error", "error":"failed to create Tokio runtime"}),
-                        );
-                        return;
-                    };
-                    if let Err(error) = runtime.block_on(session::run(
-                        commands,
-                        inputs,
-                        frames,
-                        notifier,
-                        shutdown_rx,
-                    )) {
-                        let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
-                    }
-                    runtime_shutdown.send_replace(true);
-                    let _ = runtime_render_tx.send(RenderCommand::Stop);
-                    runtime.shutdown_timeout(Duration::from_secs(2));
-                    let _ = protocol::emit(json!({"type":"closed"}));
-                })
-                .ok();
-
-            if let Ok(mut guard) = active_slot().lock() {
-                *guard = Some(ActiveSession {
-                    commands_tx,
-                    render_tx,
-                    shutdown,
-                    render_thread,
-                    runtime_thread,
-                });
-            }
+            }));
             Ok(())
         })
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSendCommand<
     'local,
@@ -402,25 +430,13 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 ) {
     unowned_env
         .with_env(|_env| -> Result<(), jni::errors::Error> {
-            match serde_json::from_str::<Command>(&command_json.to_string()) {
-                Ok(command) => {
-                    let tx = active_slot()
-                        .lock()
-                        .ok()
-                        .and_then(|g| g.as_ref().map(|s| s.commands_tx.clone()));
-                    if let Some(tx) = tx {
-                        let _ = tx.blocking_send(command);
-                    }
-                }
-                Err(error) => {
-                    let _ = protocol::emit(json!({"type":"error", "error":error.to_string()}));
-                }
-            }
+            send_command(&command_json.to_string());
             Ok(())
         })
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeStop<
     'local,
@@ -428,11 +444,10 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
     _unowned_env: EnvUnowned<'local>,
     _class: JClass<'local>,
 ) {
-    if let Some(mut session) = active_slot().lock().ok().and_then(|mut g| g.take()) {
-        session.stop();
-    }
+    stop_session();
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceCreated<
     'local,
@@ -463,6 +478,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceChanged<
     'local,
@@ -478,6 +494,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
     });
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceDestroyed<
     'local,
@@ -488,6 +505,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
     send_render(RenderCommand::SurfaceDestroyed);
 }
 
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeTouch<
     'local,
@@ -500,5 +518,73 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
     dx: jdouble,
     dy: jdouble,
 ) {
+    send_render(RenderCommand::Touch { kind, x, y, dx, dy });
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_start(
+    on_event: Option<unsafe extern "C" fn(*const std::ffi::c_char)>,
+) {
+    let Some(on_event) = on_event else { return };
+    start_session(Box::new(move |payload| {
+        if let Ok(cstr) = std::ffi::CString::new(payload) {
+            // SAFETY: `cstr` is a valid NUL-terminated string for the duration of this call.
+            unsafe { on_event(cstr.as_ptr()) };
+        }
+        Ok(())
+    }));
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deskfleet_ios_send_command(command_json: *const std::ffi::c_char) {
+    if !command_json.is_null() {
+        // SAFETY: Caller guarantees `command_json` is a valid NUL-terminated UTF-8 string.
+        if let Ok(cmd) = unsafe { std::ffi::CStr::from_ptr(command_json) }.to_str() {
+            send_command(cmd);
+        }
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_stop() {
+    stop_session();
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deskfleet_ios_surface_created(
+    layer: *mut std::ffi::c_void,
+    width: u32,
+    height: u32,
+) {
+    if let Some(layer) = std::ptr::NonNull::new(layer) {
+        // SAFETY: Caller guarantees `layer` is a live `CAMetalLayer` object.
+        let window = unsafe { NativeWindow::retain_layer(layer) };
+        send_render(RenderCommand::SurfaceAttached {
+            window,
+            width: width.max(1),
+            height: height.max(1),
+        });
+    }
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_surface_changed(width: u32, height: u32) {
+    send_render(RenderCommand::SurfaceResized { width, height });
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_surface_destroyed() {
+    send_render(RenderCommand::SurfaceDestroyed);
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_touch(kind: i32, x: f64, y: f64, dx: f64, dy: f64) {
     send_render(RenderCommand::Touch { kind, x, y, dx, dy });
 }

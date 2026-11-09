@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [lib]
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [[bin]]
 name = "deskfleet-viewer"
@@ -26,7 +26,7 @@ tokio = { workspace = true, features = ["io-util", "io-std"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 gpui = { package = "gpui-fast", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
 gpui_platform = { package = "gpui-fast-platform", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
 nsh-core = "=0.4.0"
@@ -36,16 +36,15 @@ async-channel = "2"
 image = { version = "0.25", default-features = false }
 raw-window-handle = { version = "0.6", features = ["std"] }
 
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.22.4"
-ndk = { version = "0.9.0", features = ["media", "nativewindow", "api-level-26"] }
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 wgpu = "30.0.1"
 pollster = "1.0"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2.workspace = true
-block2.workspace = true
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSView", "NSWindow", "NSResponder", "block2"] }
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+ndk = { version = "0.9.0", features = ["media", "nativewindow", "api-level-26"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 objc2-core-foundation = { workspace = true, features = [
     "CFNumber", "CFString", "CFDictionary", "CFData",
 ] }
@@ -58,6 +57,11 @@ objc2-core-video = { workspace = true, features = [
 objc2-video-toolbox = { workspace = true, features = [
     "VTDecompressionSession", "VTDecompressionProperties", "VTErrors", "VTSession",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+block2.workspace = true
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSView", "NSWindow", "NSResponder", "block2"] }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 objc2-video-toolbox = { workspace = true, features = [

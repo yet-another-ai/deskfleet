@@ -12,7 +12,7 @@ import "virtual:uno.css"
 initializeErrorReporting("web")
 const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
 const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
-if (Capacitor.getPlatform() === "android" && adapter.central) {
+if ((Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
 }
 configureClient(adapter)
@@ -57,4 +57,3 @@ if (Capacitor.isNativePlatform()) {
     void CapApp.minimizeApp()
   })
 }
-
