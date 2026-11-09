@@ -77,6 +77,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
   }
   // Every machine has a section; expanding it loads its catalog without switching the session.
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
+  const machineToggle = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>(":scope > div > button[aria-expanded]")
   const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
@@ -94,11 +95,23 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
         await new Promise(resolve => setTimeout(resolve, 25))
       }
     }
-    const toggle = machineTree(index)!.querySelector<HTMLButtonElement>(":scope > div > button[aria-expanded]")
+    const toggle = machineToggle(index)
     require(toggle, `Missing machine ${index} expansion control`)
     if (toggle.getAttribute("aria-expanded") === "false") toggle.click()
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
-    await until(() => !!link(), "machine session link")
+    {
+      const deadline = Date.now() + 30_000
+      while (!link()) {
+        if (Date.now() > deadline) {
+          const expanded = machineToggle(index)?.getAttribute("aria-expanded") ?? "missing"
+          const hrefs = [...(machineTree(index)?.querySelectorAll("a[href]") ?? [])].map(node => node.getAttribute("href"))
+          throw new Error(`machine session link timed out (machine=${context.machines[index]}; session=${context.sessionId}; expanded=${expanded}; hrefs=${hrefs.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
+        }
+        const again = machineToggle(index)
+        if (again?.getAttribute("aria-expanded") === "false") again.click()
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
     link()!.click()
     await until(() => !!chatTab()?.textContent?.includes(`Machine ${index} conversation`), "session route")
   }
