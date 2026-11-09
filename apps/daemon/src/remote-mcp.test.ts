@@ -43,12 +43,12 @@ async function fixture(t: TestContext) {
 
 test("remote access defaults off, persists across readers, and disabling immediately blocks requests", async t => {
   const f = await fixture(t)
-  assert.deepEqual(await readRemoteAgentSettings(f.directory), { allowRead: false, allowOperate: false })
-  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), { allowRead: false, allowOperate: false })
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { allowRead: false, allowOperate: false, allowSessions: false })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), { allowRead: false, allowOperate: false, allowSessions: false })
   for (const method of ["machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
   await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: false })
-  await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /operate/)
-  await assert.rejects(f.call("sessionSend", { sessionId: "session", prompt: "hello" }), /operate/)
+  await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
+  await assert.rejects(f.call("sessionSend", { sessionId: "session", prompt: "hello" }), /start or message Sessions/)
   assert.deepEqual(await f.call("sessions", { workspaceId: "workspace" }), [{ id: "session", workspaceId: "workspace" }])
   assert.deepEqual(await f.call("session", { sessionId: "session" }), { conversation: "hello" })
   await f.call("history", { sessionId: "session", afterSeq: "17", limit: 10 })
@@ -71,6 +71,7 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   await assert.rejects(f.call("mcpCall", { serverId: f.config.id, name: "record", arguments: {} }), /operate/)
   await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: true })
   await assert.rejects(f.call("sessions"), /read it/)
+  await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
   assert.deepEqual(await f.call("mcpCall", { serverId: f.config.id, name: "record", arguments: { text: "from source" } }), {
     content: [{ type: "text", text: "recorded" }], structuredContent: { recorded: true },
   })
@@ -84,6 +85,7 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   await assert.rejects(f.call("mcpTools", { serverId: id }), /not found/)
   await f.servers.remove(f.config.id)
   await assert.rejects(f.call("mcpTools", { serverId: f.config.id }), /not found/)
+  await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: true })
   assert.deepEqual(await f.call("sessionCreate", { workspaceId: "workspace", provider: "agent", context: "worktree", title: "Remote task", prompt: "Build and test" }), { conversation: "hello" })
   assert.deepEqual({ ...(f.calls[0] as [string, Record<string, unknown>])[1], operationId: "op" }, {
     workspaceId: "workspace", operationId: "op", title: "Remote task", provider: "agent", context: "worktree",

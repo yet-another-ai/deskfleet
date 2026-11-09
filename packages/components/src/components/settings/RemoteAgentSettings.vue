@@ -16,7 +16,7 @@ const { state, isLoading, error, executeImmediate } = useAsyncState(
   { resetOnExecute: false },
 )
 const requestError = computed(() => error.value instanceof Error ? error.value.message : error.value ? String(error.value) : null)
-const permissions = ["allowRead", "allowOperate"] as const
+const permissions = ["allowRead", "allowOperate", "allowSessions"] as const
 
 function save(permission: keyof RemoteAgentSettings, enabled: boolean) {
   if (state.value && !isLoading.value) void executeImmediate({ ...state.value, [permission]: enabled })

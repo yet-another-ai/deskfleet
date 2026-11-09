@@ -550,7 +550,9 @@
       "allowRead": "Allow Agents on other machines to read this computer",
       "allowReadDescription": "Agents in the same team can view this computer's Workspaces, Agent sessions and conversation history, and discover its MCP tools.",
       "allowOperate": "Allow Agents on other machines to operate this computer",
-      "allowOperateDescription": "Agents in the same team can discover and run this computer's configured MCP tools. Applies to all teams registered on this computer; reading conversations is controlled separately."
+      "allowOperateDescription": "Agents in the same team can discover and run this computer's configured MCP tools. Applies to all teams registered on this computer; reading conversations is controlled separately.",
+      "allowSessions": "Allow Agents on other machines to start and message sessions on this computer",
+      "allowSessionsDescription": "Agents in the same team can create new Agent sessions on this computer and send prompts to existing sessions."
     },
     "thisComputer": "This computer",
     "launchAtStartup": "Launch at startup",

@@ -105,14 +105,15 @@ operation to other machines without expanding the local Workspace delegation.
 
 ## Cross-machine Agent access
 
-Desktop **Preferences → This computer** has two independent switches, both off
-by default: allow Agents on other machines to read this computer, and allow
-them to operate it. Consent is stored in `<host directory>/remote-agent-settings.json`
-as `{"allowRead": false, "allowOperate": false}`. A headless operator can set the
-same file. The preference applies across this host's registrations; every call
-still stays inside the source registration's Team and backend. A caller cannot
-choose another Team. Reading conversations and operating MCP tools are separate
-permissions; enabling operations does not grant conversation access.
+Desktop **Preferences → This computer** has three independent switches, all off
+by default: allow Agents on other machines to read this computer, allow them to
+operate it, and allow them to start and message Sessions on it. Consent is
+stored in `<host directory>/remote-agent-settings.json` as
+`{"allowRead": false, "allowOperate": false, "allowSessions": false}`. A headless
+operator can set the same file. The preference applies across this host's
+registrations; every call still stays inside the source registration's Team and
+backend. A caller cannot choose another Team. Reading conversations, operating
+MCP tools, and starting or messaging Sessions are separate permissions.
 
 The issuing daemon checks the active Session and its user's current membership,
 then calls `/api/daemon/mcp` with its own machine credential. The backend repeats
@@ -129,13 +130,13 @@ or credential.
 
 | Tool | Target permission | Result |
 | --- | --- | --- |
-| `deskfleet_remote_machines` | Read or operate | Other online machines in the same Team and their current permissions |
-| `deskfleet_remote_machine` | Read | Catalog, Workspaces, directories, and public provider identities |
+| `deskfleet_remote_machines` | Read, operate, or session | Other online machines in the same Team and their current permissions |
+| `deskfleet_remote_machine` | Read or session | Catalog, Workspaces, directories, and public provider identities |
 | `deskfleet_remote_sessions` | Read | Sessions, optionally filtered by Workspace |
 | `deskfleet_remote_session` | Read | Session state and conversation snapshot |
 | `deskfleet_remote_session_history` | Read | Recorded event pages, using `afterSeq` and a limit of 1–200 |
-| `deskfleet_remote_session_create` | Operate | Create a Session (in a Workspace or the remote home directory) and optionally submit its initial prompt |
-| `deskfleet_remote_session_send` | Operate | Submit a backlog or steer prompt to a remote Session |
+| `deskfleet_remote_session_create` | Session | Create a Session (in a Workspace or the remote home directory) and optionally submit its initial prompt |
+| `deskfleet_remote_session_send` | Session | Submit a backlog or steer prompt to a remote Session |
 | `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
 | `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |

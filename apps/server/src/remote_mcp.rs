@@ -72,7 +72,10 @@ pub async fn call(
                     )
                     .await
                     .ok()?;
-                if access["allowRead"] != true && access["allowOperate"] != true {
+                if access["allowRead"] != true
+                    && access["allowOperate"] != true
+                    && access["allowSessions"] != true
+                {
                     return None;
                 }
                 Some(json!({"machine": machine.into_public(), "access": access}))

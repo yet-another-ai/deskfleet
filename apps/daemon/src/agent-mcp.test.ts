@@ -169,7 +169,7 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-sessions-"))
   const workspaceDir = join(directory, "workspace"), remoteSettingsDir = join(directory, "remote-settings")
   await Promise.all([mkdir(workspaceDir), mkdir(remoteSettingsDir)])
-  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: true, allowOperate: true })
+  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: true, allowOperate: false, allowSessions: true })
 
   const localCatalog = new DaemonCatalog(join(directory, "local-daemon")), remoteCatalog = new DaemonCatalog(join(directory, "remote-daemon"))
   await Promise.all([localCatalog.init((_, name) => openInMemoryCatalog(name)), remoteCatalog.init((_, name) => openInMemoryCatalog(name))])

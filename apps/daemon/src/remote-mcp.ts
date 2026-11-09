@@ -49,10 +49,14 @@ export class RemoteMcp {
     const authorize = async () => {
       this.#closing.signal.throwIfAborted()
       const current = await readRemoteAgentSettings(this.#directory)
-      if (operation === "sessionCreate" || operation === "sessionSend" || operation === "mcpCall" || operation === "filesWrite") {
+      if (operation === "sessionCreate" || operation === "sessionSend") {
+        if (!current.allowSessions) throw new Error("This machine does not allow other machines' Agents to start or message Sessions on it")
+      } else if (operation === "mcpCall" || operation === "filesWrite") {
         if (!current.allowOperate) throw new Error("This machine does not allow other machines' Agents to operate it")
       } else if (operation === "mcpServers" || operation === "mcpTools" || operation === "filesRead") {
         if (!current.allowRead && !current.allowOperate) throw new Error("This machine does not allow remote Agent access")
+      } else if (operation === "machine") {
+        if (!current.allowRead && !current.allowSessions) throw new Error("This machine does not allow other machines' Agents to read it")
       } else if (!current.allowRead) throw new Error("This machine does not allow other machines' Agents to read it")
     }
     if (!isFileCleanup) await authorize()
