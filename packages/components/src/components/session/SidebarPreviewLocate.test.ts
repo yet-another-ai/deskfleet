@@ -127,8 +127,11 @@ test("ImagePreview registers toolbar actions and handles zoom/reset gestures, wh
     mimeType: "model/stl",
     title: "triangle.stl",
   })
+  // ModelPreview lazily imports Tres/Three and their loaders; await that work
+  // before asserting the mounted preview instead of timing cold imports.
+  await vi.dynamicImportSettled()
   await flushPromises()
-  await vi.waitFor(() => expect(wrapper!.find("[data-tres-canvas]").exists()).toBe(true))
+  expect(wrapper.find("[data-tres-canvas]").exists()).toBe(true)
   expect(wrapper.find('[data-preview-action="zoom-in"]').exists()).toBe(true)
   expect(wrapper.find('[data-preview-action="color-picker"]').exists()).toBe(false)
   expect(wrapper.attributes("data-preview-kind")).toBe("model")
