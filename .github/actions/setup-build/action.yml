@@ -148,14 +148,8 @@ runs:
       shell: bash
       run: mise run install
 
-    # A store restored through the prefix fallback still holds every package
-    # of the older lockfile. Drop packages this checkout no longer uses so the
-    # saved entry tracks the current lockfile instead of growing with each update.
-    - name: Prune pnpm store
-      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
-      shell: bash
-      run: mise exec -- pnpm store prune
-
+    # Offline DSH deployment still needs the original package snapshots after
+    # install. Store pruning can remove them even while node_modules is intact.
     - name: Save pnpm store
       if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
