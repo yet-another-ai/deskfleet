@@ -6,7 +6,8 @@ import { ref } from "vue"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { buildPromptContent, type ComposerAttachment } from "../../services/composer-attachments.ts"
-import type { WorkspaceLocation } from "../../stores/fleet.ts"
+import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import type { SessionTarget, WorkspaceLocation } from "../../stores/fleet.ts"
 import { workspaceId } from "../../test/catalog.ts"
 import AgentContent from "../session/AgentContent.vue"
 import SessionComposer from "./SessionComposer.vue"
@@ -92,6 +93,91 @@ afterEach(() => {
   if (pinia) disposePinia(pinia)
   pinia = undefined
   vi.restoreAllMocks()
+})
+
+const yoloLocation: SessionTarget = {
+  machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+  session: { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory" },
+}
+
+test.each(["draft", "session"] as const)("YOLO in a %s requires confirmation to enable and disables immediately", async (scope) => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: { location: scope === "session" ? yoloLocation : { machine: yoloLocation.machine } },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+  const agents = useAgentSessionsStore(pinia)
+  agents.yolo = {}
+  const setYolo = vi.spyOn(agents, "setYolo")
+  const enabled = () => scope === "session" ? !!agents.yolo["yolo-session"] : agents.draftYolo
+  const page = new DOMWrapper(document.body)
+  const toggle = wrapper.get("[data-composer-yolo]")
+  try {
+    await toggle.trigger("click")
+    await flushPromises()
+    expect(enabled()).toBe(false)
+    expect(setYolo).not.toHaveBeenCalled()
+    expect(toggle.attributes("aria-pressed")).toBe("false")
+    const dialog = page.get('[role="dialog"]')
+    expect(dialog.text()).toContain(i18n.global.t("composer.yoloConfirmation.title"))
+    expect(dialog.text()).toContain(i18n.global.t("composer.yoloConfirmation.description"))
+    await dialog.findAll("button").find(button => button.text() === i18n.global.t("catalog.cancel"))!.trigger("click")
+    await flushPromises()
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+    expect(enabled()).toBe(false)
+    expect(setYolo).not.toHaveBeenCalled()
+
+    await toggle.trigger("click")
+    await flushPromises()
+    await page.get('[role="dialog"]').findAll("button").find(button => button.text() === i18n.global.t("composer.yoloConfirmation.confirm"))!.trigger("click")
+    await flushPromises()
+    expect(enabled()).toBe(true)
+    expect(toggle.attributes("aria-pressed")).toBe("true")
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+    if (scope === "session") expect(setYolo).toHaveBeenCalledExactlyOnceWith("yolo-session", true)
+    else expect(setYolo).not.toHaveBeenCalled()
+
+    await toggle.trigger("click")
+    await flushPromises()
+    expect(enabled()).toBe(false)
+    expect(toggle.attributes("aria-pressed")).toBe("false")
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+
+    await toggle.trigger("click")
+    await flushPromises()
+    expect(enabled()).toBe(false)
+    expect(page.find('[role="dialog"]').exists()).toBe(true)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test.each(["escape", "session change"])("YOLO confirmation is cancelled by %s", async (action) => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: { location: yoloLocation },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+  const agents = useAgentSessionsStore(pinia)
+  agents.yolo = {}
+  const setYolo = vi.spyOn(agents, "setYolo")
+  const page = new DOMWrapper(document.body)
+  try {
+    await wrapper.get("[data-composer-yolo]").trigger("click")
+    await flushPromises()
+    expect(page.find('[role="dialog"]').exists()).toBe(true)
+    if (action === "escape") await page.get('[role="dialog"]').trigger("keydown", { key: "Escape" })
+    else await wrapper.setProps({ location: { machine: yoloLocation.machine } })
+    await flushPromises()
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+    expect(setYolo).not.toHaveBeenCalled()
+    expect(agents.yolo).toEqual({})
+    expect(agents.draftYolo).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
 })
 
 test("composer folds long pasted text into an attachment chip, enforces text requirement for image-only drafts, and attaches machine files", async () => {

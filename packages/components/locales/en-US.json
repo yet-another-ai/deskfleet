@@ -719,6 +719,11 @@
     "reloadConfiguration": "Reload from agent",
     "yolo": "YOLO",
     "yoloHint": "Auto-approve agent permission requests in this session",
+    "yoloConfirmation": {
+      "title": "Enable YOLO mode?",
+      "description": "While YOLO mode is active, all agent permission requests in this session will be approved automatically, including requests already waiting for approval.",
+      "confirm": "Enable YOLO"
+    },
     "efforts": {
       "none": "None",
       "minimal": "Minimal",
