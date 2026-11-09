@@ -50,6 +50,7 @@ const stored = useLocalStorage<SerializedDockview | null>(() => `deskfleet.windo
 })
 const api = shallowRef<DockviewApi>()
 const topLeftGroupId = shallowRef<string>()
+const topRightGroupId = shallowRef<string>()
 const changesOpen = shallowRef(false)
 const desktopsOpen = shallowRef(false)
 const closingTerminals = new Set<string>()
@@ -224,15 +225,17 @@ function saveLayout(): void {
   stored.value = serialized
 }
 
-function updateTopLeftGroup(): void {
+function updateTitlebarGroups(): void {
   const current = api.value
-  const gridGroups = current?.groups.filter(group => group.api.location.type === "grid") ?? []
+  const gridGroups = current?.groups.filter(group => group.api.location.type === "grid" && group.api.isVisible) ?? []
   const groups = gridGroups.flatMap(group => {
     const box = group.api.boundingBox
     return box && box.width > 0 && box.height > 0 ? [{ group, box }] : []
   })
   groups.sort((first, second) => first.box.top - second.box.top || first.box.left - second.box.left)
   topLeftGroupId.value = groups[0]?.group.id ?? gridGroups[0]?.id
+  groups.sort((first, second) => first.box.top - second.box.top || (second.box.left + second.box.width) - (first.box.left + first.box.width))
+  topRightGroupId.value = groups[0]?.group.id ?? gridGroups.at(-1)?.id
 }
 
 function addChatPanel(current: DockviewApi): void {
@@ -298,12 +301,12 @@ function onReady(event: DockviewReadyEvent): void {
   const changes = event.api.getPanel("changes")
   changesOpen.value = !!changes?.api.group.api.isVisible
   desktopsOpen.value = !!event.api.getPanel("desktops")?.api.group.api.isVisible
-  updateTopLeftGroup()
+  updateTitlebarGroups()
   disposables.push(
     // Only individual tabs move between groups; header space moves the app window.
     event.api.onWillDragGroup(event => event.nativeEvent.preventDefault()),
     event.api.onDidLayoutChange(() => {
-      updateTopLeftGroup()
+      updateTitlebarGroups()
       saveLayout()
     }),
     event.api.onDidRemovePanel(panel => {
@@ -482,7 +485,13 @@ onScopeDispose(() => {
         </DropdownMenuRoot>
       </template>
       <template #rightHeaderActions="{ group }">
-        <div :id="windowHeaderActionsId(group.id)" class="mr-[6px] flex h-full items-center gap-[6px]" data-window-header-actions :data-window-header-actions-group="group.id" />
+        <div
+          :id="windowHeaderActionsId(group.id)"
+          class="mr-[6px] flex h-full items-center gap-[6px]"
+          :class="{ 'titlebar-overlay-inset': group.id === topRightGroupId && (platform === 'win32' || platform === 'linux') }"
+          data-window-header-actions
+          :data-window-header-actions-group="group.id"
+        />
       </template>
     </DockviewVue>
   </section>
