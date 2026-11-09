@@ -14,6 +14,10 @@ import type { AgentActor, AgentSnapshot } from "./agent-protocol.ts"
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { AgentClient, AgentConnection, AgentProvider } from "./agents/acp.ts"
 import { DaemonCatalog } from "./catalog.ts"
+import { dispatchMcp } from "./mcp-dispatch.ts"
+import type { MachineOperations } from "./machine-operations.ts"
+import { writeRemoteAgentSettings } from "./remote-agent-settings.ts"
+import { RemoteMcp } from "./remote-mcp.ts"
 
 const actor: AgentActor = { kind: "user", userId: "u1", deviceId: "login1" }
 function credentials(lease: AgentMcpLease) {
@@ -159,4 +163,69 @@ test("ACP creation and resume get fresh grants and stop or connection loss revok
   const third = invoke({ servers: provider.servers[2]!, close() {} })
   await sessions.handle("_deskfleet/session/archive", { sessionId: session.session.id, operationId: randomUUID() }, actor)
   await assert.rejects(third("deskfleet_context", {}), /expired/)
+})
+
+test("local and remote MCP session tools create Workspace or machine-scoped Sessions and submit prompts", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-sessions-"))
+  const workspaceDir = join(directory, "workspace"), remoteSettingsDir = join(directory, "remote-settings")
+  await Promise.all([mkdir(workspaceDir), mkdir(remoteSettingsDir)])
+  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: true, allowOperate: false, allowSessions: true })
+
+  const localCatalog = new DaemonCatalog(join(directory, "local-daemon")), remoteCatalog = new DaemonCatalog(join(directory, "remote-daemon"))
+  await Promise.all([localCatalog.init((_, name) => openInMemoryCatalog(name)), remoteCatalog.init((_, name) => openInMemoryCatalog(name))])
+  const localWorkspace = await localCatalog.native.createWorkspace("Local Workspace", [{ path: workspaceDir }])
+  const remoteWorkspace = await remoteCatalog.native.createWorkspace("Remote Workspace", [{ path: workspaceDir }])
+
+  const localProvider = new Provider(), remoteProvider = new Provider()
+  let localOperations!: MachineOperations, remoteService!: RemoteMcp
+  const gateway = new AgentMcp({
+    async authorize() {},
+    dispatch: (method, params, requestActor, scope) => dispatchMcp(localOperations, method, params, requestActor, scope, request => remoteService.handle(
+      "remoteMcp",
+      { source: { teamId: "team-1", machineId: "1", sessionId: request.sessionId }, operation: request.operation, arguments: request.arguments },
+      { ...requestActor, sourceMachine: { id: "1", originId: "source-origin" } },
+      { teamId: "team-1", machineId: "2" },
+    )),
+  })
+  await gateway.init()
+  const localSessions = new AgentSessions(localCatalog, localCatalog.native, localProvider, undefined, gateway, undefined, new TestAgentQuotas())
+  const remoteSessions = new AgentSessions(remoteCatalog, remoteCatalog.native, remoteProvider, undefined, undefined, undefined, new TestAgentQuotas())
+  await Promise.all([localSessions.init(), remoteSessions.init()])
+  localOperations = { agents: localSessions, catalog: localCatalog } as unknown as MachineOperations
+  remoteService = new RemoteMcp(remoteSettingsDir, { agents: remoteSessions, catalog: remoteCatalog } as unknown as MachineOperations)
+
+  t.after(async () => {
+    remoteService.close()
+    await Promise.all([localSessions.close(), remoteSessions.close(), gateway.close()])
+    await Promise.all([localCatalog.close(), remoteCatalog.close()])
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  const parent = await localSessions.handle("_deskfleet/session/create", { workspaceId: localWorkspace.id, operationId: randomUUID(), provider: "codex", context: "directory" }, actor) as AgentSnapshot
+  const call = invoke({ servers: localProvider.servers[0]!, close() {} })
+
+  const localCreated = await call("deskfleet_session_create", { provider: "codex", title: "Local helper", prompt: "Inspect local workspace" }) as AgentSnapshot
+  assert.equal(localCreated.session.workspaceId, localWorkspace.id)
+  assert.equal(localCreated.session.lifecycle, "ready")
+  assert.equal(localCreated.inputs.length, 1)
+
+  const localSent = await call("deskfleet_session_send", { sessionId: localCreated.session.id, prompt: "Second local message" }) as { sessionId: string; inputId: string }
+  assert.equal(localSent.sessionId, localCreated.session.id)
+  assert.ok(localSent.inputId)
+
+  const remoteWorkspaceCreated = await call("deskfleet_remote_session_create", { machineId: "2", workspaceId: remoteWorkspace.id, provider: "codex", title: "Remote workspace task", prompt: "Run remote checks" }) as AgentSnapshot
+  assert.equal(remoteWorkspaceCreated.session.workspaceId, remoteWorkspace.id)
+  assert.equal(remoteWorkspaceCreated.session.lifecycle, "ready")
+  assert.equal(remoteWorkspaceCreated.inputs.length, 1)
+
+  const remoteHomeCreated = await call("deskfleet_remote_session_create", { machineId: "2", provider: "codex", title: "Remote home task", prompt: "Inspect remote home" }) as AgentSnapshot
+  assert.equal(remoteHomeCreated.session.workspaceId, undefined)
+  assert.equal(remoteHomeCreated.session.context, "directory")
+  assert.equal(remoteHomeCreated.session.lifecycle, "ready")
+  assert.equal(remoteHomeCreated.inputs.length, 1)
+
+  const remoteSent = await call("deskfleet_remote_session_send", { machineId: "2", sessionId: remoteHomeCreated.session.id, prompt: "Follow up on remote home" }) as { sessionId: string; inputId: string }
+  assert.equal(remoteSent.sessionId, remoteHomeCreated.session.id)
+  assert.ok(remoteSent.inputId)
+  assert.notEqual(parent.session.id, localCreated.session.id)
 })

@@ -431,7 +431,9 @@
       "allowRead": "他のマシンの Agent にこのコンピューターの読み取りを許可",
       "allowReadDescription": "同じチームの Agent が、このコンピューターのワークスペース、Agent セッション、会話履歴を読み取り、MCP ツールを確認できます。",
       "allowOperate": "他のマシンの Agent にこのコンピューターの操作を許可",
-      "allowOperateDescription": "同じチームの Agent が設定済みの MCP ツールを確認・実行できます。このコンピューターに登録されたすべてのチームに適用されます。会話の読み取りは別の設定で制御されます。"
+      "allowOperateDescription": "同じチームの Agent が設定済みの MCP ツールを確認・実行できます。このコンピューターに登録されたすべてのチームに適用されます。会話の読み取りは別の設定で制御されます。",
+      "allowSessions": "他のマシンの Agent にこのコンピューターでのセッション開始とメッセージ送信を許可",
+      "allowSessionsDescription": "同じチームの Agent が、このコンピューターで新しい Agent セッションを作成し、既存のセッションにプロンプトを送信できます。"
     },
     "thisComputer": "このコンピューター", "launchAtStartup": "ログイン時に起動",
     "launchAtStartupDescription": "ログイン時に DeskFleet を自動で起動します。", "launchAtStartupUnavailable": "Linux、macOS、Windows にインストールしたアプリで利用できます。",

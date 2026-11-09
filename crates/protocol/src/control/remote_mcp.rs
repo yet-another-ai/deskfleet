@@ -11,6 +11,8 @@ pub enum RemoteMcpOperation {
     Sessions,
     Session,
     History,
+    SessionCreate,
+    SessionSend,
     McpServers,
     McpTools,
     McpCall,

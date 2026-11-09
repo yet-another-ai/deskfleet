@@ -128,8 +128,7 @@ export class AgentRuntime {
     else {
       const previousStop = this.#stop
       await previousStop
-      const catalog = await this.#catalog.native.snapshot()
-      const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
+      const worktree = await this.#catalog.sessionWorktree(this.sessionId)
       if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
       const discovery = await this.journal.serial(this.sessionId, async () => {
         requireActiveSession(await this.journal.session(this.sessionId))
@@ -281,8 +280,7 @@ export class AgentRuntime {
       : { ...savedConfiguration.selection.configValues, ...selection?.configValues }
     const availableConfiguration = this.#availableConfiguration
     this.#availableConfiguration = undefined
-    const catalog = await this.#catalog.native.snapshot()
-    const worktree = catalog.workspaces.flatMap(workspace => workspace.worktrees).find(worktree => worktree.sessionId === this.sessionId)
+    const worktree = await this.#catalog.sessionWorktree(this.sessionId)
     if (!worktree?.directories[0]) throw new Error("Session worktree is unavailable")
     const run: AgentRun = {
       sessionId: this.sessionId, generation: Math.max(0, ...snapshot.runs.map(run => run.generation)) + 1,

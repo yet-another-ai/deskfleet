@@ -88,7 +88,7 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
             github_app: None,
             stun_urls: vec![],
             turn_urls: vec![],
-            turn_secret: None,
+            turn_secret: Some("fixture-secret".into()),
             turn_usage_redis_url: None,
         })
         .await
@@ -236,12 +236,32 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
     request["userId"] = json!(outside.id);
     assert_eq!(call!(&credential, &request).status(), StatusCode::FORBIDDEN);
     request["userId"] = json!(owner.id);
+    for (operation, arguments) in [
+        (
+            "sessionCreate",
+            json!({"provider": "codex", "prompt": "Start remote work"}),
+        ),
+        (
+            "sessionSend",
+            json!({"sessionId": "remote-session", "prompt": "Continue"}),
+        ),
+    ] {
+        request["operation"] = json!(operation);
+        request["arguments"] = arguments.clone();
+        let response = call!(&credential, &request);
+        assert_eq!(response.status(), StatusCode::OK);
+        let forwarded: Value = test::read_body_json(response).await;
+        assert_eq!(forwarded["registrationId"], target_a.id);
+        assert_eq!(forwarded["params"]["operation"], json!(operation));
+        assert_eq!(forwarded["params"]["arguments"], arguments);
+    }
     request["operation"] = json!("_deskfleet/input/submit");
     assert_eq!(
         call!(&credential, &request).status(),
         StatusCode::BAD_REQUEST
     );
     request["operation"] = json!("session");
+    request["arguments"] = json!({"sessionId":"remote-session"});
 
     // The ordinary user RPC endpoint cannot impersonate this internal route.
     let response = test::call_service(

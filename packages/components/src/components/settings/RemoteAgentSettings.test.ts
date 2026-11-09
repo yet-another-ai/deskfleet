@@ -51,5 +51,6 @@ test("Chinese preferences explain the separate permissions", async () => {
   await flushPromises()
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 读取本机")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 操作本机")
+  expect(wrapper.text()).toContain("允许其它机器上的 Agent 在本机启动会话并发送消息")
   expect(wrapper.text()).toContain("读取对话由独立开关控制")
 })
