@@ -31,10 +31,12 @@ export function secureWebPreferences(): WebPreferences {
   }
 }
 
-export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<void> {
+export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""): Promise<void> {
   // The Dock icon is visible only while the window is.
   await app.dock?.show()
+  const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (hash) void mainWindow.loadURL(`${entrypoint.url}${hash}`)
     mainWindow.show()
     mainWindow.focus()
     return
@@ -100,8 +102,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle): Promise<vo
     console.error("DeskFleet renderer failed to load", { code, description })
   })
 
-  const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
-  void window.loadURL(entrypoint.url)
+  void window.loadURL(`${entrypoint.url}${hash}`)
 }
 
 /** Hides the client to the tray; the renderer keeps running. */

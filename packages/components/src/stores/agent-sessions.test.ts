@@ -1614,3 +1614,26 @@ test("only durable contiguous history is persisted, without streaming previews",
   expect(store.views["30"]!.events).toHaveLength(1)
   expect(persistence.write).toHaveBeenCalledWith("30", { snapshot: agentSnapshot(), events: [] })
 })
+
+test("yolo mode auto-approves pending and subsequent permissions", async () => {
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  const pending = agentPermission({ id: "70" })
+  receive(agentEvent(1, "permission", pending))
+  expect(store.views["30"]?.snapshot?.permissions[0]?.state).toBe("pending")
+
+  mock.call.mockResolvedValueOnce({ ...pending, state: "resolved", optionId: "allow" })
+  store.setYolo("30", true)
+  await flushPromises()
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/permission/respond", expect.objectContaining({
+    sessionId: "30", permissionId: "70", optionId: "allow",
+  }))
+
+  const next = agentPermission({ id: "71" })
+  mock.call.mockResolvedValueOnce({ ...next, state: "resolved", optionId: "allow" })
+  receive(agentEvent(2, "permission", next))
+  await flushPromises()
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/permission/respond", expect.objectContaining({
+    sessionId: "30", permissionId: "71", optionId: "allow",
+  }))
+})

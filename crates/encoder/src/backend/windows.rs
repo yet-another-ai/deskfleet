@@ -50,20 +50,19 @@ fn select<T>(
     mf: impl FnOnce() -> Result<T, EncoderError>,
 ) -> Result<T, EncoderError> {
     if preference == Preference::MediaFoundation {
-        if codec != Codec::H264 {
-            return Err(EncoderError::Unsupported(
-                "Media Foundation supports H.264 only",
-            ));
-        }
         return mf();
     }
     match nvenc() {
         Ok(value) => Ok(value),
-        Err(error) if preference == Preference::Auto && codec == Codec::H264 => {
-            tracing::info!(%error, "NVENC startup failed; trying Media Foundation hardware H.264");
+        Err(error) if preference == Preference::Auto => {
+            tracing::info!(
+                %error,
+                %codec,
+                "NVENC startup failed; trying Media Foundation hardware encoder"
+            );
             mf().map_err(|mf_error| {
                 EncoderError::Platform(format!(
-                    "no H.264 hardware encoder could start (NVENC: {error}; Media Foundation: {mf_error})"
+                    "no {codec} hardware encoder could start (NVENC: {error}; Media Foundation: {mf_error})"
                 ))
             })
         }
@@ -79,7 +78,7 @@ pub(crate) fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderErr
         preference,
         &device,
         windows::WindowsEncoder::probe_supported_codecs,
-        windows_mf::is_supported,
+        windows_mf::supported_codecs,
     ))
 }
 
@@ -88,15 +87,19 @@ fn probe_device_codecs<D>(
     preference: Preference,
     device: &D,
     nvenc: impl FnOnce(&D) -> Vec<Codec>,
-    mf: impl FnOnce(&D) -> bool,
+    mf: impl FnOnce(&D) -> Vec<Codec>,
 ) -> Vec<Codec> {
     let mut codecs = if preference == Preference::MediaFoundation {
         Vec::new()
     } else {
         nvenc(device)
     };
-    if preference != Preference::Nvenc && !codecs.contains(&Codec::H264) && mf(device) {
-        codecs.push(Codec::H264);
+    if preference != Preference::Nvenc {
+        for codec in mf(device) {
+            if !codecs.contains(&codec) {
+                codecs.push(codec);
+            }
+        }
     }
     codecs
 }
@@ -104,11 +107,6 @@ fn probe_device_codecs<D>(
 impl PlatformEncoder {
     pub(crate) fn new(config: &EncoderConfig) -> Result<Self, EncoderError> {
         let preference = Preference::current()?;
-        if preference == Preference::MediaFoundation && config.codec != Codec::H264 {
-            return Err(EncoderError::Unsupported(
-                "Media Foundation supports H.264 only",
-            ));
-        }
         Ok(Self {
             config: config.clone(),
             preference,
@@ -221,13 +219,16 @@ mod tests {
             Adapter::Nvidia => vec![Codec::H264, Codec::H265, Codec::AV1],
             Adapter::Integrated | Adapter::WithoutHardwareEncoder => Vec::new(),
         };
-        let mf = |adapter: &Adapter| matches!(adapter, Adapter::Integrated);
+        let mf = |adapter: &Adapter| match adapter {
+            Adapter::Integrated => vec![Codec::H264, Codec::H265],
+            Adapter::Nvidia | Adapter::WithoutHardwareEncoder => Vec::new(),
+        };
 
         // Changing displays must not retain the discrete GPU's capabilities or
-        // borrow H.264 support from the other display's integrated GPU.
+        // borrow codec support from the other display's integrated GPU.
         for (adapter, expected) in [
             (Adapter::Nvidia, vec![Codec::H264, Codec::H265, Codec::AV1]),
-            (Adapter::Integrated, vec![Codec::H264]),
+            (Adapter::Integrated, vec![Codec::H264, Codec::H265]),
             (Adapter::WithoutHardwareEncoder, Vec::new()),
             (Adapter::Nvidia, vec![Codec::H264, Codec::H265, Codec::AV1]),
         ] {
@@ -237,6 +238,10 @@ mod tests {
             );
         }
         assert!(probe_device_codecs(Preference::Nvenc, &Adapter::Integrated, nvenc, mf).is_empty());
+        assert_eq!(
+            probe_device_codecs(Preference::MediaFoundation, &Adapter::Integrated, nvenc, mf),
+            vec![Codec::H264, Codec::H265],
+        );
         assert!(
             probe_device_codecs(Preference::MediaFoundation, &Adapter::Nvidia, nvenc, mf)
                 .is_empty()
@@ -256,14 +261,10 @@ mod tests {
         );
         assert!(!mf_called.get());
         let failed = || Err(EncoderError::Unsupported("NVENC device"));
-        assert_eq!(
-            select(Preference::Auto, Codec::H264, failed, mf).unwrap(),
-            "mf"
-        );
-        for codec in [Codec::AV1, Codec::H265] {
+        for codec in Codec::ALL {
             mf_called.set(false);
-            assert!(select(Preference::Auto, codec, failed, mf).is_err());
-            assert!(!mf_called.get(), "must not change the negotiated codec");
+            assert_eq!(select(Preference::Auto, codec, failed, mf).unwrap(), "mf");
+            assert!(mf_called.get());
         }
     }
 
@@ -271,17 +272,10 @@ mod tests {
     fn explicit_selection_never_uses_the_other_backend() {
         let failed = || Err(EncoderError::Unsupported("unavailable"));
         let unexpected = || -> Result<(), EncoderError> { panic!("unexpected backend") };
-        assert!(select(Preference::Nvenc, Codec::H264, failed, unexpected).is_err());
-        assert!(select(Preference::MediaFoundation, Codec::H264, unexpected, failed).is_err());
-        assert!(
-            select(
-                Preference::MediaFoundation,
-                Codec::AV1,
-                unexpected,
-                unexpected
-            )
-            .is_err()
-        );
+        for codec in Codec::ALL {
+            assert!(select(Preference::Nvenc, codec, failed, unexpected).is_err());
+            assert!(select(Preference::MediaFoundation, codec, unexpected, failed).is_err());
+        }
         assert!(Preference::parse(Some("software")).is_err());
     }
 
