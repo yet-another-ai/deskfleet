@@ -2,7 +2,7 @@ use super::*;
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires an interactive Windows desktop and the selected hardware H.264 encoder"]
+#[ignore = "requires an interactive Windows desktop and a hardware video encoder"]
 fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
     use std::time::{Duration, Instant};
 
@@ -11,6 +11,8 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
         .into_iter()
         .next()
         .expect("a display");
+    let codecs = supported_codecs(display.id).unwrap();
+    assert!(!codecs.is_empty(), "display advertised no hardware codecs");
     let capture = deskfleet_capture::create_capture_stream(
         &display,
         &deskfleet_capture::CaptureConfig {
@@ -26,50 +28,59 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
         }
         assert!(Instant::now() < deadline, "capture produced no frame");
     };
-    let config = EncoderConfig {
-        width: frame.width,
-        height: frame.height,
-        fps: 30.0,
-        h264_profile: H264Profile::ConstrainedBaseline,
-        ..Default::default()
-    };
-    let mut encoder = Encoder::new(&config).unwrap();
-    for index in 0..2 {
-        frame.timestamp_ns = 100_000_000 + index * 33_333_300;
-        if index > 0 {
-            encoder.request_keyframe();
-        }
-        // Submit once: asynchronous output must arrive even on a static desktop.
-        let mut packets = encoder.encode(&frame).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while packets.is_empty() {
+    for codec in codecs {
+        let config = EncoderConfig {
+            width: frame.width,
+            height: frame.height,
+            fps: 30.0,
+            codec,
+            h264_profile: H264Profile::ConstrainedBaseline,
+            ..Default::default()
+        };
+        let mut encoder = Encoder::new(&config).unwrap();
+        for index in 0..2 {
+            frame.timestamp_ns = 100_000_000 + index * 33_333_300;
+            if index > 0 {
+                encoder.request_keyframe();
+            }
+            // Submit once: asynchronous output must arrive even on a static desktop.
+            let mut packets = encoder.encode(&frame).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while packets.is_empty() {
+                assert!(
+                    Instant::now() < deadline,
+                    "hardware {codec} encoder produced no output"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+                packets.extend(encoder.poll_output().unwrap());
+            }
+            assert_eq!(packets.len(), 1);
+            let packet = &packets[0];
             assert!(
-                Instant::now() < deadline,
-                "hardware encoder produced no output"
+                packet.is_keyframe,
+                "startup and requested {codec} frames must be keyframes"
             );
-            std::thread::sleep(Duration::from_millis(5));
-            packets.extend(encoder.poll_output().unwrap());
+            assert_eq!(packet.timestamp_ns, frame.timestamp_ns);
+            if matches!(codec, Codec::H264 | Codec::H265) {
+                assert!(
+                    packet.data.starts_with(&[0, 0, 0, 1]) || packet.data.starts_with(&[0, 0, 1])
+                );
+            } else {
+                assert!(!packet.data.is_empty());
+            }
+            assert!(packet.duration_ns > 0);
+            eprintln!(
+                "hardware {codec} {}x{}: {} bytes, keyframe={}, timestamp={}",
+                frame.width,
+                frame.height,
+                packet.data.len(),
+                packet.is_keyframe,
+                packet.timestamp_ns
+            );
         }
-        assert_eq!(packets.len(), 1);
-        let packet = &packets[0];
-        assert!(
-            packet.is_keyframe,
-            "startup and requested frames must be keyframes"
-        );
-        assert_eq!(packet.timestamp_ns, frame.timestamp_ns);
-        assert!(packet.data.starts_with(&[0, 0, 0, 1]) || packet.data.starts_with(&[0, 0, 1]));
-        assert!(packet.duration_ns > 0);
-        eprintln!(
-            "hardware H.264 {}x{}: {} bytes, keyframe={}, timestamp={}",
-            frame.width,
-            frame.height,
-            packet.data.len(),
-            packet.is_keyframe,
-            packet.timestamp_ns
-        );
+        encoder.flush().unwrap();
+        drop(encoder);
     }
-    encoder.flush().unwrap();
-    drop(encoder);
     capture.stop().unwrap();
 }
 

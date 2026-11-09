@@ -13,7 +13,7 @@ use windows::Win32::System::Variant::VARIANT;
 use windows::core::{GUID, Interface};
 
 use super::platform_error;
-use crate::{EncoderConfig, EncoderError, H264Profile};
+use crate::{Codec, EncoderConfig, EncoderError, H264Profile};
 
 /// COM initialization is thread-affine; this guard and its encoder cannot move.
 pub(super) struct Runtime(PhantomData<Rc<()>>);
@@ -51,7 +51,18 @@ pub(super) fn adapter_luid(device: &ID3D11Device) -> windows::core::Result<LUID>
     unsafe { Ok(dxgi.GetAdapter()?.GetDesc()?.AdapterLuid) }
 }
 
-pub(super) fn hardware_candidates(luid: LUID) -> windows::core::Result<Vec<IMFActivate>> {
+pub(super) fn subtype(codec: Codec) -> GUID {
+    match codec {
+        Codec::H264 => MFVideoFormat_H264,
+        Codec::H265 => MFVideoFormat_HEVC,
+        Codec::AV1 => MFVideoFormat_AV1,
+    }
+}
+
+pub(super) fn hardware_candidates(
+    luid: LUID,
+    codec: Codec,
+) -> windows::core::Result<Vec<IMFActivate>> {
     let mut attributes = None;
     let mut raw = std::ptr::null_mut();
     let mut count = 0;
@@ -61,7 +72,7 @@ pub(super) fn hardware_candidates(luid: LUID) -> windows::core::Result<Vec<IMFAc
     };
     let output = MFT_REGISTER_TYPE_INFO {
         guidMajorType: MFMediaType_Video,
-        guidSubtype: MFVideoFormat_H264,
+        guidSubtype: subtype(codec),
     };
     let mut luid_bytes = [0; 8];
     luid_bytes[..4].copy_from_slice(&luid.LowPart.to_le_bytes());
@@ -93,13 +104,27 @@ pub(super) fn hardware_candidates(luid: LUID) -> windows::core::Result<Vec<IMFAc
     }
 }
 
-pub(super) fn probe(device: &ID3D11Device) -> Result<bool, EncoderError> {
+pub(super) fn probe(device: &ID3D11Device) -> Result<Vec<Codec>, EncoderError> {
     let _runtime = Runtime::new()?;
     let luid =
         adapter_luid(device).map_err(|error| platform_error("query display adapter", error))?;
-    Ok(!hardware_candidates(luid)
-        .map_err(|error| platform_error("enumerate hardware H.264 MFTs", error))?
-        .is_empty())
+    let mut codecs = Vec::new();
+    for codec in Codec::ALL {
+        let config = EncoderConfig {
+            codec,
+            h264_profile: H264Profile::ConstrainedBaseline,
+            ..EncoderConfig::default()
+        };
+        let candidates = hardware_candidates(luid, codec)
+            .map_err(|error| platform_error(&format!("enumerate hardware {codec} MFTs"), error))?;
+        if candidates
+            .into_iter()
+            .any(|candidate| Session::new(candidate, &config, device).is_ok())
+        {
+            codecs.push(codec);
+        }
+    }
+    Ok(codecs)
 }
 
 /// Shut down failed activations as well as successfully streaming transforms.
@@ -144,14 +169,17 @@ impl Session {
         device: &ID3D11Device,
     ) -> Result<Self, EncoderError> {
         // SAFETY: Activation occurs on the COM/MF worker and returns an owned MFT.
-        let transform = unsafe { activation.ActivateObject::<IMFTransform>() }
-            .map_err(|error| platform_error("activate hardware H.264 MFT", error))?;
+        let transform =
+            unsafe { activation.ActivateObject::<IMFTransform>() }.map_err(|error| {
+                platform_error(&format!("activate hardware {} MFT", config.codec), error)
+            })?;
         let active = Activated {
             transform,
             activation,
         };
-        Self::configure(active, config, device)
-            .map_err(|error| platform_error("configure hardware H.264 MFT", error))
+        Self::configure(active, config, device).map_err(|error| {
+            platform_error(&format!("configure hardware {} MFT", config.codec), error)
+        })
     }
 
     fn configure(
@@ -201,29 +229,36 @@ impl Session {
                 &CODECAPI_AVEncCommonMeanBitRate,
                 VARIANT::from(config.bitrate_bps),
             )?;
-            // Optional driver knobs; baseline itself forbids B pictures.
-            let _ = set_codec_value(&codec, &CODECAPI_AVLowLatencyMode, VARIANT::from(true));
-            let _ = set_codec_value(
-                &codec,
-                &CODECAPI_AVEncMPVDefaultBPictureCount,
-                VARIANT::from(0u32),
-            );
-            let output = video_type(config, MFVideoFormat_H264)?;
+            let output = video_type(config, subtype(config.codec))?;
             output.SetUINT32(&MF_MT_AVG_BITRATE, config.bitrate_bps)?;
-            let profile = match config.h264_profile {
-                H264Profile::ConstrainedBaseline => eAVEncH264VProfile_ConstrainedBase,
-                H264Profile::Main => eAVEncH264VProfile_Main,
-                H264Profile::High => eAVEncH264VProfile_High,
-            };
-            output.SetUINT32(&MF_MT_MPEG2_PROFILE, profile.0 as u32)?;
-            if let Err(error) = transform.SetOutputType(outputs[0], &output, 0) {
-                if !matches!(config.h264_profile, H264Profile::ConstrainedBaseline) {
-                    return Err(error);
+            match config.codec {
+                Codec::H264 => {
+                    let profile = match config.h264_profile {
+                        H264Profile::ConstrainedBaseline => eAVEncH264VProfile_ConstrainedBase,
+                        H264Profile::Main => eAVEncH264VProfile_Main,
+                        H264Profile::High => eAVEncH264VProfile_High,
+                    };
+                    output.SetUINT32(&MF_MT_MPEG2_PROFILE, profile.0 as u32)?;
+                    if let Err(error) = transform.SetOutputType(outputs[0], &output, 0) {
+                        if !matches!(config.h264_profile, H264Profile::ConstrainedBaseline) {
+                            return Err(error);
+                        }
+                        // Some hardware MFTs expose only Base; output SPS is validated
+                        // before delivery to ensure it actually is constrained baseline.
+                        output.SetUINT32(&MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Base.0 as u32)?;
+                        transform.SetOutputType(outputs[0], &output, 0)?;
+                    }
                 }
-                // Some hardware MFTs expose only Base; output SPS is validated
-                // before delivery to ensure it actually is constrained baseline.
-                output.SetUINT32(&MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Base.0 as u32)?;
-                transform.SetOutputType(outputs[0], &output, 0)?;
+                Codec::H265 => {
+                    output
+                        .SetUINT32(&MF_MT_MPEG2_PROFILE, eAVEncH265VProfile_Main_420_8.0 as u32)?;
+                    transform.SetOutputType(outputs[0], &output, 0)?;
+                }
+                Codec::AV1 => {
+                    output
+                        .SetUINT32(&MF_MT_MPEG2_PROFILE, eAVEncAV1VProfile_Main_420_8.0 as u32)?;
+                    transform.SetOutputType(outputs[0], &output, 0)?;
+                }
             }
             let input = video_type(config, MFVideoFormat_NV12)?;
             input.SetUINT32(&MF_MT_ALL_SAMPLES_INDEPENDENT, 1)?;
@@ -231,6 +266,14 @@ impl Session {
             input.SetUINT32(&MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709.0 as u32)?;
             input.SetUINT32(&MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235.0 as u32)?;
             transform.SetInputType(inputs[0], &input, 0)?;
+            // Apply after SetOutputType/SetInputType so profile defaults (e.g.
+            // HEVC Main B-frames) do not re-enable reordering.
+            let _ = set_codec_value(&codec, &CODECAPI_AVLowLatencyMode, VARIANT::from(true));
+            let _ = set_codec_value(
+                &codec,
+                &CODECAPI_AVEncMPVDefaultBPictureCount,
+                VARIANT::from(0u32),
+            );
             transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)?;
             transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
             Ok(Self {

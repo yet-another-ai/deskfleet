@@ -1,32 +1,38 @@
-//! Turn MFT samples into the Annex B packets expected by WebRTC.
+//! Turn MFT samples into the Annex B or OBU packets expected by WebRTC.
 
 use std::mem::ManuallyDrop;
 
 use windows::Win32::Media::MediaFoundation::*;
 
-use super::{platform_error, setup::Session};
-use crate::{EncodedPacket, EncoderConfig, EncoderError, H264Profile};
+use super::{
+    platform_error,
+    setup::{Session, subtype},
+};
+use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, H264Profile};
 
 pub(super) struct Output {
-    sps: Option<Vec<u8>>,
-    pps: Option<Vec<u8>>,
+    codec: Codec,
+    params: [Option<Vec<u8>>; 3],
     nal_length: usize,
-    profile: H264Profile,
+    h264_profile: H264Profile,
     duration_ns: u64,
 }
 
 impl Output {
     pub(super) fn new(config: &EncoderConfig) -> Self {
         Self {
-            sps: None,
-            pps: None,
+            codec: config.codec,
+            params: [None, None, None],
             nal_length: 4,
-            profile: config.h264_profile,
+            h264_profile: config.h264_profile,
             duration_ns: (1_000_000_000.0 / config.fps) as u64,
         }
     }
 
     pub(super) fn update_type(&mut self, media: &IMFMediaType) -> Result<(), EncoderError> {
+        if self.codec == Codec::AV1 {
+            return Ok(());
+        }
         // SAFETY: The media type owns its sequence-header blob; the queried length
         // sizes the live destination and the blob is copied before returning.
         let header = unsafe {
@@ -36,10 +42,18 @@ impl Output {
             let mut header = vec![0; size as usize];
             media
                 .GetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, &mut header, None)
-                .map_err(|error| platform_error("read H.264 sequence header", error))?;
+                .map_err(|error| {
+                    platform_error(&format!("read {} sequence header", self.codec), error)
+                })?;
             header
         };
-        let annex_b = if header.first() == Some(&1) {
+        if header.is_empty() {
+            return Ok(());
+        }
+        let annex_b = if self.codec == Codec::H264
+            && start_code(&header, 0).is_none()
+            && header.first() == Some(&1)
+        {
             let (length, data) = avcc_header(&header)?;
             self.nal_length = length;
             data
@@ -51,16 +65,18 @@ impl Output {
 
     fn remember(&mut self, data: &[u8]) -> Result<(), EncoderError> {
         for nalu in nalus(data) {
-            match nalu[0] & 0x1f {
-                7 => {
-                    if nalu.len() < 4 || !matches_profile(nalu, self.profile) {
+            match (self.codec, nal_type(self.codec, nalu)) {
+                (Codec::H264, 7) => {
+                    if nalu.len() < 4 || !matches_profile(nalu, self.h264_profile) {
                         return Err(EncoderError::Platform(
                             "MF H.264 SPS does not match the negotiated profile".into(),
                         ));
                     }
-                    self.sps = Some(nalu.to_vec());
+                    self.params[1] = Some(nalu.to_vec());
                 }
-                8 => self.pps = Some(nalu.to_vec()),
+                (Codec::H264, 8) | (Codec::H265, 34) => self.params[2] = Some(nalu.to_vec()),
+                (Codec::H265, 32) => self.params[0] = Some(nalu.to_vec()),
+                (Codec::H265, 33) => self.params[1] = Some(nalu.to_vec()),
                 _ => {}
             }
         }
@@ -72,7 +88,25 @@ impl Output {
         bytes: &[u8],
         timestamp: i64,
         duration: Option<i64>,
+        clean_point: bool,
     ) -> Result<EncodedPacket, EncoderError> {
+        let timestamp_ns = hns_to_ns(timestamp)?;
+        let duration_ns = duration
+            .filter(|value| *value > 0)
+            .map(hns_to_ns)
+            .transpose()?
+            .unwrap_or(self.duration_ns);
+        if self.codec == Codec::AV1 {
+            if bytes.is_empty() {
+                return Err(EncoderError::Platform("empty MF AV1 sample".into()));
+            }
+            return Ok(EncodedPacket {
+                data: bytes.to_vec(),
+                timestamp_ns,
+                duration_ns,
+                is_keyframe: clean_point,
+            });
+        }
         let mut data = Vec::with_capacity(bytes.len() + 128);
         // A four-byte NAL length of 256..511 also starts with 00 00 01.
         // Prefer a complete length-prefixed parse before treating that prefix
@@ -80,40 +114,52 @@ impl Output {
         if crate::bitstream::convert_avcc_to_annex_b(bytes, self.nal_length, &mut data).is_none() {
             data.clear();
             if start_code(bytes, 0).is_none() {
-                return Err(EncoderError::Platform(
-                    "invalid MF H.264 NAL lengths".into(),
-                ));
+                return Err(EncoderError::Platform(format!(
+                    "invalid MF {} NAL lengths",
+                    self.codec
+                )));
             }
             data.extend_from_slice(bytes);
         }
         self.remember(&data)?;
-        let types: Vec<u8> = nalus(&data).map(|nalu| nalu[0] & 0x1f).collect();
+        let types: Vec<u8> = nalus(&data)
+            .map(|nalu| nal_type(self.codec, nalu))
+            .collect();
         if types.is_empty() {
-            return Err(EncoderError::Platform("empty MF H.264 sample".into()));
+            return Err(EncoderError::Platform(format!(
+                "empty MF {} sample",
+                self.codec
+            )));
         }
-        let is_keyframe = types.contains(&5);
+        let (is_keyframe, required_types, params) = match self.codec {
+            Codec::H264 => (types.contains(&5), &[7u8, 8][..], &self.params[1..]),
+            Codec::H265 => (
+                clean_point || types.iter().any(|&kind| (16..=21).contains(&kind)),
+                &[32u8, 33, 34][..],
+                &self.params[..],
+            ),
+            Codec::AV1 => unreachable!(),
+        };
         if is_keyframe {
-            let (Some(sps), Some(pps)) = (&self.sps, &self.pps) else {
-                return Err(EncoderError::Platform(
-                    "MF keyframe has no H.264 parameter sets".into(),
-                ));
-            };
-            if !types.contains(&7) || !types.contains(&8) {
-                let mut with_headers = Vec::with_capacity(data.len() + sps.len() + pps.len() + 8);
-                append_nalu(&mut with_headers, sps);
-                append_nalu(&mut with_headers, pps);
+            if params.iter().any(Option::is_none) {
+                return Err(EncoderError::Platform(format!(
+                    "MF keyframe has no {} parameter sets",
+                    self.codec
+                )));
+            }
+            if required_types.iter().any(|kind| !types.contains(kind)) {
+                let mut with_headers = Vec::with_capacity(data.len() + 128);
+                for param in params.iter().flatten() {
+                    append_nalu(&mut with_headers, param);
+                }
                 with_headers.extend_from_slice(&data);
                 data = with_headers;
             }
         }
         Ok(EncodedPacket {
             data,
-            timestamp_ns: hns_to_ns(timestamp)?,
-            duration_ns: duration
-                .filter(|value| *value > 0)
-                .map(hns_to_ns)
-                .transpose()?
-                .unwrap_or(self.duration_ns),
+            timestamp_ns,
+            duration_ns,
             is_keyframe,
         })
     }
@@ -168,12 +214,12 @@ impl Output {
         match result {
             Err(error) if error.code() == MF_E_TRANSFORM_STREAM_CHANGE => {
                 // SAFETY: The new type is obtained from the same output stream;
-                // only H.264 at the current frame dimensions is accepted.
+                // only the negotiated codec at the current frame dimensions is accepted.
                 let media = unsafe {
                     let media = transform
                         .GetOutputAvailableType(session.output_id, 0)
                         .map_err(|error| platform_error("query changed MFT output type", error))?;
-                    if media.GetGUID(&MF_MT_SUBTYPE).ok() != Some(MFVideoFormat_H264)
+                    if media.GetGUID(&MF_MT_SUBTYPE).ok() != Some(subtype(config.codec))
                         || media.GetUINT64(&MF_MT_FRAME_SIZE).ok()
                             != Some((u64::from(config.width) << 32) | u64::from(config.height))
                     {
@@ -203,7 +249,7 @@ impl Output {
             return Ok(None);
         };
         // SAFETY: The returned sample owns its buffers and timestamp attributes.
-        let (buffer, timestamp, duration) = unsafe {
+        let (buffer, timestamp, duration, clean_point) = unsafe {
             (
                 sample
                     .ConvertToContiguousBuffer()
@@ -212,10 +258,20 @@ impl Output {
                     .GetSampleTime()
                     .map_err(|error| platform_error("read encoded timestamp", error))?,
                 sample.GetSampleDuration().ok(),
+                sample.GetUINT32(&MFSampleExtension_CleanPoint).unwrap_or(0) != 0,
             )
         };
         let bytes = copy_buffer(&buffer)?;
-        self.packet(&bytes, timestamp, duration).map(Some)
+        self.packet(&bytes, timestamp, duration, clean_point)
+            .map(Some)
+    }
+}
+
+fn nal_type(codec: Codec, nalu: &[u8]) -> u8 {
+    match codec {
+        Codec::H264 => nalu[0] & 0x1f,
+        Codec::H265 => (nalu[0] >> 1) & 0x3f,
+        Codec::AV1 => unreachable!(),
     }
 }
 
@@ -339,7 +395,7 @@ mod tests {
             .remember(&[0, 0, 0, 1, 0x67, 66, 0xc0, 31, 0, 0, 1, 0x68, 1])
             .unwrap();
         let packet = output
-            .packet(&[0, 0, 0, 2, 0x65, 0x88], 123, Some(100))
+            .packet(&[0, 0, 0, 2, 0x65, 0x88], 123, Some(100), false)
             .unwrap();
         assert_eq!(
             nalus(&packet.data).map(|n| n[0] & 31).collect::<Vec<_>>(),
@@ -379,7 +435,7 @@ mod tests {
             nalu[0] = 0x65;
             let mut sample = length.to_be_bytes().to_vec();
             sample.extend_from_slice(&nalu);
-            let packet = output.packet(&sample, 0, None).unwrap();
+            let packet = output.packet(&sample, 0, None, false).unwrap();
             assert!(packet.is_keyframe);
             let nalus: Vec<_> = nalus(&packet.data).collect();
             assert_eq!(nalus.len(), 3);
@@ -397,9 +453,39 @@ mod tests {
             let mut sample = first_start_code.to_vec();
             sample
                 .extend_from_slice(&[0x67, 66, 0xc0, 31, 0, 0, 1, 0x68, 1, 0, 0, 0, 1, 0x65, 0x88]);
-            let packet = Output::new(&config).packet(&sample, 0, None).unwrap();
+            let packet = Output::new(&config)
+                .packet(&sample, 0, None, false)
+                .unwrap();
             assert_eq!(packet.data, sample);
             assert!(packet.is_keyframe);
         }
+    }
+
+    #[test]
+    fn prepends_cached_hevc_headers_and_marks_av1_clean_point() {
+        let mut hevc = Output::new(&EncoderConfig {
+            codec: Codec::H265,
+            ..Default::default()
+        });
+        hevc.remember(&[0, 0, 1, 0x40, 1, 0, 0, 1, 0x42, 1, 0, 0, 1, 0x44, 1])
+            .unwrap();
+        let packet = hevc.packet(&[0, 0, 1, 0x26, 1], 100, None, false).unwrap();
+        assert!(packet.is_keyframe);
+        assert_eq!(
+            nalus(&packet.data)
+                .map(|n| (n[0] >> 1) & 0x3f)
+                .collect::<Vec<_>>(),
+            [32, 33, 34, 19]
+        );
+
+        let mut av1 = Output::new(&EncoderConfig {
+            codec: Codec::AV1,
+            ..Default::default()
+        });
+        let key = av1
+            .packet(&[0x0a, 2, 0, 0, 0x32, 2, 0, 1], 100, None, true)
+            .unwrap();
+        assert!(key.is_keyframe);
+        assert_eq!(key.data, [0x0a, 2, 0, 0, 0x32, 2, 0, 1]);
     }
 }

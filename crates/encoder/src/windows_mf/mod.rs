@@ -1,4 +1,4 @@
-//! Windows hardware H.264 fallback through Media Foundation.
+//! Windows hardware H.264, H.265, and AV1 fallback through Media Foundation.
 //!
 //! Only hardware MFTs on the capture device's adapter are considered. Captured
 //! BGRA remains on that GPU and each submitted NV12 sample owns a fresh texture.
@@ -18,7 +18,7 @@ use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Variant::VARIANT;
 use windows::core::Interface;
 
-use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError};
+use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, H265Profile};
 use convert::GpuConverter;
 use output::Output;
 use setup::{Runtime, Session, set_codec_value};
@@ -26,12 +26,12 @@ use setup::{Runtime, Session, set_codec_value};
 const MAX_IN_FLIGHT: usize = 4;
 const MAX_EVENTS_PER_POLL: usize = 64;
 
-pub(crate) fn is_supported(device: &ID3D11Device) -> bool {
+pub(crate) fn supported_codecs(device: &ID3D11Device) -> Vec<Codec> {
     match setup::probe(device) {
-        Ok(supported) => supported,
+        Ok(codecs) => codecs,
         Err(error) => {
-            tracing::debug!(%error, "hardware Media Foundation H.264 probe failed");
-            false
+            tracing::debug!(%error, "hardware Media Foundation codec probe failed");
+            Vec::new()
         }
     }
 }
@@ -57,9 +57,9 @@ pub(crate) struct MfEncoder {
 
 impl MfEncoder {
     pub(crate) fn new(config: &EncoderConfig, frame: &Frame) -> Result<Self, EncoderError> {
-        if config.codec != Codec::H264 {
+        if config.codec == Codec::H265 && config.h265_profile != H265Profile::Main {
             return Err(EncoderError::Unsupported(
-                "Media Foundation fallback only supports H.264",
+                "Media Foundation H.265 encoding requires the 8-bit Main profile",
             ));
         }
         config.validate()?;
@@ -70,8 +70,9 @@ impl MfEncoder {
             GpuConverter::new(device, surface.d3d11_context(), config.width, config.height)?;
         let luid = setup::adapter_luid(device)
             .map_err(|error| platform_error("query capture adapter", error))?;
-        let candidates = setup::hardware_candidates(luid)
-            .map_err(|error| platform_error("enumerate hardware H.264 MFTs", error))?;
+        let candidates = setup::hardware_candidates(luid, config.codec).map_err(|error| {
+            platform_error(&format!("enumerate hardware {} MFTs", config.codec), error)
+        })?;
         let mut failures = Vec::new();
         for candidate in candidates {
             let initialized =
@@ -103,11 +104,12 @@ impl MfEncoder {
         }
         if failures.is_empty() {
             Err(EncoderError::Unsupported(
-                "no hardware H.264 MFT for the capture adapter",
+                "no hardware MFT for the capture adapter",
             ))
         } else {
             Err(EncoderError::Platform(format!(
-                "hardware H.264 MFT initialization failed: {}",
+                "hardware {} MFT initialization failed: {}",
+                config.codec,
                 failures.join("; ")
             )))
         }
@@ -273,9 +275,10 @@ impl MfEncoder {
                 break;
             }
             if Instant::now() >= deadline {
-                return Err(EncoderError::Platform(
-                    "hardware H.264 MFT input timed out before drain".into(),
-                ));
+                return Err(EncoderError::Platform(format!(
+                    "hardware {} MFT input timed out before drain",
+                    self.config.codec
+                )));
             }
             std::thread::sleep(Duration::from_millis(1));
         }
@@ -291,9 +294,10 @@ impl MfEncoder {
         while !self.drain_complete {
             packets.extend(self.poll_output()?);
             if Instant::now() >= deadline {
-                return Err(EncoderError::Platform(
-                    "hardware H.264 MFT drain timed out".into(),
-                ));
+                return Err(EncoderError::Platform(format!(
+                    "hardware {} MFT drain timed out",
+                    self.config.codec
+                )));
             }
             if !self.drain_complete {
                 std::thread::sleep(Duration::from_millis(1));
@@ -328,7 +332,7 @@ mod tests {
     use crate::H264Profile;
 
     #[test]
-    #[ignore = "requires an interactive Windows desktop and a hardware Media Foundation H.264 encoder"]
+    #[ignore = "requires an interactive Windows desktop and a hardware Media Foundation encoder"]
     fn saturated_input_preserves_latest_static_keyframe() {
         let display = deskfleet_capture::displays()
             .unwrap()
@@ -350,64 +354,75 @@ mod tests {
             }
             assert!(Instant::now() < deadline, "capture produced no frame");
         };
-        let config = EncoderConfig {
-            width: frame.width,
-            height: frame.height,
-            fps: 30.0,
-            h264_profile: H264Profile::ConstrainedBaseline,
-            ..Default::default()
-        };
-        let mut encoder = MfEncoder::new(&config, &frame).unwrap();
-        frame.timestamp_ns = 100_000_000;
-        let mut packets = encoder.encode(&frame).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while packets.is_empty() {
-            assert!(Instant::now() < deadline, "initial output timed out");
-            std::thread::sleep(Duration::from_millis(5));
-            packets.extend(encoder.poll_output().unwrap());
-        }
-        assert_eq!(encoder.in_flight, 0);
-
-        // Hold the admission limit full deterministically rather than racing
-        // the GPU. Real capture, conversion, retained samples and MFT output
-        // still exercise the normal encode/poll path.
-        encoder.in_flight = MAX_IN_FLIGHT;
-        encoder.request_keyframe();
-        for timestamp in [133_333_300, 166_666_600] {
-            frame.timestamp_ns = timestamp;
-            assert!(encoder.encode(&frame).unwrap().is_empty());
-            assert!(encoder.pending.is_some());
-            assert!(encoder.keyframe_requested);
-            assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
-        }
-        // Delayed hardware output must preserve the pending sample and permit
-        // recovery beyond the former five-second output watchdog.
-        std::thread::sleep(Duration::from_secs(6));
-        assert!(encoder.poll_output().unwrap().is_empty());
-        assert!(encoder.pending.is_some());
-        assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
-        encoder.in_flight = 0;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut packets = Vec::new();
-        while packets.is_empty() {
-            assert!(
-                Instant::now() < deadline,
-                "retained keyframe output timed out"
-            );
-            std::thread::sleep(Duration::from_millis(5));
-            packets.extend(encoder.poll_output().unwrap());
-        }
-        assert_eq!(
-            packets.len(),
-            1,
-            "only the newest waiting frame is submitted"
+        let codecs = supported_codecs(frame.surface().d3d11_device());
+        assert!(
+            !codecs.is_empty(),
+            "adapter advertised no hardware MFT codecs"
         );
-        assert_eq!(packets[0].timestamp_ns, frame.timestamp_ns);
-        assert!(packets[0].is_keyframe);
-        assert!(encoder.pending.is_none());
-        assert_eq!(encoder.in_flight, 0);
-        encoder.flush().unwrap();
-        drop(encoder);
+        for codec in codecs {
+            let config = EncoderConfig {
+                width: frame.width,
+                height: frame.height,
+                fps: 30.0,
+                codec,
+                h264_profile: H264Profile::ConstrainedBaseline,
+                ..Default::default()
+            };
+            let mut encoder = MfEncoder::new(&config, &frame).unwrap();
+            frame.timestamp_ns = 100_000_000;
+            let mut packets = encoder.encode(&frame).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while packets.is_empty() {
+                assert!(
+                    Instant::now() < deadline,
+                    "initial {codec} output timed out"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+                packets.extend(encoder.poll_output().unwrap());
+            }
+            assert_eq!(encoder.in_flight, 0);
+
+            // Hold the admission limit full deterministically rather than racing
+            // the GPU. Real capture, conversion, retained samples and MFT output
+            // still exercise the normal encode/poll path.
+            encoder.in_flight = MAX_IN_FLIGHT;
+            encoder.request_keyframe();
+            for timestamp in [133_333_300, 166_666_600] {
+                frame.timestamp_ns = timestamp;
+                assert!(encoder.encode(&frame).unwrap().is_empty());
+                assert!(encoder.pending.is_some());
+                assert!(encoder.keyframe_requested);
+                assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
+            }
+            // Delayed hardware output must preserve the pending sample and permit
+            // recovery beyond the former five-second output watchdog.
+            std::thread::sleep(Duration::from_secs(6));
+            assert!(encoder.poll_output().unwrap().is_empty());
+            assert!(encoder.pending.is_some());
+            assert_eq!(encoder.in_flight, MAX_IN_FLIGHT);
+            encoder.in_flight = 0;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut packets = Vec::new();
+            while packets.is_empty() {
+                assert!(
+                    Instant::now() < deadline,
+                    "retained {codec} keyframe output timed out"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+                packets.extend(encoder.poll_output().unwrap());
+            }
+            assert_eq!(
+                packets.len(),
+                1,
+                "only the newest waiting {codec} frame is submitted"
+            );
+            assert_eq!(packets[0].timestamp_ns, frame.timestamp_ns);
+            assert!(packets[0].is_keyframe);
+            assert!(encoder.pending.is_none());
+            assert_eq!(encoder.in_flight, 0);
+            encoder.flush().unwrap();
+            drop(encoder);
+        }
         capture.stop().unwrap();
     }
 }
