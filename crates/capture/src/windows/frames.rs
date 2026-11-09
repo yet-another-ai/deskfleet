@@ -46,6 +46,7 @@ pub(super) fn make_frame_from_resource(
             CaptureError::Platform(format!("cast src_texture to ID3D11Resource: {e}"))
         })?;
         context.CopyResource(&dst_res, &src_res);
+        context.Flush();
     }
 
     Ok(Frame::new(
@@ -78,46 +79,15 @@ pub(super) fn process_frame(
     height: u32,
     generation: u64,
 ) -> Result<(), CaptureError> {
-    let src_texture: ID3D11Texture2D = resource.cast().map_err(|e| {
-        CaptureError::Platform(format!("cast IDXGIResource to ID3D11Texture2D: {e}"))
-    })?;
-
-    let copy_texture = match texture_pool.acquire() {
-        Some(tex) => tex,
-        None => {
-            return Err(CaptureError::Platform(
-                "texture pool empty — skipping frame".into(),
-            ));
-        }
-    };
-
-    // SAFETY: Both textures belong to this device, have matching dimensions and
-    // format, and remain retained during the protected context's GPU copy.
-    unsafe {
-        let dst_res: ID3D11Resource = copy_texture.cast().map_err(|e| {
-            CaptureError::Platform(format!("cast copy_texture to ID3D11Resource: {e}"))
-        })?;
-        let src_res: ID3D11Resource = src_texture.cast().map_err(|e| {
-            CaptureError::Platform(format!("cast src_texture to ID3D11Resource: {e}"))
-        })?;
-        context.CopyResource(&dst_res, &src_res);
-    }
-
-    let frame = Frame::new(
+    let frame = make_frame_from_resource(
+        resource,
+        device,
+        context,
+        texture_pool,
+        timestamp_ns,
         width,
         height,
-        width * 4,
-        PixelFormat::Bgra8,
-        timestamp_ns,
-        NativeSurface {
-            inner: PlatformInner {
-                texture: copy_texture,
-                device: device.clone(),
-                context: context.clone(),
-                pool: Some(Arc::clone(texture_pool)),
-            },
-        },
-    );
+    )?;
 
     match tx.try_send((generation, frame)) {
         Ok(()) | Err(mpsc::TrySendError::Full(_)) => Ok(()),
@@ -166,6 +136,7 @@ pub(super) fn update_last_desktop(
                 (ld.cast::<ID3D11Resource>(), src.cast::<ID3D11Resource>())
             {
                 context.CopyResource(&dst, &src_r);
+                context.Flush();
             }
         }
     }
@@ -204,6 +175,7 @@ pub(super) fn send_frame_from_texture(
             .cast()
             .map_err(|e| CaptureError::Platform(format!("cast src to ID3D11Resource: {e}")))?;
         context.CopyResource(&dst_res, &src_res);
+        context.Flush();
     }
 
     let frame = Frame::new(
