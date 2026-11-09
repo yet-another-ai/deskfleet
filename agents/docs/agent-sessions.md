@@ -802,6 +802,13 @@ resolution merely closes its outstanding fan-out with `cancelled`, so spectators
 are not recorded as making a decision. Standard selected responses are also
 supported and yield `_deskfleet/permission/receipt` notifications.
 
+The composer's YOLO toggle requires confirmation before activation, warning that
+all Agent permission requests in the Session will be approved automatically,
+including requests already pending. The client selects the offered `allow_once`
+option, falling back to `allow_always`, through the same audited response path.
+Cancelling the confirmation leaves YOLO disabled; turning it off takes effect
+without another confirmation and leaves future requests for manual approval.
+
 The service broadcasts resolution and the deciding actor. `$/cancel_request`
 closes obsolete fan-outs. Disconnects and RPC errors leave the shared request
 pending until an approver responds, the turn ends, or the provider cancels it.

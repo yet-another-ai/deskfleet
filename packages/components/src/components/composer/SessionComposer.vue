@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
-import { useEventListener, useTextareaAutosize } from "@vueuse/core"
+import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -111,10 +112,20 @@ const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurat
 const configuration = ref<AgentConfiguration | null>(null)
 const sessionId = computed(() => props.location?.session?.id)
 const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
-function toggleYolo(): void {
-  if (props.disabled || props.submitting) return
+const yoloConfirmation = useConfirmDialog()
+const { isRevealed: confirmingYolo } = yoloConfirmation
+watch([
+  () => props.location?.machine.id,
+  () => props.location?.workspace?.id,
+  sessionId,
+  () => props.disabled,
+  () => props.submitting,
+], () => yoloConfirmation.cancel())
+async function toggleYolo(): Promise<void> {
+  if (!props.location || props.disabled || props.submitting || confirmingYolo.value) return
   const id = sessionId.value
   const next = !yoloEnabled.value
+  if (next && (await yoloConfirmation.reveal()).isCanceled) return
   if (!id) agents.draftYolo = next
   else agents.setYolo(id, next)
 }
@@ -306,6 +317,7 @@ function keydown(event: KeyboardEvent): void {
 }
 
 onBeforeUnmount(() => {
+  yoloConfirmation.cancel()
   for (const [id] of attachmentPreviewUrls) removeAttachmentPreviewUrl(id)
 })
 </script>
@@ -477,6 +489,14 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    <ConfirmDialog
+      v-if="confirmingYolo"
+      :title="t('composer.yoloConfirmation.title')"
+      :description="t('composer.yoloConfirmation.description')"
+      :confirm-label="t('composer.yoloConfirmation.confirm')"
+      :confirm="async () => { yoloConfirmation.confirm() }"
+      @close="yoloConfirmation.cancel()"
+    />
     <FilePickerDialog
       v-if="filePickerOpen && location && fileTarget && filesApi"
       :api="filesApi"

@@ -542,6 +542,11 @@
     "loading": "読み込み中…", "unavailable": "利用できません",
     "loadingConfiguration": "エージェントから設定を読み込み中…", "reloadConfiguration": "エージェントから再読み込み",
     "yolo": "YOLO", "yoloHint": "このセッションでのエージェントの権限要求を自動承認",
+    "yoloConfirmation": {
+      "title": "YOLO モードを有効にしますか？",
+      "description": "YOLO モードが有効な間、このセッション内のすべてのエージェントの権限要求が自動的に承認されます。現在承認待ちの要求も含まれます。",
+      "confirm": "YOLO を有効にする"
+    },
     "efforts": {
       "none": "なし", "minimal": "最小",
       "low": "低", "medium": "中",
