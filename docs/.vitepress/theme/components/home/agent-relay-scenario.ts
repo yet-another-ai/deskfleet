@@ -27,7 +27,8 @@ export const relaySteps: RelayStep[] = [
 ]
 
 export const relayMoments = {
-  prompt: 0.4,
+  fadeIn: [0.5, 0.8] as [number, number],
+  prompt: 0.6,
   fileArrives: 5.0,
   cursorMove: [7.1, 8.1] as [number, number],
   doubleClick: 8.15,

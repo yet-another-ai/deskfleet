@@ -38,9 +38,10 @@ const flash = computed(() => {
   return since < 0 ? 0 : Math.max(0, 1 - since / 0.55)
 })
 const toast = computed(() => time.value >= relayMoments.flash && time.value < relayMoments.flash + 1.8)
-// Fade the whole conversation out before the loop restarts, and keep it hidden
-// while items transition back to their initial state.
-const presence = computed(() => Math.min(progress(time.value, [0, 0.35]), 1 - progress(time.value, [relayMoments.fadeOut, relayLoop - 0.1])))
+// Fade the scene out before the loop restarts. After the wrap, keep it hidden
+// until items finish their 480ms transition back to hidden, so the finished
+// scene never ghosts through.
+const presence = computed(() => Math.min(progress(time.value, relayMoments.fadeIn), 1 - progress(time.value, [relayMoments.fadeOut, relayLoop - 0.1])))
 </script>
 
 <template>
