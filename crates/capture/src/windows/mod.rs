@@ -21,7 +21,7 @@ use crate::types::{CaptureConfig, Display};
 mod device;
 mod frames;
 pub use device::{create_d3d11_device, displays};
-use device::{create_duplication, find_dxgi_output, pre_allocate_pool, try_recreate_duplication};
+use device::{create_duplication, pre_allocate_pool, try_recreate_duplication};
 use frames::{
     make_frame_from_resource, process_frame, send_frame_from_texture, update_last_desktop,
 };
@@ -132,20 +132,14 @@ impl WindowsStream {
         // 1. Create a D3D11 device on the adapter that owns this display.
         let (device, context) = create_d3d11_device(display.id)?;
 
-        // 2. Find the DXGI output matching this monitor.
-        let (_output1, desc) = find_dxgi_output(&device, display.id)?;
-
-        let cap_width = config.width.unwrap_or(
-            (desc.DesktopCoordinates.right - desc.DesktopCoordinates.left).unsigned_abs(),
-        );
-        let cap_height = config.height.unwrap_or(
-            (desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top).unsigned_abs(),
-        );
-
-        // 3. Create the output duplication (validates permissions early).
+        // 2. Create the output duplication (validates permissions early).
         let output_dup = create_duplication(&device, display.id)?;
+        // SAFETY: output_dup is a live duplication interface and returns its mode description by value.
+        let dup_desc = unsafe { output_dup.GetDesc() };
+        let cap_width = config.width.unwrap_or(dup_desc.ModeDesc.Width);
+        let cap_height = config.height.unwrap_or(dup_desc.ModeDesc.Height);
 
-        // 4. Pre-allocate a texture pool for GPU-to-GPU copies.
+        // 3. Pre-allocate a texture pool for GPU-to-GPU copies.
         let texture_pool = Arc::new(TexturePool::new());
         pre_allocate_pool(&device, &texture_pool, cap_width, cap_height);
 
@@ -217,45 +211,57 @@ impl WindowsStream {
             CaptureError::Platform("capture duplication unavailable after desktop binding".into())
         })?;
 
-        let frame_period_ms = ((1000.0 / res.target_fps).round() as u32).max(1);
-        let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
-        let mut resource: Option<IDXGIResource> = None;
+        let frame_period = std::time::Duration::from_millis(u64::from(
+            ((1000.0 / res.target_fps).round() as u32).max(1),
+        ));
+        let deadline = Instant::now() + frame_period;
 
-        // SAFETY: Duplication is exclusively owned by this capture worker; the
-        // output pointers point to initialized storage valid for this call.
-        let result = unsafe {
-            output_dup.AcquireNextFrame(frame_period_ms, &raw mut frame_info, &raw mut resource)
-        };
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let timeout_ms = (remaining.as_millis() as u32).max(1);
+            let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
+            let mut resource: Option<IDXGIResource> = None;
 
-        match result {
-            Ok(()) => {
-                let frame = if let Some(ref dxgi_res) = resource {
-                    let timestamp_ns = self.start_time.elapsed().as_nanos() as u64;
-                    make_frame_from_resource(
-                        dxgi_res,
-                        &res.device,
-                        &res.context,
-                        &res.texture_pool,
-                        timestamp_ns,
-                        res.cap_width,
-                        res.cap_height,
-                    )
-                    .map(Some)
-                } else {
-                    Ok(None)
-                };
-                // SAFETY: A successful AcquireNextFrame above must be paired with release.
-                unsafe {
-                    let _ = output_dup.ReleaseFrame();
+            // SAFETY: Duplication is exclusively owned by this capture worker; the
+            // output pointers point to initialized storage valid for this call.
+            let result = unsafe {
+                output_dup.AcquireNextFrame(timeout_ms, &raw mut frame_info, &raw mut resource)
+            };
+
+            match result {
+                Ok(()) => {
+                    let has_desktop_image = frame_info.LastPresentTime != 0;
+                    let frame = if has_desktop_image && let Some(ref dxgi_res) = resource {
+                        let timestamp_ns = self.start_time.elapsed().as_nanos() as u64;
+                        make_frame_from_resource(
+                            dxgi_res,
+                            &res.device,
+                            &res.context,
+                            &res.texture_pool,
+                            timestamp_ns,
+                            res.cap_width,
+                            res.cap_height,
+                        )
+                        .map(Some)
+                    } else {
+                        Ok(None)
+                    };
+                    // SAFETY: A successful AcquireNextFrame above must be paired with release.
+                    unsafe {
+                        let _ = output_dup.ReleaseFrame();
+                    }
+                    if frame.as_ref().is_ok_and(Option::is_none) && Instant::now() < deadline {
+                        continue;
+                    }
+                    return frame;
                 }
-                frame
+                Err(e) if e.code() == DXGI_ERR_WAIT_TIMEOUT => return Ok(None),
+                Err(e) if e.code() == DXGI_ERR_ACCESS_LOST => {
+                    res.invalidate();
+                    return Ok(None);
+                }
+                Err(e) => return Err(CaptureError::Platform(format!("AcquireNextFrame: {e}"))),
             }
-            Err(e) if e.code() == DXGI_ERR_WAIT_TIMEOUT => Ok(None),
-            Err(e) if e.code() == DXGI_ERR_ACCESS_LOST => {
-                res.invalidate();
-                Ok(None)
-            }
-            Err(e) => Err(CaptureError::Platform(format!("AcquireNextFrame: {e}"))),
         }
     }
 
@@ -389,7 +395,8 @@ fn capture_loop(mut res: CaptureResources, stop_flag: Arc<AtomicBool>) {
         };
         match result {
             Ok(()) => {
-                if let Some(resource) = resource.as_ref() {
+                let has_desktop_image = frame_info.LastPresentTime != 0;
+                if has_desktop_image && let Some(resource) = resource.as_ref() {
                     let timestamp_ns = start_time.elapsed().as_nanos() as u64;
                     if let Ok(()) = process_frame(
                         resource,
@@ -416,6 +423,25 @@ fn capture_loop(mut res: CaptureResources, stop_flag: Arc<AtomicBool>) {
                 // SAFETY: Every successful AcquireNextFrame has one release.
                 unsafe {
                     let _ = output_dup.ReleaseFrame();
+                }
+                if !has_desktop_image
+                    && last_sent.elapsed() >= repeat_interval
+                    && let Some(texture) = last_desktop.as_ref()
+                {
+                    let timestamp_ns = start_time.elapsed().as_nanos() as u64;
+                    if let Ok(()) = send_frame_from_texture(
+                        texture,
+                        &res.device,
+                        &res.context,
+                        &res.video_tx,
+                        &res.texture_pool,
+                        timestamp_ns,
+                        res.cap_width,
+                        res.cap_height,
+                        generation,
+                    ) {
+                        last_sent = Instant::now();
+                    }
                 }
             }
             Err(error) if error.code() == DXGI_ERR_WAIT_TIMEOUT => {
@@ -447,5 +473,47 @@ fn capture_loop(mut res: CaptureResources, stop_flag: Arc<AtomicBool>) {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    #[ignore = "requires an interactive Windows desktop and DXGI output duplication"]
+    fn poll_frame_skips_pointer_only_updates_and_matches_physical_display() {
+        let display = displays().unwrap().remove(0);
+        let stream = WindowsStream::new(
+            &display,
+            &CaptureConfig {
+                fps: 30.0,
+                ..CaptureConfig::default()
+            },
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let frame = loop {
+            if let Some(frame) = stream.poll_frame().unwrap() {
+                break frame;
+            }
+            assert!(Instant::now() < deadline, "capture produced no frame");
+        };
+        assert_eq!((frame.width, frame.height), (display.width, display.height));
+        let pixels = frame.copy_pixels().unwrap();
+        assert_eq!(
+            pixels.len(),
+            (display.width as usize) * (display.height as usize) * 4
+        );
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|px| px[..3] != [0, 0, 0]),
+            "captured desktop frame must not be an unpopulated pointer-only surface"
+        );
+        stream.stop().unwrap();
     }
 }

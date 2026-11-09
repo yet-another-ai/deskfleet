@@ -13,8 +13,8 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, DXGI_OUTPUT_DESC, IDXGIAdapter, IDXGIDevice,
-    IDXGIFactory1, IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication,
+    CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, IDXGIAdapter, IDXGIDevice, IDXGIFactory1,
+    IDXGIOutput, IDXGIOutput1, IDXGIOutputDuplication,
 };
 use windows::Win32::Graphics::Gdi::{
     ENUM_CURRENT_SETTINGS, EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, HDC,
@@ -49,9 +49,11 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
             info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
             // SAFETY: Windows supplied hmon; info has its required size initialized.
             if unsafe { GetMonitorInfoW(hmon, &raw mut info as *mut _ as *mut _) }.as_bool() {
-                let width = (info.monitorInfo.rcMonitor.right - info.monitorInfo.rcMonitor.left)
+                let mut width = (info.monitorInfo.rcMonitor.right
+                    - info.monitorInfo.rcMonitor.left)
                     .unsigned_abs();
-                let height = (info.monitorInfo.rcMonitor.bottom - info.monitorInfo.rcMonitor.top)
+                let mut height = (info.monitorInfo.rcMonitor.bottom
+                    - info.monitorInfo.rcMonitor.top)
                     .unsigned_abs();
                 let mut refresh_rate_hz = 0.0;
                 let mut devmode = windows::Win32::Graphics::Gdi::DEVMODEW {
@@ -69,6 +71,10 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
                 }
                 .as_bool()
                 {
+                    if devmode.dmPelsWidth > 0 && devmode.dmPelsHeight > 0 {
+                        width = devmode.dmPelsWidth;
+                        height = devmode.dmPelsHeight;
+                    }
                     let freq = devmode.dmDisplayFrequency;
                     if freq > 1 {
                         refresh_rate_hz = freq as f64;
@@ -164,12 +170,8 @@ fn find_display_adapter(monitor_id: u32) -> Result<IDXGIAdapter, CaptureError> {
 
 /// Locate the DXGI output whose `HMONITOR` matches `monitor_id`.
 ///
-/// Returns the output cast to `IDXGIOutput1` (required for `DuplicateOutput`)
-/// along with its description.
-pub(super) fn find_dxgi_output(
-    device: &ID3D11Device,
-    monitor_id: u32,
-) -> Result<(IDXGIOutput1, DXGI_OUTPUT_DESC), CaptureError> {
+/// Returns the output cast to `IDXGIOutput1` (required for `DuplicateOutput`).
+fn find_dxgi_output(device: &ID3D11Device, monitor_id: u32) -> Result<IDXGIOutput1, CaptureError> {
     let dxgi_device: IDXGIDevice = device
         .cast()
         .map_err(|e| CaptureError::Platform(format!("cast to IDXGIDevice: {e}")))?;
@@ -186,7 +188,7 @@ pub(super) fn find_dxgi_output(
 fn find_adapter_output(
     adapter: &IDXGIAdapter,
     monitor_id: u32,
-) -> Result<Option<(IDXGIOutput1, DXGI_OUTPUT_DESC)>, CaptureError> {
+) -> Result<Option<IDXGIOutput1>, CaptureError> {
     let hmon = HMONITOR(monitor_id as isize as *mut _);
 
     let mut idx = 0u32;
@@ -209,7 +211,7 @@ fn find_adapter_output(
             let output1: IDXGIOutput1 = output
                 .cast()
                 .map_err(|e| CaptureError::Platform(format!("cast to IDXGIOutput1: {e}")))?;
-            return Ok(Some((output1, desc)));
+            return Ok(Some(output1));
         }
     }
 }
@@ -219,7 +221,7 @@ pub(super) fn create_duplication(
     device: &ID3D11Device,
     display_id: u32,
 ) -> Result<IDXGIOutputDuplication, CaptureError> {
-    let (output1, _desc) = find_dxgi_output(device, display_id)?;
+    let output1 = find_dxgi_output(device, display_id)?;
     // SAFETY: This output was found on the supplied D3D11 device's adapter.
     unsafe { output1.DuplicateOutput(device) }
         .map_err(|e| CaptureError::Platform(format!("DuplicateOutput: {e}")))
@@ -235,10 +237,11 @@ pub(super) fn try_recreate_duplication(
     height: &mut u32,
     texture_pool: &mut Arc<TexturePool>,
 ) -> Result<IDXGIOutputDuplication, CaptureError> {
-    let (output1, desc) = find_dxgi_output(device, display_id)?;
-
-    let new_w = (desc.DesktopCoordinates.right - desc.DesktopCoordinates.left).unsigned_abs();
-    let new_h = (desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top).unsigned_abs();
+    let dup = create_duplication(device, display_id)?;
+    // SAFETY: dup is a live duplication interface and returns its mode description by value.
+    let dup_desc = unsafe { dup.GetDesc() };
+    let new_w = dup_desc.ModeDesc.Width;
+    let new_h = dup_desc.ModeDesc.Height;
 
     if new_w != *width || new_h != *height {
         tracing::info!(
@@ -255,9 +258,7 @@ pub(super) fn try_recreate_duplication(
         pre_allocate_pool(device, texture_pool, *width, *height);
     }
 
-    // SAFETY: This output was found on the supplied D3D11 device's adapter.
-    unsafe { output1.DuplicateOutput(device) }
-        .map_err(|e| CaptureError::Platform(format!("DuplicateOutput: {e}")))
+    Ok(dup)
 }
 
 /// Pre-allocate textures in the pool to avoid per-frame `CreateTexture2D`.
