@@ -1,6 +1,7 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
 import android.content.Intent
+import android.net.Uri
 import android.view.Surface
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -8,13 +9,75 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.lang.ref.WeakReference
+import kotlin.concurrent.thread
 
 @CapacitorPlugin(name = "NativeDesktop")
 class NativeDesktopPlugin : Plugin() {
+    @Volatile
+    private var activeAuthServer: LoopbackAuthServer? = null
 
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
+    }
+
+    @PluginMethod
+    fun startAuthCallback(call: PluginCall) {
+        runCatching {
+            activeAuthServer?.close()
+            val server = LoopbackAuthServer()
+            activeAuthServer = server
+            JSObject().put("callbackUrl", server.callbackUrl)
+        }.fold({ call.resolve(it) }, { call.reject(it.message ?: "Could not start login callback") })
+    }
+
+    @PluginMethod
+    fun waitForAuthCallback(call: PluginCall) {
+        val authorizationUrl = call.getString("authorizationUrl")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing authorization URL")
+        val server = activeAuthServer ?: return call.reject("Login callback is not active")
+        val currentActivity = activity ?: return call.reject("Activity unavailable")
+        call.setKeepAlive(true)
+        try {
+            currentActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorizationUrl)))
+        } catch (error: Exception) {
+            activeAuthServer = null
+            server.close()
+            call.setKeepAlive(false)
+            return call.reject(error.message ?: "Failed to open authorization URL")
+        }
+        thread(name = "deskfleet-wait-auth", isDaemon = true) {
+            try {
+                val code = server.awaitCode()
+                activity?.let { act ->
+                    act.runOnUiThread {
+                        if (!act.isFinishing && !act.isDestroyed) {
+                            act.startActivity(
+                                Intent(act, act.javaClass).addFlags(
+                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                )
+                            )
+                        }
+                    }
+                }
+                call.resolve(JSObject().put("code", code))
+            } catch (error: Exception) {
+                call.reject(error.message ?: "Sign-in failed")
+            } finally {
+                if (activeAuthServer === server) activeAuthServer = null
+                call.setKeepAlive(false)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun openExternal(call: PluginCall) {
+        val url = call.getString("url")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing URL")
+        val currentActivity = activity ?: return call.reject("Activity unavailable")
+        runCatching {
+            currentActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.fold({ call.resolve() }, { call.reject(it.message ?: "Failed to open URL") })
     }
 
     @PluginMethod
@@ -41,6 +104,8 @@ class NativeDesktopPlugin : Plugin() {
     }
 
     override fun handleOnDestroy() {
+        activeAuthServer?.close()
+        activeAuthServer = null
         stopSession()
         super.handleOnDestroy()
     }

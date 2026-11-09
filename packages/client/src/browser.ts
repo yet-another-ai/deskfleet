@@ -1,18 +1,32 @@
-import { HttpCentralClient, serverAddress } from "./http-central.ts"
+import { HttpCentralClient, serverAddress, type SavedAccount } from "./http-central.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
 import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
 import { reportingCentral, type CentralErrorReporter } from "./reporting-central.ts"
 
-/** The browser owns no bearer token; its login session stays in an HttpOnly cookie. */
-export async function browserClient(configuredServerUrl: string, report: CentralErrorReporter = () => {}): Promise<DeskfleetDesktopApi> {
+export interface BrowserClientOptions {
+  account?: SavedAccount
+  cookieAuth?: boolean
+  persist?: (account: SavedAccount) => Promise<void>
+  authorize?: (client: HttpCentralClient) => Promise<void>
+  openExternal?: (url: string) => Promise<unknown>
+}
+
+/** The browser owns no bearer token; its login session stays in an HttpOnly cookie unless native bearer auth is configured. */
+export async function browserClient(
+  configuredServerUrl: string,
+  report: CentralErrorReporter = () => {},
+  options: BrowserClientOptions = {},
+): Promise<DeskfleetDesktopApi> {
   const serverUrl = serverAddress(configuredServerUrl)
   const central = reportingCentral(new HttpCentralClient({
-    account: { serverUrl }, cookieAuth: true, transport: "browser_fetch",
-    persist: async () => {},
-    authorize: async () => { location.assign("/auth/login") },
-    openExternal: async url => { location.assign(url) },
+    account: options.account ? { ...options.account, serverUrl } : { serverUrl },
+    cookieAuth: options.cookieAuth ?? true,
+    transport: "browser_fetch",
+    persist: options.persist ?? (async () => {}),
+    authorize: options.authorize ?? (async () => { location.assign("/auth/login") }),
+    openExternal: options.openExternal ?? (async url => { location.assign(url) }),
   }), report)
   const unavailable = async (): Promise<never> => { throw new Error("Select a machine to continue") }
   const subscribe = () => () => {}

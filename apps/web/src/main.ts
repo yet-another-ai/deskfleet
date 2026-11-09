@@ -6,10 +6,12 @@ import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
 import { captureCentralRequestError, initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
 import { watch } from "vue"
+import { capacitorClientOptions } from "./capacitor-auth.ts"
 import "virtual:uno.css"
 
 initializeErrorReporting("web")
-const adapter = await browserClient(import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin), captureCentralRequestError)
+const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
+const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
 if (Capacitor.getPlatform() === "android" && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
 }

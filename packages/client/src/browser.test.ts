@@ -68,3 +68,23 @@ test("browser storage cannot override the configured backend or reuse another se
   expect(siteRequest).toMatchObject({ url: `${serverUrl}/api/site`, credentials: "include" })
   expect(Object.fromEntries(siteRequest.headers)).toEqual({ accept: "application/json" })
 })
+
+test("native bearer options omit cookies and attach the saved bearer token", async () => {
+  await setup()
+  const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ user, siteAdmin: false })))
+  vi.stubGlobal("fetch", fetch)
+  const api = await browserClient(`${serverUrl}/`, () => {}, {
+    account: { serverUrl, token: "native-token", user },
+    cookieAuth: false,
+  })
+  const central = api.central as HttpCentralClient
+  clients.push(central)
+  expect(await central.status()).toEqual({ serverUrl, user, siteAdmin: false })
+  expect(fetch).toHaveBeenCalledOnce()
+  const request = fetch.mock.calls[0]![0] as Request
+  expect(request).toMatchObject({ url: `${serverUrl}/api/me`, credentials: "omit" })
+  expect(Object.fromEntries(request.headers)).toEqual({
+    accept: "application/json",
+    authorization: "Bearer native-token",
+  })
+})
