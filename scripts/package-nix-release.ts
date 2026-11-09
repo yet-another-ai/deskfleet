@@ -4,21 +4,28 @@ import { copyFileSync, createReadStream, mkdirSync, mkdtempSync, readFileSync, r
 import { tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 
-const systems = { x64: "x86_64-linux", arm64: "aarch64-linux" } as const
+const targets = [
+  { system: "x86_64-linux", suffix: "linux-x64.tar.gz" },
+  { system: "aarch64-linux", suffix: "linux-arm64.tar.gz" },
+  { system: "aarch64-darwin", suffix: "mac-arm64.zip" },
+] as const
 
 export async function packageNixRelease(directory: string, destination: string, archives: readonly string[]): Promise<void> {
-  if (archives.length === 0) throw new Error("Provide at least one Linux desktop archive")
+  if (archives.length === 0) throw new Error("Provide at least one desktop archive")
   const { version } = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as { version: string }
   const sources: Record<string, { url: string; hash: string }> = {}
   for (const archive of archives) {
     const filename = basename(archive)
-    const platform = Object.entries(systems).find(([arch]) => filename === `deskfleet-${version}-linux-${arch}.tar.gz`)
-    if (!platform) throw new Error(`Expected a deskfleet-${version}-linux-{x64,arm64}.tar.gz desktop archive; received ${filename}`)
-    const system = platform[1]
-    if (sources[system]) throw new Error(`Duplicate desktop archive for ${system}`)
+    const target = targets.find(({ suffix }) => filename === `deskfleet-${version}-${suffix}`)
+    if (!target) {
+      throw new Error(
+        `Expected a deskfleet-${version}-linux-{x64,arm64}.tar.gz or deskfleet-${version}-mac-arm64.zip desktop archive; received ${filename}`,
+      )
+    }
+    if (sources[target.system]) throw new Error(`Duplicate desktop archive for ${target.system}`)
     const hash = createHash("sha256")
     for await (const chunk of createReadStream(resolve(directory, archive))) hash.update(chunk)
-    sources[system] = {
+    sources[target.system] = {
       url: `https://github.com/yet-another-ai/deskfleet/releases/download/v${version}/${filename}`,
       hash: `sha256-${hash.digest("base64")}`,
     }
@@ -28,7 +35,7 @@ export async function packageNixRelease(directory: string, destination: string, 
   try {
     const staged = join(temporary, "deskfleet-nix")
     mkdirSync(staged)
-    for (const filename of ["flake.nix", "flake.lock", "desktop.nix"]) {
+    for (const filename of ["flake.nix", "flake.lock", "desktop.nix", "desktop-darwin.nix"]) {
       copyFileSync(join(directory, "nix", filename), join(staged, filename))
     }
     copyFileSync(join(directory, "apps/desktop/build/icon.png"), join(staged, "icon.png"))
@@ -44,7 +51,7 @@ export async function packageNixRelease(directory: string, destination: string, 
 if (import.meta.main) {
   const [destination, ...archives] = process.argv.slice(2)
   if (!destination || archives.length === 0) {
-    throw new Error("Usage: node scripts/package-nix-release.ts <output.tar.gz> <desktop.tar.gz> [desktop.tar.gz ...]")
+    throw new Error("Usage: node scripts/package-nix-release.ts <output.tar.gz> <desktop archive> [desktop archive ...]")
   }
   await packageNixRelease(process.cwd(), destination, archives)
   console.log(`Packaged Nix release: ${destination}`)

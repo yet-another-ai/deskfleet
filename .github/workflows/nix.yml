@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-26.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-26.04"},{"platform":"linux-arm64","os":"ubuntu-26.04-arm"}]') }}
+        include: ${{ fromJSON(inputs.smoke_build && '[{"platform":"linux-x64","os":"ubuntu-26.04"}]' || '[{"platform":"linux-x64","os":"ubuntu-26.04"},{"platform":"linux-arm64","os":"ubuntu-26.04-arm"},{"platform":"macos-arm64","os":"macos-latest"}]') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,7 +48,8 @@ jobs:
       - name: Generate the release flake and cache the application payload
         shell: bash
         run: |
-          desktop_archives=("$GITHUB_WORKSPACE"/desktop-artifacts/*.tar.gz)
+          shopt -s nullglob
+          desktop_archives=("$GITHUB_WORKSPACE"/desktop-artifacts/*.tar.gz "$GITHUB_WORKSPACE"/desktop-artifacts/*.zip)
           mise exec node -- node scripts/package-nix-release.ts "$RUNNER_TEMP/deskfleet-nix.tar.gz" "${desktop_archives[@]}"
           tar -xzf "$RUNNER_TEMP/deskfleet-nix.tar.gz" -C "$RUNNER_TEMP"
           # The final release URL does not exist yet. Cache the exact same bytes
@@ -64,9 +65,15 @@ jobs:
         run: nix build "$RUNNER_TEMP/deskfleet-nix#deskfleet" --print-build-logs
 
       - name: Enable Chromium's user namespace sandbox on the runner
+        if: runner.os == 'Linux'
         # Ubuntu's AppArmor restriction blocks unconfined Nix-store executables.
         # Keep the actual installed package and Chromium sandbox enabled.
         run: sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: Verify the installed desktop and hosted daemon
+      - name: Verify the installed Linux desktop and hosted daemon
+        if: runner.os == 'Linux'
         run: xvfb-run -a mise exec node -- node scripts/smoke-linux-package.ts ./result --layout=nix --gui
+
+      - name: Verify the installed macOS app bundle
+        if: runner.os == 'macOS'
+        run: mise exec node -- node scripts/smoke-darwin-package.ts ./result
