@@ -468,7 +468,7 @@ machine adapters. Changing Sessions restores the Session-machine scope. Selectin
 a preview opens that display in the normal viewer without preview limits, with
 mouse/keyboard control and supported system audio enabled by default.
 Display, system audio, and control settings remain editable while connecting or
-streaming. Full viewers negotiate supported audio and a settings/input channel
+streaming. Embedded browser viewers negotiate supported audio and a settings/input channel
 when connecting. Audio and control changes use that existing channel without
 replacing the peer or interrupting video. Capture startup snapshots the latest
 audio and control settings after negotiation; initial audio delivery is set
@@ -560,11 +560,49 @@ versions; see [analytics rollout](analytics.md#feature-gates-and-experiments).
 Closing the gate blocks new launches while existing native windows retain their
 normal session lifecycle. Team authorization remains independent of the gate.
 It opens `deskfleet-viewer`, a Rust executable whose thin entry
-point calls the reusable `deskfleet-desktop-viewer` library. The viewer owns its
-winit window, receive-only WebRTC peer, decoder, and wgpu renderer. The current
-native receive path supports AV1 Main, HEVC Main, H.264 constrained baseline,
+point calls the reusable `deskfleet-desktop-viewer` library. The desktop UI uses
+a GPUI Fast window with a pure-Rust NSH floating toolbar.
+The viewer owns its window, receive-only WebRTC peer, decoder, and GPU
+presentation. The current native receive path supports AV1 Main, HEVC Main,
+H.264 constrained baseline,
 and optional mouse/keyboard control;
 it does not negotiate system audio. The embedded browser viewer remains available.
+
+The toolbar follows the embedded desktop viewer's layout, color tokens, and
+English, Chinese, and Japanese translations. Electron supplies the selected
+locale and theme when opening the window. The toolbar shows connection and
+codec status, can be dragged within the window, enters or leaves full screen,
+pauses or resumes remote input, and disconnects. Settings select a display and
+enable or disable remote control. Display changes replace the receiving peer
+while keeping the window open; an incompatible display leaves the current
+stream running and shows a settings error. Control-setting changes configure
+the current peer, while pause only gates local input.
+The Ctrl+Alt+Del action appears when the target Windows machine advertises
+secure-attention support. A view-only session keeps input disabled until control
+is enabled through an acknowledged, authorized settings change. System audio
+remains unavailable in the native receive contract. Toolbar interactions are
+handled locally before remote input; entering the controls, pausing control,
+losing window focus, or closing the
+window releases remote keys and mouse buttons. Video coordinates exclude
+letterboxing and use the window's logical coordinate space. NSH exchanges only
+control state and actions with the host: decoded frames stay in Rust and never
+cross the NSH engine as UI props or JavaScript data. This UI does not enable
+NSH's JavaScript, WebView, or built-in video runtimes.
+On Linux compositors requiring client-side decorations, the host provides a
+local title bar and resize borders; these regions are excluded from remote
+video input.
+
+Per-window Wayland, X11, macOS, and Windows hooks capture native physical key
+codes before layout or IME translation. These map to the existing physical
+`KeyboardEvent.code` contract, preserving supported key locations, modifier
+sides, and keypad distinctions. Disabling remote input clears pending presses;
+resuming restores held modifiers without replaying keys typed into local UI.
+The hooks require runtime acceptance on each platform, including non-US layouts
+and focus transitions. GPUI's layout-derived key events are used for local UI
+navigation, not remote key mapping.
+
+NSH/GPUI is the sole desktop window implementation. Android continues using
+its existing native surface implementation.
 
 Electron's main process owns Team authorization, capability discovery, peer
 grants, signaling, and remote capture startup. It exchanges only control,
@@ -573,7 +611,11 @@ The viewer never receives the account credential and pixels never pass through
 JavaScript. It uses the grant's STUN/TURN configuration and the existing
 `desktop:stream`/`desktop:control` authorization and input DataChannel contracts.
 Grant expiry or revocation, account changes, viewer closure, and application
-exit close the corresponding peer and capture stream. Navigating away from the
+exit close the corresponding peer and capture stream. Disconnect and recoverable
+session errors leave the native window open with connection controls. A `stop`
+command and `stopped` acknowledgement separate peer teardown from process
+closure; replacement waits for both the old native peer and its remote grant
+to be released. Navigating away from the
 Desktop tab leaves the separate native window running. Closing a native viewer
 does not stop the hosted daemon or another session.
 
@@ -588,8 +630,8 @@ Electron intersects these with the selected display's encoder capabilities,
 preferring AV1, HEVC, then H.264. The selected codec and display dimensions cross
 the control pipe explicitly and the same codec is used in the daemon offer.
 Startup also waits for the first successfully decoded frame. Only an encoder
-or decoder startup failure tries the next common codec, using a new native
-process and grant after both the previous viewer and remote peer have closed.
+or decoder startup failure tries the next common codec, using a new peer and
+grant inside the same native process after the previous peers have closed.
 Authorization, signaling, input, and transport failures do not trigger codec
 fallback. Unavailable codec extensions or hardware never imply support.
 While the capture-start RPC is pending, a peer closure, expired local or remote
@@ -611,7 +653,8 @@ a control window waits for capture startup, the first decoded frame, and this re
 with a 10-second input readiness deadline after capture starts. View-only windows
 do not create or wait for an input channel. A transient `disconnected` state on
 either peer has the shared 10-second recovery grace; recovery keeps the same
-capture, while sustained loss releases the viewer and grant.
+capture, while sustained loss releases the peer and grant and leaves the native
+window available to reconnect.
 
 The window-to-session input queue holds at most 256 events and coalesces only
 adjacent pointer moves, preserving key/button/wheel ordering. On overflow, it
@@ -669,39 +712,39 @@ header, accepting the negotiated 8-bit Main-profile 4:2:0 stream.
 The decode worker submits each access unit synchronously, with asynchronous and
 temporal processing disabled, so output does not wait for a later picture or
 EOS. Parameter-set changes recreate the decompression session. Session
-invalidation precedes releasing callback state. The viewer's AppKit menu is
-disabled so Command-key shortcuts can reach the remote input handler.
+invalidation precedes releasing callback state.
 The synchronous callback lifetime follows Apple's
 [VideoToolbox decoding contract](https://developer.apple.com/documentation/videotoolbox/vtdecompressionsessiondecodeframe%28_%3Asamplebuffer%3Aflags%3Aframerefcon%3Ainfoflagsout%3A%29).
 
-Decoded images are copied into owned RGBA pixels and uploaded to a wgpu texture
-for scaling and display. This implementation has GPU readback and upload; it is
-not a shared-surface or zero-copy decoder integration. The decoder's reference
-surface pool is independent of the presentation queue.
+Decoded images are copied into owned RGBA pixels. The NSH/GPUI viewer converts
+that owned buffer to BGRA and submits it through GPUI's GPU image path, which
+composites the video and toolbar in one window. Superseded image cache entries
+are released after rendering. This path has GPU readback and upload; it is not
+a shared-surface or zero-copy decoder integration. The decoder's reference
+surface pool is
+independent of the presentation queue.
 
-### Shallow FIFO presentation
+### Decoded-frame queue and presentation
 
 The application retains at most two decoded, uncommitted candidates. A newly
 decoded picture evicts the oldest candidate only when both positions are full.
-Once a presentation position is available, the window takes the oldest retained
-candidate and submits it promptly. Later arrivals cannot replace that submitted
-picture. An empty queue leaves the existing image on screen; startup never
-waits to fill the queue. There is no PTS playback scheduler, predictive vsync
-timer, or three-frame prefill.
+The window takes the oldest retained candidate when it can submit a new image.
+Later arrivals cannot replace an image already selected for that submission.
+An empty queue leaves the existing image on screen; startup never waits to fill
+the queue. There is no PTS playback scheduler, predictive vsync timer, or
+three-frame prefill.
 
-The wgpu surface uses `Fifo` and `desired_maximum_frame_latency=1`. On Wayland,
-the viewer attaches `wp_presentation` feedback to the same surface commit as
-the image and allows at most one outstanding commit. A displayed or discarded
-feedback event releases that position. If the compositor lacks this extension,
-`wl_surface.frame` supplies pacing without claiming actual display feedback.
-X11, Windows, and macOS use the swapchain's FIFO latency hint; that hint alone
-does not prove a strict one-frame system presentation queue. On macOS, wgpu's
-Metal backend uses display synchronization and two CAMetalLayer drawables for
-this hint. GPU command completion is never reported as actual display completion.
+The NSH/GPUI viewer selects at most one candidate for a GPUI render, and requests
+another frame while candidates remain. GPUI owns the swapchain and frame
+scheduling. Its `presentationMode` is `gpui`; `submittedFrames` counts images
+submitted to the GPUI scene, and `presentedCommits` is absent/null. This mode does
+not expose compositor presentation feedback or an explicit
+one-outstanding-Wayland-commit gate. The retained two-candidate bound
+does not establish the depth of GPUI's or the compositor's presentation queues.
+Latency, frame pacing, and resource use still require measurements
+on each supported desktop platform.
 
-Status distinguishes decoded, submitted, and candidate-drop counts. Wayland
-presentation mode additionally reports displayed/discarded presentation events;
-those can include window redraws and are not a count of unique source pictures.
+Status distinguishes decoded, submitted, and candidate-drop counts.
 The ready-to-submit measurement starts after decoding and excludes transport,
 decoder delay, and scanout. These measurements do not establish end-to-end
 latency by themselves.
@@ -715,6 +758,11 @@ Linux, Windows, and macOS packaging stage the release viewer executable outside 
 signing. The Linux client also
 needs the GStreamer app, RTP, matching codec parser, video conversion, and hardware decoder
 plugins on the receiving machine.
+Linux builds of the NSH/GPUI backend additionally need the development libraries
+for Fontconfig, FreeType, XKB/XKB-X11, XCB, and Wayland. Runtime GPU rendering
+requires a working graphics driver and the corresponding platform libraries.
+The NSH 0.4.0 backend and GPUI Fast 0.1.9 are pinned together to the versions in
+NSH's released GPUI workspace lockfile.
 
 ```sh
 mise run viewer:build
@@ -727,12 +775,53 @@ mise exec -- cargo test -p deskfleet-linux-media --locked decoder::tests -- --ig
 
 The smoke command opens a real native window and negotiates fixture video
 with another Rust peer. It checks answer application, the real ordered input
-channel's readiness handshake, decode, and wgpu submission, without desktop
+channel's readiness handshake, decode, and image submission, without desktop
 capture or OS input injection. On Linux, `DESKFLEET_VIEWER_DECODER=software` explicitly selects
 GStreamer's `avdec_h264` for diagnostics; this requires the libav plugin and is
 never an automatic fallback. Runtime decoder tests separately exercise hardware
 encoding/decoding, delivery of an initial IDR and a final dependent P picture
 without another picture or EOS, and packet-loss recovery through PLI.
+
+Historical Linux Wayland validation of the initial NSH/GPUI toolbar passed all
+28 viewer Rust tests and Clippy. A 120-second H.264 fixture run with the explicit software
+decoder passed input readiness, image submission, and clean shutdown while
+retaining at most two candidates. This validates the GPUI submission path, not
+compositor display completion or comparative end-to-end latency.
+
+Interactive fixture checks covered toolbar dragging, including an 80 ms drag,
+pausing control, entering and leaving full screen, double-clicking the title
+bar to maximize, and disconnecting cleanly. A separate startup check verified
+title-bar dragging, resizing from 960×640 to 800×480 with the toolbar remaining
+inside the window, and user closure before a `start` command. The receiving peer
+observed a video
+center click at normalized `(0.5, 0.5)` and Ctrl+A. Toolbar gestures produced
+only `releaseAll` resets; video clicks and KeyB while control was paused were
+not forwarded. `DESKFLEET_SMOKE_REPORT_INPUT=1` makes the fixture peer emit
+`{"kind":"input","event":...}` diagnostics for these checks without injecting
+input into the operating system. These checks predate the full toolbar,
+persistent peer replacement, and physical-key hooks; they do not establish
+runtime acceptance of those changes.
+
+The replacement-window follow-up passed 27 viewer tests, 20 input tests, and
+strict Clippy on Linux. Focused native session/IPC tests and Electron type
+checking also passed. A live Wayland H.264 fixture exercised display selection,
+stop/start across three peers in one window, disconnect/reconnect, live control
+configuration without a peer restart, and clean process shutdown. Physical
+Ctrl+A reached the fixture as `ControlLeft`/`KeyA`; pause suppressed KeyB and
+resume restored KeyC. The full floating toolbar and display selector were
+visually inspected; an 80 ms drag and keyboard nudging retained its bounded
+position. The final build also preserved the settings panel across control
+changes and rendered Chinese translations, light colors, settings errors, and
+full-screen controls. These checks used explicit software decoding and
+synthetic pixels, and do not
+establish macOS/Windows runtime acceptance or latency parity.
+
+The recorded Windows and macOS results below are historical results from the
+removed winit/wgpu presenter; they do not validate the NSH/GPUI UI. Its acceptance
+on those platforms also requires toolbar dragging, window resizing, full-screen
+transitions, local input interception, focus-loss release, and user closure
+during startup. Focus-loss release is unit-tested but has not yet been checked
+with a held key during a real desktop session.
 
 Windows validation on the implementation host passed the fixture WebRTC →
 D3D11 decode → wgpu submission smoke with clean shutdown and at most two
@@ -774,8 +863,8 @@ Release staging and a local unpacked `.app` build also passed; the executable at
 That local build reused the existing native addon and disabled Developer ID
 signing and notarization. Formal signed installation and real remote input
 acceptance remain unverified.
-Presentation remains `fifo-hint`; these runs do not measure actual display
-completion or comparative end-to-end latency.
+That removed presenter reported `fifo-hint`; these runs did not measure actual
+display completion or comparative end-to-end latency.
 
 `DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host
 GPU. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240,
@@ -790,18 +879,21 @@ flushing it away with EOS. The tested production VA encoder instead supplies a
 four-picture DPB with zero reorder frames; both its first IDR and final P picture
 are delivered while the source is idle. The software diagnostic decoder also
 delivers the single fixture picture immediately. This decoder behavior is
-separate from the shallow presentation policy.
+separate from the decoded-frame queue and GPUI presentation.
 
 ## Mouse and keyboard control
 
 **Mouse and keyboard control** is enabled by default for the selected display.
 Click the video to focus keyboard input; the surrounding application keeps its
 normal keyboard behavior when the video is not focused. The toolbar can
-pause/resume input without stopping the video. Changing the control setting
-while connected updates the current peer; disabling it releases held input.
+pause/resume input without stopping the video. In both the embedded browser
+viewer and the native window, changing control while connected updates the
+current peer; disabling it releases held input.
 The daemon acknowledges each settings request on the ordered input channel and
 checks stream and control authorization separately. A rejected settings change
-reports an error without closing the video connection.
+reports an error without closing the video connection. Native settings requests
+are serialized on the same channel, and input stays gated by the acknowledged
+remote control state.
 
 The viewer sends JSON events on the reliable, ordered `deskfleet-input`
 DataChannel. `pointerMove` and `pointerButton` use normalized display coordinates

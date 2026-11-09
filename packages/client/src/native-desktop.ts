@@ -1,6 +1,8 @@
 export interface NativeDesktopOptions {
   displayId: number
   control: boolean
+  locale?: string
+  theme?: "light" | "dark"
 }
 
 export interface NativeDesktopRequest extends NativeDesktopOptions {

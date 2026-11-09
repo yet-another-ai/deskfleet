@@ -25,10 +25,53 @@ pub(crate) enum Command {
     Candidate {
         candidate: Candidate,
     },
+    /// Release the current peer while keeping the native window open.
+    Stop,
+    SetControl {
+        control: bool,
+    },
+    Ui {
+        state: UiState,
+    },
     Close,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Status {
+    #[default]
+    Connecting,
+    Starting,
+    Connected,
+    Disconnected,
+    Error,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub(crate) struct Display {
+    pub(crate) id: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UiState {
+    pub(crate) status: Status,
+    pub(crate) title: String,
+    pub(crate) codec: Option<Codec>,
+    pub(crate) displays: Vec<Display>,
+    pub(crate) display_id: u32,
+    pub(crate) control: bool,
+    pub(crate) input_ready: bool,
+    pub(crate) secure_attention: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) settings_error: Option<String>,
+    pub(crate) locale: Option<String>,
+    pub(crate) theme: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Codec {
     H264,

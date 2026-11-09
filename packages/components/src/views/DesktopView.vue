@@ -16,6 +16,7 @@ import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "..
 import { useDesktopInput } from "../composables/useDesktopInput.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
+import { useAppearanceStore } from "../stores/appearance.ts"
 import { errorPresentation } from "../services/error-presentation.ts"
 import { useFeatureGate } from "../services/analytics.ts"
 
@@ -25,8 +26,9 @@ const showNative = computed(() => !!platformClient.desktop.openNative && nativeP
 const preferNativeOnConnect = computed(() => platformClient.platform === "web" && showNative.value)
 
 const props = withDefaults(defineProps<{ machineId: string; visible?: boolean; initialDisplayId?: number; autoConnect?: boolean }>(), { visible: true, autoConnect: false })
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const fleet = useFleetStore()
+const appearance = useAppearanceStore()
 const connection = useDesktopConnection(platformClient.desktop)
 const { state, failure, settingsFailure, stream, codec: activeCodec } = connection
 const machine = computed(() => fleet.findMachine(props.machineId))
@@ -182,7 +184,8 @@ async function openNative(): Promise<void> {
   if (!canOpenNative.value || displayId.value === null || !platformClient.desktop.openNative) return
   nativeOpening.value = true
   nativeError.value = null
-  try { await platformClient.desktop.openNative({ displayId: displayId.value, control: control.value }) }
+  try { await platformClient.desktop.openNative({ displayId: displayId.value, control: control.value,
+    locale: locale.value, theme: appearance.isDark ? "dark" : "light" }) }
   catch (error) { nativeError.value = error }
   finally { nativeOpening.value = false }
 }

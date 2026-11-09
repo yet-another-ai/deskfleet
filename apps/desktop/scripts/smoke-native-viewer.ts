@@ -164,4 +164,4 @@ try {
 }
 assert.ok(result)
 const presentation = result.presentationMode === "wayland-presentation" ? " and Wayland presentation acknowledgements" : ""
-console.log(`Native WebRTC viewer: ${hardware ? "generated hardware" : "fixture"} ${codec} receive, decode, input readiness, wgpu submission${presentation}, and clean shutdown passed`, result)
+console.log(`Native WebRTC viewer: ${hardware ? "generated hardware" : "fixture"} ${codec} receive, decode, input readiness, GPU submission${presentation}, and clean shutdown passed`, result)

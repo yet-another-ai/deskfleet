@@ -1,7 +1,6 @@
 //! Physical DOM codes mapped to Linux input-event-codes.h (evdev, no XKB +8).
 
-pub(super) fn keycode(code: &str) -> Option<u32> {
-    Some(match code {
+key_mapping! { u32;
         "Escape" => 1,
         "Digit1" => 2,
         "Digit2" => 3,
@@ -149,8 +148,6 @@ pub(super) fn keycode(code: &str) -> Option<u32> {
         "F22" => 192,
         "F23" => 193,
         "F24" => 194,
-        _ => return None,
-    })
 }
 
 #[cfg(test)]
