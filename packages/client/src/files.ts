@@ -11,6 +11,8 @@ export interface FileTransfer {
   transferredBytes: number; totalBytes: number | null; bytesPerSecond: number; error?: string
 }
 export interface FileResourceRequest { target: FileTarget; sessionId: string; uri: string }
+/** Native hosts may open a resolved resource on this physical machine. */
+export interface FileResource extends FileEntry { canOpen?: boolean }
 export interface FileAttachmentUploadRequest { target: FileTarget; sessionId: string; name: string; data: Uint8Array }
 export interface FileAttachmentUploadResult { path: string; uri: string; name: string; size: number }
 
@@ -41,9 +43,10 @@ export interface FilesApi {
   cancel(id: string): Promise<void>
   retry(id: string, conflict?: FileConflict): Promise<void>
   onChanged(listener: (transfers: FileTransfer[]) => void): () => void
-  resolveResource(request: FileResourceRequest): Promise<FileEntry>
-  /** Bounded image/text preview; larger files use saveResource and the streaming transfer queue. */
-  readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string }>
+  resolveResource(request: FileResourceRequest): Promise<FileResource>
+  /** Remote previews are bounded; native hosts may allow larger local resources. */
+  readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string; canOpen?: boolean }>
+  openResource?(request: FileResourceRequest): Promise<void>
   saveResource(request: FileResourceRequest): Promise<string | null>
   uploadAttachment?(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult>
 }

@@ -5,7 +5,7 @@ import { DialogTitle } from "reka-ui"
 import { splitLines } from "shiki/core"
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileEntry, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
+import type { FileResource, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { fileResourceLines } from "../../services/agent-resources.ts"
 import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
@@ -32,7 +32,8 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const client = usePlatformClient()
 const filesApi = computed(() => props.api ?? client.files)
-const entry = ref<FileEntry>()
+const entry = ref<FileResource>()
+const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.openResource))
 const content = ref<string>()
 const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).map(([text]) => ({
   text,
@@ -40,7 +41,7 @@ const lines = computed(() => content.value === undefined ? [] : splitLines(conte
 })))
 const highlightedLines = computed(() => {
   const language = entry.value && fileCodeLanguage(entry.value.name)
-  // Preview reads allow 16 MiB; keep large files out of synchronous tokenization.
+  // Local previews may be large; keep them out of synchronous tokenization.
   if (!language || content.value === undefined || content.value.length > 200_000) return undefined
   try {
     return highlighter.codeToTokens(content.value, {
@@ -97,14 +98,19 @@ async function open(): Promise<void> {
             await nextTick()
             lineElement.value?.scrollIntoView({ block: "center" })
           }
-        } catch { error.value = t("files.previewUnavailable") }
+        } catch { error.value = t(canOpenResource.value ? "files.previewUnavailableLocal" : "files.previewUnavailable") }
       }
     }
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) loading.value = false }
 }
-async function download(): Promise<void> {
+async function fileAction(): Promise<void> {
   if (entry.value?.kind !== "file") return
+  if (canOpenResource.value) {
+    try { await filesApi.value!.openResource!(request) }
+    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+    return
+  }
   if (!previewBytes.value) {
     try { await filesApi.value?.saveResource(request) }
     catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
@@ -146,6 +152,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :title="entry?.name ?? title"
       :source="{ ...source, sessionId: source?.sessionId ?? request.sessionId, itemId: request.uri }"
       :resource-request="request"
+      :api="filesApi"
+      :can-open="canOpenResource"
       mode="tab"
       class="h-full flex-1 rounded-none border-0"
     />
@@ -165,10 +173,10 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
           <UiButton
             v-if="!loading && entry?.kind === 'file'"
             type="button"
-            data-preview-action="download"
-            @click="download"
+            :data-preview-action="canOpenResource ? 'open' : 'download'"
+            @click="fileAction"
           >
-            {{ t('files.downloadResource') }}
+            {{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}
           </UiButton>
         </div>
       </header>
@@ -215,6 +223,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :mime-type="previewMime"
       :title="entry?.name"
       :resource-request="request"
+      :api="filesApi"
+      :can-open="canOpenResource"
       mode="inline"
       class="max-h-[60vh]"
     />
@@ -226,7 +236,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="!loading && entry?.kind === 'file'" type="button" data-preview-action="download" @click="download">{{ t('files.downloadResource') }}</UiButton>
+      <UiButton v-if="!loading && entry?.kind === 'file'" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}</UiButton>
       <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>

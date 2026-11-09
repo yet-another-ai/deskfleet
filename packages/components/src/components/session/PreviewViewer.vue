@@ -4,13 +4,14 @@ import { watchImmediate } from "@vueuse/core"
 import { getActivePinia } from "pinia"
 import { computed, defineAsyncComponent, inject, onBeforeUnmount, provide, ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileResourceRequest } from "../../../../client/src/files.ts"
+import type { FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
 import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, isFileResource, type AgentResourceContext } from "../../services/agent-resources.ts"
 import {
-  previewKindFromMime,
+  previewKindFromUri,
+  previewResourceRequestToQuery,
   registerPreviewActionsKey,
   resolvePreviewKind,
   type PreviewKind,
@@ -33,6 +34,7 @@ import MermaidViewer from "./MermaidViewer.vue"
 import PreviewToolbar from "./PreviewToolbar.vue"
 
 const ModelPreview = defineAsyncComponent(() => import("./ModelPreview.vue"))
+const OfficePreview = defineAsyncComponent(() => import("./OfficePreview.vue"))
 
 const props = withDefaults(defineProps<{
   kind?: PreviewKind
@@ -44,6 +46,8 @@ const props = withDefaults(defineProps<{
   mode?: PreviewMode
   source?: PreviewSource
   resourceRequest?: FileResourceRequest
+  api?: FilesApi
+  canOpen?: boolean
   loading?: boolean
 }>(), {
   mode: "inline",
@@ -52,6 +56,7 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n()
 const client = usePlatformClient()
+const filesApi = computed(() => props.api ?? client.files)
 const layout = getActivePinia() ? useLayoutStore() : undefined
 const root = useTemplateRef<HTMLElement>("root")
 const video = useTemplateRef<HTMLVideoElement>("video")
@@ -76,7 +81,9 @@ const loadedUrl = ref<string>()
 const loadedBytes = shallowRef<Uint8Array>()
 const loadedMime = ref<string>()
 const loadedName = ref<string>()
+const loadedCanOpen = ref<boolean>()
 const loadError = ref<string>()
+const actionError = ref<string>()
 const registeredActions = shallowRef<PreviewToolbarAction[]>([])
 const pickingVideoColor = ref(false)
 let loadGeneration = 0
@@ -87,7 +94,7 @@ provide(registerPreviewActionsKey, actions => {
 })
 
 const kind = computed<PreviewKind>(() =>
-  resolvePreviewKind(props.content, props.kind, loadedMime.value ?? props.mimeType),
+  resolvePreviewKind(loadedName.value ?? props.content, props.kind, loadedMime.value ?? props.mimeType),
 )
 const toolbarActions = computed<PreviewToolbarAction[]>(() =>
   kind.value === "video"
@@ -103,6 +110,7 @@ const request = computed<FileResourceRequest | undefined>(() => {
     ? { ...resourceContext.value, target: { ...resourceContext.value.target }, uri: props.content }
     : undefined
 })
+const canOpenResource = computed(() => Boolean((loadedCanOpen.value ?? props.canOpen) && request.value && filesApi.value?.openResource))
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
 const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
 
@@ -112,22 +120,25 @@ function clearLoadedUrl(): void {
   loadedBytes.value = undefined
   loadedMime.value = undefined
   loadedName.value = undefined
+  loadedCanOpen.value = undefined
 }
 
 function loadResource(): void {
   const version = ++loadGeneration
   clearLoadedUrl()
   loadError.value = undefined
+  actionError.value = undefined
   if (kind.value === "mermaid" || !isLocalResource.value) return
-  if (!client.files || !request.value) {
+  if (!filesApi.value || !request.value) {
     loadError.value = t("files.resourceUnavailable")
     return
   }
-  void client.files.readResource(request.value).then(result => {
+  void filesApi.value.readResource(request.value).then(result => {
     if (disposed || version !== loadGeneration) return
-    const resultKind = previewKindFromMime(result.mimeType)
+    const resultKind = previewKindFromUri(result.name, result.mimeType)
     if (!resultKind) throw new Error(t("files.previewUnavailable"))
     loadedName.value = result.name
+    loadedCanOpen.value = result.canOpen
     loadedMime.value = result.mimeType
     loadedBytes.value = result.data
     loadedUrl.value = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: result.mimeType }))
@@ -136,7 +147,7 @@ function loadResource(): void {
   })
 }
 
-watchImmediate([() => props.content, () => props.kind, resourceContext], loadResource)
+watchImmediate([() => props.content, () => props.kind, request, filesApi], loadResource)
 
 function previewSource(): PreviewSource {
   const host = root.value?.closest<HTMLElement>("[data-preview]")
@@ -151,14 +162,17 @@ function previewSource(): PreviewSource {
 
 function descriptor() {
   const hostUri = root.value?.closest<HTMLElement>("[data-preview]")?.dataset.preview
+  const usesSourceFile = kind.value === "model"
+    || (props.data !== undefined && (kind.value === "docx" || kind.value === "xlsx" || kind.value === "pptx"))
   const localSourceContent = props.resourceRequest?.uri
-    ?? (isLocalResource.value ? props.content : (kind.value === "model" && hostUri && isFileResource(hostUri) ? hostUri : undefined))
+    ?? (isLocalResource.value ? props.content : (usesSourceFile && hostUri && isFileResource(hostUri) ? hostUri : undefined))
   return {
     kind: kind.value,
     content: localSourceContent ?? url.value ?? props.content,
     ...(props.title ? { title: props.title } : {}),
     ...(loadedMime.value || props.mimeType ? { mimeType: loadedMime.value ?? props.mimeType } : {}),
     source: previewSource(),
+    ...(request.value ? { resourceRequest: { ...request.value, target: { ...request.value.target } } } : {}),
   }
 }
 
@@ -184,6 +198,9 @@ function showInNewWindow(): void {
   if (item.source?.sessionId) params.set("sessionId", item.source.sessionId)
   if (item.source?.entryId) params.set("entryId", item.source.entryId)
   if (item.source?.itemId) params.set("itemId", item.source.itemId)
+  for (const [key, value] of Object.entries(previewResourceRequestToQuery(item.resourceRequest))) {
+    if (value !== undefined) params.set(key, value)
+  }
   window.open(`${window.location.origin}${window.location.pathname}#/preview?${params.toString()}`, "_blank", "popup,width=960,height=680")
 }
 
@@ -205,6 +222,13 @@ function download(): void {
   link.href = url.value
   link.download = loadedName.value ?? title.value
   link.click()
+}
+
+async function openResource(): Promise<void> {
+  if (!request.value || !canOpenResource.value) return
+  actionError.value = undefined
+  try { await filesApi.value!.openResource!(request.value) }
+  catch (reason) { if (!disposed) actionError.value = reason instanceof Error ? reason.message : String(reason) }
 }
 
 onBeforeUnmount(() => {
@@ -234,13 +258,16 @@ onBeforeUnmount(() => {
         :mode="mode"
         :actions="toolbarActions"
         :can-download="Boolean(url)"
+        :can-open="canOpenResource"
         :right-tab-label="rightTabLabel"
         @focus="showFocused"
         @download="download"
+        @open="openResource"
         @show-in-right-tab="showInRightTab"
         @show-in-new-window="showInNewWindow"
         @locate-message="locateOriginal"
       />
+      <p v-if="actionError" role="alert" class="m-0 px-3 pt-11 pb-3 text-sm text-ui-danger">{{ actionError }}</p>
       <ImagePreview
         v-if="kind === 'image'"
         :src="url"
@@ -254,6 +281,13 @@ onBeforeUnmount(() => {
         :data="loadedBytes ?? props.data"
         :mime-type="loadedMime ?? props.mimeType"
         :filename="isLocalResource ? props.content : (props.title || props.content)"
+        :mode="mode"
+      />
+      <OfficePreview
+        v-else-if="kind === 'docx' || kind === 'xlsx' || kind === 'pptx'"
+        :kind="kind"
+        :src="url"
+        :data="loadedBytes ?? props.data"
         :mode="mode"
       />
       <div
