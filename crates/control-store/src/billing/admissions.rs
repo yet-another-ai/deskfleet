@@ -1,11 +1,12 @@
 use super::effective_plan;
 use crate::entities::{
     cp_machine_registrations as registrations, cp_session_admissions as admissions,
-    cp_teams as teams,
+    cp_sessions as sessions, cp_teams as teams,
 };
 use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id};
 use sea_orm::sea_query::{
-    Asterisk, Cond, Expr, ExprTrait, Func, JoinType, LockType, Order, Query, SelectStatement,
+    Alias, Asterisk, Cond, Expr, ExprTrait, Func, JoinType, LockType, Order, Query,
+    SelectStatement, UnionType,
 };
 use sea_orm::{ConnectionTrait, QueryResult, TransactionTrait};
 use serde_json::{Value, json};
@@ -17,23 +18,75 @@ fn admission(row: QueryResult) -> Result<Value> {
     )
 }
 
-pub(super) fn active_admissions(team: Expr) -> SelectStatement {
-    Query::select()
-        .from(admissions::Entity)
-        .join(
-            JoinType::InnerJoin,
-            registrations::Entity,
-            Expr::col((registrations::Entity, registrations::Column::Id)).eq(Expr::col((
+pub(super) fn occupied_sessions(team: Expr) -> SelectStatement {
+    // History owns retained Sessions, including archived Sessions whose admission
+    // was released. Count live admissions only until history represents them;
+    // tombstones also exclude an admission whose deletion acknowledgement was lost.
+    let represented = Query::select()
+        .expr(Expr::val(1))
+        .from(sessions::Entity)
+        .and_where(
+            Expr::col((sessions::Entity, sessions::Column::RegistrationId)).eq(Expr::col((
                 admissions::Entity,
                 admissions::Column::RegistrationId,
             ))),
         )
-        .and_where(Expr::col((admissions::Entity, admissions::Column::TeamId)).eq(team))
-        .and_where(Expr::col((admissions::Entity, admissions::Column::Status)).ne("released"))
+        .and_where(
+            Expr::col((sessions::Entity, sessions::Column::SessionId)).eq(Expr::col((
+                admissions::Entity,
+                admissions::Column::SessionId,
+            ))),
+        )
+        .to_owned();
+    let pending = Query::select()
+        .column(admissions::Column::RegistrationId)
+        .from(admissions::Entity)
+        .and_where(Expr::col(admissions::Column::Status).ne("released"))
+        .and_where(Expr::exists(represented).not())
+        .to_owned();
+    let occupied = Query::select()
+        .column(sessions::Column::RegistrationId)
+        .from(sessions::Entity)
+        .and_where(Expr::col(sessions::Column::DeletedAt).is_null())
+        .union(UnionType::All, pending)
+        .to_owned();
+    Query::select()
+        .from_subquery(occupied, Alias::new("occupied"))
+        .join(
+            JoinType::InnerJoin,
+            registrations::Entity,
+            Expr::col((registrations::Entity, registrations::Column::Id)).eq(Expr::col((
+                Alias::new("occupied"),
+                admissions::Column::RegistrationId,
+            ))),
+        )
+        .and_where(Expr::col((registrations::Entity, registrations::Column::TeamId)).eq(team))
         .to_owned()
 }
 
 impl ControlStore {
+    /// History can arrive after a local commit whose admission confirmation was
+    /// lost. Persist that association so it survives snapshot content cleanup.
+    pub(crate) async fn bind_session_admission(
+        &self,
+        db: &impl ConnectionTrait,
+        registration: i64,
+        session_id: &str,
+        generation: &str,
+    ) -> Result<()> {
+        db.execute(
+            Query::update()
+                .table(admissions::Entity)
+                .value(admissions::Column::SessionId, session_id)
+                .and_where(Expr::col(admissions::Column::RegistrationId).eq(registration))
+                .and_where(Expr::col(admissions::Column::Id).eq(generation))
+                .and_where(Expr::col(admissions::Column::SessionId).is_null())
+                .and_where(Expr::col(admissions::Column::Status).ne("released")),
+        )
+        .await?;
+        Ok(())
+    }
+
     /// The caller holds the Team lock, serializing reactivation with reservations.
     pub(crate) async fn check_registration_capacity(
         &self,
@@ -48,7 +101,7 @@ impl ControlStore {
         {
             let counts = one_query(
                 db,
-                active_admissions(Expr::val(team))
+                occupied_sessions(Expr::val(team))
                     .expr_as(Expr::col(Asterisk).count(), "total")
                     .expr_as(
                         Func::count(
@@ -94,13 +147,8 @@ impl ControlStore {
     ) -> Result<Value> {
         uuid::Uuid::parse_str(operation_id)
             .map_err(|_| Error::Invalid("operationId must be a UUID"))?;
-        if !matches!(kind, "create" | "fork" | "restore")
-            || (kind == "restore" && session_id.is_none())
-        {
+        if !matches!(kind, "create" | "fork") || session_id.is_some() {
             return Err(Error::Invalid("invalid session admission"));
-        }
-        if let Some(id) = session_id {
-            resource_id(id)?;
         }
         let machine = resource_id(machine_id)?;
         let tx = self.db.begin().await?;
@@ -161,7 +209,7 @@ impl ControlStore {
         if let Some(limit) = plan.limits().max_active_sessions {
             let count: i64 = one_query(
                 &tx,
-                active_admissions(Expr::val(team))
+                occupied_sessions(Expr::val(team))
                     .expr_as(Expr::col(Asterisk).count(), "count")
                     .and_where(
                         Expr::col((registrations::Entity, registrations::Column::Revoked)).not(),
@@ -172,21 +220,6 @@ impl ControlStore {
             if count >= limit {
                 return Err(Error::Conflict("active_session_limit"));
             }
-        }
-        if let Some(id) = session_id
-            && tx
-                .query_one(
-                    Query::select()
-                        .column(admissions::Column::Id)
-                        .from(admissions::Entity)
-                        .and_where(Expr::col(admissions::Column::RegistrationId).eq(machine))
-                        .and_where(Expr::col(admissions::Column::SessionId).eq(id))
-                        .and_where(Expr::col(admissions::Column::Status).ne("released")),
-                )
-                .await?
-                .is_some()
-        {
-            return Err(Error::Conflict("session already has an active admission"));
         }
         let row = one_query(
             &tx,
@@ -303,7 +336,7 @@ impl ControlStore {
         .await?;
         if row.try_get::<String>("", "status")? == "committed" {
             return Err(Error::Conflict(
-                "committed sessions require an archive acknowledgement",
+                "committed sessions require a deletion acknowledgement",
             ));
         }
         tx.execute(
@@ -323,8 +356,8 @@ impl ControlStore {
         session_id: &str,
         generation: &str,
     ) -> Result<()> {
-        // Generation belongs to the durable local lifecycle. Late archive retries
-        // cannot touch the reservation created by a subsequent restore.
+        // A release requires the durable local deletion outcome. The generation
+        // fences it from another admission for the same Session ID.
         self.db
             .execute(
                 Query::update()

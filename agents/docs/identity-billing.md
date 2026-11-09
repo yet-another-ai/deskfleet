@@ -37,7 +37,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 
 | Allowance | Free | Go | Pro | Enterprise | Self-hosted |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Unarchived Agent Sessions per Team | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
+| Non-deleted Agent Sessions per Team | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
@@ -245,8 +245,8 @@ A replacement subscription adopts its own anchor.
 **Over-limit fallback:** preserve existing members, Sessions, files, and
 history after a smaller allowance takes effect. Block growth while the relevant
 count is at or above its limit, and apply Free turn limits to subsequent starts.
-Allow reading, archiving, member removal, and billing recovery. Do not remove
-members or archive Sessions automatically.
+Allow reading, archiving, restoring, Session deletion, member removal, and billing
+recovery. Do not remove members or archive Sessions automatically.
 
 ### Manual plan grants
 
@@ -277,25 +277,30 @@ do not. Accepting an invitation atomically checks capacity and inserts membershi
 Concurrent acceptances cannot exceed the limit, and retries cannot consume a
 second seat for an existing member.
 
-### Unarchived Sessions
+### Active Sessions
 
-Count unarchived Agent Sessions across enrolled Team Machines, independently of
-provider execution or connected clients. Idle Sessions and offline Machines
-still count. Archived Sessions and Sessions on removed Machines do not count.
-TerminalSessions are not Agent Sessions.
+The active Session count includes every non-deleted Agent Session across enrolled
+Team Machines, independently of archive state, provider execution, or connected
+clients. Archived and idle Sessions and offline Machines still count. Deleted
+Sessions and Sessions on removed Machines do not count. TerminalSessions are not
+Agent Sessions.
 
-Create, fork, and restore require capacity. Archive releases capacity only after
-the daemon closes associated resources and durably commits `archived`.
-An `archiving` or retained `provision_failed` Session still occupies capacity.
-Restore preserves consumed-turn history.
+Create and fork require capacity. Archive retains the Session's capacity, and
+restore does not consume another slot. An `archiving` or retained
+`provision_failed` Session still occupies capacity. Deletion releases capacity
+after the daemon durably removes the Session and synchronizes that removal.
+Archive and restore preserve consumed-turn history.
 
-Central PostgreSQL owns atomic Team capacity admission. Every daemon lifecycle
-entry point, including scheduled creation, uses that admission. Async replica
-counts serve display/reconciliation, not concurrent hard limits. Admissions bind
-Machine, operation, and target and are idempotent. Unknown outcomes retain
-capacity until the daemon confirms the outcome; timeout alone cannot release a
-possibly committed Session. Release/restore acknowledgements must not apply to
-a later lifecycle generation.
+Central PostgreSQL owns atomic Team capacity admission. Every Session creation
+entry point, including scheduled creation, uses that admission. Capacity counts
+retained non-deleted Sessions plus live admissions not yet represented by
+synchronized history, without counting a Session twice. This also includes
+archived Sessions whose admissions were released under the previous archive
+policy. Admissions bind Machine, operation, and target and are idempotent.
+Unknown outcomes retain capacity until the daemon confirms the outcome; timeout
+alone cannot release a possibly committed Session. Release acknowledgements must
+not apply to a later lifecycle generation. Deletion releases the admission and
+removes the Session from the complete catalog inventory.
 
 ### Per-Session turns and fork inheritance
 
@@ -478,7 +483,7 @@ names remain implementation details. Separate microservices are not required.
 - Billing: checkout progress, renewal/cancellation state, payment methods,
   invoices, and recovery actions for the Team owner.
 - Session: consumed/remaining Free turns including inherited usage, capacity
-  errors, paused inputs, and archive/upgrade actions.
+  errors, paused inputs, and archive, deletion, and upgrade actions.
 - Site administration: find the Team metadata needed for Enterprise grants,
   show underlying subscription/continuing charges, and inspect related audit
   without exposing Team execution or conversations.
@@ -494,9 +499,10 @@ names remain implementation details. Separate microservices are not required.
 3. Two concurrent invitations cannot fill the last Free seat twice. Concurrent
    Session creation across Machines, including scheduled creation, cannot claim
    the last Free Session slot twice.
-4. Full capacity rejects restore/fork. Offline Machines retain capacity; archive
-   releases only on completion. Retries do not double-count, and unknown outcomes
-   are reconciled before release.
+4. Full capacity rejects create/fork. Offline Machines and archived Sessions
+   retain capacity; restoring a Session does not require another slot. Deletion
+   releases capacity only on completion. Retries do not double-count, and unknown
+   outcomes are reconciled before release.
 5. A Free Session at 29 starts one more turn. Backlog and steering fallback cannot
    start turn 31. Restart and archive/restore preserve usage.
 6. Fork at 24 inherits 24; later parent activity does not alter it. Fork at 30

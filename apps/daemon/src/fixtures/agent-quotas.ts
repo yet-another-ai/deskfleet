@@ -17,7 +17,7 @@ export class TestAgentQuotas implements AgentQuotaAuthority {
     if (previous) return { ...previous }
     const occupied = [...this.admissions.values()].filter(value => value.status !== "released").length
     if (this.capacity !== null && occupied >= this.capacity) throw new Error("Team Session allowance reached")
-    const value: SessionAdmission = { admissionId: request.operationId, generation: request.operationId, status: "reserved", sessionId: request.sessionId ?? null }
+    const value: SessionAdmission = { admissionId: request.operationId, generation: request.operationId, status: "reserved", sessionId: null }
     this.admissions.set(request.operationId, value)
     return { ...value }
   }

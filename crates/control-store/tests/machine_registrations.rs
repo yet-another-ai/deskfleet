@@ -197,7 +197,8 @@ async fn one_public_machine_has_independent_team_resources_and_revocation() {
             .unwrap()["results"],
         json!([])
     );
-    for _ in 0..3 {
+    // The synchronized Session already occupies one of the three slots.
+    for _ in 0..2 {
         store
             .reserve_session(&ra.id, &uuid::Uuid::new_v4().to_string(), "create", None)
             .await
@@ -595,7 +596,7 @@ async fn reactivation_retains_admissions_and_competes_atomically_for_team_capaci
         3
     );
     // The daemon's existing reconciliation can still confirm unknown outcomes
-    // and acknowledge archives using the original durable generations.
+    // and acknowledge deletions using the original durable generations.
     store
         .confirm_session_admission(&restored.id, &pending, &pending, "2")
         .await

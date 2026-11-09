@@ -342,6 +342,52 @@ async fn idle_fork_boundary_survives_a_newer_running_snapshot_and_input_states_a
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn archived_titles_and_messages_remain_searchable_until_deletion() {
+    let f = Fixture::new().await;
+    let mut current = snapshot("1", 3, false);
+    current["session"]["title"] = "Retained conversation".into();
+    let input = json!({"sessionId":"1","seq":"1","kind":"input","payload":{"id":"input-1","state":"delivered","content":[{"type":"text","text":"retained user prompt"}]}});
+    f.store
+        .sync_history(
+            &f.machine,
+            "1",
+            current.clone(),
+            vec![
+                input,
+                event(2, "retained assistant reply"),
+                terminal(3, "completed"),
+            ],
+            vec![],
+        )
+        .await
+        .unwrap();
+    for state in ["active", "archiving", "archived"] {
+        current["session"]["archiveState"] = state.into();
+        f.store
+            .sync_history(&f.machine, "1", current.clone(), vec![], vec![])
+            .await
+            .unwrap();
+        for (query, entry) in [
+            ("Retained conversation", None),
+            ("retained user prompt", Some("input-input-1")),
+            ("retained assistant reply", Some("message-2")),
+        ] {
+            let results = f.search(query).await;
+            assert_eq!(results["results"].as_array().unwrap().len(), 1);
+            assert_eq!(results["results"][0]["resourceId"], "1");
+            assert_eq!(results["results"][0]["entryId"].as_str(), entry);
+        }
+    }
+    f.catalog(&["2", "3"]).await;
+    assert_eq!(f.search("retained").await["results"], json!([]));
+    // A stale catalog must not make a deleted archived Session searchable again.
+    f.catalog(&["1", "2", "3"]).await;
+    assert_eq!(f.search("retained").await["results"], json!([]));
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn authorization_current_inventory_schedules_and_keyset_pages_filter_before_pagination() {
     let f = Fixture::new().await;
     for id in ["1", "2", "3"] {
@@ -371,7 +417,7 @@ async fn authorization_current_inventory_schedules_and_keyset_pages_filter_befor
         .search(&f.user, &f.team, "needle", "all", None, 1)
         .await
         .unwrap();
-    assert_eq!(first["results"][0]["resourceId"], "3");
+    assert_eq!(first["results"][0]["resourceId"], "1");
     let second = f
         .store
         .search(
@@ -384,9 +430,22 @@ async fn authorization_current_inventory_schedules_and_keyset_pages_filter_befor
         )
         .await
         .unwrap();
-    assert_eq!(second["results"][0]["resourceId"], "task");
-    assert!(second.get("nextCursor").is_none());
-    assert!(second["results"][0].get("entryId").is_none());
+    assert_eq!(second["results"][0]["resourceId"], "3");
+    let third = f
+        .store
+        .search(
+            &f.user,
+            &f.team,
+            "needle",
+            "all",
+            second["nextCursor"].as_str(),
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(third["results"][0]["resourceId"], "task");
+    assert!(third.get("nextCursor").is_none());
+    assert!(third["results"][0].get("entryId").is_none());
     let outsider = f
         .store
         .verified_user("outsider@fixture.test", "Outsider")

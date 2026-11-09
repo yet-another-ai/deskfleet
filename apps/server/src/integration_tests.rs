@@ -277,25 +277,21 @@ async fn postgres_http_permissions_replication_and_signaling() {
             .get("binaryPath")
             .is_none()
     );
-    // Capacity follows durable daemon acknowledgements, independently of replicas.
-    let mut admission_generation = uuid::Uuid::new_v4().to_string();
-    // History remains visible while the machine is offline; archiving still counts.
+    // Retained Sessions keep their admission and count while the machine is offline.
+    let admission_generation = uuid::Uuid::new_v4().to_string();
     for (seq, archive_state, expected) in [
         ("0", "active", 1),
         ("1", "archiving", 1),
-        ("2", "archived", 0),
+        ("2", "archived", 1),
         ("3", "active", 1),
     ] {
-        if seq == "0" || seq == "3" {
-            admission_generation = uuid::Uuid::new_v4().to_string();
-            let kind = if seq == "0" { "create" } else { "restore" };
-            let session_id = if seq == "0" { None } else { Some("1") };
+        if seq == "0" {
             assert_eq!(
                 call!(
                     post,
                     "/api/daemon/session-admissions",
                     machine_token,
-                    &json!({"operationId":admission_generation,"kind":kind,"sessionId":session_id})
+                    &json!({"operationId":admission_generation,"kind":"create"})
                 )
                 .status(),
                 StatusCode::OK
@@ -315,17 +311,6 @@ async fn postgres_http_permissions_replication_and_signaling() {
                 call!(
                     post,
                     &format!("/api/daemon/session-admissions/{admission_generation}/confirm"),
-                    machine_token,
-                    &json!({"generation":admission_generation,"sessionId":"1"})
-                )
-                .status(),
-                StatusCode::OK
-            );
-        } else if archive_state == "archived" {
-            assert_eq!(
-                call!(
-                    post,
-                    "/api/daemon/session-admissions/release",
                     machine_token,
                     &json!({"generation":admission_generation,"sessionId":"1"})
                 )

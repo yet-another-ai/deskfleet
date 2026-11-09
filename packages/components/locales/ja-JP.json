@@ -935,7 +935,7 @@
     "turnRemoveServer": "サーバーを削除",
     "turnRemoveTitle": "独自の TURN サーバーを削除しますか？",
     "turnRemoveDescription": "URL と共有シークレットが削除されます。新しい接続にはプランに応じてサイトの中継が使われます。",
-    "activeSessions": "アクティブなセッション", "activeSessionsHint": "アーカイブされていないセッション。",
+    "activeSessions": "アクティブなセッション", "activeSessionsHint": "アーカイブ済みを含む、削除されていないセッション。",
     "usageMembers": "チームメンバー", "usageMembersHint": "オーナー、管理者、メンバーの合計。招待中のユーザーは含みません。",
     "unlimited": "無制限", "usageLoading": "使用状況を読み込み中…",
     "usageError": "使用状況を読み込めませんでした。", "usageRetry": "再試行",
@@ -1248,7 +1248,7 @@
     "empty": "結果が見つかりません",
     "emptyHint": "別の語句を試すか、すべての種類を検索してください。",
     "start": "会話やスケジュールを探す",
-    "startHint": "タイトル、送信済みメッセージ、終了したターンのエージェント応答、スケジュールのプロンプトを検索します。アーカイブ済みの会話は含みません。",
+    "startHint": "アーカイブ済みの会話も含め、タイトル、送信済みメッセージ、終了したターンのエージェント応答、スケジュールのプロンプトを検索します。",
     "loading": "検索中…",
     "more": "さらに読み込む",
     "untitled": "無題の会話"
