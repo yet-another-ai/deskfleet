@@ -157,8 +157,12 @@ const meta = {
         const machine = sampleMachines.find(item => item.id === machineId)
         if (machine) location.value = { machine, workspace: machine.workspaces[0] }
       }
-      function selectWorkspace(workspaceId: string): void {
+      function selectWorkspace(workspaceId: string | null): void {
         if (!location.value) return
+        if (workspaceId === null) {
+          location.value = { machine: location.value.machine }
+          return
+        }
         const workspace = location.value.machine.workspaces.find(item => item.id === workspaceId)
         if (workspace) location.value = { ...location.value, workspace }
       }

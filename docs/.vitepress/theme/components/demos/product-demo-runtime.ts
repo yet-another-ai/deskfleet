@@ -107,7 +107,10 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   // The embedded demo owns its sample resource tree and the selectors that read it.
   Reflect.set(fleet, "machines", ref([data.machine, { id: "demo-build", name: say("Build server", "构建服务器", "ビルドサーバー"), local: false, online: true, desktop: false, terminals: [], sessions: [], workspaces: buildWorkspaces }]))
   const workspaces = computed(() => fleet.machines.flatMap(machine => machine.workspaces.map(workspace => ({ machine, workspace }))))
-  const sessions = computed(() => workspaces.value.flatMap(location => location.workspace.sessions.map(session => ({ ...location, session, worktree: session.worktree }))))
+  const sessions = computed(() => [
+    ...fleet.machines.flatMap(machine => machine.sessions.map(session => ({ machine, session, worktree: session.worktree }))),
+    ...workspaces.value.flatMap(location => location.workspace.sessions.map(session => ({ ...location, session, worktree: session.worktree }))),
+  ])
   const terminalLocations = computed<TerminalLocation[]>(() => [
     ...fleet.machines.flatMap(machine => machine.terminals.map(terminal => ({ machine, terminal }))),
     ...workspaces.value.flatMap(location => location.workspace.terminals.map(terminal => ({ ...location, terminal }))),
@@ -121,7 +124,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     return location?.worktree ? { ...location, worktree: location.worktree } : null
   }
   fleet.findTerminal = id => terminalLocations.value.find(({ terminal }) => terminal.id === id) ?? null
-  Reflect.set(fleet, "newSessionTarget", computed(() => fleet.targetWorkspaceId ? fleet.findWorkspace(fleet.targetWorkspaceId) : null))
+  Reflect.set(fleet, "newSessionTarget", computed(() => fleet.targetWorkspaceId ? fleet.findWorkspace(fleet.targetWorkspaceId) : (fleet.machines[0] ? { machine: fleet.machines[0] } : null)))
   fleet.localDesktopTarget = { id: "demo-machine", name: "Studio Mac", online: true, desktop: true }
   fleet.targetWorkspaceId = "201"
   Reflect.set(fleet, "canManageCatalog", ref(true))
@@ -287,7 +290,9 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     workspaceId, context, status: "ready", repositories: [{ root: "/workspace/website", branch: "main", changes: [] }],
     ...(context === "worktree" ? { baseRevisions: [{ path: "/workspace/website", revision: "84b7f21" }] } : {}),
   })
-  agents.gitStatus = async id => ({ sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] })
+  agents.gitStatus = async id => agents.sessions[id]?.workspaceId
+    ? { sessionId: id, repositories: [{ id: `repository-${id}`, root: `/workspace/.worktrees/${id}`, branch: `deskfleet/${id}`, head: "84b7f21", changes: [{ path: "src/WorkspacePicker.vue", kind: "unstaged", status: "modified", additions: 7, deletions: 2 }] }], directories: [{ path: `/workspace/.worktrees/${id}`, repositoryId: `repository-${id}` }] }
+    : { sessionId: id, repositories: [], directories: [{ path: "/Users/you", repositoryId: null }] }
   agents.gitDiff = async request => ({ ...request, patch: demoPatch, binary: false, truncated: false })
   // Fixture changes are static; observing them must not connect to a real daemon.
   agents.watchGit = async () => () => {}
