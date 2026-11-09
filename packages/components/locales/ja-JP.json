@@ -46,11 +46,13 @@
     },
     "free_plan": {
       "title": "この接続にはリレーが必要です",
-      "description": "直接接続を確立できませんでした。無料プランには TURN リレー通信が含まれません。請求ページでプランを比較するか、直接接続に対応したネットワークをお試しください。"
+      "description": "直接接続を確立できませんでした。無料プランには TURN リレー通信が含まれません。請求ページでプランを比較するか、直接接続に対応したネットワークをお試しください。",
+      "mobileDescription": "直接接続を確立できず、このチームでは TURN リレー通信を利用できません。直接接続に対応したネットワークをお試しください。"
     },
     "turn_quota_exhausted": {
       "title": "チームのリレー通信量を使い切りました",
-      "description": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。請求ページで使用量とプランを確認するか、別のネットワークをお試しください。"
+      "description": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。請求ページで使用量とプランを確認するか、別のネットワークをお試しください。",
+      "mobileDescription": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。別のネットワークをお試しください。"
     },
     "metering_unavailable": {
       "title": "リレー接続は一時的に利用できません",
@@ -868,10 +870,11 @@
     "youAreAdmin": "あなたはこのチームの管理者です。", "youAreMember": "あなたはこのチームのメンバーです。",
     "youAreOwner": "あなたはこのチームのオーナーです。",
     "general": "一般", "name": "チーム名",
-    "plansUsage": "プランと使用状況", "relayedTraffic": "中継通信量",
+    "plansUsage": "プランと使用状況", "usage": "使用状況", "relayedTraffic": "中継通信量",
     "turnTitle": "独自の TURN サーバー",
     "turnDescription": "このチームの接続をサイトの中継ではなく独自の TURN サーバーで中継します。DeskFleet は共有シークレットで短期間有効な認証情報に署名します。独自サーバーの通信は中継の割り当てを消費せず、サーバーに到達できない場合もサイトの中継には切り替わりません。変更は新しい接続に適用されます。",
     "turnPlanRequired": "独自の TURN サーバーには Pro または Enterprise プランが必要です。",
+    "turnUnavailable": "このチームでは独自の TURN サーバーを利用できません。接続にはサイトの中継が使われます。",
     "turnDisabledBySite": "サイト管理者がチームの TURN サーバーを無効にしています。接続にはサイトの中継が使われます。",
     "turnSavedUnused": "保存済みのサーバーは使用されていません: {urls}",
     "turnViewPlans": "プランを見る",
@@ -893,6 +896,7 @@
     "admin": "管理者", "memberDescription": "チームのマシンを使用し、自分のマシンを追加できます。",
     "owner": "オーナー", "transferOwnership": "所有権を移譲", "newOwner": "新しいオーナー",
     "transferOwnershipDescription": "選択したメンバーがオーナーになり、あなたは管理者になります。サブスクリプションはこのチームに残ります。既存の支払い方法は保持され、更新時の請求が続く場合があります。",
+    "transferOwnershipMobileDescription": "選択したメンバーがオーナーになり、あなたは管理者になります。",
     "adminDescription": "さらにメンバーの管理とマシンの削除もできます。", "remove": "削除",
     "removeMemberLabel": "{name} を削除", "removeMemberTitle": "{name} を削除しますか？",
     "removeMemberDescription": "このメンバーは {team} とそのマシンにすぐにアクセスできなくなります。", "invite": "招待",

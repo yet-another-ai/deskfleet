@@ -24,6 +24,8 @@ import type { ApplicationApi } from "./application.ts"
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
   platform: "darwin" | "linux" | "win32" | "web"
+  /** True when running inside the native mobile client (Android / iOS). */
+  mobile?: boolean
   central?: CentralApi
   /** Only the Web host exposes site administration. */
   siteAdministration?: SiteAdministrationApi

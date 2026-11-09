@@ -9,6 +9,7 @@ import { computed, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { trackEvent } from "../../services/analytics.ts"
 import type { TurnAllowanceState } from "../../services/entitlement-events.ts"
 import UiButton from "../common/UiButton.vue"
@@ -17,6 +18,8 @@ import AgentNotice from "./AgentNotice.vue"
 /** Finite per-Session turn allowances: a quiet count, a warning near the end, and the pause reason once reached. */
 const props = defineProps<{ snapshot: AgentSnapshot }>()
 const account = useAccountSession()
+const client = usePlatformClient()
+const mobile = computed(() => !!client.mobile)
 const { t } = useI18n()
 const { state, executeImmediate: load } = useAsyncState(async () => account?.teamId.value ? account.central.billing(account.teamId.value) : undefined, undefined)
 watch(() => account?.teamId.value, () => { void load() })
@@ -47,11 +50,11 @@ function viewPlans(): void {
 </script>
 
 <template>
-  <AgentNotice v-if="snapshot.session.turnLimitReason" tone="warning" :text="snapshot.session.turnLimitReason" :detail="t(limitReached ? 'billing.resumeHint' : 'billing.retryHint')">
-    <UiButton v-if="account && limitReached" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
+  <AgentNotice v-if="snapshot.session.turnLimitReason" tone="warning" :text="snapshot.session.turnLimitReason" :detail="t(limitReached && !mobile ? 'billing.resumeHint' : 'billing.retryHint')">
+    <UiButton v-if="account && limitReached && !mobile" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
   </AgentNotice>
   <AgentNotice v-else-if="remaining !== null && remaining <= 5" tone="warning" :text="t('billing.turnsLeft', { remaining, limit }, remaining)" :detail="detail">
-    <UiButton v-if="account" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
+    <UiButton v-if="account && !mobile" size="sm" class="shrink-0" @click="viewPlans">{{ t("billing.viewPlans") }}</UiButton>
   </AgentNotice>
   <p v-else-if="limit !== null" class="m-0 px-1 text-xs text-ui-text-muted tabular-nums" data-session-turns>
     {{ t("billing.sessionTurns", { used, limit }) }}<template v-if="detail"> · {{ detail }}</template>

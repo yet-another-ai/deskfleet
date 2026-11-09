@@ -1,5 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test } from "vitest"
+import { platformClientKey, usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, type FakeCentralOptions } from "../../test/central.ts"
 import TeamTurnSettings from "./TeamTurnSettings.vue"
@@ -8,11 +9,12 @@ let view: VueWrapper | undefined
 afterEach(() => { view?.unmount(); view = undefined })
 const button = (label: string) => view!.findAll("button").find(value => value.text() === label)
 const secret = () => view!.get<HTMLInputElement>('[name="team-turn-secret"]')
-async function render(options: FakeCentralOptions = {}) {
+async function render(options: FakeCentralOptions = {}, mobile = false) {
   const fake = fakeCentral(options)
+  const host = { ...usePlatformClient(), ...(mobile ? { mobile: true } : {}) }
   view = mount(TeamTurnSettings, {
     props: { api: fake.central, teamId: "team-1" },
-    global: { plugins: [i18n], stubs: { teleport: { inheritAttrs: false, template: "<slot />" } } },
+    global: { plugins: [i18n], provide: { [platformClientKey as symbol]: host }, stubs: { teleport: { inheritAttrs: false, template: "<slot />" } } },
     attachTo: document.body,
   })
   await flushPromises()
@@ -78,6 +80,17 @@ test("a site-wide disable explains the site relay and offers no plan upgrade", a
   expect(view!.text()).toContain("Site administrators have turned off team TURN servers.")
   expect(button("View plans")).toBeUndefined()
   expect(button("Remove server")).toBeUndefined()
+})
+
+test("mobile hides plan names and the plans link while still allowing saved server removal", async () => {
+  const { central } = await render({ teamTurn: { availability: "planRequired", urls: ["turn:relay.example:3478"], secret: "north-secret" } }, true)
+  expect(view!.text()).toContain("Your own TURN server is not available for this team.")
+  expect(view!.text()).not.toMatch(/Pro|Enterprise|View plans/)
+  expect(button("View plans")).toBeUndefined()
+  await button("Remove server")!.trigger("click")
+  await view!.findAll("button").filter(value => value.text() === "Remove server").at(-1)!.trigger("click")
+  await flushPromises()
+  expect(central.updateTeamTurnSettings).toHaveBeenCalledExactlyOnceWith("team-1", { urls: [] })
 })
 
 test("shows save errors and keeps the typed form for retry", async () => {

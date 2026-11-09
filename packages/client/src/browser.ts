@@ -6,6 +6,7 @@ import { createBrowserNotificationSettings } from "./browser-notification-settin
 import { reportingCentral, type CentralErrorReporter } from "./reporting-central.ts"
 
 export interface BrowserClientOptions {
+  mobile?: boolean
   account?: SavedAccount
   cookieAuth?: boolean
   persist?: (account: SavedAccount) => Promise<void>
@@ -32,7 +33,9 @@ export async function browserClient(
   const subscribe = () => () => {}
   const signaling = { offer: unavailable, candidate: unavailable, close: unavailable, onEvent: subscribe }
   return {
-    platform: "web", locale: resolveAppLocale(navigator.languages), central, siteAdministration: central,
+    platform: "web", ...(options.mobile ? { mobile: true } : {}),
+    locale: resolveAppLocale(navigator.languages), central,
+    siteAdministration: options.mobile ? undefined : central,
     files: createBrowserFiles(central),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,

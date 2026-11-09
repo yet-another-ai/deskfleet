@@ -3,10 +3,12 @@ import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import type { AgentUsage } from "../../services/agent-usage.ts"
 
 const props = defineProps<{ usage: AgentUsage }>()
 const { t, locale } = useI18n()
+const client = usePlatformClient()
 const language = computed(() => intlLocale(locale.value as AppLocale))
 const numbers = computed(() => new Intl.NumberFormat(language.value))
 const ratio = computed(() => props.usage.size > 0 ? props.usage.used / props.usage.size : undefined)
@@ -15,6 +17,7 @@ const fill = computed(() => Math.min(ratio.value ?? 0, 1) * 100)
 const tone = computed(() => ratio.value !== undefined && ratio.value >= 0.9 ? "text-ui-warning" : "text-ui-text-muted")
 const summary = computed(() => ratio.value === undefined ? t("agent.usage.title") : t("agent.usage.summary", { percent: percent.value }))
 const cost = computed(() => {
+  if (client.mobile) return undefined
   const value = props.usage.cost
   if (!value) return undefined
   const format = { minimumFractionDigits: 2, maximumFractionDigits: 4 }

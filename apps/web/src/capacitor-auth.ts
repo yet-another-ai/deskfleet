@@ -107,6 +107,7 @@ async function authorizeCapacitor(client: HttpCentralClient): Promise<void> {
 export function capacitorClientOptions(configuredServerUrl: string): BrowserClientOptions {
   if (!Capacitor.isNativePlatform()) return {}
   return {
+    mobile: true,
     account: readCapacitorAccount(configuredServerUrl),
     cookieAuth: false,
     persist: saveCapacitorAccount,

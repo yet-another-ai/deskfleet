@@ -46,11 +46,13 @@
     },
     "free_plan": {
       "title": "此次连接需要中继服务",
-      "description": "无法建立直连。免费套餐不包含 TURN 中继流量，可前往账单页面比较套餐，或尝试支持直连的网络。"
+      "description": "无法建立直连。免费套餐不包含 TURN 中继流量，可前往账单页面比较套餐，或尝试支持直连的网络。",
+      "mobileDescription": "无法建立直连，且当前团队不可使用 TURN 中继流量。请尝试支持直连的网络。"
     },
     "turn_quota_exhausted": {
       "title": "团队的中继流量已用尽",
-      "description": "无法建立直连，且本月的 TURN 中继流量已用尽。请前往账单页面查看用量和套餐，或尝试其他网络。"
+      "description": "无法建立直连，且本月的 TURN 中继流量已用尽。请前往账单页面查看用量和套餐，或尝试其他网络。",
+      "mobileDescription": "无法建立直连，且本月的 TURN 中继流量已用尽。请尝试其他网络。"
     },
     "metering_unavailable": {
       "title": "中继连接暂时不可用",
@@ -1264,9 +1266,11 @@
     "general": "常规",
     "name": "团队名称",
     "plansUsage": "套餐与用量",
+    "usage": "用量",
     "turnTitle": "自有 TURN 服务器",
     "turnDescription": "通过你自己的 TURN 服务器而非站点的中继转发此团队的连接。DeskFleet 使用你的共享密钥签发短期凭据。经由你的服务器的流量不计入中继额度；服务器无法访问时，连接不会回退到站点的中继。修改对新连接生效。",
     "turnPlanRequired": "自有 TURN 服务器需要 Pro 或 Enterprise 套餐。",
+    "turnUnavailable": "此团队不可使用自有 TURN 服务器，连接使用站点的中继。",
     "turnDisabledBySite": "站点管理员已关闭团队 TURN 服务器。连接使用站点的中继。",
     "turnSavedUnused": "已保存的服务器未被使用：{urls}",
     "turnViewPlans": "查看套餐",
@@ -1298,6 +1302,7 @@
     "transferOwnership": "转移所有权",
     "newOwner": "新所有者",
     "transferOwnershipDescription": "所选成员将成为团队所有者，你将保留管理员身份。订阅仍归此团队所有。现有付款方式会保留，并可能继续用于续费扣款。",
+    "transferOwnershipMobileDescription": "所选成员将成为团队所有者，你将保留管理员身份。",
     "memberDescription": "使用团队机器，并可添加自己的机器。",
     "adminDescription": "还可以管理成员和移除机器。",
     "remove": "移除",

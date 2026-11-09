@@ -74,9 +74,12 @@ test("native bearer options omit cookies and attach the saved bearer token", asy
   const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ user, siteAdmin: false })))
   vi.stubGlobal("fetch", fetch)
   const api = await browserClient(`${serverUrl}/`, () => {}, {
+    mobile: true,
     account: { serverUrl, token: "native-token", user },
     cookieAuth: false,
   })
+  expect(api.mobile).toBe(true)
+  expect(api.siteAdministration).toBeUndefined()
   const central = api.central as HttpCentralClient
   clients.push(central)
   expect(await central.status()).toEqual({ serverUrl, user, siteAdmin: false })
