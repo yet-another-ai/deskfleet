@@ -72,10 +72,12 @@ internal class LoopbackAuthServer(
             } catch (_: Exception) {
                 break
             }
-            try {
-                socket.use { handleClient(it) }
-            } catch (_: Exception) {
-                // Ignore individual socket errors and continue waiting until POST /auth/complete or timeout.
+            thread(name = "deskfleet-loopback-client", isDaemon = true) {
+                try {
+                    socket.use { handleClient(it) }
+                } catch (_: Exception) {
+                    // Ignore individual socket errors and continue waiting until POST /auth/complete or timeout.
+                }
             }
         }
     }

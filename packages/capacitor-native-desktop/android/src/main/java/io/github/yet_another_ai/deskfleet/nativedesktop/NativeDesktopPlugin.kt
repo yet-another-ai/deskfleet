@@ -53,17 +53,6 @@ class NativeDesktopPlugin : Plugin() {
         thread(name = "deskfleet-wait-auth", isDaemon = true) {
             try {
                 val code = server.awaitCode()
-                activity?.let { act ->
-                    act.runOnUiThread {
-                        if (!act.isFinishing && !act.isDestroyed) {
-                            act.startActivity(
-                                Intent(act, act.javaClass).addFlags(
-                                    Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                )
-                            )
-                        }
-                    }
-                }
                 call.resolve(JSObject().put("code", code))
             } catch (error: Exception) {
                 call.reject(error.message ?: "Sign-in failed")
