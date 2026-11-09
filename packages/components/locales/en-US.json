@@ -1430,6 +1430,7 @@
     "imageUnavailable": "Image unavailable",
     "openResource": "Open", "previewUnavailableLocal": "Preview is unavailable for this file. You can open it in another application.",
     "previewUnavailable": "Preview is unavailable for this file. You can download it.", "downloadResource": "Download",
+    "previewHtml": "Preview", "viewSource": "Source",
     "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
     "notImage": "This file cannot be displayed as an image.",
     "state": {
