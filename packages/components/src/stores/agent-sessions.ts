@@ -3,10 +3,11 @@ import { useAgentLiveState } from "../composables/useAgentLiveState.ts"
 import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
 import type { AgentLiveUpdate } from "../../../client/src/agent-live.ts"
 import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
+import { useAccountSession } from "../composables/account-session-context.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { markRaw, onScopeDispose, ref, watch } from "vue"
+import { hasInjectionContext, markRaw, onScopeDispose, ref, watch } from "vue"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentPreviews } from "../services/agent-preview.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
@@ -64,6 +65,7 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
+  const account = hasInjectionContext() ? useAccountSession() : undefined
   const platformClient = usePlatformClient()
   const api = platformClient.agent
   const cache = useConversationCache()
@@ -91,7 +93,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const elicitationDrafts = ref<Record<string, ElicitationDraft>>({})
   const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
   const draftYolo = ref(false)
-  const yolo = useLocalStorage<Record<string, boolean>>("deskfleet.agent-yolo", {})
+  const yolo = useLocalStorage<Record<string, boolean>>(() => `deskfleet.agent-yolo:${account?.teamId?.value ?? ""}:${platformClient.target?.id ?? ""}`, {})
   const configurations = ref<Record<string, AgentConfiguration>>({})
   const configurationReads = new Map<string, Promise<AgentConfiguration>>()
   const configurationSequences = new Map<string, string>()
