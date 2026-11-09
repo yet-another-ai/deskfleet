@@ -78,11 +78,13 @@ CAPACITOR_DEVICE_ID_ANDROID="<DEVICE_ID_OR_EMULATOR_NAME>" mise run web:dev:andr
 ```
 
 For a bundled native build without the dev server, build the Web client and sync
-`dist/` into the native projects:
+`dist/` into the native projects (`cap sync android` automatically builds and stages
+the Rust Android viewer library via `capacitor:sync:before`):
 
 ```sh
-mise run web:build
-mise exec -- pnpm --filter @deskfleet/web exec cap sync
+mise run android:sync
+mise run android:test
+mise run android:build
 ```
 
 ## Backend and integrations

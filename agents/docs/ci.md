@@ -251,6 +251,11 @@ Configure these secrets in the same environment:
 | `APPLE_API_KEY_P8` | Base64 App Store Connect API private key (`.p8`). |
 | `APPLE_API_KEY_ID` | App Store Connect API key ID. |
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
+| `ANDROID_KEYSTORE_BASE64` | Base64 Android upload keystore (`.jks` or `.keystore`). |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password for the Android upload key. |
+| `ANDROID_KEY_ALIAS` | Key alias inside the Android upload keystore. |
+| `ANDROID_KEY_PASSWORD` | Key password for the Android upload alias. |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Google Play Developer API service account JSON credentials for publishing to the `internal` track. |
 
 The release overlay requires signing and notarization; missing credentials or a
 failure prevents publication. PR, main, and manual Build runs package without

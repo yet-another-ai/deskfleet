@@ -59,6 +59,10 @@ jobs:
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
   nix:
     name: Nix
@@ -251,3 +255,27 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+
+  google_play:
+    name: Publish to Google Play (internal)
+    needs: [validate, test, build, nix, aur, linux_packages]
+    runs-on: ubuntu-26.04
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Download signed Android App Bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-android
+          path: android-release
+
+      - name: Upload to Google Play internal track
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.github.yet_another_ai.deskfleet.mobile
+          releaseFiles: android-release/app-release-signed.aab
+          track: internal
+          status: completed

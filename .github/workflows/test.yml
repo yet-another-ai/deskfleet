@@ -110,7 +110,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.all_platforms && '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"},{"name":"Windows x64","os":"windows-latest","test-task":"ci:test:platform"},{"name":"macOS arm64","os":"macos-latest","test-task":"ci:test:platform"}]' || '[{"name":"Linux x64","os":"ubuntu-26.04","test-task":"test"}]') }}
     steps:
-      # Rust tests can exhaust the hosted image's free disk space. DeskFleet
+      # Rust tests can exhaust the hosted image's free disk space. This job
       # does not build Android; reclaim its SDK before restoring Cargo outputs.
       - name: Free unused Android SDK space
         if: runner.os == 'Linux'
@@ -145,6 +145,28 @@ jobs:
           env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11
           mise exec -- cargo test -p deskfleet-x11 -p deskfleet-capture
           --locked x11_ -- --ignored --test-threads=1
+
+  android:
+    name: Tests (Android)
+    needs: preflight
+    if: >-
+      ${{ !inputs.draft_pr && !(inputs.docs_only &&
+          (github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Run Android unit tests and lint
+        run: mise run android:test
 
   backend:
     name: PostgreSQL and remote backend
