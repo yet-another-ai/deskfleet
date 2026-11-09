@@ -75,28 +75,28 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     }, `${label} confirmation`)
     confirmation!.click()
   }
-  // Unopened machines have a button; retained trees select their owner through resource links.
-  const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
+  // Every machine has a section; expanding it loads its catalog without switching the session.
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
   const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
-    // Remote smoke intermittently times out here before any machine row/tree
+    // Remote smoke intermittently times out here before any machine section
     // appears. Keep the 30s deadline; dump selector state so the next failure
     // distinguishes a blank page from a late catalog.
     {
       const deadline = Date.now() + 30_000
-      while (!machineTree(index) && !machineRow(index)) {
+      while (!machineTree(index)) {
         if (Date.now() > deadline) {
-          const rows = [...document.querySelectorAll("aside button[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
           const trees = [...document.querySelectorAll("aside section[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
-          throw new Error(`team machines timed out (want=${context.machines[index]}; rows=${rows.join(",") || "none"}; trees=${trees.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
+          throw new Error(`team machines timed out (want=${context.machines[index]}; trees=${trees.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
         }
         await new Promise(resolve => setTimeout(resolve, 25))
       }
     }
-    machineRow(index)?.click()
+    const toggle = machineTree(index)!.querySelector<HTMLButtonElement>(":scope > div > button[aria-expanded]")
+    require(toggle, `Missing machine ${index} expansion control`)
+    if (toggle.getAttribute("aria-expanded") === "false") toggle.click()
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
     await until(() => !!link(), "machine session link")
     link()!.click()
@@ -112,7 +112,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     require(!JSON.stringify(account).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
-    await until(() => (machineRow(0) ?? machineTree(0))?.textContent?.includes("Offline") === true, "offline machine presence")
+    await until(() => machineTree(0)?.textContent?.includes("Offline") === true, "offline machine presence")
     await session(1)
     await session(0)
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "offline synchronized history")

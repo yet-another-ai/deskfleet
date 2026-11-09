@@ -32,6 +32,17 @@ colors until changed.
 ## Frontend addons
 
 The shared terminal pins xterm.js 6.0.0 and its compatible stable addons.
+The [WebGL patch](../../patches/@xterm__addon-webgl@0.19.0.patch) emits an
+explicit `normal` font style so canvas font strings never start with whitespace.
+Electron 45.2.3 rejects that whitespace and otherwise draws normal text with the
+canvas's fallback font inside full-size cells
+([Electron #55616](https://github.com/electron/electron/issues/55616),
+[xterm #6297](https://github.com/xtermjs/xterm.js/issues/6297)). The patch covers
+both font builders and the published CommonJS/ESM bundles. Remove it when the
+pinned addon includes the fix. `mise run desktop:smoke-terminal-font` checks
+real WebGL glyph fonts at 2× display scale and saves a screenshot under
+`target/terminal-font-smoke/`.
+
 The [official addon list](https://github.com/xtermjs/xterm.js#addons) includes
 features for other transports and newer xterm releases, so installation alone
 does not imply support in DeskFleet.
