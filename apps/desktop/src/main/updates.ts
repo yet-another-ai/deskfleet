@@ -40,9 +40,21 @@ export function installUpdateIpc(controller: UpdateController): void {
   })
 }
 
+function nixManagedDarwinInstall(): boolean {
+  if (process.platform !== "darwin") return false
+  // nix-darwin copies the app bundle to /Applications/Nix Apps; direct store
+  // launches are also possible. Nix owns upgrades for both, so electron-updater
+  // must not try to replace the read-only bundle.
+  const executable = app.getPath("exe")
+  return executable.startsWith("/nix/store/") || executable.includes("/Applications/Nix Apps/")
+}
+
 export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInstall: () => Promise<void>): Promise<UpdateController> {
-  // Development launches and extracted Linux bundles have no installable update target.
-  const enabled = app.isPackaged && (process.platform !== "linux" || Boolean(process.env.APPIMAGE))
+  // Development launches, extracted Linux bundles, and Nix-managed macOS
+  // installs have no installable update target.
+  const enabled = app.isPackaged
+    && !nixManagedDarwinInstall()
+    && (process.platform !== "linux" || Boolean(process.env.APPIMAGE))
   let driver: UpdateDriver | null = null
   if (enabled) {
     const { default: module } = await import("electron-updater")

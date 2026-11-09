@@ -7,7 +7,11 @@ import type { UpdateController } from "./update-controller.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 const { handle, app, loadUpdater, createDriver, driver } = vi.hoisted(() => ({
-  handle: vi.fn(), app: { isPackaged: false, getVersion: () => "0.1.0" }, loadUpdater: vi.fn(), createDriver: vi.fn(),
+  handle: vi.fn(), app: {
+    isPackaged: false,
+    getVersion: () => "0.1.0",
+    getPath: vi.fn(() => "/Applications/DeskFleet.app/Contents/MacOS/deskfleet"),
+  }, loadUpdater: vi.fn(), createDriver: vi.fn(),
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
 }))
 vi.mock("electron", () => ({ ipcMain: { handle }, app }))
@@ -21,6 +25,7 @@ const originalPlatform = process.platform
 beforeEach(() => {
   vi.clearAllMocks()
   app.isPackaged = false
+  app.getPath.mockReturnValue("/Applications/DeskFleet.app/Contents/MacOS/deskfleet")
   createDriver.mockReturnValue(driver)
   driver.check.mockResolvedValue("0.2.0")
   driver.download.mockResolvedValue(undefined)
@@ -81,6 +86,26 @@ test("extracted Linux bundles are disabled while AppImage installs can update", 
   const appImage = await installUpdates(lifecycle(), vi.fn())
   controllers.push(appImage)
   expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
+  expect(createDriver).toHaveBeenCalledOnce()
+})
+
+test("Nix-managed macOS installs are disabled while ordinary app installs update", async () => {
+  app.isPackaged = true
+  Object.defineProperty(process, "platform", { value: "darwin" })
+  for (const executable of [
+    "/nix/store/abc-deskfleet/Applications/DeskFleet.app/Contents/MacOS/deskfleet",
+    "/Applications/Nix Apps/DeskFleet.app/Contents/MacOS/deskfleet",
+  ]) {
+    app.getPath.mockReturnValue(executable)
+    const controller = await installUpdates(lifecycle(), vi.fn())
+    controllers.push(controller)
+    expect(controller.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
+  }
+  expect(createDriver).not.toHaveBeenCalled()
+  app.getPath.mockReturnValue("/Applications/DeskFleet.app/Contents/MacOS/deskfleet")
+  const controller = await installUpdates(lifecycle(), vi.fn())
+  controllers.push(controller)
+  expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   expect(createDriver).toHaveBeenCalledOnce()
 })
 

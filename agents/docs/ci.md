@@ -77,11 +77,11 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   packaging or distribution configurations change (`packaging/**`, `nix/**`,
   root flake files, packaging scripts, or packaging workflow files). Daily
   scheduled, manual, and tagged release runs use the full platform matrix.
-  Smoke builds package only the Linux `tar.gz` desktop payload, which Linux
-  packages and Nix consume; the full matrix keeps every configured target,
-  including AppImages.
-  Desktop Nix packaging follows Build's Linux matrix during releases so it only
-  downloads archives produced in the same run.
+  Smoke builds package only the Linux `tar.gz` desktop payload; the full matrix
+  keeps every configured target, including AppImages and the macOS ZIP that Nix
+  consumes.
+  Desktop Nix packaging follows Build's Linux and macOS matrix during releases
+  so it only downloads archives produced in the same run.
   `mise.ci.toml` gives CI release builds Cargo's parallel release codegen: 16
   units, LTO off, no debug info, and stripped symbols. Windows packaging additionally
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
@@ -100,12 +100,13 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
-  calls Nix, AUR, and Linux package validation with the desktop archives from
+  calls Nix, AUR, and Linux package validation with the desktop artifacts from
   Build. It creates a draft GitHub Release and pushes the server image after all
   five workflows succeed.
-- `.github/workflows/nix.yml` consumes the same-run Linux desktop archives from
-  Build, generates a flake bundle, and checks the repackaged app under Xvfb.
-  It preloads the archives into Nix's fixed-output store so checks can run before
+- `.github/workflows/nix.yml` consumes the same-run Linux desktop archives and
+  macOS app ZIP from Build, generates a flake bundle, checks the repackaged Linux
+  app under Xvfb, and verifies the macOS bundle's signatures on macOS.
+  It preloads each archive into Nix's fixed-output store so checks can run before
   the release assets are published. Publish reuses the workflow and includes its
   generated `deskfleet-nix.tar.gz` in the release. The Nix workflow does not bind
   the production environment or read its variables or secrets. It is dedicated to
@@ -196,17 +197,17 @@ accepted because it cannot be represented in a container tag.
 
 Publish calls the same Test and Build workflows used by CI, with the full
 platform matrix and mandatory macOS signing/notarization, then validates the
-Linux archives through Nix, AUR, and DEB/RPM package installation. It waits for
-all five before publishing. The Build workflow keeps read-only repository access;
-only the release job receives `contents: write`, and only the image job receives
-`packages: write`.
+Linux archives through AUR and DEB/RPM package installation and both desktop
+payloads through Nix. It waits for all five before publishing. The Build
+workflow keeps read-only repository access; only the release job receives
+`contents: write`, and only the image job receives `packages: write`.
 
 Before the first tag, create the `production` environment under Repository
 Settings → Environments. Set its deployment branch and tag policy to
 **Selected branches and tags**, add a **Tag** rule matching `v*`, and a **Branch**
 rule for `main` so AUR synchronization can also run by manual dispatch. Keep
 production configuration in this environment, removing any
-duplicate repository or organization variables and secrets. The Linux desktop
+duplicate repository or organization variables and secrets. The desktop
 archives carry this configuration in the compiled app, including when repackaged
 by Nix.
 
@@ -294,16 +295,17 @@ Pages build. Drafts and prereleases do not replace the website's stable download
 failed requests and unavailable assets retain a link to GitHub Releases.
 
 The installation section groups methods by platform: Homebrew and DMG on macOS;
-the Windows installer; and AppImage, DEB, RPM, AUR, Nix, and desktop archives on
-Linux. The macOS ZIP is reserved for the updater and is not offered as a website
-installation method. DEB, RPM, Nix, and Linux desktop archives appear only when
-the published release contains their assets. The Nix command uses that release's
-versioned flake URL. Homebrew uses the official tap. AUR links to the
-`deskfleet-bin` package page and remains available independently of GitHub
-release assets. Neither Homebrew nor AUR displays GitHub's release version as its
-own.
-Headless downloads remain separate server/daemon archives. English, Chinese,
-and Japanese pages share the same selection logic and localized instructions.
+the Windows installer; and AppImage, DEB, RPM, AUR, Linux Nix, and desktop
+archives on Linux. The macOS ZIP is reserved for the updater and Nix, and is not
+offered as a website installation method; macOS Nix users follow the nix-darwin
+instructions in the guide. DEB, RPM, Linux Nix, and Linux desktop archives
+appear only when the published release contains their assets. The Nix command
+uses that release's versioned flake URL. Homebrew uses the official tap. AUR
+links to the `deskfleet-bin` package page and remains available independently of
+GitHub release assets. Neither Homebrew nor AUR displays GitHub's release
+version as its own. Headless downloads remain separate server/daemon archives.
+English, Chinese, and Japanese pages share the same selection logic and
+localized instructions.
 
 ### Desktop updates
 
@@ -453,18 +455,20 @@ users that require signatures must sign or verify them independently.
 ### Nix distribution
 
 Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
-`aarch64-linux`. For tagged releases, Build compiles the desktop app once per
-architecture under the existing `production` environment and packages it as both
-an AppImage and a `tar.gz`. The archive already contains the official API,
-Statsig, and Sentry configuration. Changes to those variables take effect in the
-next release. The same archive supplies the DEB, RPM, AUR, and Nix packages.
+`aarch64-linux`. On Apple Silicon, the same release flake exposes the signed
+macOS app bundle for nix-darwin. For tagged releases, Build compiles the desktop
+app once per architecture under the existing `production` environment and
+packages Linux as an AppImage and a `tar.gz`, and macOS as a signed ZIP. The
+archives already contain the official API, Statsig, and Sentry configuration.
+Changes to those variables take effect in the next release. The same Linux
+archive supplies the DEB, RPM, AUR, and Linux Nix packages.
 
 Every release automatically generates `deskfleet-nix.tar.gz` from the templates
 under `nix/`. This bundle contains a flake with a locked nixpkgs input and the
-versioned GitHub Release URLs and SHA-256 hashes of both Linux desktop archives.
-The repository's `nix/flake.nix` is a release template; install from a generated
-release bundle. For a release containing that asset, replace `<VERSION>` with
-its version without the `v` prefix:
+versioned GitHub Release URLs and SHA-256 hashes of both Linux desktop archives
+and the macOS app ZIP. The repository's `nix/flake.nix` is a release template;
+install from a generated release bundle. For a release containing that asset,
+replace `<VERSION>` with its version without the `v` prefix:
 
 ```sh
 nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
@@ -474,13 +478,28 @@ Use `nix run` with the same URL to try that version. A versioned URL keeps the
 selected release reproducible. The generated default package is `deskfleet`.
 Nix manages installed package updates; the AppImage updater stays disabled.
 
-The Nix derivation patches the packaged ELF interpreter and library paths,
+For macOS, add the release bundle as a nix-darwin flake input, apply
+`overlays.default`, and add `pkgs.deskfleet` to `environment.systemPackages`.
+nix-darwin's application activation copies the bundle to
+`/Applications/Nix Apps` and owns upgrades. Do not install the macOS app with
+`nix profile add`: a profile entry does not register the app bundle with
+LaunchServices or place it under `/Applications`.
+
+The Linux Nix derivation patches the packaged ELF interpreter and library paths,
 installs the desktop entry and icons, and supplies the runtime libraries and
-GStreamer plugins. It does not compile Rust or run pnpm. Electron, the native
-addon, ASAR contents, ACP adapters, and embedded daemon come from the same app
-as the release installers. The daemon continues to run in Electron's main
-process. Koffi's unused musl variant is removed from this glibc package before
-ELF fixup; its glibc variant remains subject to dependency validation.
+GStreamer plugins. The macOS derivation only unpacks the signed ZIP into
+`$out/Applications/deskfleet.app`; it disables fixup and stripping so the
+Developer ID signatures on every Mach-O file survive. Neither derivation
+compiles Rust or runs pnpm. Electron, the native addon, ASAR contents, ACP
+adapters, and embedded daemon come from the same app as the release installers.
+The daemon continues to run in Electron's main process. Koffi's unused musl
+variant is removed from the glibc package before ELF fixup; its glibc variant
+remains subject to dependency validation.
+
+The updater gate disables electron-updater when a packaged macOS app runs from
+`/nix/store` or `/Applications/Nix Apps`. Nix and nix-darwin therefore remain
+the only owners of the installed version; the read-only app bundle is never
+replaced by a downloaded update.
 
 The launcher identifies itself to Linux autostart through
 `DESKFLEET_LAUNCHER`. After upgrading, launch the new version once to refresh an
@@ -488,12 +507,13 @@ enabled startup entry. GPU drivers and the user's desktop session services,
 including Portal/PipeWire on Wayland, remain host responsibilities.
 
 The Nix workflow downloads the desktop archives from Build in the same workflow
-run and generates the flake bundle. It preloads those archives into Nix's
+run and generates the flake bundle. It preloads each archive into Nix's
 fixed-output store, allowing flake checks, installation, and smoke tests before
-the versioned release URLs are public. Its installed-package smoke checks
-native-addon loading, bundled ACP adapters, dsh startup and native FFI, the
-packaged renderer, the hosted daemon, startup registration through the Nix
-wrapper, and disabled self-updates.
+the versioned release URLs are public. Its Linux smoke checks native-addon
+loading, bundled ACP adapters, dsh startup and native FFI, the packaged renderer,
+the hosted daemon, startup registration through the Nix wrapper, and disabled
+self-updates. The macOS job checks the app bundle layout and verifies the
+preserved code signature with `codesign`.
 On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 
