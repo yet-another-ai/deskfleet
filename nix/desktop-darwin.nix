@@ -32,8 +32,8 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p "$out/Applications"
     unzip -q "$src" -d "$out/Applications"
-    test -d "$out/Applications/DeskFleet.app"
-    test -x "$out/Applications/DeskFleet.app/Contents/MacOS/deskfleet"
+    test -d "$out/Applications/deskfleet.app"
+    test -x "$out/Applications/deskfleet.app/Contents/MacOS/deskfleet"
     runHook postInstall
   '';
 

@@ -7,7 +7,7 @@ const [output] = process.argv.slice(2)
 assert.ok(output, "Usage: node scripts/smoke-darwin-package.ts <package-root>")
 assert.equal(process.platform, "darwin", "The package smoke supports macOS")
 
-const app = join(resolve(output), "Applications", "DeskFleet.app")
+const app = join(resolve(output), "Applications", "deskfleet.app")
 for (const path of [
   "Contents/Info.plist",
   "Contents/MacOS/deskfleet",

@@ -488,7 +488,7 @@ LaunchServices or place it under `/Applications`.
 The Linux Nix derivation patches the packaged ELF interpreter and library paths,
 installs the desktop entry and icons, and supplies the runtime libraries and
 GStreamer plugins. The macOS derivation only unpacks the signed ZIP into
-`$out/Applications/DeskFleet.app`; it disables fixup and stripping so the
+`$out/Applications/deskfleet.app`; it disables fixup and stripping so the
 Developer ID signatures on every Mach-O file survive. Neither derivation
 compiles Rust or runs pnpm. Electron, the native addon, ASAR contents, ACP
 adapters, and embedded daemon come from the same app as the release installers.
