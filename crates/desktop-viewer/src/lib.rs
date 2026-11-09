@@ -22,6 +22,8 @@ mod macos_decoder;
 #[cfg(not(target_os = "android"))]
 mod nsh_chrome;
 #[cfg(not(target_os = "android"))]
+mod nsh_keyboard_focus;
+#[cfg(not(target_os = "android"))]
 mod nsh_layout;
 #[cfg(not(target_os = "android"))]
 mod nsh_session_state;

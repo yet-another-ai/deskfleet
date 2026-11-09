@@ -17,6 +17,7 @@ use crate::gpui_input::Input;
 use crate::host::Host;
 use crate::input_queue;
 use crate::nsh_chrome::{Chrome, ChromeHit};
+use crate::nsh_keyboard_focus::KeyboardFocus;
 use crate::nsh_session_state::SessionState;
 use crate::nsh_toolbar::{self, Toolbar, ToolbarAction, ToolbarState};
 use crate::nsh_video::{Video, video_bounds};
@@ -100,7 +101,7 @@ struct Viewer {
     toolbar: Toolbar,
     toolbar_state: ToolbarState,
     session_state: SessionState,
-    hovering_local_ui: bool,
+    keyboard_focus: KeyboardFocus,
     position: Option<Point<Pixels>>,
     drag: Option<(Point<Pixels>, Point<Pixels>)>,
     local_pointer: bool,
@@ -182,6 +183,7 @@ impl Viewer {
         let subscriptions = vec![
             cx.observe_window_activation(window, |viewer, window, cx| {
                 if !window.is_window_active() {
+                    viewer.keyboard_focus.blur();
                     viewer.drag = None;
                     viewer.local_pointer = false;
                     viewer.release(window, cx);
@@ -195,6 +197,7 @@ impl Viewer {
             cx.observe_window_bounds(window, |viewer, window, cx| {
                 viewer.clamp_position(window);
                 viewer.toolbar_state.fullscreen = window.is_fullscreen();
+                viewer.sync_input(window, cx);
                 cx.notify();
             }),
         ];
@@ -210,7 +213,7 @@ impl Viewer {
             toolbar,
             toolbar_state,
             session_state: SessionState::default(),
-            hovering_local_ui: false,
+            keyboard_focus: KeyboardFocus::default(),
             position: None,
             drag: None,
             local_pointer: false,
@@ -267,14 +270,19 @@ impl Viewer {
         let enabled = self.toolbar_state.controls_enabled();
         let release = self.controls.set_enabled(enabled);
         self.send(release, window, cx);
+        let pointer = window.is_window_hovered().then(|| window.mouse_position());
+        let ui_allows_keyboard = self.keyboard_focus.enabled(
+            &self.toolbar_state,
+            pointer,
+            Chrome::for_window(window).content_bounds(),
+            self.toolbar_bounds(window),
+        );
+        if !ui_allows_keyboard {
+            self.release(window, cx);
+        }
         if let Some(physical) = &self.physical {
-            physical.set_enabled(
-                enabled
-                    && self.video_focused
-                    && window.is_window_active()
-                    && !self.toolbar_state.settings_open
-                    && !self.hovering_local_ui,
-            );
+            physical
+                .set_enabled(ui_allows_keyboard && self.video_focused && window.is_window_active());
         }
         self.keys(window, cx);
     }
@@ -392,7 +400,6 @@ impl Viewer {
 
     fn resume_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.video_focused = true;
-        self.hovering_local_ui = false;
         self.handle_focused = false;
         window.focus(&self.focus, cx);
     }
@@ -403,6 +410,7 @@ impl Viewer {
                 self.toolbar_state.paused = !self.toolbar_state.paused;
                 self.release(window, cx);
                 if !self.toolbar_state.paused {
+                    self.keyboard_focus.resume();
                     self.resume_focus(window, cx);
                 }
                 None
@@ -427,6 +435,7 @@ impl Viewer {
                     && self.toolbar_state.ui.secure_attention =>
             {
                 self.send([InputEvent::SecureAttention], window, cx);
+                self.keyboard_focus.resume();
                 self.resume_focus(window, cx);
                 None
             }
@@ -474,6 +483,7 @@ impl Viewer {
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.keyboard_focus.pointer_moved();
         if let Some(hit) = Chrome::for_window(window).hit_test(event.position) {
             self.local_pointer = true;
             self.video_focused = false;
@@ -527,6 +537,7 @@ impl Viewer {
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.keyboard_focus.pointer_moved();
         if let Some((start, origin)) = self.drag {
             self.position = Some(clamp_toolbar(
                 origin + (event.position - start),
@@ -535,11 +546,11 @@ impl Viewer {
             ));
             cx.notify();
         } else if !self.local_pointer {
-            self.hovering_local_ui = self.local_ui(event.position, window)
+            if self.local_ui(event.position, window)
                 || Chrome::for_window(window)
                     .hit_test(event.position)
-                    .is_some();
-            if self.hovering_local_ui {
+                    .is_some()
+            {
                 self.release(window, cx);
             } else {
                 self.sync_input(window, cx);
@@ -569,6 +580,7 @@ impl Viewer {
     }
 
     fn scroll(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.keyboard_focus.pointer_moved();
         if self.local_ui(event.position, window)
             || Chrome::for_window(window)
                 .hit_test(event.position)
@@ -583,6 +595,7 @@ impl Viewer {
     }
 
     fn mouse_exit(&mut self, _: &MouseExitEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.keyboard_focus.pointer_exited();
         self.drag = None;
         self.local_pointer = false;
         self.release(window, cx);
