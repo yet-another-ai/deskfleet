@@ -75,30 +75,41 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     }, `${label} confirmation`)
     confirmation!.click()
   }
-  // Unopened machines have a button; retained trees select their owner through resource links.
-  const machineRow = (index: number) => document.querySelector<HTMLButtonElement>(`aside button[data-machine-id="${context.machines[index]}"]`)
+  // Unopened machines render a collapsed MachineSection; expand via its CollapsibleTrigger
+  // (opens the machine runtime catalog). Retained trees already expose session links.
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
+  const machineTrigger = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>("button[aria-expanded]")
   const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
-    // Remote smoke intermittently times out here before any machine row/tree
-    // appears. Keep the 30s deadline; dump selector state so the next failure
-    // distinguishes a blank page from a late catalog.
+    // Remote smoke intermittently times out here before any machine tree appears.
+    // Keep the 30s deadline; dump selector state so the next failure distinguishes
+    // a blank page from a late catalog.
     {
       const deadline = Date.now() + 30_000
-      while (!machineTree(index) && !machineRow(index)) {
+      while (!machineTree(index)) {
         if (Date.now() > deadline) {
-          const rows = [...document.querySelectorAll("aside button[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
           const trees = [...document.querySelectorAll("aside section[data-machine-id]")].map(node => node.getAttribute("data-machine-id"))
-          throw new Error(`team machines timed out (want=${context.machines[index]}; rows=${rows.join(",") || "none"}; trees=${trees.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
+          throw new Error(`team machines timed out (want=${context.machines[index]}; trees=${trees.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
         }
         await new Promise(resolve => setTimeout(resolve, 25))
       }
     }
-    machineRow(index)?.click()
+    if (machineTrigger(index)?.getAttribute("aria-expanded") === "false") machineTrigger(index)!.click()
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
-    await until(() => !!link(), "machine session link")
+    {
+      const deadline = Date.now() + 30_000
+      while (!link()) {
+        if (Date.now() > deadline) {
+          const expanded = machineTrigger(index)?.getAttribute("aria-expanded") ?? "missing"
+          const hrefs = [...(machineTree(index)?.querySelectorAll("a[href]") ?? [])].map(node => node.getAttribute("href"))
+          throw new Error(`machine session link timed out (machine=${context.machines[index]}; session=${context.sessionId}; expanded=${expanded}; hrefs=${hrefs.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
+        }
+        if (machineTrigger(index)?.getAttribute("aria-expanded") === "false") machineTrigger(index)!.click()
+        await new Promise(resolve => setTimeout(resolve, 25))
+      }
+    }
     link()!.click()
     await until(() => !!chatTab()?.textContent?.includes(`Machine ${index} conversation`), "session route")
   }
@@ -112,7 +123,7 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     require(!JSON.stringify(account).includes('"token"'), "The Electron renderer must not receive the app session token")
   }
   if (offline) {
-    await until(() => (machineRow(0) ?? machineTree(0))?.textContent?.includes("Offline") === true, "offline machine presence")
+    await until(() => machineTree(0)?.textContent?.includes("Offline") === true, "offline machine presence")
     await session(1)
     await session(0)
     await until(() => !!document.querySelector("main")?.textContent?.includes(`Prompt from ${context.mode}`), "offline synchronized history")
