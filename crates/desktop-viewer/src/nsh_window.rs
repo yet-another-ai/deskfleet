@@ -299,12 +299,18 @@ impl Viewer {
     }
 
     fn fail(&mut self, error: impl ToString, window: &mut Window, cx: &mut Context<Self>) {
-        if self.error.borrow().is_none() {
-            let error = error.to_string();
-            let _ = protocol::emit(json!({"type":"error", "error":error}));
-            *self.error.borrow_mut() = Some(error);
+        if self.error.borrow().is_some() {
+            return;
         }
-        self.close(false, window, cx);
+        let error = error.to_string();
+        let _ = protocol::emit(json!({"type":"error", "error":error}));
+        *self.error.borrow_mut() = Some(error);
+        // Failures can arrive during render or canvas paint. Release native
+        // input, GPU images, and the window after GPUI finishes this effect cycle.
+        let viewer = cx.weak_entity();
+        window.defer(cx, move |window, cx| {
+            let _ = viewer.update(cx, |viewer, cx| viewer.close(false, window, cx));
+        });
     }
 
     fn send(
@@ -635,12 +641,9 @@ impl Viewer {
 
 impl Render for Viewer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Err(error) = self.video.borrow_mut().prepare(window) {
-            // Defer closure until the render borrow has ended.
-            let viewer = cx.weak_entity();
-            window.defer(cx, move |window, cx| {
-                let _ = viewer.update(cx, |viewer, cx| viewer.fail(error, window, cx));
-            });
+        let prepared = self.video.borrow_mut().prepare(window);
+        if let Err(error) = prepared {
+            self.fail(error, window, cx);
         }
         if self.video.borrow().has_candidate() {
             window.request_animation_frame();
