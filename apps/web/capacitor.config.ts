@@ -27,6 +27,9 @@ const config: CapacitorConfig = {
     },
   },
   plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
     SystemBars: {
       initialViewportFitValueHint: "cover",
     },
