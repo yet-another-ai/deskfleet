@@ -22,11 +22,11 @@ val defaultVersionCode = run {
 }
 
 android {
-    namespace = "io.github.yet_another_ai.deskfleet.mobile"
+    namespace = "ai.yetanother.deskfleet"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "io.github.yet_another_ai.deskfleet.mobile"
+        applicationId = "ai.yetanother.deskfleet"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: defaultVersionCode

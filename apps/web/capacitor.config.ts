@@ -7,7 +7,7 @@ const releaseType = env.ANDROID_RELEASE_TYPE === "APK" ? "APK" : env.ANDROID_REL
 const signingType = env.ANDROID_SIGNING_TYPE === "apksigner" ? "apksigner" : env.ANDROID_SIGNING_TYPE === "jarsigner" ? "jarsigner" : undefined
 
 const config: CapacitorConfig = {
-  appId: "io.github.yet_another_ai.deskfleet.mobile",
+  appId: "ai.yetanother.deskfleet",
   appName: "DeskFleet",
   webDir: "dist",
   server: serverURL

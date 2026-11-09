@@ -275,7 +275,7 @@ jobs:
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: io.github.yet_another_ai.deskfleet.mobile
+          packageName: ai.yetanother.deskfleet
           releaseFiles: android-release/app-release-signed.aab
           track: internal
           status: completed

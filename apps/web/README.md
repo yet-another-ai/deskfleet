@@ -65,7 +65,7 @@ DevTools under Application → Manifest on an HTTPS or localhost deployment.
 ## Capacitor (iOS & Android)
 
 `@deskfleet/web` also manages the Capacitor iOS and Android projects under `ios/`
-and `android/` with app ID `io.github.yet_another_ai.deskfleet.mobile`. [`capacitor.config.ts`](capacitor.config.ts)
+and `android/` with app ID `ai.yetanother.deskfleet`. [`capacitor.config.ts`](capacitor.config.ts)
 reads `CAPACITOR_DEV_SERVER_URL` so [`@proj-airi/cap-vite`](https://www.npmjs.com/package/@proj-airi/cap-vite)
 can start the Vite dev server and launch Capacitor live reload in one command:
 
