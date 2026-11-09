@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import type { Machine } from "@deskfleet/client/central"
+import type { MachineSummary } from "../../stores/fleet-types.ts"
 
 import { Plus } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
@@ -19,7 +21,6 @@ import MachineSidebarSurface from "./MachineSidebarSurface.vue"
 import PinnedSessions from "./PinnedSessions.vue"
 import SidebarFooter from "./SidebarFooter.vue"
 import SidebarNavigation from "./SidebarNavigation.vue"
-import TeamMachineRow from "./TeamMachineRow.vue"
 import TeamSwitcher from "./TeamSwitcher.vue"
 
 const { t } = useI18n()
@@ -32,6 +33,17 @@ const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = platformClient.platform
 // Each opened machine retains its own catalog and action scope.
 const loaded = (id: string) => machines.value.find(machine => machine.id === id)
+const unopened = (machine: Machine): MachineSummary => ({
+  id: machine.id,
+  name: machine.name,
+  local: machine.id === account?.localMachineId.value,
+  online: machine.online,
+  lastSeen: machine.lastSeenAt ?? undefined,
+  desktop: machine.capabilities.desktop === true,
+  terminals: [],
+  sessions: [],
+  workspaces: [],
+})
 const minimum = 200
 const maximum = 480
 const clamp = (width: number) => Math.round(Math.min(Math.max(width, minimum), maximum))
@@ -107,7 +119,7 @@ function refresh(): void {
         <template v-for="machine in account.machines.value" :key="machine.id">
           <MachineSection v-if="loaded(machine.id)" :machine="loaded(machine.id)!" />
           <MachineSidebarSurface v-else-if="runtimes?.opened.has(machine.id)" :runtime="runtimes.opened.get(machine.id)!" />
-          <TeamMachineRow v-else :machine="machine" @select="account.selectMachine(machine.id)" />
+          <MachineSection v-else :machine="unopened(machine)" />
         </template>
       </template>
       <MachineSection v-for="machine in machines" v-else :key="machine.id" :machine="machine" />

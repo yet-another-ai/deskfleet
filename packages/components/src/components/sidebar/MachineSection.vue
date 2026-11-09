@@ -21,6 +21,7 @@ import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import type { MachineSummary, WorkspaceSummary } from "../../stores/fleet-types.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
@@ -44,6 +45,7 @@ const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const router = useRouter()
 const account = useAccountSession()
+const runtimes = useMachineRuntimes()
 const addingWorkspace = ref(false)
 const openingTerminal = ref(false)
 const terminalError = ref<{ workspaceId: string; message: string } | null>(null)
@@ -84,7 +86,13 @@ async function openTerminal(workspace: WorkspaceSummary): Promise<void> {
   }
 }
 
-const collapsed = computed(() => fleet.isCollapsed(props.machine.id))
+const unopened = computed(() => Boolean(runtimes && !runtimes.opened.has(props.machine.id)))
+const collapsed = computed(() => unopened.value || fleet.isCollapsed(props.machine.id))
+function toggleMachine(): void {
+  const target = unopened.value ? account?.machines.value.find(item => item.id === props.machine.id) : undefined
+  if (target && runtimes) runtimes.open(target)
+  else fleet.toggleMachine(props.machine.id)
+}
 const lastSeen = computed(() => {
   if (!props.machine.lastSeen) return undefined
   const time = new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), {
@@ -98,7 +106,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
 </script>
 
 <template>
-  <CollapsibleRoot as="section" :data-machine-id="machine.id" :open="!collapsed" class="mt-4 first:mt-0" @update:open="fleet.toggleMachine(machine.id)">
+  <CollapsibleRoot as="section" :data-machine-id="machine.id" :open="!collapsed" class="mt-4 first:mt-0" @update:open="toggleMachine">
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
       <CollapsibleTrigger
         type="button"
@@ -120,7 +128,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>
       <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
-        <UiButton variant="ghost" size="icon" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="!fleet.canManageCatalog" @click="addingWorkspace = true"><FolderPlus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="unopened || !fleet.canManageCatalog" @click="addingWorkspace = true"><FolderPlus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </div>
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
