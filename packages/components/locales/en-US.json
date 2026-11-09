@@ -684,6 +684,7 @@
     "machineChoice": "Machine: {machine}",
     "workspace": "Workspace",
     "workspaceChoice": "Workspace: {workspace}",
+    "noWorkspace": "No workspace",
     "baseBranch": "Base branch",
     "baseBranchChoice": "Base branch: {branch}",
     "prepare": {

@@ -684,6 +684,7 @@
     "machineChoice": "机器：{machine}",
     "workspace": "工作区",
     "workspaceChoice": "工作区：{workspace}",
+    "noWorkspace": "不使用工作区",
     "baseBranch": "基础分支",
     "baseBranchChoice": "基础分支：{branch}",
     "prepare": {
