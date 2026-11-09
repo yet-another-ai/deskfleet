@@ -25,7 +25,12 @@ function fixture() {
     agents: {
       requireActive: async (id: string) => ({ session: sessions.find(session => session.id === id)! }),
       journal: { list: async () => sessions, read: async (id: string) => ({ session: sessions.find(session => session.id === id)! }) },
-      handle: async (...args: unknown[]) => { calls.push(args); return "history" },
+      handle: async (method: string, params: Record<string, unknown>, ...args: unknown[]) => {
+        calls.push([method, params, ...args])
+        if (method === "_deskfleet/session/create") return { session: { id: "50", workspaceId: params.workspaceId, lifecycle: "ready" } }
+        if (method === "_deskfleet/input/submit") return { operationId: params.operationId, commandId: "cmd-1", sessionId: params.sessionId, inputId: "in-1" }
+        return "history"
+      },
     },
     catalog: {
       native: {
@@ -78,6 +83,8 @@ test("MCP rejects resource IDs and updates outside its issuing Workspace", async
   for (const [method, params] of [
     ["_deskfleet/session/subscribe", { sessionId: "2" }],
     ["_deskfleet/session/history", { sessionId: "2", afterSeq: "0" }],
+    ["_deskfleet/session/create", { workspaceId: "20", provider: "codex" }],
+    ["_deskfleet/input/submit", { sessionId: "2", prompt: "outside" }],
     ["scheduleCreate", { schedule: { workspaceId: "20" } }],
     ["scheduleDelete", { scheduleId: "b" }],
     ["scheduleRun", { scheduleId: "b" }],
@@ -89,6 +96,20 @@ test("MCP rejects resource IDs and updates outside its issuing Workspace", async
   assert.deepEqual(calls[0], ["scheduleUpdate", { scheduleId: "a", changes: { enabled: false } }, actor])
   await dispatchMcp(operations, "scheduleCreate", { schedule: { title: "Review changes" } }, actor, scope)
   assert.deepEqual(calls[1], ["scheduleCreate", { schedule: { title: "Review changes", workspaceId: "10" } }, actor])
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", context: "worktree", title: "Child", prompt: "Start work", configuration: { model: "gpt-5" } }, actor, scope)
+  assert.equal((calls[2] as unknown[])[0], "_deskfleet/session/create")
+  assert.deepEqual({ ...(calls[2] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    workspaceId: "10", operationId: "op", title: "Child", provider: "codex", context: "worktree", model: "gpt-5",
+  })
+  assert.equal((calls[3] as unknown[])[0], "_deskfleet/input/submit")
+  assert.deepEqual({ ...(calls[3] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "50", operationId: "op", content: [{ type: "text", text: "Start work" }], delivery: "backlog",
+  })
+  assert.deepEqual(calls[4], ["_deskfleet/session/subscribe", { sessionId: "50" }, actor])
+  await dispatchMcp(operations, "_deskfleet/input/submit", { sessionId: "1", prompt: "Follow up", delivery: "steer", turnId: "turn-1" }, actor, scope)
+  assert.deepEqual({ ...(calls[5] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "1", operationId: "op", content: [{ type: "text", text: "Follow up" }], delivery: "steer", turnId: "turn-1",
+  })
 })
 
 test("an archived issuing Session cannot use a retained MCP grant", async () => {

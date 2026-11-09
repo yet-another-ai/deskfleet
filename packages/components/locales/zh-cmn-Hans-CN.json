@@ -552,7 +552,9 @@
       "allowRead": "允许其它机器上的 Agent 读取本机",
       "allowReadDescription": "同一团队中的 Agent 可以查看本机的工作区、Agent 会话和对话历史，以及发现 MCP 工具。",
       "allowOperate": "允许其它机器上的 Agent 操作本机",
-      "allowOperateDescription": "同一团队中的 Agent 可以发现并调用本机已配置的 MCP 工具。设置适用于本机注册的所有团队；读取对话由独立开关控制。"
+      "allowOperateDescription": "同一团队中的 Agent 可以发现并调用本机已配置的 MCP 工具。设置适用于本机注册的所有团队；读取对话由独立开关控制。",
+      "allowSessions": "允许其它机器上的 Agent 在本机启动会话并发送消息",
+      "allowSessionsDescription": "同一团队中的 Agent 可以在本机创建新的 Agent 会话，并向现有会话发送提示词。"
     },
     "thisComputer": "本机",
     "launchAtStartup": "开机自启",

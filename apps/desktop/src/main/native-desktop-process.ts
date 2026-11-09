@@ -2,9 +2,21 @@ import { spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import type { ViewerCommand, ViewerEvent, ViewerProcess } from "./native-desktop-session.ts"
 
+/** Shared by Electron and the native viewer smoke test. */
+export function spawnDesktopViewerChild(executable: string) {
+  return spawn(executable, [], {
+    stdio: ["pipe", "pipe", "pipe"],
+    // windowsHide also hides GPUI's GUI window. The viewer uses the Windows
+    // GUI subsystem to avoid opening a console while retaining these pipes.
+    // GPUI Fast 0.1.9 replays NSH's nested accessibility nodes with duplicate
+    // parents. Disable that cache only in this Windows child until it is fixed.
+    env: process.platform === "win32" ? { ...process.env, GPUI_VIEW_RETENTION: "0" } : process.env,
+  })
+}
+
 /** The pipe carries signaling and UI state; decoded pixels stay in Rust. */
 export function spawnDesktopViewer(executable: string, receive: (event: ViewerEvent) => void): ViewerProcess {
-  const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
+  const child = spawnDesktopViewerChild(executable)
   const lines = createInterface({ input: child.stdout })
   let closing: Promise<void> | undefined
   let exited = false

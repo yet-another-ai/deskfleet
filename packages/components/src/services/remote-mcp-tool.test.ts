@@ -116,5 +116,29 @@ test("normalizes remote file list, stat, upload, and download tools into remote 
     images: [],
     isError: false,
   })
+  expect(remoteMcpTool({
+    toolCallId: "session-create",
+    title: "mcp.deskfleet.deskfleet_remote_session_create",
+    rawInput: { machineId: "machine-3", provider: "codex", title: "Verify Windows build", prompt: "Run cargo test" },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_session_create",
+    action: "create codex (Verify Windows build)",
+    images: [],
+    isError: false,
+  })
+  expect(remoteMcpTool({
+    toolCallId: "session-send",
+    title: "mcp__deskfleet__deskfleet_remote_session_send",
+    rawInput: { machineId: "machine-3", sessionId: "42", prompt: "Check logs", delivery: "steer" },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_session_send",
+    action: "steer 42",
+    images: [],
+    isError: false,
+  })
 })
 

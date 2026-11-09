@@ -5,6 +5,8 @@ const remoteToolNames = [
   "deskfleet_remote_files",
   "deskfleet_remote_file_upload",
   "deskfleet_remote_file_download",
+  "deskfleet_remote_session_create",
+  "deskfleet_remote_session_send",
 ] as const
 type RemoteToolName = (typeof remoteToolNames)[number]
 
@@ -65,6 +67,18 @@ function parseRemoteCall(tool: ConversationTool): Omit<RemoteMcpTool, "images" |
     const path = text(args.path)
     if ((operation !== "list" && operation !== "stat") || (operation === "stat" && !path)) return undefined
     return { machineId, serverId: "deskfleet", toolName: kind, action: path ? `${operation} ${path}` : operation }
+  }
+  if (kind === "deskfleet_remote_session_create") {
+    const provider = text(args.provider)
+    if (!provider) return undefined
+    const label = text(args.title) ?? text(args.workspaceId)
+    return { machineId, serverId: "deskfleet", toolName: kind, action: label ? `create ${provider} (${label})` : `create ${provider}` }
+  }
+  if (kind === "deskfleet_remote_session_send") {
+    const sessionId = text(args.sessionId), prompt = text(args.prompt)
+    if (!sessionId || !prompt) return undefined
+    const delivery = text(args.delivery) === "steer" ? "steer" : "send"
+    return { machineId, serverId: "deskfleet", toolName: kind, action: `${delivery} ${sessionId}` }
   }
   const sourcePath = text(args.sourcePath), destinationDirectory = text(args.destinationDirectory)
   if (!sourcePath || !destinationDirectory) return undefined
