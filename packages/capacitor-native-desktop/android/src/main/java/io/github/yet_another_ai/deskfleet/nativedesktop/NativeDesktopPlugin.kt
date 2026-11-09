@@ -2,6 +2,7 @@ package io.github.yet_another_ai.deskfleet.nativedesktop
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.view.Surface
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -39,7 +40,10 @@ class NativeDesktopPlugin : Plugin() {
         val currentActivity = activity ?: return call.reject("Activity unavailable")
         call.setKeepAlive(true)
         try {
-            currentActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authorizationUrl)))
+            val authIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authorizationUrl)).apply {
+                putExtras(Bundle().apply { putBinder("android.support.customtabs.extra.SESSION", null) })
+            }
+            currentActivity.startActivity(authIntent)
         } catch (error: Exception) {
             activeAuthServer = null
             server.close()

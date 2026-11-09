@@ -109,7 +109,7 @@ internal class LoopbackAuthServer(
                 append("Content-Type: text/html; charset=utf-8\r\n")
                 append("Cache-Control: no-store\r\n")
                 append("Referrer-Policy: same-origin\r\n")
-                append("Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; form-action 'self'\r\n")
+                append("Content-Security-Policy: default-src 'none'; connect-src 'self'; script-src 'unsafe-inline'; form-action 'self' ai.yetanother.deskfleet:\r\n")
                 append("Content-Length: ${bodyBytes.size}\r\n")
                 append("Connection: close\r\n\r\n")
             }
