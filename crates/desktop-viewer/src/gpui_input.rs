@@ -11,9 +11,24 @@ use gpui::{
 pub(crate) struct Input {
     enabled: bool,
     buttons: u8,
+    release_pending: bool,
 }
 
 impl Input {
+    /// Coalesce resets at the shared keyboard/pointer forwarding boundary. A
+    /// physical key can require release even when no mouse button is down.
+    pub(crate) fn prepare(&mut self, event: InputEvent) -> Option<InputEvent> {
+        if matches!(event, InputEvent::ReleaseAll) {
+            self.buttons = 0;
+            if !std::mem::take(&mut self.release_pending) {
+                return None;
+            }
+        } else {
+            self.release_pending = true;
+        }
+        Some(event)
+    }
+
     pub(crate) fn set_enabled(&mut self, enabled: bool) -> Option<InputEvent> {
         let was_enabled = self.enabled;
         self.enabled = enabled;
@@ -167,6 +182,47 @@ mod tests {
         assert_eq!(input.set_enabled(false), Some(InputEvent::ReleaseAll));
         assert!(input.mouse_down(&press, video()).is_empty());
         assert_eq!(input.set_enabled(false), None);
+    }
+
+    #[test]
+    fn repeated_local_hover_releases_physical_input_once_until_remote_input_resumes() {
+        let mut input = active();
+        let key = InputEvent::Key {
+            code: "ControlRight".into(),
+            pressed: true,
+            repeat: false,
+        };
+        assert_eq!(input.prepare(key.clone()), Some(key.clone()));
+        let mut sent = Vec::new();
+        for _ in 0..100 {
+            let release = input.release();
+            sent.extend(input.prepare(release));
+        }
+        assert_eq!(sent, [InputEvent::ReleaseAll]);
+        // Resume restores a held physical modifier before the next click.
+        assert_eq!(input.prepare(key.clone()), Some(key));
+        let press = MouseDownEvent {
+            position: point(px(400.), px(300.)),
+            ..Default::default()
+        };
+        for event in input.mouse_down(&press, video()) {
+            assert!(input.prepare(event).is_some());
+        }
+        let release = input.release();
+        assert_eq!(input.prepare(release), Some(InputEvent::ReleaseAll));
+        assert!(
+            input
+                .mouse_up(
+                    &MouseUpEvent {
+                        position: press.position,
+                        ..Default::default()
+                    },
+                    video()
+                )
+                .is_empty()
+        );
+        let release = input.release();
+        assert_eq!(input.prepare(release), None);
     }
 
     #[test]

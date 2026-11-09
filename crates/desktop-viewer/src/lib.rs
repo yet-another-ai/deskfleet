@@ -24,6 +24,8 @@ mod nsh_chrome;
 #[cfg(not(target_os = "android"))]
 mod nsh_layout;
 #[cfg(not(target_os = "android"))]
+mod nsh_session_state;
+#[cfg(not(target_os = "android"))]
 mod nsh_toolbar;
 #[cfg(not(target_os = "android"))]
 mod nsh_ui;

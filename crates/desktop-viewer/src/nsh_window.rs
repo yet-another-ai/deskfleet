@@ -17,6 +17,7 @@ use crate::gpui_input::Input;
 use crate::host::Host;
 use crate::input_queue;
 use crate::nsh_chrome::{Chrome, ChromeHit};
+use crate::nsh_session_state::SessionState;
 use crate::nsh_toolbar::{self, Toolbar, ToolbarAction, ToolbarState};
 use crate::nsh_video::{Video, video_bounds};
 use crate::physical_input::PhysicalInput;
@@ -98,6 +99,8 @@ struct Viewer {
     select_open: bool,
     toolbar: Toolbar,
     toolbar_state: ToolbarState,
+    session_state: SessionState,
+    hovering_local_ui: bool,
     position: Option<Point<Pixels>>,
     drag: Option<(Point<Pixels>, Point<Pixels>)>,
     local_pointer: bool,
@@ -206,6 +209,8 @@ impl Viewer {
             select_open: false,
             toolbar,
             toolbar_state,
+            session_state: SessionState::default(),
+            hovering_local_ui: false,
             position: None,
             drag: None,
             local_pointer: false,
@@ -217,43 +222,23 @@ impl Viewer {
     }
 
     fn event(&mut self, event: WindowEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let previous_control = self.toolbar_state.ui.control;
+        self.session_state
+            .update(&mut self.toolbar_state.ui, &event);
+        if previous_control != self.toolbar_state.ui.control
+            || matches!(&event, WindowEvent::Start { .. })
+        {
+            self.toolbar_state.paused = false;
+        }
         match event {
-            WindowEvent::Start {
-                title,
-                control,
-                codec,
-            } => {
+            WindowEvent::Start { title, .. } | WindowEvent::Ui(protocol::UiState { title, .. }) => {
                 window.set_window_title(&title);
                 self.title = title;
-                self.toolbar_state.ui.control = control;
-                self.toolbar_state.ui.codec = Some(codec);
-                self.toolbar_state.ui.status = Status::Connecting;
-                self.toolbar_state.ui.input_ready = false;
-                self.toolbar_state.paused = false;
             }
-            WindowEvent::Ui(state) => {
-                if state.control != self.toolbar_state.ui.control {
-                    self.toolbar_state.paused = false;
-                }
-                window.set_window_title(&state.title);
-                self.title = state.title.clone();
-                self.toolbar_state.ui = state;
-            }
-            WindowEvent::Connected(connected) => {
-                self.toolbar_state.ui.status = if connected {
-                    Status::Starting
-                } else {
-                    Status::Connecting
-                };
-            }
-            WindowEvent::InputReady => self.toolbar_state.ui.input_ready = true,
+            WindowEvent::Connected(_) | WindowEvent::InputReady => {}
             WindowEvent::SessionEnded => {
                 self.release(window, cx);
                 self.video.borrow_mut().clear(window, cx);
-                self.toolbar_state.ui.input_ready = false;
-                if self.toolbar_state.ui.status != Status::Error {
-                    self.toolbar_state.ui.status = Status::Disconnected;
-                }
             }
             WindowEvent::FrameReady => {}
             WindowEvent::Close => {
@@ -287,7 +272,8 @@ impl Viewer {
                 enabled
                     && self.video_focused
                     && window.is_window_active()
-                    && !self.toolbar_state.settings_open,
+                    && !self.toolbar_state.settings_open
+                    && !self.hovering_local_ui,
             );
         }
         self.keys(window, cx);
@@ -320,6 +306,9 @@ impl Viewer {
         cx: &mut Context<Self>,
     ) {
         for event in events {
+            let Some(event) = self.controls.prepare(event) else {
+                continue;
+            };
             if let Err(error) = self.input.send(event) {
                 self.fail(error, window, cx);
                 break;
@@ -403,6 +392,7 @@ impl Viewer {
 
     fn resume_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.video_focused = true;
+        self.hovering_local_ui = false;
         self.handle_focused = false;
         window.focus(&self.focus, cx);
     }
@@ -545,11 +535,11 @@ impl Viewer {
             ));
             cx.notify();
         } else if !self.local_pointer {
-            if self.local_ui(event.position, window)
+            self.hovering_local_ui = self.local_ui(event.position, window)
                 || Chrome::for_window(window)
                     .hit_test(event.position)
-                    .is_some()
-            {
+                    .is_some();
+            if self.hovering_local_ui {
                 self.release(window, cx);
             } else {
                 self.sync_input(window, cx);
@@ -631,10 +621,10 @@ impl Render for Viewer {
         if self.video.borrow().has_candidate() {
             window.request_animation_frame();
         }
-        if self.video.borrow().dimensions != (0, 0)
-            && self.toolbar_state.ui.status == Status::Starting
+        if self
+            .session_state
+            .frame_ready(&mut self.toolbar_state.ui, self.video.borrow().dimensions)
         {
-            self.toolbar_state.ui.status = Status::Connected;
             self.sync_input(window, cx);
         }
         let chrome = Chrome::for_window(window);
