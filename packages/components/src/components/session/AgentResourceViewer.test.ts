@@ -317,3 +317,39 @@ test("renders media, line-highlighted code, and workspace authorization errors i
   deniedView.unmount()
 })
 
+test.each([
+  ["index.html", "tab"],
+  ["report.htm", "dialog"],
+] as const)("defaults %s to highlighted source and toggles into a sandboxed HTML preview (%s mode)", async (name, mode) => {
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const html = "<!doctype html>\n<html>\n<body><h1>Hello</h1></body>\n</html>"
+  const view = render({
+    resolveResource: vi.fn().mockResolvedValue({ name, path: `/work/${name}`, kind: "file" }),
+    readResource: vi.fn().mockResolvedValue({ name, data: new TextEncoder().encode(html), mimeType: "text/html" }),
+  }, { ...request, uri: `${name}#L3` }, mode)
+  await flushPromises()
+
+  expect(view.get("pre code").element.textContent).toBe(html)
+  expect(view.find("pre code span[style]").exists()).toBe(true)
+  expect(view.find("iframe[data-html-preview]").exists()).toBe(false)
+  expect(scroll).toHaveBeenCalledTimes(1)
+
+  await view.get('[data-preview-action="preview-html"]').trigger("click")
+  await flushPromises()
+
+  expect(view.find("pre code").exists()).toBe(false)
+  const frame = view.get("iframe[data-html-preview]")
+  expect(frame.attributes("srcdoc")).toBe(html)
+  expect(frame.attributes("sandbox")).toBe("allow-scripts allow-forms")
+  expect(frame.attributes("sandbox")).not.toContain("allow-same-origin")
+
+  await view.get('[data-preview-action="source"]').trigger("click")
+  await flushPromises()
+
+  expect(view.find("iframe[data-html-preview]").exists()).toBe(false)
+  expect(view.get("pre code").element.textContent).toBe(html)
+  expect(scroll).toHaveBeenCalledTimes(2)
+  view.unmount()
+})
+
+

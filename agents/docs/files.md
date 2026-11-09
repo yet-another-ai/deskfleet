@@ -240,6 +240,9 @@ Text previews highlight the whole line for
 `#Lstart-Lend` range, and scroll to the first requested line. Encoded location
 separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
+HTML `.html` and `.htm` files open in the syntax-highlighted source view first
+and offer a toggle into an isolated `<iframe srcdoc>` preview (`sandbox="allow-scripts allow-forms"`,
+without `allow-same-origin`).
 Other authorized files can be opened locally or downloaded from that tab or dialog.
 
 Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` previews use
