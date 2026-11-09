@@ -703,9 +703,12 @@ still valid. CI does not use sccache: one Actions cache object per compilation
 filled the quota and evicted the target caches.
 
 The pnpm store and Cargo downloads fall back to the newest same-platform entry.
-Before saving, `pnpm store prune` removes packages that the current lockfile no
-longer uses, so the store tracks the lockfile instead of growing with every
-update. Installed `node_modules` directories are rebuilt from the lockfile.
+Installed `node_modules` directories are rebuilt from the frozen lockfile, which
+also repopulates packages missing from a restored store. Keep the pnpm store
+intact after installation: `pnpm store prune` can remove original package
+snapshots still needed by the offline DeepSeek Harness deployment even when
+the installed dependencies work. Fallback stores may retain older packages;
+the cache cleanup below removes superseded Actions cache entries.
 `pnpm install` does not download Electron. On a main miss, setup-build runs
 `install-electron` and saves the archive on every OS, whichever job later
 launches Electron.

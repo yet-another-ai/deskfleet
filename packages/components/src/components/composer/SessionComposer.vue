@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X } from "@lucide/vue"
-import { useEventListener, useTextareaAutosize } from "@vueuse/core"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
+import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -109,6 +110,25 @@ function selectWorkspace(workspaceId: unknown): void {
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
+const sessionId = computed(() => props.location?.session?.id)
+const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
+const yoloConfirmation = useConfirmDialog()
+const { isRevealed: confirmingYolo } = yoloConfirmation
+watch([
+  () => props.location?.machine.id,
+  () => props.location?.workspace?.id,
+  sessionId,
+  () => props.disabled,
+  () => props.submitting,
+], () => yoloConfirmation.cancel())
+async function toggleYolo(): Promise<void> {
+  if (!props.location || props.disabled || props.submitting || confirmingYolo.value) return
+  const id = sessionId.value
+  const next = !yoloEnabled.value
+  if (next && (await yoloConfirmation.reveal()).isCanceled) return
+  if (!id) agents.draftYolo = next
+  else agents.setYolo(id, next)
+}
 const completionId = useId()
 const completion = reactive(useComposerCompletions({
   draft, mentions, textarea, location: () => props.location,
@@ -297,6 +317,7 @@ function keydown(event: KeyboardEvent): void {
 }
 
 onBeforeUnmount(() => {
+  yoloConfirmation.cancel()
   for (const [id] of attachmentPreviewUrls) removeAttachmentPreviewUrl(id)
 })
 </script>
@@ -446,14 +467,36 @@ onBeforeUnmount(() => {
           </DropdownMenuPortal>
         </DropdownMenuRoot>
         <AgentConfigurationSelector v-if="location" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />
+        <button
+          v-if="location"
+          type="button"
+          class="ui-text-button shrink-0 cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          :aria-pressed="yoloEnabled"
+          :aria-label="t('composer.yoloHint')"
+          :title="t('composer.yoloHint')"
+          :disabled="disabled || submitting"
+          data-composer-yolo
+          @click="toggleYolo"
+        >
+          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
+          <span>{{ t("composer.yolo") }}</span>
+        </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
           <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
-          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
           <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
+    <ConfirmDialog
+      v-if="confirmingYolo"
+      :title="t('composer.yoloConfirmation.title')"
+      :description="t('composer.yoloConfirmation.description')"
+      :confirm-label="t('composer.yoloConfirmation.confirm')"
+      :confirm="async () => { yoloConfirmation.confirm() }"
+      @close="yoloConfirmation.cancel()"
+    />
     <FilePickerDialog
       v-if="filePickerOpen && location && fileTarget && filesApi"
       :api="filesApi"

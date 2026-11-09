@@ -3,6 +3,8 @@ import { computed } from "vue"
 import { useData } from "vitepress"
 import { resolveAppLocale } from "@deskfleet/client/i18n"
 import HomeDesk from "./HomeDesk.vue"
+import HomeAgentRelay from "./HomeAgentRelay.vue"
+import HomeRemoteDesktop from "./HomeRemoteDesktop.vue"
 import ProductShowcase from "./ProductShowcase.vue"
 import HomeValues from "./HomeValues.vue"
 import HomeNetwork from "./HomeNetwork.vue"
@@ -15,6 +17,8 @@ const locale = computed(() => resolveAppLocale([lang.value]))
 <template>
   <main class="deskfleet-home">
     <HomeDesk :locale="locale" />
+    <HomeAgentRelay :locale="locale" />
+    <HomeRemoteDesktop :locale="locale" />
     <ProductShowcase :locale="locale" />
     <HomeValues :locale="locale" />
     <HomeNetwork :locale="locale" />

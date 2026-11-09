@@ -283,6 +283,10 @@ description = "Verify Chromium terminal I/O and PTY reattachment over WebRTC"
 depends = ["native:debug"]
 run = "node apps/desktop/scripts/smoke-terminal.ts"
 
+[tasks."desktop:smoke-terminal-font"]
+description = "Verify real Electron WebGL terminal glyph fonts at high display scale"
+run = "node apps/desktop/scripts/smoke-terminal-font.ts"
+
 [tasks."desktop:smoke-native-terminal"]
 description = "Verify native PTY spawning inside the Linux Electron main process"
 depends = ["native:debug"]

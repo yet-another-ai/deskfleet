@@ -54,7 +54,7 @@ function start(): void {
   app.on("second-instance", show)
 
   void app.whenReady().then(async () => {
-    configureApplicationDisplay()
+    configureApplicationDisplay(() => void showMainWindow(lifecycle, "#/settings/preferences"))
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
