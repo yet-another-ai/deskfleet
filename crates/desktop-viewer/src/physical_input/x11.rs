@@ -116,7 +116,7 @@ fn dispatch(
                                 let native = (byte_index * 8 + bit) as u8;
                                 held.insert(native);
                                 if let Some(code) = native.checked_sub(8) {
-                                    bridge.key(NativeKeyCode::Evdev(u32::from(code)), true, false);
+                                    bridge.focus_key(NativeKeyCode::Evdev(u32::from(code)));
                                 }
                             }
                         }

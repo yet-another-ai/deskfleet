@@ -122,6 +122,18 @@ impl Bridge {
         self.state().enabled
     }
 
+    #[cfg(target_os = "linux")]
+    fn focus_key(&self, native: NativeKeyCode) {
+        let Some(code) = native.code() else { return };
+        if is_modifier(code) {
+            self.key(native, true, false);
+        } else {
+            // Focus snapshots describe existing presses owned by another
+            // window. Remember them without starting remote key presses.
+            self.state().held.insert(code);
+        }
+    }
+
     fn key(&self, native: NativeKeyCode, pressed: bool, repeat: bool) {
         let Some(code) = native.code() else { return };
         let mut state = self.state();
@@ -205,6 +217,56 @@ fn is_modifier(code: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn focus_entry_restores_modifiers_without_replaying_existing_presses() {
+        // The platform focus event and viewer gate update can arrive in either order.
+        for initially_enabled in [false, true] {
+            let bridge = Bridge {
+                state: Arc::new(Mutex::new(State::default())),
+                wake: Arc::new(|| {}),
+            };
+            bridge.set_enabled(initially_enabled);
+            let left_shift = NativeKeyCode::Evdev(42);
+            let right_control = NativeKeyCode::Evdev(97);
+            let letter = NativeKeyCode::Evdev(30);
+            let enter = NativeKeyCode::Evdev(96);
+            for native in [left_shift, right_control, letter, enter] {
+                bridge.focus_key(native);
+            }
+            if !initially_enabled {
+                assert!(bridge.state().pending.is_empty());
+                bridge.set_enabled(true);
+            }
+            let restored = bridge.state().pending.drain(..).collect::<Vec<_>>();
+            assert_eq!(restored.len(), 2);
+            assert!(restored.contains(&key("ShiftLeft", true, false)));
+            assert!(restored.contains(&key("ControlRight", true, false)));
+
+            for native in [letter, enter] {
+                bridge.key(native, true, true);
+                bridge.key(native, false, false);
+            }
+            assert!(bridge.state().pending.is_empty());
+
+            bridge.key(letter, true, false);
+            bridge.key(letter, true, true);
+            bridge.key(letter, false, false);
+            bridge.key(left_shift, false, false);
+            bridge.key(right_control, false, false);
+            assert_eq!(
+                bridge.state().pending.iter().cloned().collect::<Vec<_>>(),
+                vec![
+                    key("KeyA", true, false),
+                    key("KeyA", true, true),
+                    key("KeyA", false, false),
+                    key("ShiftLeft", false, false),
+                    key("ControlRight", false, false),
+                ]
+            );
+        }
+    }
 
     #[test]
     fn resuming_restores_the_held_modifier_side_without_replaying_local_keys() {

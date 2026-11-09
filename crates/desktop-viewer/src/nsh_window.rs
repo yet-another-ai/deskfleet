@@ -404,6 +404,15 @@ impl Viewer {
         window.focus(&self.focus, cx);
     }
 
+    fn dismiss_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.toolbar_state.settings_open = false;
+        self.release(window, cx);
+        self.keyboard_focus.resume();
+        self.resume_focus(window, cx);
+        self.sync_input(window, cx);
+        cx.notify();
+    }
+
     fn action(&mut self, action: ToolbarAction, window: &mut Window, cx: &mut Context<Self>) {
         let event = match action {
             ToolbarAction::ToggleControl if self.toolbar_state.ui.control => {
@@ -420,7 +429,11 @@ impl Viewer {
                 None
             }
             ToolbarAction::ToggleSettings => {
-                self.toolbar_state.settings_open = !self.toolbar_state.settings_open;
+                if self.toolbar_state.settings_open {
+                    self.dismiss_settings(window, cx);
+                    return;
+                }
+                self.toolbar_state.settings_open = true;
                 self.release(window, cx);
                 None
             }
@@ -507,9 +520,7 @@ impl Viewer {
             && !self.toolbar_bounds(window).contains(&event.position)
             && !self.panel_bounds(window).contains(&event.position)
         {
-            self.toolbar_state.settings_open = false;
-            self.release(window, cx);
-            cx.notify();
+            self.dismiss_settings(window, cx);
             cx.stop_propagation();
             return;
         }
@@ -677,7 +688,13 @@ impl Render for Viewer {
             ))
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|viewer, event: &KeyDownEvent, window, cx| {
-                if viewer.handle_focused {
+                if event.keystroke.key == "escape"
+                    && viewer.toolbar_state.settings_open
+                    && !viewer.select_open
+                {
+                    viewer.dismiss_settings(window, cx);
+                    cx.stop_propagation();
+                } else if viewer.handle_focused {
                     let step = match event.keystroke.key.as_str() {
                         "left" => Some((-16., 0.)),
                         "right" => Some((16., 0.)),
@@ -693,10 +710,6 @@ impl Render for Viewer {
                         cx.stop_propagation();
                     }
                 } else if viewer.video_focused {
-                    cx.stop_propagation();
-                } else if event.keystroke.key == "escape" && viewer.toolbar_state.settings_open {
-                    viewer.toolbar_state.settings_open = false;
-                    cx.notify();
                     cx.stop_propagation();
                 }
             }))

@@ -39,21 +39,21 @@ impl Adapter {
             return Err("Wayland keyboard requires a Wayland surface".into());
         };
         // SAFETY: The viewer drops this adapter and joins its worker before
-        // closing the GPUI window. The foreign backend does not own wl_display.
+        // closing the GPUI window. The foreign backend owns a private event
+        // queue, but does not own wl_display.
         #[allow(unsafe_code)]
         let backend = unsafe { Backend::from_foreign_display(display.display.as_ptr().cast()) };
         let connection = Connection::from_backend(backend);
-        // SAFETY: GPUI supplied a live wl_surface. Register only its identity;
-        // never destroy it or install a listener on the borrowed proxy.
+        // SAFETY: GPUI supplied a live wl_surface. Read only its protocol ID;
+        // never wrap it in a proxy, destroy it, or install a listener on it.
         #[allow(unsafe_code)]
-        let id = unsafe {
+        let target = unsafe {
             ObjectId::from_ptr(
                 wl_surface::WlSurface::interface(),
                 handle.surface.as_ptr().cast(),
             )
-        }?;
-        let surface = wl_surface::WlSurface::from_id(&connection, id)?;
-        let target = surface.id().protocol_id();
+        }?
+        .protocol_id();
         let queue = connection.new_event_queue::<Dispatcher>();
         let registry = connection.display().get_registry(&queue.handle(), ());
         connection.flush()?;
@@ -74,7 +74,7 @@ impl Adapter {
                     seat.release();
                 }
                 let _ = connection.flush();
-                drop((registry, surface));
+                drop(registry);
             })?;
         Ok(Self {
             shutdown,
@@ -168,7 +168,9 @@ fn dispatch(
         {
             return Err(error.into());
         }
-        let Some(read) = connection.prepare_read() else {
+        // The system backend prepares its private libwayland queue, not GPUI's
+        // queue. None means this queue must be drained by dispatch_pending.
+        let Some(read) = queue.prepare_read() else {
             continue;
         };
         let mut fds = [
@@ -328,7 +330,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, u32> for Dispatcher {
                     // The compositor supplies keys already down on focus entry.
                     for bytes in keys.as_chunks::<4>().0 {
                         let code = u32::from_ne_bytes(*bytes);
-                        state.bridge.key(NativeKeyCode::Evdev(code), true, false);
+                        state.bridge.focus_key(NativeKeyCode::Evdev(code));
                     }
                 }
             }
