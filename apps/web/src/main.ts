@@ -10,7 +10,7 @@ import "virtual:uno.css"
 
 initializeErrorReporting("web")
 const adapter = await browserClient(import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin), captureCentralRequestError)
-if (Capacitor.getPlatform() === "android" && adapter.central) {
+if ((Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
 }
 configureClient(adapter)

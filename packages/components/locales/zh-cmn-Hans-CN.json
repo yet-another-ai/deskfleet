@@ -719,6 +719,11 @@
     "reloadConfiguration": "从 Agent 重新加载",
     "yolo": "YOLO",
     "yoloHint": "在此会话中自动批准 Agent 的权限请求",
+    "yoloConfirmation": {
+      "title": "启用 YOLO 模式？",
+      "description": "启用 YOLO 模式后，此会话中所有 Agent 权限请求都会自动同意，包括当前等待批准的请求。",
+      "confirm": "启用 YOLO"
+    },
     "efforts": {
       "none": "无",
       "minimal": "最低",

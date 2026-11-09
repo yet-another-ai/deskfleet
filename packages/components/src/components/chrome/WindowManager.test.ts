@@ -1,7 +1,10 @@
+import { getClient } from "@deskfleet/client/platform"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { DockviewVue, type DockviewReadyEvent } from "dockview-vue"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -19,14 +22,14 @@ afterEach(async () => {
   await router.replace("/")
 })
 
-async function setup() {
+async function setup(platform: DeskfleetDesktopApi["platform"] = "linux") {
   const pinia = createPinia()
   useFleetStore(pinia).catalog = catalogFixture()
   useTerminalsStore(pinia).loaded = true
   await router.replace(`/sessions/${sessionId}`)
   const wrapper = mount(WindowManager, {
     props: { sessionId }, attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: {
+    global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform } }, stubs: {
       AppMainWindow: true, ChangesPanel: true, SessionPreviewWindow: true, WindowToolbar: true,
       SessionDesktopPanel: desktopStub,
     } },
@@ -36,6 +39,47 @@ async function setup() {
   const { api } = wrapper.getComponent(DockviewVue).emitted("ready")![0]![0] as DockviewReadyEvent
   return { wrapper, api, pinia }
 }
+
+test.each(["win32", "linux"] as const)("%s window controls reserve only the upper-right group as panes split and hide", async platform => {
+  const { wrapper, api } = await setup(platform)
+  const chat = api.getPanel("chat")!.api.group
+  const changes = api.getPanel("changes")!.api.group
+  // happy-dom has no layout; supply rendered rectangles while keeping real Dockview events.
+  const chatRect = vi.spyOn(chat.element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 900, 720))
+  const changesRect = vi.spyOn(changes.element, "getBoundingClientRect").mockReturnValue(new DOMRect(900, 0, 300, 720))
+  const insetGroups = () => wrapper.findAll("[data-window-header-actions].titlebar-overlay-inset").map(element => element.attributes("data-window-header-actions-group"))
+  api.layout(1200, 720, true)
+  await flushPromises()
+  expect(insetGroups()).toEqual([changes.id])
+
+  api.getPanel("desktops")!.api.moveTo({ group: changes, position: "bottom" })
+  const desktops = api.getPanel("desktops")!.api.group
+  changesRect.mockReturnValue(new DOMRect(900, 0, 300, 360))
+  const desktopRect = vi.spyOn(desktops.element, "getBoundingClientRect").mockReturnValue(new DOMRect(900, 360, 300, 360))
+  api.layout(1200, 720, true)
+  await flushPromises()
+  expect(insetGroups()).toEqual([changes.id])
+
+  changes.api.setVisible(false)
+  desktopRect.mockReturnValue(new DOMRect(900, 0, 300, 720))
+  api.layout(1200, 720, true)
+  await flushPromises()
+  expect(insetGroups()).toEqual([desktops.id])
+
+  desktops.api.setVisible(false)
+  chatRect.mockReturnValue(new DOMRect(0, 0, 1200, 720))
+  api.layout(1200, 720, true)
+  await flushPromises()
+  expect(insetGroups()).toEqual([chat.id])
+})
+
+test.each(["darwin", "web"] as const)("%s keeps the right side of session headers free of Windows/Linux control spacing", async platform => {
+  const { wrapper, pinia } = await setup(platform)
+  useLayoutStore(pinia).sidebarOpen = false
+  await flushPromises()
+  expect(wrapper.find(".titlebar-overlay-inset").exists()).toBe(false)
+  expect(wrapper.get("[data-window-toolbar-group]").classes().includes("pl-20")).toBe(platform === "darwin")
+})
 
 test("seeds an inactive desktop tab beside Changes and streams only while its tab is visible", async () => {
   const { wrapper, api } = await setup()

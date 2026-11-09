@@ -1,6 +1,45 @@
-//! Android GPU drawing is independent of frame selection.
+//! Mobile GPU drawing is independent of frame selection.
 
-use ndk::native_window::NativeWindow;
+#![cfg_attr(target_os = "ios", allow(unsafe_code))]
+
+#[cfg(target_os = "android")]
+pub(crate) use ndk::native_window::NativeWindow;
+
+#[cfg(target_os = "ios")]
+#[derive(Clone, Debug)]
+pub(crate) struct NativeWindow(objc2_core_foundation::CFRetained<objc2_core_foundation::CFType>);
+
+#[cfg(target_os = "ios")]
+// SAFETY: `CAMetalLayer` reference counting via `CFRetain`/`CFRelease` is thread-safe,
+// and `wgpu`'s Metal backend synchronizes layer access internally.
+unsafe impl Send for NativeWindow {}
+#[cfg(target_os = "ios")]
+// SAFETY: Shared references only pass the `CAMetalLayer` pointer to `wgpu` surface creation.
+unsafe impl Sync for NativeWindow {}
+
+#[cfg(target_os = "ios")]
+impl NativeWindow {
+    /// # Safety
+    /// `layer` must be a valid non-null `CAMetalLayer` pointer.
+    pub(crate) unsafe fn retain_layer(layer: std::ptr::NonNull<std::ffi::c_void>) -> Self {
+        // SAFETY: `CAMetalLayer` is toll-free bridged with CoreFoundation reference counting.
+        Self(unsafe { objc2_core_foundation::CFRetained::retain(layer.cast()) })
+    }
+
+    fn as_ptr(&self) -> *mut std::ffi::c_void {
+        std::ptr::from_ref::<objc2_core_foundation::CFType>(self.0.as_ref())
+            .cast_mut()
+            .cast()
+    }
+
+    fn width(&self) -> i32 {
+        0
+    }
+
+    fn height(&self) -> i32 {
+        0
+    }
+}
 
 use crate::{Error, Frame};
 
@@ -29,25 +68,47 @@ pub(crate) struct Renderer {
     pub(crate) video_size: (u32, u32),
 }
 
+#[cfg(target_os = "android")]
 #[derive(Clone, Debug)]
 struct AndroidSurfaceWindow(NativeWindow);
 
+#[cfg(target_os = "android")]
 impl wgpu::rwh::HasWindowHandle for AndroidSurfaceWindow {
     fn window_handle(&self) -> Result<wgpu::rwh::WindowHandle<'_>, wgpu::rwh::HandleError> {
         self.0.window_handle()
     }
 }
 
+#[cfg(target_os = "android")]
 impl wgpu::rwh::HasDisplayHandle for AndroidSurfaceWindow {
     fn display_handle(&self) -> Result<wgpu::rwh::DisplayHandle<'_>, wgpu::rwh::HandleError> {
         Ok(wgpu::rwh::DisplayHandle::android())
     }
 }
 
+fn create_surface(
+    instance: &wgpu::Instance,
+    window: &NativeWindow,
+) -> Result<wgpu::Surface<'static>, wgpu::CreateSurfaceError> {
+    #[cfg(target_os = "android")]
+    {
+        instance.create_surface(AndroidSurfaceWindow(window.clone()))
+    }
+    #[cfg(target_os = "ios")]
+    {
+        // SAFETY: `window` holds a retained `CAMetalLayer` pointer.
+        unsafe {
+            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(
+                window.as_ptr(),
+            ))
+        }
+    }
+}
+
 impl Renderer {
     pub(crate) async fn new(window: NativeWindow, size: PhysicalSize<u32>) -> Result<Self, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let surface = instance.create_surface(AndroidSurfaceWindow(window.clone()))?;
+        let surface = create_surface(&instance, &window)?;
         Self::init(instance, surface, window, size).await
     }
 
@@ -68,6 +129,8 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("desktop viewer"),
+                required_limits: wgpu::Limits::downlevel_defaults()
+                    .using_resolution(adapter.limits()),
                 ..Default::default()
             })
             .await?;
@@ -165,9 +228,7 @@ impl Renderer {
                 Ok(None)
             }
             Current::Lost => {
-                self.surface = self
-                    .instance
-                    .create_surface(AndroidSurfaceWindow(self.window.clone()))?;
+                self.surface = create_surface(&self.instance, &self.window)?;
                 self.resize(self.current_size());
                 Ok(None)
             }

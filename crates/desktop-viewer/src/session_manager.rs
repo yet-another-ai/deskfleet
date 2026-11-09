@@ -78,9 +78,9 @@ fn finish_peer(
 }
 
 pub(crate) fn ui(proxy: &WindowNotifier, state: protocol::UiState) {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _ = proxy.send_event(crate::WindowEvent::Ui(state));
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     let _ = (proxy, state);
 }
 
@@ -91,13 +91,13 @@ fn stopped(proxy: &WindowNotifier) -> Result<(), Error> {
 }
 
 fn session_ended(proxy: &WindowNotifier) {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _ = proxy.send_event(crate::WindowEvent::SessionEnded);
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     let _ = proxy;
 }
 
-#[cfg(all(test, not(target_os = "android")))]
+#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
 mod tests {
     use super::*;
     use session::{PeerExit, PeerOutcome};

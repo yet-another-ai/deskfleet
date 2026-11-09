@@ -24,7 +24,7 @@ const enUS = {
     live: "Live demo",
     panels: [
       { key: "agents", tab: "Your agents", title: "Keep using the agents you love.", body: "Codex, Claude Code, Cursor, Grok. Bring their strengths to the same desk. Move between machines and tasks, with the work right in front of you.", hint: "Open another task in the sidebar, review its changes on the right, or start a new session with any agent." },
-      { key: "remote", tab: "Step in", title: "When you're needed, take the controls.", body: "Step into the computer your agent is using. Work in its browser, terminal, and tools, handle the part that needs you, then let your agent carry on.", hint: "Press Connect to open a sample desktop. Remote control is coming at launch." },
+      { key: "remote", tab: "Step in", title: "When you're needed, take the controls.", body: "Step into the computer your agent is using. Work in its browser, terminal, and tools, handle the part that needs you, then let your agent carry on.", hint: "Press Connect to open a sample desktop." },
       { key: "team", tab: "Work together", title: "Work with your team, on the same agent.", body: "Share the context, add a request, answer a question, or approve the next step. Every contribution stays with the work.", hint: "Read your teammates’ messages, add a request, or answer your agent’s approval request." },
     ],
   },
@@ -124,7 +124,7 @@ const zhCmnHansCN: typeof enUS = {
     live: "实时演示",
     panels: [
       { key: "agents", tab: "你的 Agent", title: "继续使用你喜欢的 Agent。", body: "Codex、Claude Code、Cursor、Grok，各有所长。切换机器、选择任务，在同一处查看它们的工作。", hint: "从侧栏打开其他任务，在右侧查看代码变更，或用任意 Agent 创建新会话。" },
-      { key: "remote", tab: "随时介入", title: "需要你时，直接上手。", body: "进入 Agent 所在电脑的真实桌面。操作浏览器、终端和工具，处理需要你的步骤，再让 Agent 接着工作。", hint: "点击“连接”，打开示例桌面。远程控制将在首发提供。" },
+      { key: "remote", tab: "随时介入", title: "需要你时，直接上手。", body: "进入 Agent 所在电脑的真实桌面。操作浏览器、终端和工具，处理需要你的步骤，再让 Agent 接着工作。", hint: "点击“连接”，打开示例桌面。" },
       { key: "team", tab: "一起协作", title: "和同事一起，操作同一个 Agent。", body: "共享完整上下文，补充要求，回应问题，共同审批。每一次参与，都留在同一段工作记录里。", hint: "查看成员的消息，补充要求，或者回应 Agent 的审批请求。" },
     ],
   },
@@ -224,7 +224,7 @@ const jaJP: typeof enUS = {
     live: "ライブデモ",
     panels: [
       { key: "agents", tab: "エージェント", title: "お気に入りのエージェントを、そのまま。", body: "Codex、Claude Code、Cursor、Grok。それぞれの強みをひとつの場所へ。マシンやタスクを切り替えながら、作業の様子をまとめて確認できます。", hint: "サイドバーで別のタスクを開いたり、右側で変更を確認したり、好きなエージェントで新しいセッションを始めたりできます。" },
-      { key: "remote", tab: "直接操作", title: "必要なときは、あなたが操作。", body: "エージェントが使っているコンピューターのデスクトップへ。ブラウザー、ターミナル、ツールを操作して必要な手順を済ませたら、またエージェントに任せられます。", hint: "「接続」を押すと、サンプルのデスクトップが開きます。リモート操作は初回リリースで提供予定です。" },
+      { key: "remote", tab: "直接操作", title: "必要なときは、あなたが操作。", body: "エージェントが使っているコンピューターのデスクトップへ。ブラウザー、ターミナル、ツールを操作して必要な手順を済ませたら、またエージェントに任せられます。", hint: "「接続」を押すと、サンプルのデスクトップが開きます。" },
       { key: "team", tab: "チームで協力", title: "同じエージェントと、チームで働く。", body: "作業の背景を共有し、依頼を追加し、質問に答え、次の手順を承認。みんなのやり取りが、同じ作業の記録に残ります。", hint: "メンバーのメッセージを読み、依頼を追加したり、エージェントの承認リクエストに回答したりできます。" },
     ],
   },

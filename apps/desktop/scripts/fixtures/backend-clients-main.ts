@@ -75,17 +75,16 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
     }, `${label} confirmation`)
     confirmation!.click()
   }
-  // Unopened machines render a collapsed MachineSection; expand via its CollapsibleTrigger
-  // (opens the machine runtime catalog). Retained trees already expose session links.
+  // Every machine has a section; expanding it loads its catalog without switching the session.
   const machineTree = (index: number) => document.querySelector<HTMLElement>(`aside section[data-machine-id="${context.machines[index]}"]`)
-  const machineTrigger = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>("button[aria-expanded]")
+  const machineToggle = (index: number) => machineTree(index)?.querySelector<HTMLButtonElement>(":scope > div > button[aria-expanded]")
   const chatTab = () => document.querySelector<HTMLElement>('[data-window-tab-id="chat"]')
   async function session(index: number): Promise<void> {
     const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean } }).__deskfleetRtcGuard
     guard.blocked = context.mode === "electron" && index === 0
-    // Remote smoke intermittently times out here before any machine tree appears.
-    // Keep the 30s deadline; dump selector state so the next failure distinguishes
-    // a blank page from a late catalog.
+    // Remote smoke intermittently times out here before any machine section
+    // appears. Keep the 30s deadline; dump selector state so the next failure
+    // distinguishes a blank page from a late catalog.
     {
       const deadline = Date.now() + 30_000
       while (!machineTree(index)) {
@@ -96,17 +95,20 @@ async function exercise(context: BackendClientsContext, offline = false): Promis
         await new Promise(resolve => setTimeout(resolve, 25))
       }
     }
-    if (machineTrigger(index)?.getAttribute("aria-expanded") === "false") machineTrigger(index)!.click()
+    const toggle = machineToggle(index)
+    require(toggle, `Missing machine ${index} expansion control`)
+    if (toggle.getAttribute("aria-expanded") === "false") toggle.click()
     const link = () => machineTree(index)?.querySelector<HTMLAnchorElement>(`a[href="#/sessions/${context.sessionId}"]`)
     {
       const deadline = Date.now() + 30_000
       while (!link()) {
         if (Date.now() > deadline) {
-          const expanded = machineTrigger(index)?.getAttribute("aria-expanded") ?? "missing"
+          const expanded = machineToggle(index)?.getAttribute("aria-expanded") ?? "missing"
           const hrefs = [...(machineTree(index)?.querySelectorAll("a[href]") ?? [])].map(node => node.getAttribute("href"))
           throw new Error(`machine session link timed out (machine=${context.machines[index]}; session=${context.sessionId}; expanded=${expanded}; hrefs=${hrefs.join(",") || "none"}): ${document.body.innerText.slice(-4_000)}`)
         }
-        if (machineTrigger(index)?.getAttribute("aria-expanded") === "false") machineTrigger(index)!.click()
+        const again = machineToggle(index)
+        if (again?.getAttribute("aria-expanded") === "false") again.click()
         await new Promise(resolve => setTimeout(resolve, 25))
       }
     }

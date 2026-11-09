@@ -39,5 +39,6 @@ patchedDependencies:
   '@deepseek-ai/dsh-app-boot@0.2.2-rc.1': patches/@deepseek-ai__dsh-app-boot@0.2.2-rc.1.patch
   '@xterm/addon-ligatures@0.10.0': patches/@xterm__addon-ligatures@0.10.0.patch
   '@xterm/addon-search@0.16.0': patches/@xterm__addon-search@0.16.0.patch
+  '@xterm/addon-webgl@0.19.0': patches/@xterm__addon-webgl@0.19.0.patch
   pi-acp@0.0.34: patches/pi-acp@0.0.34.patch
   stream-markdown-parser@1.2.25: patches/stream-markdown-parser@1.2.25.patch

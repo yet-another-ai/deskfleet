@@ -4,7 +4,8 @@
     target_os = "linux",
     target_os = "windows",
     target_os = "macos",
-    target_os = "android"
+    target_os = "android",
+    target_os = "ios"
 ))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -12,7 +13,8 @@ use std::sync::{Arc, Mutex};
     target_os = "linux",
     target_os = "windows",
     target_os = "macos",
-    target_os = "android"
+    target_os = "android",
+    target_os = "ios"
 ))]
 use std::time::{Duration, Instant};
 
@@ -102,7 +104,12 @@ pub(crate) async fn run_peer(
                 }
                 result
             });
-            let _ = proxy.send_event(WindowEvent::Start { title, control, codec: codec.into() });
+            let _ = proxy.send_event(WindowEvent::Start {
+                title,
+                control,
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                codec: codec.into(),
+            });
             let mut input_open = false;
             let mut input_ready = false;
             let mut configuration = crate::input_configuration::Configuration::default();
@@ -158,13 +165,13 @@ pub(crate) async fn run_peer(
                             Some(PeerEvent::StateChanged(PeerState::Connected)) if !connected => {
                                 connected = true;
                                 protocol::emit(json!({"type":"connected"}))?;
-                                #[cfg(not(target_os = "android"))]
+                                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                                 let _ = proxy.send_event(WindowEvent::Connected(true));
                             }
                             Some(PeerEvent::StateChanged(PeerState::Disconnected)) => {
                                 connected = false;
                                 protocol::emit(json!({"type":"disconnected"}))?;
-                                #[cfg(not(target_os = "android"))]
+                                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                                 let _ = proxy.send_event(WindowEvent::Connected(false));
                             }
                             Some(PeerEvent::StateChanged(PeerState::Failed | PeerState::Closed)) => {
@@ -186,7 +193,7 @@ pub(crate) async fn run_peer(
                                     Reply::Ready => {
                                         input_ready = true;
                                         protocol::emit(json!({"type":"inputReady"}))?;
-                                        #[cfg(not(target_os = "android"))]
+                                        #[cfg(not(any(target_os = "android", target_os = "ios")))]
                                         let _ = proxy.send_event(WindowEvent::InputReady);
                                     }
                                     Reply::Error { error } => return Err(error.into()),
@@ -230,7 +237,8 @@ pub(crate) async fn run_peer(
     target_os = "linux",
     target_os = "windows",
     target_os = "macos",
-    target_os = "android"
+    target_os = "android",
+    target_os = "ios"
 ))]
 async fn receive(
     mut receiver: VideoReceiver,
@@ -266,7 +274,7 @@ async fn receive(
             width,
             height,
         )?;
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         let decoder = crate::macos_decoder::RtpVideoDecoder::with_codec(first.payload_type, codec)?;
         #[cfg(target_os = "android")]
         let decoder = crate::android_decoder::RtpVideoDecoder::with_codec(
@@ -367,7 +375,8 @@ async fn receive(
     target_os = "linux",
     target_os = "windows",
     target_os = "macos",
-    target_os = "android"
+    target_os = "android",
+    target_os = "ios"
 )))]
 async fn receive(
     _receiver: VideoReceiver,
@@ -377,7 +386,7 @@ async fn receive(
     _width: u32,
     _height: u32,
 ) -> Result<(), Error> {
-    Err("native desktop decoding is supported on Linux, Windows, macOS, and Android".into())
+    Err("native desktop decoding is supported on Linux, Windows, macOS, Android, and iOS".into())
 }
 
 pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
@@ -385,7 +394,7 @@ pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
     {
         crate::windows_decoder::supported_codecs()
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         crate::macos_decoder::supported_codecs()
     }
@@ -408,7 +417,8 @@ pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
         target_os = "linux",
         target_os = "windows",
         target_os = "macos",
-        target_os = "android"
+        target_os = "android",
+        target_os = "ios"
     )))]
     {
         Ok(Vec::new())
