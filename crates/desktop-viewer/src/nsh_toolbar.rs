@@ -282,6 +282,10 @@ fn surface(state: &ToolbarState) -> impl IntoElement + use<> {
         .absolute()
         .left(px(state.position.0))
         .top(px(state.position.1))
+        // Auto width is constrained by the previous measurement's left inset,
+        // making new controls unfold over many frames. Use intrinsic width so
+        // positioning cannot constrain the next measurement.
+        .app_class(Some("w-max".into()))
         .max_w(px((state.viewport.0 - 24.).max(0.)))
         .flex_row()
         .flex_wrap()

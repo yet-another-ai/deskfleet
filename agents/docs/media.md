@@ -604,6 +604,13 @@ The hooks require runtime acceptance on each platform, including non-US layouts
 and focus transitions. GPUI's layout-derived key events are used for local UI
 navigation, not remote key mapping.
 
+The floating toolbar uses its content's intrinsic width, capped to the viewport,
+independently of its docked or dragged position. Positioning an auto-width
+toolbar with the previous measurement's left inset limited its next layout to
+that width, making newly available controls unfold across many frames. The
+toolbar now reaches its full width immediately while retaining layout coordinates
+for tooltip anchors.
+
 NSH/GPUI is the sole desktop window implementation. Android continues using
 its existing native surface implementation.
 
@@ -766,6 +773,17 @@ for Fontconfig, FreeType, XKB/XKB-X11, XCB, and Wayland. Runtime GPU rendering
 requires a working graphics driver and the corresponding platform libraries.
 The NSH 0.4.0 backend and GPUI Fast 0.1.9 are pinned together to the versions in
 NSH's released GPUI workspace lockfile.
+
+On Windows, the viewer executable uses the GUI subsystem and its launcher does
+not set `windowsHide`: that flag also hides GPUI's window, even while the peer
+connects and decodes video. The launcher sets `GPUI_VIEW_RETENTION=0` only in the
+Windows viewer child's environment. GPUI Fast 0.1.9's retained accessibility
+replay loses NSH's synthetic subtree hierarchy and can panic with duplicate
+children after a UI Automation client activates accessibility. This workaround
+keeps accessibility enabled while rebuilding views instead of replaying that
+cache; remove it after validating a dependency fix with nested NSH controls and
+an attached UI Automation client. The smoke test uses the same launch function
+as Electron so these process options are covered by runtime checks.
 
 ```sh
 mise run viewer:build
