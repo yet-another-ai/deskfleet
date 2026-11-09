@@ -55,3 +55,14 @@ test("invalid choices, types, bounds, formats, and missing required answers leav
   assert.throws(() => validateElicitationResponse(request, { action: "accept", content: { choice: "a", count: 0 } }), /required/)
   assert.throws(() => validateElicitationResponse(request, { action: "unknown" }), /Invalid question response/)
 })
+
+test("Grok plan interview actions bypass required answers only for marked requests", () => {
+  const interview = { ...request, _meta: { deskfleet: { grokPlanInterview: true } } }
+  for (const grokOutcome of ["chat_about_this", "skip_interview"]) {
+    const response = { action: "accept", _meta: { deskfleet: { grokOutcome } } }
+    assert.deepEqual(validateElicitationResponse(interview, response), response)
+    assert.throws(() => validateElicitationResponse(request, response))
+    assert.throws(() => validateElicitationResponse(interview, { ...response, content }))
+  }
+  assert.throws(() => validateElicitationResponse(interview, { action: "accept", content: {} }))
+})

@@ -236,14 +236,32 @@ test("ordinary reads retry transient network and server failures through the sha
   for (let index = 1; index <= 3; index++) await expectRequest(f.fetch, index, "https://fleet.example/api/teams", { method: "GET" })
 })
 
-test("collects paginated billing Teams while retaining the administration array API", async () => {
+test("requests one administration Team page with its search filter and cursor", async () => {
   const f = setup()
-  const first = { id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }
-  const second = { id: "second", name: "Design team", owner: { id: "bob", name: "Bob", email: "bob@example.test" } }
-  f.responses.push({ teams: [first], nextCursor: "team/a?b" }, { teams: [second], nextCursor: null })
-  expect(await f.client.billingTeams()).toEqual([first, second])
-  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=100")
-  await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/teams?limit=100&cursor=team%2Fa%3Fb")
+  const page = { teams: [{ id: "first", name: "Design team", owner: { id: "ada", name: "Ada", email: "ada@example.test" } }], nextCursor: "team/a?b" }
+  f.responses.push(page)
+  expect(await f.client.billingTeams({ cursor: "team/prev", limit: 20, search: " design team " })).toEqual(page)
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/teams?limit=20&search=design+team&cursor=team%2Fprev")
+})
+
+test("creates an account through the administration route", async () => {
+  const f = setup()
+  const account = { id: "user-new", name: "New User", email: "newuser@example.test", disabled: false }
+  f.responses.push(account)
+  expect(await f.client.createUser({ name: "New User", email: "newuser@example.test", password: "a-very-long-test-password" })).toEqual(account)
+  const request = await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/users", { method: "POST" })
+  expect(JSON.parse((await requestBodies.get(request))!)).toEqual({ name: "New User", email: "newuser@example.test", password: "a-very-long-test-password" })
+})
+
+test("lists and reviews account deletion requests", async () => {
+  const f = setup()
+  const page = { requests: [{ id: "10", reason: "Moving on", status: "pending", requestedAt: "2026-11-08T00:00:00.000Z", user: { id: "user-2", name: "Grace", email: "grace@example.test" } }], nextCursor: "10" }
+  f.responses.push(page, {})
+  expect(await f.client.deletionRequests({ limit: 20, cursor: "9" })).toEqual(page)
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/account-deletion-requests?limit=20&cursor=9")
+  await f.client.reviewDeletionRequest("10", true, "Account verified")
+  const request = await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/account-deletion-requests/10/review", { method: "POST" })
+  expect(JSON.parse((await requestBodies.get(request))!)).toEqual({ approve: true, note: "Account verified" })
 })
 
 test("reports API errors and falls back to HTTP status for non-JSON failures", async () => {

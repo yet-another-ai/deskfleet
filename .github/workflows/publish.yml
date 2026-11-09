@@ -130,7 +130,8 @@ jobs:
         run: |
           mise exec node -- node scripts/package-nix-release.ts release-assets/deskfleet-nix.tar.gz \
             "release-assets/deskfleet-$VERSION-linux-x64.tar.gz" \
-            "release-assets/deskfleet-$VERSION-linux-arm64.tar.gz"
+            "release-assets/deskfleet-$VERSION-linux-arm64.tar.gz" \
+            "release-assets/deskfleet-$VERSION-mac-arm64.zip"
 
       - name: Verify release assets
         shell: bash

@@ -85,4 +85,42 @@ describe("message-sent-transition", () => {
     expect(bubbleAnim.spy).not.toHaveBeenCalled()
     expect(consumeSentMessageTransition(entry, false)).toEqual([])
   })
+
+  it("waits for smooth scrolling to settle when scrolled up, keeping the entry hidden until it reaches the bottom", () => {
+    const composer = document.createElement("div")
+    mockRect(composer, { left: 120, top: 620, width: 680, height: 112 })
+
+    const scroller = document.createElement("div")
+    scroller.dataset.sessionScrollViewport = ""
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 2400, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+      scrollTop: { value: 1200, writable: true, configurable: true },
+    })
+    const scrollTo = vi.spyOn(scroller, "scrollTo").mockImplementation(() => {})
+
+    const entry = document.createElement("div")
+    mockRect(entry, { left: 120, top: 1100, width: 680, height: 64 })
+    const bubble = document.createElement("div")
+    bubble.dataset.userMessageBubble = ""
+    entry.append(bubble)
+    scroller.append(entry)
+    document.body.append(scroller)
+    mockRect(bubble, { left: 560, top: 500, width: 220, height: 42 })
+    const bubbleAnim = spyAnimate(bubble)
+
+    recordSentMessageOrigin(composer)
+    const animations = consumeSentMessageTransition(entry)
+    expect(animations).toHaveLength(0)
+    expect(scrollTo).toHaveBeenCalledWith({ top: 2400, behavior: "smooth" })
+    expect(entry.style.opacity).toBe("0")
+    expect(bubbleAnim.spy).not.toHaveBeenCalled()
+
+    scroller.dispatchEvent(new Event("scrollend"))
+    expect(entry.style.opacity).toBe("")
+    expect(scroller.scrollTop).toBe(2400)
+    expect(animations).toHaveLength(2)
+
+    scroller.remove()
+  })
 })

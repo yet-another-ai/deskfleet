@@ -8,15 +8,38 @@ mod android_decoder;
 mod av1_config;
 #[cfg(test)]
 mod codec_tests;
+#[cfg(not(target_os = "android"))]
+mod gpui_input;
+#[cfg(not(target_os = "android"))]
+mod host;
+#[cfg(target_os = "android")]
 mod input;
+mod input_configuration;
 mod input_queue;
 mod input_reply;
 #[cfg(target_os = "macos")]
 mod macos_decoder;
 #[cfg(not(target_os = "android"))]
-mod presentation;
+mod nsh_chrome;
+#[cfg(not(target_os = "android"))]
+mod nsh_keyboard_focus;
+#[cfg(not(target_os = "android"))]
+mod nsh_layout;
+#[cfg(not(target_os = "android"))]
+mod nsh_session_state;
+#[cfg(not(target_os = "android"))]
+mod nsh_toolbar;
+#[cfg(not(target_os = "android"))]
+mod nsh_ui;
+#[cfg(not(target_os = "android"))]
+mod nsh_video;
+#[cfg(not(target_os = "android"))]
+mod nsh_window;
+#[cfg(not(target_os = "android"))]
+mod physical_input;
 mod protocol;
 mod queue;
+#[cfg(target_os = "android")]
 mod renderer;
 #[cfg(any(
     target_os = "windows",
@@ -26,25 +49,13 @@ mod renderer;
 ))]
 mod rtp_video;
 mod session;
-#[cfg(not(target_os = "android"))]
-mod window;
+mod session_manager;
 #[cfg(target_os = "windows")]
 mod windows_decoder;
 
 #[cfg(not(target_os = "android"))]
-use std::io::{self, BufRead};
-#[cfg(not(target_os = "android"))]
-use std::sync::{Arc, Mutex};
-#[cfg(not(target_os = "android"))]
-use std::time::Duration;
+use std::io;
 use std::time::Instant;
-
-#[cfg(not(target_os = "android"))]
-use serde_json::json;
-#[cfg(not(target_os = "android"))]
-use tokio::sync::{mpsc, watch};
-#[cfg(not(target_os = "android"))]
-use winit::event_loop::{EventLoop, EventLoopProxy};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -59,15 +70,32 @@ enum WindowEvent {
     Start {
         title: String,
         control: bool,
+        codec: protocol::Codec,
     },
     FrameReady,
     Error(String),
     #[cfg(not(target_os = "android"))]
     Close,
+    #[cfg(not(target_os = "android"))]
+    Ui(protocol::UiState),
+    #[cfg(not(target_os = "android"))]
+    Connected(bool),
+    #[cfg(not(target_os = "android"))]
+    InputReady,
+    #[cfg(not(target_os = "android"))]
+    SessionEnded,
 }
 
 #[cfg(not(target_os = "android"))]
-pub(crate) type WindowNotifier = EventLoopProxy<WindowEvent>;
+#[derive(Clone)]
+pub(crate) struct WindowNotifier(async_channel::Sender<WindowEvent>);
+
+#[cfg(not(target_os = "android"))]
+impl WindowNotifier {
+    pub(crate) fn send_event(&self, event: WindowEvent) -> Result<(), Error> {
+        self.0.try_send(event).map_err(|_| "viewer closed".into())
+    }
+}
 #[cfg(target_os = "android")]
 pub(crate) type WindowNotifier = android::AndroidNotifier;
 
@@ -79,73 +107,7 @@ pub fn run() -> Result<(), Error> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(io::stderr)
         .try_init();
-    let mut event_loop = EventLoop::<WindowEvent>::with_user_event();
-    #[cfg(target_os = "macos")]
-    {
-        use winit::platform::macos::EventLoopBuilderExtMacOS;
-        // AppKit's default menu consumes Command-Q/H before the remote input
-        // handler can forward them. The native close button still closes us.
-        event_loop.with_default_menu(false);
-    }
-    let event_loop = event_loop.build()?;
-    let proxy = event_loop.create_proxy();
-    let frames = Arc::new(Mutex::new(queue::FrameQueue::default()));
-    let (commands_tx, commands) = mpsc::channel(32);
-    let (input, inputs) = input_queue::channel();
-    let (shutdown, shutdown_rx) = watch::channel(false);
-    let reader_proxy = proxy.clone();
-    std::thread::Builder::new()
-        .name("viewer control".into())
-        .spawn(move || {
-            for line in io::stdin().lock().lines() {
-                let parsed = line.map_err(|error| error.to_string()).and_then(|line| {
-                    serde_json::from_str(&line).map_err(|error| error.to_string())
-                });
-                match parsed {
-                    Ok(command) => {
-                        if commands_tx.blocking_send(command).is_err() {
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        let _ = reader_proxy.send_event(WindowEvent::Error(error));
-                        return;
-                    }
-                }
-            }
-            let _ = reader_proxy.send_event(WindowEvent::Close);
-        })?;
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    let session_frames = Arc::clone(&frames);
-    let session = runtime.spawn(async move {
-        let result =
-            session::run(commands, inputs, session_frames, proxy.clone(), shutdown_rx).await;
-        match &result {
-            Ok(()) => {
-                let _ = proxy.send_event(WindowEvent::Close);
-            }
-            Err(error) => {
-                let _ = proxy.send_event(WindowEvent::Error(error.to_string()));
-            }
-        }
-        result
-    });
-    let mut viewer = window::Viewer::new(frames, input, shutdown.clone());
-    let window_result = event_loop.run_app(&mut viewer);
-    shutdown.send_replace(true);
-    let session_result = runtime.block_on(session);
-    // The detached stdin reader is an ordinary thread, never a Tokio blocking
-    // task that could keep runtime shutdown alive after the native window closes.
-    runtime.shutdown_timeout(Duration::from_secs(2));
-    protocol::emit(json!({"type":"closed"}))?;
-    window_result?;
-    session_result??;
-    if let Some(error) = viewer.error {
-        return Err(error.into());
-    }
-    Ok(())
+    nsh_window::run()
 }
 
 #[cfg(target_os = "android")]

@@ -1,3 +1,4 @@
+import type { AccountDeletionRequest } from "./account-deletion.ts"
 import { HttpError, type HttpCentralClient } from "./http-central.ts"
 import { authenticatePasskey, registerPasskey } from "./passkeys.ts"
 
@@ -37,6 +38,9 @@ export function accountAuthentication(api: Transport) {
     sessions: () => api.request<LoginSession[]>("GET", "/api/auth/sessions"),
     revokeSession: (id: string) => api.request<void>("DELETE", `/api/auth/sessions/${encodeURIComponent(id)}`),
     revokeAllSessions: () => post("sessions/revoke-all"),
+    deletionRequest: () => api.request<{ request: AccountDeletionRequest | null }>("GET", "/api/auth/account-deletion"),
+    requestDeletion: (reason: string) => post<AccountDeletionRequest>("account-deletion", { reason }),
+    cancelDeletion: () => api.request<void>("DELETE", "/api/auth/account-deletion"),
     passkeys: () => api.request<Passkey[]>("GET", "/api/auth/passkeys"),
     addPasskey: (name: string) => registerPasskey(api, name),
     renamePasskey: (id: string, name: string) => api.request<void>("PATCH", passkey(id), { name }),

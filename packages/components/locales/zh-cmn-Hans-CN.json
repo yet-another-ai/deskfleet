@@ -206,6 +206,7 @@
   },
   "siteAdmin": {
     "title": "站点管理",
+    "generalTitle": "站点设置",
     "description": "管理此 DeskFleet 站点的配置。",
     "forbidden": "此页面需要站点管理员权限。",
     "siteName": "站点名称",
@@ -241,6 +242,14 @@
     "allowTeamTurnServers": "允许团队使用自己的 TURN 服务器",
     "allowTeamTurnServersDescription": "Pro 和 Enterprise 团队可以用自己的服务器替换这些服务器。关闭后，所有团队都使用这些服务器。",
     "accounts": "账号管理",
+    "createAccount": "创建账号",
+    "createAccountDescription": "创建带密码的已验证账号。不会发送验证邮件；请通过安全渠道共享密码。",
+    "createAccountTitle": "创建账号",
+    "createAccountName": "名称",
+    "createAccountEmail": "邮箱",
+    "createAccountPassword": "临时密码",
+    "createAccountPasswordHint": "15–128 个字符。账号会立即完成验证。",
+    "accountCreated": "账号 {email} 已创建。",
     "searchUsers": "搜索邮箱或名称",
     "search": "搜索",
     "enableUser": "启用账号",
@@ -251,7 +260,20 @@
     "noAccounts": "没有与“{query}”匹配的账号。",
     "resultLimit": "仅显示前 {count} 个结果，请细化搜索条件。",
     "disableTitle": "停用 {name}？",
-    "disableDescription": "其登录会话和连接权限将被撤销，计划任务不再获得授权。Team 的机器和数据会保留。"
+    "disableDescription": "其登录会话和连接权限将被撤销，计划任务不再获得授权。Team 的机器和数据会保留。",
+    "deletionRequests": "删除申请",
+    "deletionRequestsDescription": "审批待处理的账号永久删除申请。批准后会停用登录并匿名化个人资料；Team 机器和共享工作会保留。",
+    "noDeletionRequests": "暂无待处理的账号删除申请。",
+    "pending": "待处理",
+    "requestedAt": "申请于 {date}",
+    "approveDeletion": "批准删除",
+    "rejectDeletion": "拒绝",
+    "approveDeletionTitle": "删除 {name} 的账号？",
+    "approveDeletionDescription": "{name} 将被退出登录，凭据和 Team 成员身份会被移除，个人资料会被匿名化。必须先移交 Team 所有权。此操作不可撤销。",
+    "rejectDeletionTitle": "拒绝 {name} 的删除申请？",
+    "rejectDeletionDescription": "{name} 将保留账号，并可看到你填写的备注（如有）。",
+    "reviewNote": "审批备注（可选）",
+    "reviewNoteHint": "拒绝时向账号展示；批准时与决定一并保存。"
   },
   "mcpServers": {
     "title": "MCP 服务器",
@@ -664,6 +686,7 @@
     "machineChoice": "机器：{machine}",
     "workspace": "工作区",
     "workspaceChoice": "工作区：{workspace}",
+    "noWorkspace": "不使用工作区",
     "baseBranch": "基础分支",
     "baseBranchChoice": "基础分支：{branch}",
     "prepare": {
@@ -979,6 +1002,31 @@
     "select": "添加所选文件"
   },
   "agent": {
+    "protocol": {
+      "planCancelled": "已取消",
+      "compaction": "上下文压缩",
+      "compactionStates": {
+        "in_progress": "正在压缩上下文",
+        "completed": "上下文已压缩",
+        "failed": "压缩失败",
+        "cancelled": "压缩已取消",
+        "unknown": "压缩状态更新"
+      },
+      "subagent": "子 Agent",
+      "subagentStates": {
+        "running": "工作中",
+        "idle": "空闲",
+        "requires_action": "需要输入",
+        "unknown": "状态未知"
+      },
+      "sessionMessage": "Agent 消息",
+      "messageRoute": "{sender} → {recipient}",
+      "session": "会话",
+      "userMessage": "用户消息",
+      "authentication": "Agent 登录状态",
+      "chatAboutPlan": "讨论此计划",
+      "skipInterview": "跳过访谈"
+    },
     "conversation": "对话",
     "usage": {
       "title": "会话用量",
@@ -1002,6 +1050,15 @@
     "collapseText": "收起",
     "contentType": "{type} 内容",
     "tool": "工具调用",
+    "toolCall": {
+      "read": "读取 {target}",
+      "edit": "编辑 {target}",
+      "delete": "删除 {target}",
+      "move": "移动 {target}",
+      "execute": "执行 {target}",
+      "search": "搜索 {target}",
+      "fetch": "获取 {target}"
+    },
     "remoteMcp": {
       "details": "调用详情",
       "screenshot": "{machine} · {action}"
@@ -1284,7 +1341,7 @@
     "turnRemoveDescription": "URL 和共享密钥将被删除。新连接将根据套餐使用站点的中继。",
     "relayedTraffic": "转发的流量",
     "activeSessions": "活跃会话",
-    "activeSessionsHint": "尚未归档的会话。",
+    "activeSessionsHint": "尚未删除的会话，包括已归档的会话。",
     "usageMembers": "团队人数",
     "usageMembersHint": "包含所有者、管理员和成员，不含待接受的邀请。",
     "unlimited": "无限额度",
@@ -1377,7 +1434,9 @@
     "replace": "替换",
     "loadingResource": "正在加载图片…",
     "imageUnavailable": "图片无法加载",
+    "openResource": "打开", "previewUnavailableLocal": "无法预览此文件，可以使用其他应用打开。",
     "previewUnavailable": "无法预览此文件，可以下载后查看。", "downloadResource": "下载",
+    "previewHtml": "预览", "viewSource": "源码",
     "resourceUnavailable": "此资源暂不可用，请连接所属机器后重试。",
     "notImage": "此文件无法作为图片显示。",
     "state": {
@@ -1621,7 +1680,22 @@
     "revokeDescription": "该设备需要重新登录。机器和正在运行的任务不受影响。",
     "revokeAll": "退出所有设备",
     "revokeAllTitle": "退出所有设备？",
-    "revokeAllDescription": "包括当前浏览器在内，所有浏览器和桌面应用都需要重新登录。机器和正在运行的任务不受影响。"
+    "revokeAllDescription": "包括当前浏览器在内，所有浏览器和桌面应用都需要重新登录。机器和正在运行的任务不受影响。",
+    "deleteAccount": "删除账号",
+    "deleteAccountDescription": "申请删除账号。任何更改前都会由站点管理员审批。批准后会停用登录、移除凭据和 Team 成员身份，并匿名化个人资料；Team 机器和共享工作会保留。",
+    "deleteAccountReason": "删除原因",
+    "deleteAccountReasonRequired": "请输入删除账号的原因。",
+    "deleteAccountOwnership": "在管理员批准申请前，请先移交你拥有的 Team 的所有权。Team 的机器和共享工作不会随账号删除。",
+    "deleteAccountPending": "已于 {date} 提交申请，等待站点管理员审批。",
+    "deleteAccountRejected": "已于 {date} 提交申请，站点管理员已拒绝。",
+    "deleteAccountApproved": "此账号已删除。",
+    "deleteAccountReviewNote": "备注：{note}",
+    "requestAccountDeletion": "申请删除",
+    "submitDeletionRequest": "提交申请",
+    "deleteAccountTitle": "申请删除账号",
+    "cancelDeletionRequest": "撤销申请",
+    "cancelDeletionTitle": "撤销账号删除申请？",
+    "cancelDeletionDescription": "账号保持正常状态，你可以稍后再次申请。"
   },
   "billing": {
     "comparison": {
@@ -1708,10 +1782,14 @@
     "grantExpiryInvalid": "请选择未来的到期时间。",
     "enterpriseTeams": "手动授权",
     "enterpriseHint": "为 Team 授予无限额度。此操作不会取消或暂停其 Stripe 订阅。",
-    "filterTeams": "按 Team 或所有者账户筛选",
+    "filterTeams": "按 Team 名称或所有者账户搜索",
     "teamOwnerAccount": "所有者：{name}（{email}）",
     "noTeams": "暂无 Team。",
     "noMatchingTeams": "没有符合条件的 Team。",
+    "pagination": "手动授权分页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "pageNumber": "第 {page} 页",
     "noSubscription": "无付费订阅",
     "subscriptionPlan": "{plan} 订阅",
     "grantEnterprise": "授予 Enterprise",
@@ -1745,7 +1823,7 @@
     "empty": "没有找到结果",
     "emptyHint": "试试其他关键词，或搜索全部类型。",
     "start": "查找对话或计划任务",
-    "startHint": "搜索标题、已发送的消息、已结束回合的智能体回复和计划任务提示词。不包含已归档的对话。",
+    "startHint": "搜索标题、已发送的消息、已结束回合的智能体回复和计划任务提示词，包括已归档的对话。",
     "loading": "正在搜索…",
     "more": "加载更多",
     "untitled": "未命名对话"

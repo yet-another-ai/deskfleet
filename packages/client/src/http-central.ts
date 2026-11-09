@@ -1,10 +1,11 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { PeerStartOptions } from "./central.ts"
-import type { AccountState, AccountUser, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
-import type { BillingInterval, TeamBilling, AdminTeamBilling } from "./billing.ts"
+import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
@@ -205,20 +206,17 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     const { url } = await this.request<{ url: string }>("POST", `/api/teams/${encodeURIComponent(teamId)}/billing/portal`, {})
     await this.#open(url)
   }
-  async billingTeams(): Promise<AdminTeamBilling[]> {
-    const teams: AdminTeamBilling[] = []
-    let cursor: string | null = null
-    do {
-      const suffix = cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`
-      const page: { teams: AdminTeamBilling[]; nextCursor: string | null } = await this.request("GET", `/api/admin/teams?limit=100${suffix}`)
-      teams.push(...page.teams)
-      cursor = page.nextCursor
-    } while (cursor !== null)
-    return teams
+  billingTeams(query: AdminTeamBillingQuery = {}): Promise<AdminTeamBillingPage> {
+    const params = new URLSearchParams({ limit: String(query.limit ?? 20) })
+    const search = query.search?.trim()
+    if (search) params.set("search", search)
+    if (query.cursor) params.set("cursor", query.cursor)
+    return this.request<AdminTeamBillingPage>("GET", `/api/admin/teams?${params}`)
   }
   registrationPolicy() { return this.request<{ registrationEnabled: boolean }>("GET", "/api/auth/config") }
   async updateRegistration(enabled: boolean) { await this.request("PATCH", "/api/auth/registration", { enabled }) }
-  users(query: string) { return this.request<Array<{ id: string; name: string; email: string; disabled: boolean }>>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
+  users(query: string) { return this.request<AdminAccount[]>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
+  createUser(input: CreateAccountInput) { return this.request<AdminAccount>("POST", "/api/admin/users", input) }
   async disableUser(userId: string, disabled: boolean) { await this.request("PATCH", `/api/admin/users/${encodeURIComponent(userId)}/disabled`, { disabled }) }
   sendEmailCode() { return this.request<{ challengeId: string; expiresIn: number; retryAfter: number }>("POST", "/api/auth/reauthenticate/email", {}) }
   async verifyEmailCode(challengeId: string, code: string) { await this.request("POST", "/api/auth/reauthenticate/email/verify", { challengeId, code }) }
@@ -228,6 +226,14 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     else await this.request("POST", "/api/auth/reauthenticate", { password })
   }
   async setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string) { await this.request("PUT", `/api/admin/teams/${encodeURIComponent(teamId)}/grant`, { plan, expiresAt, reason }) }
+  deletionRequests(query: AccountDeletionRequestQuery = {}): Promise<AccountDeletionRequestPage> {
+    const params = new URLSearchParams({ limit: String(query.limit ?? 20) })
+    if (query.cursor) params.set("cursor", query.cursor)
+    return this.request<AccountDeletionRequestPage>("GET", `/api/admin/account-deletion-requests?${params}`)
+  }
+  async reviewDeletionRequest(id: string, approve: boolean, note?: string) {
+    await this.request("POST", `/api/admin/account-deletion-requests/${encodeURIComponent(id)}/review`, { approve, ...(note ? { note } : {}) })
+  }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
   /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
   networkConfiguration(): Promise<NetworkConfiguration> {

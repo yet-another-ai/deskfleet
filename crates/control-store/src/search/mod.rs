@@ -29,7 +29,7 @@ struct Cursor {
 }
 
 impl ControlStore {
-    /// Search one Team's active conversations and synchronized schedules.
+    /// Search one Team's non-deleted conversations and synchronized schedules.
     ///
     /// # Errors
     /// Rejects nonmembers, invalid queries/cursors, and database failures.
@@ -96,7 +96,7 @@ impl ControlStore {
     }
 }
 
-fn escape_like(query: &str) -> String {
+pub(super) fn escape_like(query: &str) -> String {
     query
         .replace('\\', "\\\\")
         .replace('%', "\\%")

@@ -27,6 +27,16 @@ and GPU presentation. The machine daemon continues running inside Electron's
 main process. Native viewer closure releases that viewing session without
 changing the daemon's lifetime.
 
+The native desktop viewer uses a GPUI host with a pure-Rust NSH floating
+toolbar. Its video scene and toolbar share one window compositor; decoded pixels
+stay in Rust and never pass through the NSH engine. The toolbar uses the shared
+desktop translations and theme, with display selection, control settings,
+pause/resume, full screen, and disconnect/reconnect. One viewer process keeps
+its window while Electron replaces or stops the receiving peer. Per-window
+platform hooks forward physical keyboard positions through the existing input
+contract. The [native viewer guide](media.md) records runtime validation and
+GPUI presentation measurement limits.
+
 ## Components
 
 ```mermaid
@@ -51,7 +61,7 @@ flowchart LR
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
-| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and shallow FIFO presentation | Rust / winit / wgpu; platform H.264, HEVC, and AV1 decoding |
+| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and bounded decoded-frame queue | Rust / NSH / GPUI; platform H.264, HEVC, and AV1 decoding |
 | Web application | Frontend for catalog, history, and browser-supported remote access, served by the central server or an independent static host | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 
@@ -628,10 +638,10 @@ retained. Active registrations cannot be overwritten by a new token. Adding a
 different Team creates a separate empty catalog under the same public Machine ID.
 
 Revoked registrations retain their durable Session admission receipts but do not
-occupy Team capacity. Reactivation checks the retained admissions together with
-the Team's currently active admissions under the same Team lock used for new
-Session creation. It fails with `active_session_limit` if restoring them would
-exceed the current plan. Reconnected daemon reconciliation confirms or releases
+occupy Team capacity. Reactivation checks retained non-deleted Sessions and live
+admissions together with the Team's current usage under the same Team lock used
+for new Session creation. It fails with `active_session_limit` if reactivating
+them would exceed the current plan. Reconnected daemon reconciliation confirms or releases
 the original generations from its durable local outcomes.
 
 Authenticated backend management exposes catalog queries, Workspace
@@ -892,6 +902,9 @@ The Codex template connects Codex CLI through the bundled
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp). The Claude
 Code template connects Claude Code CLI through the bundled
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp).
+Both bundled adapters advertise strict steering with an idle `promptRequired`
+outcome, so the daemon retains ownership of any new turn. The Codex patch
+implements that boundary; the Claude patch advertises its existing implementation.
 The Cursor template launches the installed Cursor CLI directly as `agent acp`;
 Cursor speaks ACP and does not use a bundled adapter. The process starts in the
 Session worktree's first directory. Cursor ACP loads project skills, rules, and
@@ -899,9 +912,12 @@ subagents from that launch directory; the `session/new` working directory still
 selects file tools. After initialization it
 calls `authenticate` with `cursor_login` when Cursor advertises that method,
 except during connection tests, which use credentials loaded at CLI startup.
+Cursor's question and plan requests use shared elicitation decisions; its todo,
+task, and image notifications become structured conversation activity.
 The Grok template launches the installed Grok CLI directly as `grok agent stdio`.
 It authenticates with `xai.api_key` when `XAI_API_KEY` is set, and otherwise with
-`cached_token` after `grok login`.
+`cached_token` after `grok login`. Grok's plan-interview discussion and skip
+actions use the same audited question flow as ordinary answers.
 The Oh My Pi template launches the installed `omp` CLI directly as `omp acp`,
 using its existing provider credentials. Its native ACP server supplies session
 configuration and supports client filesystem, terminal, and MCP integration.
@@ -966,8 +982,7 @@ release, and expose only read-only output to human viewers. The terminal
 message transport carries their output without copying it into conversation history.
 
 ACP capability negotiation determines which operations an adapter supports.
-Pi is a further integration candidate. Managed
-sessions, imported history, resumed sessions, and attachment to an existing CLI
+Managed sessions, imported history, resumed sessions, and attachment to an existing CLI
 process are distinct capabilities. ACP alone does not guarantee live attachment;
 a tmux connection can expose the CLI without providing structured ACP control.
 
@@ -979,16 +994,28 @@ the sole ACP client toward each provider process.
 Credentials remain on the executing machine. ACP approval callbacks do not confine
 agents that execute tools directly.
 
-The composer discovers model, reasoning, and mode choices from the provider through the
-same ACP facade. Draft discovery uses a temporary provider session in
-the Workspace's default directory without creating a managed Session or Worktree.
+Structured plans, context compactions, child-agent activity, and session messages
+are projections of this same journal. Provider child Session IDs remain scoped
+to their declaring parent and connection; they do not allocate separate
+DeskFleet Workspaces or Worktrees. Their original provider IDs are retained, and
+child updates cannot replace the root Session's configuration, title, command
+catalog, or usage. Transient authentication status and user notices travel through
+a separate live channel and are excluded from the journal and history caches.
+
+The composer discovers model, reasoning, mode, and additional select or boolean
+options from the provider through the same ACP facade. Provider labels, categories,
+and option groups are retained; unknown categories remain usable. Draft discovery
+uses a temporary provider session in the Workspace's default directory without
+creating a managed Session or Worktree.
 Session creation applies the selected configuration before delivering prompts;
 existing Session controls change these choices between turns on that Session's
 provider connection. A Session's provider identity changes only through an
 explicit Agent switch between turns, which starts a fresh provider conversation
 without transferring prior context; clients warn about the lost prompt cache.
 Configuration options and confirmed changes use the existing ACP event journal
-so attached viewers can follow them.
+so attached viewers can follow them. Arbitrary option values are restored with
+the common controls on resume, fork, and draft-probe replacement; explicit model
+changes accept the new model's dependent defaults.
 
 Composer completions share this provider discovery for `/` commands and supported
 `$` skill invocations. `@` file search runs on the target daemon across the
@@ -1162,7 +1189,10 @@ operation routing use the authenticated control plane. Chromium receives media
 into a standard HTML video element. Linux, Windows, and macOS Electron clients
 also offer a separate native H.264/HEVC/AV1 window. Electron owns its Team grant and
 signaling over private control pipes; the Rust viewer owns receive, decode,
-input, and GPU presentation. Its lifetime is independent of the hosted daemon.
+input, and GPU presentation. Display changes, control settings, and reconnects
+replace the peer inside the same native window; disconnect releases the peer
+and leaves the window ready to reconnect. Its lifetime is independent of the
+hosted daemon.
 Within each Machine registration, a native desktop stream pool shares capture
 and encoding for matching display, codec, audio, and quality parameters across
 viewing peers. Peer authorization and transport remain independent; releasing
@@ -1332,10 +1362,11 @@ their media bytes. File previews, file transfer, and remote desktop media stay
 on their existing daemon/peer paths.
 
 Search spans the selected Team's Machines using central synchronized data. It
-matches active Chat titles, sent user messages, and Agent replies, plus Scheduled
-Task titles and prompts. Results retain their owning Machine and Workspace;
-conversation matches link to the message that contains the text. Team membership,
-machine revocation, current catalog inventory, and archive state are checked
+matches non-deleted Chat titles, sent user messages, and Agent replies, including
+archived Chats, plus Scheduled Task titles and prompts. Results retain their
+owning Machine and Workspace; conversation matches link to the message that
+contains the text. Team membership,
+machine revocation, current catalog inventory, and deletion state are checked
 before results are returned. Previously synchronized content remains searchable
 while its Machine is offline. Scheduled Task snapshots are read-only replicas;
 their execution and mutation remain owned by the daemon.
@@ -1467,7 +1498,7 @@ The Rust workspace contains:
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
 | `deskfleet-server` | Actix Web application in `apps/server` |
 | `deskfleet-desktop-service` | Thin Windows service executable in `apps/desktop-service`, hosting native desktop workers |
-| `deskfleet-desktop-viewer` | Native H.264/HEVC/AV1 receive/decode, shallow FIFO presentation, and remote input; thin viewer executable |
+| `deskfleet-desktop-viewer` | Native H.264/HEVC/AV1 receive/decode, bounded decoded-frame queue, NSH/GPUI desktop presentation, and remote input; thin viewer executable |
 
 Dependencies flow `server -> protocol -> model`, `server -> control-store -> protocol`,
 `node -> store -> model/migration` for local catalog persistence,

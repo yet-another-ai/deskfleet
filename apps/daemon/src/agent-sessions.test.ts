@@ -1144,8 +1144,10 @@ test("delete closes provider before removing owned checkouts and preserves the c
   const f = await setup(t)
   await f.submit("hold").result
   await until(f.read, state => state.turns.length === 1 && f.provider.prompts.length === 1)
+  assert.deepEqual(f.service.live(f.sessionId), { sessionId: f.sessionId, runGeneration: 1, kind: "auth", auth: null })
   const params = { sessionId: f.sessionId, operationId: randomUUID() }
   await f.service.handle("_deskfleet/session/delete", params, f.actor)
+  assert.equal(f.service.live(f.sessionId), undefined)
   await assert.rejects(f.read(), /not found/u)
   assert.equal((await f.service.journal.command(params.operationId))?.status, "completed")
   assert.equal(await f.service.handle("_deskfleet/session/delete", params, f.actor), null)

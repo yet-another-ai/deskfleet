@@ -12,6 +12,7 @@ use crate::Error;
 const CAPACITY: usize = 256;
 type Pending = Arc<Mutex<VecDeque<InputEvent>>>;
 
+#[derive(Clone)]
 pub(crate) struct Sender {
     pending: Pending,
     ready: mpsc::Sender<()>,

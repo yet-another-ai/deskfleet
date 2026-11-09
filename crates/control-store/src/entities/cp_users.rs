@@ -13,6 +13,7 @@ pub struct Model {
     pub credential_version: i64,
     pub disabled: bool,
     pub authentication_generation: i64,
+    pub deleted_at: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

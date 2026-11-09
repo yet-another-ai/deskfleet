@@ -5,6 +5,17 @@ import * as acp from "@agentclientprotocol/sdk/unstable"
 const mode = process.env.DESKFLEET_TEST_EXTENSIONS_MODE
 let forkCalls = 0
 
+async function announceChild(client: acp.AgentContext, sessionId: string, cwd: string): Promise<void> {
+  const child = `${sessionId}-child`
+  await client.notify(acp.methods.client.session.update, { sessionId, update: {
+    sessionUpdate: "subagent_update", sessionId: child, title: "Explorer", cwd,
+  } })
+  await openingFile(client, child, cwd)
+  await client.notify(acp.methods.client.session.update, { sessionId: child, update: {
+    sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Child result" },
+  } })
+}
+
 async function openingFile(client: acp.AgentContext, sessionId: string, cwd: string): Promise<string> {
   const path = join(cwd, "opening", `${sessionId}.txt`)
   await client.request(acp.methods.client.fs.writeTextFile, { sessionId, path, content: `${sessionId}\nready\n` })
@@ -15,21 +26,53 @@ async function openingFile(client: acp.AgentContext, sessionId: string, cwd: str
 const connection = acp.agent({ name: "deskfleet-extensions-fixture" })
   .onRequest(acp.methods.agent.initialize, ({ params }) => ({
     protocolVersion: acp.PROTOCOL_VERSION,
-    agentCapabilities: { sessionCapabilities: mode === "unsupported-fork" ? {} : { fork: {} } },
+    agentCapabilities: { loadSession: true, sessionCapabilities: mode === "unsupported-fork" ? {} : { fork: {} } },
     _meta: { clientCapabilities: params.clientCapabilities },
   }))
   .onRequest(acp.methods.agent.session.new, async ({ params, client }) => {
     const sessionId = "extension-source"
     const content = await openingFile(client, sessionId, params.cwd)
+    if (mode === "children") await announceChild(client, sessionId, params.cwd)
     return { sessionId, _meta: { content } }
   })
   .onRequest(acp.methods.agent.session.fork, async ({ params, client }) => {
     forkCalls++
     const sessionId = mode === "same-id" ? params.sessionId : `extension-fork-${forkCalls}`
     const content = await openingFile(client, sessionId, params.cwd)
+    if (mode === "children") await announceChild(client, sessionId, params.cwd)
     return { sessionId: mode === "mismatched-id" ? "different-id" : sessionId, _meta: { request: params, content } }
   })
+  .onRequest(acp.methods.agent.session.load, async ({ params, client }) => {
+    if (mode === "replay-children") {
+      const childId = `${params.sessionId}-child`
+      const grandchildId = `${params.sessionId}-grandchild`
+      const replay: acp.SessionNotification[] = [
+        { sessionId: childId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Historical child text" } } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "session_message", messageId: "historical-message", senderSessionId: grandchildId, recipientSessionId: "historical-only" } },
+        { sessionId: childId, update: { sessionUpdate: "subagent_update", sessionId: grandchildId, title: "Nested child" } },
+        { sessionId: "unrelated-parent", update: { sessionUpdate: "subagent_update", sessionId: "orphan" } },
+        { sessionId: childId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: childId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-command", description: "Historical child command" }] } },
+        { sessionId: childId, update: { sessionUpdate: "current_mode_update", currentModeId: "child-mode" } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "subagent_update", sessionId: childId, title: "Explorer", cwd: params.cwd } },
+        { sessionId: childId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: childId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-command", description: "Historical child command" }] } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "config_option_update", configOptions: [] } },
+        { sessionId: params.sessionId, update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "root-command", description: "Restored root command" }] } },
+      ]
+      for (const notification of replay) await client.notify(acp.methods.client.session.update, notification)
+      await openingFile(client, grandchildId, params.cwd)
+      return {}
+    }
+    await announceChild(client, params.sessionId, params.cwd)
+    return {}
+  })
   .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {
+    const notification = params._meta?.notification as { method: string; params: unknown } | undefined
+    if (notification) {
+      await client.notify(notification.method, notification.params)
+      return { stopReason: "end_turn" }
+    }
     const operation = params._meta?.operation as { method: string; params: Record<string, unknown> } | undefined
     if (operation) {
       try {

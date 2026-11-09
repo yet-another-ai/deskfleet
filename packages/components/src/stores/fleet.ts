@@ -8,6 +8,7 @@ import { useAccountSession } from "../composables/useAccountSession.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { usePinnedSessionsStore } from "./pinned-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
 
 export interface WorkspaceLocation {
@@ -86,6 +87,7 @@ export const useFleetStore = defineStore("fleet", () => {
   const catalogLoading = ref(false)
   const catalogReady = ref(false)
   const targetWorkspaceId = ref<string | null>(null)
+  let noWorkspaceSelected = false
   const collapsedMachineIds = ref(new Set<string>())
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
@@ -160,7 +162,14 @@ export const useFleetStore = defineStore("fleet", () => {
   }
   function reconcileTarget(): void {
     const values = catalog.value?.workspaces ?? []
-    if (!values.some(workspace => workspace.id === targetWorkspaceId.value)) targetWorkspaceId.value = values[0]?.id ?? null
+    if (!values.length) {
+      noWorkspaceSelected = false
+      targetWorkspaceId.value = null
+    } else if (noWorkspaceSelected) {
+      targetWorkspaceId.value = null
+    } else if (!values.some(workspace => workspace.id === targetWorkspaceId.value)) {
+      targetWorkspaceId.value = values[0]?.id ?? null
+    }
   }
   function applySnapshot(snapshot: CatalogSnapshot): void {
     catalog.value = snapshot
@@ -238,6 +247,7 @@ export const useFleetStore = defineStore("fleet", () => {
     const index = workspaces.findIndex(workspace => workspace.id === value.id)
     if (index === -1) workspaces.push(value)
     else workspaces[index] = value
+    noWorkspaceSelected = false
     targetWorkspaceId.value = value.id
     track("workspace_created", { directory_count: directories.length })
     return value
@@ -257,7 +267,12 @@ export const useFleetStore = defineStore("fleet", () => {
       await platformClient.catalog.deleteWorkspace(id)
     } catch (error) {
       if (!sessionIds.length || !(error instanceof Error) || !error.message.includes("still has active sessions")) throw error
-      for (const sessionId of sessionIds) await agents.remove(sessionId)
+      // Deletion skips archive, so pins would otherwise keep navigating to removed Sessions.
+      const pins = usePinnedSessionsStore()
+      for (const sessionId of sessionIds) {
+        await agents.remove(sessionId)
+        pins.unpin(targetId, sessionId)
+      }
       await platformClient.catalog.deleteWorkspace(id)
     }
     catalog.value!.workspaces = catalog.value!.workspaces.filter(workspace => workspace.id !== id)
@@ -280,7 +295,10 @@ export const useFleetStore = defineStore("fleet", () => {
   function findMachine(id: string): MachineSummary | null { return machines.value.find(machine => machine.id === id) ?? null }
   function isCollapsed(id: string): boolean { return collapsedMachineIds.value.has(id) }
   function toggleMachine(id: string): void { if (!collapsedMachineIds.value.delete(id)) collapsedMachineIds.value.add(id) }
-  function targetWorkspace(id: string): void { targetWorkspaceId.value = id }
+  function targetWorkspace(id: string | null): void {
+    noWorkspaceSelected = id === null
+    targetWorkspaceId.value = id
+  }
   const newSessionTarget = computed<SessionTarget | null>(() => {
     if (targetWorkspaceId.value) return findWorkspace(targetWorkspaceId.value)
     const machine = findMachine(targetId)

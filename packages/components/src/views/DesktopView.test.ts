@@ -135,7 +135,7 @@ test("opens the selected display in an independent native window without a brows
   await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
   await wrapper.get('[data-native-desktop]').trigger("click")
   await flushPromises()
-  expect(openNative).toHaveBeenCalledWith({ displayId: 2, control: true })
+  expect(openNative).toHaveBeenCalledWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
   expect(TestPeer.instances).toHaveLength(0)
   expect(mock.api.offer).not.toHaveBeenCalled()
   expect(mock.api.start).not.toHaveBeenCalled()
@@ -150,7 +150,7 @@ test.each(["av1", "h265"] as const)("native window remains available for a %s-on
   expect(wrapper.get("[data-native-desktop]").attributes("disabled")).toBeUndefined()
   await wrapper.get("[data-native-desktop]").trigger("click")
   await flushPromises()
-  expect(openNative).toHaveBeenCalledWith({ displayId: 1, control: true })
+  expect(openNative).toHaveBeenCalledWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
 })
 
 test("native startup failures remain visible and allow retry", async () => {
@@ -200,7 +200,7 @@ test("native_presentor updates hide the action and reject a click before the DOM
   valuesUpdated()
   await flushPromises()
   await wrapper.get("[data-native-desktop]").trigger("click")
-  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true })
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
 })
 
 test("mobile Connect button directly opens the native desktop activity when native_presentor is enabled", async () => {
@@ -213,7 +213,7 @@ test("mobile Connect button directly opens the native desktop activity when nati
   await wrapper.get('[aria-label="Stream settings"]').trigger("click")
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
-  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true })
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
   expect(mock.api.offer).not.toHaveBeenCalled()
 })
 

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
 import { useFleetStore } from "./fleet.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
+import { usePinnedSessionsStore } from "./pinned-sessions.ts"
 import { useProvidersStore } from "./providers.ts"
 import { useTerminalsStore } from "./terminals.ts"
 import { agentSnapshot } from "../test/agent.ts"
@@ -252,6 +253,10 @@ test("Session removal keeps the workspace selected and workspace deletion reconc
   expect(store.newSessionTarget!.workspace!.id).toBe(workspaceId)
   updated.workspaces.push({ id: "20", name: "second", worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code/second" }] }] })
   await store.refreshLocalCatalog()
+  store.targetWorkspace(null)
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
+  await store.refreshLocalCatalog()
+  expect(store.newSessionTarget?.workspace).toBeUndefined()
   store.targetWorkspace("20")
   expect(store.newSessionTarget!.workspace!.id).toBe("20")
   const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockResolvedValue()
@@ -280,16 +285,36 @@ test("deleting a workspace can remove its active and archived sessions first", a
   expect(store.findWorkspace(workspaceId)).toBeNull()
 })
 
+test("deleting workspace sessions unpins them so the sidebar cannot open removed Sessions", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  const pins = usePinnedSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, archiveState: "active", title: "Pinned chat" }
+  pins.pin(store.targetId, sessionId, "Pinned chat")
+  expect(pins.isPinned(store.targetId, sessionId)).toBe(true)
+  vi.spyOn(agents, "remove").mockImplementation(async id => { delete agents.sessions[id] })
+  vi.spyOn(platformClient.catalog, "deleteWorkspace")
+    .mockRejectedValueOnce(new Error(`workspace ${workspaceId} still has active sessions`))
+    .mockResolvedValueOnce()
+  await store.deleteWorkspace(workspaceId, { deleteSessions: true })
+  expect(pins.isPinned(store.targetId, sessionId)).toBe(false)
+  expect(store.findWorkspace(workspaceId)).toBeNull()
+})
+
 test("a session deletion failure leaves the workspace in place", async () => {
   const store = setup()
   await store.refreshLocalCatalog()
   const agents = useAgentSessionsStore()
-  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, archiveState: "archived" }
+  const pins = usePinnedSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, archiveState: "active", title: "Pinned chat" }
+  pins.pin(store.targetId, sessionId, "Pinned chat")
   vi.spyOn(agents, "remove").mockRejectedValue(new Error("Worktree cleanup failed"))
   const remove = vi.spyOn(platformClient.catalog, "deleteWorkspace").mockRejectedValueOnce(new Error(`workspace ${workspaceId} still has active sessions`))
   await expect(store.deleteWorkspace(workspaceId, { deleteSessions: true })).rejects.toThrow("Worktree cleanup failed")
   expect(remove).toHaveBeenCalledTimes(1)
   expect(store.findWorkspace(workspaceId)?.workspace.id).toBe(workspaceId)
+  expect(pins.isPinned(store.targetId, sessionId)).toBe(true)
 })
 
 test("a workspace deletion rejected for another reason does not remove its sessions", async () => {

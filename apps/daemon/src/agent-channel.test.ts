@@ -3,6 +3,7 @@ import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import { gunzipSync } from "node:zlib"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
+import { AgentLiveState } from "./agent-live.ts"
 import { AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES, type AgentActor, type AgentElicitation, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot } from "./agent-protocol.ts"
 
 type Message = { id?: string | number | null; method?: string; params?: any; result?: any; error?: { code: number; message: string } }
@@ -569,4 +570,114 @@ test("attendance is announced to initialized viewers and ends when the channel c
   ada.channel.close()
   const departed = await bob.waitFor(message => message.method === "_deskfleet/session/presence" && message.params.userIds.length === 0)
   assert.deepEqual(departed.params, { sessionId: "1", userIds: [] })
+})
+
+test("live auth follows authorized snapshots while notices are never replayed", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  live.auth("1", 2, { kind: "account", label: "Signed in" })
+  live.notice("1", 2, "provider", { severity: "warning", title: "Old notice" })
+  await h.initialize()
+  assert.ok(!h.messages.some(message => message.method === "_deskfleet/session/live"))
+  await h.subscribe()
+  const auth = await h.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.equal(auth.params.kind, "auth")
+  assert.ok(h.messages.indexOf(auth) > h.messages.findIndex(message => message.id === "subscribe"))
+  live.notice("other", 2, "provider", { severity: "warning", title: "Other Session" })
+  live.notice("1", 2, "provider", { severity: "warning", title: "Current notice" })
+  await h.waitFor(message => message.params?.notice?.title === "Current notice")
+  assert.deepEqual(h.messages.filter(message => message.params?.notice).map(message => message.params.notice.title), ["Current notice"])
+  h.channel.close()
+  const count = h.messages.length
+  live.auth("1", 2, null)
+  await delay(1)
+  assert.equal(h.messages.length, count)
+  assert.deepEqual(live.current("1"), { sessionId: "1", runGeneration: 2, kind: "auth", auth: null })
+})
+
+test("reattachment receives the auth clear missed while detached without replaying notices", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const first = attach(sessions)
+  t.after(() => first.channel.close())
+  live.auth("1", 2, { kind: "account", label: "Previous account" })
+  await first.initialize()
+  await first.subscribe()
+  await first.waitFor(message => message.params?.auth?.label === "Previous account")
+  first.channel.close()
+  live.auth("1", 2, null)
+  live.notice("1", 2, "provider", { severity: "warning", title: "While detached" })
+
+  const next = attach(sessions)
+  t.after(() => next.channel.close())
+  await next.initialize()
+  await next.subscribe()
+  const clear = await next.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.deepEqual(clear.params, { sessionId: "1", runGeneration: 2, kind: "auth", auth: null })
+  assert.ok(next.messages.indexOf(clear) > next.messages.findIndex(message => message.id === "subscribe"))
+  assert.equal(next.messages.some(message => message.params?.notice), false)
+})
+
+test("authorized subscriptions explicitly clear missing auth using the snapshot's latest generation", async t => {
+  const sessions = new Sessions()
+  sessions.handler = async () => ({ ...snapshot, runs: [
+    { sessionId: "1", generation: 3, state: "stopped", startedAt: now, endedAt: now },
+    { sessionId: "1", generation: 1, state: "stopped", startedAt: now, endedAt: now },
+  ] })
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  await h.subscribe()
+  const clear = await h.waitFor(message => message.method === "_deskfleet/session/live")
+  assert.deepEqual(clear.params, { sessionId: "1", runGeneration: 3, kind: "auth", auth: null })
+})
+
+test("clears during subscription keep their newer generation and precede subsequent live auth", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = id => live.current(id)
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("pending", "_deskfleet/session/subscribe", { sessionId: "1" })
+  live.auth("1", 2, { kind: "account", label: "Earlier account" })
+  live.auth("1", 3, null)
+  live.notice("1", 3, "provider", { severity: "info", title: "During attachment" })
+  reading.resolve({ ...snapshot, runs: [{ sessionId: "1", generation: 2, state: "stopped", startedAt: now, endedAt: now }] })
+  await h.waitFor(message => message.method === "_deskfleet/session/live")
+  live.auth("1", 3, { kind: "api_key", label: "New identity" })
+  await h.waitFor(message => message.params?.auth?.label === "New identity")
+  assert.deepEqual(h.messages.filter(message => message.method === "_deskfleet/session/live").map(message => message.params), [
+    { sessionId: "1", runGeneration: 3, kind: "auth", auth: null },
+    { sessionId: "1", runGeneration: 3, kind: "auth", auth: { kind: "api_key", label: "New identity" } },
+  ])
+})
+
+test("rejected subscriptions do not read auth snapshots or publish live auth and notices", async t => {
+  const live = new AgentLiveState()
+  const sessions = new Sessions() as Sessions & Pick<AgentChannelSessions, "onLive" | "live">
+  sessions.onLive = listener => live.onUpdate(listener)
+  sessions.live = () => { assert.fail("Unauthorized subscription read live identity") }
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const reading = deferred<AgentSnapshot>()
+  sessions.handler = async () => reading.promise
+  h.request("denied-auth", "_deskfleet/session/subscribe", { sessionId: "1" })
+  live.auth("1", 2, { kind: "account", label: "Private account" })
+  live.notice("1", 2, "provider", { severity: "info", title: "Private notice" })
+  reading.reject(new Error("Session is not accessible"))
+  assert.match((await h.waitFor(message => message.id === "denied-auth")).error!.message, /not accessible/u)
+  live.auth("1", 2, null)
+  await delay(1)
+  assert.equal(h.messages.some(message => message.method === "_deskfleet/session/live"), false)
 })

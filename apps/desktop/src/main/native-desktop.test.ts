@@ -19,7 +19,7 @@ vi.mock("electron", () => ({
 vi.mock("./native-desktop-process.ts", () => ({ spawnDesktopViewer: spawnViewer }))
 import { desktopApi } from "../preload/api.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
-import { installNativeDesktop } from "./native-desktop.ts"
+import { installNativeDesktop, nativeDesktopRequest } from "./native-desktop.ts"
 
 const closing: (() => Promise<void>)[] = []
 beforeEach(() => {
@@ -80,7 +80,7 @@ test.each([true, false])("macOS exposes the native viewer and launches its execu
   expect(spawnViewer).toHaveBeenCalledExactlyOnceWith(packaged
     ? join(process.resourcesPath, "native", "deskfleet-viewer")
     : resolve(app.getAppPath(), "../../target/debug/deskfleet-viewer"), expect.any(Function))
-  expect(f.central.startPeer).toHaveBeenCalledExactlyOnceWith("peer", { displayId: 7, control: true })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledExactlyOnceWith("peer", { displayId: 7, control: true }))
   expect(f.viewer.close).not.toHaveBeenCalled()
   await f.host.close()
   expect(f.viewer.close).toHaveBeenCalledOnce()
@@ -94,4 +94,11 @@ test("macOS native viewer rejects unrelated renderers before creating a peer or 
   await expect(f.handler({ ...f.event, senderFrame: null }, request)).rejects.toThrow("restricted")
   expect(f.central.createPeer).not.toHaveBeenCalled()
   expect(spawnViewer).not.toHaveBeenCalled()
+})
+
+test("native desktop requests preserve validated locale and theme", () => {
+  const request = { target: { teamId: "team", machineId: "machine" }, displayId: 7, control: true, locale: "zh-CN", theme: "light" }
+  expect(nativeDesktopRequest(request)).toEqual(request)
+  expect(() => nativeDesktopRequest({ ...request, theme: "system" })).toThrow("theme")
+  expect(() => nativeDesktopRequest({ ...request, locale: "\0" })).toThrow("locale")
 })

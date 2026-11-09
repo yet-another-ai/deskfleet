@@ -221,6 +221,15 @@ test("workspace New session chooses that workspace before opening the composer a
     expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
     await wrapper.get("[data-composer-workspace]").trigger("click")
     await flushPromises()
+    const workspaceItems = wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')
+    expect(workspaceItems.map(item => item.text())).toEqual(["storefront", "notes", "No workspace"])
+    await workspaceItems.at(-1)!.trigger("click")
+    await vi.waitFor(() => {
+      expect(chips(wrapper)).toEqual(["test-hostThis machine", "No workspace", "Codex"])
+      expect(wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')).toHaveLength(0)
+    })
+    await wrapper.get("[data-composer-workspace]").trigger("click")
+    await flushPromises()
     await wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]').find(item => item.text() === "storefront")!.trigger("click")
     await vi.waitFor(() => {
       expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])

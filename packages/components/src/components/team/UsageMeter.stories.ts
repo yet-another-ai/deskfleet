@@ -24,7 +24,7 @@ export const NormalAllowance: Story = {}
 export const WarningOverEightyPercent: Story = {
   args: {
     label: "Active sessions",
-    hint: "Concurrent active sessions across all machines in your team.",
+    hint: "Sessions that have not been deleted, including archived sessions.",
     used: 21,
     limit: 25,
     format: (v: number) => String(v),

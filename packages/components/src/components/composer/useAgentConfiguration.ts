@@ -1,5 +1,5 @@
 import { computed, onScopeDispose, ref, toRef, watch, type Ref } from "vue"
-import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import { agentConfigurationSelection, type AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
 
@@ -47,9 +47,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     confirmedTarget = { provider: params.provider, workspaceId: params.workspaceId }
     draftConfiguration.value = {
       provider: result.provider.id,
-      model: result.models?.currentValue,
-      reasoningEffort: result.reasoningEfforts?.currentValue,
-      mode: result.modes?.currentValue,
+      ...agentConfigurationSelection(result),
     }
   }
   function takeNext(current: ConfigurationProbe): DraftRequest | undefined {
@@ -101,11 +99,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
       // A daemon may have expired this probe. Restore only this target's
       // confirmed choices before an explicit edit; reload still reads defaults.
       const restore = choices && Object.values(choices).some(value => value !== undefined) && confirmed && confirmed.provider.id === providerId
-        && confirmedTarget?.provider === providerId && confirmedTarget.workspaceId === workspaceId ? {
-        model: confirmed.models?.currentValue,
-        reasoningEffort: confirmed.reasoningEfforts?.currentValue,
-        mode: confirmed.modes?.currentValue,
-      } : undefined
+        && confirmedTarget?.provider === providerId && confirmedTarget.workspaceId === workspaceId ? agentConfigurationSelection(confirmed) : undefined
       return new Promise(resolve => {
         current.next = { id: currentRequest, choices: { ...(choices ?? selection.value) }, restore, resolve }
         void readDraft(current)
@@ -135,6 +129,9 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   }
   function changeMode(mode: string): Promise<void> {
     return configure({ mode })
+  }
+  function changeConfigOption(configId: string, value: string | boolean): Promise<void> {
+    return configure({ configValues: { [configId]: value } })
   }
   function reload(): Promise<void> {
     retire()
@@ -169,5 +166,5 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === modelValue.value)?.name ?? modelValue.value ?? selection.value?.model)
   const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
   const modeName = computed(() => configuration.value?.modes?.options.find(option => option.id === configuration.value?.modes?.currentValue)?.name ?? configuration.value?.modes?.currentValue ?? selection.value?.mode)
-  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, reload, discover }
+  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover }
 }

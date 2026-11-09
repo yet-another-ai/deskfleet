@@ -1,6 +1,6 @@
 import type { FileEndpoint } from "../../../daemon/src/files-protocol.ts"
 import { FileTransferManager } from "@deskfleet/client/file-transfers"
-import type { FileAttachmentUploadRequest, FileAttachmentUploadResult, FileConflict, FileListing, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
+import type { FileAttachmentUploadRequest, FileAttachmentUploadResult, FileConflict, FileListing, FileReadResourceOptions, FileResource, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
 import { FileGrants } from "./files-grants.ts"
 
 interface FileDialogs {
@@ -15,6 +15,8 @@ export class WindowFiles implements FilesApi {
   readonly #dialogs: FileDialogs
   readonly #sessionDirectory: (sessionId: string) => Promise<string>
   readonly #sessionAttachmentDirectory?: (sessionId: string) => Promise<string>
+  readonly #isLocalTarget: (target: FileTarget) => Promise<boolean>
+  readonly #openPath: (path: string) => Promise<void>
   readonly #sessionTargets = new Map<string, Promise<FileTarget>>()
   #localTarget: Promise<FileTarget> | undefined
   #closed = false
@@ -23,10 +25,14 @@ export class WindowFiles implements FilesApi {
     remoteEndpoint(target: Extract<FileTarget, { kind: "machine" }>): Promise<FileEndpoint>
     sessionDirectory(sessionId: string): Promise<string>
     sessionAttachmentDirectory?(sessionId: string): Promise<string>
+    isLocalTarget(target: FileTarget): Promise<boolean>
+    openPath(path: string): Promise<void>
   }) {
     this.#dialogs = options
     this.#sessionDirectory = options.sessionDirectory
     this.#sessionAttachmentDirectory = options.sessionAttachmentDirectory
+    this.#isLocalTarget = options.isLocalTarget
+    this.#openPath = options.openPath
     this.#grants = new FileGrants({
       confirmOverwrite: path => options.confirmOverwrite(path),
       sessionAttachmentDirectory: options.sessionAttachmentDirectory,
@@ -34,6 +40,7 @@ export class WindowFiles implements FilesApi {
     this.#manager = new FileTransferManager({
       endpoint: async target => target.kind === "local" ? this.#grants.endpoint(target) : options.remoteEndpoint(target),
       chooseLocalDirectory: () => this.chooseLocalDirectory(),
+      unlimitedPreview: target => this.#live(() => this.#isLocalTarget(target)),
     })
   }
 
@@ -103,8 +110,30 @@ export class WindowFiles implements FilesApi {
   cancel(id: string): Promise<void> { return this.#live(() => this.#manager.cancel(id)) }
   retry(id: string, conflict?: FileConflict): Promise<void> { return this.#live(() => this.#manager.retry(id, conflict)) }
   onChanged(listener: (transfers: FileTransfer[]) => void): () => void { return this.#manager.onChanged(listener) }
-  resolveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.resolveResource(await this.#resource(request))) }
-  readResource(request: FileResourceRequest, options?: { onProgress?: (progress: { transferredBytes: number; totalBytes: number }) => void }) { return this.#live(async () => this.#manager.readResource(await this.#resource(request), options)) }
+  resolveResource(request: FileResourceRequest): Promise<FileResource> {
+    return this.#live(async () => {
+      request = await this.#resource(request)
+      const file = await this.#manager.resolveResource(request)
+      return { ...file, canOpen: file.kind === "file" && await this.#isLocalTarget(request.target) }
+    })
+  }
+  readResource(request: FileResourceRequest, options?: FileReadResourceOptions): ReturnType<FilesApi["readResource"]> {
+    return this.#live(async () => {
+      request = await this.#resource(request)
+      const file = await this.#manager.readResource(request, options)
+      return { ...file, canOpen: await this.#isLocalTarget(request.target) }
+    })
+  }
+  openResource(request: FileResourceRequest): Promise<void> {
+    return this.#live(async () => {
+      request = await this.#resource(request)
+      const file = await this.#manager.resolveResource(request)
+      if (file.kind !== "file") throw new Error("Select a file to open")
+      if (!await this.#isLocalTarget(request.target)) throw new Error("Only files on this computer can be opened")
+      this.#check()
+      await this.#openPath(file.path)
+    })
+  }
   saveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.saveResource(await this.#resource(request))) }
   uploadAttachment(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult> {
     return this.#live(async () => {

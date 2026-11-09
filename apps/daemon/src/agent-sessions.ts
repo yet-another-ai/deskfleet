@@ -167,6 +167,8 @@ export class AgentSessions {
 
   onEvent(listener: (event: AgentEvent) => void): () => void { return this.journal.onEvent(listener) }
   onPreview(listener: (preview: AgentPreview) => void): () => void { return this.journal.onPreview(listener) }
+  onLive(listener: (update: import("../../../packages/client/src/agent-live.ts").AgentLiveUpdate) => void): () => void { return this.journal.live.onUpdate(listener) }
+  live(sessionId: string): import("../../../packages/client/src/agent-live.ts").AgentLiveUpdate | undefined { return this.journal.live.current(sessionId) }
   onPresence(listener: (update: SessionPresenceUpdate) => void): () => void { return this.#presence.onChange(listener) }
   presence(): SessionPresenceUpdate[] { return this.#presence.snapshot() }
 
@@ -781,12 +783,9 @@ export class AgentSessions {
         const snapshot = await this.journal.read(sessionId)
         if (snapshot.session.archiveState === "archiving") throw new Error("Finish archiving this Session before restoring it")
         if (snapshot.session.archiveState === "active") return
-        await this.#admissions.allocate(command, "restore", async admissionGeneration => {
-          await this.#catalog.restoreSessionWorktree(sessionId)
-          const session = { ...snapshot.session, admissionGeneration, archiveState: "active" as const, updatedAt: timestamp() }
-          await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
-          return session
-        })
+        await this.#catalog.restoreSessionWorktree(sessionId)
+        const session = { ...snapshot.session, archiveState: "active" as const, updatedAt: timestamp() }
+        await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
       })
       const snapshot = await this.journal.read(sessionId)
       await this.#admissions.synchronize(snapshot.session)
@@ -836,6 +835,7 @@ export class AgentSessions {
     await this.#runtime(sessionId).stop()
     const deleted = await this.journal.session(sessionId)
     await this.#catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId } })
+    this.journal.live.remove(sessionId)
     await this.#admissions.releaseDeleted(deleted)
     this.#runtimes.delete(sessionId)
     await this.#complete(command, null)

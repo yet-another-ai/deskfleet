@@ -119,3 +119,15 @@ test("Grok decline and cancel both dismiss the question", async () => {
   }
 })
 
+test("Grok plan interviews expose discussion and skip actions without fake answers", async () => {
+  for (const outcome of ["chat_about_this", "skip_interview"] as const) {
+    const response: acp.CreateElicitationResponse = { action: "accept", _meta: { deskfleet: { grokOutcome: outcome } } }
+    const plan = await ask(grokParams, GROK_ASK_USER_QUESTION_METHOD, undefined, response)
+    assert.deepEqual(plan.requests[0]?._meta, { deskfleet: { grokPlanInterview: true } })
+    assert.deepEqual(plan.result, { outcome })
+    const ordinary = await ask({ ...grokParams, mode: "default" }, GROK_ASK_USER_QUESTION_METHOD, undefined, response)
+    assert.equal(ordinary.requests[0]?._meta, undefined)
+    assert.deepEqual(ordinary.result, { outcome: "cancelled" })
+  }
+})
+

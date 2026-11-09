@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import { promisify } from "node:util"
 import { gzip } from "node:zlib"
+import type { AgentLiveUpdate } from "../../../packages/client/src/agent-live.ts"
 import {
   AGENT_CHUNK_BYTES, AGENT_MESSAGE_BYTES,
   type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
@@ -15,6 +16,8 @@ export interface AgentChannelSessions {
   onEvent(listener: (event: AgentEvent) => void): () => void
   onPreview?(listener: (preview: AgentPreview) => void): () => void
   preview?(sessionId: string): AgentPreview | undefined
+  onLive?(listener: (update: AgentLiveUpdate) => void): () => void
+  live?(sessionId: string): AgentLiveUpdate | undefined
   watchGit?(sessionId: string, actor: AgentActor, listener: (error?: string) => void): Promise<() => void>
   attend?(sessionId: string, connectionId: string, actor: AgentActor): Promise<void>
   leave?(sessionId: string, connectionId: string): void
@@ -63,6 +66,7 @@ export class AgentChannel {
   readonly #connectionId = randomUUID()
   readonly #unsubscribe: () => void
   readonly #unsubscribePreview: (() => void) | undefined
+  readonly #unsubscribeLive: (() => void) | undefined
   readonly #unsubscribePresence: (() => void) | undefined
   readonly #subscriptions = new Map<string, Subscription>()
   readonly #gitSubscriptions = new Map<string, GitSubscription>()
@@ -89,6 +93,9 @@ export class AgentChannel {
     this.#unsubscribe = sessions.onEvent(event => this.#event(event))
     this.#unsubscribePreview = sessions.onPreview?.(preview => {
       if (this.#subscriptions.get(preview.sessionId)?.ready) this.#preview(preview)
+    })
+    this.#unsubscribeLive = sessions.onLive?.(update => {
+      if (this.#subscriptions.get(update.sessionId)?.ready) this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: update })
     })
     this.#unsubscribePresence = sessions.onPresence?.(update => {
       if (this.#closed || !this.#initialized) return
@@ -128,6 +135,7 @@ export class AgentChannel {
     this.#sessions.leaveAll?.(this.#connectionId)
     this.#unsubscribe()
     this.#unsubscribePreview?.()
+    this.#unsubscribeLive?.()
     this.#unsubscribePresence?.()
     for (const subscription of this.#gitSubscriptions.values()) subscription.stop?.()
     this.#gitSubscriptions.clear()
@@ -196,7 +204,7 @@ export class AgentChannel {
         this.#initialized = true
         this.#queue({ jsonrpc: "2.0", id, result: {
           protocolVersion: 1,
-          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.11.0" },
+          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.12.0" },
           agentCapabilities: { _meta: { deskfleet: { sessions: true, maxMessageBytes: AGENT_MESSAGE_BYTES } } },
           _meta: { deskfleet: { identity: this.#sessions.journal.identity } },
         } })
@@ -253,10 +261,18 @@ export class AgentChannel {
           if (this.#closed) return
         }
         subscription.events = []
+        const snapshot = result as AgentSnapshot
+        // Every authorized attachment gets an authoritative identity snapshot,
+        // including absence after stop/sign-out. Queue it before enabling live
+        // forwarding so a later auth update cannot be overwritten by this clear.
+        const live: AgentLiveUpdate = this.#sessions.live?.(subscribing.sessionId) ?? {
+          sessionId: subscribing.sessionId, kind: "auth", auth: null,
+          runGeneration: Math.max(0, ...snapshot.runs.map(run => run.generation)),
+        }
+        this.#queue({ jsonrpc: "2.0", method: "_deskfleet/session/live", params: live })
         subscription.ready = true
         const preview = this.#sessions.preview?.(subscribing.sessionId)
         if (preview) this.#preview(preview)
-        const snapshot = result as AgentSnapshot
         for (const permission of snapshot.permissions) {
           if ((permissionChanges.get(permission.id) ?? permission.state) === "pending") this.#permission(permission)
         }

@@ -1,6 +1,7 @@
 //! Verified account identity; authentication credentials never identify Teams.
 mod challenges;
 mod credentials;
+mod deletion;
 mod email_authentication;
 mod maintenance;
 mod oauth;
@@ -9,7 +10,7 @@ mod sessions;
 use crate::entities::{
     cp_auth_limits, cp_passkeys, cp_registration_policy, cp_site_admins, cp_site_audit, cp_users,
 };
-use crate::{ControlStore, Error, Result, name, one_query};
+use crate::{ControlStore, Error, Result, name, now_ms, one_query};
 use deskfleet_protocol::control::User;
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, OnConflict, Query};
@@ -143,6 +144,59 @@ impl ControlStore {
         .await?;
         Ok(user(&row))
     }
+    /// Provision a verified password account. The caller supplies an already
+    /// validated password hash; the audit record never contains credentials.
+    pub async fn create_account(
+        &self,
+        actor: &str,
+        email: &str,
+        display_name: &str,
+        password_hash: &str,
+    ) -> Result<User> {
+        let email = normalize_email(email)?;
+        let display_name = name(display_name)?;
+        let tx = self.db.begin().await?;
+        cp_site_admins::Entity::find_by_id(actor)
+            .lock_shared()
+            .select_only()
+            .column(cp_site_admins::Column::UserId)
+            .into_tuple::<String>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::Forbidden)?;
+        let row = cp_users::Entity::insert(cp_users::ActiveModel {
+            id: Set(uuid::Uuid::now_v7().to_string()),
+            name: Set(display_name.into()),
+            email: Set(email.clone()),
+            email_verified: Set(true),
+            password_hash: Set(Some(password_hash.into())),
+            ..Default::default()
+        })
+        .on_conflict(
+            OnConflict::column(cp_users::Column::Email)
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_with_returning_many(&tx)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or(Error::Conflict("email address is already registered"))?;
+        cp_site_audit::Entity::insert(cp_site_audit::ActiveModel {
+            actor_user_id: Set(Some(actor.into())),
+            source: Set("user".into()),
+            action: Set("account.create".into()),
+            target_user_id: Set(Some(row.id.clone())),
+            before_value: Set(json!({"email":email})),
+            after_value: Set(json!({"userId":row.id,"email":email})),
+            occurred_at: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await?;
+        tx.commit().await?;
+        Ok(user(&row))
+    }
     pub async fn account(&self, id: &str) -> Result<User> {
         let row = cp_users::Entity::find_by_id(id)
             .filter(cp_users::Column::Disabled.eq(false))
@@ -253,6 +307,7 @@ impl ControlStore {
         Ok(cp_users::Entity::find()
             .filter(grams(Expr::col(cp_users::Column::Name)).concat(grams(Expr::col(cp_users::Column::Email))).contains(grams(Expr::val(query))))
             .filter(contains(cp_users::Column::Email).or(contains(cp_users::Column::Name)))
+            .filter(cp_users::Column::DeletedAt.is_null())
             .order_by_asc(cp_users::Column::Email).limit(50).all(&self.db).await?.into_iter()
             .map(|row| json!({"id":row.id,"name":row.name,"email":row.email,"disabled":row.disabled})).collect())
     }

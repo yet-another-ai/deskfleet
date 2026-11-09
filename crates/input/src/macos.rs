@@ -15,8 +15,7 @@ use objc2_core_graphics::{
 
 use crate::{InputError, Result};
 
-#[path = "macos_keys.rs"]
-mod keys;
+use crate::macos_keys as keys;
 
 pub(super) struct PlatformInput {
     display_id: u32,

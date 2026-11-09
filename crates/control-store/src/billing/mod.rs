@@ -186,7 +186,7 @@ pub(crate) async fn effective_plan(
 fn usage_query(team: Expr, start: Expr, end: Expr) -> SelectStatement {
     Query::select()
         .expr_as(
-            admissions::active_admissions(team.clone())
+            admissions::occupied_sessions(team.clone())
                 .expr(Expr::col(Asterisk).count())
                 .and_where(Expr::col((registrations::Entity, registrations::Column::Revoked)).not())
                 .to_owned(),

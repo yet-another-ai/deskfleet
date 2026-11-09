@@ -108,7 +108,7 @@ async fn admin_billing_reports_freshness_for_each_team() {
 
     let page = f
         .store
-        .admin_billing_teams(&f.admin, None, 10)
+        .admin_billing_teams(&f.admin, None, None, 10)
         .await
         .unwrap();
     for team in [&f.team, &healthy_team] {
@@ -188,7 +188,7 @@ async fn rollover_uses_only_recent_contiguous_previous_usage_until_the_new_snaps
     );
     let page = f
         .store
-        .admin_billing_teams(&f.admin, None, 10)
+        .admin_billing_teams(&f.admin, None, None, 10)
         .await
         .unwrap();
     let team = page.teams.iter().find(|team| team["id"] == f.team).unwrap();
@@ -411,7 +411,7 @@ async fn snapshots_replace_replays_revisions_and_remain_collectable_after_disabl
     assert_eq!(retained.period_end, query.period_end);
     let summaries = f
         .store
-        .admin_billing_teams(&f.admin, None, 10)
+        .admin_billing_teams(&f.admin, None, None, 10)
         .await
         .unwrap();
     assert_eq!(

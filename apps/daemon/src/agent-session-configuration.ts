@@ -1,7 +1,8 @@
 import type { AvailableCommand, SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk/unstable"
-import { agentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
+import { agentConfiguration, agentConfigurationSelection, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentCommand, AgentRun } from "./agent-protocol.ts"
 import type { AgentJournal } from "./agent-store.ts"
+import { isSubagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
 
 /** Use the last confirmed provider choices, including after a daemon restart. */
 export async function savedAgentConfiguration(journal: AgentJournal, sessionId: string): Promise<{
@@ -22,18 +23,16 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
       if (BigInt(event.seq) > end) continue
       if (BigInt(event.seq) < since) return { ...(configuration ?? { options: [], selection: {} }), ...(commands ? { commands } : {}) }
       if (event.kind === "acp") {
-        const update = (event.payload as SessionNotification).update
+        const notification = event.payload as SessionNotification
+        if (isSubagentNotification(notification)) continue
+        const update = notification.update
         if (update.sessionUpdate === "available_commands_update" && !commandsResolved && event.runGeneration === generation) {
           commands = update.availableCommands
           commandsResolved = true
         }
         if (update.sessionUpdate === "config_option_update" && !configuration) {
           const selected = agentConfiguration(update.configOptions)
-          configuration = { options: update.configOptions, selection: {
-            model: selected.models?.currentValue,
-            reasoningEffort: selected.reasoningEfforts?.currentValue,
-            mode: selected.modes?.currentValue,
-          } }
+          configuration = { options: update.configOptions, selection: agentConfigurationSelection(selected) }
         }
       }
       // A fresh provider process must advertise its own command catalog. Old
@@ -49,6 +48,7 @@ export async function savedAgentConfiguration(journal: AgentJournal, sessionId: 
             model: command.params.model as string | undefined,
             reasoningEffort: command.params.reasoningEffort as string | undefined,
             mode: command.params.mode as string | undefined,
+            ...(command.params.configValues ? { configValues: command.params.configValues as AgentConfigurationSelection["configValues"] } : {}),
           },
         }
       }

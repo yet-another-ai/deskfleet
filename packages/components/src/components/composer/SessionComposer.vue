@@ -3,7 +3,7 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X } from "@lucide/vue"
 import { useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -66,7 +66,7 @@ const preparedBranches = ref<string[]>([])
 const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>>("preparationButton")
 const branchLabel = computed(() => preparedBranches.value.length
   ? t("composer.prepare.base", { branches: preparedBranches.value.join(", ") }) : baseBranch.value)
-const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: []; selectMachine: [machineId: string]; selectWorkspace: [workspaceId: string] }>()
+const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: []; selectMachine: [machineId: string]; selectWorkspace: [workspaceId: string | null] }>()
 const { t } = useI18n()
 const account = useAccountSession()
 const agents = useAgentSessionsStore()
@@ -98,10 +98,13 @@ const availableWorkspaces = computed(() => {
   if (!workspace) return workspaces
   return workspaces.some(item => item.id === workspace.id) ? workspaces : [workspace, ...workspaces]
 })
+const noWorkspaceValue = "__none__"
 function selectWorkspace(workspaceId: unknown): void {
-  if (typeof workspaceId !== "string" || !workspaceId || workspaceId === props.location?.workspace?.id) return
-  fleet.targetWorkspace(workspaceId)
-  emit("selectWorkspace", workspaceId)
+  if (typeof workspaceId !== "string" || !workspaceId) return
+  const next = workspaceId === noWorkspaceValue ? null : workspaceId
+  if (next === (props.location?.workspace?.id ?? null)) return
+  fleet.targetWorkspace(next)
+  emit("selectWorkspace", next)
 }
 const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
@@ -320,25 +323,30 @@ onBeforeUnmount(() => {
         </DropdownMenuPortal>
       </DropdownMenuRoot>
       <span v-else class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span></span>
-      <template v-if="location.workspace">
+      <template v-if="showTarget ? location.workspace || availableWorkspaces.length : location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <DropdownMenuRoot v-if="showTarget" :modal="false">
-          <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.workspaceChoice', { workspace: location.workspace.name })" data-composer-context data-composer-workspace>
-            <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.workspaceChoice', { workspace: location.workspace?.name ?? t('composer.noWorkspace') })" data-composer-context data-composer-workspace>
+            <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
             <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
-              <DropdownMenuRadioGroup :model-value="location.workspace.id" @update:model-value="selectWorkspace">
+              <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
                 <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
                   <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                   <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ workspace.name }}</span>
-                  <Check v-if="workspace.id === location.workspace.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                  <Check v-if="workspace.id === location.workspace?.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem as="button" type="button" :value="noWorkspaceValue" class="ui-menu-item">
+                  <MessageCircle :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ t("composer.noWorkspace") }}</span>
+                  <Check v-if="!location.workspace" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
-        <span v-else class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
+        <span v-else-if="location.workspace" class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
       </template>
       <template v-if="showTarget && location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />

@@ -34,6 +34,7 @@ overrides:
   'vitepress>vue': '3.6.0-rc.14'
 
 patchedDependencies:
+  '@agentclientprotocol/claude-agent-acp@0.101.0': patches/@agentclientprotocol__claude-agent-acp@0.101.0.patch
   '@agentclientprotocol/codex-acp@2.3.0': patches/@agentclientprotocol__codex-acp@2.3.0.patch
   '@deepseek-ai/dsh-app-boot@0.2.2-rc.1': patches/@deepseek-ai__dsh-app-boot@0.2.2-rc.1.patch
   '@xterm/addon-ligatures@0.10.0': patches/@xterm__addon-ligatures@0.10.0.patch

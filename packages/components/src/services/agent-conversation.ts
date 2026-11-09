@@ -1,6 +1,7 @@
 import { createConversationProjector } from "./conversation-projector.ts"
 import { isRemoteMcpTool } from "./remote-mcp-tool.ts"
 import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
+import type { CompactionUpdate, PlanUpdateContent, SessionMessage, SubagentUpdate } from "@agentclientprotocol/sdk/unstable"
 
 /** A completion remains unread until any viewer acknowledges it on the owning daemon. */
 export function sessionIsUnread(session: Pick<AgentSessionRecord, "lastCompletedSeq" | "lastReadSeq"> | undefined): boolean {
@@ -26,11 +27,21 @@ export interface AgentTerminalOutput {
 }
 export type ConversationTool = AgentPermission["request"]["toolCall"] & { terminals?: Record<string, AgentTerminalOutput> }
 
-type MessageEntry = { id: string; kind: "message"; role: "assistant" | "thought"; content: Content; turnId?: string }
-type ToolEntry = { id: string; kind: "tool"; tool: ConversationTool; permission?: AgentPermission; turnId?: string }
-type PlanEntry = { id: string; kind: "plan"; entries: { content: string; status: string }[]; turnId?: string }
-type ElicitationEntry = { id: string; kind: "elicitation"; elicitation: AgentElicitation; turnId?: string }
-export type ConversationStep = MessageEntry | ToolEntry | PlanEntry | ElicitationEntry
+type StepIdentity = { id: string; turnId?: string; providerSessionId?: string }
+type MessageEntry = StepIdentity & { kind: "message"; role: "assistant" | "thought" | "user"; content: Content; messageId?: string }
+type ToolEntry = StepIdentity & { kind: "tool"; tool: ConversationTool; permission?: AgentPermission }
+type PlanEntry = StepIdentity & { kind: "plan"; entries: { content: string; status: string; _meta?: Record<string, unknown> | null }[] }
+type ElicitationEntry = StepIdentity & { kind: "elicitation"; elicitation: AgentElicitation }
+export type StructuredPlanEntry = StepIdentity & { kind: "structured_plan"; plan: PlanUpdateContent }
+export type CompactionEntry = StepIdentity & { kind: "compaction"; compaction: CompactionUpdate }
+export type SessionMessageEntry = StepIdentity & { kind: "session_message"; message: SessionMessage }
+export type SubagentEntry = StepIdentity & { kind: "subagent"; session: SubagentUpdate; steps: ConversationStep[] }
+export type ConversationStep = MessageEntry | ToolEntry | PlanEntry | ElicitationEntry | StructuredPlanEntry | CompactionEntry | SessionMessageEntry | SubagentEntry
+
+/** Child transcript entries keep their own preview/disclosure targets. */
+export function containsConversationEntry(step: ConversationStep, id: string): boolean {
+  return step.id === id || step.kind === "subagent" && step.steps.some(child => containsConversationEntry(child, id))
+}
 export type ConversationActivityStep = ToolEntry | (MessageEntry & { role: "thought" })
 export interface ConversationActivity {
   id: string

@@ -96,7 +96,7 @@ DeskFleet supervises any ACP-compatible agent installed on an enrolled machine:
 
 | Platform | Architecture | Desktop App | Headless Daemon | Web Client (PWA) | Packages & Installers |
 | --- | --- | :---: | :---: | :---: | --- |
-| **macOS** | Apple Silicon (`arm64`) | ✅ | ✅ | ✅ | Homebrew Cask, `.dmg`, `.tar.gz` |
+| **macOS** | Apple Silicon (`arm64`) | ✅ | ✅ | ✅ | Homebrew Cask, `.dmg`, `.tar.gz`, Nix (nix-darwin) |
 | **Windows** | `x64` | ✅ | ✅ | ✅ | `.exe` installer, standalone `.tar.gz` |
 | **Linux** | `x86_64`, `arm64` | ✅ | ✅ | ✅ | AppImage, `.deb`, `.rpm`, `.tar.gz`, [AUR (`deskfleet-bin`)](https://aur.archlinux.org/packages/deskfleet-bin), [Nix flake](agents/docs/ci.md#nix-distribution) |
 
@@ -110,6 +110,7 @@ The Electron desktop app includes an embedded machine daemon in its main process
   ```sh
   brew install --cask yet-another-ai/tap/deskfleet
   ```
+- **macOS with nix-darwin (Apple Silicon)**: add the release flake as an input, apply its `overlays.default`, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and owns upgrades; the Electron updater stays disabled. See [Nix distribution](agents/docs/ci.md#nix-distribution) for the flake input.
 - **Arch Linux**:
   ```sh
   yay -S deskfleet-bin
@@ -123,7 +124,7 @@ The Electron desktop app includes an embedded machine daemon in its main process
   ```
   Your package manager owns upgrades. The distribution packages do not use the
   AppImage self-updater.
-- **Linux with Nix** (`x86_64` or `aarch64` with flakes enabled; replace `<VERSION>` with the release version without `v`):
+- **Linux with Nix** (`x86_64` or `aarch64` with flakes enabled; replace `<VERSION>` with the release version without `v`). The same release flake also exposes the macOS app for nix-darwin:
   ```sh
   nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
   ```

@@ -3,16 +3,18 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
-import { groupTranscript, type ConversationEntry, type TranscriptEntry } from "../../services/agent-conversation.ts"
+import type { AgentLiveNotice } from "@deskfleet/client/agent-live"
+import { containsConversationEntry, groupTranscript, type ConversationEntry, type TranscriptEntry } from "../../services/agent-conversation.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
 import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
+import AgentLiveNotices from "./AgentLiveNotices.vue"
 import type { FileTarget } from "../../../../client/src/files.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 
 const client = usePlatformClient()
-const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; projection?: ConversationEntry[]; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
-const emit = defineEmits<{ fork: [] }>()
+const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; projection?: ConversationEntry[]; notices?: AgentLiveNotice[]; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
+const emit = defineEmits<{ fork: []; dismissNotice: [id: string] }>()
 const resourceActive = ref(true)
 watch([() => props.snapshot.session.id, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })
 const unsubscribe = client.central?.onEvent(event => { if (event.type === "accountChanged") resourceActive.value = false })
@@ -29,10 +31,13 @@ defineExpose({ items })
 </script>
 
 <template>
+  <div class="flex flex-col gap-4">
+  <slot name="live" />
+  <AgentLiveNotices :notices="notices ?? []" @dismiss="emit('dismissNotice', $event)" />
   <ol class="flex flex-col gap-6 text-[15px] leading-[1.65]" :aria-label="t('agent.conversation')">
     <li v-for="entry in transcript" :key="entry.id" ref="items" class="scroll-mt-6"
       :class="{
-        'ui-conversation-history': entry !== transcript.at(-1) && (entry.kind === 'input' ? entry.id !== locateEntry : !entry.live && !entry.steps.some(step => step.id === locateEntry)),
+        'ui-conversation-history': entry !== transcript.at(-1) && (entry.kind === 'input' ? entry.id !== locateEntry : !entry.live && !entry.steps.some(step => locateEntry && containsConversationEntry(step, locateEntry))),
         'ui-conversation-input': entry.kind === 'input',
       }"
       :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
@@ -40,6 +45,7 @@ defineExpose({ items })
       <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === transcript.at(-1)" :fork-disabled="forkDisabled" :locate-entry="locateEntry" @fork="emit('fork')" />
     </li>
   </ol>
+  </div>
 </template>
 
 <style scoped>

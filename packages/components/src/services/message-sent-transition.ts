@@ -30,6 +30,25 @@ export function consumeSentMessageTransition(entry: HTMLElement | null | undefin
 
   const bubble = entry.querySelector<HTMLElement>("[data-user-message-bubble]")
   if (!bubble || typeof bubble.animate !== "function") return []
+
+  const scroller = entry.closest<HTMLElement>("[data-session-scroll-viewport]")
+  const remainingScroll = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : 0
+  if (scroller && remainingScroll > entry.getBoundingClientRect().height + 32) {
+    entry.style.opacity = "0"
+    const animations: Animation[] = []
+    scroller.addEventListener("scrollend", () => {
+      scroller.scrollTop = scroller.scrollHeight
+      entry.style.opacity = ""
+      if (entry.isConnected) animations.push(...animateSentMessage(entry, bubble, from))
+    }, { once: true })
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" })
+    return animations
+  }
+  if (scroller && remainingScroll > 0) scroller.scrollTop = scroller.scrollHeight
+  return animateSentMessage(entry, bubble, from)
+}
+
+function animateSentMessage(entry: HTMLElement, bubble: HTMLElement, from: DOMRect): Animation[] {
   bubble.dataset.messageSending = "true"
   const to = bubble.getBoundingClientRect()
   if (to.width <= 0 || to.height <= 0) {
@@ -85,3 +104,4 @@ export function consumeSentMessageTransition(entry: HTMLElement | null | undefin
 
   return [morph, lift, ...adornments]
 }
+

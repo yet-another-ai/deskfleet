@@ -64,7 +64,9 @@ async function submit(): Promise<void> {
   if (!canSave.value) return
   error.value = undefined
   const choices = selection.value.provider === providerId.value ? selection.value : undefined
-  const configuration = choices ? { model: choices.model, reasoningEffort: choices.reasoningEffort, mode: choices.mode } : undefined
+  const configuration = choices ? { model: choices.model, reasoningEffort: choices.reasoningEffort, mode: choices.mode,
+    ...(choices.configValues && { configValues: choices.configValues }),
+  } : undefined
   const schedule: ScheduleInput = {
     // Pause and Resume own the enabled state; saving the form keeps whatever it currently is.
     title: title.value.trim(), prompt: prompt.value.trim(), workspaceId: workspaceId.value, enabled: props.initial?.enabled ?? true,

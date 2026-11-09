@@ -228,8 +228,8 @@ retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
 part of the path. In a Session view, clicking any resource link opens a right-side
 preview tab (or mobile preview view) first and resolves workspace authorization
-and file type inside that tab: supported image, audio, video, and 3D model files
-(without line references) render in the shared media/model previewer, directories
+and file type inside that tab: supported image, audio, video, 3D model, and modern
+Office files (without line references) render in the shared previewer, directories
 open in a file browser, and text or line-referenced files render as syntax-highlighted
 code (falling back to a dialog when session preview tabs are unavailable). Text previews use the shared Shiki highlighter
 for recognized filenames, with the same light/dark colors as Markdown code blocks.
@@ -240,19 +240,57 @@ Text previews highlight the whole line for
 `#Lstart-Lend` range, and scroll to the first requested line. Encoded location
 separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
-Other authorized files can be downloaded from that tab or dialog.
+HTML `.html` and `.htm` files open in the syntax-highlighted source view first
+and offer a toggle into an isolated `<iframe srcdoc>` preview (`sandbox="allow-scripts allow-forms"`,
+without `allow-same-origin`).
+Other authorized files can be opened locally or downloaded from that tab or dialog.
+
+Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` previews use
+`@silurus/ooxml` to parse the loaded bytes locally with bundled WASM and
+render them in the client. Word pages and slides use a scrolling viewer; Excel
+includes worksheet tabs. The previews are read-only. Spreadsheet formulas display
+their saved cached results without recalculation, and PowerPoint animation
+playback is not provided. Complex layouts and unavailable fonts can differ from
+Office. Legacy `.doc`, `.xls`, and `.ppt` files use the Open or Download action.
+The viewers disable Google Fonts, external hyperlink interaction, and embedded
+media playback. Electron permits same-origin WASM fetches, in-memory Blob/data
+previews, and bundled Blob Workers through its renderer CSP; other network origins
+still require the existing explicit configuration. Parsing receives a copy of the file bytes so
+Worker transfers cannot detach the bytes retained for downloading.
+
+Codex `:codex-file-citation{path="..." purpose="output"}` markers render as
+filename links through the same resource path. The quoted path is parsed before
+Markdown typography and formatting can alter it; the marker cannot select a
+different Team, Machine, or Session. Code examples and escaped markers stay
+literal, and incomplete streamed markers become links only after they close.
 
 Markdown embeds such as `![Clip](./clip.mp4)` use the shared media viewer for
-supported image, audio, video, and 3D model MIME types. Files are fetched through the same
+supported image, audio, video, 3D model, and Office MIME types. Files are fetched through the same
 authenticated file endpoint and rendered using typed Blob URLs, which are
 released when their content or Session context leaves the view. The file client
 assigns media MIME types from filename extensions; playback also requires browser
 codec support. Raw HTML `<video>` tags remain escaped.
 BMP uses `image/bmp`; ICO uses `image/vnd.microsoft.icon`, with the legacy
 `image/x-icon` type also accepted for previews.
-Preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
-The download action selects a local destination and creates a normal queue
-item. Loading failures retain a visible retry action.
+Remote preview reads are capped at 16 MiB; larger files use the streaming transfer queue.
+Electron removes this size cap for this computer's files. Main determines locality
+from the active server and the configured, non-revoked Team/Machine registration;
+a machine-scoped request retains its existing authenticated endpoint. The renderer
+cannot opt out of the remote limit.
+
+For authorized local files, the action is **Open** instead of **Download**. Main
+resolves the Session resource again, checks that its target is still local, and
+passes the canonical file path to the operating system's default application.
+The action remains available when the format cannot be previewed. Opening does
+not copy the file or enqueue a transfer. Browser clients and remote files keep
+the download action, which saves already loaded bytes through a browser download,
+including files with unsupported preview formats. If the file resolves but its
+preview cannot load, the action remains available and selects a local destination
+for a normal transfer queue item. That transfer rechecks file access through the
+same scoped file endpoint. Media loading failures retain a visible retry action.
+Inline, focused, tab, and separate-window previews retain the original resource
+request's Team, Machine, Session, and URI. Local directory grants belong to one
+renderer document and are not serialized into another window's URL.
 
 The daemon resolves filesystem references only. It does not proxy HTTP URLs,
 remote `localhost` services, arbitrary network resources, or port-forwarded web

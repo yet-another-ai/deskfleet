@@ -354,6 +354,18 @@ test("signing out everywhere is confirmed, then retried after recent authenticat
   expect(assign).toHaveBeenCalledExactlyOnceWith("/auth/login")
 })
 
+test("/auth/account renders a scrollable container within the clipped app shell", async () => {
+  mountAt("/auth/account", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true }
+    if (path === "/api/auth/passkeys") return []
+    if (path === "/api/auth/sessions") return []
+    return {}
+  }, { id: "u1", name: "Ada", email: "ada@example.test" })
+  await flushPromises()
+  expect(view!.classes()).toContain("overflow-y-auto")
+  expect(view!.classes()).toContain("h-full")
+})
+
 test("GitHub App authorization confirms the expected DeskFleet account before redirecting", async () => {
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/github-app?user=u1", async (_method, path) => {

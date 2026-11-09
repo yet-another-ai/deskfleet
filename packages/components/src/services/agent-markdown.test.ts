@@ -23,6 +23,51 @@ test("file destinations are validated during tokenization, including angle-delim
   expect(links(parse(text, true))).toEqual(destinations)
 })
 
+test("Codex output citations become file links without interpreting filename punctuation as Markdown", () => {
+  const parse = createAgentMarkdownParser("citations")
+  const path = "/work/reports/output/方案_12页 [精简] #1 100%.pptx"
+  const text = `已完成。\n\n:codex-file-citation{path="${path}" purpose="output"}\n\n- :codex-file-citation{purpose='input' path='./data.xlsx'}`
+  const nodes = parse(text, true)
+  expect(links(nodes)).toEqual([encodeURI(path).replace(/#/gu, "%23"), "./data.xlsx"])
+  expect(nodes[1]).toMatchObject({ children: [{ type: "link", text: "方案_12页 [精简] #1 100%.pptx", title: path }] })
+})
+
+test.each([
+  [String.raw`C:\Users\Alice\My Files\报告.pptx`, String.raw`C:\Users\Alice\My%20Files\%E6%8A%A5%E5%91%8A.pptx`],
+  ["/work/report:12", "/work/report%3A12"],
+])("citation paths preserve filesystem meaning: %s", (path, uri) => {
+  expect(links(createAgentMarkdownParser("citation-path")(`:codex-file-citation{path="${path}"}`, true))).toEqual([uri])
+})
+
+test("code, escaped or incomplete citations and non-file paths do not become resource links", () => {
+  const parse = createAgentMarkdownParser("literal-citations")
+  const citation = ':codex-file-citation{path="/work/example.pptx" purpose="output"}'
+  const text = [
+    `\`${citation}\``, `\`\`\`text\n${citation}\n\`\`\``, `\\${citation}`,
+    ':codex-file-citation{path="/work/incomplete.pptx"',
+    ':codex-file-citation{purpose="output"}',
+    ':codex-file-citation{path="/one" path="/two"}',
+    ':codex-file-citation{path="javascript:alert(1)"}',
+    ':codex-file-citation{path="https://example.org/report.pptx"}',
+  ].join("\n\n")
+  // Ordinary URL linkification still applies to text that is not a file citation.
+  expect(links(parse(text, true))).toEqual(["https://example.org/report.pptx"])
+})
+
+test("citations completed across streaming chunks match a fresh parse and retain completed nodes", () => {
+  const parse = createAgentMarkdownParser("stream-citations")
+  const citation = ':codex-file-citation{path="/work/最终版本.pptx" purpose="output"}'
+  for (let end = 1; end < citation.length; end++) {
+    expect(links(parse(citation.slice(0, end), false))).toEqual([])
+  }
+  const prefix = `${citation}\n\nCompleted paragraph.\n\n`
+  const first = parse(prefix, false)
+  const next = parse(`${prefix}Next paragraph.`, false)
+  expect(links(next)).toEqual([encodeURI("/work/最终版本.pptx")])
+  expect(next[0]).toBe(first[0])
+  expect(parse(`${prefix}Next paragraph.`, true)).toEqual(createAgentMarkdownParser("fresh-citations")(`${prefix}Next paragraph.`, true))
+})
+
 test("file support never turns script or data destinations into links", () => {
   const parse = createAgentMarkdownParser("unsafe")
   const text = [

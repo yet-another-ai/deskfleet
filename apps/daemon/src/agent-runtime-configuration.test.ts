@@ -39,6 +39,7 @@ class ConfigurationProvider implements AgentProvider {
   notifyOpeningOptions = false
   openingCommands?: acp.AvailableCommand[]
   resumeCommands?: acp.AvailableCommand[]
+  resumeSubagents?: string[]
   onSetOption?: (params: acp.SetSessionConfigOptionRequest) => void
   changes: acp.SetSessionConfigOptionRequest[] = []
   prompts: { model: string; effort: string }[] = []
@@ -76,6 +77,7 @@ class ConfigurationProvider implements AgentProvider {
         this.model = "first"
         this.effort = "high"
         this.mode = "manual"
+        for (const id of this.resumeSubagents ?? []) client.onSubagentSession?.(id)
         if (this.resumeCommands) await client.onUpdate({ sessionId: "conversation", update: {
           sessionUpdate: "available_commands_update", availableCommands: this.resumeCommands,
         } })
@@ -626,4 +628,110 @@ test("a running turn blocks an Agent switch", async t => {
     assert.equal(claude.connections, 0)
   } finally { release() }
   await until(f.read, state => state.turns[0]?.state === "completed")
+})
+
+test("provider child state stays in the parent journal without changing root configuration or title", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const before = await f.read()
+  const initial = await f.configuration()
+  await provider.client.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "subagent_update", sessionId: "child", title: "Reviewer", state: { state: "running" },
+  } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "session_info_update", title: "Child title" } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "config_option_update", configOptions: options("second", "low") } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "available_commands_update", availableCommands: [{ name: "child-only", description: "Child command" }] } })
+  assert.equal((await f.read()).session.title, before.session.title)
+  assert.deepEqual(await f.configuration(), initial)
+  const history = await f.service.journal.history(f.sessionId, "0")
+  const children = history.filter(event => event.kind === "acp" && "update" in event.payload && event.payload.sessionId === "child")
+  assert.equal(children.length, 3)
+  assert.ok(children.every(event => event.kind === "acp" && "update" in event.payload && (event.payload._meta?.deskfleet as { subagent?: boolean })?.subagent === true))
+})
+
+test("repeated resume restores child ownership without appending replayed child cards", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  await provider.client.onUpdate({ sessionId: "conversation", update: {
+    sessionUpdate: "subagent_update", sessionId: "child", title: "Reviewer", state: { state: "idle" },
+  } })
+  const children = async () => (await f.service.journal.history(f.sessionId, "0"))
+    .filter(event => event.kind === "acp" && "update" in event.payload
+      && (event.payload.sessionId === "child" || event.payload.update.sessionUpdate === "subagent_update"))
+  const original = await children()
+  assert.equal(original.length, 1)
+  provider.resumeSubagents = ["child"]
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await f.stop()
+    await f.resume()
+    assert.deepEqual(await children(), original)
+  }
+  const configuration = await f.configuration()
+  const title = (await f.read()).session.title
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "session_info_update", title: "Live child title" } })
+  await provider.client.onUpdate({ sessionId: "child", update: { sessionUpdate: "config_option_update", configOptions: options("second", "low") } })
+  assert.equal((await f.read()).session.title, title)
+  assert.deepEqual(await f.configuration(), configuration)
+  assert.ok((await children()).slice(1).every(event => event.kind === "acp" && "update" in event.payload
+    && (event.payload._meta?.deskfleet as { subagent?: boolean })?.subagent === true))
+})
+
+test("stopped Sessions accept common controls addressed by provider config ID", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider, { model: "first", reasoningEffort: "low", mode: "full-access" })
+  await f.stop()
+  provider.changes = []
+  const model = await f.configure({ configValues: { model: "second" } })
+  assert.equal(model.models?.currentValue, "second")
+  assert.equal(model.reasoningEfforts?.currentValue, "high", "A generic model edit accepts the new model's default effort")
+  assert.equal(model.modes?.currentValue, "full-access")
+  assert.ok(!provider.changes.some(change => change.configId === "effort"), "The previous effort is not restored before a replacement model")
+  await f.stop()
+  const mode = await f.configure({ configValues: { "permission-mode": "manual", effort: "low" } })
+  assert.equal(mode.models?.currentValue, "second")
+  assert.equal(mode.modes?.currentValue, "manual")
+  assert.equal(mode.reasoningEfforts?.currentValue, "low")
+})
+
+test("notices remain live-only and old connections cannot restore authentication", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const live: unknown[] = []
+  const release = f.service.onLive(update => live.push(update))
+  t.after(release)
+  const client = provider.client
+  const before = (await f.read()).session.lastEventSeq
+  await client.onAuthStatus?.({ kind: "account", label: "Signed in" })
+  await client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Rate limit" } })
+  assert.equal((await f.read()).session.lastEventSeq, before)
+  assert.equal(live.length, 2)
+  assert.equal(f.service.live(f.sessionId)?.kind, "auth")
+  await f.stop()
+  assert.deepEqual(f.service.live(f.sessionId), { sessionId: f.sessionId, runGeneration: 1, kind: "auth", auth: null })
+  const count = live.length
+  await client.onAuthStatus?.({ kind: "account", label: "Stale account" })
+  await client.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })
+  assert.equal(live.length, count)
+})
+
+test("unexpected connection loss rejects late live updates and a resumed run publishes its own status", async t => {
+  const provider = new ConfigurationProvider()
+  const f = await setup(t, provider)
+  const live: unknown[] = []
+  t.after(f.service.onLive(update => live.push(update)))
+  const disconnected = provider.client
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Original account" })
+  disconnected.onClose?.(new Error("connection lost"))
+  assert.deepEqual(f.service.live(f.sessionId), { sessionId: f.sessionId, runGeneration: 1, kind: "auth", auth: null })
+  const count = live.length
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Stale account" })
+  await disconnected.onUpdate({ sessionId: "conversation", update: { sessionUpdate: "notice", severity: "warning", title: "Stale notice" } })
+  assert.equal(live.length, count)
+  await f.service.handle("_deskfleet/session/resume", { sessionId: f.sessionId, operationId: randomUUID() }, f.service.actor())
+  assert.deepEqual((await f.read()).runs.map(run => run.state), ["interrupted", "running"])
+  await provider.client.onAuthStatus?.({ kind: "api_key", label: "New account" })
+  const current = f.service.live(f.sessionId)
+  assert.equal(current?.kind === "auth" && current.auth?.label, "New account")
+  await disconnected.onAuthStatus?.({ kind: "account", label: "Old generation" })
+  assert.deepEqual(f.service.live(f.sessionId), current)
 })

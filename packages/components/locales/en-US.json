@@ -206,6 +206,7 @@
   },
   "siteAdmin": {
     "title": "Site administration",
+    "generalTitle": "Site settings",
     "description": "Manage settings for this DeskFleet site.",
     "forbidden": "Site administrator access is required.",
     "siteName": "Site name",
@@ -241,6 +242,14 @@
     "allowTeamTurnServers": "Allow teams to use their own TURN servers",
     "allowTeamTurnServersDescription": "Pro and Enterprise teams can replace these servers with their own. When off, every team uses these servers.",
     "accounts": "Accounts",
+    "createAccount": "Create account",
+    "createAccountDescription": "Create a verified account with a password. No verification email is sent; share the password through a secure channel.",
+    "createAccountTitle": "Create account",
+    "createAccountName": "Name",
+    "createAccountEmail": "Email",
+    "createAccountPassword": "Temporary password",
+    "createAccountPasswordHint": "15–128 characters. The account is verified immediately.",
+    "accountCreated": "Account {email} created.",
     "searchUsers": "Search email or name",
     "search": "Search",
     "enableUser": "Enable account",
@@ -251,7 +260,20 @@
     "noAccounts": "No accounts match “{query}”.",
     "resultLimit": "Showing the first {count} matches. Refine the search to narrow them down.",
     "disableTitle": "Disable {name}?",
-    "disableDescription": "Their login sessions and peer access are revoked, and scheduled work stops authorizing. Team machines and data are kept."
+    "disableDescription": "Their login sessions and peer access are revoked, and scheduled work stops authorizing. Team machines and data are kept.",
+    "deletionRequests": "Deletion requests",
+    "deletionRequestsDescription": "Review pending requests to permanently close an account. Approving disables sign-in and anonymizes the profile; Team machines and shared work are retained.",
+    "noDeletionRequests": "No pending account deletion requests.",
+    "pending": "Pending",
+    "requestedAt": "Requested {date}",
+    "approveDeletion": "Approve deletion",
+    "rejectDeletion": "Reject",
+    "approveDeletionTitle": "Delete {name}’s account?",
+    "approveDeletionDescription": "{name} will be signed out, credentials removed, Team memberships removed, and the profile anonymized. Team ownership must be transferred first. This cannot be undone.",
+    "rejectDeletionTitle": "Reject {name}’s deletion request?",
+    "rejectDeletionDescription": "{name} keeps the account and sees your note, if provided.",
+    "reviewNote": "Review note (optional)",
+    "reviewNoteHint": "Shared with the account when the request is rejected; stored with the decision when approved."
   },
   "mcpServers": {
     "title": "MCP Servers",
@@ -664,6 +686,7 @@
     "machineChoice": "Machine: {machine}",
     "workspace": "Workspace",
     "workspaceChoice": "Workspace: {workspace}",
+    "noWorkspace": "No workspace",
     "baseBranch": "Base branch",
     "baseBranchChoice": "Base branch: {branch}",
     "prepare": {
@@ -979,6 +1002,31 @@
     "select": "Attach selected"
   },
   "agent": {
+    "protocol": {
+      "planCancelled": "Cancelled",
+      "compaction": "Context compaction",
+      "compactionStates": {
+        "in_progress": "Compacting context",
+        "completed": "Context compacted",
+        "failed": "Compaction failed",
+        "cancelled": "Compaction cancelled",
+        "unknown": "Compaction update"
+      },
+      "subagent": "Subagent",
+      "subagentStates": {
+        "running": "Working",
+        "idle": "Idle",
+        "requires_action": "Needs input",
+        "unknown": "Status unavailable"
+      },
+      "sessionMessage": "Agent message",
+      "messageRoute": "{sender} → {recipient}",
+      "session": "Session",
+      "userMessage": "User message",
+      "authentication": "Agent authentication",
+      "chatAboutPlan": "Discuss this plan",
+      "skipInterview": "Skip interview"
+    },
     "conversation": "Conversation",
     "usage": {
       "title": "Session usage",
@@ -1002,6 +1050,15 @@
     "collapseText": "Collapse",
     "contentType": "{type} content",
     "tool": "Tool call",
+    "toolCall": {
+      "read": "Read {target}",
+      "edit": "Edit {target}",
+      "delete": "Delete {target}",
+      "move": "Move {target}",
+      "execute": "Run {target}",
+      "search": "Search {target}",
+      "fetch": "Fetch {target}"
+    },
     "remoteMcp": {
       "details": "Call details",
       "screenshot": "{machine} · {action}"
@@ -1284,7 +1341,7 @@
     "turnRemoveDescription": "The URLs and shared secret are deleted. New connections use the site’s relay, subject to your plan.",
     "relayedTraffic": "Relayed traffic",
     "activeSessions": "Active Sessions",
-    "activeSessionsHint": "Sessions that have not been archived.",
+    "activeSessionsHint": "Sessions that have not been deleted, including archived sessions.",
     "usageMembers": "Team members",
     "usageMembersHint": "Owner, admins, and members, excluding pending invitations.",
     "unlimited": "Unlimited",
@@ -1377,7 +1434,9 @@
     "replace": "Replace",
     "loadingResource": "Loading image…",
     "imageUnavailable": "Image unavailable",
+    "openResource": "Open", "previewUnavailableLocal": "Preview is unavailable for this file. You can open it in another application.",
     "previewUnavailable": "Preview is unavailable for this file. You can download it.", "downloadResource": "Download",
+    "previewHtml": "Preview", "viewSource": "Source",
     "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",
     "notImage": "This file cannot be displayed as an image.",
     "state": {
@@ -1621,7 +1680,22 @@
     "revokeDescription": "It will need to sign in again. Machines and running work are not affected.",
     "revokeAll": "Sign out everywhere",
     "revokeAllTitle": "Sign out everywhere?",
-    "revokeAllDescription": "Every browser and desktop app, including this one, will need to sign in again. Machines and running work are not affected."
+    "revokeAllDescription": "Every browser and desktop app, including this one, will need to sign in again. Machines and running work are not affected.",
+    "deleteAccount": "Delete account",
+    "deleteAccountDescription": "Request account deletion. A site administrator reviews the request before any change is made. Approval disables sign-in, removes credentials and Team memberships, and anonymizes your profile; Team machines and shared work are retained.",
+    "deleteAccountReason": "Reason for deletion",
+    "deleteAccountReasonRequired": "Enter a reason for deleting your account.",
+    "deleteAccountOwnership": "Transfer ownership of any Teams you own before an administrator can approve the request. Team machines and shared work are not deleted with your account.",
+    "deleteAccountPending": "Requested {date}. Waiting for a site administrator.",
+    "deleteAccountRejected": "Requested {date}. A site administrator declined the request.",
+    "deleteAccountApproved": "This account has been deleted.",
+    "deleteAccountReviewNote": "Note: {note}",
+    "requestAccountDeletion": "Request deletion",
+    "submitDeletionRequest": "Submit request",
+    "deleteAccountTitle": "Request account deletion",
+    "cancelDeletionRequest": "Cancel request",
+    "cancelDeletionTitle": "Cancel account deletion request?",
+    "cancelDeletionDescription": "Your account stays active and you can request deletion again later."
   },
   "billing": {
     "comparison": {
@@ -1708,10 +1782,14 @@
     "grantExpiryInvalid": "Choose an expiry in the future.",
     "enterpriseTeams": "Manual grants",
     "enterpriseHint": "Grant a Team unlimited allowances. This never cancels or pauses its Stripe subscription.",
-    "filterTeams": "Filter by Team or owner account",
+    "filterTeams": "Search by Team name or owner account",
     "teamOwnerAccount": "Owner: {name} ({email})",
     "noTeams": "No Teams yet.",
-    "noMatchingTeams": "No Teams match this filter.",
+    "noMatchingTeams": "No Teams match this search.",
+    "pagination": "Manual grant pagination",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageNumber": "Page {page}",
     "noSubscription": "No paid subscription",
     "subscriptionPlan": "{plan} subscription",
     "grantEnterprise": "Grant Enterprise",
@@ -1745,7 +1823,7 @@
     "empty": "No results",
     "emptyHint": "Try another phrase or search all result types.",
     "start": "Find a conversation or schedule",
-    "startHint": "Search titles, sent messages, completed agent responses, and schedule prompts. Archived chats are excluded.",
+    "startHint": "Search titles, sent messages, completed agent responses, and schedule prompts, including archived chats.",
     "loading": "Searching…",
     "more": "Load more",
     "untitled": "Untitled chat"

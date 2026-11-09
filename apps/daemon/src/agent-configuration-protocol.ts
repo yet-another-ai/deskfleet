@@ -43,6 +43,8 @@ export interface AgentConfiguration {
   models: AgentConfigOption | null
   reasoningEfforts: AgentConfigOption | null
   modes: AgentConfigOption | null
+  /** Complete provider catalog, including options outside the three common selectors. */
+  configOptions?: acp.SessionConfigOption[]
   promptCapabilities?: AgentPromptCapabilities
   commands?: AgentComposerCommand[]
   skills?: AgentComposerSkill[]
@@ -52,6 +54,7 @@ export interface AgentConfigurationSelection {
   model?: string
   reasoningEffort?: string
   mode?: string
+  configValues?: Record<string, string | boolean>
 }
 
 export interface AgentConfigurationParams extends AgentConfigurationSelection {
@@ -96,6 +99,46 @@ export function validateAgentConfigurationSelection(params: Record<string, unkno
       throw new Error(`Invalid agent ${key}`)
     }
   }
+  if (params.configValues !== undefined) {
+    if (!params.configValues || typeof params.configValues !== "object" || Array.isArray(params.configValues)) throw new Error("Invalid agent configuration values")
+    for (const [id, value] of Object.entries(params.configValues)) {
+      if (!id || id.length > 256 || id.includes("\0") || typeof value !== "boolean" && (typeof value !== "string" || !value || value.length > 256 || value.includes("\0"))) {
+        throw new Error("Invalid agent configuration value")
+      }
+    }
+  }
+}
+
+/** Retain provider selections without duplicating the common controls by config ID. */
+export function agentConfigurationSelection(configuration: AgentConfiguration): AgentConfigurationSelection {
+  const primary = new Set([configuration.models?.id, configuration.reasoningEfforts?.id, configuration.modes?.id])
+  const entries = (configuration.configOptions ?? []).filter(option => !primary.has(option.id))
+    .map(option => [option.id, option.currentValue] as const)
+  return {
+    model: configuration.models?.currentValue,
+    reasoningEffort: configuration.reasoningEfforts?.currentValue,
+    mode: configuration.modes?.currentValue,
+    ...(entries.length ? { configValues: Object.fromEntries(entries) } : {}),
+  }
+}
+
+/** Treat a common control addressed by config ID like the same explicit alias edit. */
+export function normalizeAgentConfigurationSelection(selection: AgentConfigurationSelection, options: acp.SessionConfigOption[]): AgentConfigurationSelection {
+  if (!selection.configValues) return selection
+  const configuration = agentConfiguration(options)
+  const configValues = { ...selection.configValues }
+  const normalized = { ...selection, configValues }
+  for (const [key, option] of [
+    ["model", configuration.models], ["reasoningEffort", configuration.reasoningEfforts], ["mode", configuration.modes],
+  ] as const) {
+    if (!option || !Object.hasOwn(configValues, option.id)) continue
+    if (selection[key] !== undefined) throw new Error(`Agent configuration specified twice: ${option.id}`)
+    const value = configValues[option.id]
+    if (typeof value !== "string") throw new Error(`Unsupported agent configuration: ${option.id}`)
+    normalized[key] = value
+    delete configValues[option.id]
+  }
+  return normalized
 }
 
 /** Select ids agents use for reasoning effort when they omit `thought_level`. */
@@ -178,6 +221,7 @@ export function agentConfiguration(
     models: selectAgentOption(options, "model", "model"),
     reasoningEfforts: selectReasoningEffort(options),
     modes: selectAgentOption(options, "mode", "mode"),
+    configOptions: options,
     ...(promptCapabilities ? { promptCapabilities } : {}),
     ...composer,
   }

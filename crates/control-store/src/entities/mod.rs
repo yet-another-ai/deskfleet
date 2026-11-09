@@ -1,4 +1,5 @@
 //! Central PostgreSQL schema. Keep these mappings aligned with schema migrations.
+pub(crate) mod cp_account_deletion_requests;
 pub(crate) mod cp_ai_turns;
 pub(crate) mod cp_auth_limits;
 pub(crate) mod cp_billing_analytics;

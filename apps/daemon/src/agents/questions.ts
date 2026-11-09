@@ -110,7 +110,21 @@ function parseGrok(params: unknown): ParsedQuestions | undefined {
     questions.push({ id: title, title, multiple, options: choices })
   }
   if (new Set(questions.map(question => question.id)).size !== questions.length) return undefined
-  return { questions, request: form(sessionId, toolCallId, questions[0]!.title, questions) }
+  const request = form(sessionId, toolCallId, questions[0]!.title, questions)
+  if (params.mode === "plan") request._meta = { deskfleet: { grokPlanInterview: true } }
+  return { questions, request }
+}
+
+export function grokPlanInterview(request: acp.CreateElicitationRequest): boolean {
+  const deskfleet = request._meta?.deskfleet
+  return isRecord(deskfleet) && deskfleet.grokPlanInterview === true
+}
+
+/** Explicit plan-interview actions carry no answers and cannot be used on ordinary forms. */
+export function grokPlanOutcome(value: unknown): "chat_about_this" | "skip_interview" | undefined {
+  if (!isRecord(value) || value.action !== "accept" || !isRecord(value._meta) || !isRecord(value._meta.deskfleet)) return undefined
+  const outcome = value._meta.deskfleet.grokOutcome
+  return outcome === "chat_about_this" || outcome === "skip_interview" ? outcome : undefined
 }
 
 function selected(question: ParsedQuestion, value: unknown): string[] | undefined {
@@ -155,8 +169,8 @@ function grokOutcome(questions: ParsedQuestion[], response: acp.CreateElicitatio
 /**
  * Translates a vendor question into a session form and the form result back
  * into that vendor's response. A request that cannot be shown is cancelled.
- * Grok decline and cancel both become `cancelled`. Plan-mode outcomes
- * `chat_about_this` and `skip_interview` are not separate actions.
+ * Grok decline and cancel both become `cancelled`; plan interviews expose
+ * explicit discussion and skip actions through the form's metadata.
  */
 export async function answerVendorQuestion(
   method: string,
@@ -169,6 +183,8 @@ export async function answerVendorQuestion(
   const parsed = cursor ? parseCursor(params, sessionId) : parseGrok(params)
   if (!parsed) return cursor ? { outcome: { outcome: "cancelled" } } : { outcome: "cancelled" }
   const response = await ask(parsed.request, signal)
+  const planOutcome = !cursor && grokPlanInterview(parsed.request) ? grokPlanOutcome(response) : undefined
+  if (planOutcome) return { outcome: planOutcome }
   return cursor ? cursorOutcome(parsed.questions, response) : grokOutcome(parsed.questions, response)
 }
 

@@ -8,6 +8,7 @@ import { useRecentAuthentication } from "../../composables/useRecentAuthenticati
 import BrandLogo from "../common/BrandLogo.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import AccountCredentials from "./AccountCredentials.vue"
+import AccountDeletion from "./AccountDeletion.vue"
 import AccountPasskeys from "./AccountPasskeys.vue"
 import AccountSessions from "./AccountSessions.vue"
 import ReauthDialog from "./ReauthDialog.vue"
@@ -20,7 +21,7 @@ const formatDate = (value: string | number) => new Intl.DateTimeFormat(intlLocal
 </script>
 
 <template>
-  <div class="min-h-full bg-ui-canvas text-ui-text">
+  <div class="h-full overflow-y-auto bg-ui-canvas text-ui-text">
     <header class="border-b border-ui-border">
       <div class="mx-auto flex h-14 max-w-2xl items-center justify-between gap-4 px-4">
         <a href="/" class="flex items-center gap-2.5 text-[15px] font-semibold"><BrandLogo :size="24" decorative />DeskFleet</a>
@@ -38,6 +39,7 @@ const formatDate = (value: string | number) => new Intl.DateTimeFormat(intlLocal
       <AccountCredentials :account="account" :user="user" :confirmed="recent.confirmed" />
       <AccountPasskeys :account="account" :confirmed="recent.confirmed" :format-date="formatDate" />
       <AccountSessions :account="account" :confirmed="recent.confirmed" :format-date="formatDate" />
+      <AccountDeletion :account="account" :confirmed="recent.confirmed" />
     </main>
     <ReauthDialog v-if="recent.prompting.value" :reauthenticate="account.reauthenticate" :send-email-code="account.sendEmailCode" :verify-email-code="account.verifyEmailCode" :authentication-methods="account.authenticationMethods" @settle="recent.settle" />
   </div>

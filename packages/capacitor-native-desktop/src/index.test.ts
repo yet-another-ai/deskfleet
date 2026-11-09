@@ -113,5 +113,5 @@ test("createCapacitorNativeDesktopApi completes signaling handshake with the Cap
     displayId: 1,
     control: true,
   })
-  expect(sent.map(item => item.type)).toEqual(["start", "answer"])
+  expect(sent.filter(item => item.type !== "ui").map(item => item.type)).toEqual(["start", "answer"])
 })

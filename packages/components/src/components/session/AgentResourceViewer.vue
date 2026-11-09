@@ -5,7 +5,7 @@ import { DialogTitle } from "reka-ui"
 import { splitLines } from "shiki/core"
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { FileEntry, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
+import type { FileResource, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { fileResourceLines } from "../../services/agent-resources.ts"
 import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
@@ -32,15 +32,18 @@ const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const client = usePlatformClient()
 const filesApi = computed(() => props.api ?? client.files)
-const entry = ref<FileEntry>()
+const entry = ref<FileResource>()
+const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.openResource))
 const content = ref<string>()
+const isHtmlContent = computed(() => content.value !== undefined && Boolean(entry.value && fileCodeLanguage(entry.value.name) === "html"))
+const renderingHtml = ref(false)
 const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).map(([text]) => ({
   text,
   ending: text.match(/\r?\n$/u)?.[0] ?? "",
 })))
 const highlightedLines = computed(() => {
   const language = entry.value && fileCodeLanguage(entry.value.name)
-  // Preview reads allow 16 MiB; keep large files out of synchronous tokenization.
+  // Local previews may be large; keep them out of synchronous tokenization.
   if (!language || content.value === undefined || content.value.length > 200_000) return undefined
   try {
     return highlighter.codeToTokens(content.value, {
@@ -97,14 +100,24 @@ async function open(): Promise<void> {
             await nextTick()
             lineElement.value?.scrollIntoView({ block: "center" })
           }
-        } catch { error.value = t("files.previewUnavailable") }
+        } catch { error.value = t(canOpenResource.value ? "files.previewUnavailableLocal" : "files.previewUnavailable") }
       }
     }
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) loading.value = false }
 }
-function download(): void {
-  if (!previewBytes.value || !entry.value) return
+async function fileAction(): Promise<void> {
+  if (entry.value?.kind !== "file") return
+  if (canOpenResource.value) {
+    try { await filesApi.value!.openResource!(request) }
+    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+    return
+  }
+  if (!previewBytes.value) {
+    try { await filesApi.value?.saveResource(request) }
+    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+    return
+  }
   imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
   const link = document.createElement("a")
   link.href = imageUrl.value
@@ -119,6 +132,13 @@ function locateOriginal(): void {
     sessionId: props.source?.sessionId ?? request.sessionId,
     itemId: request.uri,
   })
+}
+async function toggleHtmlPreview(): Promise<void> {
+  renderingHtml.value = !renderingHtml.value
+  if (!renderingHtml.value && requestedLines) {
+    await nextTick()
+    lineElement.value?.scrollIntoView({ block: "center" })
+  }
 }
 void open()
 onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL(imageUrl.value) })
@@ -141,6 +161,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :title="entry?.name ?? title"
       :source="{ ...source, sessionId: source?.sessionId ?? request.sessionId, itemId: request.uri }"
       :resource-request="request"
+      :api="filesApi"
+      :can-open="canOpenResource"
       mode="tab"
       class="h-full flex-1 rounded-none border-0"
     />
@@ -150,6 +172,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
           {{ entry?.name ?? title ?? request.uri }}
         </span>
         <div class="flex shrink-0 items-center gap-1.5">
+          <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
           <UiButton
             variant="ghost"
             size="icon"
@@ -158,12 +181,12 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             @click="locateOriginal"
           ><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton
-            v-if="!loading && previewBytes"
+            v-if="!loading && entry?.kind === 'file'"
             type="button"
-            data-preview-action="download"
-            @click="download"
+            :data-preview-action="canOpenResource ? 'open' : 'download'"
+            @click="fileAction"
           >
-            {{ t('files.downloadResource') }}
+            {{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}
           </UiButton>
         </div>
       </header>
@@ -180,6 +203,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <div v-else-if="entry?.kind === 'directory' && filesApi" class="min-h-0 flex-1 overflow-auto p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </div>
+        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" />
         <pre v-else-if="content !== undefined" class="m-0 min-h-0 flex-1 overflow-auto p-4 whitespace-pre text-xs select-text"><code><span
           v-for="(line, index) in lines"
           :key="index"
@@ -210,9 +234,12 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :mime-type="previewMime"
       :title="entry?.name"
       :resource-request="request"
+      :api="filesApi"
+      :can-open="canOpenResource"
       mode="inline"
       class="max-h-[60vh]"
     />
+    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" />
     <pre v-else-if="content !== undefined" class="max-h-[60vh] overflow-auto whitespace-pre text-xs select-text"><code><span
       v-for="(line, index) in lines"
       :key="index"
@@ -221,7 +248,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
-      <UiButton v-if="!loading && previewBytes" type="button" @click="download">{{ t('files.downloadResource') }}</UiButton>
+      <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
+      <UiButton v-if="!loading && entry?.kind === 'file'" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}</UiButton>
       <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>

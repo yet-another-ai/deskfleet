@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron"
+import { app, ipcMain } from "electron"
 import { join, resolve } from "node:path"
 import type { CentralApi } from "@deskfleet/client/central"
 import { NATIVE_DESKTOP_CHANNEL, type NativeDesktopRequest } from "@deskfleet/client/native-desktop"
@@ -17,7 +17,14 @@ export function nativeDesktopRequest(value: unknown): NativeDesktopRequest {
   }
   if (typeof request.displayId !== "number" || !Number.isSafeInteger(request.displayId) || request.displayId < 0) throw new Error("Invalid display identifier")
   if (typeof request.control !== "boolean") throw new Error("Invalid desktop control option")
-  return { target: { teamId: identifier(target.teamId), machineId: identifier(target.machineId) }, displayId: request.displayId, control: request.control }
+  if (request.locale !== undefined && (typeof request.locale !== "string" || !request.locale.trim() || request.locale.length > 64 || request.locale.includes("\0"))) throw new Error("Invalid desktop locale")
+  if (request.theme !== undefined && request.theme !== "light" && request.theme !== "dark") throw new Error("Invalid desktop theme")
+  return {
+    target: { teamId: identifier(target.teamId), machineId: identifier(target.machineId) },
+    displayId: request.displayId, control: request.control,
+    ...(typeof request.locale === "string" ? { locale: request.locale } : {}),
+    ...(request.theme === "light" || request.theme === "dark" ? { theme: request.theme } : {}),
+  }
 }
 
 export function installNativeDesktop(central: CentralApi): { close(): Promise<void> } {
@@ -27,21 +34,15 @@ export function installNativeDesktop(central: CentralApi): { close(): Promise<vo
     if (closed || !isDesktopMediaSender(event)) throw new Error("Native desktop IPC is restricted to the main renderer")
     if (process.platform !== "linux" && process.platform !== "win32" && process.platform !== "darwin") throw new Error("Native desktop windows are not available on this platform")
     const request = nativeDesktopRequest(value)
-    const window = BrowserWindow.fromWebContents(event.sender)
     const name = process.platform === "win32" ? "deskfleet-viewer.exe" : "deskfleet-viewer"
     const executable = app.isPackaged
       ? join(process.resourcesPath, "native", name)
       : resolve(app.getAppPath(), "../../target/debug", name)
-    let started = false
     const session = openNativeDesktopSession(central, request, receive => spawnDesktopViewer(executable, receive), error => {
-      if (!started || closed) return
-      const options = { type: "error" as const, title: "DeskFleet", message: "Remote desktop window disconnected", detail: error.message }
-      const show = window && !window.isDestroyed() ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options)
-      void show.catch(error => console.error("Native desktop error dialog failed", error))
+      console.error("Native desktop session failed", error)
     }, () => { sessions.delete(session) })
     sessions.add(session)
-    await session.ready
-    started = true
+    await session.opened
   })
   return {
     async close() {

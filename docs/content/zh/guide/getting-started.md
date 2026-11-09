@@ -14,6 +14,8 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 你也可以直接从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载 `.dmg` 磁盘映像。
 
+- **Nix（nix-darwin）**：将发布版 flake 添加为输入，应用其 `deskfleet` overlay，并把 `pkgs.deskfleet` 加入 `environment.systemPackages`。nix-darwin 会把已签名的应用包安装到 `/Applications/Nix Apps` 并管理升级。详见 [Nix 分发说明](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution)。
+
 ### Windows（`x64`）
 
 从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载并运行 `.exe` 安装程序。

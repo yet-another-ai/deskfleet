@@ -1,8 +1,7 @@
 diff --git a/dist/index.js b/dist/index.js
-index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344c8d0af0f 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -27966,10 +27966,10 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
+@@ -27966,10 +27966,10 @@
    const spawnEnv = env ?? process.env;
    let codex;
    if (codexPath) {
@@ -15,7 +14,82 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
    }
    attachLogs(codex);
    codex.stdin.on("error", (error62) => logger.log(`[STDIN ERROR] ${error62.message}`));
-@@ -43076,7 +43076,11 @@ var CodexAppServerSupervisor = class {
+@@ -34598,11 +34598,11 @@
+       resolvedModel ? { model: resolvedModel, source: "activity" } : void 0
+     );
+     await this.session.update({
+-      sessionUpdate: "subagent_spawned",
+-      subagentSessionId: childSessionId,
+-      name,
+-      task,
+-      capabilities: {}
++      sessionUpdate: "subagent_update",
++      sessionId: childSessionId,
++      title: name,
++      description: task,
++      capabilities: {}, state: { state: "running" }
+     }, parentSessionId);
+     this.children.set(childSessionId, {
+       parentThreadId,
+@@ -34638,9 +34638,9 @@
+     child.terminalState = state;
+     try {
+       await this.session.update({
+-        sessionUpdate: "subagent_state_update",
+-        subagentSessionId: child.sessionId,
+-        state
++        sessionUpdate: "subagent_update",
++        sessionId: child.sessionId,
++        state: subagentWorkState(state)
+       }, child.parentSessionId);
+     } catch (error62) {
+       if (child.terminalState === state) delete child.terminalState;
+@@ -34665,11 +34665,11 @@
+         generation: 2
+       };
+       await this.session.update({
+-        sessionUpdate: "subagent_spawned",
+-        subagentSessionId: reopened.sessionId,
+-        name: reopened.name,
+-        task: reopened.task,
+-        capabilities: {}
++        sessionUpdate: "subagent_update",
++        sessionId: reopened.sessionId,
++        title: reopened.name,
++        description: reopened.task,
++        capabilities: {}, state: { state: "running" }
+       }, parentSessionId);
+       this.children.set(childThreadId, reopened);
+       this.terminalPendingSpawns.delete(childThreadId);
+@@ -34686,11 +34686,11 @@
+     delete child.terminalState;
+     try {
+       await this.session.update({
+-        sessionUpdate: "subagent_spawned",
+-        subagentSessionId: child.sessionId,
+-        name: child.name,
+-        task: child.task,
+-        capabilities: {}
++        sessionUpdate: "subagent_update",
++        sessionId: child.sessionId,
++        title: child.name,
++        description: child.task,
++        capabilities: {}, state: { state: "running" }
+       }, child.parentSessionId);
+     } catch (error62) {
+       child.generation -= 1;
+@@ -34764,6 +34764,10 @@
+     return parent ? { threadId: parent[0], sessionId: parent[1].sessionId } : { threadId: this.rootSessionId, sessionId: this.rootSessionId };
+   }
+ };
++function subagentWorkState(state) {
++  if (state === "disconnected") return { state: "unknown" };
++  return { state: "idle", stopReason: state === "completed" ? "end_turn" : state === "cancelled" ? "cancelled" : "error" };
++}
+ function terminalStateOf(status) {
+   switch (status) {
+     case "completed":
+@@ -43076,7 +43080,11 @@
      let closed = false;
      let stdoutEnded = false;
      let wedgedTimer = null;
@@ -27,7 +101,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
        child.dead = true;
        for (const listener of [...this.deathListeners]) {
          try {
-@@ -43199,14 +43203,14 @@ var CodexAppServerSupervisor = class {
+@@ -43199,14 +43207,14 @@
          process11.stdin?.end();
        } catch {
        }
@@ -44,7 +118,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
            if (exitSeen) return;
            exitSeen = true;
            markDead();
-@@ -45148,7 +45152,7 @@ var TitleGenerator = class {
+@@ -45148,7 +45156,7 @@
    }
    /**
     * Call when an explicit rename failed. A title that this generator dropped for that rename is generated
@@ -53,7 +127,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
     */
    retryAfterFailedRename() {
      if (!this.droppedForExplicitTitle) return;
-@@ -45166,13 +45170,13 @@ var TitleGenerator = class {
+@@ -45166,13 +45174,13 @@
      this.renameEchoResolve = null;
    }
    /**
@@ -69,7 +143,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
      if (this.generated) return;
      const src = this.getSessionTitleSource();
      if (src === "explicit" || src === "unknown") return;
-@@ -45185,7 +45189,7 @@ var TitleGenerator = class {
+@@ -45185,7 +45193,7 @@
    }
    /**
     * Resolves once the fire-and-forget generation started by
@@ -78,7 +152,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
     *
     * Generation renames the thread, which Codex echoes back as a
     * `session_info_update`. `session/load` has to finish replaying a session
-@@ -48042,7 +48046,8 @@ var CodexAcpServer = class {
+@@ -48042,7 +48050,8 @@
      ];
      return {
        steering: {
@@ -88,7 +162,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
        },
        ...this.capabilities.airClient ? {
          [JETBRAINS_META_KEY]: {
-@@ -49756,6 +49761,9 @@ You have been logged out. Please try again.`);
+@@ -49756,6 +49765,9 @@
          return { outcome: "injected" };
        }
      }
@@ -98,7 +172,7 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
      return await this.startNewTurnFromSteering(params, clientUserMessageId);
    }
    /**
-@@ -49897,7 +49905,8 @@ You have been logged out. Please try again.`);
+@@ -49897,7 +49909,8 @@
      }
      return {
        sessionId,
@@ -108,18 +182,78 @@ index f44e3aa831b7229ee6a2a681d45f6aa4ee2271b6..3eee642db07ae77d961ea14f11db0344
      };
    }
    createSessionConfigOptions(sessionState) {
-@@ -51388,6 +51397,10 @@ You have been logged out. Please try again.`);
+@@ -50289,11 +50302,11 @@
+             const name = nameFromAgentPath(item.agentPath, `Agent ${item.agentThreadId.slice(-8)}`);
+             const model = item.model || previous?.model;
+             await session.update({
+-              sessionUpdate: "subagent_spawned",
+-              subagentSessionId: childSessionId,
+-              name,
+-              task: `Delegated task for ${name}`,
+-              capabilities: {}
++              sessionUpdate: "subagent_update",
++              sessionId: childSessionId,
++              title: name,
++              description: `Delegated task for ${name}`,
++              capabilities: {}, state: { state: "running" }
+             });
+             announced.set(item.agentThreadId, {
+               generation,
+@@ -50334,11 +50347,11 @@
+               const name = nameFromAgentPath(item.agentPath, `Agent ${item.agentThreadId.slice(-8)}`);
+               const model = item.model || void 0;
+               await session.update({
+-                sessionUpdate: "subagent_spawned",
+-                subagentSessionId: item.agentThreadId,
+-                name,
+-                task: `Delegated task for ${name}`,
+-                capabilities: {}
++                sessionUpdate: "subagent_update",
++                sessionId: item.agentThreadId,
++                title: name,
++                description: `Delegated task for ${name}`,
++                capabilities: {}, state: { state: "running" }
+               });
+               announced.set(item.agentThreadId, {
+                 generation: 1,
+@@ -50351,9 +50364,9 @@
+             }
+             if (child.terminal) continue;
+             await session.update({
+-              sessionUpdate: "subagent_state_update",
+-              subagentSessionId: child.sessionId,
+-              state: activityKind === "completed" ? "completed" : "cancelled"
++              sessionUpdate: "subagent_update",
++              sessionId: child.sessionId,
++              state: subagentWorkState(activityKind === "completed" ? "completed" : "cancelled")
+             });
+             child.terminal = true;
+           }
+@@ -50371,9 +50384,9 @@
+     for (const child of announced.values()) {
+       if (child.terminal) continue;
+       await session.update({
+-        sessionUpdate: "subagent_state_update",
+-        subagentSessionId: child.sessionId,
+-        state: "disconnected"
++        sessionUpdate: "subagent_update",
++        sessionId: child.sessionId,
++        state: subagentWorkState("disconnected")
+       });
+     }
+   }
+@@ -51387,6 +51400,10 @@
+             pendingTurnStart?.resolve(turnId);
              if (priorRunningTurnId !== null && turnId === priorRunningTurnId) {
                insertion?.onTurnAdopted?.();
-             }
++            }
 +            if (sessionState.titleGen) {
 +              const promptText = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
 +              sessionState.titleGen.onTurnStarted(promptText);
-+            }
+             }
              onTurnStarted?.();
            },
-           () => this.promptShouldStop(params.sessionId, activePrompt),
-@@ -51556,10 +51569,6 @@ You have been logged out. Please try again.`);
+@@ -51556,10 +51573,6 @@
          () => this.sessionPublishIsCurrent(sessionState, turnSessionGeneration),
          true
        );

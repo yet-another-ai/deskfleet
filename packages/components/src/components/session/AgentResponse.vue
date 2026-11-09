@@ -5,7 +5,7 @@ import { computed, inject, reactive, watch } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse, ConversationStep } from "../../services/agent-conversation.ts"
-import { groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
+import { containsConversationEntry, groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
 import { isRemoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import { elapsed, formatDuration } from "../../services/agent-format.ts"
 import { pendingMermaidLocate, type MermaidLocateRequest } from "../../stores/layout.ts"
@@ -16,6 +16,7 @@ import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
+import AgentProtocolActivity from "./AgentProtocolActivity.vue"
 import { conversationReadingKey, useConversationDisclosure } from "../../stores/conversation-reading.ts"
 const reading = inject(conversationReadingKey, undefined)
 const localDisclosures = reactive<Record<string, boolean | null>>({})
@@ -40,6 +41,17 @@ const text = computed(() => {
 })
 const steps = computed(() => answer.value ? props.response.steps.slice(0, -1) : props.response.steps)
 const groupedSteps = computed(() => groupResponseActivity(steps.value))
+const sessionLabels = computed(() => {
+  const labels: Record<string, string> = {}
+  function visit(steps: ConversationStep[]): void {
+    for (const step of steps) if (step.kind === "subagent") {
+      labels[step.session.sessionId] = step.session.title || t("agent.protocol.subagent")
+      visit(step.steps)
+    }
+  }
+  visit(props.response.steps)
+  return labels
+})
 const endingToolId = computed(() => {
   const last = props.response.steps.at(-1)
   return !props.response.live && props.response.turn && last?.kind === "tool" ? last.id : undefined
@@ -48,7 +60,11 @@ const activities = { get: (id: string) => disclosures()[`activity:${id}`] ?? und
 const toggled = useConversationDisclosure(() => `response:${props.response.id}`)
 watch(() => props.response.live, () => { toggled.value = null })
 const hasRemoteCall = computed(() => props.response.steps.some(step => step.kind === "tool" && isRemoteMcpTool(step.tool)))
-const open = computed(() => props.response.steps.some(step => step.kind === "elicitation" && step.elicitation.state === "pending") || !props.response.turn || (toggled.value ?? (!answer.value || hasRemoteCall.value)))
+function needsAttention(step: ConversationStep): boolean {
+  return step.kind === "elicitation" && step.elicitation.state === "pending"
+    || step.kind === "subagent" && (step.session.state?.state === "running" || step.session.state?.state === "requires_action" || step.steps.some(needsAttention))
+}
+const open = computed(() => props.response.steps.some(needsAttention) || !props.response.turn || (toggled.value ?? (!answer.value || hasRemoteCall.value)))
 const summary = computed(() => props.response.live ? [] : summarizeTools(props.response.steps).map(({ kind, count }) => t(`agent.summary.${kind}`, { n: count }, count)))
 const outcome = computed(() => props.response.last && props.response.turn && ["cancelled", "interrupted", "failed"].includes(props.response.turn.state) ? props.response.turn : undefined)
 const thoughts = { has: (id: string) => !!disclosures()[`thought:${id}`], add: (id: string) => { disclosures()[`thought:${id}`] = true }, delete: (id: string) => { disclosures()[`thought:${id}`] = false } }
@@ -58,11 +74,13 @@ type LocateRequest = PreviewLocateRequest | MermaidLocateRequest | { entryId: st
 const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value ?? (props.locateEntry ? { entryId: props.locateEntry } : undefined))
 
 function stepMatchesLocate(step: ConversationStep, target: LocateRequest): boolean {
-  if (target.entryId) return step.id === target.entryId
+  if (target.entryId) return containsConversationEntry(step, target.entryId)
   const content = "content" in target ? target.content : "code" in target ? target.code : undefined
   if (content === undefined) return false
-  if (step.kind === "message") {
-    return step.content.some(block =>
+  if (step.kind === "subagent") return step.steps.some(child => stepMatchesLocate(child, target))
+  const blocks = step.kind === "message" ? step.content : step.kind === "compaction" ? step.compaction.summary : step.kind === "session_message" ? step.message.content : undefined
+  if (blocks) {
+    return blocks.some(block =>
       (block.type === "text" && block.text.includes(content))
       || ((block.type === "image" || block.type === "audio") && `data:${block.mimeType};base64,${block.data}` === content)
       || (block.type === "resource_link" && block.uri === content),
@@ -102,6 +120,7 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
         <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
+        <AgentProtocolActivity v-else-if="step.kind !== 'message'" :step="step" :live="response.live" :disabled="disabled" :session-labels="sessionLabels" :locate-entry="pendingLocate?.entryId" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
           <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 rounded-sm outline-offset-2 hover:text-ui-text">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 ui-motion group-hover/thought:opacity-100 group-focus-visible/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />

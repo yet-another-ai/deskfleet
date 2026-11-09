@@ -14,6 +14,8 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 You can also download the `.dmg` disk image directly from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
 
+- **Nix (nix-darwin)**: Add the release flake as an input, apply its `deskfleet` overlay, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and manages upgrades. See the [Nix distribution guide](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution).
+
 ### Windows (`x64`)
 
 Download and run the `.exe` installer from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).

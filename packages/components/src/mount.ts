@@ -6,7 +6,7 @@ import { useAppearanceStore } from "./stores/appearance.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
 import { installErrorReporting, installErrorReportingAccount, shutdownErrorReporting } from "./services/error-reporting.ts"
-import { resolvePreviewKind } from "./services/preview.ts"
+import { previewResourceRequestFromQuery, resolvePreviewKind } from "./services/preview.ts"
 import "./styles.css"
 
 export async function mountDeskfleet(target: string | Element = "#root") {
@@ -22,7 +22,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
       ? (await import("./components/session/PreviewViewer.vue")).default
       : (await import("./components/session/MermaidViewer.vue")).default
     const props = previewWindow
-      ? { kind: resolvePreviewKind(content, params.get("kind"), mimeType), content, title: params.get("title") || undefined, mimeType, mode: "window", source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, itemId: params.get("itemId") || undefined } }
+      ? { kind: resolvePreviewKind(content, params.get("kind"), mimeType), content, title: params.get("title") || undefined, mimeType, mode: "window", resourceRequest: previewResourceRequestFromQuery(key => params.get(key)), source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, itemId: params.get("itemId") || undefined } }
       : { code: content, mode: "window", source: { sessionId: params.get("sessionId") || undefined, entryId: params.get("entryId") || undefined, diagramId: params.get("diagramId") || undefined } }
     const app = createApp(root, props)
     installErrorReporting(app)

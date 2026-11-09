@@ -17,6 +17,7 @@ function fixture(context: TestContext, version = "1.2.3"): string {
   writeFileSync(join(directory, "nix/flake.nix"), '{ outputs = _: {}; }\n')
   writeFileSync(join(directory, "nix/flake.lock"), '{ "nodes": {}, "version": 7 }\n')
   writeFileSync(join(directory, "nix/desktop.nix"), '{}: null\n')
+  writeFileSync(join(directory, "nix/desktop-darwin.nix"), '{}: null\n')
   writeFileSync(join(directory, "apps/desktop/build/icon.png"), Buffer.from([137, 80, 78, 71]))
   writeFileSync(join(directory, "unrelated.txt"), "This file must not ship in the release flake")
   return directory
@@ -30,15 +31,17 @@ function unpack(directory: string, archive: string): string {
   return join(extracted, "deskfleet-nix")
 }
 
-test("release flake pins both desktop archives and contains only the packaging inputs", async context => {
+test("release flake pins Linux archives and the macOS app bundle", async context => {
   const directory = fixture(context)
   const payloads = {
     "x86_64-linux": gzipSync("x64 Electron application and native addon"),
     "aarch64-linux": gzipSync("arm64 Electron application and native addon"),
+    "aarch64-darwin": Buffer.from("signed and notarized macOS app bundle"),
   }
   const filenames = {
     "x86_64-linux": "deskfleet-1.2.3-linux-x64.tar.gz",
     "aarch64-linux": "deskfleet-1.2.3-linux-arm64.tar.gz",
+    "aarch64-darwin": "deskfleet-1.2.3-mac-arm64.zip",
   }
   for (const [system, filename] of Object.entries(filenames)) {
     writeFileSync(join(directory, filename), payloads[system as keyof typeof payloads])
@@ -46,8 +49,8 @@ test("release flake pins both desktop archives and contains only the packaging i
   const output = join(directory, "release/deskfleet-nix.tar.gz")
   await packageNixRelease(directory, output, Object.values(filenames))
   const extracted = unpack(directory, output)
-  assert.deepEqual(readdirSync(extracted).sort(), ["desktop.nix", "flake.lock", "flake.nix", "icon.png", "release.json"])
-  for (const filename of ["flake.nix", "flake.lock", "desktop.nix"]) {
+  assert.deepEqual(readdirSync(extracted).sort(), ["desktop-darwin.nix", "desktop.nix", "flake.lock", "flake.nix", "icon.png", "release.json"])
+  for (const filename of ["flake.nix", "flake.lock", "desktop.nix", "desktop-darwin.nix"]) {
     assert.deepEqual(readFileSync(join(extracted, filename)), readFileSync(join(directory, "nix", filename)))
   }
   assert.deepEqual(readFileSync(join(extracted, "icon.png")), readFileSync(join(directory, "apps/desktop/build/icon.png")))
@@ -83,8 +86,14 @@ test("rejects mismatched releases, unsupported targets and duplicate architectur
   const valid = "deskfleet-1.2.3-linux-x64.tar.gz"
   writeFileSync(join(directory, valid), gzipSync("desktop"))
   await assert.rejects(packageNixRelease(directory, output, []), /at least one/)
-  for (const filename of ["deskfleet-2.0.0-linux-x64.tar.gz", "deskfleet-1.2.3-linux-ia32.tar.gz", "deskfleet-linux-x64.tar.gz"]) {
-    await assert.rejects(packageNixRelease(directory, output, [filename]), /Expected a deskfleet-1.2.3-linux/)
+  for (const filename of [
+    "deskfleet-2.0.0-linux-x64.tar.gz",
+    "deskfleet-1.2.3-linux-ia32.tar.gz",
+    "deskfleet-1.2.3-mac-x64.zip",
+    "deskfleet-1.2.3-mac-arm64.dmg",
+    "deskfleet-linux-x64.tar.gz",
+  ]) {
+    await assert.rejects(packageNixRelease(directory, output, [filename]), /Expected a deskfleet-1\.2\.3-/)
   }
   await assert.rejects(packageNixRelease(directory, output, [valid, valid]), /Duplicate desktop archive for x86_64-linux/)
   assert.equal(existsSync(output), false)

@@ -620,10 +620,10 @@ billing queries combine complete minutes with raw events at partial boundaries.
 Team settings show **Plans & Usages** to every member, with unlimited allowances
 for relayed traffic, active Sessions, and Team members. Relayed traffic is the
 cumulative sum of sent bytes across both socket sides. Active Sessions are
-unarchived Agent Sessions on the Team's enrolled machines, based on durable
-Session admissions. Idle Sessions and offline machines still count; removed
-machines and completed archives do not. Team members include administrators and
-members, excluding pending invitations.
+non-deleted Agent Sessions on the Team's enrolled machines. Archived and idle
+Sessions and offline machines still count; deleted Sessions and removed machines
+do not. Archive and restore leave this count unchanged. Team members include
+administrators and members, excluding pending invitations.
 
 `GET /api/teams/{team}/usage` returns `relayedBytes` as a decimal string, plus
 the current `activeSessionCount` and `memberCount` as numbers.
@@ -864,8 +864,9 @@ After administrator removal, prepare the same backend and Team again with the
 command above, then enroll the returned credential. This reactivates its existing
 association and retains Workspaces, Sessions, history, and checkout paths.
 Where the Team plan limits Sessions, rejoining can fail with `active_session_limit`
-if retained admissions plus current Team work exceed that limit. Self-hosted
-Teams have unlimited capacity. Other Teams remain connected. An active registration cannot be overwritten.
+if retained non-deleted Sessions and live admissions plus current Team work
+exceed that limit. Self-hosted Teams have unlimited capacity. Other Teams remain
+connected. An active registration cannot be overwritten.
 
 The Web client is bundled in the official image, or can be deployed from
 `apps/web/dist` to an independent static host. Browsers

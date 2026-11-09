@@ -34,6 +34,7 @@ beforeEach(() => {
       return () => h("div", { ref: viewport }, [
         h("div", { "data-mermaid-canvas": "" }, [h("svg")]),
         h("div", { "data-preview-kind": "image" }, [h("div", { "data-preview-canvas": "" }, [h("img")])]),
+        h("div", { "data-office-preview": "xlsx" }, [h("canvas")]),
       ])
     },
   }))
@@ -144,7 +145,7 @@ test.each([{ hold: 0, selected: 1 }, { hold: 120, selected: 0 }])(
   },
 )
 
-test.each(["[data-mermaid-canvas] svg", "[data-preview-canvas] img"])(
+test.each(["[data-mermaid-canvas] svg", "[data-preview-canvas] img", "[data-office-preview] canvas"])(
   "pannable canvas %s keeps its own drag gesture without switching views", async selector => {
     const target = wrapper.get(selector).element
     await pointer("right", "pointerdown", 280, target)
@@ -153,5 +154,9 @@ test.each(["[data-mermaid-canvas] svg", "[data-preview-canvas] img"])(
     expect(swipe.offset.value).toBe(0)
     expect(swipe.dragging.value).toBe(false)
     expect(index.value).toBe(0)
+    if (selector.includes("data-office-preview")) {
+      expect(wrapper.get("[data-office-preview]").element.setPointerCapture).not.toHaveBeenCalled()
+      expect(target.setPointerCapture).toHaveBeenCalledWith(1)
+    }
   },
 )

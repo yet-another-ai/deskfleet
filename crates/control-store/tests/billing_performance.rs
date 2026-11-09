@@ -283,7 +283,12 @@ async fn reconciliation_claims_are_due_exclusive_and_recover_expired_owners() {
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn admin_billing_pages_are_bounded_and_preserve_summary_values() {
     let (store, db, schema, owner) = fixture().await;
-    assert!(store.admin_billing_teams(&owner, None, 100).await.is_err());
+    assert!(
+        store
+            .admin_billing_teams(&owner, None, None, 100)
+            .await
+            .is_err()
+    );
     store.grant_site_admin(&owner).await.unwrap();
     let mut ids = Vec::new();
     for i in 0..103 {
@@ -295,7 +300,10 @@ async fn admin_billing_pages_are_bounded_and_preserve_summary_values() {
                 .id,
         );
     }
-    let first = store.admin_billing_teams(&owner, None, 1000).await.unwrap();
+    let first = store
+        .admin_billing_teams(&owner, None, None, 1000)
+        .await
+        .unwrap();
     assert_eq!(first.teams.len(), 100);
     assert_eq!(first.next_cursor.as_deref(), Some(ids[99].as_str()));
     for team in &first.teams {
@@ -307,15 +315,36 @@ async fn admin_billing_pages_are_bounded_and_preserve_summary_values() {
         );
     }
     let second = store
-        .admin_billing_teams(&owner, first.next_cursor.as_deref(), 100)
+        .admin_billing_teams(&owner, first.next_cursor.as_deref(), None, 100)
         .await
         .unwrap();
     assert_eq!(second.teams.len(), 3);
     assert!(second.next_cursor.is_none());
     assert_eq!(second.teams[0]["id"], ids[100]);
+    let matches = store
+        .admin_billing_teams(&owner, None, Some(" team 100 "), 100)
+        .await
+        .unwrap();
+    assert_eq!(matches.teams.len(), 1);
+    assert_eq!(matches.teams[0]["id"], ids[100]);
+    assert!(matches.next_cursor.is_none());
+    let by_owner = store
+        .admin_billing_teams(&owner, None, Some("OWNER@BILLING.TEST"), 10)
+        .await
+        .unwrap();
+    assert_eq!(by_owner.teams.len(), 10);
+    assert_eq!(by_owner.next_cursor.as_deref(), Some(ids[9].as_str()));
     assert!(
         store
-            .admin_billing_teams(&owner, Some("invalid"), 100)
+            .admin_billing_teams(&owner, None, Some("missing"), 100)
+            .await
+            .unwrap()
+            .teams
+            .is_empty()
+    );
+    assert!(
+        store
+            .admin_billing_teams(&owner, Some("invalid"), None, 100)
             .await
             .is_err()
     );
@@ -347,7 +376,10 @@ async fn admin_billing_identifies_current_owner_for_same_name_teams() {
             .await
             .unwrap();
     }
-    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    let page = store
+        .admin_billing_teams(&owner, None, None, 100)
+        .await
+        .unwrap();
     assert_eq!(page.teams.len(), 2);
     assert_eq!(page.teams[0]["id"], first.id);
     assert_eq!(page.teams[1]["id"], second.id);
@@ -363,13 +395,19 @@ async fn admin_billing_identifies_current_owner_for_same_name_teams() {
         .transfer_team_ownership(&owner, &first.id, &other.id)
         .await
         .unwrap();
-    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    let page = store
+        .admin_billing_teams(&owner, None, None, 100)
+        .await
+        .unwrap();
     assert_eq!(page.teams[0]["owner"], remaining);
     store
         .change_member(&other.id, &first.id, &owner, None)
         .await
         .unwrap();
-    let page = store.admin_billing_teams(&owner, None, 100).await.unwrap();
+    let page = store
+        .admin_billing_teams(&owner, None, None, 100)
+        .await
+        .unwrap();
     assert_eq!(page.teams[0]["owner"], remaining);
     cleanup(store, db, schema).await;
 }

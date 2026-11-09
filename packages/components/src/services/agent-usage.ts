@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
 
 type SessionNotification = Extract<AgentEvent["payload"], { update: unknown }>
 export type AgentUsage = Extract<SessionNotification["update"], { sessionUpdate: "usage_update" }>
@@ -6,7 +7,7 @@ export type AgentUsage = Extract<SessionNotification["update"], { sessionUpdate:
 function usageAfter(events: readonly AgentEvent[], after: number): AgentUsage | undefined {
   for (let index = events.length - 1; index >= after; index--) {
     const event = events[index]!
-    if (event.kind === "acp" && "update" in event.payload && event.payload.update.sessionUpdate === "usage_update") return event.payload.update
+    if (event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload) && event.payload.update.sessionUpdate === "usage_update") return event.payload.update
   }
   return undefined
 }

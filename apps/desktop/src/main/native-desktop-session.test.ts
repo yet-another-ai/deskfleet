@@ -14,30 +14,36 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, control = true, viewerCodecs = ["h264"] as VideoCodec[], grantLifetimeMs = 60_000 } = {}) {
+function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, autoStopped = true, autoConfigured = true, control = true, viewerCodecs = ["h264"] as VideoCodec[], grantLifetimeMs = 60_000 } = {}) {
   let receive!: (event: ViewerEvent) => void
-  let emit!: (event: CentralEvent) => void
+  const listeners = new Set<(event: CentralEvent) => void>()
+  const emit = (event: CentralEvent) => { for (const listener of [...listeners]) listener(event) }
   const unsubscribe = vi.fn()
+  let grants = 0
+  let requestedControl = control
   const central = {
-    onEvent: vi.fn((listener: typeof emit) => { emit = listener; return unsubscribe }),
-    machines: vi.fn(async () => [{ id: "machine", name: "Workstation" }]),
-    rpc: vi.fn(async () => ({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264", "h265", "av1"] }], audio: true })),
-    createPeer: vi.fn(async () => ({ peerId: "peer", authorization: { expiresAt: new Date(Date.now() + grantLifetimeMs).toISOString() }, iceServers: [{ urls: "turn:example.test", username: "user", credential: "secret" }] })),
+    onEvent: vi.fn((listener: typeof emit) => { listeners.add(listener); return () => { listeners.delete(listener); unsubscribe() } }),
+    machines: vi.fn(async () => [{ id: "machine", name: "Workstation", capabilities: { platform: "linux" } }]),
+    rpc: vi.fn(async () => ({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264", "h265", "av1"] }, { id: 8, width: 2560, height: 1440, codecs: ["h264", "h265", "av1"] }], audio: true })),
+    createPeer: vi.fn(async () => ({ peerId: ++grants === 1 ? "peer" : `peer-${grants}`, authorization: { expiresAt: new Date(Date.now() + grantLifetimeMs).toISOString() }, iceServers: [{ urls: "turn:example.test", username: "user", credential: "secret" }] })),
     offerPeer: vi.fn(async () => ({ sdp: "answer" })),
     candidatePeer: vi.fn(async () => {}), startPeer: vi.fn(async () => {}), closePeer: vi.fn(async () => {}),
   }
   const child = { send: vi.fn((command: ViewerCommand) => {
+    if (command.type === "start") requestedControl = command.control
+    if (command.type === "setControl" && autoConfigured) queueMicrotask(() => receive({ type: "controlConfigured", control: command.control }))
+    if (command.type === "stop" && autoStopped) queueMicrotask(() => receive({ type: "stopped" }))
     if (command.type === "answer") queueMicrotask(() => {
       if (autoAnswerApplied) receive({ type: "answerApplied" })
-      if (autoInputReady && control) receive({ type: "inputReady" })
+      if (autoInputReady && requestedControl) receive({ type: "inputReady" })
       if (autoVideoReady) receive({ type: "videoReady" })
     })
   }), close: vi.fn(async () => {}) }
   const spawn = vi.fn((listener: typeof receive) => { receive = listener; queueMicrotask(() => listener({ type: "capabilities", codecs: viewerCodecs })); return child })
   const failed = vi.fn(), ended = vi.fn()
-  const open = () => {
+  const open = (preferences: { locale?: string; theme?: "light" | "dark" } = {}) => {
     const session = openNativeDesktopSession(central as unknown as CentralApi,
-      { target: { teamId: "team", machineId: "machine" }, displayId: 7, control }, spawn, failed, ended)
+      { target: { teamId: "team", machineId: "machine" }, displayId: 7, control, ...preferences }, spawn, failed, ended)
     closing.push(session.close)
     return session
   }
@@ -66,7 +72,7 @@ test("native signaling buffers early ICE and starts H264 capture only after answ
   expect(f.central.offerPeer).toHaveBeenCalledWith("peer", "offer", { codec: "h264", audio: false })
   answer.resolve({ sdp: "answer" })
   await session.ready
-  expect(f.child.send.mock.calls.slice(1)).toEqual([[{ type: "answer", sdp: "answer" }], [{ type: "candidate", candidate: remote }]])
+  expect(f.child.send.mock.calls.filter(([command]) => ["answer", "candidate"].includes(command.type))).toEqual([[{ type: "answer", sdp: "answer" }], [{ type: "candidate", candidate: remote }]])
   expect(f.central.candidatePeer).toHaveBeenCalledWith("peer", local)
   expect(f.central.startPeer).toHaveBeenCalledWith("peer", { displayId: 7, control: true })
   f.receive({ type: "connected" })
@@ -75,12 +81,12 @@ test("native signaling buffers early ICE and starts H264 capture only after answ
   await session.close()
   expect(f.central.closePeer).toHaveBeenCalledOnce()
   expect(f.child.close).toHaveBeenCalledOnce()
-  expect(f.unsubscribe).toHaveBeenCalledOnce()
+  expect(f.unsubscribe).toHaveBeenCalledTimes(2)
   expect(f.ended).toHaveBeenCalledOnce()
   expect(f.failed).not.toHaveBeenCalled()
 })
 
-test("shutdown during grant creation closes the late grant without spawning a window", async () => {
+test("shutdown during grant creation closes the window and releases the late grant", async () => {
   const f = fixture()
   const grant = deferred<Awaited<ReturnType<typeof f.central.createPeer>>>()
   f.central.createPeer.mockReturnValueOnce(grant.promise)
@@ -89,7 +95,7 @@ test("shutdown during grant creation closes the late grant without spawning a wi
   await session.close()
   grant.resolve({ peerId: "late", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] })
   await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledWith("late"))
-  expect(f.spawn).not.toHaveBeenCalled()
+  expect(f.spawn).toHaveBeenCalledOnce()
   await expect(session.ready).rejects.toThrow("closed")
 })
 
@@ -142,7 +148,7 @@ test("candidate send failure before connection rejects startup and closes the gr
   expect(f.central.closePeer).toHaveBeenCalledOnce()
 })
 
-test.each(["account", "revoked", "expired", "error"])("%s closes the native viewer and remote capture", async cause => {
+test.each(["account", "revoked", "expired", "error"])("%s releases remote capture before explicit window closure", async cause => {
   vi.useFakeTimers()
   const f = fixture()
   const session = f.open()
@@ -161,12 +167,13 @@ test.each(["account", "revoked", "expired", "error"])("%s closes the native view
   else expect(f.failed).toHaveBeenCalledOnce()
 })
 
-test("failed native process startup rejects opening and releases the authorization", async () => {
+test("failed native process startup rejects opening without creating authorization", async () => {
   const f = fixture()
   f.spawn.mockImplementationOnce(() => { throw new Error("Viewer executable missing") })
   const session = f.open()
+  await expect(session.opened).rejects.toThrow("Viewer executable missing")
   await expect(session.ready).rejects.toThrow("Viewer executable missing")
-  expect(f.central.closePeer).toHaveBeenCalledWith("peer")
+  expect(f.central.createPeer).not.toHaveBeenCalled()
   expect(f.central.startPeer).not.toHaveBeenCalled()
 })
 
@@ -194,7 +201,7 @@ test("unsupported display codec fails before authorizing a native connection", a
   const session = f.open()
   await expect(session.ready).rejects.toThrow("No common native desktop video codec")
   expect(f.central.createPeer).not.toHaveBeenCalled()
-  expect(f.spawn).not.toHaveBeenCalled()
+  expect(f.spawn).toHaveBeenCalledOnce()
 })
 
 test("capture waits for the viewer to apply the answer; opening waits for input readiness", async () => {
@@ -225,8 +232,8 @@ test("missing input readiness times out and releases the capture and grant", asy
   await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalled())
   await vi.advanceTimersByTimeAsync(10_000)
   await expect(session.ready).rejects.toThrow("input readiness timed out")
-  expect(f.child.close).toHaveBeenCalledOnce()
-  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledOnce())
 })
 
 test("view-only startup does not wait for an input channel", async () => {
@@ -263,7 +270,7 @@ test.each(["success", "encoder failure"])("slow connection setup leaves time for
   await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
   expect(f.failed).not.toHaveBeenCalled()
   expect(f.ended).not.toHaveBeenCalled()
-  expect(f.child.close).toHaveBeenCalledTimes(outcome === "encoder failure" ? 1 : 0)
+  expect(f.child.close).not.toHaveBeenCalled()
 })
 
 test("capture has a bounded startup deadline independent of slow connection setup", async () => {
@@ -283,7 +290,7 @@ test("capture has a bounded startup deadline independent of slow connection setu
   await expect(session.ready).rejects.toThrow("media startup timed out")
   expect(f.central.startPeer).toHaveBeenCalledOnce()
   expect(f.central.closePeer).toHaveBeenCalledOnce()
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
   starting.resolve()
   await vi.advanceTimersByTimeAsync(0)
   expect(f.spawn).toHaveBeenCalledOnce()
@@ -300,10 +307,10 @@ test("connection setup still times out before capture starts", async () => {
   await expect(session.ready).rejects.toThrow("connection timed out")
   expect(f.central.startPeer).not.toHaveBeenCalled()
   expect(f.central.closePeer).toHaveBeenCalledOnce()
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
 })
 
-test.each(["local", "remote"])("%s disconnection recovers within grace but sustained loss closes the session", async side => {
+test.each(["local", "remote"])("%s disconnection recovers within grace but sustained loss releases the peer while retaining the window", async side => {
   vi.useFakeTimers()
   const f = fixture()
   const session = f.open()
@@ -315,15 +322,17 @@ test.each(["local", "remote"])("%s disconnection recovers within grace but susta
     ? f.receive({ type: state })
     : f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state } as never })
   state("disconnected")
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connecting", inputReady: false }) }))
   await vi.advanceTimersByTimeAsync(9_000)
   state("connected")
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", inputReady: true }) }))
   await vi.advanceTimersByTimeAsync(2_000)
   expect(f.failed).not.toHaveBeenCalled()
   expect(f.central.startPeer).toHaveBeenCalledOnce()
   state("disconnected")
   await vi.advanceTimersByTimeAsync(10_000)
   expect(f.failed).toHaveBeenCalledOnce()
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
   expect(f.central.closePeer).toHaveBeenCalledOnce()
 })
 
@@ -343,7 +352,6 @@ test("decoder fallback waits for old peer cleanup and fences old events", async 
   f.central.closePeer.mockReturnValueOnce(cleanup.promise)
   const session = f.open()
   await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "start", codec: "av1" })))
-  const oldReceive = f.spawn.mock.calls[0]![0]
   f.receive({ type: "offer", sdp: "av1 offer" })
   f.receive({ type: "connected" })
   await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
@@ -352,7 +360,7 @@ test("decoder fallback waits for old peer cleanup and fences old events", async 
   expect(f.spawn).toHaveBeenCalledOnce()
   cleanup.resolve()
   await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "start", codec: "h265" })))
-  oldReceive({ type: "error", error: "late old process failure" })
+  f.emit({ type: "peerRevoked", peerId: "peer", reason: "late old peer failure" } as CentralEvent)
   f.receive({ type: "offer", sdp: "hevc offer" })
   f.receive({ type: "connected" })
   f.receive({ type: "videoReady" })
@@ -371,7 +379,7 @@ test("encoder startup failure retries the next codec; authorization failure neve
   f.central.startPeer.mockRejectedValueOnce(new Error("Access denied"))
   f.receive({ type: "offer", sdp: "h265" }); f.receive({ type: "connected" })
   await expect(session.ready).rejects.toThrow("Access denied")
-  expect(f.spawn).toHaveBeenCalledTimes(2)
+  expect(f.spawn).toHaveBeenCalledOnce()
   expect(f.failed).toHaveBeenCalledOnce()
 })
 
@@ -398,7 +406,6 @@ test.each(["closed", "failed", "native"])("%s before the start RPC rejects prese
   await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
   if (source === "native") {
     f.receive({ type: "error", error: "desktop input channel closed" })
-    f.receive({ type: "closed" })
   } else f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state: source } as never })
   expect(f.child.close).not.toHaveBeenCalled()
   expect(f.failed).not.toHaveBeenCalled()
@@ -423,7 +430,7 @@ test.each(["success", "denied"])("a pending peer closure with RPC %s stays termi
   else starting.reject(new Error("Access denied"))
   await expect(session.ready).rejects.toThrow(outcome === "success" ? "connection closed" : "Access denied")
   expect(f.spawn).toHaveBeenCalledOnce()
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
 })
 
 test("revocation during capture startup does not wait for the start RPC", async () => {
@@ -437,7 +444,7 @@ test("revocation during capture startup does not wait for the start RPC", async 
   f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state: "closed" } as never })
   f.emit({ type: "peerRevoked", peerId: "peer", reason: "Access revoked" } as CentralEvent)
   await expect(session.ready).rejects.toThrow("Access revoked")
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
   starting.reject(Object.assign(new Error("late encoder failure"), { reason: "encoder" }))
   await Promise.resolve()
   expect(f.spawn).toHaveBeenCalledOnce()
@@ -481,7 +488,7 @@ test.each(["local", "remote"])("%s expired grace stays terminal when capture sta
   starting.resolve()
   await expect(session.ready).rejects.toThrow("connection lost")
   expect(f.spawn).toHaveBeenCalledOnce()
-  expect(f.child.close).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
 })
 
 test("the startup deadline still closes a disconnected peer when capture startup never settles", async () => {
@@ -498,8 +505,8 @@ test("the startup deadline still closes a disconnected peer when capture startup
   expect(f.child.close).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS - PEER_DISCONNECT_GRACE_MS)
   await expect(session.ready).rejects.toThrow("timed out")
-  expect(f.child.close).toHaveBeenCalledOnce()
-  expect(f.central.closePeer).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
+  await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledOnce())
   starting.reject(Object.assign(new Error("late encoder error"), { reason: "encoder" }))
   await Promise.resolve()
   expect(f.spawn).toHaveBeenCalledOnce()
@@ -528,5 +535,211 @@ test.each(["local", "remote", "native"])("user close after deferred %s failure c
   f.receive({ type: "closed" })
   await vi.advanceTimersByTimeAsync(DESKTOP_START_TIMEOUT_MS)
   expect(f.spawn).toHaveBeenCalledOnce()
+  expect(f.failed).not.toHaveBeenCalled()
+})
+
+async function connect(f: ReturnType<typeof fixture>, count = 1): Promise<void> {
+  await vi.waitFor(() => expect(f.child.send.mock.calls.filter(([command]) => command.type === "start")).toHaveLength(count))
+  const connected = () => f.child.send.mock.calls.filter(([command]) => command.type === "ui" && command.state.status === "connected").length
+  const previous = connected()
+  f.receive({ type: "offer", sdp: `offer-${count}` })
+  f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(connected()).toBeGreaterThan(previous))
+}
+
+test("display switching retains the window and waits for stopped plus remote grant release", async () => {
+  const f = fixture({ autoStopped: false })
+  const released = deferred<void>()
+  f.central.closePeer.mockReturnValueOnce(released.promise)
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "selectDisplay", displayId: 8 })
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith({ type: "stop" }))
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  released.resolve()
+  await Promise.resolve()
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  f.receive({ type: "stopped" })
+  await connect(f, 2)
+  expect(f.central.startPeer).toHaveBeenLastCalledWith("peer-2", { displayId: 8, control: true })
+  expect(f.spawn).toHaveBeenCalledOnce()
+  expect(f.child.close).not.toHaveBeenCalled()
+  expect(f.central.machines).toHaveBeenNthCalledWith(2, "team")
+  expect(f.central.rpc).toHaveBeenNthCalledWith(2, "team", "machine", "capabilities", {})
+})
+
+test("control changes update the live peer without restarting capture", async () => {
+  const f = fixture()
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "setControl", control: false })
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith({ type: "setControl", control: false }))
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", control: false, inputReady: false }) }))
+  f.receive({ type: "setControl", control: true })
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", control: true, inputReady: true }) })))
+  expect(f.central.startPeer).toHaveBeenCalledExactlyOnceWith("peer", { displayId: 7, control: true })
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  expect(f.child.send).not.toHaveBeenCalledWith({ type: "stop" })
+  expect(f.spawn).toHaveBeenCalledOnce()
+})
+
+test("disconnect and reconnect keep the window and rediscover displays", async () => {
+  const f = fixture()
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "disconnect" })
+  await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledWith("peer"))
+  expect(f.child.close).not.toHaveBeenCalled()
+  expect(f.ended).not.toHaveBeenCalled()
+  expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "disconnected", inputReady: false }) }))
+  f.receive({ type: "reconnect" })
+  await connect(f, 2)
+  expect(f.central.rpc).toHaveBeenCalledTimes(2)
+  expect(f.spawn).toHaveBeenCalledOnce()
+})
+
+test("a replacement waits for a late grant and fences its unused start", async () => {
+  const f = fixture()
+  const grant = deferred<Awaited<ReturnType<typeof f.central.createPeer>>>()
+  const released = deferred<void>()
+  f.central.createPeer.mockReturnValueOnce(grant.promise)
+  f.central.closePeer.mockReturnValueOnce(released.promise)
+  f.open()
+  await vi.waitFor(() => expect(f.central.createPeer).toHaveBeenCalledOnce())
+  f.receive({ type: "selectDisplay", displayId: 8 })
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith({ type: "stop" }))
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  grant.resolve({ peerId: "late", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] })
+  await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledWith("late"))
+  expect(f.child.send.mock.calls.some(([command]) => command.type === "start")).toBe(false)
+  released.resolve()
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "start", width: 2560 })))
+  expect(f.central.createPeer).toHaveBeenCalledTimes(2)
+})
+
+test.each([["linux", true], ["darwin", true], ["win32", true], ["win32", false]] as const)("UI metadata uses target %s and secure-attention capability %s", async (platform, secureAttention) => {
+  const f = fixture()
+  f.central.machines.mockResolvedValue([{ id: "machine", name: "Workstation", capabilities: { platform } }])
+  f.central.rpc.mockResolvedValue({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264"] }], audio: true, secureAttention } as never)
+  const session = f.open({ locale: "zh-CN", theme: "light" })
+  await session.opened
+  await connect(f)
+  await session.ready
+  expect(f.child.send).toHaveBeenCalledWith({ type: "ui", state: expect.objectContaining({
+    status: "connected", title: "Workstation", codec: "h264", control: true, inputReady: true,
+    displays: [{ id: 7, width: 1920, height: 1080 }], displayId: 7,
+    secureAttention: platform === "win32" && secureAttention, locale: "zh-CN", theme: "light",
+  }) })
+  expect(f.central.offerPeer).toHaveBeenCalledWith("peer", "offer-1", { codec: "h264", audio: false })
+})
+
+test("initial authorization failure is shown in the opened window and retry can recover", async () => {
+  const f = fixture()
+  f.central.createPeer.mockRejectedValueOnce(new Error("Access denied"))
+  const session = f.open()
+  await session.opened
+  await expect(session.ready).rejects.toThrow("Access denied")
+  expect(f.child.close).not.toHaveBeenCalled()
+  expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "error", error: "Access denied" }) }))
+  f.receive({ type: "reconnect" })
+  await connect(f)
+  expect(f.spawn).toHaveBeenCalledOnce()
+  expect(f.ended).not.toHaveBeenCalled()
+})
+
+test("control edits during capture startup wait for the start RPC then configure in place", async () => {
+  const f = fixture()
+  const started = deferred<void>()
+  f.central.startPeer.mockReturnValueOnce(started.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "start" })))
+  f.receive({ type: "offer", sdp: "offer" }); f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
+  f.receive({ type: "setControl", control: false })
+  expect(f.child.send).not.toHaveBeenCalledWith({ type: "setControl", control: false })
+  started.resolve()
+  await session.ready
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith({ type: "setControl", control: false }))
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", control: false, inputReady: false }) }))
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+})
+
+test("a superseded cleanup failure cannot reject a newer queued connection", async () => {
+  const f = fixture({ autoVideoReady: false })
+  const released = deferred<void>()
+  f.central.closePeer.mockReturnValueOnce(released.promise)
+  const session = f.open()
+  await vi.waitFor(() => expect(f.child.send).toHaveBeenCalledWith(expect.objectContaining({ type: "start" })))
+  f.receive({ type: "offer", sdp: "old" }); f.receive({ type: "connected" })
+  await vi.waitFor(() => expect(f.central.startPeer).toHaveBeenCalledOnce())
+  f.receive({ type: "selectDisplay", displayId: 8 })
+  await vi.waitFor(() => expect(f.central.closePeer).toHaveBeenCalledOnce())
+  f.receive({ type: "reconnect" })
+  released.reject(new Error("Temporary release failure"))
+  await vi.waitFor(() => expect(f.child.send.mock.calls.filter(([command]) => command.type === "start")).toHaveLength(2))
+  expect(f.failed).not.toHaveBeenCalled()
+  const states = f.child.send.mock.calls.flatMap(([command]) => command.type === "ui" ? [command.state] : [])
+  expect(states.at(-1)).toMatchObject({ status: "connecting", control: true, displayId: 8 })
+  f.receive({ type: "offer", sdp: "replacement" }); f.receive({ type: "connected" }); f.receive({ type: "videoReady" })
+  await session.ready
+  expect(f.central.closePeer).toHaveBeenCalledTimes(2)
+  expect(f.spawn).toHaveBeenCalledOnce()
+})
+
+test("view-only control enable waits for an acknowledgement and keeps video on rejection", async () => {
+  const f = fixture({ control: false, autoConfigured: false })
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "setControl", control: true })
+  expect(f.child.send).toHaveBeenLastCalledWith({ type: "setControl", control: true })
+  const states = () => f.child.send.mock.calls.flatMap(([command]) => command.type === "ui" ? [command.state] : [])
+  expect(states().at(-1)).toMatchObject({ status: "connected", control: true, inputReady: false })
+  f.receive({ type: "controlConfigured", control: false, error: "Control is not authorized" })
+  expect(states().at(-1)).toMatchObject({ status: "connected", control: true, inputReady: false, settingsError: "Control is not authorized" })
+  expect(f.failed).not.toHaveBeenCalled()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+})
+
+test("rapid control edits serialize acknowledgements and do not replay stale readiness", async () => {
+  const f = fixture({ autoConfigured: false })
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "setControl", control: false })
+  f.receive({ type: "setControl", control: true })
+  expect(f.child.send.mock.calls.filter(([command]) => command.type === "setControl")).toEqual([[{ type: "setControl", control: false }]])
+  f.receive({ type: "controlConfigured", control: false })
+  expect(f.child.send).toHaveBeenLastCalledWith({ type: "setControl", control: true })
+  f.receive({ type: "inputReady" })
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ control: true, inputReady: false }) }))
+  f.receive({ type: "controlConfigured", control: true })
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", control: true, inputReady: true }) }))
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+})
+
+test("an incompatible display keeps the current stream and settings error survives control replies", async () => {
+  const f = fixture({ autoConfigured: false })
+  f.central.rpc.mockResolvedValue({ displays: [
+    { id: 7, width: 1920, height: 1080, codecs: ["h264"] },
+    { id: 8, width: 2560, height: 1440, codecs: ["av1"] },
+  ], audio: true })
+  const session = f.open()
+  await connect(f)
+  await session.ready
+  f.receive({ type: "selectDisplay", displayId: 8 })
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", displayId: 7, settingsError: expect.stringContaining("No common") }) }))
+  f.receive({ type: "setControl", control: false })
+  f.receive({ type: "controlConfigured", control: false })
+  expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", displayId: 7, settingsError: expect.stringContaining("No common") }) }))
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  expect(f.child.send).not.toHaveBeenCalledWith({ type: "stop" })
   expect(f.failed).not.toHaveBeenCalled()
 })

@@ -148,7 +148,7 @@ impl AndroidViewer {
 
     fn handle(&mut self, cmd: RenderCommand) -> Result<bool, Error> {
         match cmd {
-            RenderCommand::Window(WindowEvent::Start { title, control }) => {
+            RenderCommand::Window(WindowEvent::Start { title, control, .. }) => {
                 tracing::info!(%title, control, "Android viewer started");
                 self.control = control;
             }

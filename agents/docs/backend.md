@@ -19,7 +19,7 @@ ownership and explicit Site Admin boundary.
 
 - Prioritize the officially hosted service and replace OIDC with owned accounts,
   public email/password registration, Passkeys, and optional GitHub and Google OAuth login.
-- Make Team the subscription boundary. Free limits members, unarchived Sessions,
+- Make Team the subscription boundary. Free limits members, non-deleted Sessions,
   and per-Session turns and has no TURN. Go/Pro remove those quantity limits and
   provide distinct monthly TURN allowances. Only Site Admin can assign the
   unlimited Enterprise override. Exact rules are owned by the
@@ -94,9 +94,9 @@ ownership and explicit Site Admin boundary.
   release does not need a legacy resource/history import flow.
 - Re-enrollment after administrator removal reactivates the same Team association,
   catalog origin, and directory while rotating its execution token. It retains
-  Workspaces, Sessions, and history. Reactivation checks retained Session
-  admissions against the Team's current capacity and can fail with
-  `active_session_limit`. Another Team receives a separate catalog and runtime
+  Workspaces, Sessions, and history. Reactivation checks retained non-deleted
+  Sessions and live admissions against the Team's current capacity and can fail
+  with `active_session_limit`. Another Team receives a separate catalog and runtime
   under the same public Machine ID; its existing work remains running.
 - Upgrade existing enrolled data in place: migrate central Machine rows into
   shared identities and Team registrations, and adopt the daemon's existing
@@ -110,7 +110,7 @@ ownership and explicit Site Admin boundary.
 | Identity | Owned accounts, email verification/password recovery, password, Passkey, and GitHub/Google OAuth login, application sessions/revocation, and client/device identity | Electron and Web implement their login entry points; daemon credentials are separate from user login |
 | Subscriptions and quotas | Team billing, verified paid coverage, monthly TURN periods, Enterprise grants/audit, and atomic member/Session capacity admission | Daemon checks effective per-Session turn limits and persists fork-inherited consumption; clients display limits and billing state |
 | Teams | Team creation and selection, membership/invitations, owner/administrator/member roles, atomic ownership transfer, member removal, and authorization | Clients display the selected Team and available actions |
-| Site administration | Explicit site grants, site name/announcement/Team-creation settings, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
+| Site administration | Explicit site grants, site name/announcement/Team-creation settings, verified account provisioning, account deletion requests and review, per-operation policies, and transactional site audit | Deployment operators bootstrap and recover grants through the server CLI; Web exposes a Team-independent administration page; Web and Electron display public site settings and apply the Team-creation setting |
 | Machine enrollment | Verify the host identity proof and Team membership, enforce one registration per Machine/Team, and issue or revoke that registration's execution credential | One daemon keeps a host identity secret and separate catalog origins, credentials, and runtimes per backend/Team |
 | Presence | Independent authenticated connections, online status, and capabilities for each Team registration; events carry Team and public Machine IDs | One daemon connects all registrations concurrently; each peer has its own state |
 | Resource catalog | Team-scoped Machine/Workspace/Session/Worktree queries, source identity mapping, synchronized directory metadata, and active/archived Session filtering | Daemon owns Workspace configuration and captured Session directories |
