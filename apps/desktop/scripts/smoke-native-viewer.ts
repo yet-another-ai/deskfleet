@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { join, resolve } from "node:path"
 import { createInterface } from "node:readline"
+import { spawnDesktopViewerChild } from "../src/main/native-desktop-process.ts"
 
 // Opens a real native window using 64x64 H.264/HEVC/AV1 fixture frames. Set
 // DESKFLEET_SMOKE_HARDWARE=1 to encode generated 320x240 pixels with the host's
@@ -27,7 +28,7 @@ let failed = false
 let result: Stats | undefined
 
 function launch(kind: "viewer" | "source", executable: string): ChildProcessWithoutNullStreams {
-  const child = spawn(executable, [], {
+  const child = kind === "viewer" ? spawnDesktopViewerChild(executable) : spawn(executable, [], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, DESKFLEET_SMOKE_CAPTURE: "0", DESKFLEET_SMOKE_HARDWARE: hardware ? "1" : "0", DESKFLEET_SMOKE_WINDOWS_SERVICE: "0", DESKFLEET_SMOKE_VIDEO_ONLY: "1", DESKFLEET_SMOKE_CODEC: codec },
   })
