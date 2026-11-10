@@ -15,8 +15,8 @@ const meta = {
   args: {
     preview: false,
     rgb: false,
-    maxWidth: 32,
-    decayMs: 200,
+    maxWidth: 48,
+    decayMs: 140,
   },
 } satisfies Meta<typeof AgentOutline>
 

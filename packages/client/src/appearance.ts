@@ -49,8 +49,8 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   terminalColors: {},
   outlineAudio: false,
   outlineAudioRgb: false,
-  outlineAudioMaxWidth: 32,
-  outlineAudioDecayMs: 200,
+  outlineAudioMaxWidth: 48,
+  outlineAudioDecayMs: 140,
   readingSpotlight: false,
   readingSpotlightStyle: "aside",
 }
