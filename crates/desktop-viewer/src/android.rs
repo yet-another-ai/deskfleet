@@ -11,7 +11,7 @@ use deskfleet_input::InputEvent;
 #[cfg(target_os = "android")]
 use jni::objects::{JClass, JObject, JString, JValue};
 #[cfg(target_os = "android")]
-use jni::sys::{jdouble, jint};
+use jni::sys::{jdouble, jint, jstring};
 #[cfg(target_os = "android")]
 use jni::{EnvUnowned, jni_sig, jni_str};
 #[cfg(target_os = "android")]
@@ -390,7 +390,7 @@ fn stop_session() {
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeStart<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeStart<
     'local,
 >(
     mut unowned_env: EnvUnowned<'local>,
@@ -421,7 +421,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSendCommand<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeSendCommand<
     'local,
 >(
     mut unowned_env: EnvUnowned<'local>,
@@ -438,7 +438,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeStop<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeStop<
     'local,
 >(
     _unowned_env: EnvUnowned<'local>,
@@ -449,7 +449,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceCreated<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeSurfaceCreated<
     'local,
 >(
     mut unowned_env: EnvUnowned<'local>,
@@ -480,7 +480,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceChanged<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeSurfaceChanged<
     'local,
 >(
     _unowned_env: EnvUnowned<'local>,
@@ -496,7 +496,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeSurfaceDestroyed<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeSurfaceDestroyed<
     'local,
 >(
     _unowned_env: EnvUnowned<'local>,
@@ -507,7 +507,7 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_NativeDesktopPlugin_nativeTouch<
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeTouch<
     'local,
 >(
     _unowned_env: EnvUnowned<'local>,
@@ -519,6 +519,55 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_N
     dy: jdouble,
 ) {
     send_render(RenderCommand::Touch { kind, x, y, dx, dy });
+}
+
+fn format_nat_response(result: Result<deskfleet_native::nat::NatTestResult, String>) -> String {
+    match result {
+        Ok(res) => json!({
+            "result": {
+                "server": res.server.to_string(),
+                "localAddress": res.local_address.to_string(),
+                "publicAddress": res.public_address.map(|address| address.to_string()),
+                "mapping": res.mapping.as_str(),
+                "filtering": res.filtering.as_str(),
+                "status": res.status.as_str(),
+                "durationMs": u32::try_from(res.duration.as_millis()).unwrap_or(u32::MAX),
+            }
+        })
+        .to_string(),
+        Err(error) => json!({ "error": error }).to_string(),
+    }
+}
+
+fn test_nat_json(server: &str) -> String {
+    let result = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())
+        .and_then(|runtime| {
+            runtime
+                .block_on(deskfleet_native::nat::test_nat(server))
+                .map_err(|error| error.to_string())
+        });
+    format_nat_response(result)
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeTestNat<
+    'local,
+>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    server: JString<'local>,
+) -> jstring {
+    unowned_env
+        .with_env(|env| -> Result<jstring, jni::errors::Error> {
+            let payload = test_nat_json(&server.to_string());
+            let jstr = JString::from_str(env, &payload)?;
+            Ok(jstr.into_raw())
+        })
+        .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
 #[cfg(target_os = "ios")]
@@ -587,4 +636,33 @@ pub extern "C" fn deskfleet_ios_surface_destroyed() {
 #[unsafe(no_mangle)]
 pub extern "C" fn deskfleet_ios_touch(kind: i32, x: f64, y: f64, dx: f64, dy: f64) {
     send_render(RenderCommand::Touch { kind, x, y, dx, dy });
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deskfleet_ios_test_nat(
+    server: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    let server = if server.is_null() {
+        Err("Missing STUN server".to_owned())
+    } else {
+        // SAFETY: Caller guarantees `server` is a valid NUL-terminated UTF-8 string.
+        unsafe { std::ffi::CStr::from_ptr(server) }
+            .to_str()
+            .map_err(|error| error.to_string())
+    };
+    let payload = match server {
+        Ok(server) => test_nat_json(server),
+        Err(error) => format_nat_response(Err(error)),
+    };
+    std::ffi::CString::new(payload).map_or(std::ptr::null_mut(), std::ffi::CString::into_raw)
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deskfleet_ios_string_free(ptr: *mut std::ffi::c_char) {
+    if !ptr.is_null() {
+        // SAFETY: `ptr` was allocated by `CString::into_raw` in `deskfleet_ios_test_nat`.
+        unsafe { drop(std::ffi::CString::from_raw(ptr)) };
+    }
 }

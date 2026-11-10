@@ -1,6 +1,6 @@
 import { App as CapApp } from "@capacitor/app"
 import { Capacitor } from "@capacitor/core"
-import { NativeDesktopPlugin } from "@deskfleet/capacitor-native-desktop"
+import { DeskFleetBridge } from "@deskfleet/capacitor-bridge"
 import type { BrowserClientOptions } from "@deskfleet/client/browser"
 import { serverAddress, type HttpCentralClient, type SavedAccount } from "@deskfleet/client/http-central"
 
@@ -50,7 +50,7 @@ async function openCapacitorExternal(url: string): Promise<void> {
     throw new Error("Invalid external URL")
   }
   if (Capacitor.getPlatform() === "android") {
-    await NativeDesktopPlugin.openExternal({ url: parsed.toString() })
+    await DeskFleetBridge.openExternal({ url: parsed.toString() })
     return
   }
   window.open(parsed.toString(), "_blank", "noopener,noreferrer")

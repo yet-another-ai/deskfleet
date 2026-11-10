@@ -115,7 +115,7 @@ final class RemoteDesktopViewController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         metalView.detachSurface()
-        if NativeDesktopPlugin.activeController === self { NativeDesktopPlugin.activeController = nil }
+        if DeskFleetBridge.activeController === self { DeskFleetBridge.activeController = nil }
         if isBeingDismissed && !closeSent {
             closeSent = true
             deskfleetIosTouch(7, 0, 0, 0, 0)

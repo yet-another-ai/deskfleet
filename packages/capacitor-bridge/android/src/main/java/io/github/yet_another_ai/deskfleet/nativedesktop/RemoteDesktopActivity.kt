@@ -30,7 +30,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        NativeDesktopPlugin.activeActivity = WeakReference(this)
+        DeskFleetBridge.activeActivity = WeakReference(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
 
@@ -41,12 +41,12 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
             override fun onDown(e: MotionEvent) = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                NativeDesktopPlugin.nativeTouch(3, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
+                DeskFleetBridge.nativeTouch(3, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
                 return true
             }
 
             override fun onLongPress(e: MotionEvent) {
-                NativeDesktopPlugin.nativeTouch(4, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
+                DeskFleetBridge.nativeTouch(4, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
             }
 
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
@@ -55,15 +55,15 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 if (e2.pointerCount >= 2) {
                     if (dragging) {
                         dragging = false
-                        NativeDesktopPlugin.nativeTouch(2, x, y, 0.0, 0.0)
+                        DeskFleetBridge.nativeTouch(2, x, y, 0.0, 0.0)
                     }
-                    NativeDesktopPlugin.nativeTouch(5, x, y, dx.toDouble(), dy.toDouble())
+                    DeskFleetBridge.nativeTouch(5, x, y, dx.toDouble(), dy.toDouble())
                 } else {
                     if (!dragging && e1 != null) {
                         dragging = true
-                        NativeDesktopPlugin.nativeTouch(1, e1.x.toDouble(), e1.y.toDouble(), 0.0, 0.0)
+                        DeskFleetBridge.nativeTouch(1, e1.x.toDouble(), e1.y.toDouble(), 0.0, 0.0)
                     }
-                    NativeDesktopPlugin.nativeTouch(0, x, y, 0.0, 0.0)
+                    DeskFleetBridge.nativeTouch(0, x, y, 0.0, 0.0)
                 }
                 return true
             }
@@ -74,7 +74,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
             val action = event.actionMasked
             if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && dragging) {
                 dragging = false
-                NativeDesktopPlugin.nativeTouch(2, event.x.toDouble(), event.y.toDouble(), 0.0, 0.0)
+                DeskFleetBridge.nativeTouch(2, event.x.toDouble(), event.y.toDouble(), 0.0, 0.0)
             }
             true
         }
@@ -115,7 +115,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars() else {
             dragging = false
-            NativeDesktopPlugin.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
+            DeskFleetBridge.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
         }
     }
 
@@ -130,14 +130,14 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun requestCloseAndFinish() {
         if (!closeSent) {
             closeSent = true
-            NativeDesktopPlugin.nativeTouch(7, 0.0, 0.0, 0.0, 0.0)
+            DeskFleetBridge.nativeTouch(7, 0.0, 0.0, 0.0, 0.0)
         }
         finish()
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val frame = holder.surfaceFrame
-        NativeDesktopPlugin.nativeSurfaceCreated(
+        DeskFleetBridge.nativeSurfaceCreated(
             holder.surface,
             frame.width().coerceAtLeast(1),
             frame.height().coerceAtLeast(1),
@@ -145,19 +145,19 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        NativeDesktopPlugin.nativeSurfaceChanged(width, height)
+        DeskFleetBridge.nativeSurfaceChanged(width, height)
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        NativeDesktopPlugin.nativeSurfaceDestroyed()
+        DeskFleetBridge.nativeSurfaceDestroyed()
     }
 
     override fun onDestroy() {
-        val active = NativeDesktopPlugin.activeActivity?.get() === this
-        if (active) NativeDesktopPlugin.activeActivity = null
+        val active = DeskFleetBridge.activeActivity?.get() === this
+        if (active) DeskFleetBridge.activeActivity = null
         if (active && isFinishing && !closeSent) {
             closeSent = true
-            NativeDesktopPlugin.nativeTouch(7, 0.0, 0.0, 0.0, 0.0)
+            DeskFleetBridge.nativeTouch(7, 0.0, 0.0, 0.0, 0.0)
         }
         super.onDestroy()
     }

@@ -29,6 +29,19 @@ pub enum NatMapping {
     AddressAndPortDependent,
 }
 
+impl NatMapping {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Direct => "direct",
+            Self::EndpointIndependent => "endpoint-independent",
+            Self::AddressDependent => "address-dependent",
+            Self::AddressAndPortDependent => "address-and-port-dependent",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NatFiltering {
     Unknown,
@@ -37,12 +50,36 @@ pub enum NatFiltering {
     AddressAndPortDependent,
 }
 
+impl NatFiltering {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::EndpointIndependent => "endpoint-independent",
+            Self::AddressDependent => "address-dependent",
+            Self::AddressAndPortDependent => "address-and-port-dependent",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NatTestStatus {
     Complete,
     ServerUnsupported,
     Inconclusive,
     UdpUnreachable,
+}
+
+impl NatTestStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::ServerUnsupported => "server-unsupported",
+            Self::Inconclusive => "inconclusive",
+            Self::UdpUnreachable => "udp-unreachable",
+        }
+    }
 }
 
 #[derive(Debug)]

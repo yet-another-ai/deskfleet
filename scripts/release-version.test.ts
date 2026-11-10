@@ -14,7 +14,7 @@ test("repository Node packages and Cargo share the release version", () => {
   validateReleaseTag(`v${release.root}`, release)
   for (const manifest of [
     "apps/daemon/package.json", "apps/desktop/package.json", "apps/web/package.json",
-    "crates/node/package.json", "docs/package.json", "packages/capacitor-native-desktop/package.json",
+    "crates/node/package.json", "docs/package.json", "packages/capacitor-bridge/package.json",
     "packages/client/package.json", "packages/components/package.json", "packages/dsh-runtime/package.json",
     "packages/mcp/package.json",
   ]) {

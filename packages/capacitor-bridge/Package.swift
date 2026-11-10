@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "DeskfleetCapacitorNativeDesktop",
+    name: "DeskfleetCapacitorBridge",
     platforms: [.iOS(.v16)],
     products: [
         .library(
-            name: "DeskfleetCapacitorNativeDesktop",
-            targets: ["NativeDesktopPlugin"]
+            name: "DeskfleetCapacitorBridge",
+            targets: ["DeskFleetBridge"]
         )
     ],
     dependencies: [
@@ -19,13 +19,13 @@ let package = Package(
             path: "ios/Frameworks/DeskfleetDesktopViewerFFI.xcframework"
         ),
         .target(
-            name: "NativeDesktopPlugin",
+            name: "DeskFleetBridge",
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 "DeskfleetDesktopViewerFFI"
             ],
-            path: "ios/Sources/NativeDesktopPlugin",
+            path: "ios/Sources/DeskFleetBridge",
             linkerSettings: [
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("CoreAudio"),

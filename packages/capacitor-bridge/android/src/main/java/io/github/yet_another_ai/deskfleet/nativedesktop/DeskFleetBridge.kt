@@ -11,8 +11,8 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.lang.ref.WeakReference
 
-@CapacitorPlugin(name = "NativeDesktop")
-class NativeDesktopPlugin : Plugin() {
+@CapacitorPlugin(name = "DeskFleetBridge")
+class DeskFleetBridge : Plugin() {
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
@@ -54,6 +54,28 @@ class NativeDesktopPlugin : Plugin() {
             .fold({ call.resolve() }, { call.reject(it.message ?: "Failed to close native desktop") })
     }
 
+    @PluginMethod
+    fun testNat(call: PluginCall) {
+        val server = call.getString("server")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing STUN server")
+        Thread {
+            runCatching { JSObject(nativeTestNat(server)) }
+                .fold(
+                    { response ->
+                        val error = response.getString("error")
+                        if (!error.isNullOrEmpty()) {
+                            call.reject(error)
+                        } else {
+                            val result = response.getJSObject("result")
+                            if (result != null) call.resolve(result)
+                            else call.reject("Missing NAT test result")
+                        }
+                    },
+                    { call.reject(it.message ?: "Failed to test NAT") },
+                )
+        }.start()
+    }
+
     override fun handleOnDestroy() {
         stopSession()
         super.handleOnDestroy()
@@ -82,5 +104,6 @@ class NativeDesktopPlugin : Plugin() {
         @JvmStatic external fun nativeSurfaceChanged(width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceDestroyed()
         @JvmStatic external fun nativeTouch(kind: Int, x: Double, y: Double, dx: Double, dy: Double)
+        @JvmStatic external fun nativeTestNat(server: String): String
     }
 }

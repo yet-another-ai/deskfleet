@@ -58,7 +58,7 @@ execFileSync(
   },
 )
 
-const outDir = join(repoRoot, "packages/capacitor-native-desktop/android/src/main/jniLibs/arm64-v8a")
+const outDir = join(repoRoot, "packages/capacitor-bridge/android/src/main/jniLibs/arm64-v8a")
 mkdirSync(outDir, { recursive: true })
 const targetSo = join(outDir, "libdeskfleet_desktop_viewer.so")
 copyFileSync(join(repoRoot, "target/aarch64-linux-android", release ? "release" : "debug", "libdeskfleet_desktop_viewer.so"), targetSo)

@@ -37,7 +37,7 @@ export function isPackagingPath(path: string): boolean {
     path === "apps/desktop/package.json" ||
     path === "apps/web/capacitor.config.ts" ||
     path.startsWith("apps/web/android/") ||
-    path.startsWith("packages/capacitor-native-desktop/") ||
+    path.startsWith("packages/capacitor-bridge/") ||
     // `nix/web.nix` installs these pnpm inputs for the offline Web image build.
     /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
     /^(?:apps\/(?:web|daemon)|packages\/(?:client|components))\/package\.json$/u.test(path) ||
@@ -61,7 +61,7 @@ export function hasMatchingChanges(raw: string, matcher: (path: string) => boole
 
 export function isPlatformPath(path: string): boolean {
   return path.endsWith(".rs") ||
-    /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|apps\/web\/android|packages\/capacitor-native-desktop|packages\/client|packages\/mcp|packages\/dsh-runtime|vendor)\//u.test(path) ||
+    /^(?:crates|apps\/desktop|apps\/desktop-service|apps\/daemon|apps\/web\/android|packages\/capacitor-bridge|packages\/client|packages\/mcp|packages\/dsh-runtime|vendor)\//u.test(path) ||
     path === "apps/web/capacitor.config.ts" ||
     /^(?:Cargo\.toml|Cargo\.lock|mise\.toml|mise\.ci\.toml|mise\.lock|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$/u.test(path) ||
     /^(?:\.github\/(?:workflows|actions)|scripts)\//u.test(path) ||
