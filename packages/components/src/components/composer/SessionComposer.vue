@@ -479,7 +479,6 @@ onBeforeUnmount(() => {
           @click="toggleYolo"
         >
           <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
-          <span>{{ t("composer.yolo") }}</span>
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
