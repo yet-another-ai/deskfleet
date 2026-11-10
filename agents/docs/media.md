@@ -593,7 +593,10 @@ cross the NSH engine as UI props or JavaScript data. This UI does not enable
 NSH's JavaScript, WebView, or built-in video runtimes.
 On Linux compositors requiring client-side decorations, the host provides a
 local title bar and resize borders; these regions are excluded from remote
-video input.
+video input. On every platform, points outside the GPUI client content remain
+local: native title bars and resize borders are never forwarded as remote input
+or consumed by the viewer, so the platform keeps handling dragging, resizing,
+and window controls.
 
 Per-window Wayland, X11, macOS, and Windows hooks capture native physical key
 codes before layout or IME translation. These map to the existing physical
