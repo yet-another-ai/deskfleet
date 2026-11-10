@@ -14,8 +14,9 @@ test("repository Node packages and Cargo share the release version", () => {
   validateReleaseTag(`v${release.root}`, release)
   for (const manifest of [
     "apps/daemon/package.json", "apps/desktop/package.json", "apps/web/package.json",
-    "crates/node/package.json", "docs/package.json", "packages/client/package.json",
-    "packages/components/package.json", "packages/dsh-runtime/package.json", "packages/mcp/package.json",
+    "crates/node/package.json", "docs/package.json", "packages/capacitor-native-desktop/package.json",
+    "packages/client/package.json", "packages/components/package.json", "packages/dsh-runtime/package.json",
+    "packages/mcp/package.json",
   ]) {
     const { version } = JSON.parse(readFileSync(join(directory, manifest), "utf8"))
     assert.equal(version, release.root, `${manifest} must match the release version`)

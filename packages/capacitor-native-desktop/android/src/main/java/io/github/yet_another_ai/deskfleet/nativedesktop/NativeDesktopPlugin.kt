@@ -1,6 +1,8 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
 import android.view.Surface
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -11,10 +13,22 @@ import java.lang.ref.WeakReference
 
 @CapacitorPlugin(name = "NativeDesktop")
 class NativeDesktopPlugin : Plugin() {
-
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
+    }
+
+    @PluginMethod
+    fun openExternal(call: PluginCall) {
+        val url = call.getString("url")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing URL")
+        val currentActivity = activity ?: return call.reject("Activity unavailable")
+        runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                putExtras(Bundle().apply { putBinder("android.support.customtabs.extra.SESSION", null) })
+            }
+            currentActivity.startActivity(intent)
+        }.fold({ call.resolve() }, { call.reject(it.message ?: "Failed to open URL") })
     }
 
     @PluginMethod

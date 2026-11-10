@@ -1,8 +1,11 @@
 {
   "name": "@deskfleet/capacitor-native-desktop",
-  "version": "0.10.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "capacitor:sync:before": "node ../../scripts/build-android-viewer.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts"

@@ -4,16 +4,23 @@ import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import type { RelayDeniedReason } from "@deskfleet/client/relay"
 import { useAccountSession } from "../../composables/account-session-context.ts"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { errorPresentation } from "../../services/error-presentation.ts"
 import UiButton from "./UiButton.vue"
 
 const props = defineProps<{ error?: unknown; title?: string; description?: string; relayDeniedReason?: RelayDeniedReason }>()
 const { t } = useI18n()
 const account = useAccountSession()
+const client = usePlatformClient()
 const presentation = computed(() => errorPresentation(props.error, props.relayDeniedReason))
 const relay = computed(() => ["free_plan", "turn_quota_exhausted", "metering_unavailable"].includes(presentation.value.kind))
+const showBilling = computed(() => presentation.value.billing && !!account && !client.mobile)
 const title = computed(() => (!relay.value && props.title) || t(`errors.${presentation.value.kind}.title`))
-const description = computed(() => !relay.value && props.description !== undefined ? props.description : t(`errors.${presentation.value.kind}.description`))
+const description = computed(() => {
+  if (!relay.value && props.description !== undefined) return props.description
+  if (client.mobile && presentation.value.billing) return t(`errors.${presentation.value.kind}.mobileDescription`)
+  return t(`errors.${presentation.value.kind}.description`)
+})
 const detail = computed(() => presentation.value.detail !== title.value && presentation.value.detail !== description.value ? presentation.value.detail : undefined)
 </script>
 
@@ -24,8 +31,8 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
       <div class="min-w-0 flex-1">
         <p class="m-0 break-words text-[13px] font-medium text-ui-text">{{ title }}</p>
         <p v-if="description" class="m-0 mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ui-text-muted">{{ description }}</p>
-        <div v-if="(presentation.billing && account) || $slots.default" class="mt-3 flex flex-wrap items-center gap-2">
-          <UiButton v-if="presentation.billing && account" size="sm" @click="account.openSettings('plans')">{{ t("errors.viewBilling") }}</UiButton>
+        <div v-if="showBilling || $slots.default" class="mt-3 flex flex-wrap items-center gap-2">
+          <UiButton v-if="showBilling" size="sm" @click="account!.openSettings('plans')">{{ t("errors.viewBilling") }}</UiButton>
           <slot />
         </div>
         <details v-if="detail" :key="detail" class="group mt-3 text-xs text-ui-text-muted">

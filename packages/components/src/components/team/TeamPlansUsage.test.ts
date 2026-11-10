@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { TeamBilling } from "@deskfleet/client/billing"
 import { HttpError } from "@deskfleet/client/http-central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
+import { platformClientKey, usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { fakeCentral, billingFixture } from "../../test/central.ts"
 import TeamPlansUsage from "./TeamPlansUsage.vue"
@@ -17,7 +18,7 @@ afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session
 const usage = () => view!.getComponent(TeamPlansUsage)
 const metric = (key: string) => usage().get(`[data-team-usage="${key}"]`)
 
-async function setup(configure?: (fake: ReturnType<typeof fakeCentral>) => void) {
+async function setup(configure?: (fake: ReturnType<typeof fakeCentral>) => void, options?: { mobile?: boolean }) {
   view?.unmount()
   session?.dispose()
   const fake = fakeCentral({ teams: [
@@ -27,7 +28,8 @@ async function setup(configure?: (fake: ReturnType<typeof fakeCentral>) => void)
   configure?.(fake)
   session = createAccountSession(fake.central)
   await flushPromises()
-  view = mount(PlansUsageSettings, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } } })
+  const host = { ...usePlatformClient(), ...(options?.mobile ? { mobile: true } : {}) }
+  view = mount(PlansUsageSettings, { global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session, [platformClientKey as symbol]: host } } })
   await flushPromises()
   return fake
 }
@@ -362,4 +364,29 @@ test("unavailable prices do not hide current usage or invent a paid price", asyn
   await setup(fake => fake.central.billing.mockResolvedValue({ ...free(), prices: null }))
   expect(metric("members").text()).toContain("3 / 3")
   expect(usage().get('[data-plan-comparison="go"]').text()).toContain("Price temporarily unavailable")
+})
+
+test("mobile hides plans, billing actions, and prices while keeping Team usage meters", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue({
+    ...free({ relayedBytes: "0", activeSessionCount: 2, memberCount: 3 }),
+    canManageBilling: true,
+    enterpriseContactEmail: "sales@example.test",
+    subscription: { plan: "go", status: "past_due", paidThrough: "2026-11-01T00:00:00Z", cancelAtPeriodEnd: false },
+    prices: [{ plan: "go", interval: "month", unitAmount: 500, currency: "usd" }],
+  }), { mobile: true })
+  expect(usage().get("h1").text()).toBe("Usage")
+  expect(metric("traffic").text()).toContain("Not included")
+  expect(metric("traffic").text()).not.toContain("Upgrade for relay")
+  expect(metric("sessions").get("[data-team-usage-amount]").text()).toBe("2 / 3")
+  expect(metric("members").get("[data-team-usage-amount]").text()).toBe("3 / 3")
+  expect(metric("turns").text()).toContain("30 per Session")
+  expect(usage().find("[data-plan-comparison]").exists()).toBe(false)
+  expect(usage().find("[data-billing-interval]").exists()).toBe(false)
+  expect(usage().find("[data-billing-offer]").exists()).toBe(false)
+  expect(usage().text()).not.toContain("Free")
+  expect(usage().text()).not.toContain("Manage billing")
+  expect(usage().text()).not.toContain("Update payment")
+  expect(usage().text()).not.toContain("Compare plans")
+  expect(usage().text()).not.toContain("USD 5.00")
+  expect(trackEvent).not.toHaveBeenCalled()
 })

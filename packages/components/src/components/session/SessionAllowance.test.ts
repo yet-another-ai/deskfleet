@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentSnapshot, TurnLimitCode } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
+import { platformClientKey, usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { billingFixture, fakeCentral } from "../../test/central.ts"
@@ -15,13 +16,14 @@ let session: AccountSession | undefined
 beforeEach(() => vi.mocked(trackEvent).mockClear())
 afterEach(async () => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; await router.replace("/") })
 
-async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string, turnLimitCode?: TurnLimitCode) {
+async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string, turnLimitCode?: TurnLimitCode, options?: { mobile?: boolean }) {
   const fake = fakeCentral()
   fake.central.billing.mockResolvedValue({ ...billingFixture(), plan: "free", limits: { maxActiveSessions: 3, maxTurnsPerSession, maxMembers: 3, turnBytes: 0 } })
   session = createAccountSession(fake.central)
   await flushPromises()
+  const host = { ...usePlatformClient(), ...(options?.mobile ? { mobile: true } : {}) }
   const snapshot = { session: { id: "30", inheritedTurnCount, turnLimitReason, turnLimitCode }, turns: Array.from({ length: consumed }, () => ({ consumed: true })) } as unknown as AgentSnapshot
-  view = mount(SessionAllowance, { props: { snapshot }, global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session } } })
+  view = mount(SessionAllowance, { props: { snapshot }, global: { plugins: [i18n], provide: { [accountSessionKey as symbol]: session, [platformClientKey as symbol]: host } } })
   await flushPromises()
   return { fake, snapshot }
 }
@@ -109,4 +111,15 @@ test("unlimited plans show nothing", async () => {
   await mountWith(null, 0, 3)
   expect(view!.text()).toBe("")
   expect(trackEvent).not.toHaveBeenCalled()
+})
+
+test("mobile keeps turn usage counts and warnings while hiding plan links and upgrade hints", async () => {
+  await mountWith(30, 24, 5, undefined, undefined, { mobile: true })
+  expect(view!.get('[role="status"]').text()).toContain("1 turn left of 30 in this Session")
+  expect(view!.find("button").exists()).toBe(false)
+  view!.unmount()
+  await mountWith(30, 0, 30, "This Session has used its 30 turns.", "turn_limit_reached", { mobile: true })
+  expect(view!.text()).toContain("Queued input is kept. Please retry later.")
+  expect(view!.text()).not.toMatch(/upgrades|View plans/i)
+  expect(view!.find("button").exists()).toBe(false)
 })

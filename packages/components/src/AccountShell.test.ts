@@ -133,8 +133,8 @@ test("browses synchronized history with the machine offline and isolates equal l
   await settled(() => expect(view!.text()).toContain("Workspace 101"))
 })
 
-const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin") => {
-  view = mount(AccountShell, { props: { host: { ...host, platform, central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
+const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin", mobile = false) => {
+  view = mount(AccountShell, { props: { host: { ...host, platform, ...(mobile ? { mobile: true } : {}), central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
 
@@ -650,4 +650,20 @@ test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens
   expect(events).toHaveBeenCalledWith("billing_entry_clicked", expect.objectContaining({ source }))
   await buttonText("Back to app")!.trigger("click")
   await settled(() => expect(router.currentRoute.value.fullPath).toBe(origin))
+})
+
+test("mobile hides the sidebar billing entry and labels Team usage navigation without plans or billing", async () => {
+  const events = vi.spyOn(analytics, "trackEvent")
+  const fake = fakeCentral()
+  mountShell(fake.central, "web", true)
+  await settled(() => expect(page().find('button[aria-label="Team"]').exists()).toBe(true))
+  expect(page().find("[data-billing-entry]").exists()).toBe(false)
+  await page().get('button[aria-label="Team"]').trigger("click")
+  const items = page().findAll('[role="menuitem"]').map(item => item.text())
+  expect(items).toContain("Usage")
+  expect(items).not.toContain("Plans & billing")
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Usage")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Usage"))
+  expect(page().findAll('nav[aria-label="Settings sections"] a').map(link => link.text())).toEqual(["Team settings", "Usage", "AI usage"])
+  expect(events).not.toHaveBeenCalledWith("billing_entry_clicked", expect.anything())
 })

@@ -259,7 +259,8 @@ upgrade process; these commands apply only to the local development stack.
 
 ## Toolchain
 
-`mise.toml` selects Rust, its components, Node.js, pnpm, APM, and supporting
+`mise.toml` selects Rust (including the `aarch64-linux-android` cross target and
+components), Temurin JDK 21, Node.js, pnpm, APM, and supporting
 development tools. Lockfile mode is enabled and `mise.lock` records the resolved
 versions and available platform metadata. `Cargo.lock` owns Rust dependencies;
 `pnpm-lock.yaml` owns JavaScript dependencies. Cargo's `rust-version` declares
@@ -322,6 +323,9 @@ to check module initialization order as well as file sizes.
 | `mise run desktop:build` | Build the Electron main, preload, and renderer bundles |
 | `mise run web:dev` / `web:build` | Run or build the independent Vue Web app |
 | `mise run web:typecheck` | Check the Web app and shared components |
+| `mise run android:sync` | Build the Web app, stage the Rust Android viewer library, and sync Capacitor Android |
+| `mise run android:test` | Sync Capacitor Android and run Gradle unit tests |
+| `mise run android:build` | Build and sign the release Android App Bundle or APK through Capacitor |
 | `mise run desktop:smoke-catalog` | Exercise local catalog forms, persistence, and directory terminals in production Electron |
 | `mise run desktop:package` / `desktop:package:dir` | Package the desktop app with electron-builder as installers or an unpacked directory |
 | `mise run check` | Run static checks, TypeScript and Rust tests, and debug workspace and desktop builds |

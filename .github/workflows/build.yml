@@ -27,6 +27,14 @@ on:
         required: false
       APPLE_API_ISSUER:
         required: false
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -237,5 +245,101 @@ jobs:
         with:
           name: deskfleet-web
           path: apps/web/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Build (android-arm64)
+    runs-on: ubuntu-26.04
+    environment: ${{ inputs.production_release && 'production' || '' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Generate temporary Android keystore for smoke builds
+        id: smoke_keystore
+        if: ${{ !inputs.production_release }}
+        shell: bash
+        run: |
+          keystore_path="$RUNNER_TEMP/deskfleet-android-smoke.jks"
+          mise exec -- keytool -genkeypair -v \
+            -keystore "$keystore_path" \
+            -storetype PKCS12 \
+            -alias deskfleet-smoke \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -storepass deskfleet-smoke \
+            -keypass deskfleet-smoke \
+            -dname "CN=DeskFleet CI, O=DeskFleet, C=US"
+          echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
+
+      - name: Build Android App Bundle (smoke)
+        if: ${{ !inputs.production_release }}
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ steps.smoke_keystore.outputs.keystore_path }}
+          ANDROID_KEYSTORE_PASSWORD: deskfleet-smoke
+          ANDROID_KEY_ALIAS: deskfleet-smoke
+          ANDROID_KEY_PASSWORD: deskfleet-smoke
+        run: mise run android:build
+
+      - name: Prepare Android release keystore
+        id: android_credentials
+        if: ${{ inputs.production_release }}
+        shell: bash
+        env:
+          DESKTOP_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$DESKTOP_SERVER_URL" ]]; then
+            echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
+            exit 1
+          fi
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required release secret: $name"
+              exit 1
+            fi
+          done
+          keystore_path="$RUNNER_TEMP/deskfleet-android-upload.jks"
+          (umask 077 && printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore_path")
+          echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
+
+      - name: Build production Android Web assets and App Bundle
+        if: ${{ inputs.production_release }}
+        env:
+          VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
+          VITE_SENTRY_DIST: android
+          VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
+          ANDROID_KEYSTORE_PATH: ${{ steps.android_credentials.outputs.keystore_path }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: mise run android:build
+
+      - name: Remove Android keystore
+        if: ${{ always() }}
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/deskfleet-android-smoke.jks" "$RUNNER_TEMP/deskfleet-android-upload.jks"
+
+      - name: Upload Android App Bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-android
+          path: apps/web/android/app/build/outputs/bundle/release/app-release-signed.aab
           if-no-files-found: error
           retention-days: 14

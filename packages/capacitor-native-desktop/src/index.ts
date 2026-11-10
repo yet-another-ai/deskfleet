@@ -9,6 +9,7 @@ import {
 } from "@deskfleet/client/native-desktop-session"
 
 export interface NativeDesktopCapacitorPlugin {
+  openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>
   close(): Promise<void>

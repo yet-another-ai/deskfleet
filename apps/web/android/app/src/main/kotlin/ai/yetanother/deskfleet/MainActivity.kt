@@ -1,4 +1,4 @@
-package io.github.yet_another_ai.deskfleet.mobile
+package ai.yetanother.deskfleet
 
 import android.os.Bundle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen

@@ -101,16 +101,25 @@ pub(super) async fn exchange(
 mod tests {
     #[test]
     fn callbacks_are_loopback_and_exact() {
-        let allowed = vec!["http://127.0.0.1:*/auth/callback".into()];
+        let allowed = vec![
+            "http://127.0.0.1:*/auth/callback".into(),
+            "ai.yetanother.deskfleet://auth/callback".into(),
+        ];
         assert!(super::allowed_return_to(
             &allowed,
             "http://127.0.0.1:3456/auth/callback"
+        ));
+        assert!(super::allowed_return_to(
+            &allowed,
+            "ai.yetanother.deskfleet://auth/callback"
         ));
         for invalid in [
             "http://localhost:3456/auth/callback",
             "http://127.0.0.1:3456/evil",
             "http://127.0.0.1:3456/auth/callback?evil",
             "http://user@127.0.0.1:3456/auth/callback",
+            "ai.yetanother.deskfleet://auth/callback?evil",
+            "ai.yetanother.deskfleet://auth/callback#frag",
         ] {
             assert!(!super::allowed_return_to(&allowed, invalid));
         }

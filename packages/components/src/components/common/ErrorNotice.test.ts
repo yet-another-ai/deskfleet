@@ -2,14 +2,16 @@ import { mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import type { RelayDeniedReason } from "@deskfleet/client/relay"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
+import { platformClientKey, usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import ErrorNotice from "./ErrorNotice.vue"
 
 let wrapper: VueWrapper | undefined
 afterEach(() => { wrapper?.unmount(); i18n.global.locale.value = "en-US" })
 
-function render(props: InstanceType<typeof ErrorNotice>["$props"], account?: Pick<AccountSession, "openSettings">) {
-  wrapper = mount(ErrorNotice, { props, global: { plugins: [i18n], provide: account ? { [accountSessionKey as symbol]: account } : {} } })
+function render(props: InstanceType<typeof ErrorNotice>["$props"], account?: Pick<AccountSession, "openSettings">, options?: { mobile?: boolean }) {
+  const host = { ...usePlatformClient(), ...(options?.mobile ? { mobile: true } : {}) }
+  wrapper = mount(ErrorNotice, { props, global: { plugins: [i18n], provide: { [platformClientKey as symbol]: host, ...(account ? { [accountSessionKey as symbol]: account } : {}) } } })
   return wrapper
 }
 
@@ -51,6 +53,12 @@ test("a metering outage suggests trying again without offering billing", () => {
 test("a local-only client does not offer an unavailable billing action", () => {
   const view = render({ relayDeniedReason: "turn_quota_exhausted" })
   expect(view.find("button").exists()).toBe(false)
+})
+
+test.each(["free_plan", "turn_quota_exhausted"] as RelayDeniedReason[])("mobile hides billing actions and plan mentions for %s", reason => {
+  const view = render({ relayDeniedReason: reason }, { openSettings: vi.fn() }, { mobile: true })
+  expect(view.find("button").exists()).toBe(false)
+  expect(view.text()).not.toMatch(/Free plan|View billing|compare plans/i)
 })
 
 test("an uncertain operation can suppress failure and retry advice", () => {

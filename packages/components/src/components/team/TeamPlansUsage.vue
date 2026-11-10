@@ -8,6 +8,7 @@ import type { BillingInterval } from "@deskfleet/client/billing"
 import type { Team } from "@deskfleet/client/central"
 import { HttpError } from "@deskfleet/client/http-central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { fileSize } from "../../services/file-format.ts"
 import { beginAnalyticsPlanRefresh, trackEvent } from "../../services/analytics.ts"
 import { billingFailure } from "../../services/billing-events.ts"
@@ -20,6 +21,8 @@ const props = defineProps<{ team: Team }>()
 const { t, locale } = useI18n()
 const id = useId()
 const account = useAccountSession()!
+const client = usePlatformClient()
+const mobile = computed(() => !!client.mobile)
 const central = account.central
 const pending = ref<"go" | "pro" | "portal">()
 const checkoutOpened = ref(false)
@@ -60,7 +63,7 @@ const enterpriseContact = computed(() => {
 })
 const caption = computed(() => {
   const value = state.value
-  if (value?.limits.turnBytes === 0) return t("billing.trafficNotIncluded")
+  if (value?.limits.turnBytes === 0) return mobile.value ? undefined : t("billing.trafficNotIncluded")
   if (!value?.limits.turnBytes) return undefined
   const remaining = Math.max(0, value.limits.turnBytes - Number(value.usage.relayedBytes))
   const left = t("billing.remaining", { amount: fileSize(remaining) })
@@ -70,7 +73,7 @@ const caption = computed(() => {
 let viewed = false
 const recoveryViewed = new Set<string>()
 watch(state, value => {
-  if (!value) return
+  if (!value || mobile.value) return
   if (!viewed) {
     viewed = true
     trackEvent("billing_plans_viewed", {
@@ -137,7 +140,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
 <template>
   <section :aria-labelledby="`${id}-title`" class="mb-8">
     <header class="mb-8">
-      <h1 :id="`${id}-title`" class="ui-page-title">{{ t("team.plansUsage") }}</h1>
+      <h1 :id="`${id}-title`" class="ui-page-title">{{ t(mobile ? "team.usage" : "team.plansUsage") }}</h1>
       <p class="m-0 mt-1 truncate text-[13px] text-ui-text-muted">{{ team.name }}</p>
     </header>
     <p v-if="isLoading && !state" role="status" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("team.usageLoading") }}</p>
@@ -146,12 +149,12 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
       <UiButton class="shrink-0" @click="load()">{{ t("team.usageRetry") }}</UiButton>
     </div>
     <div v-else-if="state" class="flex flex-col gap-3">
-      <AgentNotice v-if="paymentProblem && billingAdmin" tone="danger" :text="t('billing.paymentIssueDescription')">
+      <AgentNotice v-if="!mobile && paymentProblem && billingAdmin" tone="danger" :text="t('billing.paymentIssueDescription')">
         <UiButton size="sm" class="shrink-0" :loading="pending === 'portal'" @click="open('portal', 'payment_recovery')">{{ t("billing.fixPayment") }}</UiButton>
       </AgentNotice>
-      <AgentNotice v-if="checkoutOpened && !hasSubscription" tone="progress" :text="t('billing.checkoutOpened')" />
+      <AgentNotice v-if="!mobile && checkoutOpened && !hasSubscription" tone="progress" :text="t('billing.checkoutOpened')" />
       <div class="ui-card" data-team-plan>
-        <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-4">
+        <div v-if="!mobile" class="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 p-4">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <p class="m-0 text-base font-semibold">{{ t(`billing.plan.${state.plan}`) }}</p>
@@ -162,7 +165,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
           <UiButton v-if="billingAdmin && subscription" class="shrink-0" :loading="pending === 'portal'" @click="open('portal')">{{ t("billing.manage") }}<ExternalLink :size="13" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
-        <div class="border-t border-ui-border-strong">
+        <div :class="!mobile && 'border-t border-ui-border-strong'">
           <UsageMeter data-team-usage="traffic" :label="t('team.relayedTraffic')" :hint="t('billing.trafficHint')" :used="Number(state.usage.relayedBytes)" :limit="state.limits.turnBytes" :format="fileSize" :caption="caption" />
           <UsageMeter data-team-usage="sessions" class="border-t border-ui-border-strong" :label="t('team.activeSessions')" :hint="t('team.activeSessionsHint')" :used="state.usage.activeSessionCount" :limit="state.limits.maxActiveSessions" :format="count" />
           <UsageMeter data-team-usage="members" class="border-t border-ui-border-strong" :label="t('team.usageMembers')" :hint="t('team.usageMembersHint')" :used="state.usage.memberCount" :limit="state.limits.maxMembers" :format="count" />
@@ -176,7 +179,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
         </div>
       </div>
-      <section v-if="state.plan !== 'selfHosted'" class="mt-5 flex flex-col gap-4" :aria-labelledby="`${id}-compare`">
+      <section v-if="!mobile && state.plan !== 'selfHosted'" class="mt-5 flex flex-col gap-4" :aria-labelledby="`${id}-compare`">
         <div>
           <h2 :id="`${id}-compare`" class="m-0 text-base font-semibold">{{ t("billing.comparison.title") }}</h2>
           <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.comparison.subtitle") }}</p>
@@ -191,15 +194,15 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
         <p v-if="state.paymentsAvailable" class="m-0 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }} · {{ t("billing.comparison.monthlyReset") }}</p>
         <PlanComparison :billing="state" :interval="interval" :offers="offers" :pending="pending" @select="open" />
       </section>
-      <p v-if="state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
-      <div v-if="enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
+      <p v-if="!mobile && state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
+      <div v-if="!mobile && enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">
         <div class="min-w-0">
           <p class="m-0 text-sm font-semibold">{{ t("billing.plan.enterprise") }}</p>
           <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.offer.enterprise") }}</p>
         </div>
         <a class="ui-button shrink-0" :href="`mailto:${enterpriseContact}`" @click="trackEvent('billing_enterprise_contact_clicked', {})">{{ t("billing.contactEnterprise") }}<Mail :size="13" :stroke-width="1.75" aria-hidden="true" /></a>
       </div>
-      <p v-if="actionError" role="alert" class="m-0 text-sm text-ui-danger">{{ actionError }}</p>
+      <p v-if="!mobile && actionError" role="alert" class="m-0 text-sm text-ui-danger">{{ actionError }}</p>
     </div>
   </section>
 </template>

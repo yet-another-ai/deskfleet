@@ -58,7 +58,10 @@ impl AuthConfig {
         Self {
             web_url: web_url.clone(),
             allowed_origins: vec![public_url.trim_end_matches('/').into(), web_url],
-            return_to: vec!["http://127.0.0.1:*/auth/callback".into()],
+            return_to: vec![
+                "http://127.0.0.1:*/auth/callback".into(),
+                "ai.yetanother.deskfleet://auth/callback".into(),
+            ],
             rp_id: origin
                 .as_ref()
                 .and_then(|u| u.host_str())
@@ -136,7 +139,10 @@ impl AuthConfig {
         Ok(Self {
             web_url: web_url.trim_end_matches('/').into(),
             allowed_origins,
-            return_to: vec!["http://127.0.0.1:*/auth/callback".into()],
+            return_to: vec![
+                "http://127.0.0.1:*/auth/callback".into(),
+                "ai.yetanother.deskfleet://auth/callback".into(),
+            ],
             rp_id: env::var("DESKFLEET_WEBAUTHN_RP_ID")
                 .unwrap_or_else(|_| parsed.host_str().unwrap_or("localhost").into()),
             secure_cookies: public.scheme() == "https",
