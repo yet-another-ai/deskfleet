@@ -511,9 +511,9 @@ test("untracked nested repositories are skipped and excessive directory counts p
   await repository(nestedRepo)
   await mkdir(join(nestedRepo, "inside"))
   await mkdir(join(root, "allowed"))
-  const errors: (string | undefined)[] = []
-  const stop = await inspection.watch([root], error => errors.push(error))
-  assert.equal(errors.length, 0)
+  const errors: string[] = []
+  const stop = await inspection.watch([root], error => { if (error) errors.push(error) })
+  assert.deepEqual(errors, [])
   assert.equal(activeWatches.has(nestedRepo), false)
   assert.equal(activeWatches.has(join(nestedRepo, "inside")), false)
   assert.equal(activeWatches.has(join(root, "allowed")), true)

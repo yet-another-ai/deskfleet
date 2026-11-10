@@ -102,19 +102,20 @@ test("createAntigravityClientWrapper waits for background settlement, flushes up
           { step_index: 3, type: "SYSTEM_MESSAGE", status: "DONE", content: `sender=${sessionId}/task-2 finished` },
           { step_index: 4, type: "PLANNER_RESPONSE", status: "DONE", content: "Final settled output." },
         ]), 25)
-        return { stopReason: "end_turn" }
+        return { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
       }
       await wrappedClient.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" } })
       await wrappedClient.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Final settled output." } } })
       await delay(50)
       await wrappedClient.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Redundant tail" } } })
-      return { stopReason: "cancelled" }
+      return { stopReason: "cancelled", usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 } }
     },
     async cancel() { cancels++ },
   }))
 
   const res = await conn.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] })
   assert.equal(res.stopReason, "end_turn")
+  assert.equal(res.usage?.totalTokens, 45)
   assert.equal(prompts, 2)
   assert.equal(cancels, 1)
   assert.deepEqual(messages, ["Running in background...", "Final settled output."])
