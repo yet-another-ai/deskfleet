@@ -92,8 +92,8 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "apps/desktop/scripts/stage-auv.ts",
     "apps/web/capacitor.config.ts",
     "apps/web/android/app/build.gradle.kts",
-    "packages/capacitor-native-desktop/package.json",
-    "packages/capacitor-native-desktop/android/build.gradle",
+    "packages/capacitor-bridge/package.json",
+    "packages/capacitor-bridge/android/build.gradle",
     "scripts/build-android-viewer.ts",
     "scripts/stage-native-binaries.ts",
     "scripts/package-linux-release.ts",
@@ -215,7 +215,7 @@ test("platform and backend detectors cover shared actions and build-env paths", 
     assert.equal(isPlatformPath(file), true, `platform:${file}`)
     assert.equal(isBackendPath(file), true, `backend:${file}`)
   }
-  for (const file of ["apps/web/capacitor.config.ts", "apps/web/android/app/build.gradle.kts", "packages/capacitor-native-desktop/src/index.ts"]) {
+  for (const file of ["apps/web/capacitor.config.ts", "apps/web/android/app/build.gradle.kts", "packages/capacitor-bridge/src/index.ts"]) {
     assert.equal(isPlatformPath(file), true, `platform:${file}`)
   }
   for (const file of ["apps/web/src/App.vue", "docs/guide.md", "README.md"]) {

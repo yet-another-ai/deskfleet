@@ -1,10 +1,16 @@
 import { expect, test, vi } from "vitest"
 import type { CentralApi } from "@deskfleet/client/central"
+import type { NatTestResult } from "@deskfleet/client/network-diagnostics"
 import {
   createCapacitorNativeDesktopApi,
+  createCapacitorNetworkDiagnosticsApi,
   spawnCapacitorDesktopViewer,
-  type NativeDesktopCapacitorPlugin,
+  type DeskFleetBridgeCapacitorPlugin,
 } from "./index.ts"
+
+const unusedTestNat = async (): Promise<NatTestResult> => {
+  throw new Error("unexpected testNat call")
+}
 
 test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening and forwards commands", async () => {
   const order: string[] = []
@@ -12,7 +18,8 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
   const remove = vi.fn(async () => {
     order.push("remove")
   })
-  const plugin: NativeDesktopCapacitorPlugin = {
+  const plugin: DeskFleetBridgeCapacitorPlugin = {
+    async openExternal() {},
     async addListener(_name, fn) {
       order.push("addListener")
       listener = fn
@@ -28,6 +35,7 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
     async close() {
       order.push("close")
     },
+    testNat: unusedTestNat,
   }
 
   const events: unknown[] = []
@@ -57,7 +65,8 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
 test("createCapacitorNativeDesktopApi completes signaling handshake with the Capacitor plugin", async () => {
   let listener: ((data: { payload: string }) => void) | undefined
   const sent: { type: string }[] = []
-  const plugin: NativeDesktopCapacitorPlugin = {
+  const plugin: DeskFleetBridgeCapacitorPlugin = {
+    async openExternal() {},
     async addListener(_name, fn) {
       listener = fn
       return { remove: async () => {} }
@@ -78,6 +87,7 @@ test("createCapacitorNativeDesktopApi completes signaling handshake with the Cap
       }
     },
     async close() {},
+    testNat: unusedTestNat,
   }
 
   const central = {
@@ -114,4 +124,27 @@ test("createCapacitorNativeDesktopApi completes signaling handshake with the Cap
     control: true,
   })
   expect(sent.filter(item => item.type !== "ui").map(item => item.type)).toEqual(["start", "answer"])
+})
+
+test("createCapacitorNetworkDiagnosticsApi selects the first compatible STUN server and forwards to the plugin", async () => {
+  const result: NatTestResult = {
+    server: "198.51.100.10:3478",
+    localAddress: "192.0.2.2:54321",
+    publicAddress: "203.0.113.5:62000",
+    mapping: "endpoint-independent",
+    filtering: "address-dependent",
+    status: "complete",
+    durationMs: 42,
+  }
+  const testNat = vi.fn(async () => result)
+  const networkConfiguration = vi.fn(async () => ({
+    stunUrls: ["stun:invalid?transport=tcp", "stun:stun.example.com", "stun:backup.example.com:3479"],
+  }))
+  const api = createCapacitorNetworkDiagnosticsApi({ networkConfiguration }, { testNat })
+
+  await expect(api.testNat()).resolves.toEqual(result)
+  expect(testNat).toHaveBeenCalledExactlyOnceWith({ server: "stun.example.com:3478" })
+
+  networkConfiguration.mockResolvedValueOnce({ stunUrls: ["stun:[::1]:3478"] })
+  await expect(api.testNat()).rejects.toThrow("no IPv4 UDP STUN server configured")
 })

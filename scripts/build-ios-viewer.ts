@@ -47,7 +47,7 @@ for (const target of targets) {
   )
 }
 
-const frameworksDir = join(repoRoot, "packages/capacitor-native-desktop/ios/Frameworks")
+const frameworksDir = join(repoRoot, "packages/capacitor-bridge/ios/Frameworks")
 const xcframeworkDir = join(frameworksDir, "DeskfleetDesktopViewerFFI.xcframework")
 mkdirSync(frameworksDir, { recursive: true })
 rmSync(xcframeworkDir, { recursive: true, force: true })

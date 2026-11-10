@@ -20,7 +20,7 @@ let
     (source + /pnpm-workspace.yaml)
     (source + /patches)
     (source + /apps/web/package.json)
-    (source + /packages/capacitor-native-desktop/package.json)
+    (source + /packages/capacitor-bridge/package.json)
     (source + /packages/client/package.json)
     (source + /packages/components/package.json)
   ];
@@ -44,7 +44,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       (source + /apps/web/vite.config.ts)
       (source + /apps/web/public)
       (source + /apps/web/src)
-      (source + /packages/capacitor-native-desktop/src)
+      (source + /packages/capacitor-bridge/src)
       (source + /packages/client/src)
       (source + /packages/components/src)
       (source + /packages/components/locales)

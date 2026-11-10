@@ -23,22 +23,29 @@ internal func deskfleetIosSurfaceDestroyed()
 @_silgen_name("deskfleet_ios_touch")
 internal func deskfleetIosTouch(_ kind: Int32, _ x: Double, _ y: Double, _ dx: Double, _ dy: Double)
 
+@_silgen_name("deskfleet_ios_test_nat")
+internal func deskfleetIosTestNat(_ server: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("deskfleet_ios_string_free")
+internal func deskfleetIosStringFree(_ ptr: UnsafeMutablePointer<CChar>?)
+
 private let viewerEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { payloadPtr in
     guard let payloadPtr else { return }
-    NativeDesktopPlugin.activePlugin?.notifyListeners("viewerEvent", data: ["payload": String(cString: payloadPtr)])
+    DeskFleetBridge.activePlugin?.notifyListeners("viewerEvent", data: ["payload": String(cString: payloadPtr)])
 }
 
-@objc(NativeDesktopPlugin)
-public class NativeDesktopPlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "NativeDesktopPlugin"
-    public let jsName = "NativeDesktop"
+@objc(DeskFleetBridge)
+public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "DeskFleetBridge"
+    public let jsName = "DeskFleetBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "send", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "testNat", returnType: CAPPluginReturnPromise)
     ]
 
-    nonisolated(unsafe) internal static weak var activePlugin: NativeDesktopPlugin?
+    nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
 
     @objc func open(_ call: CAPPluginCall) {
@@ -75,6 +82,34 @@ public class NativeDesktopPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func close(_ call: CAPPluginCall) {
         Self.stopSession()
         call.resolve()
+    }
+
+    @objc func testNat(_ call: CAPPluginCall) {
+        guard let server = call.getString("server"), !server.isEmpty else {
+            call.reject("Missing STUN server")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let ptr = server.withCString({ deskfleetIosTestNat($0) }) else {
+                call.reject("Failed to test NAT")
+                return
+            }
+            defer { deskfleetIosStringFree(ptr) }
+            guard let data = String(cString: ptr).data(using: .utf8),
+                  let response = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                call.reject("Invalid NAT test response")
+                return
+            }
+            if let error = response["error"] as? String, !error.isEmpty {
+                call.reject(error)
+                return
+            }
+            guard let result = response["result"] as? JSObject else {
+                call.reject("Missing NAT test result")
+                return
+            }
+            call.resolve(result)
+        }
     }
 
     deinit { Self.stopSession() }

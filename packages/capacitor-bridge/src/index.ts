@@ -1,5 +1,6 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core"
 import type { CentralApi } from "@deskfleet/client/central"
+import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import type { NativeDesktopApi, NativeDesktopRequest } from "@deskfleet/client/native-desktop"
 import {
   openNativeDesktopSession,
@@ -7,19 +8,25 @@ import {
   type ViewerEvent,
   type ViewerProcess,
 } from "@deskfleet/client/native-desktop-session"
+import {
+  stunEndpoint,
+  type NatTestResult,
+  type NetworkDiagnosticsApi,
+} from "@deskfleet/client/network-diagnostics"
 
-export interface NativeDesktopCapacitorPlugin {
+export interface DeskFleetBridgeCapacitorPlugin {
   openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>
   close(): Promise<void>
+  testNat(options: { server: string }): Promise<NatTestResult>
   addListener(
     eventName: "viewerEvent",
     listenerFunc: (data: { payload: string }) => void,
   ): Promise<PluginListenerHandle>
 }
 
-export const NativeDesktopPlugin = registerPlugin<NativeDesktopCapacitorPlugin>("NativeDesktop")
+export const DeskFleetBridge = registerPlugin<DeskFleetBridgeCapacitorPlugin>("DeskFleetBridge")
 
 const toErrorEvent = (error: unknown): ViewerEvent => ({
   type: "error",
@@ -28,7 +35,7 @@ const toErrorEvent = (error: unknown): ViewerEvent => ({
 
 export function spawnCapacitorDesktopViewer(
   onEvent: (event: ViewerEvent) => void,
-  plugin: NativeDesktopCapacitorPlugin = NativeDesktopPlugin,
+  plugin: DeskFleetBridgeCapacitorPlugin = DeskFleetBridge,
 ): ViewerProcess {
   let closed = false
   let ready = false
@@ -80,7 +87,7 @@ export function spawnCapacitorDesktopViewer(
 
 export function createCapacitorNativeDesktopApi(
   central: CentralApi,
-  plugin: NativeDesktopCapacitorPlugin = NativeDesktopPlugin,
+  plugin: DeskFleetBridgeCapacitorPlugin = DeskFleetBridge,
 ): NativeDesktopApi {
   let active: ReturnType<typeof openNativeDesktopSession> | undefined
   return {
@@ -97,6 +104,24 @@ export function createCapacitorNativeDesktopApi(
       )
       active = session
       await session.ready
+    },
+  }
+}
+
+export function createCapacitorNetworkDiagnosticsApi(
+  central: Pick<HttpCentralClient, "networkConfiguration">,
+  plugin: Pick<DeskFleetBridgeCapacitorPlugin, "testNat"> = DeskFleetBridge,
+  noStunServerMessage: string | (() => string | Promise<string>) = "This DeskFleet service has no IPv4 UDP STUN server configured. Contact the service administrator.",
+): NetworkDiagnosticsApi {
+  return {
+    async testNat(): Promise<NatTestResult> {
+      const configuration = await central.networkConfiguration()
+      const server = stunEndpoint(configuration.stunUrls)
+      if (!server) {
+        const message = typeof noStunServerMessage === "function" ? await noStunServerMessage() : noStunServerMessage
+        throw new Error(message)
+      }
+      return plugin.testNat({ server })
     },
   }
 }
