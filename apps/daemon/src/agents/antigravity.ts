@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
+import type { Usage } from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 
@@ -25,6 +26,19 @@ const isDaemon = (input: unknown): boolean =>
   typeof input === "object" && input !== null && [true, "true"].includes((input as { IsDaemon?: unknown }).IsDaemon as boolean)
 
 const cleanId = (id: string): string => id.replace(/[.,;:]+$/, "")
+
+function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
+  if (!a || !b) return a ?? b ?? undefined
+  const add = (x?: number | null, y?: number | null) => (x != null || y != null ? (x ?? 0) + (y ?? 0) : undefined)
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+    cachedReadTokens: add(a.cachedReadTokens, b.cachedReadTokens),
+    cachedWriteTokens: add(a.cachedWriteTokens, b.cachedWriteTokens),
+    thoughtTokens: add(a.thoughtTokens, b.thoughtTokens),
+  }
+}
 
 /** Inspects `transcript.jsonl` steps after `turnStartStepIndex` for active or settled background tasks. */
 export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: number): AntigravityTranscriptStatus {
@@ -130,9 +144,9 @@ export function createAntigravityClientWrapper(
         try {
           const initRaw = await readTranscript(sessionId)
           let startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
-          let response = await connection.prompt(params)
+          let { stopReason, usage } = await connection.prompt(params)
 
-          while (response.stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
+          while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
             const startedAt = Date.now()
             let settled: AntigravityTranscriptStatus | undefined
             while (!abort.signal.aborted && Date.now() - startedAt < 30 * 60_000) {
@@ -142,11 +156,11 @@ export function createAntigravityClientWrapper(
               if (s.state === "waiting_interaction" || s.state === "settled_response") { settled = s; break }
               await delay(pollMs, undefined, { signal: abort.signal }).catch(() => {})
             }
-            if (abort.signal.aborted) return { stopReason: "cancelled" }
-            if (!settled) return response
+            if (!settled || abort.signal.aborted) break
 
-            if (settled.state === "settled_response") {
-              let timer: ReturnType<typeof setTimeout> | undefined
+            const isSettled = settled.state === "settled_response"
+            let timer: ReturnType<typeof setTimeout> | undefined
+            if (isSettled) {
               t.onFlush = () => {
                 if (t.pending.size > 0) return
                 clearTimeout(timer)
@@ -156,19 +170,20 @@ export function createAntigravityClientWrapper(
                 }, Math.min(120, pollMs * 2))
               }
               t.onFlush()
-              try {
-                await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
-              } finally {
-                clearTimeout(timer)
-                t.onFlush = undefined
-                t.suppress = false
-              }
-              return { stopReason: abort.signal.aborted ? "cancelled" : "end_turn" }
             }
-            startStep = settled.lastStepIndex
-            response = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
+            try {
+              startStep = settled.lastStepIndex
+              const next = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
+              usage = mergeUsage(usage, next.usage)
+              stopReason = isSettled ? "end_turn" : next.stopReason
+            } finally {
+              clearTimeout(timer)
+              t.onFlush = undefined
+              t.suppress = false
+            }
+            if (isSettled) break
           }
-          return abort.signal.aborted ? { stopReason: "cancelled" } : response
+          return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
         } finally {
           client.signal?.removeEventListener("abort", onAbort)
           if (aborts.get(sessionId) === abort) aborts.delete(sessionId)
