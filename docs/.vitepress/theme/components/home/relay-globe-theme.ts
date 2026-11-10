@@ -6,7 +6,7 @@ export function relayPalette(host: HTMLElement) {
   probe.style.visibility = "hidden"
   host.append(probe)
   const color = (token: string) => {
-    // Resolve light-dark() through CSS before passing colors to WebGL.
+    // Resolve CSS color tokens before passing colors to WebGL.
     probe.style.color = `var(--ui-color-${token})`
     return getComputedStyle(probe).color
   }

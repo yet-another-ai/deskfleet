@@ -36,20 +36,20 @@ export function chromaticShadeHex(shade: Shade, hue: number): string {
   return chromaticColorFrom(hue, { shade }).toHex()
 }
 
-function applyThemeHueTokens(style: CSSStyleDeclaration, hue: number | null): void {
+function applyThemeHueTokens(style: CSSStyleDeclaration, hue: number | null, dark: boolean): void {
   if (hue === null) {
     for (const name of THEME_HUE_PROPERTIES) style.removeProperty(name)
     return
   }
   const lightAccent = chromaticShadeCss(600, hue)
   const darkAccent = chromaticShadeCss(400, hue)
-  const accent = `light-dark(${lightAccent}, ${darkAccent})`
+  const accent = dark ? darkAccent : lightAccent
   style.setProperty("--ui-color-accent", accent)
   style.setProperty("--ui-color-action", accent)
   style.setProperty("--ui-color-focus", accent)
-  style.setProperty("--ui-color-action-hover", `light-dark(${chromaticShadeCss(700, hue)}, ${chromaticShadeCss(300, hue)})`)
-  style.setProperty("--ui-color-avatar", `light-dark(${lightAccent}, ${chromaticShadeCss(500, hue)})`)
-  style.setProperty("--ui-color-accent-alt", `light-dark(${chromaticShadeCss(600, hue + 40)}, ${chromaticShadeCss(400, hue + 40)})`)
+  style.setProperty("--ui-color-action-hover", chromaticShadeCss(dark ? 300 : 700, hue))
+  style.setProperty("--ui-color-avatar", dark ? chromaticShadeCss(500, hue) : lightAccent)
+  style.setProperty("--ui-color-accent-alt", chromaticShadeCss(dark ? 400 : 600, hue + 40))
   style.setProperty("--ui-color-mini-accent-light", chromaticShadeCss(500, hue))
   style.setProperty("--ui-color-mini-bubble-light", chromaticShadeCss(100, hue))
   style.setProperty("--ui-color-mini-accent-dark", darkAccent)
@@ -123,9 +123,10 @@ const defineAppearanceStore = defineStore("appearance", () => {
           pauseDynamicHue()
         }
       }, { immediate: true, flush: "sync" })
-      stopApplying = watch([() => settings.value.theme, activeThemeHue, interfaceFont, locale, terminalTheme], () => {
+      stopApplying = watch([() => settings.value.theme, isDark, activeThemeHue, interfaceFont, locale, terminalTheme], () => {
+        document.documentElement.dataset.theme = isDark.value ? "dark" : "light"
         document.documentElement.style.colorScheme = settings.value.theme === "system" ? "light dark" : settings.value.theme
-        applyThemeHueTokens(document.documentElement.style, activeThemeHue.value)
+        applyThemeHueTokens(document.documentElement.style, activeThemeHue.value, isDark.value)
         document.documentElement.style.setProperty("--ui-font-interface", interfaceFont.value)
         document.documentElement.style.setProperty("--ui-color-terminal", terminalTheme.value.background)
         document.documentElement.lang = intlLocale(locale.value)

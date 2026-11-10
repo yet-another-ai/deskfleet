@@ -19,6 +19,7 @@ afterEach(() => {
   configureClient(host)
   localStorage.clear()
   document.documentElement.removeAttribute("style")
+  delete document.documentElement.dataset.theme
   document.documentElement.lang = "en-US"
   i18n.global.locale.value = "en-US"
   vi.restoreAllMocks()
@@ -76,13 +77,17 @@ test("explicit theme overrides OS changes and Follow System resumes tracking the
   await appearance.initialize()
   await nextTick()
   expect(appearance.isDark).toBe(false)
+  expect(document.documentElement.dataset.theme).toBe("light")
   dark = true
   media.dispatchEvent(Object.assign(new Event("change"), { matches: dark }))
   expect(appearance.isDark).toBe(true)
+  expect(document.documentElement.dataset.theme).toBe("dark")
   await appearance.set({ theme: "light" })
   expect(appearance.isDark).toBe(false)
+  expect(document.documentElement.dataset.theme).toBe("light")
   await appearance.set({ theme: "system" })
   expect(appearance.isDark).toBe(true)
+  expect(document.documentElement.dataset.theme).toBe("dark")
   expect(document.documentElement.style.colorScheme).toBe("light dark")
 })
 
@@ -209,6 +214,8 @@ test("custom theme hue and dynamic RGB mode update root chromatic tokens and res
   expect(appearance.themeHue).toBe(210)
   const hue210Accent = document.documentElement.style.getPropertyValue("--ui-color-accent")
   expect(hue210Accent).toContain("oklch(")
+  await appearance.set({ theme: "dark" })
+  expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).not.toBe(hue210Accent)
   expect(JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!)).toMatchObject({ themeHue: 210, themeHueDynamic: false })
 
   await appearance.set({ themeHue: null, themeHueDynamic: true })
