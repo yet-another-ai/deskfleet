@@ -102,7 +102,8 @@ const lastSeen = computed(() => {
   return t("machine.lastSeen", { time })
 })
 const terminalLink = (terminalId: string) => ({ name: "terminal", params: { terminalId } })
-const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
+const sessionIndicator = (session: { id: string; archiveState?: string }) =>
+  session.archiveState === "archiving" ? "archiving" : agents.isWorking(session.id)
 </script>
 
 <template>
@@ -160,7 +161,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
             </template>
             <template #trailing>
               <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-              <SessionWorkingIndicator v-if="sessionWorking(session.id)" :state="sessionWorking(session.id)" />
+              <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
               <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
             </template>
             <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
@@ -217,7 +218,7 @@ const sessionWorking = (sessionId: string) => agents.isWorking(sessionId)
                 </template>
                 <template #trailing>
                   <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-                  <SessionWorkingIndicator v-if="sessionWorking(session.id)" :state="sessionWorking(session.id)" />
+                  <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
                   <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
                 </template>
                 <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>

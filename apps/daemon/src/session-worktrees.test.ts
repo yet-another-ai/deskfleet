@@ -390,7 +390,12 @@ test("restore finishes a checkout interrupted after Git registration", async con
   const managed = new ManagedSessionWorktrees(state.catalog, machine)
   const session = await managed.create("1")
   const checkout = session.worktree.directories[0]!.path
+  // An untracked nested repository causes `git worktree remove --force` (single --force)
+  // to fail, verifying the direct filesystem removal + `git worktree prune` fallback.
+  await repository(join(checkout, "nested-repo"))
   await managed.archive(session.id)
+  await assert.rejects(access(checkout))
+  assert.equal((await git(source, "worktree", "list", "--porcelain")).match(/^worktree /gmu)?.length, 1)
   const path = join(machine, "session-worktrees", session.id, "manifest.json")
   const manifest = JSON.parse(await readFile(path, "utf8"))
   manifest.state = "restoring"

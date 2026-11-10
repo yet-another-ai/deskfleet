@@ -207,6 +207,13 @@ export class AgentSessions {
   }
   preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
+  async resumeArchiving(): Promise<void> {
+    for (const session of await this.journal.list()) {
+      if (this.#closed) return
+      if (session.archiveState !== "archiving" || !["ready", "provision_failed"].includes(session.lifecycle)) continue
+      await this.#continueArchive(session.id).catch(error => console.error(`Could not finish archiving Session ${session.id}`, error))
+    }
+  }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {
     const session = await this.journal.session(id(sessionId, "Session ID"))
@@ -797,6 +804,21 @@ export class AgentSessions {
     return next
   }
 
+  #continueArchive(sessionId: string): Promise<void> {
+    const previous = this.#transitions.get(sessionId) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(async () => {
+      if (this.#closed) return
+      const current = await this.journal.session(sessionId)
+      if (current.archiveState !== "archiving" || !["ready", "provision_failed"].includes(current.lifecycle)) return
+      await this.#archive(sessionId)
+      const snapshot = await this.journal.read(sessionId)
+      await this.#admissions.synchronize(snapshot.session)
+    })
+    this.#transitions.set(sessionId, next)
+    void next.finally(() => { if (this.#transitions.get(sessionId) === next) this.#transitions.delete(sessionId) }).catch(() => {})
+    return next
+  }
+
   async #archive(sessionId: string): Promise<void> {
     const alreadyArchived = await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
@@ -850,6 +872,7 @@ export class AgentSessions {
     const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
     await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())
+    await Promise.allSettled(this.#transitions.values())
     // A Resume accepted before shutdown may have been waiting for an earlier
     // Stop. Once accepted commands settle, close any generation they restarted.
     const restarted = await Promise.allSettled([...this.#runtimes.values()].map(runtime => runtime.stop()))

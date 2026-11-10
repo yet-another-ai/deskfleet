@@ -23,3 +23,4 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {}
 export const Permission: Story = { args: { state: "permission" } }
 export const Question: Story = { args: { state: "question" } }
+export const Archiving: Story = { args: { state: "archiving" } }

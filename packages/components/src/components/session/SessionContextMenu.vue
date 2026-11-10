@@ -10,6 +10,7 @@ import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 import RenameSessionDialog from "./RenameSessionDialog.vue"
+import SessionConfirmDialog from "./SessionConfirmDialog.vue"
 
 const props = defineProps<{ sessionId: string; machineId?: string; title: string; context?: "directory" | "worktree"; archiveState?: "active" | "archiving" | "archived"; disabled?: boolean }>()
 const { t } = useI18n()
@@ -24,10 +25,6 @@ const open = ref(false)
 const dialog = ref<"rename" | "archive" | "restore" | "unread">()
 const pending = ref(false)
 const error = ref<string>()
-const confirmationQuestion = computed(() => {
-  if (dialog.value === "restore") return props.context === "worktree" ? "agent.restoreWorktreeQuestion" : "agent.restoreQuestion"
-  return props.context === "worktree" ? "agent.archiveWorktreeQuestion" : "agent.archiveQuestion"
-})
 
 function focusRow(): void {
   const element = trigger.value?.$el as HTMLElement | undefined
@@ -69,16 +66,12 @@ function togglePin(): void {
   if (pinned.value) pins.unpin(machineId.value, props.sessionId)
   else pins.pin(machineId.value, props.sessionId, props.title)
 }
-async function confirm(): Promise<void> {
-  if (pending.value || props.disabled || !props.context) return
-  pending.value = true
-  error.value = undefined
-  try {
-    if (dialog.value === "restore") await agents.restore(props.sessionId)
-    else await agents.archive(props.sessionId)
-    dialog.value = undefined
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { pending.value = false }
+function confirm(): void {
+  if (props.disabled || !props.context) return
+  const action = dialog.value
+  dialog.value = undefined
+  if (action === "restore") void agents.restore(props.sessionId).catch(() => {})
+  else if (action === "archive") void agents.archive(props.sessionId).catch(() => {})
 }
 </script>
 
@@ -104,13 +97,5 @@ async function confirm(): Promise<void> {
       <UiButton variant="primary" type="button" :disabled="pending || disabled || !canMarkUnread" @click="markUnread">{{ t('agent.markUnread') }}</UiButton>
     </div>
   </UiDialog>
-  <UiDialog v-else-if="dialog" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
-    <DialogTitle class="ui-dialog-title">{{ t(dialog === 'restore' ? 'agent.restore' : 'agent.archive') }}</DialogTitle>
-    <p class="m-0 mt-3 text-sm leading-relaxed">{{ t(confirmationQuestion) }}</p>
-    <p v-if="error" role="alert" class="mb-0 mt-3 text-sm text-ui-danger">{{ error }}</p>
-    <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="pending" @click="dialog = undefined">{{ t('catalog.cancel') }}</UiButton>
-      <UiButton :variant="dialog === 'archive' && context === 'worktree' ? 'danger' : 'primary'" type="button" :disabled="pending || disabled || !context" @click="confirm">{{ t(dialog === 'restore' ? 'agent.restore' : 'agent.archive') }}</UiButton>
-    </div>
-  </UiDialog>
+  <SessionConfirmDialog v-else-if="dialog" :action="dialog" :context="context" @close="dialog = undefined" @confirm="confirm" />
 </template>

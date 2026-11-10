@@ -103,6 +103,7 @@ test("archived local sessions are unpinned and restoring does not pin them again
   agents.sessions["30"]!.archiveState = "archiving"
   await flushPromises()
   expect(row(machineId).text()).toContain("Current investigation")
+  expect(row(machineId).get('[data-session-working="archiving"]').attributes("title")).toContain("Archiving this session.")
 
   agents.sessions["30"]!.archiveState = "archived"
   await flushPromises()
