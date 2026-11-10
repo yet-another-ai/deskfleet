@@ -22,7 +22,10 @@ export default defineConfig(({ command }) => {
         },
         transformIndexHtml: {
           order: "pre",
-          handler: (html) => injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
+          handler: (html, ctx) =>
+            ctx.path === "/html-preview.html"
+              ? html
+              : injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
         },
       },
       UnoCSS({ configFile: resolve(import.meta.dirname, "uno.config.ts") }),

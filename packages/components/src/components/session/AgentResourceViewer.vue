@@ -56,6 +56,7 @@ const highlightedLines = computed(() => {
 const requestedLines = fileResourceLines(request.uri)
 const lineElement = ref<HTMLElement>()
 const imageUrl = ref<string>()
+let htmlPreviewSent = false
 const previewKind = ref<MediaPreviewKind>()
 const previewMime = ref<string>()
 const previewBytes = shallowRef<Uint8Array>()
@@ -133,7 +134,15 @@ function locateOriginal(): void {
     itemId: request.uri,
   })
 }
+function sendHtmlPreview(event: Event): void {
+  if (htmlPreviewSent || content.value === undefined) return
+  const frame = event.currentTarget instanceof HTMLIFrameElement ? event.currentTarget : undefined
+  if (!frame?.contentWindow) return
+  htmlPreviewSent = true
+  frame.contentWindow.postMessage({ html: content.value }, "*")
+}
 async function toggleHtmlPreview(): Promise<void> {
+  htmlPreviewSent = false
   renderingHtml.value = !renderingHtml.value
   if (!renderingHtml.value && requestedLines) {
     await nextTick()
@@ -203,7 +212,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <div v-else-if="entry?.kind === 'directory' && filesApi" class="min-h-0 flex-1 overflow-auto p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </div>
-        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" />
+        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
         <pre v-else-if="content !== undefined" class="m-0 min-h-0 flex-1 overflow-auto p-4 whitespace-pre text-xs select-text"><code><span
           v-for="(line, index) in lines"
           :key="index"
@@ -239,7 +248,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       mode="inline"
       class="max-h-[60vh]"
     />
-    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" />
+    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
     <pre v-else-if="content !== undefined" class="max-h-[60vh] overflow-auto whitespace-pre text-xs select-text"><code><span
       v-for="(line, index) in lines"
       :key="index"
