@@ -1,9 +1,20 @@
 import { executeGit, GitPolicyError } from "./git-execution.ts"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
 import type { GitPreparedRevision } from "./git-protocol.ts"
+
+const remove = (() => {
+  if (process.versions.electron) {
+    try {
+      const original = createRequire(import.meta.url)("original-fs") as { promises?: { rm?: typeof rm } }
+      if (typeof original.promises?.rm === "function") return original.promises.rm
+    } catch { /* Non-Electron or restricted hosts use node:fs/promises. */ }
+  }
+  return rm
+})()
 
 export interface ManagedSessionCatalog {
   snapshot(): Promise<CatalogSnapshot>
@@ -34,8 +45,8 @@ interface WorktreeStorage {
   root(): Promise<string | null>
 }
 
-async function git(args: string[]): Promise<string> {
-  return (await executeGit(args, { maxBuffer: 1024 * 1024 })).stdout.replace(/\r?\n$/u, "")
+async function git(args: string[], timeout?: number): Promise<string> {
+  return (await executeGit(args, { maxBuffer: 1024 * 1024, ...(timeout ? { timeout } : {}) })).stdout.replace(/\r?\n$/u, "")
 }
 
 /** Git for Windows prints worktree paths with forward slashes and its own casing. */
@@ -227,7 +238,7 @@ export class ManagedSessionWorktrees {
     for (const worktree of manifest.worktrees) {
       await this.#removeCheckout(worktree, await this.#registered(worktree))
     }
-    if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
+    if (manifest.directory) await remove(manifest.directory, { recursive: true, force: true })
     manifest.state = "archived"
     await this.#save(manifest)
   }
@@ -334,8 +345,8 @@ export class ManagedSessionWorktrees {
       manifest.worktrees.pop()
       await this.#save(manifest)
     }
-    if (manifest.directory) await rm(manifest.directory, { recursive: true, force: true })
-    await rm(this.#sessionDirectory(manifest.sessionId), { recursive: true, force: true })
+    if (manifest.directory) await remove(manifest.directory, { recursive: true, force: true })
+    await remove(this.#sessionDirectory(manifest.sessionId), { recursive: true, force: true })
   }
 
   async #registered(worktree: OwnedWorktree): Promise<boolean> {
@@ -350,7 +361,17 @@ export class ManagedSessionWorktrees {
   }
 
   async #removeCheckout(worktree: OwnedWorktree, registered: boolean): Promise<void> {
-    if (registered) await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path])
-    else await rm(worktree.path, { recursive: true, force: true })
+    if (registered) {
+      try {
+        await git(["--git-dir", worktree.repository, "worktree", "remove", "--force", worktree.path], 120_000)
+        return
+      } catch (error) {
+        if (error instanceof GitPolicyError || /\blocked\b/iu.test(error instanceof Error ? error.message : String(error))) throw error
+      }
+    }
+    await remove(worktree.path, { recursive: true, force: true })
+    if (registered && await this.#registered(worktree)) {
+      await git(["--git-dir", worktree.repository, "worktree", "prune"])
+    }
   }
 }
