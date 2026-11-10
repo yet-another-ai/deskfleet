@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { setTimeout as delay } from "node:timers/promises"
 import type { Usage } from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
@@ -37,6 +38,64 @@ function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
     cachedReadTokens: add(a.cachedReadTokens, b.cachedReadTokens),
     cachedWriteTokens: add(a.cachedWriteTokens, b.cachedWriteTokens),
     thoughtTokens: add(a.thoughtTokens, b.thoughtTokens),
+  }
+}
+
+function readVarint(buf: Uint8Array, pos: number): [value: number, next: number] | null {
+  let val = 0n
+  let shift = 0n
+  while (pos < buf.length) {
+    const b = buf[pos++]!
+    val |= BigInt(b & 0x7f) << shift
+    if (!(b & 0x80)) return [Number(val), pos]
+    shift += 7n
+  }
+  return null
+}
+
+function findProtoField(buf: Uint8Array | undefined, target: number, wireType: 0 | 2): [value: number, pos: number] | null {
+  if (!buf) return null
+  let pos = 0
+  while (pos < buf.length) {
+    const tag = readVarint(buf, pos)
+    if (!tag) return null
+    const [t, next] = tag
+    const wire = t & 7
+    if (wire === 0 || wire === 2) {
+      const v = readVarint(buf, next)
+      if (!v) return null
+      if (t >>> 3 === target && wire === wireType) return v
+      pos = wire === 2 ? v[1] + v[0] : v[1]
+    } else if (wire === 1) pos = next + 8
+    else if (wire === 5) pos = next + 4
+    else return null
+  }
+  return null
+}
+
+const protoSub = (buf: Uint8Array | undefined, field: number): Uint8Array | undefined => {
+  const m = findProtoField(buf, field, 2)
+  return m && m[1] + m[0] <= buf!.length ? buf!.subarray(m[1], m[1] + m[0]) : undefined
+}
+const protoInt = (buf: Uint8Array | undefined, field: number): number => findProtoField(buf, field, 0)?.[0] ?? 0
+
+/** Reads `used` (input + output + cached) and `size` (`max_context_tokens`) from the session SQLite DB (`CortexStepGeneratorMetadata` protobuf). */
+function readContextUsage(dbPath: string): { used: number; size: number } | null {
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true, timeout: 2000 })
+    const row = db.prepare("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1").get() as { data?: Uint8Array } | undefined
+    if (!row?.data) return null
+    const chatModel = protoSub(row.data, 1)
+    const stats = protoSub(chatModel, 4)
+    const ctxMeta = protoSub(protoSub(chatModel, 9), 10)
+    const used = protoInt(stats, 2) + protoInt(stats, 3) + protoInt(stats, 5)
+    const size = protoInt(ctxMeta, 4)
+    return used > 0 && size > 0 ? { used, size } : null
+  } catch {
+    return null
+  } finally {
+    db?.close()
   }
 }
 
@@ -182,6 +241,10 @@ export function createAntigravityClientWrapper(
               t.suppress = false
             }
             if (isSettled) break
+          }
+          const ctx = readContextUsage(join(dataDir, "conversations", `${sessionId}.db`))
+          if (ctx) {
+            await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
           }
           return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
         } finally {
