@@ -37,7 +37,7 @@ const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.
 const content = ref<string>()
 const isHtmlContent = computed(() => content.value !== undefined && Boolean(entry.value && fileCodeLanguage(entry.value.name) === "html"))
 const renderingHtml = ref(false)
-const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).map(([text]) => ({
+const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).filter(([text]) => text).map(([text]) => ({
   text,
   ending: text.match(/\r?\n$/u)?.[0] ?? "",
 })))
@@ -217,6 +217,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
           v-for="(line, index) in lines"
           :key="index"
           :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+          :data-line="index + 1"
+          class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
           :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
         ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
         <p v-if="error" class="m-0 p-4 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
@@ -253,6 +255,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       v-for="(line, index) in lines"
       :key="index"
       :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+      :data-line="index + 1"
+      class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
       :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
     ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
@@ -263,3 +267,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     </div>
   </UiDialog>
 </template>
+
+<style scoped>
+[data-line]::before { content: attr(data-line); }
+</style>
