@@ -399,9 +399,12 @@ impl Viewer {
     }
 
     fn local_ui(&self, position: Point<Pixels>, window: &Window) -> bool {
-        self.toolbar_state.settings_open
-            || self.toolbar_state.ui.status != Status::Connected
-            || self.toolbar_bounds(window).contains(&position)
+        pointer_target(
+            &self.toolbar_state,
+            position,
+            Chrome::for_window(window).content_bounds(),
+            self.toolbar_bounds(window),
+        ) != PointerTarget::Remote
     }
 
     fn resume_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -520,7 +523,22 @@ impl Viewer {
             cx.stop_propagation();
             return;
         }
-        self.local_pointer = self.local_ui(event.position, window);
+        let target = pointer_target(
+            &self.toolbar_state,
+            event.position,
+            Chrome::for_window(window).content_bounds(),
+            self.toolbar_bounds(window),
+        );
+        if target == PointerTarget::NativeChrome {
+            // Native move/size loops can consume the matching button-up. Do
+            // not latch `local_pointer`, or remote pointer forwarding would
+            // stay suspended until the next click.
+            self.local_pointer = false;
+            self.video_focused = false;
+            self.release(window, cx);
+            return;
+        }
+        self.local_pointer = target == PointerTarget::LocalUi;
         if self.toolbar_state.settings_open
             && !self.select_open
             && !self.toolbar_bounds(window).contains(&event.position)
@@ -639,6 +657,36 @@ impl Viewer {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointerTarget {
+    /// A native title bar, resize border, or other non-client area.
+    NativeChrome,
+    /// The floating toolbar, its settings panel, or another local surface.
+    LocalUi,
+    /// The remote desktop video.
+    Remote,
+}
+
+fn pointer_target(
+    state: &ToolbarState,
+    position: Point<Pixels>,
+    content: Bounds<Pixels>,
+    toolbar: Bounds<Pixels>,
+) -> PointerTarget {
+    if !content.contains(&position) {
+        // Native title bars, resize borders, and other non-client areas live
+        // outside the GPUI client content. They belong to the platform.
+        PointerTarget::NativeChrome
+    } else if state.settings_open
+        || state.ui.status != Status::Connected
+        || toolbar.contains(&position)
+    {
+        PointerTarget::LocalUi
+    } else {
+        PointerTarget::Remote
+    }
+}
+
 impl Render for Viewer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let prepared = self.video.borrow_mut().prepare(window);
@@ -750,5 +798,70 @@ impl Render for Viewer {
                     .child(self.toolbar.view.clone()),
             )
             .child(chrome.render(&self.title))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn content() -> Bounds<Pixels> {
+        Bounds::new(point(px(0.), px(0.)), size(px(960.), px(640.)))
+    }
+
+    fn toolbar() -> Bounds<Pixels> {
+        Bounds::new(point(px(468.), px(12.)), size(px(480.), px(42.)))
+    }
+
+    fn connected() -> ToolbarState {
+        let mut state = ToolbarState::default();
+        state.ui.status = Status::Connected;
+        state
+    }
+
+    #[test]
+    fn native_non_client_points_are_native_chrome_after_connecting() {
+        let state = connected();
+        for position in [
+            point(px(480.), px(-24.)), // native title bar
+            point(px(-4.), px(320.)),  // native left border
+            point(px(964.), px(320.)), // native right border
+            point(px(480.), px(644.)), // native bottom border
+        ] {
+            assert_eq!(
+                pointer_target(&state, position, content(), toolbar()),
+                PointerTarget::NativeChrome
+            );
+        }
+    }
+
+    #[test]
+    fn connected_video_is_remote_but_local_controls_are_local() {
+        let state = connected();
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::Remote
+        );
+        assert_eq!(
+            pointer_target(&state, toolbar().center(), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
+    }
+
+    #[test]
+    fn disconnected_or_open_settings_keep_client_pointer_local() {
+        let mut state = connected();
+        state.ui.status = Status::Disconnected;
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
+
+        let mut state = connected();
+        state.settings_open = true;
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
     }
 }
