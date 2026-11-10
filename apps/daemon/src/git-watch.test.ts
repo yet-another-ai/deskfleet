@@ -243,14 +243,38 @@ test("linked worktrees observe their separate index and HEAD plus common refs", 
   assert.deepEqual(errors, [])
 })
 
-test("a plain directory can become a repository without another subscription", async context => {
+test("a plain directory watches only its root until it becomes a repository", async context => {
+  const watched = new Set<string>()
+  const original = fs.watch
+  const mock = context.mock.method(fs, "watch", (...args: Parameters<typeof fs.watch>) => {
+    watched.add(String(args[0]))
+    return original(...args)
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
   const f = await fixture(context, false)
+  f.stop()
+  const nested = join(f.root, "nested", "deeper")
+  await mkdir(nested, { recursive: true })
+  watched.clear()
+  let events = 0
+  const errors: string[] = []
+  await f.watch([f.root], error => { events++; if (error) errors.push(error) })
+  assert.deepEqual([...watched], [f.root])
   assert.equal((await f.inspection.status("1", [f.root])).repositories.length, 0)
-  await f.changed(() => repository(f.root))
-  await delay(350)
+  await mkdir(join(f.root, "another"))
+  await writeFile(join(f.root, "unrelated.txt"), "plain file\n")
+  await delay(150)
+  assert.equal(events, 0)
+  assert.deepEqual([...watched], [f.root])
+  await repository(f.root)
+  await eventually(() => events > 0 && watched.has(nested), "initialized repository did not watch its existing subdirectories")
   assert.equal((await f.inspection.status("1", [f.root])).repositories.length, 1)
-  await f.changed(() => writeFile(join(f.root, "source.txt"), "initialized\n"))
+  const before = events
+  await writeFile(join(f.root, "source.txt"), "initialized\n")
+  await eventually(() => events > before, "initialized repository did not observe tracked file edit")
   assert.equal((await f.inspection.status("1", [f.root])).repositories[0]!.changes.length, 1)
+  assert.deepEqual(errors, [])
 })
 
 test("replacing a watched directory rebinds its watch and refreshes cached edits", async context => {
@@ -461,4 +485,44 @@ test("watcher failures stay visible through surviving events and another viewer 
   while (second.length === before && Date.now() < until) await delay(20)
   assert.ok(second.length > before)
   assert.equal(second.at(-1), undefined)
+})
+
+test("untracked nested repositories are skipped and excessive directory counts pause automatic watching", async context => {
+  const activeWatches = new Set<string>()
+  const original = fs.watch
+  const mock = context.mock.method(fs, "watch", (...args: Parameters<typeof fs.watch>) => {
+    const target = String(args[0])
+    const watcher = original(...args)
+    activeWatches.add(target)
+    const close = watcher.close.bind(watcher)
+    watcher.close = () => { activeWatches.delete(target); close() }
+    return watcher
+  })
+  syncBuiltinESMExports()
+  context.after(() => { mock.mock.restore(); syncBuiltinESMExports() })
+  const root = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-git-watch-")))
+  const inspection = new GitInspection(2)
+  context.after(async () => {
+    inspection.close()
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  })
+  await repository(root)
+  const nestedRepo = join(root, "untracked-repo")
+  await repository(nestedRepo)
+  await mkdir(join(nestedRepo, "inside"))
+  await mkdir(join(root, "allowed"))
+  const errors: (string | undefined)[] = []
+  const stop = await inspection.watch([root], error => errors.push(error))
+  assert.equal(errors.length, 0)
+  assert.equal(activeWatches.has(nestedRepo), false)
+  assert.equal(activeWatches.has(join(nestedRepo, "inside")), false)
+  assert.equal(activeWatches.has(join(root, "allowed")), true)
+  stop()
+  await mkdir(join(root, "overflow"))
+  const overflowErrors: (string | undefined)[] = []
+  const stopOverflow = await inspection.watch([root], error => overflowErrors.push(error))
+  context.after(stopOverflow)
+  assert.ok(overflowErrors.some(error => error?.includes("too many directories to watch automatically")))
+  assert.equal(activeWatches.size, 0)
+  assert.equal((await inspection.status("1", [root])).repositories.length, 1)
 })

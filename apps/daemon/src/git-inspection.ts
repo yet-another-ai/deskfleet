@@ -1,6 +1,7 @@
 import { executeGit } from "./git-execution.ts"
 import { createHash } from "node:crypto"
 import { lstat, open, readlink, realpath, stat } from "node:fs/promises"
+import { homedir } from "node:os"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { GitBranchesSnapshot, GitDiffRequest, GitFileChange, GitFileDiff, GitFileStatus, GitRepositoryStatus, GitStatusSnapshot } from "./git-protocol.ts"
 import { GitWatch } from "./git-watch.ts"
@@ -9,8 +10,18 @@ const STATUS_BYTES = 2 * 1024 * 1024
 const PATCH_BYTES = 1024 * 1024
 const COUNT_BYTES = 128 * 1024
 const MAX_FILES = 10_000
+const MAX_UNTRACKED_COUNTS = 512
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 type CommandError = Error & { code?: string | number; stdout?: string; stderr?: string; gitCommandOutput?: boolean }
+
+// Accidental git init in $HOME or / turns both machine-scoped Sessions and any
+// non-Git child directory into a full-disk status scan and FSEvents storm.
+// Refuse those toplevel roots while keeping real child repositories inside $HOME usable.
+async function isProtectedRoot(root: string): Promise<boolean> {
+  if (dirname(root) === root) return true
+  const home = await realpath(homedir()).catch(() => resolve(homedir()))
+  return root === home
+}
 
 async function git(root: string, args: string[], limit = STATUS_BYTES, allowTruncation = false): Promise<{ text: string; truncated: boolean }> {
   try {
@@ -119,11 +130,16 @@ async function inspect(root: string): Promise<GitRepositoryStatus> {
     if (files.truncated || files.files.length > MAX_FILES) result.error = `Showing the first ${result.changes.length} changed entries; this checkout has too many changes to display at once`
     else if (staged.truncated || unstaged.truncated) result.error = "Some change counts are unavailable because this checkout has too many changes"
     const counts = { staged: parseCounts(staged.text, staged.truncated), unstaged: parseCounts(unstaged.text, unstaged.truncated) }
+    let untrackedCounts = 0
     for (const change of result.changes) {
       if (change.kind !== "untracked") {
         if (change.status !== "conflicted") Object.assign(change, counts[change.kind].get(change.path))
         continue
       }
+      // Cap sequential file reads for line counts when a checkout has thousands
+      // of untracked files; remaining entries still appear with null line counts.
+      if (untrackedCounts >= MAX_UNTRACKED_COUNTS) continue
+      untrackedCounts++
       try {
         const content = await untrackedContent(root, change.path, COUNT_BYTES)
         if (!content.truncated && !binary(content.data)) { change.additions = lineCount(content.data); change.deletions = 0 }
@@ -141,6 +157,10 @@ async function resolveDirectories(paths: string[]): Promise<{ directories: GitSt
       if (!(await stat(path)).isDirectory()) throw new Error("Session path is not a directory")
       const output = (await git(path, ["rev-parse", "--show-toplevel"])).text.replace(/\n$/u, "")
       const root = await realpath(output)
+      if (await isProtectedRoot(root)) {
+        directories.push({ path, repositoryId: null, error: "Refusing to inspect the home or root directory as a Git repository" })
+        continue
+      }
       const id = repositoryId(root)
       roots.set(id, root)
       directories.push({ path, repositoryId: id })
@@ -181,7 +201,12 @@ interface WatchedCheckout {
 /** A watched checkout shares its transient status until an OS notification invalidates it. */
 export class GitInspection {
   readonly #watched = new Map<string, WatchedCheckout>()
+  readonly #maxWatchedDirectories: number | undefined
   #closed = false
+
+  constructor(maxWatchedDirectories?: number) {
+    this.#maxWatchedDirectories = maxWatchedDirectories
+  }
 
   async watch(paths: string[], listener: (error?: string) => void): Promise<() => void> {
     if (this.#closed) throw new Error("Git inspection is stopping")
@@ -191,8 +216,10 @@ export class GitInspection {
     for (const directory of directories) {
       if (directory.error) unavailable.push(`${directory.path}: ${directory.error}`)
       else if (directory.repositoryId === null) {
-        try { watchedRoots.add(await realpath(directory.path)) }
-        catch (error) { unavailable.push(`${directory.path}: ${message(error)}`) }
+        try {
+          const physical = await realpath(directory.path)
+          if (!await isProtectedRoot(physical)) watchedRoots.add(physical)
+        } catch (error) { unavailable.push(`${directory.path}: ${message(error)}`) }
       }
     }
     const directoryError = unavailable.length ? `Could not watch Git changes in ${unavailable.join("; ")}` : undefined
@@ -217,7 +244,7 @@ export class GitInspection {
             entry!.version++
             entry!.cached = undefined
             for (const changed of entry!.listeners) changed(error)
-          })
+          }, this.#maxWatchedDirectories)
           entry = { watcher, ready: Promise.resolve(), listeners: new Set([subscriber]), version: 0 }
           this.#watched.set(root, entry)
           entry.ready = watcher.start()
@@ -275,6 +302,7 @@ export class GitInspection {
       if (!(await stat(path)).isDirectory()) return { workspaceId, currentBranch: null, branches: [] }
       const output = (await git(path, ["rev-parse", "--show-toplevel"])).text.replace(/\n$/u, "")
       const root = await realpath(output)
+      if (await isProtectedRoot(root)) return { workspaceId, currentBranch: null, branches: [] }
       const [symbolic, refs] = await Promise.all([
         git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(value => value.text.replace(/\n$/u, "")).catch(() => null),
         git(root, ["for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads", "refs/remotes"]),
