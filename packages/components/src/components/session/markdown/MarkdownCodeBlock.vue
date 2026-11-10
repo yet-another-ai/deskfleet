@@ -69,7 +69,7 @@ function syncTokens(nextCode: string, lang: string): void {
       highlighter,
       lang,
       themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: "light-dark()",
+      defaultColor: false,
     })
     tokenizedCode = ""
     stableChunks.value = []

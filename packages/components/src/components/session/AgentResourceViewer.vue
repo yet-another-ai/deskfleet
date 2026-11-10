@@ -49,7 +49,7 @@ const highlightedLines = computed(() => {
     return highlighter.codeToTokens(content.value, {
       lang: language,
       themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: "light-dark()",
+      defaultColor: false,
     }).tokens
   } catch { return undefined }
 })
