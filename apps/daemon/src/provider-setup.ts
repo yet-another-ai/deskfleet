@@ -73,11 +73,16 @@ function locations(template: AgentProviderTemplateId, ctx: Context): string[] {
   if (template === "grok") directories.push(path.join(home, ".grok", "bin"))
   if (template === "claude-code") directories.push(path.join(home, ".claude", "local"))
   if (template === "pi") directories.push(...npmLocations(ctx), path.join(env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"), "bin"))
+  if (template === "codebuddy") {
+    directories.push(...npmLocations(ctx))
+    if (platform !== "win32" && env.XDG_DATA_HOME) directories.push(path.join(env.XDG_DATA_HOME, "..", "bin"))
+  }
   if (template === "omp") directories.push(path.join(env.BUN_INSTALL ?? path.join(home, ".bun"), "bin"))
   if (platform === "win32") {
     const local = env.LOCALAPPDATA ?? path.join(home, "AppData", "Local")
     if (template === "codex") directories.push(path.join(local, "Programs", "OpenAI", "Codex", "bin"))
     if (template === "cursor") directories.push(path.join(local, "cursor-agent"))
+    if (template === "codebuddy") directories.push(path.join(local, "codebuddy", "bin"))
     if (template === "omp") directories.push(path.join(local, "omp"))
     if (template === "antigravity") directories.push(path.join(local, "agy", "bin"))
   } else directories.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin")
@@ -126,7 +131,8 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
       "$ErrorActionPreference = 'Stop'; if (Test-Path \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\") { & \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\" update } else { Invoke-RestMethod 'https://antigravity.google/cli/install.ps1' | Invoke-Expression }; if ($LASTEXITCODE) { exit $LASTEXITCODE }"] }
     const url = template === "codex" ? "https://chatgpt.com/codex/install.ps1"
       : template === "claude-code" ? "https://claude.ai/install.ps1"
-        : template === "pi" ? "https://pi.dev/install.ps1" : "https://cursor.com/install?win32=true"
+        : template === "pi" ? "https://pi.dev/install.ps1"
+          : template === "codebuddy" ? "https://copilot.tencent.com/cli/install.ps1" : "https://cursor.com/install?win32=true"
     return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       `$ErrorActionPreference = 'Stop'; Invoke-RestMethod '${url}' | Invoke-Expression; if ($LASTEXITCODE) { exit $LASTEXITCODE }`] }
   }
@@ -145,7 +151,8 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
   const url = template === "codex" ? "https://chatgpt.com/codex/install.sh"
     : template === "claude-code" ? "https://claude.ai/install.sh"
       : template === "cursor" ? "https://cursor.com/install"
-        : template === "pi" ? "https://pi.dev/install.sh" : "https://x.ai/cli/install.sh"
+        : template === "pi" ? "https://pi.dev/install.sh"
+          : template === "codebuddy" ? "https://copilot.tencent.com/cli/install.sh" : "https://x.ai/cli/install.sh"
   return { command: shell, args: ["-o", "pipefail", "-c", `curl -fsSL '${url}' | ${template === "codex" || template === "pi" ? "sh" : "bash"}`] }
 }
 
@@ -160,7 +167,7 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
     : template === "cursor" ? /\bcursor\b/iu : template === "pi" ? /\bpi\s+-\s+AI coding assistant\b/iu
       : template === "omp" ? /\bomp\b|Oh My Pi/iu : template === "deepseek-harness" ? /\bdsh\b|DeepSeek Harness/iu
-        : template === "antigravity" ? /\bagy\b|Antigravity/iu : /\bgrok\b/iu
+        : template === "codebuddy" ? /\bcodebuddy\b/iu : template === "antigravity" ? /\bagy\b|Antigravity/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
     // Some CLIs print just a version; their help identifies the provider.
     const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
@@ -173,8 +180,8 @@ async function authentication(template: AgentProviderTemplateId, binary: string,
   if (template === "acp" || template === "antigravity") return "unknown"
   // DeepSeek Harness authenticates through DEEPSEEK_API_KEY (or a stored credential the CLI resolves).
   if (template === "deepseek-harness") return ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown"
-  // Grok has no noninteractive status command; Pi and OMP authenticate individual model providers.
-  if (template === "grok" || template === "pi" || template === "omp") return "unknown"
+  // Grok and CodeBuddy have no noninteractive status command; Pi and OMP authenticate individual model providers.
+  if (template === "grok" || template === "codebuddy" || template === "pi" || template === "omp") return "unknown"
   try {
     const args = template === "codex" ? ["login", "status"] : template === "claude-code" ? ["auth", "status"] : ["status", "--format", "json"]
     const result = await ctx.run(binary, args, ctx.env, ctx.home)
@@ -322,11 +329,11 @@ export class ProviderSetup {
       return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)
     }
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
-    // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
+    // CodeBuddy, Pi, and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]
       : provider.template === "cursor" ? ["login"] : provider.template === "antigravity"
         ? ["acp", ...(ctx.env.GEMINI_HOME ? ["--gemini-dir", ctx.env.GEMINI_HOME] : []), "--login"]
-        : provider.template === "pi" ? [] : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
+        : provider.template === "pi" || provider.template === "codebuddy" ? [] : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
     const launch = launchProviderCommand(result.binaryPath, args,
       provider.template === "cursor" ? { ...ctx.env, NO_OPEN_BROWSER: "1" } : ctx.env, ctx.platform)
     return this.#run({ ...launch, cwd: ctx.home }, `${provider.name} sign in`)

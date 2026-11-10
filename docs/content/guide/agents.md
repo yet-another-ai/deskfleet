@@ -4,7 +4,7 @@ DeskFleet lets your team run existing CLI coding agents on enrolled machines, co
 
 ## Configure your preferred agents
 
-DeskFleet connects to **Codex CLI**, **Claude Code**, **Cursor CLI**, **Grok CLI**, **Oh My Pi**, **DeepSeek Harness**, and any other [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) executable. Configure them on each machine that will execute tasks under **Settings → Agents**.
+DeskFleet connects to **Codex CLI**, **Claude Code**, **Cursor CLI**, **Grok CLI**, **Oh My Pi**, **CodeBuddy Code**, **DeepSeek Harness**, and any other [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) executable. Configure them on each machine that will execute tasks under **Settings → Agents**.
 
 ### Installation and status checks
 
@@ -23,6 +23,15 @@ If a built-in CLI is missing, click **Install** to run its official installer on
 - **Test connection**: Verifies the current executable and credentials without starting a new login flow. If a check fails, click **Details** to inspect the full CLI output.
 
 Each new session selects one configured provider. Available models, reasoning controls, in-flight steering, and session resumption depend on that provider's ACP capabilities.
+
+For **CodeBuddy Code**, choose its built-in template and use **Install** for the
+official standalone CLI; Node.js/npm is not required. Use **Log in** or set
+`CODEBUDDY_API_KEY` under **Advanced**. Turn on **Use China edition** for China
+accounts; leave it off for the international
+edition. DeskFleet applies the edition to login and session connections
+automatically. Then use **Test connection** to check session creation.
+In the login terminal, follow CodeBuddy's startup prompts or enter `/login`,
+then `/exit` to return to setup.
 
 ## Share a session with your team
 

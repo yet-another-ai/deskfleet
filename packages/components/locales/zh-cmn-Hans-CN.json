@@ -1250,6 +1250,9 @@
     "binaryDetected": "留空时使用检测到的可执行文件。",
     "showDetails": "详情",
     "hideDetails": "收起",
+    "codebuddyChina": "使用国内版",
+    "codebuddyChinaDescription": "国内版 CodeBuddy 账号请开启，国际版请关闭。",
+    "codebuddyAuthHint": "登录所选版本的 CodeBuddy，或在高级设置中添加 CODEBUDDY_API_KEY。",
     "templateDescription": {
       "codex": "OpenAI 的编程 Agent。",
       "claude-code": "Anthropic 的编程 Agent。",
@@ -1259,6 +1262,7 @@
       "omp": "Oh My Pi 的编程 Agent CLI。",
       "deepseek-harness": "DeepSeek 的 Agent Harness CLI（dsh）。",
       "antigravity": "Google 的 Antigravity 编程 Agent。",
+      "codebuddy": "腾讯的 CodeBuddy 编程 Agent。",
       "acp": "任何支持 Agent Client Protocol 的 Agent。"
     },
     "iconDefault": "模板默认图标",
@@ -1288,6 +1292,7 @@
       "installing": "正在安装…",
       "loggingIn": "等待登录，请按下方提示操作。",
       "interactiveLoginHint": "输入 /login 登录，完成后输入 /quit 返回。",
+      "codebuddyLoginHint": "按照 CodeBuddy 的启动提示或输入 /login 登录，完成后输入 /exit 返回。",
       "output": "设置输出",
       "installNotFound": "安装程序已结束，但未找到可执行文件。请查看输出，或在“高级”中设置路径。",
       "interrupted": "设置已中断。",

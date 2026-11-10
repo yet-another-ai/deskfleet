@@ -186,6 +186,44 @@ test("Grok cached-token status is unknown without starting an auth flow", async 
   assert.equal((await f.setup.probe(input("grok", { env: { XAI_API_KEY: "configured-key" } }))).auth, "unknown")
 })
 
+test("CodeBuddy validates its bare version without starting ACP or login", async () => {
+  const f = fixture({ files: ["/tools/codebuddy", "/bin/bash"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("2.182.0") : result("Usage: codebuddy|cbc [options] [command] [prompt]\nCodeBuddy Code") })
+  const provider = input("codebuddy", { env: { CODEBUDDY_API_KEY: "configured-key", CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } })
+  assert.deepEqual(await f.setup.probe(provider), {
+    status: "found", binaryPath: "/tools/codebuddy", version: "2.182.0", auth: "unknown", installable: true, loginAvailable: true,
+  })
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+  assert.equal(f.calls[0]!.env.CODEBUDDY_INTERNET_ENVIRONMENT, "internal")
+  assert.equal(f.runs.length, 0)
+  assert.equal((await f.setup.probe(input("codebuddy", { binaryPath: "/missing/codebuddy" }))).status, "missing")
+  assert.equal(f.calls.length, 2)
+})
+
+test("CodeBuddy rejects an unrelated executable and does not offer login", async () => {
+  const f = fixture({ files: ["/tools/codebuddy"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
+  const found = await f.setup.probe(input("codebuddy"))
+  assert.equal(found.status, "invalid")
+  assert.equal(found.loginAvailable, false)
+})
+
+test("CodeBuddy discovers native and npm installations outside the daemon PATH", async () => {
+  for (const [platform, env, binary] of [
+    ["linux", { PATH: "" }, "/home/someone/.local/bin/codebuddy"],
+    ["darwin", { PATH: "", XDG_DATA_HOME: "/custom/share" }, "/custom/bin/codebuddy"],
+    ["linux", { PATH: "", NPM_CONFIG_PREFIX: "/custom/npm" }, "/custom/npm/bin/codebuddy"],
+    ["win32", { PATH: "", LOCALAPPDATA: "C:\\Local" }, "C:\\Local\\codebuddy\\bin\\codebuddy.exe"],
+    ["win32", { PATH: "", APPDATA: "C:\\Roaming" }, "C:\\Roaming\\npm\\codebuddy.cmd"],
+  ] as const) {
+    const f = fixture({ platform, env, files: [binary], answer: async (_command, args) =>
+      args[0] === "--version" ? result("2.182.0") : result("Usage: codebuddy|cbc [options] [command] [prompt]") })
+    assert.equal((await f.setup.probe(input("codebuddy"))).binaryPath, binary)
+    assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+    assert.equal(f.runs.length, 0)
+  }
+})
+
 test("Pi validates its bare version with help and leaves authentication unknown", async () => {
   const f = fixture({ files: ["/home/someone/.pi/agent/bin/pi", "/bin/bash"], answer: async (_command, args) =>
     args[0] === "--version" ? result("1.4.0") : result("pi - AI coding assistant with read, bash, edit, write tools") })
@@ -400,6 +438,7 @@ test("official installers start dedicated terminals and do not start login or AC
     ["codex", "https://chatgpt.com/codex/install.sh"], ["claude-code", "https://claude.ai/install.sh"],
     ["cursor", "https://cursor.com/install"], ["grok", "https://x.ai/cli/install.sh"], ["pi", "https://pi.dev/install.sh"],
     ["omp", "https://omp.sh/install"], ["antigravity", "https://antigravity.google/cli/install.sh"],
+    ["codebuddy", "https://copilot.tencent.com/cli/install.sh"],
   ] as const) {
     const f = fixture({ files: ["/bin/bash"] })
     const terminal = await f.setup.install(input(template, { binaryPath: "/missing/old", env: { TOKEN: "sensitive-value" } }))
@@ -519,6 +558,36 @@ test("Pi sign in opens its interactive CLI without sending a slash command as a 
   assert.deepEqual(f.runs[0]!.args, [])
   assert.equal(f.runs[0]!.env?.PI_CODING_AGENT_DIR, "/custom/pi-agent")
   assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("CodeBuddy sign in opens its TUI without sending a login command as a prompt", async () => {
+  const f = fixture({ files: ["/tools/codebuddy"], answer: async (_command, args) =>
+    args[0] === "--version" ? result("2.182.0") : result("Usage: codebuddy|cbc [options] [command] [prompt]") })
+  await f.setup.login(input("codebuddy", { env: { CODEBUDDY_CONFIG_DIR: "/chosen/account", CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } }))
+  assert.equal(f.runs[0]!.command, "/tools/codebuddy")
+  assert.deepEqual(f.runs[0]!.args, [])
+  assert.equal(f.runs[0]!.cwd, "/home/someone")
+  assert.equal(f.runs[0]!.env?.CODEBUDDY_CONFIG_DIR, "/chosen/account")
+  assert.equal(f.runs[0]!.env?.CODEBUDDY_INTERNET_ENVIRONMENT, "internal")
+  assert.deepEqual(f.calls.map(call => call.args), [["--version"], ["--help"]])
+})
+
+test("CodeBuddy Windows setup uses its native installer and safely launches an explicit npm shim", async () => {
+  const binary = "C:\\User's $tools\\codebuddy.cmd"
+  const powershell = "C:\\tools\\pwsh.exe"
+  const f = fixture({ platform: "win32", env: { PATH: "C:\\tools", SYSTEMROOT: "C:\\Windows" }, files: [binary, powershell],
+    answer: async (_command, args) => args[0] === "--version" ? result("2.182.0") : result("CodeBuddy Code") })
+  const provider = input("codebuddy", { binaryPath: binary, env: { CODEBUDDY_API_KEY: "secret-key", CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } })
+  await f.setup.install(provider)
+  assert.equal(f.runs[0]!.command, powershell)
+  assert.match(f.runs[0]!.args!.at(-1)!, /https:\/\/copilot\.tencent\.com\/cli\/install\.ps1/u)
+  assert.equal(f.runs[0]!.env?.CODEBUDDY_INTERNET_ENVIRONMENT, "internal")
+  assert.ok(!f.runs[0]!.args!.join(" ").includes("secret-key"))
+  await f.setup.login(provider)
+  assert.equal(f.runs[1]!.env?.DESKFLEET_PROVIDER_COMMAND, binary)
+  assert.equal(f.runs[1]!.env?.CODEBUDDY_API_KEY, "secret-key")
+  assert.equal(f.runs[1]!.args!.at(-1), "& $env:DESKFLEET_PROVIDER_COMMAND ; exit $LASTEXITCODE")
+  assert.ok(!f.runs[1]!.args!.join(" ").includes(binary))
 })
 
 test("OMP sign in opens its TUI in the setup home directory without sending a prompt", async () => {

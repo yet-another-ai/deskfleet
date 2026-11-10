@@ -7,6 +7,7 @@ import { commandEnvironment } from "./agent-command-path.ts"
 import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
 import { antigravityProvider } from "./agents/antigravity.ts"
 import { claudeCodeProvider } from "./agents/claude-code.ts"
+import { codebuddyProvider } from "./agents/codebuddy.ts"
 import { codexProvider } from "./agents/codex.ts"
 import { cursorProvider } from "./agents/cursor.ts"
 import { deepseekHarnessProvider } from "./agents/deepseek-harness.ts"
@@ -56,6 +57,7 @@ export class AgentProviders {
     this.#providerByTemplate = {
       codex: codexOverride,
       "claude-code": claudeCodeProvider,
+      codebuddy: codebuddyProvider,
       cursor: cursorProvider,
       grok: grokProvider,
       pi: piProvider,

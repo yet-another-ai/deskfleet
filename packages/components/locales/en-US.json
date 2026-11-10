@@ -1250,6 +1250,9 @@
     "binaryDetected": "Leave blank to use the detected executable.",
     "showDetails": "Details",
     "hideDetails": "Hide",
+    "codebuddyChina": "Use China edition",
+    "codebuddyChinaDescription": "Enable for CodeBuddy China accounts. Leave off for the international edition.",
+    "codebuddyAuthHint": "Log in to the selected CodeBuddy edition, or add CODEBUDDY_API_KEY under Advanced.",
     "templateDescription": {
       "codex": "OpenAI's coding agent.",
       "claude-code": "Anthropic's coding agent.",
@@ -1259,6 +1262,7 @@
       "omp": "Oh My Pi's coding agent CLI.",
       "deepseek-harness": "DeepSeek's agent harness CLI (dsh).",
       "antigravity": "Google's Antigravity coding agent.",
+      "codebuddy": "Tencent's CodeBuddy coding agent.",
       "acp": "Any agent that speaks the Agent Client Protocol."
     },
     "iconDefault": "Template default",
@@ -1288,6 +1292,7 @@
       "installing": "Installing…",
       "loggingIn": "Waiting for sign-in. Follow the prompts below.",
       "interactiveLoginHint": "Enter /login to sign in, then /quit to return.",
+      "codebuddyLoginHint": "Follow CodeBuddy's startup prompts or enter /login to sign in, then /exit to return.",
       "output": "Setup output",
       "installNotFound": "The installer finished, but the executable wasn't found. Check the output or set its path under Advanced.",
       "interrupted": "Setup was interrupted.",

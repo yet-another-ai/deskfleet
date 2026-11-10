@@ -921,6 +921,13 @@ actions use the same audited question flow as ordinary answers.
 The Oh My Pi template launches the installed `omp` CLI directly as `omp acp`,
 using its existing provider credentials. Its native ACP server supplies session
 configuration and supports client filesystem, terminal, and MCP integration.
+The CodeBuddy Code template launches the installed `codebuddy --acp` in the
+Session worktree's first directory. It uses the CLI's cached login or
+`CODEBUDDY_API_KEY`; the daemon never calls its interactive ACP `authenticate`
+method during startup. Settings uses Tencent's standalone installer and a
+separate login terminal, so installation does not require system Node.js/npm.
+The CodeBuddy edition switch writes the existing provider environment setting:
+`internal` for China and `public` for international, shared by setup and sessions.
 The DeepSeek Harness template launches the bundled CLI as `dsh --profile acp`;
 an explicit binary path selects an external CLI. `packages/dsh-runtime` owns
 source and packaged launch resolution, deployment, and runtime smoke checks.
@@ -958,7 +965,7 @@ Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
 paths use the bundled DeepSeek runtime or the template default (`codex`, `claude`,
-`agent`, `grok`, `pi`, `omp`, `agy`, or `acp-agent`), and configured environment
+`agent`, `grok`, `pi`, `omp`, `codebuddy`, `agy`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
 the machine's executable discovery, installation, and login actions. The

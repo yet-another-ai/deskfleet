@@ -1,6 +1,6 @@
 import type { TerminalSummary } from "./terminal-protocol.ts"
 
-export type AgentProviderTemplateId = "codex" | "claude-code" | "cursor" | "grok" | "pi" | "omp" | "deepseek-harness" | "antigravity" | "acp"
+export type AgentProviderTemplateId = "codex" | "claude-code" | "cursor" | "grok" | "pi" | "omp" | "deepseek-harness" | "antigravity" | "codebuddy" | "acp"
 
 export interface AgentProviderTemplate {
   id: AgentProviderTemplateId
@@ -81,6 +81,7 @@ export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
   { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp" },
   { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
   { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
+  { id: "codebuddy", name: "CodeBuddy Code", defaultBinaryPath: "codebuddy" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
 
