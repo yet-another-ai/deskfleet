@@ -122,10 +122,11 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     if (!shell) return "PowerShell is required to run the official installer."
     if (template === "omp") return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       "$ErrorActionPreference = 'Stop'; & ([scriptblock]::Create((Invoke-RestMethod 'https://omp.sh/install.ps1'))) -Binary; if ($LASTEXITCODE) { exit $LASTEXITCODE }"] }
+    if (template === "antigravity") return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+      "$ErrorActionPreference = 'Stop'; if (Test-Path \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\") { & \"$env:LOCALAPPDATA\\agy\\bin\\agy.exe\" update } else { Invoke-RestMethod 'https://antigravity.google/cli/install.ps1' | Invoke-Expression }; if ($LASTEXITCODE) { exit $LASTEXITCODE }"] }
     const url = template === "codex" ? "https://chatgpt.com/codex/install.ps1"
       : template === "claude-code" ? "https://claude.ai/install.ps1"
-        : template === "pi" ? "https://pi.dev/install.ps1"
-          : template === "antigravity" ? "https://antigravity.google/cli/install.ps1" : "https://cursor.com/install?win32=true"
+        : template === "pi" ? "https://pi.dev/install.ps1" : "https://cursor.com/install?win32=true"
     return { command: shell, args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
       `$ErrorActionPreference = 'Stop'; Invoke-RestMethod '${url}' | Invoke-Expression; if ($LASTEXITCODE) { exit $LASTEXITCODE }`] }
   }
@@ -139,11 +140,12 @@ async function installer(template: AgentProviderTemplateId, ctx: Context): Promi
     : await findCommand("bash", ctx, bashDirectories)
   if (!shell) return ctx.platform === "win32" ? "Git for Windows is required to install Grok." : "Bash is required to run the official installer."
   if (template === "omp") return { command: shell, args: ["-o", "pipefail", "-c", "curl -fsSL 'https://omp.sh/install' | sh -s -- --binary"] }
+  if (template === "antigravity") return { command: shell, args: ["-o", "pipefail", "-c",
+    "if [ -x \"$HOME/.local/bin/agy\" ]; then \"$HOME/.local/bin/agy\" update; else curl -fsSL 'https://antigravity.google/cli/install.sh' | bash; fi"] }
   const url = template === "codex" ? "https://chatgpt.com/codex/install.sh"
     : template === "claude-code" ? "https://claude.ai/install.sh"
       : template === "cursor" ? "https://cursor.com/install"
-        : template === "pi" ? "https://pi.dev/install.sh"
-          : template === "antigravity" ? "https://antigravity.google/cli/install.sh" : "https://x.ai/cli/install.sh"
+        : template === "pi" ? "https://pi.dev/install.sh" : "https://x.ai/cli/install.sh"
   return { command: shell, args: ["-o", "pipefail", "-c", `curl -fsSL '${url}' | ${template === "codex" || template === "pi" ? "sh" : "bash"}`] }
 }
 
@@ -322,7 +324,8 @@ export class ProviderSetup {
     if (result.status !== "found" || !result.binaryPath) throw new Error("Install or select the provider executable before signing in.")
     // Pi and OMP use /login in their TUI; OMP needs --allow-home for this setup terminal.
     const args = provider.template === "claude-code" ? ["auth", "login"]
-      : provider.template === "cursor" ? ["login"] : provider.template === "antigravity" ? ["acp", "--login"]
+      : provider.template === "cursor" ? ["login"] : provider.template === "antigravity"
+        ? ["acp", ...(ctx.env.GEMINI_HOME ? ["--gemini-dir", ctx.env.GEMINI_HOME] : []), "--login"]
         : provider.template === "pi" ? [] : provider.template === "omp" ? ["--allow-home"] : ["login", "--device-auth"]
     const launch = launchProviderCommand(result.binaryPath, args,
       provider.template === "cursor" ? { ...ctx.env, NO_OPEN_BROWSER: "1" } : ctx.env, ctx.platform)

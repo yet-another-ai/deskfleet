@@ -82,7 +82,8 @@ export function createAntigravityClientWrapper(
   client: AgentClient,
   options: { dataDir?: string; pollIntervalMs?: number } = {},
 ) {
-  const dataDir = options.dataDir ?? process.env.ANTIGRAVITY_CLI_DIR ?? join(homedir(), ".gemini", "antigravity-cli")
+  const dataDir = options.dataDir ?? process.env.ANTIGRAVITY_CLI_DIR
+    ?? join(process.env.GEMINI_HOME ?? join(homedir(), ".gemini"), "antigravity-cli")
   const pollMs = options.pollIntervalMs ?? 250
   const trackers = new Map<string, { pending: Set<string>; suppress: boolean; onFlush?: () => void }>()
   const aborts = new Map<string, AbortController>()
@@ -187,7 +188,10 @@ export function createAntigravityClientWrapper(
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   async connect(config, client) {
-    const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir: config.env?.ANTIGRAVITY_CLI_DIR })
-    return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", ["acp"], config.env), wrappedClient))
+    const geminiDir = config.env?.GEMINI_HOME ?? process.env.GEMINI_HOME
+    const dataDir = config.env?.ANTIGRAVITY_CLI_DIR ?? (geminiDir ? join(geminiDir, "antigravity-cli") : undefined)
+    const args = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
+    const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir })
+    return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", args, config.env), wrappedClient))
   },
 }
