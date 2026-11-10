@@ -339,9 +339,16 @@ test.each([
 
   expect(view.find("pre code").exists()).toBe(false)
   const frame = view.get("iframe[data-html-preview]")
-  expect(frame.attributes("srcdoc")).toBe(html)
+  expect(frame.attributes("src")).toBe("./html-preview.html")
+  expect(frame.attributes("srcdoc")).toBeUndefined()
   expect(frame.attributes("sandbox")).toBe("allow-scripts allow-forms")
   expect(frame.attributes("sandbox")).not.toContain("allow-same-origin")
+
+  const postMessage = vi.fn()
+  Object.defineProperty(frame.element, "contentWindow", { value: { postMessage }, configurable: true })
+  await frame.trigger("load")
+  await frame.trigger("load")
+  expect(postMessage).toHaveBeenCalledExactlyOnceWith({ html }, "*")
 
   await view.get('[data-preview-action="source"]').trigger("click")
   await flushPromises()

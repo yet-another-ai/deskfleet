@@ -27,7 +27,7 @@ export function rendererContentSecurityPolicy(production: boolean, statsigEnable
     // Fetch bundled WASM and in-memory previews; API traffic stays in main.
     `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",
-    "frame-src 'none'",
+    "frame-src 'self' blob:",
     "form-action 'none'",
     "base-uri 'none'",
   ].join("; ")
