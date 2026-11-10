@@ -340,3 +340,35 @@ test("branches lists local and remote branches without remote HEAD symrefs and o
     branches: [],
   })
 })
+
+test("home directory is refused as a Git repository while child repositories inside home remain usable", async context => {
+  const home = await fixture(context)
+  const downloads = join(home, "Downloads")
+  const project = join(home, "Projects", "app")
+  await repository(home)
+  await mkdir(downloads, { recursive: true })
+  await repository(project)
+  const previous = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
+  try {
+    const snapshot = await inspection.status("1", [home, downloads, project])
+    assert.equal(snapshot.repositories.length, 1)
+    assert.equal(snapshot.repositories[0]!.root, await realpath(project))
+    assert.equal(snapshot.directories[0]!.repositoryId, null)
+    assert.match(snapshot.directories[0]!.error!, /Refusing to inspect the home or root directory/u)
+    assert.equal(snapshot.directories[1]!.repositoryId, null)
+    assert.match(snapshot.directories[1]!.error!, /Refusing to inspect the home or root directory/u)
+    assert.equal(snapshot.directories[2]!.repositoryId, snapshot.repositories[0]!.id)
+    assert.deepEqual(await inspection.branches("1", home), { workspaceId: "1", currentBranch: null, branches: [] })
+    const errors: (string | undefined)[] = []
+    const stop = await inspection.watch([home], error => errors.push(error))
+    stop()
+    assert.ok(errors.some(error => error?.includes("Refusing to inspect the home or root directory")))
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})

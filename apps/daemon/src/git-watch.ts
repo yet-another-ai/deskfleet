@@ -9,6 +9,10 @@ const key = (path: string) => path.split(sep).join("/")
 // Windows briefly denies `.git/config` while another Git process holds it (common
 // during submodule add). Treat that as retryable contention, not a sticky failure.
 const CONFIG_LOCK_RETRIES = 40
+// libuv on macOS multiplexes all non-recursive fs.watch handles onto a single
+// FSEventStreamRef; rebuilding or closing thousands of handles blocks the main
+// event loop on uv_sem_wait inside uv__fsevents_close.
+const MAX_DIRECTORIES = 2_048
 const transientGitConfigLock = (error: unknown) => {
   const text = detail(error)
   return /unable to access .+config['"]?: Permission denied/iu.test(text)
@@ -28,6 +32,7 @@ interface DirectoryWatch { watcher: FSWatcher; metadata: boolean }
 export class GitWatch {
   readonly root: string
   readonly #changed: (error?: string) => void
+  readonly #maxDirectories: number
   readonly #directories = new Map<string, DirectoryWatch>()
   readonly #submodules = new Map<string, GitWatch>()
   #ignored = new Set<string>()
@@ -46,9 +51,10 @@ export class GitWatch {
   #configLockStreak = 0
   healthy = true
 
-  constructor(root: string, changed: (error?: string) => void) {
+  constructor(root: string, changed: (error?: string) => void, maxDirectories = MAX_DIRECTORIES) {
     this.root = root
     this.#changed = changed
+    this.#maxDirectories = maxDirectories
   }
 
   get error(): string | undefined { return this.#error }
@@ -116,6 +122,14 @@ export class GitWatch {
       if (filename !== null && this.#gitDirectories.has(directory) && !/^(HEAD|index|packed-refs|config|config\.worktree|commondir|refs|info)(\/|$)/u.test(rel)) return
     } else {
       const rel = key(relative(this.root, path))
+      // A plain directory only watches its root for a later git init; ordinary
+      // writes and renames cannot change Git status and must not trigger scans.
+      if (!this.#repository) {
+        if (filename !== null && rel !== ".git" && !rel.startsWith(".git/")) return
+        this.#notify()
+        this.#schedule()
+        return
+      }
       if (filename !== ".gitignore" && this.#ignored.has(path) && !this.#tracked.has(rel)) return
       // The metadata subscriptions handle .git; watching its contents as files
       // would wake on object writes, reflogs and our own status commands.
@@ -125,7 +139,7 @@ export class GitWatch {
       }
       const external = relative(this.root, directory)
       if (this.#externalIgnore && directory === dirname(this.#externalIgnore) && (external.startsWith(`..${sep}`) || isAbsolute(external)) && path !== this.#externalIgnore) return
-      if (this.#repository && filename !== null && rel !== ".git" && filename !== ".gitignore" && path !== this.#externalIgnore && !this.#tracked.has(rel)) {
+      if (filename !== null && rel !== ".git" && filename !== ".gitignore" && path !== this.#externalIgnore && !this.#tracked.has(rel)) {
         this.#candidates.set(path, event === "rename" || this.#candidates.get(path) === true)
         if (!this.#classifying) {
           this.#classifying = true
@@ -258,19 +272,39 @@ export class GitWatch {
       }
     }
     const ignored = new Set<string>()
-    let queue = [this.root]
+    // Never walk subdirectories of a non-repository: without git check-ignore,
+    // a broad directory (such as $HOME) would attach watches to every folder on disk.
+    let queue = repository ? [this.root] : []
     while (queue.length && !this.#closed) {
       const entries: { path: string; directory: boolean }[] = []
       for (const directory of queue) {
         try {
           this.#watch(directory, false, wanted)
-          for (const entry of await readdir(directory, { withFileTypes: true })) {
+          const children = await readdir(directory, { withFileTypes: true })
+          // Git status treats untracked subdirectories containing .git as opaque
+          // nested repositories; skip them instead of watching their working trees.
+          if (directory !== this.root && !this.#tracked.has(key(relative(this.root, directory))) && children.some(entry => entry.name === ".git")) {
+            this.#directories.get(directory)?.watcher.close()
+            this.#directories.delete(directory)
+            wanted.delete(directory)
+            continue
+          }
+          // Release all handles before failing so an unignored tree (e.g. node_modules
+          // or an accidental git init in a broad parent) cannot stall libuv FSEvents.
+          if (wanted.size > this.#maxDirectories) {
+            for (const { watcher } of this.#directories.values()) watcher.close()
+            this.#directories.clear()
+            for (const watcher of this.#submodules.values()) watcher.close()
+            this.#submodules.clear()
+            throw new Error("Repository has too many directories to watch automatically")
+          }
+          for (const entry of children) {
             if (entry.name !== ".git") entries.push({ path: join(directory, entry.name), directory: entry.isDirectory() })
           }
         } catch (error) { if (missing(error) && directory !== this.root) continue; throw error }
       }
       const candidates = entries.filter(entry => !this.#tracked.has(key(relative(this.root, entry.path))))
-      if (repository && candidates.length) {
+      if (candidates.length) {
         const input = candidates.map(entry => "./" + key(relative(this.root, entry.path))).join("\0") + "\0"
         for (const path of (await git(this.root, ["check-ignore", "--no-index", "-z", "--stdin"], input)).split("\0")) {
           if (path) ignored.add(resolve(this.root, path))
@@ -289,7 +323,7 @@ export class GitWatch {
           if (error) { this.healthy = false; this.#error = error }
           else if (this.#error) this.#schedule()
           this.#notify()
-        })
+        }, this.#maxDirectories)
         this.#submodules.set(path, watcher)
         await watcher.start()
       } catch (error) { if (!missing(error)) throw error }
