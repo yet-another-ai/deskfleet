@@ -25,7 +25,7 @@ export default defineConfig(({ command }) => {
           handler: (html) => injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
         },
       },
-      UnoCSS({ configFile: resolve(import.meta.dirname, "uno.config.ts") }),
+      UnoCSS({ configFile: resolve(import.meta.dirname, "../../packages/components/uno.config.ts") }),
       vue({ features: { vapor: true }, ...tresTemplateCompilerOptions }),
       VueI18nPlugin({
         // Locale JSON stays plain so the main process can import the same catalogs.

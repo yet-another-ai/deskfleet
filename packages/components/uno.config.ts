@@ -107,7 +107,7 @@ export default defineConfig({
     "ui-meter-fill": "h-full rounded-full",
 
     // Navigation
-    "ui-nav-item": "flex h-8 items-center gap-2.5 rounded-lg text-ui-text ui-motion active:scale-[0.985] [&:not(.ui-nav-active):hover]:bg-ui-hover",
+    "ui-nav-item": "flex h-8 items-center gap-2.5 rounded-lg [&:not(.ui-nav-active)]:text-ui-text ui-motion active:scale-[0.985] [&:not(.ui-nav-active):hover]:bg-ui-hover",
     "ui-nav-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/20",
     // Underlined tabs; styles.css draws the underline, which grows in under `ui-tab-active`.
     "ui-tab": "relative flex shrink-0 cursor-pointer items-center whitespace-nowrap text-ui-text-muted ui-motion hover:text-ui-text",

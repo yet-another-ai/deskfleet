@@ -47,7 +47,8 @@ function destination(section: Section) {
           <a
             :href="href" :aria-label="t(section.label)"
             :aria-current="section === activeSection ? 'page' : undefined"
-            class="section-link flex h-9 min-w-9 items-center justify-center rounded-full px-2.5 text-[13px] font-medium text-ui-text-muted hover:bg-ui-hover hover:text-ui-text"
+            class="section-link ui-nav-item h-9 min-w-9 justify-center rounded-full px-2.5 text-[13px]"
+            :class="section === activeSection && 'ui-nav-active'"
             @click="navigate"
           >
             <component :is="section.icon" :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
@@ -63,17 +64,13 @@ function destination(section: Section) {
 <style scoped>
 .section-link {
   min-width: 2.25rem;
-  transition: background-color var(--ui-duration-fast) var(--ui-ease-out), color var(--ui-duration-fast) var(--ui-ease-out);
+  gap: 0;
 }
 .section-label {
   max-width: 0;
   margin-inline-start: 0;
   opacity: 0;
   transition: max-width var(--ui-duration-base) var(--ui-ease-out), margin-inline-start var(--ui-duration-base) var(--ui-ease-out), opacity var(--ui-duration-fast) var(--ui-ease-out);
-}
-.section-link[aria-current="page"] {
-  background: var(--ui-color-active);
-  color: var(--ui-color-text);
 }
 .section-link[aria-current="page"] .section-label {
   max-width: 12rem;

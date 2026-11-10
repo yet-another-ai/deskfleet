@@ -65,6 +65,12 @@ body {
   user-select: none;
 }
 
+/* Sidebar interactive items tint their hover and active states with the theme hue. */
+.bg-ui-sidebar {
+  --ui-color-hover: color-mix(in srgb, var(--ui-color-accent) 10%, transparent);
+  --ui-color-active: color-mix(in srgb, var(--ui-color-accent) 14%, transparent);
+}
+
 button,
 input,
 select,
