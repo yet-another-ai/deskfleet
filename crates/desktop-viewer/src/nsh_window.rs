@@ -399,12 +399,12 @@ impl Viewer {
     }
 
     fn local_ui(&self, position: Point<Pixels>, window: &Window) -> bool {
-        is_local_pointer(
+        pointer_target(
             &self.toolbar_state,
             position,
             Chrome::for_window(window).content_bounds(),
             self.toolbar_bounds(window),
-        )
+        ) != PointerTarget::Remote
     }
 
     fn resume_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -523,7 +523,22 @@ impl Viewer {
             cx.stop_propagation();
             return;
         }
-        self.local_pointer = self.local_ui(event.position, window);
+        let target = pointer_target(
+            &self.toolbar_state,
+            event.position,
+            Chrome::for_window(window).content_bounds(),
+            self.toolbar_bounds(window),
+        );
+        if target == PointerTarget::NativeChrome {
+            // Native move/size loops can consume the matching button-up. Do
+            // not latch `local_pointer`, or remote pointer forwarding would
+            // stay suspended until the next click.
+            self.local_pointer = false;
+            self.video_focused = false;
+            self.release(window, cx);
+            return;
+        }
+        self.local_pointer = target == PointerTarget::LocalUi;
         if self.toolbar_state.settings_open
             && !self.select_open
             && !self.toolbar_bounds(window).contains(&event.position)
@@ -642,19 +657,34 @@ impl Viewer {
     }
 }
 
-/// Native title bars, resize borders, and other non-client areas live outside
-/// the GPUI client content. They belong to the platform, so their presses must
-/// reach `DefWindowProc` instead of being consumed as remote desktop input.
-fn is_local_pointer(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointerTarget {
+    /// A native title bar, resize border, or other non-client area.
+    NativeChrome,
+    /// The floating toolbar, its settings panel, or another local surface.
+    LocalUi,
+    /// The remote desktop video.
+    Remote,
+}
+
+fn pointer_target(
     state: &ToolbarState,
     position: Point<Pixels>,
     content: Bounds<Pixels>,
     toolbar: Bounds<Pixels>,
-) -> bool {
-    state.settings_open
+) -> PointerTarget {
+    if !content.contains(&position) {
+        // Native title bars, resize borders, and other non-client areas live
+        // outside the GPUI client content. They belong to the platform.
+        PointerTarget::NativeChrome
+    } else if state.settings_open
         || state.ui.status != Status::Connected
-        || !content.contains(&position)
         || toolbar.contains(&position)
+    {
+        PointerTarget::LocalUi
+    } else {
+        PointerTarget::Remote
+    }
 }
 
 impl Render for Viewer {
@@ -790,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn native_non_client_points_stay_local_after_connecting() {
+    fn native_non_client_points_are_native_chrome_after_connecting() {
         let state = connected();
         for position in [
             point(px(480.), px(-24.)), // native title bar
@@ -798,45 +828,40 @@ mod tests {
             point(px(964.), px(320.)), // native right border
             point(px(480.), px(644.)), // native bottom border
         ] {
-            assert!(is_local_pointer(&state, position, content(), toolbar()));
+            assert_eq!(
+                pointer_target(&state, position, content(), toolbar()),
+                PointerTarget::NativeChrome
+            );
         }
     }
 
     #[test]
-    fn connected_video_is_forwarded_but_local_controls_are_not() {
+    fn connected_video_is_remote_but_local_controls_are_local() {
         let state = connected();
-        assert!(!is_local_pointer(
-            &state,
-            point(px(480.), px(320.)),
-            content(),
-            toolbar()
-        ));
-        assert!(is_local_pointer(
-            &state,
-            toolbar().center(),
-            content(),
-            toolbar()
-        ));
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::Remote
+        );
+        assert_eq!(
+            pointer_target(&state, toolbar().center(), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
     }
 
     #[test]
     fn disconnected_or_open_settings_keep_client_pointer_local() {
         let mut state = connected();
         state.ui.status = Status::Disconnected;
-        assert!(is_local_pointer(
-            &state,
-            point(px(480.), px(320.)),
-            content(),
-            toolbar()
-        ));
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
 
         let mut state = connected();
         state.settings_open = true;
-        assert!(is_local_pointer(
-            &state,
-            point(px(480.), px(320.)),
-            content(),
-            toolbar()
-        ));
+        assert_eq!(
+            pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
     }
 }
