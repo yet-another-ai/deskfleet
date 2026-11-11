@@ -15,6 +15,7 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0",
+    "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/capacitor-bridge": "workspace:*"
   },
   "devDependencies": {
