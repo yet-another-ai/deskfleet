@@ -1,6 +1,7 @@
 import AuthenticationServices
 import Capacitor
 import Foundation
+import ReplayKit
 import UIKit
 
 @_silgen_name("deskfleet_ios_start")
@@ -44,7 +45,10 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "send", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "testNat", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "testNat", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "outlineAudioStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startOutlineAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopOutlineAudio", returnType: CAPPluginReturnPromise)
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
@@ -116,6 +120,15 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         }
     }
 
+    private lazy var sharedStore = OutlineAudioSharedStore()
+    private var pollTimer: DispatchSourceTimer?
+    private var pendingStartCall: CAPPluginCall?
+    private var pickerView: RPSystemBroadcastPickerView?
+    private var appLifecycleObservers: [NSObjectProtocol] = []
+    private var pickerPresented = false
+    private var startDeadlineMs: UInt64 = 0
+    private var lastAudioTs: UInt64 = 0
+
     @objc func open(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
             guard let self, let root = self.bridge?.viewController else {
@@ -180,7 +193,126 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         }
     }
 
+    @objc func outlineAudioStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return call.resolve(["supported": false, "active": false]) }
+            let active = self.sharedStore?.isCurrentlyActive() ?? false
+            if active { self.startPollingBands() }
+            call.resolve(["supported": self.sharedStore != nil, "active": active])
+        }
+    }
+
+    @objc func startOutlineAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let root = self.bridge?.viewController, let store = self.sharedStore else {
+                call.reject("System audio broadcast is unavailable.", "unavailable")
+                return
+            }
+            if store.isCurrentlyActive() {
+                self.startPollingBands()
+                call.resolve(["started": true])
+                return
+            }
+
+            self.resolvePendingStart(started: false)
+            store.setStopRequested(false)
+            self.pendingStartCall = call
+            self.pickerPresented = false
+            self.startDeadlineMs = OutlineAudioSharedStore.nowMs() + 2_000
+
+            let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            picker.preferredExtension = "\(Bundle.main.bundleIdentifier ?? "ai.yetanother.deskfleet").BroadcastUpload"
+            picker.showsMicrophoneButton = false
+            picker.isHidden = true
+            picker.isUserInteractionEnabled = false
+            root.view.addSubview(picker)
+            self.pickerView = picker
+
+            guard let button = picker.subviews.compactMap({ $0 as? UIButton }).first else {
+                self.resolvePendingStart(started: false, failure: "Broadcast picker is unavailable.")
+                return
+            }
+
+            let center = NotificationCenter.default
+            self.appLifecycleObservers = [
+                center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                    self?.pickerPresented = true
+                    self?.startDeadlineMs = .max
+                },
+                center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                    guard let self, self.pickerPresented else { return }
+                    self.startDeadlineMs = OutlineAudioSharedStore.nowMs() + 1_500
+                }
+            ]
+            self.startPollingBands()
+            button.sendActions(for: .touchUpInside)
+        }
+    }
+
+    @objc func stopOutlineAudio(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            self?.resolvePendingStart(started: false)
+            self?.stopPollingBands()
+            self?.sharedStore?.setStopRequested(true)
+            call.resolve()
+        }
+    }
+
+    private func resolvePendingStart(started: Bool, failure: String? = nil) {
+        for observer in appLifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+        appLifecycleObservers.removeAll()
+        pickerView?.removeFromSuperview()
+        pickerView = nil
+        guard let call = pendingStartCall else { return }
+        pendingStartCall = nil
+        if let failure { call.reject(failure, "unavailable") }
+        else { call.resolve(["started": started]) }
+    }
+
+    private func startPollingBands() {
+        guard pollTimer == nil else { return }
+        lastAudioTs = 0
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + .milliseconds(22), repeating: .milliseconds(22), leeway: .milliseconds(4))
+        timer.setEventHandler { [weak self] in self?.pollSharedSpectrum() }
+        pollTimer = timer
+        timer.resume()
+    }
+
+    private func stopPollingBands() {
+        pollTimer?.cancel()
+        pollTimer = nil
+    }
+
+    private func pollSharedSpectrum() {
+        guard let store = sharedStore else { return }
+        let nowMs = OutlineAudioSharedStore.nowMs()
+        let (alive, sampleRate, binsBase64) = store.readState(nowMs: nowMs, lastAudioTs: &lastAudioTs)
+
+        if pendingStartCall != nil {
+            if alive {
+                resolvePendingStart(started: true)
+            } else if nowMs >= startDeadlineMs {
+                stopPollingBands()
+                resolvePendingStart(started: false, failure: pickerPresented ? nil : "Broadcast picker did not appear.")
+            }
+            return
+        }
+
+        guard alive else {
+            stopPollingBands()
+            notifyListeners("outlineAudioStopped", data: [:])
+            return
+        }
+
+        if let binsBase64 {
+            notifyListeners("outlineAudioBands", data: ["sampleRate": sampleRate, "bins": binsBase64])
+        }
+    }
+
     deinit {
+        pollTimer?.cancel()
+        for observer in appLifecycleObservers { NotificationCenter.default.removeObserver(observer) }
         let session = authSession
         authSession = nil
         if Thread.isMainThread {
