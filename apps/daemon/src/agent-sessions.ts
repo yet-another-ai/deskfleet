@@ -208,11 +208,17 @@ export class AgentSessions {
   preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
   async resumeArchiving(): Promise<void> {
-    for (const session of await this.journal.list()) {
-      if (this.#closed) return
-      if (session.archiveState !== "archiving" || !["ready", "provision_failed"].includes(session.lifecycle)) continue
-      await this.#continueArchive(session.id).catch(error => console.error(`Could not finish archiving Session ${session.id}`, error))
-    }
+    // Register before awaiting journal I/O so close() drains this startup work
+    // while the catalog pool is still open (fire-and-forget from openMachine).
+    const pending = (async () => {
+      for (const session of await this.journal.list()) {
+        if (this.#closed) return
+        if (session.archiveState !== "archiving" || !["ready", "provision_failed"].includes(session.lifecycle)) continue
+        await this.#continueArchive(session.id).catch(error => console.error(`Could not finish archiving Session ${session.id}`, error))
+      }
+    })()
+    this.#discovery.add(pending)
+    try { await pending } finally { this.#discovery.delete(pending) }
   }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {

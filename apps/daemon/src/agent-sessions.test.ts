@@ -823,6 +823,29 @@ test("failed archive retains archiving admission state and retry survives servic
   } finally { await restarted.close() }
 })
 
+test("close drains an in-flight resumeArchiving journal listing", async t => {
+  const f = await setup(t)
+  let releaseList!: () => void
+  const listGate = new Promise<void>(resolve => { releaseList = resolve })
+  let listing = false
+  const list = f.service.journal.list.bind(f.service.journal)
+  f.service.journal.list = async () => {
+    listing = true
+    await listGate
+    return list()
+  }
+  const resume = f.service.resumeArchiving()
+  for (let n = 0; n < 400 && !listing; n++) await delay(5)
+  assert.equal(listing, true)
+  let closed = false
+  const closing = f.service.close().then(() => { closed = true })
+  await delay(20)
+  assert.equal(closed, false)
+  releaseList()
+  await closing
+  await resume
+})
+
 test("archive serializes with terminal admission and never completes before resource closure", async t => {
   const f = await setup(t)
   const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path

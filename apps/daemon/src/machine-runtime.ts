@@ -85,7 +85,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     await agents.init()
     await terminals.init()
     agents.onSessionArchive(worktreeId => terminals.stopOwned(worktreeId))
-    void agents.resumeArchiving()
+    void agents.resumeArchiving().catch(error => console.error("Could not resume Session archiving", error))
     schedules = new ScheduledTasks(directory, { agents, catalog, providers, authorize })
     await schedules.init()
     operations = new MachineOperations({ agents, catalog, providers, terminals, setup, schedules, mcpServers, capabilities: options.capabilities })
