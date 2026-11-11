@@ -37,6 +37,8 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
   const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (hash) void mainWindow.loadURL(`${entrypoint.url}${hash}`)
+    // Hiding the Dock icon resets macOS focus, which otherwise tabs into the first control on show.
+    if (!mainWindow.isVisible()) mainWindow.webContents.focus()
     mainWindow.show()
     mainWindow.focus()
     return
