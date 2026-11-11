@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Capacitor
 import Foundation
 import UIKit
@@ -35,10 +36,11 @@ private let viewerEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void 
 }
 
 @objc(DeskFleetBridge)
-public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin {
+public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
     public let identifier = "DeskFleetBridge"
     public let jsName = "DeskFleetBridge"
     public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "authenticate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "send", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
@@ -47,6 +49,72 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin {
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
+    private var authSession: ASWebAuthenticationSession?
+
+    @objc func authenticate(_ call: CAPPluginCall) {
+        guard let rawUrl = call.getString("url"),
+              let url = URL(string: rawUrl),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let callbackScheme = call.getString("callbackScheme"),
+              !callbackScheme.isEmpty else {
+            call.reject("Invalid authentication parameters")
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                call.reject("Bridge unavailable")
+                return
+            }
+            self.authSession?.cancel()
+
+            weak var createdSession: ASWebAuthenticationSession?
+            let session = ASWebAuthenticationSession(
+                url: url,
+                callbackURLScheme: callbackScheme
+            ) { [weak self] callbackURL, error in
+                DispatchQueue.main.async {
+                    if let createdSession, self?.authSession === createdSession {
+                        self?.authSession = nil
+                    }
+                    if let error {
+                        if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
+                            call.reject("Sign-in canceled", "CANCELED", error)
+                        } else {
+                            call.reject(error.localizedDescription, nil, error)
+                        }
+                        return
+                    }
+                    guard let callbackURL else {
+                        call.reject("Missing authentication callback URL")
+                        return
+                    }
+                    call.resolve(["url": callbackURL.absoluteString])
+                }
+            }
+            createdSession = session
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = false
+            self.authSession = session
+
+            if !session.start() {
+                self.authSession = nil
+                call.reject("Failed to start authentication session")
+            }
+        }
+    }
+
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated {
+            self.bridge?.viewController?.viewIfLoaded?.window
+                ?? UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .flatMap(\.windows)
+                    .first(where: \.isKeyWindow)
+                ?? ASPresentationAnchor()
+        }
+    }
 
     @objc func open(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
@@ -112,7 +180,16 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    deinit { Self.stopSession() }
+    deinit {
+        let session = authSession
+        authSession = nil
+        if Thread.isMainThread {
+            session?.cancel()
+        } else {
+            DispatchQueue.main.async { session?.cancel() }
+        }
+        Self.stopSession()
+    }
 
     internal static func stopSession() {
         deskfleetIosStop()

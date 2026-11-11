@@ -16,6 +16,7 @@ import {
 import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outline-audio"
 
 export interface DeskFleetBridgeCapacitorPlugin {
+  authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>

@@ -24,6 +24,7 @@ export default defineConfig({
           include: [
             "src/main/**/*.test.ts",
             "src/shared/**/*.test.ts",
+            "../web/src/**/*.test.ts",
             "../../packages/client/src/**/*.test.ts",
             "../../packages/capacitor-bridge/src/**/*.test.ts",
           ],

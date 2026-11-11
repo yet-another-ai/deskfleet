@@ -30,5 +30,8 @@
     "src",
     "../../packages/components/src",
     "../../packages/client/src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

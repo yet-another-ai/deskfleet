@@ -28,6 +28,7 @@ let package = Package(
             path: "ios/Sources/DeskFleetBridge",
             linkerSettings: [
                 .linkedFramework("AudioToolbox"),
+                .linkedFramework("AuthenticationServices"),
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("CoreGraphics"),
