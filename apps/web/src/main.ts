@@ -3,6 +3,7 @@ import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
 import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
+  createCapacitorOutlineAudioApi,
 } from "@deskfleet/capacitor-bridge"
 import { createPlayUpdates } from "@deskfleet/capacitor-bridge/app-updates"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
@@ -28,6 +29,7 @@ if (Capacitor.isNativePlatform() && adapter.central) {
   )
 }
 if (Capacitor.getPlatform() === "android") {
+  adapter.outlineAudio = createCapacitorOutlineAudioApi()
   const play = createPlayUpdates()
   adapter.updates = play.updates
   adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: play.getAutoDownload, setAutoDownloadUpdates: play.setAutoDownload }
