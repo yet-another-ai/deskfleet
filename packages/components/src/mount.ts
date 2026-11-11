@@ -3,6 +3,7 @@ import { createApp, vaporInteropPlugin } from "vue"
 import { getClient } from "@deskfleet/client/platform"
 import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
+import { useOutlineAudioStore } from "./stores/outline-audio.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
 import { installErrorReporting, installErrorReportingAccount, shutdownErrorReporting } from "./services/error-reporting.ts"
@@ -12,6 +13,7 @@ import "./styles.css"
 export async function mountDeskfleet(target: string | Element = "#root") {
   const state = createPinia()
   await useAppearanceStore(state).initialize()
+  await useOutlineAudioStore(state).initialize()
   const previewWindow = window.location.hash.startsWith("#/preview")
   const mermaidWindow = window.location.hash.startsWith("#/mermaid")
   if (previewWindow || mermaidWindow) {

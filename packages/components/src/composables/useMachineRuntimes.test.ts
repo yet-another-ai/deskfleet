@@ -5,6 +5,7 @@ import { createPinia, disposePinia } from "pinia"
 import { defineComponent, effectScope, h, nextTick } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { useAppearanceStore } from "../stores/appearance.ts"
+import { useOutlineAudioStore } from "../stores/outline-audio.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
@@ -41,7 +42,7 @@ async function fixture() {
   await flushPromises()
   const state = createPinia()
   const scope = effectScope()
-  const runtimes = scope.run(() => createMachineRuntimes(getClient(), session, useAppearanceStore(state)))!
+  const runtimes = scope.run(() => createMachineRuntimes(getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state)))!
   cleanups.push(() => { scope.stop(); session.dispose(); disposePinia(state) })
   return { ...fake, first, second, session, scope, runtimes, createPeer, closePeer, catalog }
 }
