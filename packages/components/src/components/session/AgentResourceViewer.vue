@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LocateFixed } from "@lucide/vue"
+import { Download, ExternalLink, FolderOpen, LocateFixed } from "@lucide/vue"
 import { getActivePinia } from "pinia"
 import { DialogTitle } from "reka-ui"
 import { splitLines } from "shiki/core"
@@ -7,7 +7,7 @@ import { computed, nextTick, onBeforeUnmount, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { FileResource, FileResourceRequest, FilesApi } from "../../../../client/src/files.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
-import { fileResourceLines } from "../../services/agent-resources.ts"
+import { fileResourceLines, revealResourceLabel } from "../../services/agent-resources.ts"
 import { fileCodeLanguage, highlighter } from "../../services/code-highlight.ts"
 import { previewKindFromMime, previewKindFromUri, type MediaPreviewKind, type PreviewSource } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
@@ -35,6 +35,11 @@ const client = usePlatformClient()
 const filesApi = computed(() => props.api ?? client.files)
 const entry = ref<FileResource>()
 const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.openResource))
+const canRevealResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.revealResource))
+const hasFileActions = computed(() => !loading.value && entry.value?.kind === "file")
+const hasPrimaryAction = computed(() => hasFileActions.value && (canOpenResource.value || !canRevealResource.value))
+const primaryActionLabel = computed(() => t(canOpenResource.value ? "files.openResource" : "files.downloadResource"))
+const revealLabel = computed(() => revealResourceLabel(client.platform, t))
 const content = ref<string>()
 const isHtmlContent = computed(() => content.value !== undefined && Boolean(entry.value && fileCodeLanguage(entry.value.name) === "html"))
 const renderingHtml = ref(false)
@@ -102,29 +107,28 @@ async function open(): Promise<void> {
             await nextTick()
             lineElement.value?.scrollIntoView({ block: "center" })
           }
-        } catch { error.value = t(canOpenResource.value ? "files.previewUnavailableLocal" : "files.previewUnavailable") }
+        } catch { error.value = t((canOpenResource.value || canRevealResource.value) ? "files.previewUnavailableLocal" : "files.previewUnavailable") }
       }
     }
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) loading.value = false }
 }
+async function runAction(task: () => Promise<unknown>): Promise<void> {
+  try { await task() }
+  catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+}
 async function fileAction(): Promise<void> {
   if (entry.value?.kind !== "file") return
-  if (canOpenResource.value) {
-    try { await filesApi.value!.openResource!(request) }
-    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
-    return
-  }
-  if (!previewBytes.value) {
-    try { await filesApi.value?.saveResource(request) }
-    catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
-    return
-  }
+  if (canOpenResource.value) return runAction(() => filesApi.value!.openResource!(request))
+  if (!previewBytes.value) return runAction(() => filesApi.value?.saveResource(request) ?? Promise.resolve())
   imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
   const link = document.createElement("a")
   link.href = imageUrl.value
   link.download = entry.value.name
   link.click()
+}
+function revealResource(): Promise<void> | undefined {
+  if (entry.value?.kind === "file" && canRevealResource.value) return runAction(() => filesApi.value!.revealResource!(request))
 }
 function locateOriginal(): void {
   const pinia = getActivePinia()
@@ -172,32 +176,20 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :source="{ ...source, sessionId: source?.sessionId ?? request.sessionId, itemId: request.uri }"
       :resource-request="request"
       :api="filesApi"
-      :can-open="canOpenResource"
+      :can-open="entry?.canOpen"
       mode="tab"
       class="h-full flex-1 rounded-none border-0"
     />
     <template v-else>
-      <header class="flex shrink-0 items-center justify-between gap-2 border-b border-ui-border px-4 py-2">
+      <header class="flex shrink-0 items-center justify-between gap-2 border-b border-ui-border px-4 py-1.5">
         <span class="min-w-0 truncate text-xs font-medium text-ui-text-muted" :title="entry?.path ?? request.uri">
           {{ entry?.name ?? title ?? request.uri }}
         </span>
-        <div class="flex shrink-0 items-center gap-1.5">
-          <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
-          <UiButton
-            variant="ghost"
-            size="icon"
-            :label="t('mermaid.locateMessage')"
-            data-preview-action="locate-message"
-            @click="locateOriginal"
-          ><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <UiButton
-            v-if="!loading && entry?.kind === 'file'"
-            type="button"
-            :data-preview-action="canOpenResource ? 'open' : 'download'"
-            @click="fileAction"
-          >
-            {{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}
-          </UiButton>
+        <div class="flex shrink-0 items-center gap-0.5">
+          <UiButton v-if="isHtmlContent" type="button" variant="ghost" size="sm" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
+          <UiButton variant="ghost" size="icon" :label="t('mermaid.locateMessage')" data-preview-action="locate-message" @click="locateOriginal"><LocateFixed :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton v-if="hasFileActions && canRevealResource" variant="ghost" size="icon" :label="revealLabel" data-preview-action="reveal" @click="revealResource"><FolderOpen :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton v-if="hasPrimaryAction" variant="ghost" size="icon" :label="primaryActionLabel" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction"><component :is="canOpenResource ? ExternalLink : Download" :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </header>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -224,7 +216,13 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
           ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
         </UiScrollArea>
-        <p v-if="error" class="m-0 p-4 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
+        <div v-if="error" class="flex flex-col items-start gap-3 p-4">
+          <p class="m-0 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
+          <div v-if="hasFileActions && content === undefined" data-preview-error-actions class="flex flex-wrap items-center gap-2">
+            <UiButton v-if="canRevealResource" type="button" data-preview-action="reveal" @click="revealResource"><FolderOpen :size="15" aria-hidden="true" />{{ revealLabel }}</UiButton>
+            <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction"><component :is="canOpenResource ? ExternalLink : Download" :size="15" aria-hidden="true" />{{ primaryActionLabel }}</UiButton>
+          </div>
+        </div>
       </div>
     </template>
   </div>
@@ -249,7 +247,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :title="entry?.name"
       :resource-request="request"
       :api="filesApi"
-      :can-open="canOpenResource"
+      :can-open="entry?.canOpen"
       mode="inline"
       class="max-h-[60vh]"
     />
@@ -267,7 +265,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
       <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
-      <UiButton v-if="!loading && entry?.kind === 'file'" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ t(canOpenResource ? 'files.openResource' : 'files.downloadResource') }}</UiButton>
+      <UiButton v-if="hasFileActions && canRevealResource" type="button" data-preview-action="reveal" @click="revealResource">{{ revealLabel }}</UiButton>
+      <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ primaryActionLabel }}</UiButton>
       <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>

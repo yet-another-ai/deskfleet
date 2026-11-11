@@ -110,7 +110,9 @@ const request = computed<FileResourceRequest | undefined>(() => {
     ? { ...resourceContext.value, target: { ...resourceContext.value.target }, uri: props.content }
     : undefined
 })
-const canOpenResource = computed(() => Boolean((loadedCanOpen.value ?? props.canOpen) && request.value && filesApi.value?.openResource))
+const isLocalFile = computed(() => Boolean((loadedCanOpen.value ?? props.canOpen) && request.value))
+const canOpenResource = computed(() => Boolean(isLocalFile.value && filesApi.value?.openResource))
+const canRevealResource = computed(() => Boolean(isLocalFile.value && filesApi.value?.revealResource))
 const title = computed(() => props.title || (kind.value === "image" ? t("agent.image") : t("agent.contentType", { type: kind.value })))
 const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
 
@@ -224,10 +226,11 @@ function download(): void {
   link.click()
 }
 
-async function openResource(): Promise<void> {
-  if (!request.value || !canOpenResource.value) return
+async function runResourceAction(method: "openResource" | "revealResource"): Promise<void> {
+  const handler = filesApi.value?.[method]
+  if (!isLocalFile.value || !handler) return
   actionError.value = undefined
-  try { await filesApi.value!.openResource!(request.value) }
+  try { await handler(request.value!) }
   catch (reason) { if (!disposed) actionError.value = reason instanceof Error ? reason.message : String(reason) }
 }
 
@@ -259,10 +262,12 @@ onBeforeUnmount(() => {
         :actions="toolbarActions"
         :can-download="Boolean(url)"
         :can-open="canOpenResource"
+        :can-reveal="canRevealResource"
         :right-tab-label="rightTabLabel"
         @focus="showFocused"
         @download="download"
-        @open="openResource"
+        @open="runResourceAction('openResource')"
+        @reveal="runResourceAction('revealResource')"
         @show-in-right-tab="showInRightTab"
         @show-in-new-window="showInNewWindow"
         @locate-message="locateOriginal"

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { Download, Ellipsis, ExternalLink, LocateFixed, Maximize2, PanelRight } from "@lucide/vue"
+import { Download, Ellipsis, ExternalLink, FolderOpen, LocateFixed, Maximize2, PanelRight } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { revealResourceLabel } from "../../services/agent-resources.ts"
 import type { PreviewMode, PreviewToolbarAction } from "../../services/preview.ts"
 import UiButton from "../common/UiButton.vue"
 
@@ -11,6 +13,7 @@ defineProps<{
   actions: PreviewToolbarAction[]
   canDownload?: boolean
   canOpen?: boolean
+  canReveal?: boolean
   rightTabLabel: string
 }>()
 
@@ -18,12 +21,14 @@ const emit = defineEmits<{
   focus: []
   download: []
   open: []
+  reveal: []
   showInRightTab: []
   showInNewWindow: []
   locateMessage: []
 }>()
 
 const { t } = useI18n()
+const client = usePlatformClient()
 const menuOpen = ref(false)
 
 function select(action: () => void): void {
@@ -47,11 +52,14 @@ function select(action: () => void): void {
     <DropdownMenuRoot v-model:open="menuOpen" :modal="false">
       <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('mermaid.more')" data-preview-action="more"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex w-44 flex-col" loop>
+        <DropdownMenuContent align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex min-w-44 flex-col" loop>
           <DropdownMenuItem v-if="canOpen" as="button" type="button" class="ui-menu-item" data-preview-action="open" @select="select(() => emit('open'))">
             <ExternalLink :size="14" aria-hidden="true" />{{ t('files.openResource') }}
           </DropdownMenuItem>
-          <DropdownMenuItem v-else-if="canDownload" as="button" type="button" class="ui-menu-item" data-preview-action="download" @select="select(() => emit('download'))">
+          <DropdownMenuItem v-if="canReveal" as="button" type="button" class="ui-menu-item" data-preview-action="reveal" @select="select(() => emit('reveal'))">
+            <FolderOpen :size="14" aria-hidden="true" />{{ revealResourceLabel(client.platform, t) }}
+          </DropdownMenuItem>
+          <DropdownMenuItem v-if="!canOpen && !canReveal && canDownload" as="button" type="button" class="ui-menu-item" data-preview-action="download" @select="select(() => emit('download'))">
             <Download :size="14" aria-hidden="true" />{{ t('files.downloadResource') }}
           </DropdownMenuItem>
           <DropdownMenuItem v-if="mode !== 'tab'" as="button" type="button" class="ui-menu-item" data-preview-action="show-in-right-tab" @select="select(() => emit('showInRightTab'))">
