@@ -27,6 +27,7 @@ import { trackEvent } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
+import { useOutlineAudioStore } from "./stores/outline-audio.ts"
 import { platformClientKey } from "./composables/usePlatformClient.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
@@ -44,7 +45,7 @@ const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
 useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
-provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore()))
+provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore()))
 useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
 const machineScopeKey = computed(() => JSON.stringify([account.value.serverUrl, account.value.user?.id, session.teamId.value, machine.value?.id]))

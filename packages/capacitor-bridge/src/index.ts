@@ -13,6 +13,7 @@ import {
   type NatTestResult,
   type NetworkDiagnosticsApi,
 } from "@deskfleet/client/network-diagnostics"
+import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outline-audio"
 
 export interface DeskFleetBridgeCapacitorPlugin {
   openExternal(options: { url: string }): Promise<void>
@@ -20,11 +21,32 @@ export interface DeskFleetBridgeCapacitorPlugin {
   send(options: { command: string }): Promise<void>
   close(): Promise<void>
   testNat(options: { server: string }): Promise<NatTestResult>
+  startOutlineAudio(): Promise<{ started: boolean }>
+  stopOutlineAudio(): Promise<void>
+  outlineAudioStatus(): Promise<OutlineAudioStatus>
   addListener(
     eventName: "viewerEvent",
     listenerFunc: (data: { payload: string }) => void,
   ): Promise<PluginListenerHandle>
+  addListener(
+    eventName: "outlineAudioBands",
+    listenerFunc: (data: { sampleRate: number; bins: string }) => void,
+  ): Promise<PluginListenerHandle>
+  addListener(
+    eventName: "outlineAudioStopped",
+    listenerFunc: () => void,
+  ): Promise<PluginListenerHandle>
 }
+
+export type ViewerBridgePlugin = Pick<
+  DeskFleetBridgeCapacitorPlugin,
+  "open" | "send" | "close" | "addListener"
+>
+
+export type OutlineAudioBridgePlugin = Pick<
+  DeskFleetBridgeCapacitorPlugin,
+  "startOutlineAudio" | "stopOutlineAudio" | "outlineAudioStatus" | "addListener"
+>
 
 export const DeskFleetBridge = registerPlugin<DeskFleetBridgeCapacitorPlugin>("DeskFleetBridge")
 
@@ -35,7 +57,7 @@ const toErrorEvent = (error: unknown): ViewerEvent => ({
 
 export function spawnCapacitorDesktopViewer(
   onEvent: (event: ViewerEvent) => void,
-  plugin: DeskFleetBridgeCapacitorPlugin = DeskFleetBridge,
+  plugin: ViewerBridgePlugin = DeskFleetBridge,
 ): ViewerProcess {
   let closed = false
   let ready = false
@@ -62,7 +84,7 @@ export function spawnCapacitorDesktopViewer(
     }
     if (!closed) await plugin.open()
   })
-  void openPromise.catch(emitError)
+  openPromise.catch(emitError)
 
   let sendChain = openPromise.catch(() => {})
 
@@ -87,7 +109,7 @@ export function spawnCapacitorDesktopViewer(
 
 export function createCapacitorNativeDesktopApi(
   central: CentralApi,
-  plugin: DeskFleetBridgeCapacitorPlugin = DeskFleetBridge,
+  plugin: ViewerBridgePlugin = DeskFleetBridge,
 ): NativeDesktopApi {
   let active: ReturnType<typeof openNativeDesktopSession> | undefined
   return {
@@ -123,5 +145,31 @@ export function createCapacitorNetworkDiagnosticsApi(
       }
       return plugin.testNat({ server })
     },
+  }
+}
+
+/** Drops events that arrive between unsubscribing and the asynchronous native listener removal. */
+function nativeSubscription(add: (subscribed: () => boolean) => Promise<PluginListenerHandle>): () => void {
+  let subscribed = true
+  const handle = add(() => subscribed)
+  return () => {
+    subscribed = false
+    void handle.then(item => item.remove())
+  }
+}
+
+export function createCapacitorOutlineAudioApi(
+  plugin: OutlineAudioBridgePlugin = DeskFleetBridge,
+): OutlineAudioApi {
+  return {
+    status: () => plugin.outlineAudioStatus(),
+    start: async () => (await plugin.startOutlineAudio()).started,
+    stop: () => plugin.stopOutlineAudio(),
+    onSpectrum: listener => nativeSubscription(subscribed => plugin.addListener("outlineAudioBands", ({ sampleRate, bins }) => {
+      if (subscribed()) listener({ sampleRate, bins: Uint8Array.from(atob(bins), ch => ch.charCodeAt(0)) })
+    })),
+    onStopped: listener => nativeSubscription(subscribed => plugin.addListener("outlineAudioStopped", () => {
+      if (subscribed()) listener()
+    })),
   }
 }
