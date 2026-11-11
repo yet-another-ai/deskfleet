@@ -4,7 +4,13 @@ import { env } from "node:process"
 const serverURL = env.CAPACITOR_DEV_SERVER_URL
 const isCleartext = serverURL?.startsWith("http://") ?? false
 const releaseType = env.ANDROID_RELEASE_TYPE === "APK" ? "APK" : env.ANDROID_RELEASE_TYPE === "AAB" ? "AAB" : undefined
-const signingType = env.ANDROID_SIGNING_TYPE === "apksigner" ? "apksigner" : env.ANDROID_SIGNING_TYPE === "jarsigner" ? "jarsigner" : undefined
+const signingType = env.ANDROID_SIGNING_TYPE === "apksigner"
+  ? "apksigner"
+  : env.ANDROID_SIGNING_TYPE === "jarsigner"
+    ? "jarsigner"
+    : releaseType === "APK"
+      ? "apksigner"
+      : undefined
 
 const config: CapacitorConfig = {
   appId: "ai.yetanother.deskfleet",

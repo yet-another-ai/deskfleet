@@ -279,6 +279,8 @@ instead of embedding paths to a local Nix store. These settings apply to both
 On Windows install the Windows SDK and LLVM/libclang for NVENC header generation,
 setting
 `LIBCLANG_PATH` to LLVM's `bin` directory when it is not discovered automatically.
+Android viewer builds target Android 14 (`minSdk` 34) and require Android NDK r28
+or newer for 16 KB memory page alignment.
 See [native media](media.md) for static linkage and platform support.
 
 After changing a tool declaration, run `mise lock` and `mise install --locked`,
