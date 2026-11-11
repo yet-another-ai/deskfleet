@@ -119,13 +119,17 @@ export class GitWatch {
     if (metadata) {
       const rel = key(relative(directory, path))
       if (filename !== null && rel.endsWith(".lock")) return
-      if (filename !== null && this.#gitDirectories.has(directory) && !/^(HEAD|index|packed-refs|config|config\.worktree|commondir|refs|info)(\/|$)/u.test(rel)) return
+      const pattern = this.#gitDirectories.has(directory)
+        ? /^(HEAD|index|packed-refs|config|config\.worktree|commondir|refs|info)(\/|$)/u
+        : /^(HEAD|objects|refs|reftable|config|commondir)(\/|$)/u
+      if (filename !== null && !pattern.test(rel)) return
     } else {
       const rel = key(relative(this.root, path))
       // A plain directory only watches its root for a later git init; ordinary
       // writes and renames cannot change Git status and must not trigger scans.
       if (!this.#repository) {
         if (filename !== null && rel !== ".git" && !rel.startsWith(".git/")) return
+        if (event === "rename" && rel === ".git") this.#evict(path)
         this.#notify()
         this.#schedule()
         return
@@ -136,6 +140,7 @@ export class GitWatch {
       if (rel === ".git" || rel.startsWith(".git/")) {
         if (rel !== ".git") return
         if (event !== "rename" && this.#gitDirectories.has(path)) return
+        if (event === "rename") this.#evict(path)
       }
       const external = relative(this.root, directory)
       if (this.#externalIgnore && directory === dirname(this.#externalIgnore) && (external.startsWith(`..${sep}`) || isAbsolute(external)) && path !== this.#externalIgnore) return
@@ -149,8 +154,14 @@ export class GitWatch {
       }
     }
     this.#notify()
-    if (filename === null || filename === ".git" || filename === ".gitignore" || path === this.#externalIgnore || metadata && ["index", "config", "config.worktree", "commondir", "exclude"].includes(filename ?? "")) this.#schedule()
+    if (filename === null || filename === ".git" || filename === ".gitignore" || path === this.#externalIgnore || metadata && (!this.#repository || ["index", "config", "config.worktree", "commondir", "exclude"].includes(filename ?? ""))) this.#schedule()
     else if (event === "rename") void this.#topology(path)
+  }
+
+  #evict(path: string): void {
+    for (const [directory, { watcher }] of this.#directories) {
+      if (directory === path || directory.startsWith(path + sep)) { watcher.close(); this.#directories.delete(directory) }
+    }
   }
 
   async #topology(path: string): Promise<void> {
@@ -159,9 +170,7 @@ export class GitWatch {
       if (!known && !(await lstat(path)).isDirectory()) return
       // A path can name a new inode after replacement, even if it exists again
       // by the time we process the rename. Never reuse that old directory watch.
-      for (const [directory, { watcher }] of this.#directories) {
-        if (directory === path || directory.startsWith(path + sep)) { watcher.close(); this.#directories.delete(directory) }
-      }
+      this.#evict(path)
       const submodule = this.#submodules.get(path)
       if (submodule) { submodule.close(); this.#submodules.delete(path) }
       this.#schedule()
@@ -242,20 +251,35 @@ export class GitWatch {
     try { await pending } finally { this.#rebuilding = undefined }
   }
 
+  async #probe(): Promise<{ repository: boolean; metadata: string[] }> {
+    try {
+      const [root, ...directories] = (await git(this.root, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"])).trimEnd().split("\n")
+      const repository = await realpath(root!) === this.root
+      return { repository, metadata: repository ? directories : [] }
+    } catch (error) {
+      if (!/not a git repository/u.test(detail(error))) throw error
+      return { repository: false, metadata: [] }
+    }
+  }
+
   async #scan(): Promise<void> {
     const wanted = new Set<string>()
     // Subscribe before discovery so a concurrent git init/file creation causes
     // another pass instead of disappearing in the initial snapshot race.
     this.#watch(this.root, false, wanted)
-    let repository = true
-    let metadata: string[] = []
-    try {
-      const [root, ...directories] = (await git(this.root, ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-dir", "--git-common-dir"])).trimEnd().split("\n")
-      repository = await realpath(root!) === this.root
-      metadata = repository ? directories : []
-    } catch (error) {
-      if (!/not a git repository/u.test(detail(error))) throw error
-      repository = false
+    let { repository, metadata } = await this.#probe()
+    let pendingGit: string | undefined
+    if (!repository) {
+      // Non-recursive root watches only see mkdir(".git"), not the later HEAD
+      // write that completes git init. Watch an incomplete .git directory too.
+      const candidate = await realpath(join(this.root, ".git")).catch(() => undefined)
+      if (candidate && await lstat(candidate).then(entry => entry.isDirectory(), () => false)) {
+        pendingGit = candidate
+        this.#watch(pendingGit, true, new Set())
+        const recheck = await this.#probe()
+        repository = recheck.repository
+        metadata = recheck.metadata
+      }
     }
     this.#repository = repository
     if (this.#closed) return
@@ -329,6 +353,7 @@ export class GitWatch {
       } catch (error) { if (!missing(error)) throw error }
     }
     for (const [path, watcher] of this.#submodules) if (!submodules.has(path)) { watcher.close(); this.#submodules.delete(path) }
+    if (!repository && pendingGit) wanted.add(pendingGit)
     this.#gitDirectories = new Set(await Promise.all(metadata.map(path => realpath(path))))
     for (const directory of this.#gitDirectories) {
       this.#watch(directory, true, wanted)
