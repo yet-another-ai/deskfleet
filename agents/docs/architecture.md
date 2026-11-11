@@ -863,6 +863,16 @@ installs a downloaded update. Web clients
 and development launches do not check for desktop updates. Release artifacts and
 feed metadata are described in [CI notes](ci.md#tagged-releases).
 
+The Capacitor Android client uses Google Play flexible in-app updates through the
+same update interface. It checks at launch and whenever the app returns to the
+foreground. Play reports only the available versionCode; the client derives the
+displayed version from the Gradle versionCode formula. Clicking the offer opens
+Play's consent dialog, downloads, and then restarts into the update. Automatic
+download opens that dialog as soon as a check finds an update and waits for a
+click before restarting; a declined version is not offered again automatically
+until the next launch. Builds not installed from Google Play receive no update
+information.
+
 Web clients use the browser Notifications API for task completion and pending
 input alerts while the page is running. Web and Electron share the account-wide
 task monitor, including its history baseline and event deduplication. The Web
