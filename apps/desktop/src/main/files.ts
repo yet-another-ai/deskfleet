@@ -62,9 +62,11 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown,
         : api.readResource(resource(args[0]))
     }
     case "saveResource": return api.saveResource(resource(args[0]))
-    case "openResource": {
-      if (!api.openResource) throw new Error("Opening local files is unavailable")
-      return api.openResource(resource(args[0]))
+    case "openResource":
+    case "revealResource": {
+      const action = api[method]
+      if (!action) throw new Error(method === "openResource" ? "Opening local files is unavailable" : "Revealing local files is unavailable")
+      return action.call(api, resource(args[0]))
     }
     case "uploadAttachment": {
       if (!api.uploadAttachment) throw new Error("Attachment upload is unavailable")
@@ -113,6 +115,7 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
         const error = await shell.openPath(path)
         if (error) throw new Error(error)
       },
+      revealPath: async path => shell.showItemInFolder(path),
       sessionDirectory: localSessionDirectory,
       sessionAttachmentDirectory: localSessionAttachmentDirectory,
       chooseDirectory: async () => {

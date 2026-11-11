@@ -267,6 +267,9 @@ test("a plain directory watches only its root until it becomes a repository", as
   await delay(150)
   assert.equal(events, 0)
   assert.deepEqual([...watched], [f.root])
+  // Simulate git init creating .git/ before writing HEAD past the scan debounce.
+  await mkdir(join(f.root, ".git"))
+  await delay(100)
   await repository(f.root)
   await eventually(() => events > 0 && watched.has(nested), "initialized repository did not watch its existing subdirectories")
   assert.equal((await f.inspection.status("1", [f.root])).repositories.length, 1)

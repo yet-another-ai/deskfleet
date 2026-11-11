@@ -3,7 +3,9 @@ import { MessageSquare } from "@lucide/vue"
 import { computed, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, type AppearanceSettings, type ReadingSpotlightStyle } from "@deskfleet/client/appearance"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
+import { useOutlineAudioStore } from "../../stores/outline-audio.ts"
 import UiButton from "../common/UiButton.vue"
 import UiNumberField from "../common/UiNumberField.vue"
 import UiSelect from "../common/UiSelect.vue"
@@ -15,8 +17,16 @@ import AppearanceTerminalPreview from "./AppearanceTerminalPreview.vue"
 import AppearanceTerminalColors from "./AppearanceTerminalColors.vue"
 
 const { t } = useI18n()
+const client = usePlatformClient()
 const appearance = useAppearanceStore()
+const outlineAudio = useOutlineAudioStore()
 const busy = computed(() => !appearance.ready || appearance.saving)
+const outlineAudioHint = computed(() => {
+  if (!outlineAudio.supported) return t("appearance.outlineAudioUnsupported")
+  if (client.mobile) return t("appearance.outlineAudioMobileHint")
+  if (client.platform === "web") return t("appearance.outlineAudioWebHint")
+  return t("appearance.outlineAudioHint")
+})
 const interfaceFont = ref(appearance.settings.interfaceFont)
 const terminalFont = ref(appearance.settings.terminalFont)
 watch(() => appearance.settings.interfaceFont, value => { interfaceFont.value = value })
@@ -129,10 +139,17 @@ onMounted(() => { void appearance.initialize() })
       <div class="flex items-center justify-between gap-6">
         <div>
           <div id="appearance-outline-audio-label" class="text-sm font-medium">{{ t("appearance.outlineAudio") }}</div>
-          <p id="appearance-outline-audio-description" class="mb-0 mt-1 text-xs leading-relaxed text-ui-text-muted">{{ t("appearance.outlineAudioHint") }}</p>
+          <p id="appearance-outline-audio-description" class="mb-0 mt-1 text-xs leading-relaxed text-ui-text-muted">{{ outlineAudioHint }}</p>
         </div>
-        <UiSwitch :model-value="appearance.settings.outlineAudio" :disabled="busy" aria-labelledby="appearance-outline-audio-label" aria-describedby="appearance-outline-audio-description" @update:model-value="appearance.set({ outlineAudio: $event })" />
+        <UiSwitch
+          :model-value="appearance.settings.outlineAudio"
+          :disabled="busy || outlineAudio.starting || (!outlineAudio.supported && !appearance.settings.outlineAudio)"
+          aria-labelledby="appearance-outline-audio-label"
+          aria-describedby="appearance-outline-audio-description"
+          @update:model-value="outlineAudio.setEnabled($event)"
+        />
       </div>
+      <p v-if="outlineAudio.error" data-outline-audio-error role="alert" class="mb-0 mt-2 break-words text-xs leading-relaxed text-ui-danger">{{ outlineAudio.error }}</p>
       <div v-if="appearance.settings.outlineAudio" class="mt-4 flex flex-col gap-4">
         <div data-outline-audio-preview class="overflow-hidden rounded-xl border border-ui-border bg-ui-canvas text-ui-text" :aria-label="t('appearance.preview')">
           <div class="flex h-9 items-center gap-2 border-b border-ui-border bg-ui-surface px-3.5 text-xs text-ui-text-muted">

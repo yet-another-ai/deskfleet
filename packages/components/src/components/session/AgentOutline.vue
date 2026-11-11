@@ -1,28 +1,12 @@
 <script lang="ts">
-import { fittedOklch } from "@proj-airi/chromatic"
-import { createSharedComposable, useEventListener, useRafFn, watchImmediate } from "@vueuse/core"
-import { computed, onScopeDispose, ref, shallowRef, triggerRef, useTemplateRef, watch } from "vue"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { ConversationEntry } from "../../services/agent-conversation.ts"
-import { useConversationProjection } from "../../composables/useConversationProjection.ts"
-import { useAppearanceStore } from "../../stores/appearance.ts"
 
 interface OutlineItem {
   id: string
   label: string
   reply?: string
 }
-
-const BAND_COUNT = 24
-const STEREO_BANDS = BAND_COUNT * 2
-const MIN_WIDTH = 6
-const MIN_HZ = 80
-const MAX_HZ = 2_400
-const MIN_DB = -80
-const MAX_DB = -10
-const TILT_DB_PER_OCT = 1.8
-const SIGNAL_THRESHOLD = 0.02
-const STEVENS_EXPONENT = 0.65
 
 const PREVIEW_ITEMS: OutlineItem[] = [
   { id: "preview-1", label: "Inspect repo", reply: "Scanned workspace packages and build scripts." },
@@ -41,241 +25,15 @@ const PREVIEW_ITEMS: OutlineItem[] = [
   { id: "preview-14", label: "Clean up stories", reply: "Updated AgentOutline story in Storybook." },
   { id: "preview-15", label: "Ship it", reply: "Ready to merge." },
 ]
-
-function binAmplitude(bins: Float32Array<ArrayBuffer>, index: number): number {
-  const db = bins[index] ?? -Infinity
-  return db > MIN_DB ? 10 ** (Math.min(0, db - MAX_DB) / 20) : 0
-}
-
-function interpolateBin(bins: Float32Array<ArrayBuffer>, position: number): number {
-  const lo = Math.floor(position)
-  const hi = Math.min(bins.length - 1, lo + 1)
-  const fraction = position - lo
-  return binAmplitude(bins, lo) * (1 - fraction) + binAmplitude(bins, hi) * fraction
-}
-
-function demoBandTarget(slot: number, now: number): number {
-  const ch = slot < BAND_COUNT ? 0 : 1
-  const band = ch === 0 ? BAND_COUNT - 1 - slot : slot - BAND_COUNT
-  const u = band / (BAND_COUNT - 1)
-  const t = now * 0.001
-  const phase = ch * 1.15
-  const beat = t * 1.9
-  const kickPhase = beat % 1
-  const kickEnv = kickPhase < 0.18 ? Math.sin((kickPhase / 0.18) * Math.PI) : 0
-  const kick = kickEnv * Math.exp(-u * u * 5.2)
-
-  const eighthPhase = (beat * 2 + ch * 0.16) % 1
-  const eighthEnv = eighthPhase < 0.3 ? Math.sin((eighthPhase / 0.3) * Math.PI) : 0
-  const ripple = Math.max(0, Math.sin(u * 5.4 - t * 6.2 + phase) * 0.62 + Math.sin(u * 9.2 - t * 3.6 - phase) * 0.38)
-  const mids = ripple * (0.22 + 0.78 * eighthEnv) * Math.sin(u * Math.PI) * 0.92
-
-  const hatPhase = ((beat + 0.5 + ch * 0.25) * 2) % 1
-  const hatEnv = hatPhase < 0.22 ? Math.sin((hatPhase / 0.22) * Math.PI) : 0
-  const shimmer = (0.5 + 0.5 * Math.sin(u * 11 + t * 8.5 + phase)) * hatEnv * (u ** 1.25) * 0.68
-
-  const swell = 0.84 + 0.16 * Math.sin(t * 1.3 + phase * 0.5)
-  return Math.min(1, (kick + mids + shimmer) * swell)
-}
-
-const useOutlineAudio = createSharedComposable(() => {
-  const appearance = useAppearanceStore()
-  const decayOverride = ref<number>()
-  const decayMs = computed(() => decayOverride.value ?? appearance.settings.outlineAudioDecayMs)
-  const previewCount = ref(0)
-  const bands = shallowRef(new Float32Array(STEREO_BANDS))
-  const activity = ref(0)
-  const hue = ref(220)
-  const raw = new Float32Array(STEREO_BANDS)
-  const targets = new Float32Array(STEREO_BANDS)
-  let runningPeak = 0.3
-  let prevTime = 0
-  let context: AudioContext | undefined
-  let analysers: [AnalyserNode, AnalyserNode] | undefined
-  let bins: Float32Array<ArrayBuffer> | undefined
-
-  function step(): void {
-    const now = performance.now()
-    const dt = prevTime > 0 ? Math.min(64, now - prevTime) : 16.67
-    prevTime = now
-    hue.value = (now * 0.07) % 360
-    let frameMax = 0
-    let frameSum = 0
-
-    if (analysers && bins && context) {
-      const maxBin = bins.length - 1
-      const binScale = (bins.length * 2) / context.sampleRate
-      const ratio = Math.min(MAX_HZ, context.sampleRate * 0.45) / MIN_HZ
-
-      for (let ch = 0; ch < 2; ch++) {
-        analysers[ch]!.getFloatFrequencyData(bins)
-        for (let band = 0; band < BAND_COUNT; band++) {
-          const f0 = MIN_HZ * ratio ** (band / BAND_COUNT)
-          const fc = MIN_HZ * ratio ** ((band + 0.5) / BAND_COUNT)
-          const f1 = MIN_HZ * ratio ** ((band + 1) / BAND_COUNT)
-          const startBin = Math.max(1, Math.ceil(f0 * binScale))
-          const endBin = Math.min(maxBin, Math.floor(f1 * binScale))
-          let peak = interpolateBin(bins, Math.min(maxBin, Math.max(1, fc * binScale)))
-          let sumSq = peak * peak
-          let count = 1
-
-          for (let bin = startBin; bin <= endBin; bin++) {
-            const amp = binAmplitude(bins, bin)
-            if (amp > peak) peak = amp
-            sumSq += amp * amp
-            count++
-          }
-
-          const amplitude = peak * 0.4 + Math.sqrt(sumSq / count) * 0.6
-          const tilt = (fc / MIN_HZ) ** (TILT_DB_PER_OCT / 6.0206)
-          const perceived = Math.min(1, (amplitude * tilt) ** STEVENS_EXPONENT)
-          const value = perceived < SIGNAL_THRESHOLD ? 0 : perceived
-          const slot = ch === 0 ? BAND_COUNT - 1 - band : BAND_COUNT + band
-          raw[slot] = value
-          if (value > frameMax) frameMax = value
-          frameSum += value
-        }
-      }
-    }
-
-    if (frameMax === 0 && previewCount.value > 0) {
-      for (let i = 0; i < STEREO_BANDS; i++) {
-        targets[i] = demoBandTarget(i, now)
-      }
-    } else {
-      runningPeak = frameMax > runningPeak
-        ? runningPeak + (frameMax - runningPeak) * 0.14
-        : Math.max(0.25, runningPeak * 0.997)
-      const frameMean = frameSum / STEREO_BANDS / runningPeak
-
-      for (let i = 0; i < STEREO_BANDS; i++) {
-        const norm = Math.min(1, (raw[i] ?? 0) / runningPeak)
-        const prominence = Math.max(0, norm - frameMean * 0.28) / Math.max(0.6, 1 - frameMean * 0.22)
-        targets[i] = Math.min(1, norm * 0.55 + prominence * 0.45)
-      }
-    }
-
-    const release = decayMs.value > 0 ? 1 - Math.exp(-dt / decayMs.value) : 1
-    const attack = 0.4
-    for (let i = 0; i < STEREO_BANDS; i++) {
-      const prev = targets[Math.max(0, i - 1)] ?? 0
-      const curr = targets[i] ?? 0
-      const next = targets[Math.min(STEREO_BANDS - 1, i + 1)] ?? 0
-      const target = prev * 0.22 + curr * 0.56 + next * 0.22
-      const current = bands.value[i] ?? 0
-      const updated = current + (target - current) * (target > current ? attack : release)
-      bands.value[i] = updated < 0.002 ? 0 : updated
-    }
-
-    activity.value = frameMax > 0 || previewCount.value > 0
-      ? Math.min(1, activity.value + (1 - activity.value) * 0.18)
-      : Math.max(0, activity.value * (1 - release) - 0.002)
-    if (activity.value > 0) triggerRef(bands)
-  }
-
-  const { pause, resume } = useRafFn(step, { immediate: false })
-  const active = computed(() => activity.value > 0)
-
-  function startPreview(): () => void {
-    previewCount.value++
-    prevTime = 0
-    resume()
-    return () => {
-      previewCount.value = Math.max(0, previewCount.value - 1)
-      if (previewCount.value === 0 && !appearance.settings.outlineAudio) {
-        pause()
-        bands.value.fill(0)
-        activity.value = 0
-      }
-    }
-  }
-
-  function width(index: number, count: number, baseline: number, targetMaxWidth: number): number {
-    const mix = activity.value
-    if (mix <= 0) return baseline
-    const pos = (count > 1 ? (index / (count - 1)) ** 1.27 : 0.5) * (STEREO_BANDS - 1)
-    const lo = Math.floor(pos)
-    const hi = Math.min(STEREO_BANDS - 1, lo + 1)
-    const energy = (bands.value[lo] ?? 0) * (1 - (pos - lo)) + (bands.value[hi] ?? 0) * (pos - lo)
-    const audioWidth = MIN_WIDTH + energy * (Math.max(MIN_WIDTH, targetMaxWidth) - MIN_WIDTH)
-    return baseline * (1 - mix) + audioWidth * mix
-  }
-
-  function color(index: number, highlighted: boolean): string {
-    const deg = (((hue.value - index * 18) % 360) + 360) % 360
-    const { l, c, h } = fittedOklch(500, deg)
-    return `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)}deg / ${highlighted ? 1 : 0.72})`
-  }
-
-  watchImmediate(() => appearance.settings.outlineAudio, (enabled, _, onCleanup) => {
-    if (!enabled) return
-    prevTime = 0
-    resume()
-    let stopped = false
-    let stream: MediaStream | undefined
-
-    onCleanup(() => {
-      stopped = true
-      if (previewCount.value === 0) pause()
-      analysers = undefined
-      bins = undefined
-      raw.fill(0)
-      targets.fill(0)
-      bands.value.fill(0)
-      runningPeak = 0.3
-      for (const track of stream?.getTracks() ?? []) track.stop()
-      context?.close().catch(() => {})
-      context = undefined
-      if (previewCount.value === 0) activity.value = 0
-    })
-
-    if (typeof AudioContext === "undefined" || !navigator.mediaDevices?.getDisplayMedia) return
-    function startCapture(): void {
-      navigator.mediaDevices.getDisplayMedia({
-        video: { width: 1, height: 1, frameRate: 1 },
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      }).then(media => {
-        for (const track of media.getVideoTracks()) track.stop()
-        if (stopped) {
-          for (const track of media.getTracks()) track.stop()
-          return
-        }
-        stream = media
-        context = new AudioContext()
-        const splitter = context.createChannelSplitter(2)
-        context.createMediaStreamSource(media).connect(splitter)
-        analysers = [0, 1].map(ch => {
-          const node = context!.createAnalyser()
-          node.fftSize = 4096
-          node.smoothingTimeConstant = 0.2
-          splitter.connect(node, ch)
-          return node
-        }) as [AnalyserNode, AnalyserNode]
-        bins = new Float32Array(analysers[0].frequencyBinCount)
-        step()
-      }).catch(error => {
-        console.warn("Could not start outline audio loopback:", error)
-      })
-    }
-    if (navigator.userActivation && !navigator.userActivation.isActive) {
-      const stop = useEventListener(["pointerdown", "keydown"], () => {
-        stop()
-        startCapture()
-      }, { capture: true, once: true })
-      onCleanup(stop)
-      return
-    }
-    startCapture()
-  })
-
-  onScopeDispose(pause)
-
-  return { decayOverride, active, width, color, startPreview }
-})
 </script>
 
 <script setup lang="ts">
+import { watchImmediate } from "@vueuse/core"
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
+import { computed, ref, useTemplateRef, watch } from "vue"
+import { useConversationProjection } from "../../composables/useConversationProjection.ts"
+import { useAppearanceStore } from "../../stores/appearance.ts"
+import { OUTLINE_MIN_WIDTH, useOutlineAudioStore } from "../../stores/outline-audio.ts"
 
 const props = withDefaults(defineProps<{
   /** Preview overrides; omitted values use the saved appearance. */
@@ -294,16 +52,16 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ select: [id: string] }>()
 
 const appearance = useAppearanceStore()
+const audio = useOutlineAudioStore()
 const rows = useTemplateRef<HTMLLIElement[]>("rows")
 const hovered = ref<string>()
 const selectedPreview = ref(PREVIEW_ITEMS[7]!.id)
-const audio = useOutlineAudio()
 const audioEnabled = computed(() => props.preview || appearance.settings.outlineAudio)
-const audioActive = computed(() => audioEnabled.value && audio.active.value)
+const audioActive = computed(() => audioEnabled.value && audio.active)
 const maxWidth = computed(() => props.maxWidth ?? appearance.settings.outlineAudioMaxWidth)
 const rgb = computed(() => props.rgb ?? (audioEnabled.value && appearance.settings.outlineAudioRgb))
 
-watchImmediate(() => props.decayMs, value => { audio.decayOverride.value = value })
+watchImmediate(() => props.decayMs, value => { audio.decayOverride = value })
 
 watchImmediate(() => props.preview, (isPreview, _, onCleanup) => {
   if (isPreview) onCleanup(audio.startPreview())
@@ -350,7 +108,7 @@ const hoveredIndex = computed(() => items.value.findIndex(item => item.id === ho
 const highlighted = computed(() => hovered.value ?? currentActive.value)
 
 function tickWidth(index: number, label: string): number {
-  const baseline = MIN_WIDTH + (22 * label.length) / (label.length + 10)
+  const baseline = OUTLINE_MIN_WIDTH + (22 * label.length) / (label.length + 10)
   if (hoveredIndex.value < 0) {
     return audioEnabled.value ? audio.width(index, items.value.length, baseline, maxWidth.value) : baseline
   }

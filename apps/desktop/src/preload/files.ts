@@ -26,6 +26,7 @@ export function filesApi(): FilesApi {
     },
     saveResource: request => invoke("saveResource", request),
     openResource: request => invoke("openResource", request),
+    revealResource: request => invoke("revealResource", request),
     uploadAttachment: request => invoke("uploadAttachment", request),
     onChanged: listener => {
       const handler = (_event: Electron.IpcRendererEvent, transfers: FileTransfer[]) => listener(transfers)

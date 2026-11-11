@@ -1,13 +1,17 @@
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import { getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount } from "@vue/test-utils"
 import { expect, test, vi } from "vitest"
 import type { FilesApi, FileResourceRequest } from "../../../../client/src/files.ts"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { highlighter } from "../../services/code-highlight.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 
 const request: FileResourceRequest = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "src" }
-function render(api: Partial<FilesApi>, selected = request, mode: "dialog" | "tab" = "dialog") {
-  return mount(AgentResourceViewer, { props: { api: api as FilesApi, request: selected, mode }, global: { plugins: [i18n], stubs: { Teleport: { template: "<slot />" } } }, attachTo: document.body })
+function render(api: Partial<FilesApi>, selected = request, mode: "dialog" | "tab" = "dialog", platform?: DeskfleetDesktopApi["platform"]) {
+  const provide = platform ? { [platformClientKey as symbol]: { ...getClient(), platform } } : undefined
+  return mount(AgentResourceViewer, { props: { api: api as FilesApi, request: selected, mode }, global: { plugins: [i18n], provide, stubs: { Teleport: { template: "<slot />" } } }, attachTo: document.body })
 }
 
 function renderText(name: string, text: string, uri = name) {
@@ -183,20 +187,34 @@ test("downloads loaded binary files even when their preview format is unsupporte
   view.unmount()
 })
 
-test.each(["dialog", "tab"] as const)("opens local unsupported files instead of downloading in %s mode", async mode => {
+test.each([
+  ["dialog", "win32", "Show in File Explorer"],
+  ["tab", "darwin", "Show in Finder"],
+  ["tab", "linux", "Show in File Manager"],
+] as const)("opens and reveals local unsupported files instead of downloading (%s, %s)", async (mode, platform, expectedLabel) => {
   const openResource = vi.fn().mockRejectedValue(new Error("No application is associated with this file"))
+  const revealResource = vi.fn().mockResolvedValue(undefined)
   const saveResource = vi.fn()
   const createUrl = vi.spyOn(URL, "createObjectURL")
   const view = render({
-    resolveResource: vi.fn().mockResolvedValue({ name: "archive.zip", path: "/work/archive.zip", kind: "file", canOpen: true }),
-    readResource: vi.fn().mockResolvedValue({ name: "archive.zip", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/zip", canOpen: true }),
-    openResource, saveResource,
-  }, request, mode)
+    resolveResource: vi.fn().mockResolvedValue({ name: "archive.ipa", path: "/tmp/archive.ipa", kind: "file", canOpen: true }),
+    readResource: vi.fn().mockResolvedValue({ name: "archive.ipa", data: new Uint8Array([0x50, 0x4b, 0, 0]), mimeType: "application/octet-stream", canOpen: true }),
+    openResource, revealResource, saveResource,
+  }, request, mode, platform)
   await flushPromises()
   expect(view.get('[role="alert"]').text()).toContain("open it in another application")
   expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
-  await view.get('[data-preview-action="open"]').trigger("click")
+  const container = mode === "tab" ? view.get("[data-preview-error-actions]") : view
+  if (mode === "tab") {
+    expect(view.get('header [data-preview-action="reveal"]').attributes("aria-label")).toBe(expectedLabel)
+    expect(view.get('header [data-preview-action="reveal"]').text()).toBe("")
+    expect(view.get('header [data-preview-action="open"]').attributes("aria-label")).toBe("Open")
+  }
+  expect(container.get('[data-preview-action="reveal"]').text()).toBe(expectedLabel)
+  await container.get('[data-preview-action="reveal"]').trigger("click")
+  await container.get('[data-preview-action="open"]').trigger("click")
   await flushPromises()
+  expect(revealResource).toHaveBeenCalledExactlyOnceWith(request)
   expect(openResource).toHaveBeenCalledExactlyOnceWith(request)
   expect(saveResource).not.toHaveBeenCalled()
   expect(createUrl).not.toHaveBeenCalled()

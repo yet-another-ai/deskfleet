@@ -1,8 +1,13 @@
 import type { ComputedRef, InjectionKey } from "vue"
+import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
 import type { FileTarget } from "../../../client/src/files.ts"
 
 export interface AgentResourceContext { target: FileTarget; sessionId: string }
 export const agentResourceContextKey: InjectionKey<ComputedRef<AgentResourceContext | undefined>> = Symbol("Agent resource context")
+
+export function revealResourceLabel(platform: DeskfleetDesktopApi["platform"], t: (key: string) => string): string {
+  return t(platform === "darwin" ? "files.showInFinder" : platform === "win32" ? "files.showInExplorer" : "files.showInFileManager")
+}
 
 /** Editor locations are parsed before decoding so encoded separators stay in filenames. */
 export function fileResourceLines(uri: string): { start: number; end: number } | undefined {

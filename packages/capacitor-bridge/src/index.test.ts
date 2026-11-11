@@ -1,16 +1,15 @@
 import { expect, test, vi } from "vitest"
+import type { PluginListenerHandle } from "@capacitor/core"
 import type { CentralApi } from "@deskfleet/client/central"
 import type { NatTestResult } from "@deskfleet/client/network-diagnostics"
 import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
+  createCapacitorOutlineAudioApi,
   spawnCapacitorDesktopViewer,
-  type DeskFleetBridgeCapacitorPlugin,
+  type OutlineAudioBridgePlugin,
+  type ViewerBridgePlugin,
 } from "./index.ts"
-
-const unusedTestNat = async (): Promise<NatTestResult> => {
-  throw new Error("unexpected testNat call")
-}
 
 test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening and forwards commands", async () => {
   const order: string[] = []
@@ -18,9 +17,7 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
   const remove = vi.fn(async () => {
     order.push("remove")
   })
-  const plugin: DeskFleetBridgeCapacitorPlugin = {
-    async authenticate() { return { url: "" } },
-    async openExternal() {},
+  const plugin: ViewerBridgePlugin = {
     async addListener(_name, fn) {
       order.push("addListener")
       listener = fn
@@ -36,7 +33,6 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
     async close() {
       order.push("close")
     },
-    testNat: unusedTestNat,
   }
 
   const events: unknown[] = []
@@ -66,9 +62,7 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
 test("createCapacitorNativeDesktopApi completes signaling handshake with the Capacitor plugin", async () => {
   let listener: ((data: { payload: string }) => void) | undefined
   const sent: { type: string }[] = []
-  const plugin: DeskFleetBridgeCapacitorPlugin = {
-    async authenticate() { return { url: "" } },
-    async openExternal() {},
+  const plugin: ViewerBridgePlugin = {
     async addListener(_name, fn) {
       listener = fn
       return { remove: async () => {} }
@@ -89,7 +83,6 @@ test("createCapacitorNativeDesktopApi completes signaling handshake with the Cap
       }
     },
     async close() {},
-    testNat: unusedTestNat,
   }
 
   const central = {
@@ -149,4 +142,59 @@ test("createCapacitorNetworkDiagnosticsApi selects the first compatible STUN ser
 
   networkConfiguration.mockResolvedValueOnce({ stunUrls: ["stun:[::1]:3478"] })
   await expect(api.testNat()).rejects.toThrow("no IPv4 UDP STUN server configured")
+})
+
+test("createCapacitorOutlineAudioApi decodes spectrum frames and stops forwarding after unsubscribe", async () => {
+  let spectrumEmit: ((data: { sampleRate: number; bins: string }) => void) | undefined
+  let stoppedEmit: (() => void) | undefined
+  const removeBands = vi.fn(async () => {})
+  const removeStopped = vi.fn(async () => {})
+  const startOutlineAudio = vi.fn<OutlineAudioBridgePlugin["startOutlineAudio"]>()
+
+  const plugin = {
+    startOutlineAudio,
+    stopOutlineAudio: vi.fn(async () => {}),
+    outlineAudioStatus: vi.fn(async () => ({ supported: true, active: false })),
+    addListener: vi.fn(async (eventName: string, fn: (data: never) => void): Promise<PluginListenerHandle> => {
+      if (eventName === "outlineAudioBands") {
+        spectrumEmit = fn as unknown as typeof spectrumEmit
+        return { remove: removeBands }
+      }
+      stoppedEmit = fn as unknown as typeof stoppedEmit
+      return { remove: removeStopped }
+    }) as OutlineAudioBridgePlugin["addListener"],
+  } satisfies OutlineAudioBridgePlugin
+
+  const api = createCapacitorOutlineAudioApi(plugin)
+  await expect(api.status()).resolves.toEqual({ supported: true, active: false })
+
+  const receivedFrames: { sampleRate: number; bins: number[] }[] = []
+  let stoppedCount = 0
+  const offSpectrum = api.onSpectrum(frame => receivedFrames.push({
+    sampleRate: frame.sampleRate,
+    bins: Array.from(frame.bins),
+  }))
+  const offStopped = api.onStopped(() => { stoppedCount++ })
+  await Promise.resolve()
+
+  startOutlineAudio.mockResolvedValueOnce({ started: false })
+  await expect(api.start()).resolves.toBe(false)
+
+  startOutlineAudio.mockResolvedValueOnce({ started: true })
+  await expect(api.start()).resolves.toBe(true)
+
+  spectrumEmit?.({ sampleRate: 48_000, bins: btoa(String.fromCharCode(64, 192)) })
+  stoppedEmit?.()
+  expect(receivedFrames).toEqual([{ sampleRate: 48_000, bins: [64, 192] }])
+  expect(stoppedCount).toBe(1)
+
+  offSpectrum()
+  offStopped()
+  spectrumEmit?.({ sampleRate: 48_000, bins: btoa(String.fromCharCode(1)) })
+  stoppedEmit?.()
+  expect(receivedFrames).toHaveLength(1)
+  expect(stoppedCount).toBe(1)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(removeBands).toHaveBeenCalledOnce()
+  expect(removeStopped).toHaveBeenCalledOnce()
 })
