@@ -47,6 +47,7 @@ export interface FilesApi {
   /** Remote previews are bounded; native hosts may allow larger local resources. */
   readResource(request: FileResourceRequest, options?: FileReadResourceOptions): Promise<{ data: Uint8Array; name: string; mimeType: string; canOpen?: boolean }>
   openResource?(request: FileResourceRequest): Promise<void>
+  revealResource?(request: FileResourceRequest): Promise<void>
   saveResource(request: FileResourceRequest): Promise<string | null>
   uploadAttachment?(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult>
 }

@@ -7,7 +7,7 @@ import type { CentralApi, CentralEvent } from "@deskfleet/client/central"
 import { FILES_CHANGED_EVENT, type FileListing, type FilesApi, type FileTarget } from "@deskfleet/client/files"
 import { FilesService } from "../../../daemon/src/files-service.ts"
 
-vi.mock("electron", () => ({ app: { getPath: vi.fn() }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn() }, shell: { openPath: vi.fn() } }))
+vi.mock("electron", () => ({ app: { getPath: vi.fn() }, BrowserWindow: { fromWebContents: vi.fn() }, dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn() }, shell: { openPath: vi.fn(), showItemInFolder: vi.fn() } }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./files-peer.ts", () => ({ createNativeFileEndpoint: vi.fn() }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
@@ -38,14 +38,14 @@ test("file bridge forwards opaque grants and rejects malformed grant identifiers
   await expect(invokeFiles(api, "list", [{ kind: "local", grantId: "bad\0token" }])).rejects.toThrow("identifier")
 })
 
-test("native open accepts only a validated scoped resource request", async () => {
-  const openResource = vi.fn(async () => {})
-  const api = { openResource } as unknown as FilesApi
+test.each(["openResource", "revealResource"] as const)("native %s accepts only a validated scoped resource request", async method => {
+  const handler = vi.fn(async () => {})
+  const api = { [method]: handler } as unknown as FilesApi
   const request = { target: { kind: "machine", teamId: "team", machineId: "machine" }, sessionId: "session", uri: "file:///work/report.docx" }
-  await invokeFiles(api, "openResource", [{ ...request, canOpen: true, path: "/untrusted" }])
-  expect(openResource).toHaveBeenCalledExactlyOnceWith(request)
-  await expect(invokeFiles(api, "openResource", [{ ...request, uri: "bad\0path" }])).rejects.toThrow("path")
-  await expect(invokeFiles({} as FilesApi, "openResource", [request])).rejects.toThrow("unavailable")
+  await invokeFiles(api, method, [{ ...request, canOpen: true, path: "/untrusted" }])
+  expect(handler).toHaveBeenCalledExactlyOnceWith(request)
+  await expect(invokeFiles(api, method, [{ ...request, uri: "bad\0path" }])).rejects.toThrow("path")
+  await expect(invokeFiles({} as FilesApi, method, [request])).rejects.toThrow("unavailable")
 })
 
 class TestContents extends EventEmitter {
@@ -154,4 +154,7 @@ test("native open verifies this daemon registration and forwards its resolved pa
   expect(shell.openPath).toHaveBeenCalledExactlyOnceWith(join(f.root, "visible.txt"))
   await expect(f.request(contents, "openResource", request)).rejects.toThrow("No application")
   expect(close).toHaveBeenCalledTimes(2)
+  await f.request(contents, "revealResource", request)
+  expect(shell.showItemInFolder).toHaveBeenCalledExactlyOnceWith(join(f.root, "visible.txt"))
+  expect(close).toHaveBeenCalledTimes(3)
 })

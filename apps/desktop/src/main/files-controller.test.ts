@@ -31,12 +31,13 @@ async function fixture() {
   const remoteEndpoint = vi.fn(async () => new FilesService(async () => source))
   const isLocalTarget = vi.fn(async (target: FileTarget) => target.kind === "local")
   const openPath = vi.fn(async (_path: string) => {})
+  const revealPath = vi.fn(async (_path: string) => {})
   const create = () => {
-    const controller = new WindowFiles({ chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint, isLocalTarget, openPath })
+    const controller = new WindowFiles({ chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint, isLocalTarget, openPath, revealPath })
     controllers.push(controller)
     return controller
   }
-  return { source, destination, chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint, isLocalTarget, openPath, create }
+  return { source, destination, chooseDirectory, confirmOverwrite, sessionDirectory, remoteEndpoint, isLocalTarget, openPath, revealPath, create }
 }
 async function selected(controller: WindowFiles): Promise<Extract<FileTarget, { kind: "local" }>> {
   const listing = await controller.chooseLocalDirectory()
@@ -186,20 +187,24 @@ test("explicit remote machine endpoints retain their own filesystem authority", 
   expect(f.sessionDirectory).not.toHaveBeenCalled()
 })
 
-test("resolved local resources expose native open and retain their scoped canonical path", async () => {
+test("resolved local resources expose native open and reveal and retain their scoped canonical path", async () => {
   const f = await fixture(), controller = f.create()
   const request = { target: { kind: "machine", machineId: "this-machine", teamId: "team" } as const, sessionId: "session", uri: "hello.txt:2" }
   f.isLocalTarget.mockResolvedValue(true)
   expect(await controller.resolveResource(request)).toMatchObject({ path: join(f.source, "hello.txt"), canOpen: true })
   expect(await controller.readResource(request)).toMatchObject({ name: "hello.txt", canOpen: true })
   await controller.openResource(request)
+  await controller.revealResource(request)
   expect(f.remoteEndpoint).toHaveBeenCalledWith(request.target)
   expect(f.sessionDirectory).not.toHaveBeenCalled()
   expect(f.openPath).toHaveBeenCalledExactlyOnceWith(join(f.source, "hello.txt"))
+  expect(f.revealPath).toHaveBeenCalledExactlyOnceWith(join(f.source, "hello.txt"))
   f.isLocalTarget.mockResolvedValue(false)
   expect(await controller.resolveResource(request)).toMatchObject({ canOpen: false })
   await expect(controller.openResource(request)).rejects.toThrow("Only files on this computer")
+  await expect(controller.revealResource(request)).rejects.toThrow("Only files on this computer")
   expect(f.openPath).toHaveBeenCalledOnce()
+  expect(f.revealPath).toHaveBeenCalledOnce()
 })
 
 test("only verified local machine previews bypass the remote size limit", async () => {
@@ -215,25 +220,29 @@ test("only verified local machine previews bypass the remote size limit", async 
   await expect(controller.readResource(request)).rejects.toThrow("too large to preview")
 })
 
-test("native open rejects directories and expired local grants and reports launcher failures", async () => {
+test("native open and reveal reject directories and expired local grants and report launcher failures", async () => {
   const f = await fixture(), controller = f.create()
   const request = { target: { kind: "local" } as const, sessionId: "session", uri: "hello.txt" }
   await expect(controller.openResource({ ...request, uri: "." })).rejects.toThrow("Select a file")
+  await expect(controller.revealResource({ ...request, uri: "." })).rejects.toThrow("Select a file")
   await expect(controller.openResource({ ...request, target: { kind: "local", grantId: "forged" } })).rejects.toThrow("expired")
+  await expect(controller.revealResource({ ...request, target: { kind: "local", grantId: "forged" } })).rejects.toThrow("expired")
   expect(f.openPath).not.toHaveBeenCalled()
+  expect(f.revealPath).not.toHaveBeenCalled()
   f.openPath.mockRejectedValueOnce(new Error("No application is associated with this file"))
   await expect(controller.openResource(request)).rejects.toThrow("No application")
 })
 
-test("native open cannot outlive its window or account while locality is pending", async () => {
+test.each(["openResource", "revealResource"] as const)("native %s cannot outlive its window or account while locality is pending", async method => {
   const f = await fixture(), controller = f.create(), local = deferred<boolean>()
   const request = { target: { kind: "machine", machineId: "this-machine", teamId: "team" } as const, sessionId: "session", uri: "hello.txt" }
   f.isLocalTarget.mockReturnValue(local.promise)
-  const pending = controller.openResource(request)
+  const pending = controller[method](request)
   const rejected = expect(pending).rejects.toThrow("expired")
   await vi.waitFor(() => expect(f.isLocalTarget).toHaveBeenCalledOnce())
   await controller.close()
   local.resolve(true)
   await rejected
   expect(f.openPath).not.toHaveBeenCalled()
+  expect(f.revealPath).not.toHaveBeenCalled()
 })

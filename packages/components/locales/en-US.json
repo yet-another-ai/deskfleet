@@ -1449,6 +1449,7 @@
     "loadingResource": "Loading image…",
     "imageUnavailable": "Image unavailable",
     "openResource": "Open", "previewUnavailableLocal": "Preview is unavailable for this file. You can open it in another application.",
+    "showInFinder": "Show in Finder", "showInExplorer": "Show in File Explorer", "showInFileManager": "Show in File Manager",
     "previewUnavailable": "Preview is unavailable for this file. You can download it.", "downloadResource": "Download",
     "previewHtml": "Preview", "viewSource": "Source",
     "resourceUnavailable": "This resource is unavailable. Connect to its machine and try again.",

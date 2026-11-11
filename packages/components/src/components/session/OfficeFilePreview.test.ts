@@ -87,16 +87,17 @@ test("loads an Office resource in a reopened preview using the existing scoped f
   view.unmount()
 })
 
-test.each(["dialog", "tab"] as const)("opens local Office files with the scoped native API in %s mode", async mode => {
+test.each(["dialog", "tab"] as const)("opens and reveals local Office files with the scoped native API in %s mode", async mode => {
   const data = new Uint8Array([0x50, 0x4b])
   const openResource = vi.fn().mockResolvedValue(undefined)
+  const revealResource = vi.fn().mockResolvedValue(undefined)
   const saveResource = vi.fn()
   const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {})
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:local-slides")
   const api = {
     resolveResource: vi.fn().mockResolvedValue({ name: "preview.pptx", path: request.uri, kind: "file", canOpen: true }),
     readResource: vi.fn().mockResolvedValue({ name: "preview.pptx", data, mimeType: "application/octet-stream", canOpen: true }),
-    openResource, saveResource,
+    openResource, revealResource, saveResource,
   } as unknown as FilesApi
   const view = mount(AgentResourceViewer, { props: { api, request, mode }, global, attachTo: document.body })
   await flushPromises()
@@ -105,10 +106,17 @@ test.each(["dialog", "tab"] as const)("opens local Office files with the scoped 
   await flushPromises()
   expect(view.find('[data-preview-action="download"]').exists()).toBe(false)
   const actions = view.findAll('[data-preview-action="open"]')
+  const reveals = view.findAll('[data-preview-action="reveal"]')
   expect(actions).toHaveLength(mode === "dialog" ? 2 : 1)
+  expect(reveals).toHaveLength(mode === "dialog" ? 2 : 1)
   for (const action of actions) await action.trigger("click")
+  await view.get('[data-preview-action="more"]').trigger("click")
+  await flushPromises()
+  for (const reveal of view.findAll('[data-preview-action="reveal"]')) await reveal.trigger("click")
   expect(openResource).toHaveBeenCalledTimes(actions.length)
   expect(openResource).toHaveBeenCalledWith(request)
+  expect(revealResource).toHaveBeenCalledTimes(reveals.length)
+  expect(revealResource).toHaveBeenCalledWith(request)
   expect(saveResource).not.toHaveBeenCalled()
   expect(download).not.toHaveBeenCalled()
   view.unmount()
