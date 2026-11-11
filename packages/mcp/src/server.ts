@@ -7,7 +7,7 @@ import { DESKFLEET_TOOLS } from "./tools.ts"
 export type ToolInvoker = (name: string, args: Record<string, unknown>) => Promise<unknown>
 
 export function createMcpServer(invoke: ToolInvoker): Server {
-  const server = new Server({ name: "deskfleet", title: "DeskFleet", version: "0.13.0" }, { capabilities: { tools: {} } })
+  const server = new Server({ name: "deskfleet", title: "DeskFleet", version: "0.13.1" }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: DESKFLEET_TOOLS.map(({ method: _method, ...tool }) => tool),
   }))
