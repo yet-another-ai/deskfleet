@@ -205,10 +205,12 @@ test("session rows distinguish working, permission, and question indicators", as
 
   agents.views["workspace-session"]!.snapshot = { ...live, elicitations: [agentElicitation({ sessionId: "workspace-session", state: "pending" })] }
   await flushPromises()
+  expect(wrapper.get('[data-session-working="question"]').classes()).toContain("text-ui-text-muted")
   expect(wrapper.get('[data-session-working="question"] svg').classes()).toContain("animate-bounce")
 
   agents.views["workspace-session"]!.snapshot = { ...live, permissions: [agentPermission({ sessionId: "workspace-session", state: "pending" })], elicitations: [agentElicitation({ sessionId: "workspace-session", state: "pending" })] }
   await flushPromises()
+  expect(wrapper.get('[data-session-working="permission"]').classes()).toContain("text-ui-warning")
   expect(wrapper.get('[data-session-working="permission"] svg').classes()).toContain("animate-bounce")
 
   agents.views["workspace-session"]!.snapshot = { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] }

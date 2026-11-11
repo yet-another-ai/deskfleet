@@ -550,8 +550,15 @@ onScopeDispose(() => {
 }
 .deskfleet-windows :deep(.dv-tab::before),
 .deskfleet-windows :deep(.dv-tab::after) { display: none; }
-.deskfleet-windows :deep(.dv-active-tab:hover) { background: color-mix(in srgb, var(--ui-color-accent) 20%, transparent); }
-.deskfleet-windows :deep(.dv-inactive-tab:hover) { background: var(--ui-color-hover); }
+/* Override Dockview's tab background custom properties on the tab itself so its 6-class group rule resolves hover colors. */
+.deskfleet-windows :deep(.dv-active-tab:hover) {
+  --dv-activegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+  --dv-inactivegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+}
+.deskfleet-windows :deep(.dv-inactive-tab:hover) {
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--ui-color-hover);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--ui-color-hover);
+}
 .deskfleet-windows :deep(.dv-pre-actions-container > .dv-vue-part),
 .deskfleet-windows :deep(.dv-left-actions-container > .dv-vue-part),
 .deskfleet-windows :deep(.dv-right-actions-container > .dv-vue-part) {

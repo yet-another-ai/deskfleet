@@ -10,7 +10,13 @@ const label = computed(() => t(state === "permission" ? "agent.permissionRequire
 </script>
 
 <template>
-  <span class="inline-flex shrink-0 items-center text-ui-text-muted" role="status" :title="label" :data-session-working="state">
+  <span
+    class="inline-flex shrink-0 items-center"
+    :class="state === 'permission' ? 'text-ui-warning' : 'text-ui-text-muted'"
+    role="status"
+    :title="label"
+    :data-session-working="state"
+  >
     <ShieldCheck v-if="state === 'permission'" :size="14" :stroke-width="2" class="animate-bounce" aria-hidden="true" />
     <Hand v-else-if="state === 'question'" :size="14" :stroke-width="2" class="animate-bounce" aria-hidden="true" />
     <LoaderCircle v-else :size="14" :stroke-width="2" class="animate-spin" aria-hidden="true" />
