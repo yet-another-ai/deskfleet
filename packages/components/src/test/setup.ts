@@ -1,6 +1,7 @@
 import { configureClient } from "@deskfleet/client/platform"
 import { afterEach, vi } from "vitest"
 import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
+import { AGENT_PROVIDER_TEMPLATES } from "../../../../apps/daemon/src/provider-protocol.ts"
 import { loadProviderIcons } from "../services/provider-icons.ts"
 
 if (document.compatMode !== "CSS1Compat") {
@@ -14,7 +15,7 @@ const api: DeskfleetDesktopApi = {
     list: async () => ({
       revision: "test-settings",
       shellEnvironmentDefault: true,
-      templates: [{ id: "codex", name: "Codex", defaultBinaryPath: "codex" }, { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" }, { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" }, { id: "grok", name: "Grok", defaultBinaryPath: "grok" }, { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" }, { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp" }, { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" }, { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" }, { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" }],
+      templates: [...AGENT_PROVIDER_TEMPLATES],
       providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
     }),
     create: async () => { throw new Error("Daemon unavailable") },

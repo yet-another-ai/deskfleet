@@ -124,14 +124,18 @@ test("login runs independently and refreshes auth without assuming a successful 
   expect(view.get("[data-provider-install]").text()).toBe("Reinstall")
 })
 
-test.each(([
+test.each([...([
   ["en-US", "Enter /login to sign in, then /quit to return."],
   ["zh-cmn-Hans-CN", "输入 /login 登录，完成后输入 /quit 返回。"],
   ["ja-JP", "/login を入力してログインし、/quit で戻ってください。"],
 ] as const).flatMap(([locale, hint]) => ([
   { template: "pi", name: "Pi Coding Agent", locale, hint },
   { template: "omp", name: "Oh My Pi", locale, hint },
-] as const)))("guides $name login in $locale until its terminal exits", async ({ template, name, locale, hint }) => {
+] as const)),
+  { template: "codebuddy", name: "CodeBuddy Code", locale: "en-US", hint: "Follow CodeBuddy's startup prompts or enter /login to sign in, then /exit to return." },
+  { template: "codebuddy", name: "CodeBuddy Code", locale: "zh-cmn-Hans-CN", hint: "按照 CodeBuddy 的启动提示或输入 /login 登录，完成后输入 /exit 返回。" },
+  { template: "codebuddy", name: "CodeBuddy Code", locale: "ja-JP", hint: "CodeBuddy の起動時の案内に従うか、/login を入力してログインし、/exit で戻ってください。" },
+] as const)("guides $name login in $locale until its terminal exits", async ({ template, name, locale, hint }) => {
   i18n.global.locale.value = locale
   const probe = vi.fn<(provider: AgentProviderInput) => Promise<ProviderProbeResult>>().mockResolvedValue({ ...found, binaryPath: `/tools/${template}`, version: "0.65.0" })
   const { view, terminals } = render(probe, { template, name, env: {} })

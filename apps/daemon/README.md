@@ -245,6 +245,7 @@ mise exec -- node apps/daemon/src/main.ts agent cursor --check
 mise exec -- node apps/daemon/src/main.ts agent grok --check
 mise exec -- node apps/daemon/src/main.ts agent pi --check
 mise exec -- node apps/daemon/src/main.ts agent omp --check
+mise exec -- node apps/daemon/src/main.ts agent codebuddy --check
 mise exec -- node apps/daemon/src/main.ts agent deepseek-harness --check
 mise exec -- node apps/daemon/src/main.ts agent antigravity --check
 ```
@@ -258,8 +259,8 @@ Agent configuration uses these common options:
 
 | Option | Meaning |
 | --- | --- |
-| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, or `agy` on PATH |
+| `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `CodeBuddy Code`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
+| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `codebuddy`, or `agy` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -294,6 +295,16 @@ binary through the official `omp.sh` installer. **Log in** opens
 `omp --allow-home`; enter `/login`, complete authentication, then `/quit`.
 Discovery leaves credential status unknown; **Test Connection** opens a session
 without sending a prompt.
+CodeBuddy Code uses native ACP as `codebuddy --acp`, starting in the selected
+workspace. Settings installs the official standalone CLI without requiring
+Node.js/npm. **Log in** opens its interactive interface; follow its startup
+prompts or enter `/login`, then `/exit`. Existing CLI credentials or
+`CODEBUDDY_API_KEY` authenticate sessions. In Settings, turn **Use China edition**
+on for China or off for international accounts; it sets
+`CODEBUDDY_INTERNET_ENVIRONMENT` to `internal` or `public` for all setup and
+session operations. The one-shot CLI can set the same variable through `--env`.
+Detection leaves credential status unknown, and **Test Connection** checks
+session creation without invoking interactive ACP authentication.
 DeepSeek Harness is native ACP: the daemon runs the bundled CLI, or an explicit
 external binary, using `--profile acp`
 (`dsh acp` is the same launch). The bundle's **Log in** action opens a terminal

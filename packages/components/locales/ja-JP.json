@@ -882,12 +882,16 @@
     "runsOn": "{machine} 上の {template}", "advanced": "詳細設定",
     "customPath": "カスタムパス", "binaryDetected": "空欄にすると検出された実行ファイルを使用します。",
     "showDetails": "詳細", "hideDetails": "非表示",
+    "codebuddyChina": "中国版を使用",
+    "codebuddyChinaDescription": "CodeBuddy 中国版のアカウントではオン、国際版ではオフにしてください。",
+    "codebuddyAuthHint": "選択した版の CodeBuddy にログインするか、詳細設定で CODEBUDDY_API_KEY を追加してください。",
     "templateDescription": {
       "codex": "OpenAI のコーディングエージェント。", "claude-code": "Anthropic のコーディングエージェント。",
       "cursor": "Cursor のエージェント CLI。", "grok": "xAI の Grok CLI。",
       "pi": "Pi のコーディングエージェント CLI。", "deepseek-harness": "DeepSeek のエージェントハーネス CLI（dsh）。",
       "omp": "Oh My Pi のコーディングエージェント CLI。",
       "antigravity": "Google の Antigravity コーディングエージェント。",
+      "codebuddy": "Tencent の CodeBuddy コーディングエージェント。",
       "acp": "Agent Client Protocol に対応した任意のエージェント。"
     },
     "iconDefault": "テンプレートのデフォルト", "iconReset": "テンプレートのデフォルトを使用",
@@ -905,6 +909,7 @@
       "setPath": "パスを設定", "starting": "起動中…",
       "installing": "インストール中…", "loggingIn": "ログインを待っています。以下の案内に従ってください。",
       "interactiveLoginHint": "/login を入力してログインし、/quit で戻ってください。", "output": "セットアップの出力",
+      "codebuddyLoginHint": "CodeBuddy の起動時の案内に従うか、/login を入力してログインし、/exit で戻ってください。",
       "installNotFound": "インストーラーは終了しましたが、実行ファイルが見つかりません。出力を確認するか、詳細設定でパスを指定してください。", "interrupted": "セットアップが中断されました。",
       "failed": "セットアップがステータス {code} で終了しました。", "unknownExit": "不明",
       "stop": "停止"

@@ -387,7 +387,8 @@ URL in the task's environment, or update the user's pnpm registry configuration.
 The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
 dependencies in pnpm. The SEA build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
-Grok (`grok agent stdio`), Pi (`pi --mode rpc`), or Oh My Pi (`omp acp`).
+Grok (`grok agent stdio`), Pi (`pi --mode rpc`), Oh My Pi (`omp acp`), or
+CodeBuddy Code (`codebuddy --acp`).
 `packages/dsh-runtime` owns DeepSeek Harness launch resolution, deployment, and
 smoke checks. Source daemon launches use the installed dependency tree with the
 running Node executable; Desktop development uses that same tree with Electron
@@ -422,6 +423,10 @@ Settings installs it through Google's official installer. Pi's official installe
 provide its required Node.js runtime; the bundled adapter does not include Pi.
 Oh My Pi uses native ACP; Settings installs its standalone binary through the
 official `omp.sh` installer without requiring a separate Bun runtime.
+CodeBuddy Code also uses native ACP. Settings uses Tencent's official
+`copilot.tencent.com/cli/install.sh` or `install.ps1` standalone installer,
+without requiring system Node.js/npm. An explicit binary path can also select
+an existing native or npm installation.
 Use `--binary-path` to select it and repeated `--env` options for environment
 overrides. See the [agent setup](../../apps/daemon/README.md#agents-through-acp)
 for initialization checks and prompt commands.

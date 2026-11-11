@@ -151,7 +151,8 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
         promptCapabilities: { image: true },
         sessionCapabilities: { resume: {} },
       },
-      ...(cursorMode ? { authMethods: [{ id: "cursor_login", name: "Cursor Login" }] } : grokMode ? { authMethods: grokAuthMethods() } : {}),
+      ...(cursorMode ? { authMethods: [{ id: "cursor_login", name: "Cursor Login" }] } : grokMode ? { authMethods: grokAuthMethods() }
+        : mode?.startsWith("codebuddy") ? { authMethods: [{ id: "external", name: "Login with Google/Github" }, { id: "internal", name: "Login with WeChat" }] } : {}),
       _meta: {
         steering: { supported: true, supportsPromptRequired: mode !== "legacy-steering" },
         clientCapabilities: params.clientCapabilities,
@@ -165,6 +166,7 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     }
   })
   .onRequest(acp.methods.agent.authenticate, ({ params }) => {
+    if (mode?.startsWith("codebuddy")) throw new Error("CodeBuddy must use existing authentication")
     if (mode?.startsWith("antigravity")) throw new Error("Antigravity must use existing authentication")
     if (mode?.startsWith("cursor-test")) throw new Error("Test connection must not request login")
     authenticated = true
@@ -173,7 +175,7 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     return {}
   })
   .onRequest(acp.methods.agent.session.new, async ({ params }) => {
-    if (mode === "cursor-test-signed-out" || mode === "antigravity-signed-out") throw acp.RequestError.authRequired()
+    if (mode === "cursor-test-signed-out" || mode === "antigravity-signed-out" || mode === "codebuddy-signed-out") throw acp.RequestError.authRequired()
     if (mode === "test-no-login" && process.env.DEFAULT_AUTH_REQUEST) throw new Error("Test connection inherited automatic login")
     if (mode === "wait-session") await new Promise(() => {})
     if (mode === "session-error") throw acp.RequestError.internalError({ details: `fixture cannot open ${params.cwd}` })
