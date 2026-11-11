@@ -17,6 +17,7 @@ export class WindowFiles implements FilesApi {
   readonly #sessionAttachmentDirectory?: (sessionId: string) => Promise<string>
   readonly #isLocalTarget: (target: FileTarget) => Promise<boolean>
   readonly #openPath: (path: string) => Promise<void>
+  readonly #revealPath: (path: string) => Promise<void>
   readonly #sessionTargets = new Map<string, Promise<FileTarget>>()
   #localTarget: Promise<FileTarget> | undefined
   #closed = false
@@ -27,12 +28,14 @@ export class WindowFiles implements FilesApi {
     sessionAttachmentDirectory?(sessionId: string): Promise<string>
     isLocalTarget(target: FileTarget): Promise<boolean>
     openPath(path: string): Promise<void>
+    revealPath(path: string): Promise<void>
   }) {
     this.#dialogs = options
     this.#sessionDirectory = options.sessionDirectory
     this.#sessionAttachmentDirectory = options.sessionAttachmentDirectory
     this.#isLocalTarget = options.isLocalTarget
     this.#openPath = options.openPath
+    this.#revealPath = options.revealPath
     this.#grants = new FileGrants({
       confirmOverwrite: path => options.confirmOverwrite(path),
       sessionAttachmentDirectory: options.sessionAttachmentDirectory,
@@ -124,16 +127,16 @@ export class WindowFiles implements FilesApi {
       return { ...file, canOpen: await this.#isLocalTarget(request.target) }
     })
   }
-  openResource(request: FileResourceRequest): Promise<void> {
-    return this.#live(async () => {
-      request = await this.#resource(request)
-      const file = await this.#manager.resolveResource(request)
-      if (file.kind !== "file") throw new Error("Select a file to open")
-      if (!await this.#isLocalTarget(request.target)) throw new Error("Only files on this computer can be opened")
-      this.#check()
-      await this.#openPath(file.path)
-    })
+  async #localFilePath(request: FileResourceRequest, action: "open" | "reveal"): Promise<string> {
+    request = await this.#resource(request)
+    const file = await this.#manager.resolveResource(request)
+    if (file.kind !== "file") throw new Error(`Select a file to ${action}`)
+    if (!await this.#isLocalTarget(request.target)) throw new Error(`Only files on this computer can be ${action}ed`)
+    this.#check()
+    return file.path
   }
+  openResource(request: FileResourceRequest) { return this.#live(async () => this.#openPath(await this.#localFilePath(request, "open"))) }
+  revealResource(request: FileResourceRequest) { return this.#live(async () => this.#revealPath(await this.#localFilePath(request, "reveal"))) }
   saveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.saveResource(await this.#resource(request))) }
   uploadAttachment(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult> {
     return this.#live(async () => {

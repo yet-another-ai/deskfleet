@@ -280,11 +280,12 @@ from the active server and the configured, non-revoked Team/Machine registration
 a machine-scoped request retains its existing authenticated endpoint. The renderer
 cannot opt out of the remote limit.
 
-For authorized local files, the action is **Open** instead of **Download**. Main
-resolves the Session resource again, checks that its target is still local, and
-passes the canonical file path to the operating system's default application.
-The action remains available when the format cannot be previewed. Opening does
-not copy the file or enqueue a transfer. Browser clients and remote files keep
+For authorized local files, the actions are **Open** and **Show in Finder**
+(**Show in File Explorer** on Windows, **Show in File Manager** on Linux) instead
+of **Download**. Main resolves the Session resource again, checks that its target
+is still local, and opens the canonical file path in the default application or
+reveals it in the system file manager. Both remain available when the format
+cannot be previewed, and neither copies the file or enqueues a transfer. Browser clients and remote files keep
 the download action, which saves already loaded bytes through a browser download,
 including files with unsupported preview formats. If the file resolves but its
 preview cannot load, the action remains available and selects a local destination

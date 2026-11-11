@@ -1449,6 +1449,7 @@
     "loadingResource": "正在加载图片…",
     "imageUnavailable": "图片无法加载",
     "openResource": "打开", "previewUnavailableLocal": "无法预览此文件，可以使用其他应用打开。",
+    "showInFinder": "在访达中显示", "showInExplorer": "在文件资源管理器中显示", "showInFileManager": "在文件管理器中显示",
     "previewUnavailable": "无法预览此文件，可以下载后查看。", "downloadResource": "下载",
     "previewHtml": "预览", "viewSource": "源码",
     "resourceUnavailable": "此资源暂不可用，请连接所属机器后重试。",
