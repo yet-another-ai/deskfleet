@@ -319,6 +319,22 @@ Its native ACP server advertises model and thinking configuration, Default and
 Plan modes where enabled, and saved-session loading, resuming, and forking.
 It accepts client-provided MCP servers and delegates filesystem and terminal
 operations when the client advertises those capabilities.
+The CodeBuddy Code template runs its
+[native ACP server](https://www.codebuddy.ai/docs/cli/acp) as `codebuddy --acp`,
+starting in the Session worktree's first directory. It uses cached CLI credentials
+or `CODEBUDDY_API_KEY`. Settings exposes **Use China edition**, writing
+`CODEBUDDY_INTERNET_ENVIRONMENT=internal` when enabled and `public` when
+disabled. This choice applies to discovery, login, connection tests, and sessions;
+advanced enterprise environment values remain unchanged until the user changes
+the switch. **Log in** opens the CLI's interactive terminal: complete its
+startup prompts or enter `/login`, then `/exit` to return to setup. Executable
+detection leaves credential status unknown; **Test connection** opens a session
+without sending a prompt. Neither startup nor testing calls ACP `authenticate`,
+which clears the existing CodeBuddy account before starting interactive login.
+CodeBuddy 2.182.0 advertises saved-session loading, image and embedded-context
+prompts, and HTTP/SSE MCP support. Standard ACP configuration, permission,
+filesystem, and terminal operations use the shared client. CodeBuddy's private
+Agent Teams metadata is not projected into DeskFleet's subagent interface.
 The DeepSeek Harness template runs the bundled
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) CLI (`dsh`)
 as `dsh --profile acp`, using Electron's Node mode in Desktop or the private Node

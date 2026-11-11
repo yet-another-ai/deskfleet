@@ -6,7 +6,8 @@ lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"]
 
 [tools]
 apm = "0.35.0"
-rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"] }
+java = "temurin-21.0.13+9.0.LTS"
+rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"], targets = ["aarch64-linux-android"] }
 node = "24.22.1"
 pnpm = "12.15.0"
 "cargo:cargo-shear" = "1.14.0"
@@ -219,8 +220,28 @@ run = "pnpm --filter @deskfleet/web dev:ios"
 
 [tasks."web:dev:android"]
 description = "Run the Vue Web development server with Capacitor Android live reload"
-depends = ["install", "viewer:build:android"]
+depends = ["install"]
 run = "pnpm --filter @deskfleet/web dev:android"
+
+[tasks."android:sync"]
+description = "Build the Vue Web client and sync Capacitor Android plugins and assets"
+depends = ["web:build"]
+run = "pnpm --filter @deskfleet/web exec cap sync android"
+
+[tasks."android:test"]
+description = "Sync Capacitor Android and run Gradle unit tests"
+depends = ["android:sync"]
+dir = "apps/web/android"
+run = "./gradlew testDebugUnitTest"
+
+[tasks."android:build"]
+description = "Build and sign the release Android App Bundle or APK with Capacitor"
+depends = ["web:build"]
+env.DESKFLEET_ANDROID_RELEASE = "1"
+run = [
+    "pnpm --filter @deskfleet/web exec cap sync android",
+    "pnpm --filter @deskfleet/web exec cap build android",
+]
 
 [tasks."web:build"]
 description = "Build the Vue Web client"

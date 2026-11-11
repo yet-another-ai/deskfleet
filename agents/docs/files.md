@@ -241,8 +241,10 @@ Text previews highlight the whole line for
 separators remain filename characters. Invalid or unavailable line numbers do
 not select another line.
 HTML `.html` and `.htm` files open in the syntax-highlighted source view first
-and offer a toggle into an isolated `<iframe srcdoc>` preview (`sandbox="allow-scripts allow-forms"`,
-without `allow-same-origin`).
+and offer a toggle into a sandboxed `<iframe src="./html-preview.html">` preview
+(`sandbox="allow-scripts allow-forms"`, without `allow-same-origin`) that replaces
+its location with an opaque-origin Blob document inside its own policy container,
+so inline scripts run without inheriting the host renderer's `script-src` policy.
 Other authorized files can be opened locally or downloaded from that tab or dialog.
 
 Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` previews use

@@ -283,6 +283,9 @@ test.each(["machine", "workspace"])("%s session rows hide completed archives and
   const visibleIds = () => wrapper.findAll('a[href^="/sessions/"]').map(link => link.attributes("href"))
   expect(visibleIds()).toEqual(["/sessions/active", "/sessions/archiving"])
   expect(wrapper.find('button[aria-label="Retry archive"]').exists()).toBe(true)
+  const archivingIndicator = wrapper.get('a[href="/sessions/archiving"] [data-session-working="archiving"]')
+  expect(archivingIndicator.attributes("title")).toContain("Archiving this session.")
+  expect(archivingIndicator.get("svg").classes()).toContain("animate-pulse")
 
   await router.push("/sessions/archived"); await flushPromises()
   expect(wrapper.find('a[href="/sessions/archived"]').exists()).toBe(false)
@@ -369,12 +372,13 @@ test("workspace row context menu edits and deletes without expanding or collapsi
   wrapper.unmount()
 })
 
-test.each(["machine", "workspace"] as const)("%s hover Archive confirms before acting and retains cleanup errors for retry", async scope => {
+test.each(["machine", "workspace"] as const)("%s hover Archive confirms before acting and closes the dialog while archiving proceeds", async scope => {
   const sessions: AgentSessionSummary[] = [{ id: "30", title: "Active chat", context: scope === "machine" ? "directory" : "worktree", archiveState: "active" }]
   const { wrapper, router } = await setup(scope === "machine" ? { sessions } : {
     workspaces: [{ id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions }],
   })
-  const archive = vi.spyOn(useAgentSessionsStore(), "archive").mockRejectedValueOnce(new Error("Worktree cleanup failed")).mockResolvedValue()
+  let finishArchive!: () => void
+  const archive = vi.spyOn(useAgentSessionsStore(), "archive").mockImplementation(() => new Promise<void>(resolve => { finishArchive = resolve }))
   const page = new DOMWrapper(document.body)
   const button = wrapper.get('button[aria-label="Archive session"]')
   const confirmSelector = scope === "machine" ? ".ui-button-primary" : ".ui-button-danger"
@@ -385,11 +389,10 @@ test.each(["machine", "workspace"] as const)("%s hover Archive confirms before a
   expect(archive).not.toHaveBeenCalled()
   await button.trigger("click"); await flushPromises()
   await page.get(`[role="dialog"] ${confirmSelector}`).trigger("click"); await flushPromises()
-  expect(page.get('[role="dialog"] [role="alert"]').text()).toBe("Worktree cleanup failed")
-  await page.get(`[role="dialog"] ${confirmSelector}`).trigger("click"); await flushPromises()
-  expect(archive).toHaveBeenCalledTimes(2)
-  expect(archive).toHaveBeenLastCalledWith("30")
+  expect(archive).toHaveBeenCalledExactlyOnceWith("30")
   expect(page.find('[role="dialog"]').exists()).toBe(false)
   expect(router.currentRoute.value.name).toBe("machine-control")
+  finishArchive()
+  await flushPromises()
   wrapper.unmount()
 })

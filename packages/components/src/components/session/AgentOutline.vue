@@ -15,11 +15,13 @@ interface OutlineItem {
 }
 
 const BAND_COUNT = 24
+const STEREO_BANDS = BAND_COUNT * 2
 const MIN_WIDTH = 6
-const MIN_HZ = 50
+const MIN_HZ = 80
+const MAX_HZ = 2_400
 const MIN_DB = -80
 const MAX_DB = -10
-const TILT_DB_PER_OCT = 2.0
+const TILT_DB_PER_OCT = 1.8
 const SIGNAL_THRESHOLD = 0.02
 const STEVENS_EXPONENT = 0.65
 
@@ -53,24 +55,27 @@ function interpolateBin(bins: Float32Array<ArrayBuffer>, position: number): numb
   return binAmplitude(bins, lo) * (1 - fraction) + binAmplitude(bins, hi) * fraction
 }
 
-function demoBandTarget(band: number, now: number): number {
+function demoBandTarget(slot: number, now: number): number {
+  const ch = slot < BAND_COUNT ? 0 : 1
+  const band = ch === 0 ? BAND_COUNT - 1 - slot : slot - BAND_COUNT
   const u = band / (BAND_COUNT - 1)
   const t = now * 0.001
+  const phase = ch * 1.15
   const beat = t * 1.9
   const kickPhase = beat % 1
   const kickEnv = kickPhase < 0.18 ? Math.sin((kickPhase / 0.18) * Math.PI) : 0
   const kick = kickEnv * Math.exp(-u * u * 5.2)
 
-  const eighthPhase = (beat * 2) % 1
+  const eighthPhase = (beat * 2 + ch * 0.16) % 1
   const eighthEnv = eighthPhase < 0.3 ? Math.sin((eighthPhase / 0.3) * Math.PI) : 0
-  const ripple = Math.max(0, Math.sin(u * 5.4 - t * 6.2) * 0.62 + Math.sin(u * 9.2 - t * 3.6) * 0.38)
+  const ripple = Math.max(0, Math.sin(u * 5.4 - t * 6.2 + phase) * 0.62 + Math.sin(u * 9.2 - t * 3.6 - phase) * 0.38)
   const mids = ripple * (0.22 + 0.78 * eighthEnv) * Math.sin(u * Math.PI) * 0.92
 
-  const hatPhase = ((beat + 0.5) * 2) % 1
+  const hatPhase = ((beat + 0.5 + ch * 0.25) * 2) % 1
   const hatEnv = hatPhase < 0.22 ? Math.sin((hatPhase / 0.22) * Math.PI) : 0
-  const shimmer = (0.5 + 0.5 * Math.sin(u * 11 + t * 8.5)) * hatEnv * (u ** 1.25) * 0.68
+  const shimmer = (0.5 + 0.5 * Math.sin(u * 11 + t * 8.5 + phase)) * hatEnv * (u ** 1.25) * 0.68
 
-  const swell = 0.84 + 0.16 * Math.sin(t * 1.3)
+  const swell = 0.84 + 0.16 * Math.sin(t * 1.3 + phase * 0.5)
   return Math.min(1, (kick + mids + shimmer) * swell)
 }
 
@@ -79,15 +84,15 @@ const useOutlineAudio = createSharedComposable(() => {
   const decayOverride = ref<number>()
   const decayMs = computed(() => decayOverride.value ?? appearance.settings.outlineAudioDecayMs)
   const previewCount = ref(0)
-  const bands = shallowRef(new Float32Array(BAND_COUNT))
+  const bands = shallowRef(new Float32Array(STEREO_BANDS))
   const activity = ref(0)
   const hue = ref(220)
-  const raw = new Float32Array(BAND_COUNT)
-  const targets = new Float32Array(BAND_COUNT)
+  const raw = new Float32Array(STEREO_BANDS)
+  const targets = new Float32Array(STEREO_BANDS)
   let runningPeak = 0.3
   let prevTime = 0
   let context: AudioContext | undefined
-  let analyser: AnalyserNode | undefined
+  let analysers: [AnalyserNode, AnalyserNode] | undefined
   let bins: Float32Array<ArrayBuffer> | undefined
 
   function step(): void {
@@ -98,62 +103,65 @@ const useOutlineAudio = createSharedComposable(() => {
     let frameMax = 0
     let frameSum = 0
 
-    if (analyser && bins && context) {
-      analyser.getFloatFrequencyData(bins)
+    if (analysers && bins && context) {
       const maxBin = bins.length - 1
       const binScale = (bins.length * 2) / context.sampleRate
-      const ratio = Math.min(6_400, context.sampleRate * 0.45) / MIN_HZ
+      const ratio = Math.min(MAX_HZ, context.sampleRate * 0.45) / MIN_HZ
 
-      for (let band = 0; band < BAND_COUNT; band++) {
-        const f0 = MIN_HZ * ratio ** (band / BAND_COUNT)
-        const fc = MIN_HZ * ratio ** ((band + 0.5) / BAND_COUNT)
-        const f1 = MIN_HZ * ratio ** ((band + 1) / BAND_COUNT)
-        const startBin = Math.max(1, Math.ceil(f0 * binScale))
-        const endBin = Math.min(maxBin, Math.floor(f1 * binScale))
-        let peak = interpolateBin(bins, Math.min(maxBin, Math.max(1, fc * binScale)))
-        let sumSq = peak * peak
-        let count = 1
+      for (let ch = 0; ch < 2; ch++) {
+        analysers[ch]!.getFloatFrequencyData(bins)
+        for (let band = 0; band < BAND_COUNT; band++) {
+          const f0 = MIN_HZ * ratio ** (band / BAND_COUNT)
+          const fc = MIN_HZ * ratio ** ((band + 0.5) / BAND_COUNT)
+          const f1 = MIN_HZ * ratio ** ((band + 1) / BAND_COUNT)
+          const startBin = Math.max(1, Math.ceil(f0 * binScale))
+          const endBin = Math.min(maxBin, Math.floor(f1 * binScale))
+          let peak = interpolateBin(bins, Math.min(maxBin, Math.max(1, fc * binScale)))
+          let sumSq = peak * peak
+          let count = 1
 
-        for (let bin = startBin; bin <= endBin; bin++) {
-          const amp = binAmplitude(bins, bin)
-          if (amp > peak) peak = amp
-          sumSq += amp * amp
-          count++
+          for (let bin = startBin; bin <= endBin; bin++) {
+            const amp = binAmplitude(bins, bin)
+            if (amp > peak) peak = amp
+            sumSq += amp * amp
+            count++
+          }
+
+          const amplitude = peak * 0.4 + Math.sqrt(sumSq / count) * 0.6
+          const tilt = (fc / MIN_HZ) ** (TILT_DB_PER_OCT / 6.0206)
+          const perceived = Math.min(1, (amplitude * tilt) ** STEVENS_EXPONENT)
+          const value = perceived < SIGNAL_THRESHOLD ? 0 : perceived
+          const slot = ch === 0 ? BAND_COUNT - 1 - band : BAND_COUNT + band
+          raw[slot] = value
+          if (value > frameMax) frameMax = value
+          frameSum += value
         }
-
-        const amplitude = peak * 0.35 + Math.sqrt(sumSq / count) * 0.65
-        const tilt = (fc / MIN_HZ) ** (TILT_DB_PER_OCT / 6.0206)
-        const perceived = Math.min(1, (amplitude * tilt) ** STEVENS_EXPONENT)
-        const value = perceived < SIGNAL_THRESHOLD ? 0 : perceived
-        raw[band] = value
-        if (value > frameMax) frameMax = value
-        frameSum += value
       }
     }
 
     if (frameMax === 0 && previewCount.value > 0) {
-      for (let i = 0; i < BAND_COUNT; i++) {
+      for (let i = 0; i < STEREO_BANDS; i++) {
         targets[i] = demoBandTarget(i, now)
       }
     } else {
       runningPeak = frameMax > runningPeak
-        ? runningPeak + (frameMax - runningPeak) * 0.12
+        ? runningPeak + (frameMax - runningPeak) * 0.14
         : Math.max(0.25, runningPeak * 0.997)
-      const frameMean = frameSum / BAND_COUNT / runningPeak
+      const frameMean = frameSum / STEREO_BANDS / runningPeak
 
-      for (let i = 0; i < BAND_COUNT; i++) {
+      for (let i = 0; i < STEREO_BANDS; i++) {
         const norm = Math.min(1, (raw[i] ?? 0) / runningPeak)
-        const prominence = Math.max(0, norm - frameMean * 0.45) / Math.max(0.55, 1 - frameMean * 0.35)
-        targets[i] = Math.min(1, norm * 0.45 + prominence * 0.55)
+        const prominence = Math.max(0, norm - frameMean * 0.28) / Math.max(0.6, 1 - frameMean * 0.22)
+        targets[i] = Math.min(1, norm * 0.55 + prominence * 0.45)
       }
     }
 
     const release = decayMs.value > 0 ? 1 - Math.exp(-dt / decayMs.value) : 1
-    const attack = 0.35
-    for (let i = 0; i < BAND_COUNT; i++) {
+    const attack = 0.4
+    for (let i = 0; i < STEREO_BANDS; i++) {
       const prev = targets[Math.max(0, i - 1)] ?? 0
       const curr = targets[i] ?? 0
-      const next = targets[Math.min(BAND_COUNT - 1, i + 1)] ?? 0
+      const next = targets[Math.min(STEREO_BANDS - 1, i + 1)] ?? 0
       const target = prev * 0.22 + curr * 0.56 + next * 0.22
       const current = bands.value[i] ?? 0
       const updated = current + (target - current) * (target > current ? attack : release)
@@ -186,10 +194,9 @@ const useOutlineAudio = createSharedComposable(() => {
   function width(index: number, count: number, baseline: number, targetMaxWidth: number): number {
     const mix = activity.value
     if (mix <= 0) return baseline
-    const maxStep = Math.floor((count - 1) / 2)
-    const pos = (maxStep > 0 ? Math.floor(Math.abs(index - (count - 1) / 2)) / maxStep : 0) * (BAND_COUNT - 1)
+    const pos = (count > 1 ? (index / (count - 1)) ** 1.27 : 0.5) * (STEREO_BANDS - 1)
     const lo = Math.floor(pos)
-    const hi = Math.min(BAND_COUNT - 1, lo + 1)
+    const hi = Math.min(STEREO_BANDS - 1, lo + 1)
     const energy = (bands.value[lo] ?? 0) * (1 - (pos - lo)) + (bands.value[hi] ?? 0) * (pos - lo)
     const audioWidth = MIN_WIDTH + energy * (Math.max(MIN_WIDTH, targetMaxWidth) - MIN_WIDTH)
     return baseline * (1 - mix) + audioWidth * mix
@@ -211,7 +218,7 @@ const useOutlineAudio = createSharedComposable(() => {
     onCleanup(() => {
       stopped = true
       if (previewCount.value === 0) pause()
-      analyser = undefined
+      analysers = undefined
       bins = undefined
       raw.fill(0)
       targets.fill(0)
@@ -236,11 +243,16 @@ const useOutlineAudio = createSharedComposable(() => {
         }
         stream = media
         context = new AudioContext()
-        analyser = context.createAnalyser()
-        analyser.fftSize = 4096
-        analyser.smoothingTimeConstant = 0.5
-        context.createMediaStreamSource(media).connect(analyser)
-        bins = new Float32Array(analyser.frequencyBinCount)
+        const splitter = context.createChannelSplitter(2)
+        context.createMediaStreamSource(media).connect(splitter)
+        analysers = [0, 1].map(ch => {
+          const node = context!.createAnalyser()
+          node.fftSize = 4096
+          node.smoothingTimeConstant = 0.2
+          splitter.connect(node, ch)
+          return node
+        }) as [AnalyserNode, AnalyserNode]
+        bins = new Float32Array(analysers[0].frequencyBinCount)
         step()
       }).catch(error => {
         console.warn("Could not start outline audio loopback:", error)

@@ -813,8 +813,8 @@ test("failed archive retains archiving admission state and retry survives servic
     assert.equal((await restarted.journal.read(f.sessionId)).session.archiveState, "archiving")
     let closed = false
     restarted.onSessionArchive(async () => { closed = true })
-    const archived = await restarted.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor) as AgentSnapshot
-    assert.equal(archived.session.archiveState, "archived")
+    await restarted.resumeArchiving()
+    assert.equal((await restarted.journal.read(f.sessionId)).session.archiveState, "archived")
     assert.equal(closed, true)
     assert.equal(f.provider.clients.length, 1)
     const restored = await restarted.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor) as AgentSnapshot

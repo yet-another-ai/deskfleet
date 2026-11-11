@@ -3,6 +3,7 @@ import { DialogDescription, DialogTitle } from "reka-ui"
 import { ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TeamMember } from "@deskfleet/client/central"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
 import UiSelect from "../common/UiSelect.vue"
@@ -10,6 +11,7 @@ import UiSelect from "../common/UiSelect.vue"
 const props = defineProps<{ members: TeamMember[]; transfer(userId: string): Promise<void> }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
+const client = usePlatformClient()
 const id = useId()
 const userId = ref(props.members[0]?.userId ?? "")
 const pending = ref(false)
@@ -29,7 +31,7 @@ async function submit(): Promise<void> {
 <template>
   <UiDialog class="w-[28rem] break-words" described :prevent-close="pending" @close="close">
     <DialogTitle class="ui-dialog-title">{{ t("team.transferOwnership") }}</DialogTitle>
-    <DialogDescription class="ui-dialog-description">{{ t("team.transferOwnershipDescription") }}</DialogDescription>
+    <DialogDescription class="ui-dialog-description">{{ t(client.mobile ? "team.transferOwnershipMobileDescription" : "team.transferOwnershipDescription") }}</DialogDescription>
     <form class="mt-4" @submit.prevent="submit">
       <label :id="`${id}-owner`" class="mb-1.5 block text-[13px]">{{ t("team.newOwner") }}</label>
       <UiSelect

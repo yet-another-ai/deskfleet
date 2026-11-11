@@ -109,7 +109,8 @@ async function confirmSwitch(): Promise<void> {
       <DropdownMenuTrigger data-agent-configuration-trigger data-composer-context class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })">
         <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
         <ProviderIcon v-else :icon="selectedProvider?.icon" :template="selectedProvider?.template" :size="15" />
-        <span class="truncate">{{ summary }}</span>
+        <span class="truncate">{{ modelName ?? providerName }}</span>
+        <template v-if="effortLabel">{{ " " }}<span class="shrink-0 text-ui-text-faint">{{ effortLabel }}</span></template>
         <LoaderCircle v-if="requestedModel" :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
         <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>

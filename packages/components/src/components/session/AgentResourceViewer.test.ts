@@ -23,6 +23,7 @@ test("highlights the resolved code filename with both themes and retains line na
   const view = renderText("main.ts", source, "file:///work/alias#L2-L3")
   await flushPromises()
   expect(view.get("pre code").element.textContent).toBe(source)
+  expect(view.findAll("pre code [data-line]").map(line => line.attributes("data-line"))).toEqual(["1", "2", "3"])
   const tokens = view.findAll("pre code span[style]")
   expect(tokens.length).toBeGreaterThan(3)
   const keyword = tokens.find(token => token.text() === "const")!
@@ -296,6 +297,7 @@ test("renders media, line-highlighted code, and workspace authorization errors i
   })
   await flushPromises()
   expect(codeView.findAll("pre .bg-ui-hover").map(line => line.text())).toEqual(["<path />"])
+  expect(codeView.findAll("pre code [data-line]").map(line => line.attributes("data-line"))).toEqual(["1", "2", "3"])
   expect(scroll).toHaveBeenCalledWith({ block: "center" })
   expect(codeView.find('[data-preview-action="download"]').exists()).toBe(true)
   codeView.unmount()
@@ -339,9 +341,16 @@ test.each([
 
   expect(view.find("pre code").exists()).toBe(false)
   const frame = view.get("iframe[data-html-preview]")
-  expect(frame.attributes("srcdoc")).toBe(html)
+  expect(frame.attributes("src")).toBe("./html-preview.html")
+  expect(frame.attributes("srcdoc")).toBeUndefined()
   expect(frame.attributes("sandbox")).toBe("allow-scripts allow-forms")
   expect(frame.attributes("sandbox")).not.toContain("allow-same-origin")
+
+  const postMessage = vi.fn()
+  Object.defineProperty(frame.element, "contentWindow", { value: { postMessage }, configurable: true })
+  await frame.trigger("load")
+  await frame.trigger("load")
+  expect(postMessage).toHaveBeenCalledExactlyOnceWith({ html }, "*")
 
   await view.get('[data-preview-action="source"]').trigger("click")
   await flushPromises()

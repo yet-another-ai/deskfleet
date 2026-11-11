@@ -1,4 +1,4 @@
-/* Website surfaces use the product palette; the theme switch selects color-scheme. */
+/* Website surfaces use the shared product palette. */
 :root {
   --deskfleet-display: "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
   --vp-font-family-base: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
@@ -85,9 +85,6 @@ body {
   height: auto;
   overflow-y: auto;
 }
-
-:root { color-scheme: light; }
-:root.dark { color-scheme: dark; }
 
 .VPNavBarTitle .logo { border-radius: 6px; }
 

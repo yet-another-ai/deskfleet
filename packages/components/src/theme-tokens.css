@@ -4,53 +4,56 @@
  * uno.config.ts. Text tokens meet WCAG AA on canvas, sidebar, and surface, and
  * `text-faint` meets 3:1 for secondary labels.
  */
-/* Appearance overrides color-scheme on the root; the default follows the OS. */
-:root {
-  color-scheme: light dark;
+/* Appearance sets data-theme on the root; VitePress toggles .dark. */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   /* Keep canvas and text in sync with apps/desktop/src/main/window-chrome.ts. */
-  --ui-color-canvas: light-dark(#fbfbfd, #17191f);
-  --ui-color-sidebar: light-dark(#f3f4f8, #121419);
-  --ui-color-surface: light-dark(#ffffff, #1f222a);
-  --ui-color-control: light-dark(#ffffff, #23262f);
-  --ui-color-control-hover: light-dark(#f3f4f8, #2a2e38);
-  --ui-color-text: light-dark(#1b1f2b, #e7e9ef);
-  --ui-color-text-muted: light-dark(#596173, #a3a9b7);
-  --ui-color-text-faint: light-dark(#838a9a, #7c8393);
-  --ui-color-border: light-dark(#e3e6ed, #2c303a);
-  --ui-color-border-strong: light-dark(#d3d7e0, #3a3f4b);
-  --ui-color-hover: light-dark(rgb(27 31 43 / 5%), rgb(231 233 239 / 6%));
-  --ui-color-active: light-dark(rgb(27 31 43 / 8%), rgb(231 233 239 / 10%));
-  --ui-color-badge: light-dark(rgb(27 31 43 / 6%), rgb(231 233 239 / 9%));
-  --ui-color-accent: light-dark(#4a5bd4, #8e9bff);
-  --ui-color-action: light-dark(#4a5bd4, #8e9bff);
-  --ui-color-action-hover: light-dark(#3d4dbf, #a5afff);
-  --ui-color-action-text: light-dark(#ffffff, #12141a);
-  --ui-color-action-disabled: light-dark(#c5cad6, #353a47);
-  --ui-color-avatar: light-dark(#4a5bd4, #5b6be0);
+  --ui-color-canvas: #fbfbfd;
+  --ui-color-sidebar: #f3f4f8;
+  --ui-color-surface: #ffffff;
+  --ui-color-control: #ffffff;
+  --ui-color-control-hover: #f3f4f8;
+  --ui-color-text: #1b1f2b;
+  --ui-color-text-muted: #596173;
+  --ui-color-text-faint: #838a9a;
+  --ui-color-border: #e3e6ed;
+  --ui-color-border-strong: #d3d7e0;
+  --ui-color-hover: rgb(27 31 43 / 5%);
+  --ui-color-active: rgb(27 31 43 / 8%);
+  --ui-color-badge: rgb(27 31 43 / 6%);
+  --ui-color-accent: #4a5bd4;
+  --ui-color-action: #4a5bd4;
+  --ui-color-action-hover: #3d4dbf;
+  --ui-color-action-text: #ffffff;
+  --ui-color-action-disabled: #c5cad6;
+  --ui-color-avatar: #4a5bd4;
   --ui-color-avatar-text: #ffffff;
-  --ui-color-focus: light-dark(#4a5bd4, #8e9bff);
-  --ui-color-success: light-dark(#167a4a, #4cc38a);
-  --ui-color-warning: light-dark(#975a00, #e3a64c);
-  --ui-color-danger: light-dark(#c4372f, #f47c71);
+  --ui-color-focus: #4a5bd4;
+  --ui-color-success: #167a4a;
+  --ui-color-warning: #975a00;
+  --ui-color-danger: #c4372f;
   --ui-color-switch-thumb: #ffffff;
   --ui-color-terminal: #15171d;
   --ui-color-desktop: #15171d;
-  --ui-color-scrim: light-dark(rgb(17 20 30 / 32%), rgb(4 5 8 / 58%));
+  --ui-color-scrim: rgb(17 20 30 / 32%);
   --ui-color-selection: color-mix(in srgb, var(--ui-color-accent) 24%, transparent);
   /* Second hue for decorative gradients only; never carries meaning. */
-  --ui-color-accent-alt: light-dark(#a24bd1, #c48cff);
+  --ui-color-accent-alt: #a24bd1;
+  --ui-aurora-a: color-mix(in srgb, var(--ui-color-accent) 14%, transparent);
+  --ui-aurora-b: color-mix(in srgb, var(--ui-color-accent-alt) 10%, transparent);
 
   /*
    * Depth. Raised surfaces catch a hairline of light along their top edge,
    * which reads as elevation in dark mode where shadows disappear.
    */
-  --ui-highlight: light-dark(rgb(255 255 255 / 0%), rgb(255 255 255 / 5%));
-  --ui-shadow-color-near: light-dark(rgb(27 31 43 / 4%), rgb(0 0 0 / 30%));
-  --ui-shadow-color: light-dark(rgb(27 31 43 / 4%), rgb(0 0 0 / 20%));
+  --ui-highlight: rgb(255 255 255 / 0%);
+  --ui-shadow-color-near: rgb(27 31 43 / 4%);
+  --ui-shadow-color: rgb(27 31 43 / 4%);
   --ui-shadow-card: inset 0 1px 0 var(--ui-highlight), 0 1px 2px var(--ui-shadow-color-near), 0 2px 8px var(--ui-shadow-color);
-  --ui-shadow-raised: inset 0 1px 0 var(--ui-highlight), 0 2px 4px var(--ui-shadow-color-near), 0 8px 20px light-dark(rgb(27 31 43 / 7%), rgb(0 0 0 / 28%));
-  --ui-shadow-popover: inset 0 1px 0 var(--ui-highlight), 0 4px 12px light-dark(rgb(27 31 43 / 8%), rgb(0 0 0 / 35%)), 0 12px 32px light-dark(rgb(27 31 43 / 8%), rgb(0 0 0 / 30%));
-  --ui-shadow-dialog: inset 0 1px 0 var(--ui-highlight), 0 8px 24px light-dark(rgb(27 31 43 / 10%), rgb(0 0 0 / 40%)), 0 24px 64px light-dark(rgb(27 31 43 / 14%), rgb(0 0 0 / 40%));
+  --ui-shadow-raised: inset 0 1px 0 var(--ui-highlight), 0 2px 4px var(--ui-shadow-color-near), 0 8px 20px rgb(27 31 43 / 7%);
+  --ui-shadow-popover: inset 0 1px 0 var(--ui-highlight), 0 4px 12px rgb(27 31 43 / 8%), 0 12px 32px rgb(27 31 43 / 8%);
+  --ui-shadow-dialog: inset 0 1px 0 var(--ui-highlight), 0 8px 24px rgb(27 31 43 / 10%), 0 24px 64px rgb(27 31 43 / 14%);
   --ui-shadow-glow: 0 0 0 3px color-mix(in srgb, var(--ui-color-accent) 16%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--ui-color-accent) 45%, transparent);
 
   /*
@@ -69,6 +72,48 @@
   --ui-font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC",
     "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --ui-font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root:is(.dark:not([data-theme="light"]), [data-theme="dark"]),
+[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-color-canvas: #17191f;
+  --ui-color-sidebar: #121419;
+  --ui-color-surface: #1f222a;
+  --ui-color-control: #23262f;
+  --ui-color-control-hover: #2a2e38;
+  --ui-color-text: #e7e9ef;
+  --ui-color-text-muted: #a3a9b7;
+  --ui-color-text-faint: #7c8393;
+  --ui-color-border: #2c303a;
+  --ui-color-border-strong: #3a3f4b;
+  --ui-color-hover: rgb(231 233 239 / 6%);
+  --ui-color-active: rgb(231 233 239 / 10%);
+  --ui-color-badge: rgb(231 233 239 / 9%);
+  --ui-color-accent: #8e9bff;
+  --ui-color-action: #8e9bff;
+  --ui-color-action-hover: #a5afff;
+  --ui-color-action-text: #12141a;
+  --ui-color-action-disabled: #353a47;
+  --ui-color-avatar: #5b6be0;
+  --ui-color-focus: #8e9bff;
+  --ui-color-success: #4cc38a;
+  --ui-color-warning: #e3a64c;
+  --ui-color-danger: #f47c71;
+  --ui-color-scrim: rgb(4 5 8 / 58%);
+  --ui-color-selection: color-mix(in srgb, var(--ui-color-accent) 24%, transparent);
+  --ui-color-accent-alt: #c48cff;
+  --ui-aurora-a: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+  --ui-aurora-b: color-mix(in srgb, var(--ui-color-accent-alt) 14%, transparent);
+
+  --ui-highlight: rgb(255 255 255 / 5%);
+  --ui-shadow-color-near: rgb(0 0 0 / 30%);
+  --ui-shadow-color: rgb(0 0 0 / 20%);
+  --ui-shadow-card: inset 0 1px 0 var(--ui-highlight), 0 1px 2px var(--ui-shadow-color-near), 0 2px 8px var(--ui-shadow-color);
+  --ui-shadow-raised: inset 0 1px 0 var(--ui-highlight), 0 2px 4px var(--ui-shadow-color-near), 0 8px 20px rgb(0 0 0 / 28%);
+  --ui-shadow-popover: inset 0 1px 0 var(--ui-highlight), 0 4px 12px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 30%);
+  --ui-shadow-dialog: inset 0 1px 0 var(--ui-highlight), 0 8px 24px rgb(0 0 0 / 40%), 0 24px 64px rgb(0 0 0 / 40%);
+  --ui-shadow-glow: 0 0 0 3px color-mix(in srgb, var(--ui-color-accent) 16%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--ui-color-accent) 45%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

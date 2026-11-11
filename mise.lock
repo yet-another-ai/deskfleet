@@ -57,6 +57,27 @@ checksum = "sha256:bace36e94b31c68ab6fa295f26dfa11219e0701cf7c94b0284a7d1cb13dac
 url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip"
 url_api = "https://api.github.com/repos/Kitware/CMake/releases/assets/605998125"
 
+[[tools.java]]
+version = "temurin-21.0.13+9.0.LTS"
+backend = "core:java"
+specifiers = ["temurin-21.0.13+9.0.LTS"]
+
+[tools.java."platforms.linux-arm64"]
+checksum = "sha256:e3522e707fc7dbe2a72c30746b1e7068301a0213ecd213d4491f35a14eb55578"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz"
+
+[tools.java."platforms.linux-x64"]
+checksum = "sha256:d7f5d5cf865a2902b70ff549b97586a7d3f234e016f041ab447ea740c7d66d1c"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz"
+
+[tools.java."platforms.macos-arm64"]
+checksum = "sha256:bf036b35b071bfb2f54f2c0af8ee8d88afa95ee6eb3dce02c0f94cfc2524d04a"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz"
+
+[tools.java."platforms.windows-x64"]
+checksum = "sha256:a4dbaa05fca4bd89d84584e58c459bd732efebb1722af80ab13c6516832004f9"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip"
+
 [[tools.node]]
 version = "24.22.1"
 backend = "core:node"
@@ -115,3 +136,4 @@ specifiers = ["1.99.1"]
 [tools.rust.options]
 components = "clippy,rustfmt"
 profile = "minimal"
+targets = "aarch64-linux-android"

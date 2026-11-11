@@ -9,9 +9,10 @@ import ProviderDialog from "./ProviderDialog.vue"
 let wrapper: VueWrapper | undefined
 async function render(save = vi.fn().mockResolvedValue(undefined), initial?: AgentProviderConfig, test = vi.fn().mockResolvedValue({ agentName: "Claude Agent" }), shellEnvironmentDefault = true) {
   const pinia = createPinia()
-  wrapper = mount(ProviderDialog, { attachTo: document.body, props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", shellEnvironmentDefault, probe: vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false }), install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true, teleport: { inheritAttrs: false, template: "<slot />" } } } })
+  const probe = vi.fn().mockResolvedValue({ status: "missing", auth: "unknown", installable: true, loginAvailable: false })
+  wrapper = mount(ProviderDialog, { attachTo: document.body, props: { save, test, initial, templates: [...AGENT_PROVIDER_TEMPLATES], machineName: "my-machine", shellEnvironmentDefault, probe, install: vi.fn(), login: vi.fn() }, global: { plugins: [pinia, i18n], stubs: { LiveTerminal: true, teleport: { inheritAttrs: false, template: "<slot />" } } } })
   await wrapper.vm.$nextTick()
-  return { view: wrapper, save, test, terminals: useTerminalsStore(pinia) }
+  return { view: wrapper, save, test, probe, terminals: useTerminalsStore(pinia) }
 }
 const button = (view: VueWrapper, text: string) => view.findAll("button").find(value => value.text() === text)!
 const pick = (view: VueWrapper, template: AgentProviderTemplateId) => view.get(`[data-provider-template-choice="${template}"]`).trigger("click")
@@ -54,6 +55,7 @@ test.each([
   ["omp", "Oh My Pi", "omp", "pi"],
   ["deepseek-harness", "DeepSeek Harness", "dsh", "deepseek"],
   ["antigravity", "Antigravity", "agy", "antigravity"],
+  ["codebuddy", "CodeBuddy Code", "codebuddy", "codebuddy"],
 ] as const)("the %s template defaults to its installed CLI and mark", async (template, name, binary, mark) => {
   const { view, save } = await render()
   await pick(view, template)
@@ -62,7 +64,92 @@ test.each([
   await vi.waitFor(() => expect(view.get("[data-provider-icon]").attributes("data-provider-icon")).toBe(mark))
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(save).toHaveBeenCalledExactlyOnceWith({ template, name, binaryPath: undefined, icon: undefined, inheritShellEnvironment: true, env: {} })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template, name, binaryPath: undefined, icon: undefined, inheritShellEnvironment: true,
+    env: template === "codebuddy" ? { CODEBUDDY_INTERNET_ENVIRONMENT: "public" } : {} })
+})
+
+test.each([
+  ["internal", true, "internal"], ["public", false, "public"],
+  ["ioa", false, "ioa"], ["selfhosted", false, "selfhosted"], ["cloudhosted", false, "cloudhosted"],
+  [undefined, false, "public"], ["", false, "public"],
+] as const)("restores CodeBuddy region %s without changing an explicit account region", async (region, checked, effectiveRegion) => {
+  const env = { CODEBUDDY_API_KEY: "account-key", ...(region !== undefined ? { CODEBUDDY_INTERNET_ENVIRONMENT: region } : {}) }
+  const { view, save, test: testConnection, probe } = await render(undefined, { id: "work", template: "codebuddy", name: "Work CodeBuddy", env })
+  await flushPromises()
+  const expectedEnv = { ...env, CODEBUDDY_INTERNET_ENVIRONMENT: effectiveRegion }
+  expect(view.get("[data-provider-codebuddy-china]").attributes("aria-checked")).toBe(String(checked))
+  expect(view.get("[data-provider-advanced]").find("[data-provider-codebuddy-china]").exists()).toBe(false)
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ env: expectedEnv }))
+  await view.get("[data-provider-test]").trigger("click")
+  await flushPromises()
+  expect(testConnection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ env: expectedEnv }))
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ env: expectedEnv }))
+  expect(env).toEqual({ CODEBUDDY_API_KEY: "account-key", ...(region !== undefined ? { CODEBUDDY_INTERNET_ENVIRONMENT: region } : {}) })
+})
+
+test("CodeBuddy edition controls discovery, login, tests, and persistence without opening Advanced", async () => {
+  vi.useFakeTimers()
+  const { view, save, test: testConnection, terminals } = await render()
+  const loginTerminal = { id: "codebuddy-login", title: "CodeBuddy sign in", cwd: "/home/user", cols: 100, rows: 24, status: "running" as const }
+  const login = vi.fn().mockResolvedValue(loginTerminal)
+  const probe = vi.fn().mockResolvedValue({ status: "found", binaryPath: "/tools/codebuddy", auth: "unknown", installable: true, loginAvailable: true })
+  await view.setProps({ probe, login })
+  await pick(view, "codebuddy")
+  await flushPromises()
+  expect(advancedOpen(view)).toBe(false)
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "public" } }))
+  await view.get("[data-provider-codebuddy-china]").trigger("click")
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(view.get("[data-provider-codebuddy-china]").attributes("aria-checked")).toBe("true")
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } }))
+  expect(advancedOpen(view)).toBe(false)
+
+  await view.get("[data-provider-login]").trigger("click")
+  await flushPromises()
+  expect(login).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ binaryPath: "/tools/codebuddy", env: { CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } }))
+  expect(view.find("[data-provider-codebuddy-china]").exists()).toBe(false)
+  terminals.sessions.push({ ...loginTerminal, status: "exited", exitCode: 0 })
+  await flushPromises()
+  await view.get("[data-provider-test]").trigger("click")
+  await flushPromises()
+  expect(testConnection).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "internal" } }))
+
+  await view.get("[data-provider-codebuddy-china]").trigger("click")
+  expect(view.find("[data-provider-test-result]").exists()).toBe(false)
+  await vi.advanceTimersByTimeAsync(300)
+  await flushPromises()
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "public" } }))
+  await view.get("[data-provider-test]").trigger("click")
+  await flushPromises()
+  expect(testConnection).toHaveBeenLastCalledWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "public" } }))
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ env: { CODEBUDDY_INTERNET_ENVIRONMENT: "public" } }))
+})
+
+test("changing an existing CodeBuddy edition preserves other settings and replaces its region", async () => {
+  const { view, save } = await render(undefined, { id: "work", template: "codebuddy", name: "Work", binaryPath: "/work/codebuddy", inheritShellEnvironment: false,
+    env: { CODEBUDDY_API_KEY: "account-key", CODEBUDDY_INTERNET_ENVIRONMENT: "ioa" } })
+  await view.get("[data-provider-codebuddy-china]").trigger("click")
+  expect(view.get("[data-provider-codebuddy-china]").attributes("aria-checked")).toBe("true")
+  await view.get("[data-provider-codebuddy-china]").trigger("click")
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith({ template: "codebuddy", name: "Work", binaryPath: "/work/codebuddy", icon: undefined, inheritShellEnvironment: false,
+    env: { CODEBUDDY_API_KEY: "account-key", CODEBUDDY_INTERNET_ENVIRONMENT: "public" } })
+})
+
+test("CodeBuddy edition settings do not leak into another provider template", async () => {
+  const { view, save, probe } = await render()
+  await pick(view, "codebuddy")
+  await view.get("[data-provider-codebuddy-china]").trigger("click")
+  await view.get("[data-provider-back]").trigger("click")
+  await pick(view, "cursor")
+  await flushPromises()
+  expect(view.find("[data-provider-codebuddy-china]").exists()).toBe(false)
+  expect(probe).toHaveBeenLastCalledWith(expect.objectContaining({ template: "cursor", env: {} }))
+  await view.get("form").trigger("submit")
+  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ template: "cursor", env: {} }))
 })
 
 test("tests the unsaved settings without saving and clears a result once launch settings change", async () => {

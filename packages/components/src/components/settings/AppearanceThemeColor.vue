@@ -127,13 +127,31 @@ async function reset(): Promise<void> {
   cursor: not-allowed;
 }
 
+.chromatic-hue-slider {
+  --thumb-bg: #525252;
+  --thumb-border: #737373;
+  --thumb-hover-bg: #262626;
+}
+
+:global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .chromatic-hue-slider {
+  --thumb-bg: #f5f5f5;
+  --thumb-border: #ffffff;
+  --thumb-hover-bg: #d4d4d4;
+}
+
+:global([data-theme="light"]) .chromatic-hue-slider {
+  --thumb-bg: #525252;
+  --thumb-border: #737373;
+  --thumb-hover-bg: #262626;
+}
+
 .chromatic-hue-slider::-webkit-slider-thumb {
   appearance: none;
   width: 0.25rem;
   height: 2rem;
   border-radius: 0.25rem;
-  background: light-dark(#525252, #f5f5f5);
-  border: 1.5px solid light-dark(#737373, #ffffff);
+  background: var(--thumb-bg);
+  border: 1.5px solid var(--thumb-border);
   box-shadow: 0 2px 6px rgb(0 0 0 / 28%);
   cursor: col-resize;
   transition:
@@ -146,7 +164,7 @@ async function reset(): Promise<void> {
 .chromatic-hue-slider:not(:disabled):hover::-webkit-slider-thumb {
   width: 0.375rem;
   height: 2.125rem;
-  background: light-dark(#262626, #d4d4d4);
+  background: var(--thumb-hover-bg);
 }
 
 .chromatic-hue-slider::-moz-range-thumb {
@@ -154,8 +172,8 @@ async function reset(): Promise<void> {
   width: 0.25rem;
   height: 2rem;
   border-radius: 0.25rem;
-  background: light-dark(#525252, #f5f5f5);
-  border: 1.5px solid light-dark(#737373, #ffffff);
+  background: var(--thumb-bg);
+  border: 1.5px solid var(--thumb-border);
   box-shadow: 0 2px 6px rgb(0 0 0 / 28%);
   cursor: col-resize;
   transition:
@@ -168,6 +186,6 @@ async function reset(): Promise<void> {
 .chromatic-hue-slider:not(:disabled):hover::-moz-range-thumb {
   width: 0.375rem;
   height: 2.125rem;
-  background: light-dark(#262626, #d4d4d4);
+  background: var(--thumb-hover-bg);
 }
 </style>

@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { setTimeout as delay } from "node:timers/promises"
+import type { Usage } from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 
@@ -25,6 +27,77 @@ const isDaemon = (input: unknown): boolean =>
   typeof input === "object" && input !== null && [true, "true"].includes((input as { IsDaemon?: unknown }).IsDaemon as boolean)
 
 const cleanId = (id: string): string => id.replace(/[.,;:]+$/, "")
+
+function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
+  if (!a || !b) return a ?? b ?? undefined
+  const add = (x?: number | null, y?: number | null) => (x != null || y != null ? (x ?? 0) + (y ?? 0) : undefined)
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+    cachedReadTokens: add(a.cachedReadTokens, b.cachedReadTokens),
+    cachedWriteTokens: add(a.cachedWriteTokens, b.cachedWriteTokens),
+    thoughtTokens: add(a.thoughtTokens, b.thoughtTokens),
+  }
+}
+
+function readVarint(buf: Uint8Array, pos: number): [value: number, next: number] | null {
+  let val = 0n
+  let shift = 0n
+  while (pos < buf.length) {
+    const b = buf[pos++]!
+    val |= BigInt(b & 0x7f) << shift
+    if (!(b & 0x80)) return [Number(val), pos]
+    shift += 7n
+  }
+  return null
+}
+
+function findProtoField(buf: Uint8Array | undefined, target: number, wireType: 0 | 2): [value: number, pos: number] | null {
+  if (!buf) return null
+  let pos = 0
+  while (pos < buf.length) {
+    const tag = readVarint(buf, pos)
+    if (!tag) return null
+    const [t, next] = tag
+    const wire = t & 7
+    if (wire === 0 || wire === 2) {
+      const v = readVarint(buf, next)
+      if (!v) return null
+      if (t >>> 3 === target && wire === wireType) return v
+      pos = wire === 2 ? v[1] + v[0] : v[1]
+    } else if (wire === 1) pos = next + 8
+    else if (wire === 5) pos = next + 4
+    else return null
+  }
+  return null
+}
+
+const protoSub = (buf: Uint8Array | undefined, field: number): Uint8Array | undefined => {
+  const m = findProtoField(buf, field, 2)
+  return m && m[1] + m[0] <= buf!.length ? buf!.subarray(m[1], m[1] + m[0]) : undefined
+}
+const protoInt = (buf: Uint8Array | undefined, field: number): number => findProtoField(buf, field, 0)?.[0] ?? 0
+
+/** Reads `used` (input + output + cached) and `size` (`max_context_tokens`) from the session SQLite DB (`CortexStepGeneratorMetadata` protobuf). */
+function readContextUsage(dbPath: string): { used: number; size: number } | null {
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true, timeout: 2000 })
+    const row = db.prepare("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1").get() as { data?: Uint8Array } | undefined
+    if (!row?.data) return null
+    const chatModel = protoSub(row.data, 1)
+    const stats = protoSub(chatModel, 4)
+    const ctxMeta = protoSub(protoSub(chatModel, 9), 10)
+    const used = protoInt(stats, 2) + protoInt(stats, 3) + protoInt(stats, 5)
+    const size = protoInt(ctxMeta, 4)
+    return used > 0 && size > 0 ? { used, size } : null
+  } catch {
+    return null
+  } finally {
+    db?.close()
+  }
+}
 
 /** Inspects `transcript.jsonl` steps after `turnStartStepIndex` for active or settled background tasks. */
 export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: number): AntigravityTranscriptStatus {
@@ -82,7 +155,8 @@ export function createAntigravityClientWrapper(
   client: AgentClient,
   options: { dataDir?: string; pollIntervalMs?: number } = {},
 ) {
-  const dataDir = options.dataDir ?? process.env.ANTIGRAVITY_CLI_DIR ?? join(homedir(), ".gemini", "antigravity-cli")
+  const dataDir = options.dataDir ?? process.env.ANTIGRAVITY_CLI_DIR
+    ?? join(process.env.GEMINI_HOME ?? join(homedir(), ".gemini"), "antigravity-cli")
   const pollMs = options.pollIntervalMs ?? 250
   const trackers = new Map<string, { pending: Set<string>; suppress: boolean; onFlush?: () => void }>()
   const aborts = new Map<string, AbortController>()
@@ -129,9 +203,9 @@ export function createAntigravityClientWrapper(
         try {
           const initRaw = await readTranscript(sessionId)
           let startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
-          let response = await connection.prompt(params)
+          let { stopReason, usage } = await connection.prompt(params)
 
-          while (response.stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
+          while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
             const startedAt = Date.now()
             let settled: AntigravityTranscriptStatus | undefined
             while (!abort.signal.aborted && Date.now() - startedAt < 30 * 60_000) {
@@ -141,11 +215,11 @@ export function createAntigravityClientWrapper(
               if (s.state === "waiting_interaction" || s.state === "settled_response") { settled = s; break }
               await delay(pollMs, undefined, { signal: abort.signal }).catch(() => {})
             }
-            if (abort.signal.aborted) return { stopReason: "cancelled" }
-            if (!settled) return response
+            if (!settled || abort.signal.aborted) break
 
-            if (settled.state === "settled_response") {
-              let timer: ReturnType<typeof setTimeout> | undefined
+            const isSettled = settled.state === "settled_response"
+            let timer: ReturnType<typeof setTimeout> | undefined
+            if (isSettled) {
               t.onFlush = () => {
                 if (t.pending.size > 0) return
                 clearTimeout(timer)
@@ -155,19 +229,24 @@ export function createAntigravityClientWrapper(
                 }, Math.min(120, pollMs * 2))
               }
               t.onFlush()
-              try {
-                await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
-              } finally {
-                clearTimeout(timer)
-                t.onFlush = undefined
-                t.suppress = false
-              }
-              return { stopReason: abort.signal.aborted ? "cancelled" : "end_turn" }
             }
-            startStep = settled.lastStepIndex
-            response = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
+            try {
+              startStep = settled.lastStepIndex
+              const next = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
+              usage = mergeUsage(usage, next.usage)
+              stopReason = isSettled ? "end_turn" : next.stopReason
+            } finally {
+              clearTimeout(timer)
+              t.onFlush = undefined
+              t.suppress = false
+            }
+            if (isSettled) break
           }
-          return abort.signal.aborted ? { stopReason: "cancelled" } : response
+          const ctx = readContextUsage(join(dataDir, "conversations", `${sessionId}.db`))
+          if (ctx) {
+            await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
+          }
+          return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
         } finally {
           client.signal?.removeEventListener("abort", onAbort)
           if (aborts.get(sessionId) === abort) aborts.delete(sessionId)
@@ -187,7 +266,10 @@ export function createAntigravityClientWrapper(
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   async connect(config, client) {
-    const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir: config.env?.ANTIGRAVITY_CLI_DIR })
-    return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", ["acp"], config.env), wrappedClient))
+    const geminiDir = config.env?.GEMINI_HOME ?? process.env.GEMINI_HOME
+    const dataDir = config.env?.ANTIGRAVITY_CLI_DIR ?? (geminiDir ? join(geminiDir, "antigravity-cli") : undefined)
+    const args = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
+    const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir })
+    return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", args, config.env), wrappedClient))
   },
 }

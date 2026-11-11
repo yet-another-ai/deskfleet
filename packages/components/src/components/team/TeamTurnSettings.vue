@@ -4,6 +4,7 @@ import { useAsyncState } from "@vueuse/core"
 import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CentralApi, TeamTurnSettings } from "@deskfleet/client/central"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import UiButton from "../common/UiButton.vue"
 import UiField from "../common/UiField.vue"
@@ -12,6 +13,7 @@ import UiField from "../common/UiField.vue"
 const props = defineProps<{ api: Pick<CentralApi, "teamTurnSettings" | "updateTeamTurnSettings">; teamId: string }>()
 const emit = defineEmits<{ plans: [] }>()
 const { t } = useI18n()
+const client = usePlatformClient()
 const id = useId()
 const urlsForm = ref<string[]>([])
 const secret = ref("")
@@ -62,10 +64,10 @@ async function remove(): Promise<void> {
     </div>
     <template v-else-if="current">
       <div v-if="current.availability !== 'available'" class="ui-card flex flex-col items-start gap-3 p-4" data-team-turn-unavailable>
-        <p class="m-0 text-sm">{{ t(current.availability === "planRequired" ? "team.turnPlanRequired" : "team.turnDisabledBySite") }}</p>
+        <p class="m-0 text-sm">{{ t(current.availability === "planRequired" ? (client.mobile ? "team.turnUnavailable" : "team.turnPlanRequired") : "team.turnDisabledBySite") }}</p>
         <p v-if="current.secretConfigured" class="m-0 text-[13px] text-ui-text-muted">{{ t("team.turnSavedUnused", { urls: current.urls.join(", ") }) }}</p>
-        <div v-if="current.availability === 'planRequired' || current.secretConfigured" class="flex flex-wrap gap-2">
-          <UiButton v-if="current.availability === 'planRequired'" variant="primary" @click="emit('plans')">{{ t("team.turnViewPlans") }}</UiButton>
+        <div v-if="(current.availability === 'planRequired' && !client.mobile) || current.secretConfigured" class="flex flex-wrap gap-2">
+          <UiButton v-if="current.availability === 'planRequired' && !client.mobile" variant="primary" @click="emit('plans')">{{ t("team.turnViewPlans") }}</UiButton>
           <UiButton v-if="current.secretConfigured" @click="removing = true">{{ t("team.turnRemoveServer") }}</UiButton>
         </div>
       </div>

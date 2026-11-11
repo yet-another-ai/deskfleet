@@ -38,6 +38,16 @@ const icon = ref(props.initial?.icon)
 const inheritShellEnvironment = ref(props.initial?.inheritShellEnvironment ?? props.shellEnvironmentDefault)
 let nextRowId = 0
 const environment = ref(Object.entries(props.initial?.env ?? {}).map(([key, value]) => ({ id: nextRowId++, key, value })))
+const CODEBUDDY_REGION_ENV = "CODEBUDDY_INTERNET_ENVIRONMENT"
+const codebuddyChina = computed({
+  get: () => environment.value.find(row => row.key.trim() === CODEBUDDY_REGION_ENV)?.value === "internal",
+  set(value: boolean) {
+    const region = value ? "internal" : "public"
+    const row = environment.value.find(row => row.key.trim() === CODEBUDDY_REGION_ENV)
+    if (row) row.value = region
+    else environment.value.push({ id: nextRowId++, key: CODEBUDDY_REGION_ENV, value: region })
+  },
+})
 const advanced = ref(!!props.initial?.binaryPath || environment.value.length > 0 || inheritShellEnvironment.value !== props.shellEnvironmentDefault)
 const saving = ref(false)
 const error = ref<string | null>(null)
@@ -54,7 +64,7 @@ const setupProvider = computed((): AgentProviderInput | null => {
     template: template.value, name: selectedTemplate.value.name,
     binaryPath: binaryPath.value.trim() || undefined,
     inheritShellEnvironment: inheritShellEnvironment.value,
-    env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
+    env: inputEnvironment(keys),
   }
 })
 /** Names the overrides hidden inside a collapsed Advanced section. */
@@ -103,6 +113,13 @@ function back(): void {
   error.value = null
   step.value = "template"
 }
+function inputEnvironment(keys: string[]): Record<string, string> {
+  const env = Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value]))
+  // An unchecked default must override a China region inherited from the shell.
+  // Explicit enterprise regions remain unchanged until the user moves the switch.
+  if (template.value === "codebuddy" && !env[CODEBUDDY_REGION_ENV]?.trim()) env[CODEBUDDY_REGION_ENV] = "public"
+  return env
+}
 async function editPath(): Promise<void> {
   advanced.value = true
   await nextTick()
@@ -124,7 +141,7 @@ function current(): AgentProviderInput | null {
     binaryPath: resolvedBinaryPath.value || binaryPath.value.trim() || undefined,
     icon: icon.value,
     inheritShellEnvironment: inheritShellEnvironment.value,
-    env: Object.fromEntries(environment.value.map((row, index) => [keys[index]!, row.value])),
+    env: inputEnvironment(keys),
   }
 }
 
@@ -210,6 +227,17 @@ onBeforeUnmount(() => { finished = true })
           <ProviderIconPicker v-model="icon" :template="template" :disabled="formDisabled" />
           <input id="provider-name" v-model="name" name="provider-name" class="ui-input" autofocus required maxlength="256" :disabled="formDisabled" autocomplete="off" />
         </div>
+      </div>
+
+      <div v-if="template === 'codebuddy' && !setupExpanded" class="flex flex-col gap-2">
+        <div class="flex items-start justify-between gap-4 text-sm">
+          <div class="flex flex-col gap-1">
+            <label id="provider-codebuddy-china-label" for="provider-codebuddy-china">{{ t("providers.codebuddyChina") }}</label>
+            <p id="provider-codebuddy-china-description" class="m-0 text-xs text-ui-text-muted">{{ t("providers.codebuddyChinaDescription") }}</p>
+          </div>
+          <UiSwitch id="provider-codebuddy-china" v-model="codebuddyChina" :disabled="formDisabled" aria-labelledby="provider-codebuddy-china-label" aria-describedby="provider-codebuddy-china-description" data-provider-codebuddy-china />
+        </div>
+        <p class="m-0 break-words text-xs text-ui-text-muted" data-codebuddy-auth-hint>{{ t("providers.codebuddyAuthHint") }}</p>
       </div>
 
       <ProviderSetup

@@ -37,6 +37,8 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
   const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (hash) void mainWindow.loadURL(`${entrypoint.url}${hash}`)
+    // Hiding the Dock icon resets macOS focus, which otherwise tabs into the first control on show.
+    if (!mainWindow.isVisible()) mainWindow.webContents.focus()
     mainWindow.show()
     mainWindow.focus()
     return
@@ -91,10 +93,12 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
     followSystemTheme(child, process.platform)
     attachExternalLinks(child.webContents)
     child.webContents.on("will-navigate", (event, url) => {
-      if (!isAuxiliaryRendererUrl(url)) event.preventDefault()
+      if (event.frame === child.webContents.mainFrame && !isAuxiliaryRendererUrl(url)) event.preventDefault()
     })
   })
-  window.webContents.on("will-navigate", (event) => event.preventDefault())
+  window.webContents.on("will-navigate", (event) => {
+    if (event.frame === window.webContents.mainFrame) event.preventDefault()
+  })
   window.webContents.on("render-process-gone", (_event, details) => {
     console.error("DeskFleet renderer process exited", details)
   })

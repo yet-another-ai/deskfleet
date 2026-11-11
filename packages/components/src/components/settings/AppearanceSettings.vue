@@ -147,7 +147,7 @@ onMounted(() => { void appearance.initialize() })
               <div class="h-5 w-5/6 rounded-md bg-ui-text-muted/10" />
               <div class="h-5 w-3/4 rounded-md bg-ui-text-muted/10" />
             </div>
-            <div class="relative flex min-w-0 flex-1 items-center overflow-hidden px-10 py-4">
+            <div class="relative flex min-w-0 flex-1 items-center overflow-hidden py-4 pl-14 pr-10">
               <AgentOutline preview class="absolute left-1 top-1/2 z-10 max-h-[calc(100%-2rem)] -translate-y-1/2" />
               <div aria-hidden="true" class="flex h-full w-full flex-col justify-between">
                 <div class="h-5 w-32 self-end rounded-xl bg-ui-accent/10" />

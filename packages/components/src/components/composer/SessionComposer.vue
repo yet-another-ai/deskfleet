@@ -488,7 +488,6 @@ onBeforeUnmount(() => {
           @click="toggleYolo"
         >
           <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
-          <span>{{ t("composer.yolo") }}</span>
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
@@ -543,11 +542,11 @@ onBeforeUnmount(() => {
 
 .composer-creation-beam {
   --beam-colors:
-    radial-gradient(ellipse at 15% 0%, light-dark(#3478d4, #4996ff), transparent 55%),
-    radial-gradient(ellipse at 75% 0%, light-dark(#ce753b, #ef8d51), transparent 50%),
-    radial-gradient(ellipse at 100% 65%, light-dark(#bf4c9b, #dc6bb8), transparent 50%),
-    radial-gradient(ellipse at 60% 100%, light-dark(#7652d5, #9171f8), transparent 55%),
-    radial-gradient(ellipse at 0% 80%, light-dark(#259886, #43baa8), transparent 50%);
+    radial-gradient(ellipse at 15% 0%, #3478d4, transparent 55%),
+    radial-gradient(ellipse at 75% 0%, #ce753b, transparent 50%),
+    radial-gradient(ellipse at 100% 65%, #bf4c9b, transparent 50%),
+    radial-gradient(ellipse at 60% 100%, #7652d5, transparent 55%),
+    radial-gradient(ellipse at 0% 80%, #259886, transparent 50%);
   position: absolute;
   inset: -1px;
   z-index: 1;
@@ -560,6 +559,14 @@ onBeforeUnmount(() => {
     transparent 0% 15%, #000 45% 65%, transparent 95%
   );
   animation: composer-beam-sweep 2.3s linear infinite, composer-beam-appear 180ms ease-out;
+}
+:global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .composer-creation-beam {
+  --beam-colors:
+    radial-gradient(ellipse at 15% 0%, #4996ff, transparent 55%),
+    radial-gradient(ellipse at 75% 0%, #ef8d51, transparent 50%),
+    radial-gradient(ellipse at 100% 65%, #dc6bb8, transparent 50%),
+    radial-gradient(ellipse at 60% 100%, #9171f8, transparent 55%),
+    radial-gradient(ellipse at 0% 80%, #43baa8, transparent 50%);
 }
 
 .composer-creation-beam::before,

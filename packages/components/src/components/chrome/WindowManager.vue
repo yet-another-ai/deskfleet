@@ -499,7 +499,7 @@ onScopeDispose(() => {
 
 <style scoped>
 .deskfleet-windows :deep(.dockview-theme-light) {
-  /* Undo dockview's forced light scheme so light-dark() tokens follow Appearance. */
+  /* Undo dockview's forced light scheme so native controls follow Appearance. */
   color-scheme: inherit;
   --dv-group-view-background-color: var(--ui-color-canvas);
   --dv-tabs-and-actions-container-background-color: var(--ui-color-canvas);

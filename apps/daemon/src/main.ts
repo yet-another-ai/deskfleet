@@ -45,7 +45,7 @@ async function main() {
   })
   if (values.help) {
     console.log("Usage: deskfleet-daemon [--port <0-65535>] [--info] [--help]")
-    console.log("       deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|omp|deepseek-harness|antigravity> --help")
+    console.log("       deskfleet-daemon agent <codex|claude-code|cursor|grok|pi|omp|codebuddy|deepseek-harness|antigravity> --help")
     console.log("       deskfleet-daemon status")
     console.log("       deskfleet-daemon prepare-enrollment --server-url URL --team-id ID")
     console.log("       deskfleet-daemon enroll --server-url <https://backend> < machine-credentials.json")

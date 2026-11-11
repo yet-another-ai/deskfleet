@@ -71,8 +71,8 @@ const preview: Preview = {
       const theme = (context.globals.theme as "light" | "dark" | "system") || "light"
       const locale = (context.globals.locale as "en-US" | "zh-cmn-Hans-CN") || "en-US"
       document.documentElement.style.colorScheme = theme === "system" ? "light dark" : theme
-      document.documentElement.dataset.theme = theme
       sharedState.appearance.settings.theme = theme
+      document.documentElement.dataset.theme = sharedState.appearance.isDark ? "dark" : "light"
       sharedState.appearance.settings.language = locale
       i18n.global.locale.value = locale
 

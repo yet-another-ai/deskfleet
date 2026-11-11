@@ -76,23 +76,9 @@ function refresh(): void {
 
 <template>
   <aside
-    class="relative flex shrink-0 flex-col overflow-clip border-r border-ui-border bg-ui-sidebar"
+    class="relative flex shrink-0 flex-col overflow-y-clip border-r border-ui-border bg-ui-sidebar"
     :style="{ width: compact ? '100%' : `${width}px` }"
   >
-    <div
-      v-if="!compact"
-      role="separator"
-      aria-orientation="vertical"
-      tabindex="0"
-      :aria-label="t('toolbar.resizeSidebar')"
-      :aria-valuenow="width"
-      :aria-valuemin="minimum"
-      :aria-valuemax="maximum"
-      class="app-no-drag absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize after:pointer-events-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:bg-transparent after:transition-colors after:duration-[var(--ui-duration-fast)] after:ease-[var(--ui-ease-out)] after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus/50"
-      :class="resizing && 'after:!bg-ui-focus/50'"
-      @pointerdown="startResize"
-      @keydown="keyResize"
-    />
     <!-- On macOS the traffic lights sit at the start of this row. -->
     <div
       v-if="!compact"
@@ -134,5 +120,20 @@ function refresh(): void {
     <AccountNotices />
     <AppUpdateNotice />
     <SidebarFooter />
+
+    <div
+      v-if="!compact"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      :aria-label="t('toolbar.resizeSidebar')"
+      :aria-valuenow="width"
+      :aria-valuemin="minimum"
+      :aria-valuemax="maximum"
+      class="app-no-drag absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize outline-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:ui-motion after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus"
+      :class="resizing && 'after:!bg-ui-focus'"
+      @pointerdown="startResize"
+      @keydown="keyResize"
+    />
   </aside>
 </template>

@@ -38,7 +38,7 @@ const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.
 const content = ref<string>()
 const isHtmlContent = computed(() => content.value !== undefined && Boolean(entry.value && fileCodeLanguage(entry.value.name) === "html"))
 const renderingHtml = ref(false)
-const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).map(([text]) => ({
+const lines = computed(() => content.value === undefined ? [] : splitLines(content.value, true).filter(([text]) => text).map(([text]) => ({
   text,
   ending: text.match(/\r?\n$/u)?.[0] ?? "",
 })))
@@ -50,13 +50,14 @@ const highlightedLines = computed(() => {
     return highlighter.codeToTokens(content.value, {
       lang: language,
       themes: { light: "github-light", dark: "github-dark" },
-      defaultColor: "light-dark()",
+      defaultColor: false,
     }).tokens
   } catch { return undefined }
 })
 const requestedLines = fileResourceLines(request.uri)
 const lineElement = ref<HTMLElement>()
 const imageUrl = ref<string>()
+let htmlPreviewSent = false
 const previewKind = ref<MediaPreviewKind>()
 const previewMime = ref<string>()
 const previewBytes = shallowRef<Uint8Array>()
@@ -134,7 +135,15 @@ function locateOriginal(): void {
     itemId: request.uri,
   })
 }
+function sendHtmlPreview(event: Event): void {
+  if (htmlPreviewSent || content.value === undefined) return
+  const frame = event.currentTarget instanceof HTMLIFrameElement ? event.currentTarget : undefined
+  if (!frame?.contentWindow) return
+  htmlPreviewSent = true
+  frame.contentWindow.postMessage({ html: content.value }, "*")
+}
 async function toggleHtmlPreview(): Promise<void> {
+  htmlPreviewSent = false
   renderingHtml.value = !renderingHtml.value
   if (!renderingHtml.value && requestedLines) {
     await nextTick()
@@ -204,12 +213,14 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </UiScrollArea>
-        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" />
+        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
         <UiScrollArea v-else-if="content !== undefined" orientation="both" class="min-h-0 flex-1">
           <pre class="m-0 p-4 whitespace-pre text-xs select-text"><code><span
             v-for="(line, index) in lines"
             :key="index"
             :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+            :data-line="index + 1"
+            class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
             :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
           ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
         </UiScrollArea>
@@ -242,12 +253,14 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       mode="inline"
       class="max-h-[60vh]"
     />
-    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview :srcdoc="content" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" />
+    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
     <UiScrollArea v-else-if="content !== undefined" orientation="both" fade-size="sm" class="max-h-[60vh]">
       <pre class="m-0 whitespace-pre text-xs select-text"><code><span
         v-for="(line, index) in lines"
         :key="index"
         :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+        :data-line="index + 1"
+        class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
         :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
       ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
     </UiScrollArea>
@@ -259,3 +272,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     </div>
   </UiDialog>
 </template>
+
+<style scoped>
+[data-line]::before { content: attr(data-line); }
+</style>

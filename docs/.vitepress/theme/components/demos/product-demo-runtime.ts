@@ -77,7 +77,8 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     appearance.settings = { ...appearance.settings, ...patch }
     i18n.global.locale.value = appearance.settings.language === "system" ? locale : appearance.settings.language
     target.lang = intlLocale(i18n.global.locale.value)
-    target.style.colorScheme = appearance.settings.theme === "system" ? "" : appearance.settings.theme
+    if (appearance.settings.theme === "system") delete target.dataset.theme
+    else target.dataset.theme = appearance.settings.theme
     target.style.setProperty("--ui-font-interface", appearance.interfaceFont)
   }
   target.lang = intlLocale(locale)

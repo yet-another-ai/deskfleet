@@ -1,17 +1,30 @@
 import { App as CapApp } from "@capacitor/app"
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
-import { createCapacitorNativeDesktopApi } from "@deskfleet/capacitor-native-desktop"
+import {
+  createCapacitorNativeDesktopApi,
+  createCapacitorNetworkDiagnosticsApi,
+} from "@deskfleet/capacitor-bridge"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
 import { captureCentralRequestError, initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
 import { watch } from "vue"
+import { capacitorClientOptions } from "./capacitor-auth.ts"
 import "virtual:uno.css"
 
 initializeErrorReporting("web")
-const adapter = await browserClient(import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin), captureCentralRequestError)
+const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
+const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
 if ((Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
+  adapter.networkDiagnostics = createCapacitorNetworkDiagnosticsApi(
+    adapter.central as HttpCentralClient,
+    undefined,
+    async () => {
+      const { i18n } = await import("@deskfleet/components/i18n/index.ts")
+      return i18n.global.t("developerSettings.noStunServer")
+    },
+  )
 }
 configureClient(adapter)
 if (location.pathname.startsWith("/auth/")) {
@@ -55,4 +68,3 @@ if (Capacitor.isNativePlatform()) {
     void CapApp.minimizeApp()
   })
 }
-

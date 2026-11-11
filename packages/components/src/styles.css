@@ -419,8 +419,6 @@ textarea {
 
 /* Ambient color behind hero content: two slow-drifting radial blooms. */
 .ui-aurora {
-  --ui-aurora-a: light-dark(color-mix(in srgb, var(--ui-color-accent) 14%, transparent), color-mix(in srgb, var(--ui-color-accent) 20%, transparent));
-  --ui-aurora-b: light-dark(color-mix(in srgb, var(--ui-color-accent-alt) 10%, transparent), color-mix(in srgb, var(--ui-color-accent-alt) 14%, transparent));
   pointer-events: none;
   position: absolute;
   inset: 0;
@@ -577,6 +575,15 @@ textarea {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+span[style*="--shiki-light"] {
+  color: var(--shiki-light);
+}
+:is(:root.dark:not([data-theme="light"]), [data-theme="dark"]) span[style*="--shiki-dark"] {
+  color: var(--shiki-dark);
+}
+[data-theme="light"] span[style*="--shiki-light"] {
+  color: var(--shiki-light);
 }
 .ui-math-copy {
   position: absolute;
