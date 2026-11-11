@@ -19,6 +19,7 @@ test("spawnCapacitorDesktopViewer registers viewerEvent listener before opening 
     order.push("remove")
   })
   const plugin: DeskFleetBridgeCapacitorPlugin = {
+    async authenticate() { return { url: "" } },
     async openExternal() {},
     async addListener(_name, fn) {
       order.push("addListener")
@@ -66,6 +67,7 @@ test("createCapacitorNativeDesktopApi completes signaling handshake with the Cap
   let listener: ((data: { payload: string }) => void) | undefined
   const sent: { type: string }[] = []
   const plugin: DeskFleetBridgeCapacitorPlugin = {
+    async authenticate() { return { url: "" } },
     async openExternal() {},
     async addListener(_name, fn) {
       listener = fn
