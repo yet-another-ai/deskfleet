@@ -6,6 +6,7 @@ import { createPinia, disposePinia, type Pinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import AgentOutline from "../components/session/AgentOutline.vue"
 import { i18n } from "../i18n/index.ts"
+import { mountDeskfleet } from "../mount.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "./appearance.ts"
 import { computeChannelBands, useOutlineAudioStore } from "./outline-audio.ts"
 
@@ -220,8 +221,40 @@ test("desktop loopback keeps the saved preference and recaptures on the next ges
     await vi.waitFor(() => expect(FakeAudioContext.instances[1]?.createMediaStreamSource).toHaveBeenCalled())
     expect(getDisplayMedia).toHaveBeenCalledTimes(2)
     expect(appearance.settings.outlineAudio).toBe(true)
+
+    // When OS loopback capture fails, desktop reports the error and resets the preference.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    getDisplayMedia.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"))
+    audioTracks[1]!.end()
+    window.dispatchEvent(new Event("pointerdown"))
+    await vi.waitFor(() => expect(appearance.settings.outlineAudio).toBe(false))
+    expect(outlineAudio.error).toBe("Audio capture permission was denied.")
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
   } finally {
     Reflect.deleteProperty(navigator, "userActivation")
+  }
+})
+
+test("auxiliary preview windows skip outline audio initialization", async () => {
+  const getDisplayMedia = vi.fn(async () => new FakeMediaStream([new FakeTrack("video"), new FakeTrack("audio")]) as unknown as MediaStream)
+  Object.defineProperty(navigator, "mediaDevices", { configurable: true, writable: true, value: { getDisplayMedia } })
+  localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...DEFAULT_APPEARANCE_SETTINGS, outlineAudio: true }))
+  configureClient({ ...host, platform: "web", mobile: false, appearance: undefined, outlineAudio: undefined })
+
+  const previousHash = window.location.hash
+  const container = document.createElement("div")
+  document.body.appendChild(container)
+  window.location.hash = "#/preview?kind=text&content=hello"
+  try {
+    const app = await mountDeskfleet(container)
+    const saved = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY)!) as { outlineAudio: boolean }
+    expect(saved.outlineAudio).toBe(true)
+    expect(getDisplayMedia).not.toHaveBeenCalled()
+    app.unmount()
+  } finally {
+    window.location.hash = previousHash
+    container.remove()
   }
 })
 

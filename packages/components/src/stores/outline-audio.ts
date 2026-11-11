@@ -101,6 +101,9 @@ function formatOutlineAudioError(reason: unknown): string {
   if (reason instanceof DOMException && (reason.name === "NotSupportedError" || reason.name === "NotFoundError")) {
     return i18n.global.t("appearance.outlineAudioUnsupported")
   }
+  if (reason instanceof DOMException && reason.name === "NotAllowedError") {
+    return i18n.global.t("appearance.outlineAudioPermissionDenied")
+  }
   const code = (reason as { code?: unknown } | null | undefined)?.code
   if (code === "permission-denied") return i18n.global.t("appearance.outlineAudioPermissionDenied")
   if (code === "unavailable") return i18n.global.t("appearance.outlineAudioUnavailable")
@@ -307,11 +310,12 @@ const defineOutlineAudioStore = defineStore("outline-audio", () => {
     stopCapture()
     if (!supported.value) return
     const token = sessionToken
-    prevTime = 0
-    resume()
     const begin = () => {
       captureDisplayStream(token).catch(reason => {
+        if (token !== sessionToken) return
         console.warn("Could not start outline audio loopback:", reason)
+        error.value = formatOutlineAudioError(reason)
+        void stopAndDisable()
       })
     }
     if (navigator.userActivation && !navigator.userActivation.isActive) {

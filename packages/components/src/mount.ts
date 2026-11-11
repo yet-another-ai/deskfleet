@@ -13,7 +13,6 @@ import "./styles.css"
 export async function mountDeskfleet(target: string | Element = "#root") {
   const state = createPinia()
   await useAppearanceStore(state).initialize()
-  await useOutlineAudioStore(state).initialize()
   const previewWindow = window.location.hash.startsWith("#/preview")
   const mermaidWindow = window.location.hash.startsWith("#/mermaid")
   if (previewWindow || mermaidWindow) {
@@ -31,9 +30,12 @@ export async function mountDeskfleet(target: string | Element = "#root") {
     const central = getClient().central
     if (central) installErrorReportingAccount(app, central)
     app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
-    app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
+    app.use(nativeDragPolicy)
+    if (vaporInteropPlugin) app.use(vaporInteropPlugin)
+    app.use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app
   }
+  await useOutlineAudioStore(state).initialize()
   const host = getClient()
   // Account sign-in and the local workspace are separate graphs.
   const root = host.central
@@ -44,7 +46,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
   installAnalytics(app, router)
   installErrorReporting(app)
   app.use(nativeDragPolicy)
-  app.use(vaporInteropPlugin)
+  if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.use(state)
   app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
   app.use(router)
