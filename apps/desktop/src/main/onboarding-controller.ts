@@ -4,12 +4,14 @@ import { DESKTOP_ONBOARDING_PERMISSIONS, ONBOARDING_PERMISSIONS, onboardingPermi
 import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import type { LocalAgentController } from "./local-agent-controller.ts"
 import type { WindowsDesktopServiceController } from "./windows-desktop-service-controller.ts"
+import type { AuvPermissionsController } from "./auv-permissions-controller.ts"
 
 interface OnboardingOptions {
   path: string
   platform: NodeJS.Platform
   localAgent: Pick<LocalAgentController, "state" | "refreshPermissions" | "requestPermission">
   windowsDesktopService?: Pick<WindowsDesktopServiceController, "get" | "setEnabled">
+  auv?: Pick<AuvPermissionsController, "get" | "request">
   localNetwork: {
     request(): Promise<LocalNetworkAccessRequest>
     openSettings(): Promise<void>
@@ -35,7 +37,7 @@ export async function establishedDesktopProfile(directory: string): Promise<bool
 
 const steps: readonly OnboardingStep[] = [...ONBOARDING_PERMISSIONS, "account", "complete"]
 
-/** The host requests network access and service installation; the daemon owns native permissions. */
+/** The host owns AUV, network access, and service installation; the daemon owns its native permissions. */
 export class OnboardingController {
   readonly #options: OnboardingOptions
   #state: Pick<OnboardingState, "step"> | undefined
@@ -65,7 +67,10 @@ export class OnboardingController {
     }
     // The permission list preserves saved Wayland consent while its backend is unknown.
     if (ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)
-      && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("account")
+      && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) {
+      // AUV's independent grant remains applicable when X11 removes native Portal steps.
+      return this.#save(this.#permissionSteps().includes("auv") ? "auv" : "account")
+    }
     return this.#snapshot(this.#state)
   }
 
@@ -75,7 +80,7 @@ export class OnboardingController {
     const localAgent = local.enabled || local.status === "running"
     // A saved Portal step may continue while reconnecting; fresh profiles need a known backend.
     if (backend === undefined && this.#state
-      && ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)) {
+      && DESKTOP_ONBOARDING_PERMISSIONS.some(permission => permission === this.#state?.step)) {
       return onboardingPermissions(this.#options.platform, "wayland", localAgent)
     }
     return onboardingPermissions(this.#options.platform, backend, localAgent)
@@ -103,16 +108,23 @@ export class OnboardingController {
         ...desktop,
         ...(permissionSteps.includes("localNetwork") ? { localNetwork: this.#localNetwork } : {}),
         ...(permissionSteps.includes("windowsDesktopService") ? { windowsDesktopService: await this.#windowsDesktopServiceState() } : {}),
+        ...(permissionSteps.includes("auv") ? { auv: await this.#auv().get() } : {}),
       }
     }
     if (!ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) throw new Error("Welcome setup is not on a permission step")
     if (step === "localNetwork") return { localNetwork: this.#localNetwork }
     if (step === "windowsDesktopService") return { windowsDesktopService: await this.#windowsDesktopServiceState() }
+    if (step === "auv") return { auv: await this.#auv().get() }
     return this.#options.localAgent.refreshPermissions()
   }
 
   async #windowsDesktopServiceState(): Promise<WindowsDesktopServiceState> {
     return this.#options.windowsDesktopService?.get() ?? { available: false, installed: false, running: false }
+  }
+
+  #auv(): Pick<AuvPermissionsController, "get" | "request"> {
+    if (!this.#options.auv) throw new Error("AUV is unavailable in this build")
+    return this.#options.auv
   }
 
   requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState> {
@@ -135,6 +147,7 @@ export class OnboardingController {
         if (!service) throw new Error("Windows desktop service is unavailable in this build")
         return { windowsDesktopService: await service.setEnabled(true) }
       }
+      if (permission === "auv") return { auv: await this.#auv().request() }
       return this.#options.localAgent.requestPermission(permission)
     })
   }
@@ -152,10 +165,9 @@ export class OnboardingController {
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
     return this.#run(async () => {
       const current = await this.get()
-      // X11 hello can rewrite a provisional Portal step; Skip/Continue must reach account.
+      // A backend change can remove a daemon step while leaving the host's AUV step.
       if (current.step !== permission) {
-        if ((current.step === "account" || current.step === "complete")
-          && !this.#permissionSteps().includes(permission)) return current
+        if (!this.#permissionSteps().includes(permission)) return current
         throw new Error("Welcome setup step has changed")
       }
       const permissions = this.#permissionSteps()

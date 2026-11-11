@@ -775,7 +775,9 @@ account sign-in. macOS first guides Local Network access for connections to othe
 machines, followed by Full Disk Access, screen/system-audio recording,
 and Accessibility for its local Agent. Linux Wayland guides screen sharing and keyboard/mouse
 control through its desktop authorization dialog. Linux X11 checks access to the
-existing X server and skips Portal permission steps. Linux has no Full Disk
+existing X server and skips the daemon's Portal permission steps. Linux also
+guides AUV's independent screen and input authorization before account setup.
+Linux has no Full Disk
 Access or macOS System Settings instructions. The host saves
 the current step in `onboarding.json` under its user-data directory and resumes
 it after restart. A profile that already has an account or desktop settings, but
@@ -786,9 +788,20 @@ Clients with local Agent startup disabled and no running daemon skip the
 daemon's permission steps; macOS still offers Local Network access. macOS retains
 permission guidance when an enabled Agent fails to start. Linux preserves a saved
 Portal step while disconnected; a fresh profile with no known backend starts at
-account setup. When a later hello identifies X11, the renderer reloads the host's
-normalized account step after active permission work finishes. Users can defer an individual
+the AUV step. When a later hello identifies X11, the renderer reloads the host's
+normalized AUV step after active permission work finishes. Users can defer an individual
 permission without blocking account setup or unrelated Agent work.
+
+AUV authorization belongs to the desktop host, separate from daemon permission
+events. Welcome and Settings → Permissions invoke the bundled AUV doctor only
+on an explicit authorization action; entry, focus, and refresh use its silent
+diagnostics. Authorization installs AUV's desktop identity and requests its own
+screen and input grants. Ordinary local AUV CLI and MCP operations share the
+default user Portal state across worktrees. No token is copied into Team catalogs
+or renderer state. The UI reports saved authorization rather than asserting a
+live grant from token presence. Revocation, unsupported persistence, and AUV's
+separate clipboard consent can still require a later prompt. The app owns and
+aborts pending doctor helpers on quit; completed welcome progress remains complete.
 
 Local Network access belongs to the desktop client, independently of its local
 Agent. Its welcome action calls a Rust native helper in Electron's main process.

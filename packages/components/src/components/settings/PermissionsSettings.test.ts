@@ -15,6 +15,7 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
   const state: OnboardingState = { step: "complete", permissionSteps: onboardingPermissions(platform, backend, localAgent), linuxDesktopBackend: backend }
   const permissions: OnboardingPermissionsState = {
     localNetwork: "not-requested",
+    ...(platform === "linux" ? { auv: { status: "not-requested" as const } } : {}),
     linuxDesktopBackend: backend,
     fullDiskAccessPermission: { status: "denied" },
     screenCapturePermission: { status: "denied" },
@@ -25,7 +26,10 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
   const onboarding = {
     get: vi.fn(async () => ({ ...state })),
     permissions: vi.fn(async () => ({ ...permissions })),
-    requestPermission: vi.fn<OnboardingApi["requestPermission"]>(async kind => kind === "localNetwork" ? { localNetwork: "attempted" } : { ...permissions, [`${kind}Permission`]: { status: "requesting" } }),
+    requestPermission: vi.fn<OnboardingApi["requestPermission"]>(async kind => {
+      if (kind === "auv") { permissions.auv = { status: "saved" }; return { auv: permissions.auv } }
+      return kind === "localNetwork" ? { localNetwork: "attempted" } : { ...permissions, [`${kind}Permission`]: { status: "requesting" } }
+    }),
     openLocalNetworkSettings: vi.fn(async () => {}),
     advancePermission: vi.fn(async () => state),
     complete: vi.fn(async () => state),
@@ -271,7 +275,7 @@ test("Wayland uses shared consent and blocks duplicate requests while the deskto
   app.permissions.accessibilityPermission = { status: "denied" }
   app.mount()
   await flushPromises()
-  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Screen sharing", "Mouse and keyboard control"])
+  expect(view!.findAll("h2").map(title => title.text())).toEqual(["Screen sharing", "Mouse and keyboard control", "AI computer access"])
   app.onboarding.requestPermission.mockResolvedValueOnce({
     screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" },
   })
@@ -301,10 +305,10 @@ test("Linux follows late backend events and does not restore Wayland cards from 
   app.changedSnapshot({ enabled: true, status: "running", linuxDesktopBackend: "x11" })
   resolve({ ...app.permissions })
   await flushPromises()
-  expect(view!.findAll("h2")).toHaveLength(0)
+  expect(view!.findAll("h2").map(title => title.text())).toEqual(["AI computer access"])
   app.changedSnapshot({ enabled: true, status: "running", linuxDesktopBackend: "wayland" })
   await flushPromises()
-  expect(view!.findAll("h2")).toHaveLength(2)
+  expect(view!.findAll("h2")).toHaveLength(3)
 })
 
 test("macOS without a local agent only exposes the host network permission", async () => {
@@ -314,12 +318,82 @@ test("macOS without a local agent only exposes the host network permission", asy
   expect(view!.findAll("h2").map(title => title.text())).toEqual(["Local network"])
 })
 
-test.each(["win32", "linux"] as const)("%s without permission steps needs no permission requests", async platform => {
-  const app = setup(platform, true, platform === "linux" ? "x11" : undefined)
+test.each(["win32", "linux"] as const)("%s with its local agent disabled needs no permission requests", async platform => {
+  const app = setup(platform, false, platform === "linux" ? "x11" : undefined)
   app.mount()
   await flushPromises()
   expect(view!.findAll("h2")).toHaveLength(0)
   expect(app.onboarding.permissions).not.toHaveBeenCalled()
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
+test.each(["wayland", "x11", undefined] as const)("Linux %s offers independent AUV authorization and silently checks on focus", async backend => {
+  const app = setup("linux", true, backend)
+  if (backend === undefined) { app.state.linuxDesktopBackend = undefined; app.permissions.linuxDesktopBackend = undefined; app.state.permissionSteps = ["auv"] }
+  app.permissions.screenCapturePermission = { status: "requesting" }
+  app.permissions.accessibilityPermission = { status: "requesting" }
+  app.mount()
+  await flushPromises()
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV has not been authorized")
+  expect(card("auv").text()).toContain("screenshots")
+  expect(card("auv").findAll("button")[0]!.attributes("disabled")).toBeUndefined()
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  await click("Check again")
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+  await click("Authorize AUV")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("auv")
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(card("auv").text()).toContain("expires or is revoked")
+  expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
+  await click("Authorize AUV again")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledTimes(2)
+})
+
+test("AUV authorization prevents duplicate requests and retains its result across native permission events", async () => {
+  const app = setup("linux")
+  let finish!: (state: OnboardingPermissionsState) => void
+  app.onboarding.requestPermission.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  app.mount()
+  await flushPromises()
+  await click("Authorize AUV")
+  expect(card("auv").get('[role="status"]').text()).toBe("Waiting for AUV authorization…")
+  await click("Authorize AUV")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(app.onboarding.requestPermission).toHaveBeenCalledOnce()
+  expect(app.onboarding.permissions).toHaveBeenCalledOnce()
+  app.changedSnapshot({ enabled: true, status: "running", screenCapturePermission: { status: "granted" } })
+  finish({ auv: { status: "saved" }, screenCapturePermission: { status: "denied" } })
+  await flushPromises()
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(card("screenCapture").get('[role="status"]').text()).toBe("Access enabled")
+})
+
+test("a cancelled AUV request stays available for retry", async () => {
+  const app = setup("linux")
+  app.onboarding.requestPermission.mockResolvedValueOnce({ auv: { status: "error", error: "Authorization cancelled" } })
+  app.mount()
+  await flushPromises()
+  await click("Authorize AUV")
+  expect(card("auv").get('[role="alert"]').text()).toBe("Authorization cancelled")
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV authorization was not saved")
+  await click("Authorize AUV")
+  expect(card("auv").find('[role="alert"]').exists()).toBe(false)
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV authorization saved")
+})
+
+test("a silent AUV status read survives a concurrent native permission update", async () => {
+  const app = setup("linux")
+  let finish!: (state: OnboardingPermissionsState) => void
+  app.onboarding.permissions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  app.mount()
+  await flushPromises()
+  app.changedSnapshot({ enabled: true, status: "running", accessibilityPermission: { status: "denied" } })
+  finish({ ...app.permissions, auv: { status: "saved" } })
+  await flushPromises()
+  expect(card("auv").get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(card("accessibility").get('[role="status"]').text()).toBe("Access is not enabled yet")
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
 })
 

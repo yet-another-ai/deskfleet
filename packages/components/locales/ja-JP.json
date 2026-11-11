@@ -130,6 +130,20 @@
     "restart": "この権限を変更した後は、DeskFleet を完全に終了して再起動し、ローカルエージェントに新しい権限を反映してください。",
     "waylandShared": "画面共有とマウス・キーボード操作は、同じデスクトップ認証を使用します。"
   },
+  "auvPermissions": {
+    "description": "AI エージェントが AUV を使ってスクリーンショットを撮影し、マウスとキーボードを操作できるようにします。",
+    "instructions": "デスクトップの権限ダイアログで画面を選択し、リモート操作を許可してください。",
+    "savedHint": "今後の AUV セッションで使う認可情報を保存しました。権限が失効または取り消された場合は、デスクトップから再び許可を求められることがあります。",
+    "request": "AUV を許可",
+    "retry": "AUV を再度許可",
+    "skip": "後で設定 → 権限から AUV を許可できます。",
+    "status": {
+      "not-requested": "AUV はまだ許可されていません",
+      "requesting": "AUV の許可を待っています…",
+      "saved": "AUV の認可情報を保存済み",
+      "error": "AUV の認可情報は保存されませんでした"
+    }
+  },
   "updatesSettings": {
     "title": "アップデート",
     "description": "DeskFleet の新しいバージョンを確認し、準備ができたらインストールできます。",
@@ -1028,7 +1042,7 @@
     "steps": {
       "localNetwork": "ローカルネットワーク",
       "fullDiskAccess": "フルディスクアクセス", "screenCapture": "画面収録",
-      "accessibility": "マウスとキーボードの操作", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
+      "accessibility": "マウスとキーボードの操作", "auv": "AI によるコンピューター操作", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
     },
     "stepCount": "ステップ {current} / {total}", "continue": "続ける",
     "continueAs": "{name} として続ける", "systemSettings": "macOS システム設定",
