@@ -45,26 +45,30 @@ export function findNdkRoot(env: NodeJS.ProcessEnv = process.env, home: string =
     const candidate = env[key]
     if (candidate && parseNdkRevision(candidate)) return candidate
   }
+  // When ANDROID_HOME / ANDROID_SDK_ROOT are set, search only those roots.
+  // Merging in later defaults (for example /usr/local/lib/android/sdk on
+  // GitHub-hosted runners) can override an explicit SDK with a newer NDK.
+  const explicitSdks = [env.ANDROID_HOME, env.ANDROID_SDK_ROOT].filter((v): v is string => Boolean(v))
   const sdks = [
-    env.ANDROID_HOME,
-    env.ANDROID_SDK_ROOT,
-    join(home, "Library/Android/sdk"),
-    join(home, "Android/Sdk"),
-    "/usr/local/lib/android/sdk",
-  ].filter((v): v is string => Boolean(v))
+    ...new Set(
+      explicitSdks.length > 0
+        ? explicitSdks
+        : [join(home, "Library/Android/sdk"), join(home, "Android/Sdk"), "/usr/local/lib/android/sdk"],
+    ),
+  ]
 
-  const installed: NdkRevision[] = []
   for (const sdk of sdks) {
     const ndkDir = join(sdk, "ndk")
     if (!existsSync(ndkDir)) continue
+    const installed: NdkRevision[] = []
     for (const entry of readdirSync(ndkDir)) {
       if (entry.startsWith(".")) continue
       const parsed = parseNdkRevision(join(ndkDir, entry))
       if (parsed) installed.push(parsed)
     }
+    installed.sort(compareNdkRevisions)
+    if (installed[0]) return installed[0].path
   }
-  installed.sort(compareNdkRevisions)
-  if (installed[0]) return installed[0].path
   throw new Error(`Could not locate Android NDK r${MIN_NDK_MAJOR} or newer. Install NDK ${MIN_NDK_MAJOR}+ under Android SDK or set ANDROID_NDK_HOME.`)
 }
 

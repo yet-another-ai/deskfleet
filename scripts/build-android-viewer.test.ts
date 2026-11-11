@@ -22,15 +22,26 @@ test("findNdkRoot ignores runner NDKs older than r28 and prefers newest stable r
   const root = mkdtempSync(join(tmpdir(), "deskfleet-android-ndk-"))
   context.after(() => rmSync(root, { recursive: true, force: true }))
   const sdk = join(root, "sdk")
+  const laterSdk = join(root, "later-sdk")
+  const emptyHome = join(root, "empty-home")
+  mkdirSync(emptyHome, { recursive: true })
   const r27 = writeNdk(sdk, "27.2.12479018", "27.2.12479018")
   writeNdk(sdk, "28.1.13356709", "28.1.13356709")
   const r29 = writeNdk(sdk, "29.0.14206865", "29.0.14206865")
   writeNdk(sdk, "30.0.14904198", "30.0.14904198-beta1")
+  // A newer NDK under ANDROID_SDK_ROOT must not override ANDROID_HOME.
+  writeNdk(laterSdk, "30.0.16248370", "30.0.16248370")
 
   assert.equal(MIN_ANDROID_API, 34)
   assert.equal(MIN_NDK_MAJOR, 28)
-  assert.equal(findNdkRoot({ ANDROID_NDK_HOME: r27, ANDROID_HOME: sdk }, root), r29)
-  assert.throws(() => findNdkRoot({ ANDROID_NDK_HOME: r27 }, root), /NDK r28 or newer/)
+  assert.equal(
+    findNdkRoot({ ANDROID_NDK_HOME: r27, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: laterSdk }, emptyHome),
+    r29,
+  )
+  assert.throws(
+    () => findNdkRoot({ ANDROID_NDK_HOME: r27, ANDROID_HOME: join(root, "missing-sdk") }, emptyHome),
+    /NDK r28 or newer/,
+  )
 })
 
 test("buildAndroidViewerEnv enforces 16 KB page alignment, Android 14 API, and release debug symbols", () => {
