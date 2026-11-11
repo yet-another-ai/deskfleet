@@ -5,6 +5,7 @@ import type { ThemedToken } from "shiki/core"
 import { computed, onBeforeUnmount, shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { canHighlight, codeLanguageName, highlighter } from "../../../services/code-highlight.ts"
+import UiScrollArea from "../../common/UiScrollArea.vue"
 import MarkdownMathBlock from "./MarkdownMathBlock.vue"
 import MarkdownMermaidNode from "./MarkdownMermaidNode.vue"
 import MarkdownCodeTokens from "./MarkdownCodeTokens.vue"
@@ -125,10 +126,12 @@ onBeforeUnmount(() => {
         <Check :size="14" data-icon-check="" aria-hidden="true" />
       </button>
     </div>
-    <pre><code v-if="hasHighlightedTokens"><span class="shiki-stream-stable"><MarkdownCodeTokens
-      v-for="(chunk, index) in stableChunks"
-      :key="index"
-      :tokens="chunk"
-    /></span><MarkdownCodeTokens class="shiki-stream-unstable" :tokens="unstableTokens" /></code><code v-else>{{ code }}</code></pre>
+    <UiScrollArea orientation="both" fade-size="sm">
+      <pre class="!overflow-visible"><code v-if="hasHighlightedTokens"><span class="shiki-stream-stable"><MarkdownCodeTokens
+        v-for="(chunk, index) in stableChunks"
+        :key="index"
+        :tokens="chunk"
+      /></span><MarkdownCodeTokens class="shiki-stream-unstable" :tokens="unstableTokens" /></code><code v-else>{{ code }}</code></pre>
+    </UiScrollArea>
   </div>
 </template>

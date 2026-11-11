@@ -5,6 +5,7 @@ import { RouterLink } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
 import DirectoryList from "../components/catalog/DirectoryList.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import { useWorktreeLabel } from "../composables/useWorktreeLabel.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useFleetStore } from "../stores/fleet.ts"
@@ -30,7 +31,7 @@ const archived = computed(() => archiveState.value === "archiving" || archiveSta
   <div v-if="!location" class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted">
     {{ fleet.catalogLoading ? t("catalog.loading") : t("worktree.notFound") }}
   </div>
-  <div v-else class="min-h-0 flex-1 overflow-y-auto">
+  <UiScrollArea v-else class="min-h-0 flex-1">
     <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-10 pt-6">
       <p v-if="!available" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t("catalog.offline") }}</p>
       <p v-if="archived" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving') }}</p>
@@ -47,5 +48,5 @@ const archived = computed(() => archiveState.value === "archiving" || archiveSta
         </ul>
       </section>
     </div>
-  </div>
+  </UiScrollArea>
 </template>

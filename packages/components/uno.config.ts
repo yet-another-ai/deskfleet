@@ -113,6 +113,12 @@ export default defineConfig({
     "ui-tab": "relative flex shrink-0 cursor-pointer items-center whitespace-nowrap text-ui-text-muted ui-motion hover:text-ui-text",
     "ui-tab-active": "text-ui-accent hover:text-ui-accent",
     "ui-avatar": "inline-flex shrink-0 items-center justify-center bg-ui-avatar text-xs font-semibold text-ui-avatar-text",
+
+    // Scrollbars: floating pill tracks shared by `UiScrollArea`.
+    "ui-scrollbar":
+      "group z-20 flex touch-none select-none p-0.5 data-[orientation=vertical]:w-2.5 data-[orientation=horizontal]:h-2.5 data-[orientation=horizontal]:flex-col",
+    "ui-scrollbar-thumb":
+      "relative flex-1 rounded-full bg-ui-text-faint/50 ui-motion group-hover:bg-ui-text-faint/70",
   },
   rules: [
     // Continuous-curvature corners: falls back to `border-radius` and scales up 1.25x when `corner-shape: superellipse(1.4)` is supported.

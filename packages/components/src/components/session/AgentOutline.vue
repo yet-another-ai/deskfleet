@@ -5,6 +5,7 @@ import { computed, onScopeDispose, ref, shallowRef, triggerRef, useTemplateRef, 
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { ConversationEntry } from "../../services/agent-conversation.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
+import { useScrollFade } from "../../composables/useScrollFade.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 
 interface OutlineItem {
@@ -351,6 +352,9 @@ function onSelect(id: string): void {
   emit("select", id)
 }
 
+const list = useTemplateRef<HTMLElement>("list")
+const { fadeStyle } = useScrollFade(list, { size: "sm" })
+
 watch(currentActive, id => {
   const index = items.value.findIndex(item => item.id === id)
   rows.value?.[index]?.scrollIntoView({ block: "nearest" })
@@ -364,7 +368,8 @@ watch(currentActive, id => {
     class="pointer-events-none flex max-h-full max-w-[calc(100%-0.5rem)] flex-col"
   >
     <TooltipProvider :delay-duration="250">
-      <ol class="min-h-0 overflow-x-hidden overflow-y-auto scrollbar-none">
+      <div class="ui-scroll-mask flex min-h-0 flex-col" :style="fadeStyle">
+        <ol ref="list" class="min-h-0 overflow-x-hidden overflow-y-auto scrollbar-none">
         <li v-for="(item, index) in items" :key="item.id" ref="rows">
           <TooltipRoot>
             <TooltipTrigger
@@ -404,7 +409,8 @@ watch(currentActive, id => {
             </TooltipPortal>
           </TooltipRoot>
         </li>
-      </ol>
+        </ol>
+      </div>
     </TooltipProvider>
   </nav>
 </template>

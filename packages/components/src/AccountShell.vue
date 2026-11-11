@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "./components/common/UiButton.vue"
+import UiScrollArea from "./components/common/UiScrollArea.vue"
 import { computed, defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
 import { useEventListener, useStorage, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
@@ -91,7 +92,11 @@ if (props.host.onboarding) void loadOnboarding()
 
 <template>
   <div class="flex h-full flex-col overflow-clip bg-ui-canvas text-ui-text">
-    <p v-if="site?.announcement" role="status" class="m-0 max-h-32 shrink-0 overflow-y-auto whitespace-pre-wrap break-words border-b border-ui-border bg-ui-surface px-5 py-2 text-sm">{{ site.announcement }}</p>
+    <div v-if="site?.announcement" class="shrink-0 border-b border-ui-border bg-ui-surface">
+      <UiScrollArea class="max-h-32" fade-size="sm">
+        <p role="status" class="m-0 whitespace-pre-wrap break-words px-5 py-2 text-sm">{{ site.announcement }}</p>
+      </UiScrollArea>
+    </div>
     <template v-if="ready && onboarding">
       <BrowserNotificationOnboarding v-if="!browserNotificationOnboardingComplete && browserNotificationPermission === 'default'" :site-name="site?.siteName ?? 'DeskFleet'" @complete="browserNotificationOnboardingComplete = true" />
       <WelcomePage v-else-if="onboarding.step !== 'complete' || !account.user" :host="host" :state="onboarding" @change="onboarding = $event" />

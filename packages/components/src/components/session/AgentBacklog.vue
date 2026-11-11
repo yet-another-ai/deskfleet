@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import { CircleAlert, CornerDownRight, ListEnd, RotateCw, X } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -17,16 +18,18 @@ const command = (input: AgentInput) => commandDraft(input.content.find(block => 
 <template>
   <section v-if="candidates.length" class="overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :aria-label="t('agent.backlog')">
     <h2 class="m-0 flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs font-medium text-ui-text-muted"><ListEnd :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.backlog') }} · {{ candidates.length }}</h2>
-    <ol class="max-h-48 overflow-y-auto pb-1">
-      <li v-for="input in candidates" :key="input.id" :data-input-id="input.id" class="group flex items-center gap-2 px-3 py-1 text-[13px]">
-        <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
-        <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
-        <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
-        <AgentActor v-if="input.author.userId" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
-        <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
-        <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
-        <UiButton variant="ghost" size="sm" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer px-1.5 hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-      </li>
-    </ol>
+    <UiScrollArea fade-size="sm" class="max-h-48">
+      <ol class="pb-1">
+        <li v-for="input in candidates" :key="input.id" :data-input-id="input.id" class="group flex items-center gap-2 px-3 py-1 text-[13px]">
+          <CircleAlert v-if="input.state === 'failed'" :size="14" :stroke-width="2" class="shrink-0 text-ui-danger" aria-hidden="true" />
+          <span class="min-w-0 flex-1 truncate select-text" :title="input.error ?? preview(input)">{{ preview(input) }}</span>
+          <span v-if="input.state === 'failed'" class="shrink-0 text-xs text-ui-danger">{{ t('agent.inputState.failed') }}</span>
+          <AgentActor v-if="input.author.userId" :actor="input.author" class="shrink-0 text-xs text-ui-text-muted" />
+          <UiButton variant="ghost" size="sm" v-if="input.state === 'pending' && canSteer && !command(input)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('steer', input.id)"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton variant="ghost" size="sm" v-if="input.state === 'failed' || (input.state === 'pending' && input.error)" type="button" class="shrink-0 cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" @click="emit('retry', input.id)"><RotateCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.retryInput') }}</UiButton>
+          <UiButton variant="ghost" size="sm" v-if="input.state === 'pending'" type="button" class="shrink-0 cursor-pointer px-1.5 hover:bg-ui-hover hover:text-ui-text disabled:opacity-50" :disabled="disabled" :title="t('agent.withdraw')" :aria-label="t('agent.withdraw')" @click="emit('withdraw', input.id)"><X :size="14" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+        </li>
+      </ol>
+    </UiScrollArea>
   </section>
 </template>

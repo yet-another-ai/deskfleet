@@ -8,6 +8,7 @@ import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import AgentConfigOptionMenu from "./AgentConfigOptionMenu.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 
@@ -113,39 +114,43 @@ async function confirmSwitch(): Promise<void> {
         <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 max-h-[var(--reka-popper-available-height)] w-72 overflow-y-auto" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
-          <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
-            <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
-              <span>{{ control.label }}</span>
-              <span class="ml-auto truncate text-ui-text-muted">{{ control.name ?? (loading ? t('composer.loading') : t('composer.unavailable')) }}</span>
-              <LoaderCircle v-if="control.id === 'model' && requestedModel" :size="13" class="shrink-0 animate-spin text-ui-text-muted" data-model-pending aria-hidden="true" />
-              <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto" loop>
-                <DropdownMenuRadioGroup :model-value="control.value">
-                  <template v-for="group in optionGroups(control)" :key="group.id">
-                    <DropdownMenuLabel v-if="group.name" class="px-2.5 py-1.5 text-xs font-medium text-ui-text-muted">{{ group.name }}</DropdownMenuLabel>
-                  <DropdownMenuRadioItem v-for="option in group.options" :key="option.id" as="button" type="button" :value="option.id" :data-value="option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(control.id, option.id)">
-                    <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
-                    <span class="min-w-0 flex-1 text-left">
-                      <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
-                      <span v-if="option.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ option.description }}</span>
-                    </span>
-                    <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
-                  </DropdownMenuRadioItem>
-                  </template>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-          <DropdownMenuSeparator v-if="extraOptions.length" class="-mx-1 my-1 h-px bg-ui-border" />
-          <AgentConfigOptionMenu v-for="option in extraOptions" :key="option.id" :option="option" :open="active === `config:${option.id}`" :disabled="disabled || loading || !sessionReady" @update:open="active = $event ? `config:${option.id}` : active === `config:${option.id}` ? null : active" @change="changeConfigOption(option.id, $event)" />
-          <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
-          <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
-            <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>
-            <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>
-          </div>
+        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
+          <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+            <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
+              <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
+                <span>{{ control.label }}</span>
+                <span class="ml-auto truncate text-ui-text-muted">{{ control.name ?? (loading ? t('composer.loading') : t('composer.unavailable')) }}</span>
+                <LoaderCircle v-if="control.id === 'model' && requestedModel" :size="13" class="shrink-0 animate-spin text-ui-text-muted" data-model-pending aria-hidden="true" />
+                <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
+                  <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+                    <DropdownMenuRadioGroup :model-value="control.value">
+                      <template v-for="group in optionGroups(control)" :key="group.id">
+                        <DropdownMenuLabel v-if="group.name" class="px-2.5 py-1.5 text-xs font-medium text-ui-text-muted">{{ group.name }}</DropdownMenuLabel>
+                        <DropdownMenuRadioItem v-for="option in group.options" :key="option.id" as="button" type="button" :value="option.id" :data-value="option.id" :disabled="control.disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(control.id, option.id)">
+                          <ProviderIcon v-if="control.id === 'agent'" :icon="providers.providers.find(provider => provider.id === option.id)?.icon" :template="providers.providers.find(provider => provider.id === option.id)?.template" :size="15" class="text-ui-text-muted" />
+                          <span class="min-w-0 flex-1 text-left">
+                            <span class="block" :class="option.description ? 'whitespace-normal' : 'truncate'">{{ option.name }}</span>
+                            <span v-if="option.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ option.description }}</span>
+                          </span>
+                          <Check v-if="control.value === option.id" :size="15" class="shrink-0" aria-hidden="true" />
+                        </DropdownMenuRadioItem>
+                      </template>
+                    </DropdownMenuRadioGroup>
+                  </UiScrollArea>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator v-if="extraOptions.length" class="-mx-1 my-1 h-px bg-ui-border" />
+            <AgentConfigOptionMenu v-for="option in extraOptions" :key="option.id" :option="option" :open="active === `config:${option.id}`" :disabled="disabled || loading || !sessionReady" @update:open="active = $event ? `config:${option.id}` : active === `config:${option.id}` ? null : active" @change="changeConfigOption(option.id, $event)" />
+            <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
+            <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
+              <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>
+              <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>
+            </div>
+          </UiScrollArea>
         </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>

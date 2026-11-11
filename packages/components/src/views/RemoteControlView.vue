@@ -3,13 +3,15 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { Activity, FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { computed, defineAsyncComponent, ref } from "vue"
+import { computed, defineAsyncComponent, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import UiTabTitle from "../components/common/UiTabTitle.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
+import { useScrollFade } from "../composables/useScrollFade.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 
@@ -28,6 +30,8 @@ const machine = computed(() => fleet.findMachine(props.machineId))
 const currentTarget = computed(() => props.machineId === fleet.targetId)
 const controlLabel = computed(() => machine.value?.local ? "machine.localControl" : "machine.remoteControl")
 const files = platformClient.files
+const tabsList = useTemplateRef<InstanceType<typeof TabsList>>("tabsList")
+const { fadeStyle: tabsFadeStyle } = useScrollFade(() => tabsList.value?.$el as HTMLElement | undefined, { fade: "x", size: "sm" })
 const target = useFileTarget(() => props.machineId)
 const tabs = [
   { id: "terminal", label: "remoteControl.terminal", icon: SquareTerminal },
@@ -73,13 +77,17 @@ const activeTerminal = computed({
     <ResourcePath v-if="machine" :segments="[machine.name]" />
   </PaneHeader>
   <TabsRoot v-if="machine" :key="machineId" :model-value="active" class="flex min-h-0 flex-1 flex-col px-4 pb-4" @update:model-value="select">
-    <TabsList :aria-label="t(controlLabel)" class="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-ui-border" loop>
-      <TabsTrigger
-        v-for="tab in availableTabs" :key="tab.id" :value="tab.id"
-        class="ui-tab h-9 gap-2 px-3 text-[13px]"
-        :class="active === tab.id && 'ui-tab-active'"
-      ><component :is="tab.icon" :size="15" class="shrink-0" aria-hidden="true" /><UiTabTitle :title="t(tab.label)">{{ t(tab.label) }}</UiTabTitle></TabsTrigger>
-    </TabsList>
+    <div class="mb-3 shrink-0 border-b border-ui-border">
+      <div class="ui-scroll-mask" :style="tabsFadeStyle">
+        <TabsList ref="tabsList" :aria-label="t(controlLabel)" class="flex gap-1 overflow-x-auto" loop>
+          <TabsTrigger
+            v-for="tab in availableTabs" :key="tab.id" :value="tab.id"
+            class="ui-tab h-9 gap-2 px-3 text-[13px]"
+            :class="active === tab.id && 'ui-tab-active'"
+          ><component :is="tab.icon" :size="15" class="shrink-0" aria-hidden="true" /><UiTabTitle :title="t(tab.label)">{{ t(tab.label) }}</UiTabTitle></TabsTrigger>
+        </TabsList>
+      </div>
+    </div>
     <!-- Retain visited tools and their state; desktop capture stops when its tab is hidden. -->
     <TabsContent v-if="visited.has('terminal')" v-show="active === 'terminal'" value="terminal" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-ui-border">
       <TerminalWorkspace v-if="currentTarget" v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
@@ -88,13 +96,17 @@ const activeTerminal = computed({
     <TabsContent v-if="!machine.local && visited.has('desktop')" v-show="active === 'desktop'" value="desktop" force-mount class="flex min-h-0 flex-1 flex-col">
       <DesktopView :machine-id="machineId" :visible="active === 'desktop'" :initial-display-id="desktopDisplay" :auto-connect="route.query.connect === '1'" />
     </TabsContent>
-    <TabsContent v-if="visited.has('files')" v-show="active === 'files'" value="files" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">
-      <FileTransferPanel v-if="files && target && currentTarget" :key="target.kind === 'machine' ? `${target.teamId}:${target.machineId}` : 'local'" :api="files" :target="target" :machine-name="machine.name" />
-      <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('remoteControl.filesUnavailable') }}</p>
+    <TabsContent v-if="visited.has('files')" v-show="active === 'files'" value="files" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <UiScrollArea orientation="both" class="min-h-0 flex-1" content-class="flex min-h-full flex-col">
+        <FileTransferPanel v-if="files && target && currentTarget" :key="target.kind === 'machine' ? `${target.teamId}:${target.machineId}` : 'local'" :api="files" :target="target" :machine-name="machine.name" />
+        <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('remoteControl.filesUnavailable') }}</p>
+      </UiScrollArea>
     </TabsContent>
-    <TabsContent v-if="visited.has('system')" v-show="active === 'system'" value="system" force-mount class="flex min-h-0 flex-1 flex-col overflow-auto">
-      <SystemStatusPanel v-if="currentTarget" :machine-id="machineId" :machine-name="machine.name" :online="machine.online" :active="active === 'system'" />
-      <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('systemStatus.unavailable') }}</p>
+    <TabsContent v-if="visited.has('system')" v-show="active === 'system'" value="system" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <UiScrollArea orientation="both" class="min-h-0 flex-1" content-class="flex min-h-full flex-col">
+        <SystemStatusPanel v-if="currentTarget" :machine-id="machineId" :machine-name="machine.name" :online="machine.online" :active="active === 'system'" />
+        <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('systemStatus.unavailable') }}</p>
+      </UiScrollArea>
     </TabsContent>
   </TabsRoot>
   <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('desktop.notFound') }}</p>

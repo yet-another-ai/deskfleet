@@ -6,6 +6,7 @@ import type { GitChangeKind, GitFileChange } from "../../../../../apps/daemon/sr
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import { gitDiffCardKey } from "./git-diff-card.ts"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import GitChangeFile from "./GitChangeFile.vue"
 import GitCheckout from "./GitCheckout.vue"
 import GitDiffCard from "./GitDiffCard.vue"
@@ -95,9 +96,11 @@ function reveal(repositoryId: string, change: GitFileChange): void {
         :class="treeOpen && 'flex-row'"
         :data-git-split="treeOpen ? '' : undefined"
       >
-        <div
+        <UiScrollArea
           v-if="treeOpen"
-          class="min-h-0 w-[42%] max-w-52 min-w-0 shrink-0 overflow-y-auto border-r border-ui-border px-3 pb-4"
+          fade-size="sm"
+          class="min-h-0 w-[42%] max-w-52 min-w-0 shrink-0 border-r border-ui-border"
+          viewport-class="px-3 pb-4"
           role="navigation"
           :aria-label="t('panel.fileTree')"
           data-git-tree
@@ -142,8 +145,8 @@ function reveal(repositoryId: string, change: GitFileChange): void {
             <p v-if="directory.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ directory.error }}</p>
             <p v-else class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.notGit') }}</p>
           </section>
-        </div>
-        <div data-git-cards class="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4">
+        </UiScrollArea>
+        <UiScrollArea data-git-cards class="min-h-0 min-w-0 flex-1" viewport-class="px-3 pb-4">
           <section v-for="repository in repositories" :key="repository.id" :data-repository="repository.id" class="min-w-0">
             <GitCheckout :root="repository.root" :branch="repository.branch" :head="repository.head" />
             <p v-if="repository.error" class="m-0 break-words text-[13px] text-ui-danger" role="alert">{{ repository.error }}</p>
@@ -171,7 +174,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
               <p v-else class="m-0 text-[13px] text-ui-text-faint">{{ t('panel.notGit') }}</p>
             </section>
           </template>
-        </div>
+        </UiScrollArea>
       </div>
     </template>
   </div>

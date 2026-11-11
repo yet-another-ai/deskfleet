@@ -4,10 +4,11 @@ import UiTabTitle from "../common/UiTabTitle.vue"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import { Bot, Circle, CircleAlert, CircleStop, LoaderCircle, Plus, SquareTerminal, Unplug, X } from "@lucide/vue"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { onMounted, ref, shallowRef, watch, type Component } from "vue"
+import { onMounted, ref, shallowRef, useTemplateRef, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TerminalSummary } from "../../../../../apps/daemon/src/terminal-protocol.ts"
 import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
+import { useScrollFade } from "../../composables/useScrollFade.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import LiveTerminal, { type TerminalConnection } from "./LiveTerminal.vue"
 
@@ -21,6 +22,8 @@ const props = defineProps<{
 const activeId = defineModel<string | undefined>("activeId")
 const store = useTerminalsStore()
 const { t } = useI18n()
+const tabsList = useTemplateRef<InstanceType<typeof TabsList>>("tabsList")
+const { fadeStyle: tabsFadeStyle } = useScrollFade(() => tabsList.value?.$el as HTMLElement | undefined, { fade: "x", size: "sm" })
 const creating = ref(false)
 const closing = ref(new Set<string>())
 const error = shallowRef<unknown>(null)
@@ -91,7 +94,8 @@ onMounted(() => {
 <template>
   <TabsRoot :model-value="activeId" class="flex min-h-0 flex-1 flex-col" @update:model-value="select">
     <div class="flex h-8 min-w-0 shrink-0 items-center border-b border-ui-border">
-      <TabsList :aria-label="t('terminal.tabs')" class="flex h-full min-w-0 flex-1 overflow-x-auto" loop>
+      <div class="ui-scroll-mask flex h-full min-w-0 flex-1" :style="tabsFadeStyle">
+        <TabsList ref="tabsList" :aria-label="t('terminal.tabs')" class="flex h-full min-w-0 flex-1 overflow-x-auto scrollbar-none" loop>
         <div
           v-for="(terminal, index) in terminals"
           :key="terminal.id"
@@ -133,7 +137,8 @@ onMounted(() => {
             @click="hangup(terminal.id)"
           ><X :size="13" aria-hidden="true" /></button>
         </div>
-      </TabsList>
+        </TabsList>
+      </div>
       <button
         type="button"
         :aria-label="t('terminal.newTab')"
