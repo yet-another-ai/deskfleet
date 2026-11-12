@@ -1365,6 +1365,14 @@ the last sample visibly stale; these measurements are not persisted in the centr
 catalog or Agent history. Native sampling runs off Node's event loop and is shared
 by concurrent reads without a background polling service.
 
+The sidebar's Remote desktop capsule opens an independent, Team-wide overview.
+It defaults to a single responsive grid of every remote machine's displays, with
+the machine name on each thumbnail. Like the Session previews, it excludes the
+viewing Electron client's own machine and uses silent, read-only preview peers.
+The overview owns its adapters without opening the other machines' catalogs;
+pausing or hiding the page stops streams, and leaving it releases the adapters.
+Opening a display on another machine keeps the overview in navigation history.
+
 Machine file access shares one service between the two-pane transfer panel and
 Agent Markdown resources. File endpoints and the transfer queue have independent
 lifetimes from Sessions and desktop media. Electron's main process owns its

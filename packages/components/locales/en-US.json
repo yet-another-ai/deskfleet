@@ -478,6 +478,7 @@
   "nav": {
     "label": "Navigation",
     "conversations": "Conversations",
+    "remoteDesktop": "Remote desktop",
     "newSession": "New session",
     "settings": "Settings",
     "team": "Switch team"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarClock, MessagesSquare, Search, SquarePen } from "@lucide/vue"
+import { CalendarClock, MessagesSquare, MonitorPlay, Search, SquarePen } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -17,10 +17,11 @@ const searchPath = useAccountSession()?.searchPath ?? ref("/search")
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
   { routeName: "schedules", label: "schedules.title", icon: CalendarClock },
+  { routeName: "remote-desktops", label: "nav.remoteDesktop", icon: MonitorPlay },
   { routeName: "search", label: "search.title", icon: Search },
 ] as const
 type Section = typeof sections[number]
-/** Named routes that belong under Conversations; Settings and Schedules are excluded. */
+/** Machine-local resource routes that belong under Conversations. */
 const conversationRouteNames = new Set(["new-session", "session", "worktree", "machine-control", "terminal"])
 const activeSection = computed(() => sections.find(section => section.routeName === route.name)
   ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
@@ -64,8 +65,10 @@ function destination(section: Section) {
 <style scoped>
 .section-link {
   min-width: 2.25rem;
+  flex-shrink: 0;
   gap: 0;
 }
+.section-link[aria-current="page"] { flex-shrink: 1; }
 .section-label {
   max-width: 0;
   margin-inline-start: 0;

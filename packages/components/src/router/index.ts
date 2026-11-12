@@ -69,6 +69,11 @@ export const router = createRouter({
       component: () => import("../views/SearchView.vue"),
     },
     {
+      path: "/desktops",
+      name: "remote-desktops",
+      component: () => import("../views/RemoteDesktopsView.vue"),
+    },
+    {
       path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),
