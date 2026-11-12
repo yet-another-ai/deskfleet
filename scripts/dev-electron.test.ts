@@ -30,7 +30,9 @@ test("macOS development host has speech declarations, a valid signature, and sur
   assert.match(info.NSMicrophoneUsageDescription, /microphone/)
   assert.match(info.NSSpeechRecognitionUsageDescription, /speech recognition/)
   execFileSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app], { stdio: "pipe" })
-  assert.match(execFileSync(executable, ["--version"], { encoding: "utf8", timeout: 20_000 }), /^v\d+\./)
+  const env = { ...process.env }
+  delete env.ELECTRON_RUN_AS_NODE
+  assert.equal(execFileSync(executable, ["--version"], { env, encoding: "utf8", timeout: 20_000 }).trim(), `v${info.CFBundleShortVersionString}`)
 
   const signature = join(app, "Contents/_CodeSignature/CodeResources")
   const before = await stat(signature)
