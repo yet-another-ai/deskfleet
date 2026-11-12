@@ -19,6 +19,7 @@ async function setup(path = "/") {
     routes: [
       { path: "/", name: "new-session", component: {} },
       { path: "/search", name: "search", component: {} },
+      { path: "/desktops", name: "remote-desktops", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
       { path: "/sessions/archived", name: "archived-sessions", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
@@ -123,6 +124,7 @@ test.each([
   { path: "/sessions/session-42?tab=changes", section: "Conversations" },
   { path: "/schedules/new", section: "Schedules" },
   { path: "/search?q=hello&kind=chat", section: "Search" },
+  { path: "/desktops", section: "Remote desktop" },
 ])("selecting the active $section section keeps $path", async ({ path, section }) => {
   const router = await setup(path)
   expect(sectionLink(section).attributes("href")).toBe(path)
@@ -188,6 +190,21 @@ test("Search is always available alongside the existing capsules", async () => {
   expect(sectionLink("Conversations").attributes("href")).toBe("/")
 })
 
+test("Remote desktop opens its own overview and preserves the conversation destination", async () => {
+  const conversation = "/sessions/session-42?tab=changes#reply-7"
+  const router = await setup(conversation)
+  expect(sectionLink("Remote desktop").attributes("href")).toBe("/desktops")
+  await sectionLink("Remote desktop").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.name).toBe("remote-desktops")
+  expect(sectionLink("Remote desktop").attributes("aria-current")).toBe("page")
+  expect(sectionLink("Conversations").attributes("aria-current")).toBeUndefined()
+  expect(sectionLink("Conversations").attributes("href")).toBe(conversation)
+  await sectionLink("Conversations").trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe(conversation)
+})
+
 test("Settings does not overwrite the Conversations return path", async () => {
   const conversation = "/terminals/shell-7"
   const router = await setup(conversation)
@@ -216,4 +233,5 @@ test("localizes both section links and the New session action", async () => {
   expect(sectionLink("计划任务").attributes("aria-current")).toBe("page")
   expect(sectionLink("对话").attributes("aria-current")).toBeUndefined()
   expect(sectionLink("对话").attributes("href")).toBe("/")
+  expect(sectionLink("远程桌面").attributes("href")).toBe("/desktops")
 })

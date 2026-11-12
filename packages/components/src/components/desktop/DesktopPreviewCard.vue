@@ -7,7 +7,7 @@ import type { DesktopDisplay, DesktopMediaApi } from "@deskfleet/client/desktop-
 import { commonDesktopCodecs, useDesktopConnection } from "../../composables/useDesktopConnection.ts"
 import UiButton from "../common/UiButton.vue"
 
-const props = defineProps<{ api: DesktopMediaApi; display: DesktopDisplay; machineName: string; active: boolean }>()
+const props = defineProps<{ api: DesktopMediaApi; display: DesktopDisplay; machineName: string; active: boolean; showMachineName?: boolean }>()
 defineEmits<{ open: [] }>()
 const { t } = useI18n()
 const connection = useDesktopConnection(props.api)
@@ -45,7 +45,7 @@ watch([video, stream], ([element, media]) => {
 </script>
 
 <template>
-  <article class="w-80 max-w-full overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :data-preview-display="display.id">
+  <article class="max-w-full overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :class="showMachineName ? 'w-full' : 'w-80'" :data-preview-display="display.id">
     <button type="button" class="group relative block aspect-video w-full cursor-pointer overflow-hidden bg-ui-desktop text-white focus-visible:outline-2 focus-visible:outline-ui-accent" :aria-label="t('desktopOverview.openDisplay', { machine: machineName, display: display.id })" @click="$emit('open')">
       <video ref="video" v-show="stream && state === 'connected'" class="absolute inset-0 h-full w-full object-contain" :aria-label="t('desktop.video')" width="320" height="180" muted autoplay playsinline />
       <span v-if="!stream || state !== 'connected'" class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-white/60">
@@ -56,7 +56,10 @@ watch([video, stream], ([element, media]) => {
       <span class="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/60 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><ArrowUpRight :size="16" aria-hidden="true" /></span>
     </button>
     <footer class="flex items-center justify-between gap-2 px-3 py-2.5">
-      <span class="min-w-0 truncate text-[13px] font-medium">{{ t('desktopOverview.display', { id: display.id }) }}</span>
+      <span class="min-w-0 text-[13px] font-medium">
+        <span v-if="showMachineName" class="block truncate">{{ machineName }}</span>
+        <span class="block truncate" :class="showMachineName && 'text-xs font-normal text-ui-text-muted'">{{ t('desktopOverview.display', { id: display.id }) }}</span>
+      </span>
       <span v-if="status" class="flex shrink-0 items-center gap-1.5 text-xs text-ui-text-muted"><span class="ui-status-dot text-ui-text-faint" aria-hidden="true" />{{ status }}</span>
     </footer>
     <div v-if="failure || playbackBlocked" class="flex flex-col items-start gap-2 border-t border-ui-border px-3 py-3">

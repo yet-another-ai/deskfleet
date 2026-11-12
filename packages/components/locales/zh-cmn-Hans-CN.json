@@ -478,6 +478,7 @@
   "nav": {
     "label": "导航",
     "conversations": "对话",
+    "remoteDesktop": "远程桌面",
     "newSession": "新会话",
     "settings": "设置",
     "team": "切换团队"

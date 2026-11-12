@@ -379,6 +379,7 @@
   },
   "nav": {
     "label": "ナビゲーション", "conversations": "会話",
+    "remoteDesktop": "リモートデスクトップ",
     "newSession": "新規セッション", "settings": "設定",
     "team": "チームを切り替え"
   },
