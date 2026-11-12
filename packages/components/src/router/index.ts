@@ -125,6 +125,11 @@ export const router = createRouter({
           component: () => import("../components/settings/PreferencesSettings.vue"),
         },
         {
+          path: "worktrees",
+          name: "settings-worktrees",
+          component: () => import("../components/settings/WorktreeSettings.vue"),
+        },
+        {
           path: "appearance",
           name: "settings-appearance",
           component: () => import("../components/settings/AppearanceSettings.vue"),

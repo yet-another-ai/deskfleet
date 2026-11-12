@@ -1,6 +1,8 @@
 import type { LocalAgentSettingsApi } from "./local-agent.ts"
 import type { RemoteAgentSettings } from "../../../apps/daemon/src/remote-agent-settings.ts"
+import type { WorktreePreferences } from "../../../apps/daemon/src/worktree-preferences.ts"
 export type { RemoteAgentSettings } from "../../../apps/daemon/src/remote-agent-settings.ts"
+export type { WorktreePreferences } from "../../../apps/daemon/src/worktree-preferences.ts"
 
 export const SETTINGS_CHANNEL = "deskfleet:settings"
 export const SETTINGS_CHANGED_EVENT = "deskfleet:settings-changed"
@@ -62,6 +64,8 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   getWorktreeRoot(): Promise<WorktreeRootState>
   setWorktreeRoot(root: string | null): Promise<WorktreeRootState>
   chooseWorktreeRoot(): Promise<string | null>
+  getWorktreePreferences(): Promise<WorktreePreferences>
+  setWorktreePreferences(settings: WorktreePreferences): Promise<WorktreePreferences>
   getNotifications(): Promise<NotificationSettings>
   setNotifications(settings: NotificationSettings): Promise<NotificationSettings>
 }

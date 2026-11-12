@@ -195,13 +195,16 @@ Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Off
 history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
 
-Archive is the normal user action for ending active use of a Session. It removes
-generated checkouts, including uncommitted changes and untracked files, to reclaim
-disk space. It preserves Session and Worktree identity, directory metadata,
+Archive is the normal user action for ending active use of a Session. It closes
+execution and applies this computer's archived-worktree cleanup setting. When
+that setting is disabled or local changes are protected, the generated checkouts
+remain on disk and the Session still becomes archived. Archive preserves Session
+and Worktree identity, directory metadata,
 queued inputs, configuration, conversation/tool history, terminal records, and
 full audit. Compact Git refs and the ownership manifest retain each checkout's
-last committed HEAD for restoration. Directory Sessions leave their Workspace
-source directories untouched. The archived Sessions page and authenticated
+last committed HEAD for restoration, and cleanup preserves named branches.
+Directory Sessions leave their Workspace source directories untouched. The
+archived Sessions page and authenticated
 management/Agent APIs also expose the separate deletion path documented below.
 
 Archive requires the owning machine online. Before changing archive state, the
@@ -211,21 +214,25 @@ resources. The daemon then blocks new execution and backlog dispatch, closes the
 provider and its pending permission callbacks without granting them, and stops
 Session-owned terminals while retaining their final output and metadata. It
 records the resulting execution/permission transitions
-without deleting their history, captures committed HEADs again after shutdown,
-then removes generated checkouts. The prepared refs remain a fallback if a checkout
-disappears during shutdown. Archive completes only after live resources have closed
-and checkout cleanup succeeds.
-Cleanup failures remain retryable. There is no queued offline archive or
-background cleanup of previously archived checkouts in this release; an explicit
-archive request can reclaim a previously archived Session's retained checkouts.
+without deleting their history, captures committed HEADs again when cleanup is
+enabled, then removes eligible generated checkouts. The prepared refs remain a
+fallback if a checkout disappears during shutdown. Archive completes only after live resources have closed
+and the configured cleanup has completed or retained protected checkouts.
+Cleanup failures remain retryable. There is no queued offline archive. Automatic
+cleanup can reclaim retained archived checkouts according to current preferences;
+an explicit archive request also reapplies those preferences to an archived Session.
 That request keeps the Session archived throughout cleanup and retains its quota
 slot; it does not reopen execution admission or restart resource closure.
+If cleanup was interrupted after removing only some repositories, disabling
+cleanup or protecting remaining changes restores missing checkouts from their
+saved commits while preserving surviving files, so later restore can complete.
 
-Restore recreates generated checkouts at the same paths and saved committed HEADs,
-then returns the same Session to active use without starting the provider,
-dispatching queued inputs, or creating terminals. Uncommitted changes and
-untracked files removed by archive are not restored. The next explicit message can
-resume the provider using its existing capabilities. A later terminal start
+Restore reuses retained checkouts without resetting their local files. Removed
+checkouts are recreated detached at the same paths and saved committed HEADs.
+Restore returns the same Session to active use without starting the provider,
+dispatching queued inputs, or creating terminals. Local files removed by cleanup
+are not restored. The next explicit message can resume the provider using its
+existing capabilities. A later terminal start
 creates a new PTY while preserving the ended terminal's record and transcript.
 Reading an archived Session cannot trigger implicit resume or terminal creation.
 Archive state must be durable and synchronized, distinct from provider process
@@ -239,6 +246,66 @@ inherited usage.
 Archive cannot reuse Session destruction or terminal hangup, both of which delete
 retained records and history. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
 and the [backend scope](backend.md#session-archive-and-restore).
+
+### Worktree cleanup preferences
+
+Desktop Settings → Worktrees owns host-wide branch naming and cleanup preferences
+in `<daemon directory>/worktree-preferences.json`, alongside the existing worktree
+root setting. They apply to every Team registration on this computer. Each Team
+runtime scans only its own journal and ownership manifests, beginning 60 seconds
+after startup and repeating 15 minutes after each pass. Passes do not overlap;
+shutdown stops scheduling and waits for an in-progress pass. A failed Session
+inspection is reported without preventing later Sessions from being checked.
+
+| Rule | Default | Eligibility |
+| --- | --- | --- |
+| Archived Sessions | Enabled | The Session is already archived; retained backlog is history rather than pending execution. |
+| Merged worktrees | Enabled | The latest turn completed, every repository's HEAD is included in its default branch, and every branch has a merged GitHub PR. |
+| Inactive worktrees | Enabled, 5 days | The latest durable Session, input, turn, or viewer activity is at least this old. |
+| Settled worktrees | Enabled, 6 days | The latest turn completed at least this long ago, with no pending work or input. Zero days selects the next pass. |
+| Unchanged worktrees | Enabled | The latest turn completed and no checkout has commits beyond its default branch. New checkouts are not removed before their first completed turn. |
+
+Active Sessions must be idle: no starting, running, or cancelling turn; pending,
+dispatching, or uncertain input; or pending permission or elicitation. A connected
+viewer or running user terminal also prevents automatic cleanup. ACP-owned
+terminals close with the provider. The inactive and settled clocks use durable
+timestamps, so daemon restarts do not reset them. Archived Sessions are governed
+by the archived rule rather than the active-Session time or Git rules.
+
+The default **Uncommitted changes** protection retains a Session's checkouts if
+any repository has staged or unstaged edits or untracked files. Ignored files,
+including `.env`, do not prevent removal. **All local files** also protects
+ignored files, including those inside initialized submodules. **Do not keep**
+allows removal of all local edits, untracked files, and ignored files; restore
+can recover only committed content. Directory Sessions and Workspace source
+directories never participate in worktree cleanup. Explicit Session deletion
+remains destructive and is not governed by these retention preferences.
+
+Git-based checks refresh the advertised default branch from `origin`, or the
+only remote when no `origin` exists, without switching or resetting a checkout.
+Repositories without remotes use a local `main` or `master`; ambiguous or
+unavailable defaults do not establish eligibility. All repositories must pass
+the ancestry check. The merged rule queries GitHub through the backend using the
+Session's saved user author, current machine-management authorization, and current
+GitHub App opt-in. The machine credential fixes the Team registration; user
+tokens stay on the backend. A missing grant or failed lookup cannot establish a
+merged PR. The unchanged rule does not require GitHub authorization.
+
+Before removal, the Session transition gate rechecks the saved event sequence,
+current preferences, activity, presence, terminals, local changes, and, for
+Git-based candidates, checkout/default-ref identities. Changes during inspection
+skip that candidate. Eligible active Sessions follow the archive lifecycle;
+cleanup preserves history, catalog identity, named branches, and committed-HEAD
+refs. Local changes that appear during shutdown retain the checkout and return
+the Session to active state. Reopening an archived Session still requires restore.
+
+Branch naming is applied before the first generated-worktree turn. **Semantic
+prefix**, the default, adds a first-prompt instruction asking the Agent to create
+a task-derived branch such as `feat/add-search` before editing, using a unique
+suffix if necessary. **Session identifier** creates
+`deskfleet/session-<origin-prefix>-<session ID>` directly, with a repository suffix
+for additional checkouts. Neither overwrites an already selected branch or
+renames later turns or inherited fork conversations.
 
 ## Provider configuration
 
@@ -594,11 +661,11 @@ conversation can acknowledge it.
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
 Independent `archiveState` is `active`, `archiving`, or `archived`. After preparing
 retained commits, archive persists `archiving` to close admission, then stops
-provider processes and owned terminals, removes generated checkouts, and only
+provider processes and owned terminals, applies worktree cleanup preferences, and only
 then commits `archived`. A failed
 close or checkout cleanup retains `archiving` and can be retried with a new
 operation ID after restart. Restore permits only
-`archived` to `active` after checkout recreation; it does not start processes or
+`archived` to `active` after retained-checkout reuse or checkout recreation; it does not start processes or
 dispatch backlog.
 Runs are `starting`, `running`, `stopping`, `stopped`, `interrupted`, or `failed`.
 Each new provider process gets a new generation, including when resuming a saved

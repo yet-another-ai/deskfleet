@@ -19,6 +19,7 @@ import { loadMachineRegistrations, newMachineDirectory, registrationKey, saveMac
 import { MachineOperations } from "./machine-operations.ts"
 import { ProviderSetup } from "./provider-setup.ts"
 import { TerminalSessions } from "./terminals.ts"
+import { WorktreeCleanup } from "./worktree-cleanup.ts"
 
 interface MachineOptions {
   peers: ControlPeers
@@ -43,15 +44,17 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let schedules: ScheduledTasks | undefined
   let mcp: AgentMcp | undefined
   let remoteMcp: RemoteMcp | undefined
+  let cleanup: WorktreeCleanup | undefined
   let stopping: Promise<void> | undefined
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    const cleanupResults = await Promise.allSettled([cleanup?.close()])
     remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
     const results = await Promise.allSettled([schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
     const terminalResults = await Promise.allSettled([terminals.close()])
-    const failures = [...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    const failures = [...cleanupResults, ...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, "Failed to stop machine resources")
   })()
   const close = () => closing ??= (async () => {
@@ -92,6 +95,8 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     remoteMcp = new RemoteMcp(hostDirectory, operations)
     central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp)
     await central.init()
+    cleanup = new WorktreeCleanup({ agents, catalog, pullRequest: (actor, query) => central!.githubPullRequest(actor, query) })
+    cleanup.start()
     schedules.start()
     return { directory, catalog, providers, mcpServers, setup, agents, terminals, central, schedules, mcp, operations, stop, close }
   } catch (error) {
