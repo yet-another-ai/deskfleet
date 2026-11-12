@@ -110,7 +110,7 @@ function rangeFixture() {
     },
   }))
   vi.spyOn(wrapper.element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 24))
-  return { range, commit, preview, enabled }
+  return { range, commit, preview, enabled, value }
 }
 
 test("range track clicks animate from rest and save the final value once motion stops", async () => {
@@ -189,4 +189,20 @@ test("a right arrow during range inertia targets a step beyond the current thumb
   await tick(2000)
   expect(range.value.value).toBeCloseTo(moving + 0.01)
   expect(commit).toHaveBeenCalledExactlyOnceWith(range.value.value)
+})
+
+test("an external reset still cancels a drag and its pending commit", async () => {
+  const { range, commit, value } = rangeFixture()
+  await pointer("pointerdown", 100)
+  await tick(32)
+  await pointer("pointermove", 120)
+  expect(range.value.value).toBe(216)
+  value.value = 40
+  await nextTick()
+  expect(range.value.value).toBe(40)
+  await pointer("pointermove", 150)
+  await pointer("pointerup", 150)
+  await tick(2000)
+  expect(range.value.value).toBe(40)
+  expect(commit).not.toHaveBeenCalled()
 })

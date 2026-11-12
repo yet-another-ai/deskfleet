@@ -19,9 +19,8 @@ const { value: hue, startDrag, moveDrag, endDrag, onInput, onChange, onKeydown }
   max: 360,
   enabled: () => appearance.ready && !appearance.settings.themeHueDynamic,
   preview: value => appearance.previewThemeHue(value),
-  async commit(value) {
-    appearance.previewThemeHue(value)
-    await appearance.set({ themeHue: value, themeHueDynamic: false })
+  commit: value => appearance.set({ themeHue: value, themeHueDynamic: false }),
+  afterCommit() {
     if (!appearance.error) appearance.previewThemeHue(null)
   },
 })
