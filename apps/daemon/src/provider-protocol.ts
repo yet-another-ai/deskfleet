@@ -6,6 +6,7 @@ export interface AgentProviderTemplate {
   id: AgentProviderTemplateId
   name: string
   defaultBinaryPath: string
+  supportsUsage?: boolean
 }
 
 export interface AgentProviderSettings {
@@ -73,17 +74,21 @@ export interface ProviderMethods {
 export type ProviderEvent = { kind: "providersChanged" }
 
 export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
-  { id: "codex", name: "Codex", defaultBinaryPath: "codex" },
-  { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" },
+  { id: "codex", name: "Codex", defaultBinaryPath: "codex", supportsUsage: true },
+  { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude", supportsUsage: true },
   { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" },
   { id: "grok", name: "Grok", defaultBinaryPath: "grok" },
   { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" },
-  { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp" },
+  { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp", supportsUsage: true },
   { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
-  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
+  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy", supportsUsage: true },
   { id: "codebuddy", name: "CodeBuddy Code", defaultBinaryPath: "codebuddy" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
+
+export function supportsProviderUsage(template?: AgentProviderTemplateId): boolean {
+  return AGENT_PROVIDER_TEMPLATES.some(entry => entry.id === template && entry.supportsUsage)
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected provider settings")

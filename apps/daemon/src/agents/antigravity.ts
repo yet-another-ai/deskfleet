@@ -4,6 +4,8 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as delay } from "node:timers/promises"
 import type { Usage } from "@agentclientprotocol/sdk/unstable"
+import type { AgentQuotaItem } from "../agent-configuration-protocol.ts"
+import { clampQuota, runUsageJsonCommand } from "../agent-usage.ts"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 
@@ -262,6 +264,32 @@ export function createAntigravityClientWrapper(
   return { wrappedClient, wrapConnection }
 }
 
+/** Parses `agy -p "/usage" --output-format json` output into quota buckets. */
+export function parseAntigravityUsage(stdout: string): AgentQuotaItem[] {
+  const payload = JSON.parse(stdout.trim()) as {
+    status?: string
+    error?: string
+    command?: { data?: { groups?: { name?: string; buckets?: { id?: string; name?: string; remaining_fraction?: number; reset_time?: string }[] }[] } }
+  }
+  if (payload.status !== "SUCCESS") throw new Error(payload.error?.trim() || "Could not read Antigravity usage")
+  const items: AgentQuotaItem[] = []
+  for (const group of payload.command?.data?.groups ?? []) {
+    const groupName = group.name?.trim() || undefined
+    for (const bucket of group.buckets ?? []) {
+      const label = bucket.name?.trim() || bucket.id?.trim()
+      if (typeof bucket.remaining_fraction !== "number" || !label) continue
+      items.push({
+        id: bucket.id?.trim() || label,
+        label,
+        ...(groupName ? { group: groupName } : {}),
+        remaining: clampQuota(bucket.remaining_fraction),
+        ...(bucket.reset_time ? { resetsAt: bucket.reset_time } : {}),
+      })
+    }
+  }
+  return items
+}
+
 /** Antigravity CLI serves ACP directly and uses its existing local credentials. */
 export const antigravityProvider: AgentProvider = {
   id: "antigravity",
@@ -271,5 +299,8 @@ export const antigravityProvider: AgentProvider = {
     const args = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
     const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir })
     return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", args, config.env), wrappedClient))
+  },
+  async readUsage(config, signal) {
+    return parseAntigravityUsage(await runUsageJsonCommand(config.binaryPath || "agy", ["-p", "/usage", "--output-format", "json"], config.env, signal))
   },
 }

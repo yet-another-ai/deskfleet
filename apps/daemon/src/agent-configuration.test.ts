@@ -394,3 +394,44 @@ test("draft configuration resolves the selected provider's current launch settin
   assert.equal((await catalog.native.snapshot()).workspaces[0]?.worktrees.length, 1)
   assert.equal(fake.closed, 2)
 })
+
+test("_deskfleet/agent/usage deduplicates concurrent reads and clears cache when providers change", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-agent-usage-"))
+  let calls = 0
+  let releaseFirst!: () => void
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
+  const fake = fakeProvider()
+  const providerWithUsage = {
+    ...fake.provider,
+    async readUsage() {
+      const callIndex = ++calls
+      if (callIndex === 1) await firstGate
+      return [{ id: "weekly", label: "Weekly Limit Remaining", remaining: callIndex === 1 ? 0.75 : 0.5 }]
+    },
+  }
+  const catalog = new DaemonCatalog(directory)
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const providers = new AgentProviders(directory, providerWithUsage)
+  await providers.init()
+  const configured = await providers.create({ template: "codex", name: "Usage agent", inheritShellEnvironment: false, env: {} })
+  const service = new AgentSessions(catalog, catalog.native, providerWithUsage, providers, undefined, undefined, new TestAgentQuotas())
+  await service.init()
+  context.after(async () => { await service.close(); await catalog.close(); await rm(directory, { recursive: true, force: true }) })
+
+  const p1 = service.handle("_deskfleet/agent/usage", { provider: configured.id }, service.actor())
+  const p2 = service.handle("_deskfleet/agent/usage", { provider: configured.id }, service.actor())
+  releaseFirst()
+  const [r1, r2] = await Promise.all([p1, p2])
+  assert.equal(calls, 1)
+  assert.deepEqual(r1, [{ id: "weekly", label: "Weekly Limit Remaining", remaining: 0.75 }])
+  assert.deepEqual(r2, r1)
+
+  const cached = await service.handle("_deskfleet/agent/usage", { provider: configured.id }, service.actor())
+  assert.equal(calls, 1)
+  assert.deepEqual(cached, r1)
+
+  await providers.update(configured.id, { name: "Usage agent updated", inheritShellEnvironment: false, env: {} })
+  const refreshed = await service.handle("_deskfleet/agent/usage", { provider: configured.id }, service.actor())
+  assert.equal(calls, 2)
+  assert.deepEqual(refreshed, [{ id: "weekly", label: "Weekly Limit Remaining", remaining: 0.5 }])
+})

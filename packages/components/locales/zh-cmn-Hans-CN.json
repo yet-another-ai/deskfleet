@@ -764,6 +764,9 @@
     "unavailable": "不可用",
     "loadingConfiguration": "正在从 Agent 读取配置…",
     "reloadConfiguration": "从 Agent 重新加载",
+    "viewUsage": "查看用量",
+    "usageEmpty": "暂无可用额度信息。",
+    "usageResetsAt": "{time} 重置",
     "yolo": "YOLO",
     "yoloHint": "在此会话中自动批准 Agent 的权限请求",
     "yoloConfirmation": {

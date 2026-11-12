@@ -1160,6 +1160,10 @@ export function createSeededStorybookState() {
   agents.refresh = async () => {}
   agents.open = async () => {}
   agents.agentConfiguration = async (params) => makeConfiguration(params.provider)
+  agents.agentUsage = async () => [
+    { id: "five_hour", label: "5-hour limit", remaining: 0.78, resetsAt: "2026-11-12T18:00:00Z" },
+    { id: "seven_day", label: "Weekly · all models", remaining: 0.54, resetsAt: "2026-11-18T00:00:00Z" },
+  ]
   agents.sessionConfiguration = async (id) => agents.configurations[id] ?? makeConfiguration("claude-code")
   agents.configureSession = async (id, choices) => {
     const cfg = makeConfiguration(agents.sessions[id]?.provider ?? "claude-code")
