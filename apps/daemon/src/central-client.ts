@@ -6,6 +6,7 @@ import { apiRequest, type ApiRequestOptions } from "@deskfleet/client/api-reques
 import { HttpError } from "@deskfleet/client/request-diagnostics"
 import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
+import type { GithubPullRequest, GithubPullRequestQuery } from "../../../packages/client/src/central.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
 import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
@@ -117,6 +118,17 @@ export class CentralClient {
     })
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
     return structuredClone(actor)
+  }
+
+  /** Read PR state using the Session author's current opt-in; no user token reaches the daemon. */
+  async githubPullRequest(actor: AgentActor, query: GithubPullRequestQuery): Promise<{ pullRequest: GithubPullRequest | null }> {
+    const credentials = this.#credentials
+    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("GitHub pull request status is unavailable")
+    return this.#api(credentials, "/api/daemon/github/pull-request", {
+      method: "POST", json: { userId: actor.userId, query }, timeoutMs: 45_000, totalTimeoutMs: 45_000,
+      errorPrefix: "GitHub pull request status is unavailable",
+    })
   }
 
   /** The credential fixes the source registration; the backend authorizes the target in that Team. */

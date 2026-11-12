@@ -5,7 +5,7 @@ use crate::{
     error::{ApiError, Result},
 };
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
-use deskfleet_control_store::now_ms;
+use deskfleet_control_store::{MachineAction, now_ms};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -192,6 +192,32 @@ pub(super) async fn lookup(
     query: web::Query<Lookup>,
 ) -> Result<HttpResponse> {
     let user = auth::user(&req, &state).await?;
+    lookup_for_user(&state, &user.user.id, &query).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct DelegatedLookup {
+    user_id: String,
+    query: Lookup,
+}
+
+/// A registration may use a saved Session author's current, opted-in GitHub grant.
+/// Machine identity and Team authorization always come from the machine token.
+pub(super) async fn daemon_lookup(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<DelegatedLookup>,
+) -> Result<HttpResponse> {
+    let machine = auth::machine(&req, &state).await?;
+    state
+        .store
+        .authorize_machine(&body.user_id, &machine.machine.id, MachineAction::Manage)
+        .await?;
+    lookup_for_user(&state, &body.user_id, &body.query).await
+}
+
+async fn lookup_for_user(state: &AppState, user_id: &str, query: &Lookup) -> Result<HttpResponse> {
     query.validate()?;
     let config = state
         .config
@@ -203,7 +229,7 @@ pub(super) async fn lookup(
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| ApiError::internal())?;
-    let token = access_token(&state, &user.user.id, config, &client).await?;
+    let token = access_token(state, user_id, config, &client).await?;
     let mut pull_request = None;
     // Query open first so a reused branch's active PR wins over older PR activity,
     // without requiring pagination through all of its historical pull requests.
@@ -222,7 +248,7 @@ pub(super) async fn lookup(
         }
         let pulls: Vec<PullRequest> = response.json().await.map_err(|_| upstream_error())?;
         if let Some(pull) = pulls.into_iter().next() {
-            pull_request = Some(pull.status(&query)?);
+            pull_request = Some(pull.status(query)?);
             break;
         }
     }

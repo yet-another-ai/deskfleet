@@ -384,7 +384,7 @@ test.each(["machine", "workspace"] as const)("%s hover Archive confirms before a
   const confirmSelector = scope === "machine" ? ".ui-button-primary" : ".ui-button-danger"
   await button.trigger("click"); await flushPromises()
   expect(archive).not.toHaveBeenCalled()
-  expect(page.get('[role="dialog"]').text()).toContain(scope === "machine" ? "working directory, and files will be retained" : "including uncommitted changes and untracked files")
+  expect(page.get('[role="dialog"]').text()).toContain(scope === "machine" ? "working directory, and files will be retained" : "including its local changes protection")
   await page.get('[role="dialog"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(archive).not.toHaveBeenCalled()
   await button.trigger("click"); await flushPromises()

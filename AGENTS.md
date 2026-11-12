@@ -18,9 +18,10 @@ product website and user manual.
   and no directory aliases. Its main Worktree uses those actual directories; other Worktree records
   are created and destroyed with their owning Session, never maintained separately.
   A new Session either generates its own Git worktree or works directly in the
-  Workspace's directories. Archive removes generated checkouts, including
-  uncommitted and untracked files; restore recreates them at their saved committed
-  HEADs. Archiving or deleting a directory Session never touches source files.
+  Workspace's directories. Archive stops live resources and applies the host's
+  worktree cleanup and local-change protection settings. Restore retains protected
+  checkouts or recreates cleaned ones at their saved committed HEADs. Archiving
+  or deleting a directory Session never touches source files.
   A TerminalSession can belong to a Machine, Workspace, or Worktree. Its working
   directory is a separate choice.
 - Cross-machine coordination belongs to agent-facing MCP tools. Do not introduce

@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { configureClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { WorktreePreferences } from "@deskfleet/client/settings"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate } from "@deskfleet/client/central"
 import type { AdminTeamBilling, TeamBilling } from "@deskfleet/client/billing"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "@deskfleet/client/ai-usage"
@@ -864,6 +865,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
   let autoDownloadUpdates = true
   let launchAtStartup = false
   let worktreeRoot: string | null = "/Users/ada/.deskfleet/worktrees"
+  let worktreePreferences: WorktreePreferences = { branchNaming: "semantic", cleanup: { archived: true, merged: true, inactive: true, inactiveDays: 5, settled: true, settledDays: 6, unchanged: true, keepLocalChanges: "uncommitted" } }
   let notifications = { enabled: true, taskCompleted: true, taskNeedsInput: true }
   let appearance = { ...DEFAULT_APPEARANCE_SETTINGS }
 
@@ -927,6 +929,8 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
       getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, installSource: "desktop_installer" }),
       setAutoDownloadUpdates: async (enabled) => ({ enabled: (autoDownloadUpdates = enabled), installSource: "desktop_installer" }),
       getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
+      getWorktreePreferences: async () => structuredClone(worktreePreferences),
+      setWorktreePreferences: async (settings) => structuredClone(worktreePreferences = settings),
       setWorktreeRoot: async (root) => ({ root: (worktreeRoot = root), defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
       chooseWorktreeRoot: async () => "/Users/ada/CustomWorktrees",
       getNotifications: async () => ({ ...notifications }),
@@ -1097,6 +1101,7 @@ export function createStorybookRouter() {
       { path: "/terminals/:terminalId", name: "terminal", component: { template: "<div />" }, props: true },
       { path: "/settings", name: "settings", component: { template: "<div />" } },
       { path: "/settings/preferences", name: "settings-preferences", component: { template: "<div />" } },
+      { path: "/settings/worktrees", name: "settings-worktrees", component: { template: "<div />" } },
       { path: "/settings/appearance", name: "settings-appearance", component: { template: "<div />" } },
       { path: "/settings/notifications", name: "settings-notifications", component: { template: "<div />" } },
       { path: "/settings/permissions", name: "settings-permissions", component: { template: "<div />" } },

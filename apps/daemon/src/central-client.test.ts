@@ -83,6 +83,7 @@ test("delegation rechecks membership without treating a removed user as a revoke
   const identity = daemon.central.status().identity
   let status = 200
   const users: string[] = []
+  const lookups: unknown[] = []
   const server = createServer(async (request, response) => {
     assert.equal(request.headers.authorization, "Bearer machine-secret")
     response.setHeader("content-type", "application/json")
@@ -97,6 +98,12 @@ test("delegation rechecks membership without treating a removed user as a revoke
     } else if (request.url === "/api/daemon/entitlements") {
       response.writeHead(status)
       response.end(JSON.stringify({ error: { message: "Team limit reached" } }))
+    } else if (request.url === "/api/daemon/github/pull-request") {
+      let body = ""
+      for await (const chunk of request) body += chunk
+      lookups.push(JSON.parse(body))
+      response.writeHead(status)
+      response.end(JSON.stringify({ pullRequest: { number: 3, title: "Merged", url: "https://github.com/owner/repo/pull/3", state: "merged" } }))
     } else response.end("{}")
   })
   server.on("upgrade", (_request, socket) => socket.destroy())
@@ -107,8 +114,13 @@ test("delegation rechecks membership without treating a removed user as a revoke
   await daemon.central.enroll({ serverUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, machineId: "machine", teamId: "team", token: "machine-secret", originId: identity.originId })
   await assert.rejects(daemon.central.authorizeDelegation({ kind: "local_token" }), /verified/)
   assert.deepEqual(await daemon.central.authorizeDelegation(actor), actor)
+  const query = { owner: "owner", repo: "repo", branch: "fix/example" }
+  await assert.rejects(daemon.central.githubPullRequest({ kind: "local_token" }, query), /verified/)
+  assert.equal((await daemon.central.githubPullRequest(actor, query)).pullRequest?.state, "merged")
+  assert.deepEqual(lookups, [{ userId: "creator", query }])
   status = 403
   await assert.rejects(daemon.central.authorizeDelegation(actor), /403/)
+  await assert.rejects(daemon.central.githubPullRequest(actor, query), /403/)
   assert.equal(daemon.central.status().revoked, false)
   await assert.rejects(daemon.central.quotaRequest("GET", "/api/daemon/entitlements"), /Team limit reached/)
   assert.equal(daemon.central.status().revoked, false, "quota denials never revoke an enrolled machine")

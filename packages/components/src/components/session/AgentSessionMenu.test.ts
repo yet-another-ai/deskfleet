@@ -38,7 +38,7 @@ test("archive and restore confirmations follow the latest session state and retu
   await flushPromises()
   await page.findAll('[role="menuitem"]').find(item => item.text() === "Archive session")!.trigger("click"); await flushPromises()
   expect(page.get('[role="dialog"]').text()).toContain("Archive this session?")
-  expect(page.get('[role="dialog"]').text()).toContain("including uncommitted changes and untracked files")
+  expect(page.get('[role="dialog"]').text()).toContain("including its local changes protection")
   await page.get('[role="dialog"] .ui-button-danger').trigger("click"); await flushPromises()
   expect(wrapper.emitted("archive")).toEqual([[]])
   expect(page.find('[role="dialog"]').exists()).toBe(false)

@@ -21,6 +21,8 @@ import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentRecei
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 import { MAX_GENERATED_TITLE_LENGTH } from "./titles.ts"
+import { defaultWorktreePreferences, writeWorktreePreferences } from "./worktree-preferences.ts"
+import { worktreeCleanupFingerprint } from "./worktree-cleanup-inspection.ts"
 
 const execute = promisify(execFile)
 const questionRequest: acp.CreateElicitationRequest = {
@@ -135,6 +137,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
   const daemon = join(directory, "daemon")
   await mkdir(daemon)
+  await writeWorktreePreferences(daemon, { ...defaultWorktreePreferences(), branchNaming: "session" })
   const catalog = new DaemonCatalog(daemon)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Fixture", [{ path: repository }])
@@ -620,8 +623,68 @@ test("rename validates titles and persists customization for archived and machin
   } finally { await restarted.close() }
 })
 
+test("archive retains protected local changes and disabled cleanup retains clean checkouts", async t => {
+  for (const disabled of [false, true]) await t.test(disabled ? "disabled" : "protected", async t => {
+    const f = await setup(t)
+    const preferences = await f.catalog.getWorktreePreferences()
+    preferences.cleanup.archived = !disabled
+    await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
+    const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+    if (!disabled) await writeFile(join(cwd, "local.txt"), "keep my work\n")
+    await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    assert.equal((await f.read()).session.archiveState, "archived")
+    assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    if (!disabled) assert.equal(await readFile(join(cwd, "local.txt"), "utf8"), "keep my work\n")
+    assert.equal((await f.read()).session.archiveState, "active")
+  })
+})
+
+test("automatic cleanup fences changed history, running turns, visitors and late local edits", async t => {
+  const f = await setup(t)
+  const settings = (await f.catalog.getWorktreePreferences()).cleanup
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+  const first = (await f.read()).session.lastEventSeq
+  await f.submit("task").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "running") && f.provider.prompts.length === 1)
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  f.provider.finish()
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  await f.service.cleanupWorktree(f.sessionId, first, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  await f.service.attend(f.sessionId, "viewer", f.actor)
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  f.service.leave(f.sessionId, "viewer")
+  await f.service.journal.serial(f.sessionId, async () => {})
+  const preferences = await f.catalog.getWorktreePreferences()
+  await writeWorktreePreferences(join(f.directory, "daemon"), { ...preferences, cleanup: { ...settings, unchanged: false } })
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
+  const candidate = worktreeCleanupFingerprint((await f.catalog.inspectSessionWorktreeCleanup(f.sessionId, settings.keepLocalChanges))!)
+  await execute("git", ["-C", cwd, "switch", "-c", "feat/changed-since-scan"])
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings, candidate)
+  assert.equal((await f.read()).session.archiveState, "active")
+  const stop = f.service.onSessionArchive(async () => { await writeFile(join(cwd, "late.txt"), "keep\n") })
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  assert.equal(await readFile(join(cwd, "late.txt"), "utf8"), "keep\n")
+  stop()
+  await rm(join(cwd, "late.txt"))
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "archived")
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+})
+
 test("archive removes generated files but retains history, and restore recreates the checkout without starting work", async t => {
   const f = await setup(t)
+  const preferences = await f.catalog.getWorktreePreferences()
+  preferences.cleanup.keepLocalChanges = "none"
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
   const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
   const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
   const cwd = worktree.directories[0]!.path
@@ -691,6 +754,9 @@ test("archive removes generated files but retains history, and restore recreates
 
 test("reclaiming legacy archived checkouts preserves archived state and does not close resources again", async t => {
   const f = await setup(t)
+  const preferences = await f.catalog.getWorktreePreferences()
+  preferences.cleanup.keepLocalChanges = "none"
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
   const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
   await writeFile(join(cwd, "untracked.txt"), "old archived checkout\n")
   await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
@@ -1743,8 +1809,11 @@ test("a person opening a Session is remembered, and live attendance ends when th
   f.service.leave(f.sessionId, "desktop")
   assert.deepEqual(f.service.presence(), [{ sessionId: f.sessionId, userIds: ["bob"] }])
   f.service.leaveAll("browser")
+  await f.service.journal.serial(f.sessionId, async () => {})
   assert.deepEqual(f.service.presence(), [])
   assert.deepEqual((await f.read()).session.viewers?.map(viewer => viewer.userId), ["bob", "alice"])
+  const leftAt = (await f.read()).session.viewers!.find(viewer => viewer.userId === "bob")!.seenAt
+  assert.ok(Date.parse(leftAt) >= Date.parse(visited.session.viewers![0]!.seenAt))
   await f.service.attend(f.sessionId, "local", f.service.actor())
   assert.deepEqual(f.service.presence(), [])
 })

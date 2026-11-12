@@ -169,7 +169,7 @@ test("restoring a Session requires confirmation and then opens its conversation"
   const dialog = page().get('[role="dialog"]')
   expect(dialog.text()).toContain("Restore this session?")
   expect(dialog.text()).toContain("recreated from its last committed state")
-  expect(dialog.text()).toContain("untracked files cannot be recovered")
+  expect(dialog.text()).toContain("deleted local files cannot be recovered")
   expect(dialog.text()).toContain("Execution stays stopped")
   await dialog.get("[data-confirm-restore]").trigger("click"); await flushPromises()
   expect(restore).toHaveBeenCalledExactlyOnceWith(sessionId)

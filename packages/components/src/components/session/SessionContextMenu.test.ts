@@ -198,7 +198,7 @@ test("rename operates on the clicked session, retains failures, and restores row
 
 test.each([
   { archiveState: "active", context: "directory", message: "working directory, and files will be retained", button: ".ui-button-primary" },
-  { archiveState: "active", context: "worktree", message: "including uncommitted changes and untracked files", button: ".ui-button-danger" },
+  { archiveState: "active", context: "worktree", message: "including its local changes protection", button: ".ui-button-danger" },
   { archiveState: "archived", context: "directory", message: "Execution stays stopped", button: ".ui-button-primary" },
   { archiveState: "archived", context: "worktree", message: "recreated from its last committed state", button: ".ui-button-primary" },
 ] as const)("$archiveState $context session confirms its archive action without navigating", async ({ archiveState, context, message, button }) => {

@@ -43,6 +43,7 @@ export async function browserClient(
       getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
       getAutoDownloadUpdates: async () => ({ enabled: false, installSource: "web" }), setAutoDownloadUpdates: unavailable,
       getWorktreeRoot: unavailable, setWorktreeRoot: unavailable, chooseWorktreeRoot: unavailable,
+      getWorktreePreferences: unavailable, setWorktreePreferences: unavailable,
       getRemoteAgentSettings: unavailable, setRemoteAgentSettings: unavailable,
       ...createBrowserNotificationSettings(localStorage),
       onChanged: subscribe,

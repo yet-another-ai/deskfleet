@@ -26,6 +26,9 @@ import type {
   AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentPreview, AgentReceipt, AgentSnapshot,
 } from "./agent-protocol.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
+import { cleanupSessionIdle } from "./worktree-cleanup-policy.ts"
+import type { WorktreePreferences } from "./worktree-preferences.ts"
+import { worktreeCleanupFingerprint } from "./worktree-cleanup-inspection.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected request parameters")
@@ -181,10 +184,16 @@ export class AgentSessions {
   }
 
   leave(sessionId: string, connectionId: string): void {
+    for (const visit of this.#presence.visits(connectionId).filter(visit => visit.sessionId === sessionId)) {
+      void this.#rememberViewer(sessionId, visit.userId).catch(error => console.error("Could not record Session activity", error))
+    }
     this.#presence.unwatch(id(sessionId, "Session ID"), connectionId)
   }
 
   leaveAll(connectionId: string): void {
+    for (const visit of this.#presence.visits(connectionId)) {
+      void this.#rememberViewer(visit.sessionId, visit.userId).catch(error => console.error("Could not record Session activity", error))
+    }
     this.#presence.disconnect(connectionId)
   }
 
@@ -192,11 +201,14 @@ export class AgentSessions {
     await this.journal.serial(sessionId, async () => {
       if (this.#closed) return
       const snapshot = await this.journal.read(sessionId)
-      if (snapshot.session.viewers?.some(viewer => viewer.userId === userId)) return
+      const seenAt = timestamp()
+      const viewers = snapshot.session.viewers ?? []
       const session = {
         ...snapshot.session,
-        viewers: [...snapshot.session.viewers ?? [], { userId, seenAt: timestamp() }],
-        updatedAt: timestamp(),
+        viewers: viewers.some(viewer => viewer.userId === userId)
+          ? viewers.map(viewer => viewer.userId === userId ? { userId, seenAt } : viewer)
+          : [...viewers, { userId, seenAt }],
+        updatedAt: seenAt,
         lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n),
       }
       await this.journal.commit(snapshot, {
@@ -825,9 +837,38 @@ export class AgentSessions {
     return next
   }
 
-  async #archive(sessionId: string): Promise<void> {
+  /** Recheck the candidate under the same gate used by input and terminal admission. */
+  cleanupWorktree(sessionId: string, sequence: string, settings: WorktreePreferences["cleanup"], git?: string): Promise<void> {
+    if (this.#closed || this.#transitions.has(sessionId)) return Promise.resolve()
+    const pending = this.#archive(sessionId, { sequence, settings, git }).then(async () => {
+      await this.#admissions.synchronize((await this.journal.session(sessionId)))
+    })
+    this.#transitions.set(sessionId, pending)
+    void pending.finally(() => { if (this.#transitions.get(sessionId) === pending) this.#transitions.delete(sessionId) }).catch(() => {})
+    return pending
+  }
+
+  async #archive(sessionId: string, automatic?: { sequence: string; settings: WorktreePreferences["cleanup"]; git?: string }): Promise<void> {
     const alreadyArchived = await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      if (automatic) {
+        if (JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) !== JSON.stringify(automatic.settings)) return "skip"
+        if (this.#closed || snapshot.session.lastEventSeq !== automatic.sequence || !cleanupSessionIdle(snapshot)
+          || this.#presence.userIds(sessionId).length) return "skip"
+        const worktree = await this.#catalog.sessionWorktree(sessionId)
+        if (worktree && this.#terminals?.list().some(terminal => terminal.worktreeId === worktree.id && terminal.status === "running" && terminal.kind !== "acp")) return "skip"
+        const inspection = await this.#catalog.inspectSessionWorktreeCleanup(sessionId, automatic.settings.keepLocalChanges)
+        if (!inspection?.hasCheckouts || inspection.protected || this.#presence.userIds(sessionId).length) return "skip"
+        if (automatic.git !== undefined && worktreeCleanupFingerprint(inspection) !== automatic.git) return "skip"
+        if (snapshot.session.archiveState === "archived") {
+          if (automatic.settings.archived
+            && JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) === JSON.stringify(automatic.settings)) {
+            await this.#catalog.cleanupSessionWorktree(sessionId, automatic.settings.keepLocalChanges)
+          }
+          return "skip"
+        }
+        if (snapshot.session.archiveState !== "active") return "skip"
+      }
       if (!["ready", "provision_failed"].includes(snapshot.session.lifecycle)) throw new Error("Wait for Session provisioning or deletion before archiving")
       if (snapshot.session.archiveState === "archived") return true
       await this.#catalog.prepareSessionWorktreeArchive(sessionId)
@@ -835,6 +876,7 @@ export class AgentSessions {
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
       return false
     })
+    if (alreadyArchived === "skip") return
     if (alreadyArchived) {
       await this.#catalog.archiveSessionWorktree(sessionId)
       return
@@ -845,15 +887,28 @@ export class AgentSessions {
     const results = await Promise.allSettled(closures)
     const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (errors.length) throw new AggregateError(errors, "Session resources could not all be closed; retry archive")
-    await this.#catalog.archiveSessionWorktree(sessionId)
+    if (!automatic) await this.#catalog.archiveSessionWorktree(sessionId)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
-      const session = { ...snapshot.session, archiveState: "archived" as const, updatedAt: timestamp() }
+      if (snapshot.session.lifecycle === "deleting") return
+      const removed = !automatic || (!this.#closed && !this.#presence.userIds(sessionId).length
+        && JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) === JSON.stringify(automatic.settings)
+        && await this.#catalog.cleanupSessionWorktree(sessionId, automatic.settings.keepLocalChanges, automatic.git))
+      const session = { ...snapshot.session, archiveState: removed ? "archived" as const : "active" as const, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
     })
   }
 
-  async #delete(command: AgentCommand): Promise<null> {
+  #delete(command: AgentCommand): Promise<null> {
+    const sessionId = command.sessionId!
+    const previous = this.#transitions.get(sessionId) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(() => this.#deleteSession(command))
+    this.#transitions.set(sessionId, next)
+    void next.finally(() => { if (this.#transitions.get(sessionId) === next) this.#transitions.delete(sessionId) }).catch(() => {})
+    return next
+  }
+
+  async #deleteSession(command: AgentCommand): Promise<null> {
     const sessionId = command.sessionId!
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)

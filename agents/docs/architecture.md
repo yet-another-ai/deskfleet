@@ -412,7 +412,7 @@ Team
       Ordered directory paths [one or more; first is default]
       AgentSessions
         Managed Worktree record [owned for the Session's lifetime]
-          Generated checkouts [removed on archive; recreated on restore]
+          Generated checkouts [cleanup follows host preferences; restorable from saved commits]
       TerminalSessions [machine, workspace, or worktree scope]
 ```
 
@@ -454,7 +454,8 @@ Worktrees are not independently maintained resources. Each Session record owns
 one Worktree record, created and destroyed with it. Creating a Session chooses
 its context. New-session composition defaults to directory mode and remembers
 the user's last choice on that device. A **worktree** Session allocates generated
-checkouts; archiving or destroying it removes them. A **directory** Session records the Workspace's
+checkouts; archiving applies the host's cleanup preferences, and destroying it
+removes them. A **directory** Session records the Workspace's
 current paths and works in them directly, including their uncommitted changes
 and non-Git directories; archiving it leaves those files intact, and destroying
 it removes only its records. The choice is immutable. Sessions sharing directories
@@ -463,6 +464,13 @@ contexts, the daemon creates detached Git worktrees
 from the selected base branch or the configured checkouts' HEAD commits, grouping
 paths in the same checkout and preserving subdirectory positions. Uncommitted
 source changes are not copied.
+Desktop Settings → Worktrees controls first-turn branch naming for all Team
+registrations on that host. Semantic naming, the default, adds an instruction to
+the first Agent prompt to create a task-derived branch such as `feat/add-search`
+before editing. Session-identifier naming creates a deterministic
+`deskfleet/session-<origin-prefix>-<session ID>` branch before dispatch, with a
+repository suffix when needed. Both preserve a branch already selected by the
+user, and neither renames existing Sessions or inherited fork conversations.
 The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
@@ -495,23 +503,40 @@ This integration is unavailable for remote Machines and Web clients; it does not
 start an editor on a remote daemon or create a forwarding connection.
 
 Archiving is the normal way to finish using a Session. It closes the provider
-and Session-owned terminals, then removes generated checkouts to reclaim disk
-space, including uncommitted changes and untracked files. It retains the Session,
+and Session-owned terminals, then applies the host's archived-worktree cleanup
+setting. By default, cleanup removes generated checkouts only when they have no
+uncommitted edits or untracked files; ignored files, including `.env`, do not
+protect a checkout. Disabling archived cleanup or finding protected local changes
+keeps the checkout while completing the archive. Archive retains the Session,
 Worktree identity and directory metadata, queued inputs, conversation/tool
 history, terminal transcripts, and audit. Compact Git refs and the ownership
-manifest preserve each checkout's last committed HEAD for restoration; discarded
-local changes are not recoverable through restore. Workspace source directories
-are never removed. The machine must be online, and archive completes only after
-the daemon confirms that live resources have closed and generated checkouts have
-been removed. Cleanup failures remain retryable. Restoration recreates generated
-checkouts at the same paths and saved commits, keeps the same Session identity,
-and returns it to the active list without starting processes. A later message
+manifest preserve each checkout's last committed HEAD for restoration; named
+branches are retained, and discarded local files are not recoverable through
+restore. Workspace source directories are never removed. The machine must be
+online, and archive completes after live resources have closed and the configured
+cleanup has completed or retained the checkout. Cleanup failures remain retryable.
+Restoration reuses retained checkouts with their local changes intact, or recreates
+removed checkouts detached at the same paths and saved commits. It keeps the same
+Session identity and returns it to the active list without starting processes. A later message
 resumes the provider where supported; opening a terminal can create a new shell
 while retaining old terminal history.
 Archived Sessions remain owned by their Workspace and continue to prevent its
 deletion until the Session is deleted. Deletion removes its Session and Worktree
 records, ownership manifest, commit refs, and any remaining generated checkouts.
 Archive does not invoke Session or Worktree record destruction.
+
+Each Team runtime also checks for eligible generated checkouts 60 seconds after
+startup, then every 15 minutes. Host preferences enable archived, merged,
+five-day inactive, six-day settled, and unchanged cleanup by default. Settled
+cleanup requires the latest turn to have completed; zero days means the next
+pass. Git-based cleanup waits for a completed turn, refreshes the remote default
+branch, and requires all checkout commits to be included in that branch. Merged
+cleanup additionally verifies merged GitHub PRs using the Session author's current
+authorization. Automatic cleanup skips live turns, pending input or approvals,
+viewed Sessions, and running user terminals. It archives eligible active Sessions
+while retaining their history and restoration refs. The
+[Session guide](agent-sessions.md#worktree-cleanup-preferences) defines the criteria,
+local-file protection choices, and race checks.
 
 For example:
 
@@ -661,7 +686,7 @@ Clients treat paths as opaque so browsing follows the target machine's rules.
 Worktree Session creation allocates a durable ID and creates Git worktrees beneath
 `<machine directory>/session-worktrees/<session ID>/` by default. The host's
 `<daemon directory>/worktree-settings.json` can select an absolute root directory,
-configured through Desktop Settings → Preferences → This computer. Each new
+configured through Desktop Settings → Worktrees → Storage. Each new
 worktree Session reads the current preference and creates custom checkouts under
 `<root>/<catalog origin>/<session ID>/`; the catalog origin keeps repeated local
 IDs in different machine registrations separate. A changed root affects new
@@ -676,9 +701,11 @@ in compact Git refs and the manifest before changing archive state; a missing
 recoverable commit fails the request without stopping resources or changing that
 state. It refreshes the retained HEADs after shutdown before removing checkouts;
 restoration uses those saved locations regardless of the current root preference.
-Disconnect never destroys checkouts. Previously archived Sessions are not cleaned
-up in the background; explicitly archiving them again can reclaim retained
-checkouts. Deletion removes retained manifests and commit refs as well as any
+The adjacent host-level `worktree-preferences.json` stores branch naming and
+cleanup rules. Each Team runtime reads the current rules on its cleanup pass;
+archived checkouts retained by local-change protection can be reclaimed after
+those changes are committed or the protection rule changes. Disconnect itself
+never destroys checkouts. Deletion removes retained manifests and commit refs as well as any
 remaining checkouts; the same destruction path supports provisioning rollback.
 
 Electron reaches the backend through its main-process transport and narrow

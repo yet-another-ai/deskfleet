@@ -27,6 +27,15 @@ fn request(token: &str, branch: &str) -> test::TestRequest {
         .insert_header(("Authorization", format!("Bearer {token}")))
 }
 
+fn daemon_request(token: &str, user_id: &str) -> test::TestRequest {
+    test::TestRequest::post()
+        .uri("/api/daemon/github/pull-request")
+        .insert_header(("Authorization", format!("Bearer {token}")))
+        .set_json(json!({"userId":user_id,"query":{
+            "owner":"upstream","repo":"project","branch":"merged","headOwner":"octocat"
+        }}))
+}
+
 fn grant(expired: bool) -> GithubAppGrant {
     GithubAppGrant {
         subject: "1234".into(),
@@ -138,6 +147,23 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     let token = session["token"].as_str().unwrap();
     let session_id = session["sessionId"].as_str().unwrap();
     let app = test::init_service(App::new().app_data(state.clone()).configure(configure)).await;
+    let team = state.store.create_team(&user.id, "Cleanup").await.unwrap();
+    let enrolled: Value = test::read_body_json(
+        test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/teams/{}/machines", team.id))
+                .insert_header(("Authorization", format!("Bearer {token}")))
+                .set_json(
+                    json!({"name":"cleanup","identityToken":deskfleet_control_store::secret(),
+                    "originId":uuid::Uuid::new_v4().to_string(),"localMachineId":"1"}),
+                )
+                .to_request(),
+        )
+        .await,
+    )
+    .await;
+    let machine_token = enrolled["token"].as_str().unwrap();
 
     let response = test::call_service(
         &app,
@@ -149,12 +175,19 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let response = test::call_service(&app, request(token, "open").to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response =
+        test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     state
         .store
         .save_github_app_grant(&user.id, session_id, "app-client", grant(false))
         .await
         .unwrap();
     let response = test::call_service(&app, request(token, "open").to_request()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(pull_calls.load(Ordering::SeqCst), 0);
+    let response =
+        test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(pull_calls.load(Ordering::SeqCst), 0);
     state
@@ -168,6 +201,35 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = test::call_service(&app, daemon_request(token, &user.id).to_request()).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    state
+        .store
+        .save_github_app_grant(
+            &other.id,
+            other_session["sessionId"].as_str().unwrap(),
+            "app-client",
+            grant(false),
+        )
+        .await
+        .unwrap();
+    state
+        .store
+        .set_github_act_as_you(&other.id, "app-client", true)
+        .await
+        .unwrap();
+    let previous = pull_calls.load(Ordering::SeqCst);
+    let response =
+        test::call_service(&app, daemon_request(machine_token, &other.id).to_request()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(pull_calls.load(Ordering::SeqCst), previous);
+    let response =
+        test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["pullRequest"]["state"], "merged");
+    assert!(!body.to_string().contains("ghu_"));
 
     for (branch, expected, requests) in [
         ("open", "open", 1),
@@ -262,6 +324,10 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
         .unwrap();
     let previous = pull_calls.load(Ordering::SeqCst);
     let response = test::call_service(&app, request(token, "open").to_request()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(pull_calls.load(Ordering::SeqCst), previous);
+    let response =
+        test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(pull_calls.load(Ordering::SeqCst), previous);
     assert_eq!(refresh_calls.load(Ordering::SeqCst), 1);

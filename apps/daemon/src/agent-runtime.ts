@@ -17,6 +17,7 @@ import type { TerminalSessions } from "./terminals.ts"
 import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
 import { subagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
+import { prepareWorktreeBranchPrompt } from "./worktree-branch-naming.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -662,11 +663,18 @@ export class AgentRuntime {
     this.#active = { turn, completion }
     let sent = false
     void (async () => {
-      const prompt = await this.#catalog.attachments.preparePrompt(
+      let prompt = await this.#catalog.attachments.preparePrompt(
         this.sessionId,
         input.content,
         connection.initialization.agentCapabilities?.promptCapabilities ?? undefined,
       )
+      if (session.context === "worktree") {
+        const snapshot = await this.journal.read(this.sessionId)
+        const worktree = await this.#catalog.sessionWorktree(this.sessionId)
+        const preferences = await this.#catalog.getWorktreePreferences()
+        prompt = await prepareWorktreeBranchPrompt(snapshot, turn.id, worktree?.directories ?? [],
+          preferences.branchNaming, this.journal.identity.originId, prompt)
+      }
       if (!this.running || this.#connection !== connection) throw new Error("Agent stopped before delivery")
       await consumeTurn(this.journal, this.#quotas, turn)
       sent = true

@@ -9,6 +9,7 @@ import type { GitPreparedRevision } from "./git-protocol.ts"
 import { SessionAttachments } from "./session-attachments.ts"
 import { ManagedSessionWorktrees } from "./session-worktrees.ts"
 import { readWorktreeRoot } from "./worktree-settings.ts"
+import { readWorktreePreferences, type LocalChangesProtection } from "./worktree-preferences.ts"
 
 /** The daemon owns this machine's persistent catalog, independently of its clients. */
 export class DaemonCatalog {
@@ -87,14 +88,37 @@ export class DaemonCatalog {
     await this.#sessions.prepareArchive(sessionId)
   }
 
+  getWorktreePreferences() { return readWorktreePreferences(this.#hostDirectory) }
+
+  async inspectSessionWorktreeCleanup(sessionId: string, protection: LocalChangesProtection) {
+    if (!this.#sessions) throw new Error("Local catalog is not available")
+    return this.#sessions.inspectCleanup(sessionId, protection)
+  }
+
+  async cleanupSessionWorktree(sessionId: string, protection: LocalChangesProtection, expectedGit?: string): Promise<boolean> {
+    if (!this.#sessions) throw new Error("Local catalog is not available")
+    return this.#sessions.cleanup(sessionId, protection, expectedGit)
+  }
+
+  async refreshSessionWorktreeDefaults(sessionId: string): Promise<void> {
+    if (!this.#sessions) throw new Error("Local catalog is not available")
+    await this.#sessions.refreshCleanupDefaults(sessionId)
+  }
+
   /** Release generated files while retaining the Session's catalog and history. */
   async archiveSessionWorktree(sessionId: string): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
-    await this.#sessions.archive(sessionId)
+    const { cleanup } = await this.getWorktreePreferences()
+    if (cleanup.archived) {
+      await this.#sessions.prepareArchive(sessionId)
+      if (await this.#sessions.cleanup(sessionId, cleanup.keepLocalChanges)) return
+    }
+    await this.#sessions.retainArchive(sessionId)
   }
 
   async restoreSessionWorktree(sessionId: string): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
+    await this.#sessions.retainArchive(sessionId)
     await this.#sessions.restore(sessionId)
   }
 

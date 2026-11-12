@@ -6,7 +6,6 @@ import AutoDownloadUpdatesSettings from "./AutoDownloadUpdatesSettings.vue"
 import KeepAwakeSettings from "./KeepAwakeSettings.vue"
 import LaunchAtStartupSettings from "./LaunchAtStartupSettings.vue"
 import LocalAgentSettings from "./LocalAgentSettings.vue"
-import WorktreeRootSettings from "./WorktreeRootSettings.vue"
 import RemoteAgentSettings from "./RemoteAgentSettings.vue"
 
 const client = usePlatformClient()
@@ -33,7 +32,6 @@ if (client.platform === "web" && client.updates) {
       <LaunchAtStartupSettings />
       <KeepAwakeSettings />
       <AutoDownloadUpdatesSettings />
-      <WorktreeRootSettings />
       <RemoteAgentSettings />
       <LocalAgentSettings />
     </div>
