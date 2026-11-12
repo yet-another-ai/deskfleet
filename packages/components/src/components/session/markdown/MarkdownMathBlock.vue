@@ -2,6 +2,7 @@
 import { Check, Copy } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
+import UiScrollArea from "../../common/UiScrollArea.vue"
 import { renderCachedMath } from "./context.ts"
 
 const props = defineProps<{
@@ -28,8 +29,10 @@ const copyLabel = computed(() => t("common.copy"))
       <Copy :size="14" data-icon-copy="" aria-hidden="true" />
       <Check :size="14" data-icon-check="" aria-hidden="true" />
     </button>
-    <!-- eslint-disable-next-line vue/no-v-html -->
-    <div v-if="rendered.ok" v-html="rendered.html" />
-    <pre v-else class="ui-math-fallback"><code>{{ `$$\n${trimmed}\n$$` }}</code></pre>
+    <UiScrollArea orientation="horizontal" fade-size="sm" viewport-class="py-2.5 pr-10 pl-3.5">
+      <!-- eslint-disable-next-line vue/no-v-html -->
+      <div v-if="rendered.ok" v-html="rendered.html" />
+      <pre v-else class="ui-math-fallback !m-0 !border-0 !bg-transparent !p-0"><code>{{ `$$\n${trimmed}\n$$` }}</code></pre>
+    </UiScrollArea>
   </div>
 </template>

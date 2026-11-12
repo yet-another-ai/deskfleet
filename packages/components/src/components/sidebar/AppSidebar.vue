@@ -14,6 +14,7 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import AccountNotices from "./AccountNotices.vue"
 import AppUpdateNotice from "./AppUpdateNotice.vue"
 import MachineSection from "./MachineSection.vue"
@@ -91,7 +92,12 @@ function refresh(): void {
 
     <SidebarNavigation />
 
-    <div class="mt-4 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+    <UiScrollArea
+      class="min-h-0 min-w-0 flex-1"
+      content-class="px-2 pt-4 pb-3"
+      data-sidebar-scroll-area
+      :viewport-attrs="{ 'data-sidebar-scroll-viewport': '' }"
+    >
       <PinnedSessions />
       <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">
         <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
@@ -109,7 +115,7 @@ function refresh(): void {
         </template>
       </template>
       <MachineSection v-for="machine in machines" v-else :key="machine.id" :machine="machine" />
-    </div>
+    </UiScrollArea>
 
     <AccountNotices />
     <AppUpdateNotice />

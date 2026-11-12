@@ -4,6 +4,7 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { previewKindFromUri, type MediaPreviewKind } from "../../services/preview.ts"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import AgentMarkdown from "./AgentMarkdown.vue"
 import AgentResourceLink from "./AgentResourceLink.vue"
 import PreviewViewer from "./PreviewViewer.vue"
@@ -67,7 +68,9 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
             <component :is="expanded.has(index) ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
           </span>
         </button>
-        <pre v-if="expanded.has(index)" class="m-0 max-h-80 overflow-auto border-t border-ui-border bg-ui-badge/50 p-3 font-mono text-xs whitespace-pre-wrap">{{ block.resource.text }}</pre>
+        <UiScrollArea v-if="expanded.has(index)" orientation="both" fade-size="sm" class="max-h-80 border-t border-ui-border bg-ui-badge/50">
+          <pre class="m-0 p-3 font-mono text-xs whitespace-pre-wrap">{{ block.resource.text }}</pre>
+        </UiScrollArea>
         <pre v-else class="m-0 line-clamp-3 overflow-hidden border-t border-ui-border bg-ui-badge/30 px-3 py-2 font-mono text-xs text-ui-text-muted whitespace-pre-wrap">{{ block.resource.text }}</pre>
       </div>
       <PreviewViewer

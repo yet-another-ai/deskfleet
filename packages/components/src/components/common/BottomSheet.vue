@@ -3,6 +3,7 @@ import { X } from "@lucide/vue"
 import { DrawerClose, DrawerContent, DrawerHandle, DrawerOverlay, DrawerPortal, DrawerRoot, DrawerTitle } from "reka-ui"
 import { shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import UiScrollArea from "./UiScrollArea.vue"
 
 const props = defineProps<{ open: boolean; title: string; background?: "canvas" | "sidebar" }>()
 const emit = defineEmits<{ close: [] }>()
@@ -38,9 +39,9 @@ function focusPanel(event: Event): void {
             <X :size="18" aria-hidden="true" />
           </DrawerClose>
         </header>
-        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+        <UiScrollArea class="min-h-0 flex-1" viewport-class="overscroll-contain" content-class="flex min-h-full flex-col">
           <slot />
-        </div>
+        </UiScrollArea>
       </DrawerContent>
     </DrawerPortal>
   </DrawerRoot>

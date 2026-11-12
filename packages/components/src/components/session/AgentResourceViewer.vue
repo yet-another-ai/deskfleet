@@ -14,6 +14,7 @@ import { useLayoutStore } from "../../stores/layout.ts"
 import { locatePreviewInMainView } from "../../stores/previews.ts"
 import UiDialog from "../common/UiDialog.vue"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import FileBrowserPane from "../files/FileBrowserPane.vue"
 import PreviewViewer from "./PreviewViewer.vue"
 
@@ -201,18 +202,20 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             <div class="h-full bg-ui-accent transition-[width] duration-150" :style="{ width: `${loadPercent}%` }" />
           </div>
         </div>
-        <div v-else-if="entry?.kind === 'directory' && filesApi" class="min-h-0 flex-1 overflow-auto p-4">
+        <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
-        </div>
+        </UiScrollArea>
         <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
-        <pre v-else-if="content !== undefined" class="m-0 min-h-0 flex-1 overflow-auto p-4 whitespace-pre text-xs select-text"><code><span
-          v-for="(line, index) in lines"
-          :key="index"
-          :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
-          :data-line="index + 1"
-          class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
-          :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
-        ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
+        <UiScrollArea v-else-if="content !== undefined" orientation="both" class="min-h-0 flex-1">
+          <pre class="m-0 p-4 whitespace-pre text-xs select-text"><code><span
+            v-for="(line, index) in lines"
+            :key="index"
+            :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+            :data-line="index + 1"
+            class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
+            :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
+          ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
+        </UiScrollArea>
         <div v-if="error" class="flex flex-col items-start gap-3 p-4">
           <p class="m-0 break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
           <div v-if="hasFileActions && content === undefined" data-preview-error-actions class="flex flex-wrap items-center gap-2">
@@ -249,14 +252,16 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       class="max-h-[60vh]"
     />
     <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
-    <pre v-else-if="content !== undefined" class="max-h-[60vh] overflow-auto whitespace-pre text-xs select-text"><code><span
-      v-for="(line, index) in lines"
-      :key="index"
-      :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
-      :data-line="index + 1"
-      class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
-      :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
-    ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
+    <UiScrollArea v-else-if="content !== undefined" orientation="both" fade-size="sm" class="max-h-[60vh]">
+      <pre class="m-0 whitespace-pre text-xs select-text"><code><span
+        v-for="(line, index) in lines"
+        :key="index"
+        :ref="index + 1 === requestedLines?.start ? (element: any) => { lineElement = element } : undefined"
+        :data-line="index + 1"
+        class="before:mr-3 before:inline-block before:min-w-8 before:text-right before:text-ui-text-faint before:tabular-nums before:select-none"
+        :class="requestedLines && index + 1 >= requestedLines.start && index + 1 <= requestedLines.end && 'bg-ui-hover'"
+      ><template v-if="highlightedLines"><span v-for="(token, tokenIndex) in highlightedLines[index]" :key="tokenIndex" :style="token.htmlStyle">{{ token.content }}</span>{{ line.ending }}</template><template v-else>{{ line.text }}</template></span></code></pre>
+    </UiScrollArea>
     <p v-if="error" class="break-words text-sm text-ui-danger" role="alert">{{ error }}</p>
     <div class="mt-4 flex justify-end gap-2">
       <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>

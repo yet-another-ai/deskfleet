@@ -263,6 +263,17 @@ jobs:
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
+      - name: Add Android SDK build-tools to PATH for apksigner
+        shell: bash
+        run: |
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          build_tools="$(find "$sdk_root/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          if [[ -z "$build_tools" || ! -x "$build_tools/apksigner" ]]; then
+            echo "::error::Could not locate apksigner under $sdk_root/build-tools"
+            exit 1
+          fi
+          echo "$build_tools" >> "$GITHUB_PATH"
+
       - name: Generate temporary Android keystore for smoke builds
         id: smoke_keystore
         if: ${{ !inputs.production_release }}
@@ -281,7 +292,7 @@ jobs:
             -dname "CN=DeskFleet CI, O=DeskFleet, C=US"
           echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
 
-      - name: Build Android App Bundle (smoke)
+      - name: Build Android App Bundle and APK (smoke)
         if: ${{ !inputs.production_release }}
         env:
           ANDROID_KEYSTORE_PATH: ${{ steps.smoke_keystore.outputs.keystore_path }}
@@ -315,7 +326,7 @@ jobs:
           (umask 077 && printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore_path")
           echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
 
-      - name: Build production Android Web assets and App Bundle
+      - name: Build production Android Web assets, App Bundle, and APK
         if: ${{ inputs.production_release }}
         env:
           VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
@@ -341,5 +352,14 @@ jobs:
         with:
           name: deskfleet-android
           path: apps/web/android/app/build/outputs/bundle/release/app-release-signed.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      # A separate artifact keeps the Google Play job's AAB path unchanged.
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-android-apk
+          path: apps/web/android/app/build/outputs/apk/release/app-release-signed.apk
           if-no-files-found: error
           retention-days: 14

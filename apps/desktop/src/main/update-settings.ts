@@ -1,16 +1,22 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { AutoDownloadUpdatesState } from "../../../../packages/client/src/settings.ts"
+import type { AutoDownloadUpdatesState, UpdateInstallSource } from "../../../../packages/client/src/settings.ts"
 
 /** Owns the desktop client's automatic update download preference. */
 export class UpdateSettingsController {
   readonly #path: string
   readonly #onChange: (enabled: boolean) => void
+  readonly #installSource: UpdateInstallSource
   #enabled: boolean | undefined
 
-  constructor(path: string, onChange: (enabled: boolean) => void = () => {}) {
+  constructor(
+    path: string,
+    onChange: (enabled: boolean) => void = () => {},
+    installSource: UpdateInstallSource = "desktop_installer",
+  ) {
     this.#path = path
     this.#onChange = onChange
+    this.#installSource = installSource
   }
 
   get(): AutoDownloadUpdatesState {
@@ -27,7 +33,7 @@ export class UpdateSettingsController {
       this.#enabled = enabled
       this.#onChange(enabled)
     }
-    return { enabled: this.#enabled }
+    return { enabled: this.#enabled, installSource: this.#installSource }
   }
 
   setEnabled(enabled: boolean): AutoDownloadUpdatesState {
@@ -37,6 +43,6 @@ export class UpdateSettingsController {
     renameSync(temporary, this.#path)
     this.#enabled = enabled
     this.#onChange(enabled)
-    return { enabled }
+    return { enabled, installSource: this.#installSource }
   }
 }

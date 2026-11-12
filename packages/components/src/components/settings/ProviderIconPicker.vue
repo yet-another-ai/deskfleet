@@ -5,6 +5,7 @@ import { computed, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { loadProviderIcons, matchProviderIcon, type ProviderIcon as ProviderIconMark } from "../../services/provider-icons.ts"
 import ProviderIcon from "../common/ProviderIcon.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 
 const props = defineProps<{ template: string; disabled?: boolean }>()
 const icon = defineModel<string | undefined>()
@@ -67,12 +68,12 @@ function select(value?: string): void {
         <span class="flex-1">{{ t("providers.iconReset") }}</span>
         <Check v-if="!icon" :size="14" :stroke-width="1.75" aria-hidden="true" />
       </button>
-      <div class="grid max-h-52 grid-cols-5 gap-1 overflow-y-auto" role="group" :aria-label="t('providers.iconChoices')">
+      <UiScrollArea fade-size="sm" class="max-h-52" content-class="grid grid-cols-5 gap-1" role="group" :aria-label="t('providers.iconChoices')">
         <button v-for="item in icons" :key="item.id" type="button" class="flex min-w-0 cursor-pointer flex-col items-center gap-1.5 rounded-md border px-1 py-2.5 hover:bg-ui-hover disabled:cursor-default" :class="icon === item.id ? 'border-ui-text-muted bg-ui-hover' : 'border-transparent'" :disabled="disabled" :aria-label="item.name" :aria-pressed="icon === item.id" :title="item.name" :data-provider-icon-choice="item.id" @click="select(item.id)">
           <ProviderIcon :icon="item.id" :size="24" />
           <span class="w-full truncate text-center text-[10px] text-ui-text-muted">{{ item.name }}</span>
         </button>
-      </div>
+      </UiScrollArea>
       <p v-if="ready && !icons.length" role="status" class="m-0 px-2 py-4 text-center text-[13px] text-ui-text-muted">{{ t("providers.iconNoResults") }}</p>
     </PopoverContent>
     </PopoverPortal>

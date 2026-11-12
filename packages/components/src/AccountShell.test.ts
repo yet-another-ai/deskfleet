@@ -91,7 +91,8 @@ test("browses synchronized history with the machine offline and isolates equal l
   await settled(() => expect(view!.text()).toContain("Message from 101"))
   expect(central.createPeer).not.toHaveBeenCalled()
   // Expanding another machine retains the current session view, sidebar scroll, and first machine's expanded resource tree.
-  const sidebarScroll = page().get<HTMLElement>("aside .overflow-y-auto").element
+  expect(page().find("aside [data-sidebar-scroll-area]").exists()).toBe(true)
+  const sidebarScroll = page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element
   sidebarScroll.scrollTop = 120
   expect(page().get('aside section[data-machine-id="101"] button').attributes("aria-expanded")).toBe("true")
   expect(page().get('aside section[data-machine-id="102"] button').attributes("aria-expanded")).toBe("false")
@@ -99,7 +100,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   await settled(() => expect(view!.text()).toContain("Workspace 102"))
   expect(router.currentRoute.value.path).toBe("/sessions/30")
   expect(view.text()).toContain("Message from 101")
-  expect(page().get("aside .overflow-y-auto").element).toBe(sidebarScroll)
+  expect(page().get("aside [data-sidebar-scroll-viewport]").element).toBe(sidebarScroll)
   expect(sidebarScroll.scrollTop).toBe(120)
   expect(page().get("aside").text()).toContain("Workspace 101")
   expect(page().get("aside").text()).toContain("Conversation 101")

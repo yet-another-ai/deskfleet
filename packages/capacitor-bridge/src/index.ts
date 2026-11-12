@@ -18,6 +18,7 @@ import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "
 
 export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
+  getInstallSource?(): Promise<{ installerPackageName: string | null }>
   openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>

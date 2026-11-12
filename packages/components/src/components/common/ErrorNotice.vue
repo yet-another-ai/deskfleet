@@ -7,6 +7,7 @@ import { useAccountSession } from "../../composables/account-session-context.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { errorPresentation } from "../../services/error-presentation.ts"
 import UiButton from "./UiButton.vue"
+import UiScrollArea from "./UiScrollArea.vue"
 
 const props = defineProps<{ error?: unknown; title?: string; description?: string; relayDeniedReason?: RelayDeniedReason }>()
 const { t } = useI18n()
@@ -39,7 +40,9 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
           <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm outline-offset-2 ui-motion hover:text-ui-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent">
             <ChevronRight :size="13" class="shrink-0 ui-motion duration-[var(--ui-duration-base)] group-open:rotate-90" aria-hidden="true" />{{ t("errors.details") }}
           </summary>
-          <pre class="mb-0 mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-ui-canvas/70 p-2 font-mono text-[11px] leading-relaxed" style="overflow-wrap: anywhere">{{ detail }}</pre>
+          <UiScrollArea orientation="both" fade-size="sm" class="mt-2 max-h-48 rounded-md bg-ui-canvas/70">
+            <pre class="m-0 whitespace-pre-wrap break-words p-2 font-mono text-[11px] leading-relaxed" style="overflow-wrap: anywhere">{{ detail }}</pre>
+          </UiScrollArea>
         </details>
       </div>
     </div>

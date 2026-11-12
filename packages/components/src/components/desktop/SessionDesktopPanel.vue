@@ -4,6 +4,7 @@ import { useDocumentVisibility } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import MachineDesktopPreviews from "./MachineDesktopPreviews.vue"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -52,7 +53,7 @@ function open(machineId: string, displayId: number): void {
         <UiButton variant="ghost" size="icon" :label="t('desktop.retry')" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </header>
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3">
+    <UiScrollArea class="min-h-0 flex-1" content-class="flex flex-col gap-4 p-3">
       <p v-if="paused" role="status" class="ui-notice m-0">{{ t('desktopOverview.paused') }}</p>
       <div v-if="!machines.length" class="ui-empty">
         <MonitorPlay :size="28" class="mb-2 text-ui-text-muted" aria-hidden="true" />
@@ -66,6 +67,6 @@ function open(machineId: string, displayId: number): void {
           @open="open(machine.id, $event)"
         />
       </div>
-    </div>
+    </UiScrollArea>
   </section>
 </template>

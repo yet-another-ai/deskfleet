@@ -7,6 +7,7 @@ import { useRoute, useRouter } from "vue-router"
 import type { SearchResult } from "@deskfleet/client/search"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import UiButton from "../components/common/UiButton.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import SearchHighlight from "../components/search/SearchHighlight.vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useSearch, type SearchKind } from "../composables/useSearch.ts"
@@ -48,7 +49,7 @@ function open(result: SearchResult): void {
 
 <template>
   <PaneHeader>{{ t('search.title') }}</PaneHeader>
-  <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6 lg:px-8">
+  <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
     <div class="mx-auto flex max-w-4xl flex-col gap-5">
       <header>
         <h1 class="ui-page-title">{{ t('search.title') }}</h1>
@@ -85,5 +86,5 @@ function open(result: SearchResult): void {
       <p v-if="loading" role="status" class="m-0 flex items-center justify-center gap-2 py-5 text-sm text-ui-text-muted"><LoaderCircle :size="16" class="animate-spin" aria-hidden="true" />{{ t('search.loading') }}</p>
       <UiButton v-else-if="nextCursor" class="self-center" type="button" @click="search.loadMore">{{ t('search.more') }}</UiButton>
     </div>
-  </div>
+  </UiScrollArea>
 </template>

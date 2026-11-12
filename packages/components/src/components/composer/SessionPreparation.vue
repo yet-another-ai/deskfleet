@@ -9,6 +9,7 @@ import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
 import UiButton from "../common/UiButton.vue"
 import UiDialog from "../common/UiDialog.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 
 const props = defineProps<{ location: SessionTarget; context: AgentSessionContext; disabled?: boolean }>()
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
@@ -93,14 +94,14 @@ async function prepare(): Promise<void> {
   <UiDialog v-if="isRevealed" :title="t('composer.prepare.confirmTitle')" class="w-[min(34rem,calc(100vw-2rem))] p-5" @close="cancel()">
     <h2 class="m-0 text-base font-semibold">{{ t('composer.prepare.confirmTitle') }}</h2>
     <p class="mb-3 text-sm text-ui-text-muted">{{ t('composer.prepare.confirmDescription') }}</p>
-    <div class="max-h-64 space-y-3 overflow-y-auto rounded-lg border border-ui-border bg-ui-canvas p-3">
+    <UiScrollArea fade-size="sm" class="max-h-64 rounded-lg border border-ui-border bg-ui-canvas" content-class="space-y-3 p-3">
       <div v-for="repository in changedRepositories" :key="repository.root">
         <p class="m-0 break-all text-xs font-medium text-ui-text">{{ repository.root }} → {{ repository.branch }}</p>
         <ul class="mb-0 mt-1 pl-4 text-xs text-ui-text-muted">
           <li v-for="path in repository.changes" :key="path" class="break-all font-mono">{{ path }}</li>
         </ul>
       </div>
-    </div>
+    </UiScrollArea>
     <p class="my-3 text-xs text-ui-text-muted">{{ t('composer.prepare.sharedDirectory') }}</p>
     <div class="flex justify-end gap-2">
       <UiButton data-prepare-cancel @click="cancel()">{{ t('catalog.cancel') }}</UiButton>

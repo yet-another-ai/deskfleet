@@ -37,7 +37,7 @@ import {
 } from "./renderer-protocol.ts"
 import { createTray } from "./tray.ts"
 import { UpdateSettingsController } from "./update-settings.ts"
-import { installUpdates } from "./updates.ts"
+import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
@@ -116,7 +116,11 @@ function start(): void {
       return closing
     }
     const updates = await installUpdates(lifecycle, closeServices)
-    const updateSettings = new UpdateSettingsController(join(userData, "updates.json"), enabled => updates.setAutoDownload(enabled))
+    const updateSettings = new UpdateSettingsController(
+      join(userData, "updates.json"),
+      enabled => updates.setAutoDownload(enabled),
+      resolveDesktopInstallSource(),
+    )
     installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings, new RemoteAgentSettingsController(desktopDaemonDirectory()))
     app.on("will-quit", (event) => {
       updates.close()

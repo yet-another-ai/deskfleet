@@ -327,7 +327,7 @@ to check module initialization order as well as file sizes.
 | `mise run web:typecheck` | Check the Web app and shared components |
 | `mise run android:sync` | Build the Web app, stage the Rust Android viewer library, and sync Capacitor Android |
 | `mise run android:test` | Sync Capacitor Android and run Gradle unit tests |
-| `mise run android:build` | Build and sign the release Android App Bundle or APK through Capacitor |
+| `mise run android:build` | Build and sign the release Android App Bundle (Google Play) and APK (GitHub Releases) through Capacitor |
 | `mise run desktop:smoke-catalog` | Exercise local catalog forms, persistence, and directory terminals in production Electron |
 | `mise run desktop:package` / `desktop:package:dir` | Package the desktop app with electron-builder as installers or an unpacked directory |
 | `mise run check` | Run static checks, TypeScript and Rust tests, and debug workspace and desktop builds |

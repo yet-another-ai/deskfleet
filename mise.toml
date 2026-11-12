@@ -235,12 +235,13 @@ dir = "apps/web/android"
 run = "./gradlew testDebugUnitTest"
 
 [tasks."android:build"]
-description = "Build and sign the release Android App Bundle or APK with Capacitor"
+description = "Build and sign the release Android App Bundle (Google Play) and APK (GitHub Releases) with Capacitor"
 depends = ["web:build"]
 env.DESKFLEET_ANDROID_RELEASE = "1"
 run = [
     "pnpm --filter @deskfleet/web exec cap sync android",
-    "pnpm --filter @deskfleet/web exec cap build android",
+    "pnpm --filter @deskfleet/web exec cap build android --androidreleasetype AAB",
+    "pnpm --filter @deskfleet/web exec cap build android --androidreleasetype APK --signing-type apksigner",
 ]
 
 [tasks."web:build"]

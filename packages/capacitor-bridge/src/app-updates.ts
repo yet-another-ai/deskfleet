@@ -9,20 +9,60 @@ import {
 } from "@capawesome/capacitor-app-update"
 import type { AutoDownloadUpdatesState } from "@deskfleet/client/settings"
 import type { UpdateApi, UpdateState } from "@deskfleet/client/updates"
+import { DeskFleetBridge, type DeskFleetBridgeCapacitorPlugin } from "./index.ts"
 
 const AUTO_DOWNLOAD_STORAGE_KEY = "deskfleet.updates.autoDownload"
+const PLAY_STORE_PACKAGE = "com.android.vending"
+const LATEST_RELEASE_API_URL = "https://api.github.com/repos/yet-another-ai/deskfleet/releases/latest"
 
 export type PlayUpdatePlugin = Pick<AppUpdatePlugin, "getAppUpdateInfo" | "startFlexibleUpdate" | "completeFlexibleUpdate" | "addListener">
 
-export interface PlayUpdates {
+export interface AndroidUpdates {
   updates: UpdateApi
   getAutoDownload(): Promise<AutoDownloadUpdatesState>
   setAutoDownload(enabled: boolean): Promise<AutoDownloadUpdatesState>
 }
 
+interface GitHubReleasePayload {
+  tag_name?: string
+  published_at?: string | null
+  draft?: boolean
+  prerelease?: boolean
+  assets?: { name?: string; browser_download_url?: string }[]
+}
+
+function parseVersionSegment(segment: string): number | undefined {
+  if (!/^(?:0|[1-9]\d*)$/u.test(segment)) return undefined
+  const value = Number(segment)
+  return Number.isSafeInteger(value) ? value : undefined
+}
+
+/**
+ * Matches the versionCode formula in apps/web/android/app/build.gradle.kts:
+ * major * 10_000_000 + minor * 100_000 + patch * 1_000 + (999 for releases, else the prerelease number).
+ */
+export function androidVersionCode(versionName: string): number | undefined {
+  const [core, prerelease] = versionName.trim().replace(/^v/u, "").split("-", 2)
+  const parts = core?.split(".")
+  if (!parts || parts.length !== 3) return undefined
+
+  const major = parseVersionSegment(parts[0]!)
+  const minor = parseVersionSegment(parts[1]!)
+  const patch = parseVersionSegment(parts[2]!)
+  if (major === undefined || minor === undefined || patch === undefined) return undefined
+  if (minor > 99 || patch > 99) return undefined
+
+  let pre = 999
+  if (prerelease !== undefined) {
+    const trailingDigits = /(\d+)$/u.exec(prerelease)?.[1]
+    const parsed = Number(trailingDigits ?? "1") || 1
+    pre = Math.min(998, Math.max(1, parsed))
+  }
+  return major * 10_000_000 + minor * 100_000 + patch * 1_000 + pre
+}
+
 /**
  * Reverses the versionCode formula in apps/web/android/app/build.gradle.kts:
- * major * 10_000_000 + minor * 100_000 + patch * 1_000 + (999 for releases, else the prerelease number).
  * Google Play reports only the available versionCode, not its versionName.
  */
 export function playVersionName(versionCode: string): string {
@@ -40,7 +80,7 @@ export function playVersionName(versionCode: string): string {
 export function createPlayUpdates(
   plugin: PlayUpdatePlugin = AppUpdate,
   storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
-): PlayUpdates {
+): AndroidUpdates {
   const listeners = new Set<(state: UpdateState) => void>()
   let state: UpdateState = { status: "idle" }
   let currentVersion: string | undefined
@@ -169,7 +209,7 @@ export function createPlayUpdates(
 
   return {
     updates,
-    async getAutoDownload() { return { enabled: autoDownload } },
+    async getAutoDownload() { return { enabled: autoDownload, installSource: "google_play" } },
     async setAutoDownload(enabled) {
       storage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, String(enabled))
       autoDownload = enabled
@@ -177,7 +217,148 @@ export function createPlayUpdates(
         declinedVersion = undefined
         void consent().catch(() => {})
       }
-      return { enabled }
+      return { enabled, installSource: "google_play" }
     },
   }
+}
+
+export interface GitHubApkUpdatesOptions {
+  getAppInfo(): Promise<{ version: string; build: string }>
+  openExternal(url: string): Promise<void>
+  fetchImpl?: typeof fetch
+  releaseApiUrl?: string
+}
+
+function findNewerApkAsset(
+  release: GitHubReleasePayload,
+  currentCode: number,
+): { version: string; url: string } | undefined {
+  if (release.draft || release.prerelease || !release.published_at || !release.tag_name) {
+    return undefined
+  }
+  const version = release.tag_name.replace(/^v/u, "")
+  const releaseCode = androidVersionCode(version)
+  if (releaseCode === undefined || releaseCode <= currentCode) {
+    return undefined
+  }
+  const apkName = `deskfleet-${version}-android-arm64.apk`
+  const asset = release.assets?.find(item => item.name === apkName && typeof item.browser_download_url === "string")
+  if (!asset?.browser_download_url) {
+    return undefined
+  }
+  return { version, url: asset.browser_download_url }
+}
+
+/**
+ * GitHub Releases update checks for sideloaded Android APK installs.
+ * Installing opens the signed APK asset URL in the external browser without requiring REQUEST_INSTALL_PACKAGES.
+ */
+export function createGitHubApkUpdates(options: GitHubApkUpdatesOptions): AndroidUpdates {
+  const fetchFn = options.fetchImpl ?? fetch
+  const releaseApiUrl = options.releaseApiUrl ?? LATEST_RELEASE_API_URL
+  const listeners = new Set<(state: UpdateState) => void>()
+  let state: UpdateState = { status: "idle" }
+  let currentVersion: string | undefined
+  let downloadUrl: string | undefined
+  let checking: Promise<UpdateState> | undefined
+
+  const snapshot = (): UpdateState => ({ ...state, ...(currentVersion ? { currentVersion } : {}) })
+  const publish = (next: UpdateState): void => {
+    state = next
+    const value = snapshot()
+    for (const listener of listeners) listener(value)
+  }
+
+  async function fetchLatestRelease(): Promise<UpdateState> {
+    try {
+      const appInfo = await options.getAppInfo()
+      currentVersion = appInfo.version
+      const currentCode = Number(appInfo.build) || androidVersionCode(appInfo.version) || 0
+
+      const response = await fetchFn(releaseApiUrl, {
+        headers: { Accept: "application/vnd.github+json" },
+      })
+      if (!response.ok) throw new Error(`GitHub release check failed (${response.status})`)
+
+      const release = await response.json() as GitHubReleasePayload
+      const apkAsset = findNewerApkAsset(release, currentCode)
+      if (apkAsset) {
+        downloadUrl = apkAsset.url
+        publish({ status: "available", version: apkAsset.version })
+      } else {
+        downloadUrl = undefined
+        publish({ status: "idle" })
+      }
+      return snapshot()
+    } catch (error) {
+      publish(state.version ? { status: "available", version: state.version } : { status: "idle" })
+      throw error
+    }
+  }
+
+  function check(): Promise<UpdateState> {
+    checking ??= fetchLatestRelease().finally(() => { checking = undefined })
+    return checking
+  }
+
+  const updates: UpdateApi = {
+    async get() { return snapshot() },
+    check,
+    async install() {
+      if (!downloadUrl) await check()
+      if (!downloadUrl || !state.version) throw new Error("No application update is available")
+      try {
+        await options.openExternal(downloadUrl)
+      } catch (error) {
+        publish({ status: "error", version: state.version, error: error instanceof Error ? error.message : String(error) })
+        throw error
+      }
+    },
+    onChanged(listener) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+
+  return {
+    updates,
+    async getAutoDownload() { return { enabled: false, installSource: "apk" } },
+    async setAutoDownload() { throw new Error("Automatic update downloads are unavailable for APK installs") },
+  }
+}
+
+export interface AndroidUpdatesOptions {
+  getAppInfo(): Promise<{ version: string; build: string }>
+  bridge?: Pick<DeskFleetBridgeCapacitorPlugin, "getInstallSource" | "openExternal">
+  playPlugin?: PlayUpdatePlugin
+  storage?: Pick<Storage, "getItem" | "setItem">
+  fetchImpl?: typeof fetch
+}
+
+async function getInstallerPackageName(
+  bridge: Pick<DeskFleetBridgeCapacitorPlugin, "getInstallSource">,
+): Promise<string | null> {
+  try {
+    const result = await bridge.getInstallSource?.()
+    return result?.installerPackageName ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Selects Google Play flexible updates when installed from Play (`com.android.vending`),
+ * or GitHub Releases APK updates for sideloaded installs.
+ */
+export async function createAndroidUpdates(options: AndroidUpdatesOptions): Promise<AndroidUpdates> {
+  const bridge = options.bridge ?? DeskFleetBridge
+  const installer = await getInstallerPackageName(bridge)
+  if (installer === PLAY_STORE_PACKAGE) {
+    return createPlayUpdates(options.playPlugin, options.storage)
+  }
+  return createGitHubApkUpdates({
+    getAppInfo: options.getAppInfo,
+    openExternal: url => bridge.openExternal({ url }),
+    fetchImpl: options.fetchImpl,
+  })
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, File, Folder, FolderOpen, Home, RefreshCw } from "@lucide/vue"
@@ -70,7 +71,7 @@ onBeforeUnmount(() => { disposed = true; ++generation })
       <span v-if="listing" class="min-w-0 flex-1 truncate text-xs" :title="listing.path" :data-current-path="listing.path">{{ listing.path }}</span>
       <UiButton variant="ghost" size="icon" :label="t('files.refresh')" :disabled="loading" @click="navigate(requestedPath)"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
     </nav>
-    <div class="file-browser-entries max-h-80 min-h-40 flex-1 overflow-y-auto border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
+    <UiScrollArea fade-size="sm" class="file-browser-entries max-h-80 min-h-40 flex-1 border-t border-ui-border bg-ui-canvas" :aria-busy="loading">
       <p v-if="loading" class="m-0 p-3 text-sm text-ui-text-muted" role="status">{{ t('folderPicker.loading') }}</p>
       <ErrorNotice v-else-if="error" :error="error" class="m-3">
         <UiButton v-if="target.kind === 'local'" type="button" @click="choose">{{ t('files.chooseFolder') }}</UiButton>
@@ -86,7 +87,7 @@ onBeforeUnmount(() => { disposed = true; ++generation })
         </li>
       </ul>
       <p v-else class="m-0 p-3 text-sm text-ui-text-muted">{{ t('files.empty') }}</p>
-    </div>
+    </UiScrollArea>
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
       <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       <label class="ml-auto flex items-center gap-1.5"><UiCheckbox v-model="hidden" />{{ t('files.showHidden') }}</label>

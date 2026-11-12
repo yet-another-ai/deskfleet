@@ -14,6 +14,7 @@ import HoldButton from "../components/common/HoldButton.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import UiButton from "../components/common/UiButton.vue"
 import UiDialog from "../components/common/UiDialog.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import SessionContextMenu from "../components/session/SessionContextMenu.vue"
 
 const { t } = useI18n()
@@ -76,7 +77,7 @@ async function confirmAction(): Promise<void> {
 
 <template>
   <PaneHeader>{{ t('archivedSessions.title') }}</PaneHeader>
-  <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6 lg:px-8">
+  <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
     <div class="mx-auto flex max-w-4xl flex-col gap-5">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
@@ -111,7 +112,7 @@ async function confirmAction(): Promise<void> {
         </li>
       </ul>
     </div>
-  </div>
+  </UiScrollArea>
   <UiDialog v-if="confirming" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(confirmingAction === 'delete' ? 'agent.delete' : 'agent.restore') }}</DialogTitle>
     <p class="m-0 text-sm leading-relaxed">{{ t(confirmingAction === 'delete' ? (confirming.session.context === 'directory' ? 'agent.deleteDirectoryQuestion' : 'agent.deleteQuestion') : (confirming.session.context === 'worktree' ? 'agent.restoreWorktreeQuestion' : 'agent.restoreQuestion')) }}</p>

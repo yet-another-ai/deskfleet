@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { ArrowLeft, ArrowRight, File, Folder, RotateCcw, X } from "@lucide/vue"
@@ -86,7 +87,7 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
       <section class="mt-5 shrink-0" :aria-label="t('files.queue')">
         <div class="mb-2 text-sm font-medium">{{ t('files.queue') }}<span v-if="activeCount" class="ml-1.5 text-xs font-normal text-ui-text-muted">({{ activeCount }})</span></div>
         <p v-if="!tasks.length" class="m-0 py-3 text-sm text-ui-text-muted">{{ t('files.noTransfers') }}</p>
-        <div v-else class="max-h-64 overflow-y-auto border-t border-ui-border">
+        <UiScrollArea v-else fade-size="sm" class="max-h-64 border-t border-ui-border">
           <div v-for="task in tasks" :key="task.id" class="border-b border-ui-border last:border-0" :data-transfer-id="task.id">
             <div class="file-transfer-row grid grid-cols-[minmax(0,1fr)_1rem_3.25rem_4.75rem_1.75rem] items-center gap-2 py-2.5 text-xs">
               <div class="flex min-w-0 items-center gap-2"><component :is="task.kind === 'directory' ? Folder : File" :size="15" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate text-[13px]" :title="task.name">{{ task.name }}</span></div>
@@ -105,7 +106,7 @@ onBeforeUnmount(() => { disposed = true; unsubscribe(); unsubscribeAccount?.() }
             <p v-if="task.state === 'conflict' && task.error" class="mt-0 mb-2 break-words pl-6 text-xs text-ui-warning" role="alert">{{ task.error }}</p>
             <ErrorNotice v-else-if="['failed', 'cancelled'].includes(task.state) && task.error" :error="task.error" class="mb-2" />
           </div>
-        </div>
+        </UiScrollArea>
       </section>
       <ErrorNotice v-if="error" :error="error" class="mt-3 shrink-0" />
     </div>
