@@ -9,6 +9,8 @@ import { listDirectories } from "./filesystem.ts"
 import type { TerminalDial, TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import type { ProviderSetup } from "./provider-setup.ts"
+import { AGENT_PROVIDER_TEMPLATES, type AgentProviderTemplateId } from "./provider-protocol.ts"
+import type { ProviderUpdates } from "./provider-updates.ts"
 import type { ScheduledTasks } from "./scheduled-tasks.ts"
 import type { McpServers } from "./mcp-servers.ts"
 import { mcpServerInput, validateMcpServerId } from "./mcp-server-protocol.ts"
@@ -29,6 +31,7 @@ export class MachineOperations {
   readonly terminals: TerminalSessions
   readonly providers: AgentProviders
   readonly setup: ProviderSetup
+  readonly providerUpdates?: Pick<ProviderUpdates, "snapshot" | "upgrade" | "onChanged">
   readonly schedules?: ScheduledTasks
   readonly mcpServers?: McpServers
   readonly #capabilities: () => Promise<DesktopCapabilities>
@@ -38,12 +41,14 @@ export class MachineOperations {
   constructor(options: {
     agents: AgentSessions; catalog: DaemonCatalog; terminals: TerminalSessions
     providers: AgentProviders; setup: ProviderSetup; capabilities: () => Promise<DesktopCapabilities>
+    providerUpdates?: Pick<ProviderUpdates, "snapshot" | "upgrade" | "onChanged">
     schedules?: ScheduledTasks
     mcpServers?: McpServers
     systemStatus?: () => Promise<SystemStatus>
   }) {
     this.agents = options.agents; this.catalog = options.catalog; this.terminals = options.terminals
     this.providers = options.providers; this.setup = options.setup; this.#capabilities = options.capabilities
+    this.providerUpdates = options.providerUpdates
     this.schedules = options.schedules
     this.mcpServers = options.mcpServers
     this.#systemStatus = options.systemStatus ?? readSystemStatus
@@ -64,6 +69,12 @@ export class MachineOperations {
 
   async handle(method: string, params: unknown, actor: AgentActor | undefined): Promise<unknown> {
     if (actor?.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user and login session are required")
+    if (method === "providerUpgrade") {
+      if (!this.providerUpdates) throw new Error("Provider updates are unavailable")
+      const template = (params as { template?: unknown } | null)?.template
+      if (!AGENT_PROVIDER_TEMPLATES.some(item => item.id === template)) throw new Error("Unknown Agent provider template")
+      return this.providerUpdates.upgrade(template as AgentProviderTemplateId)
+    }
     if (["mcpServerList", "mcpServerCreate", "mcpServerUpdate", "mcpServerRemove"].includes(method)) {
       if (!this.mcpServers) throw new Error("MCP server settings are unavailable")
       if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("Expected MCP server parameters")

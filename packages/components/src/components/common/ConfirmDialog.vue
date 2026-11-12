@@ -12,6 +12,8 @@ const props = defineProps<{
   confirmLabel: string
   /** Non-destructive confirmations use the primary action. */
   tone?: "danger" | "primary"
+  /** Blocks confirmation while the slotted choices are incomplete. */
+  confirmDisabled?: boolean
   /** Runs the confirmed action; the dialog stays open with its error when it rejects. */
   confirm(): Promise<void>
 }>()
@@ -40,8 +42,8 @@ async function submit(): Promise<void> {
     <slot />
     <ErrorNotice v-if="error" :error="error" class="mt-4" />
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
-      <UiButton :variant="tone ?? 'danger'" type="button" :disabled="pending" @click="submit">{{ confirmLabel }}</UiButton>
+      <UiButton type="button" data-confirm-cancel :disabled="pending" @click="cancel">{{ t("catalog.cancel") }}</UiButton>
+      <UiButton :variant="tone ?? 'danger'" type="button" :disabled="pending || confirmDisabled" @click="submit">{{ confirmLabel }}</UiButton>
     </div>
   </UiDialog>
 </template>

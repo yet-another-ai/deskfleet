@@ -190,6 +190,25 @@
     "installing": "正在重启…",
     "failed": "更新失败，请重试，或退出并重新打开 DeskFleet。"
   },
+  "providerUpdates": {
+    "available": "{name} {version} 可更新 · {count} 台机器",
+    "completed": "{name} 已更新至 {version}",
+    "install": "更新",
+    "installAria": "更新 {name}",
+    "retry": "重试更新",
+    "retryAria": "重试更新 {name}",
+    "updating": "正在更新…",
+    "updatingAria": "正在更新 {name}…",
+    "updated": "已更新",
+    "updatedAria": "{name} 已更新",
+    "machineFailed": "{machine}：{error}",
+    "confirmTitle": "将 {name} 更新至 {version}",
+    "confirmDescription": "所选机器上所有使用 {name} 的 Agent 进程都会停止，进行中的任务会被中断。继续前请确认这些机器上没有正在运行的任务。",
+    "confirmAction": "更新 {count} 台机器",
+    "current": "当前 {version}",
+    "offline": "离线",
+    "selectMachine": "在 {machine} 上更新 {name}"
+  },
   "aiUsage": {
     "title": "AI 用量",
     "period": "统计时段",

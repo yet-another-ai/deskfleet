@@ -13,7 +13,7 @@ import type { TerminalRun, TerminalSessions } from "./terminals.ts"
 
 const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
 
-interface ProbeDependencies {
+export interface ProbeDependencies {
   directory?: string
   platform?: NodeJS.Platform
   arch?: string
@@ -23,7 +23,15 @@ interface ProbeDependencies {
   run?: ProbeCommand
   executable?: (path: string) => Promise<boolean>
   timeoutMs?: number
+  signal?: AbortSignal
   shellEnvironment?: (signal?: AbortSignal) => Promise<Record<string, string>>
+}
+
+export interface ProviderInstallerLaunch {
+  command: string
+  args: string[]
+  env: NodeJS.ProcessEnv
+  cwd: string
 }
 
 interface Context {
@@ -222,6 +230,7 @@ async function deepseekAuthentication(ctx: Context): Promise<ProviderProbeResult
 /** Find the binary on the executing machine without initializing ACP or starting a login. */
 export async function probeProvider(input: AgentProviderInput, dependencies: ProbeDependencies = {}): Promise<ProviderProbeResult> {
   const controller = new AbortController()
+  const signal = dependencies.signal ? AbortSignal.any([controller.signal, dependencies.signal]) : controller.signal
   const probeTimeout = input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000
   // Shell startup has its own bounded budget; preserve the full detection budget after it.
   const timeout = dependencies.timeoutMs ?? (probeTimeout + (shellEnvironmentEnabled(input.inheritShellEnvironment, dependencies.platform) ? SHELL_ENVIRONMENT_TIMEOUT_MS : 0))
@@ -233,8 +242,19 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
       reject(error)
     }, timeout)
   })
-  try { return await Promise.race([probe(input, dependencies, controller.signal), deadline]) }
+  try { return await Promise.race([probe(input, dependencies, signal), deadline]) }
   finally { clearTimeout(timer!); controller.abort() }
+}
+
+export async function resolveProviderInstaller(
+  input: AgentProviderInput,
+  dependencies: ProbeDependencies = {},
+): Promise<ProviderInstallerLaunch> {
+  const provider = providerInput(input)
+  const ctx = await context(provider, dependencies, dependencies.signal)
+  const launch = await installer(provider.template, ctx)
+  if (typeof launch === "string") throw new Error(launch)
+  return { ...launch, env: ctx.env, cwd: ctx.home }
 }
 
 async function probe(input: AgentProviderInput, dependencies: ProbeDependencies, signal: AbortSignal): Promise<ProviderProbeResult> {
@@ -311,10 +331,8 @@ export class ProviderSetup {
 
   async install(input: AgentProviderInput): Promise<TerminalSummary> {
     const provider = providerInput(input)
-    const ctx = await context(provider, this.#dependencies)
-    const launch = await installer(provider.template, ctx)
-    if (typeof launch === "string") throw new Error(launch)
-    return this.#run({ ...launch, env: ctx.env, cwd: ctx.home }, `${provider.name} installation`)
+    const launch = await resolveProviderInstaller(provider, this.#dependencies)
+    return this.#run(launch, `${provider.name} installation`)
   }
 
   async login(input: AgentProviderInput): Promise<TerminalSummary> {

@@ -20,6 +20,7 @@ import AppUpdateNotice from "./AppUpdateNotice.vue"
 import MachineSection from "./MachineSection.vue"
 import MachineSidebarSurface from "./MachineSidebarSurface.vue"
 import PinnedSessions from "./PinnedSessions.vue"
+import ProviderUpdateNotice from "./ProviderUpdateNotice.vue"
 import SidebarFooter from "./SidebarFooter.vue"
 import SidebarNavigation from "./SidebarNavigation.vue"
 import TeamSwitcher from "./TeamSwitcher.vue"
@@ -118,6 +119,7 @@ function refresh(): void {
     </UiScrollArea>
 
     <AccountNotices />
+    <ProviderUpdateNotice />
     <AppUpdateNotice />
     <SidebarFooter />
 

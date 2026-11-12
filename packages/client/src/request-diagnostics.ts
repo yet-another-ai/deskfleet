@@ -55,7 +55,7 @@ const rpcMethods = new Set([
   "_deskfleet/session/rename", "_deskfleet/session/delete", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/list",
   "_deskfleet/session/subscribe", "_deskfleet/session/history", "_deskfleet/command/get", "_deskfleet/git/branches",
   "catalogList", "workspaceCreate", "workspaceUpdate", "workspaceDelete", "directoryList",
-  "providerList", "providerCreate", "providerUpdate", "providerRemove", "providerTest", "providerProbe", "providerInstall", "providerLogin",
+  "providerList", "providerCreate", "providerUpdate", "providerRemove", "providerTest", "providerProbe", "providerInstall", "providerLogin", "providerUpgrade",
   "capabilities", "systemStatus", "terminalList", "terminalDial", "terminalHangup",
   "scheduleList", "scheduleCreate", "scheduleUpdate", "scheduleDelete", "scheduleRun",
   "mcpServerList", "mcpServerCreate", "mcpServerUpdate", "mcpServerRemove",

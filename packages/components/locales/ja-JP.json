@@ -187,6 +187,25 @@
     "downloading": "ダウンロード中 {percent}%", "installing": "再起動中…",
     "failed": "更新に失敗しました。再試行するか、DeskFleet を終了して再度開いてください。"
   },
+  "providerUpdates": {
+    "available": "{name} {version} が利用可能 · {count} 台のマシン",
+    "completed": "{name} を {version} に更新しました",
+    "install": "更新",
+    "installAria": "{name} を更新",
+    "retry": "更新を再試行",
+    "retryAria": "{name} の更新を再試行",
+    "updating": "更新中…",
+    "updatingAria": "{name} を更新中…",
+    "updated": "更新完了",
+    "updatedAria": "{name} の更新が完了しました",
+    "machineFailed": "{machine}: {error}",
+    "confirmTitle": "{name} を {version} に更新",
+    "confirmDescription": "選択したマシンで {name} を使用している実行中のエージェントプロセスはすべて停止し、進行中のタスクは中断されます。実行中のタスクがないことを確認してから続行してください。",
+    "confirmAction": "{count} 台のマシンを更新",
+    "current": "現在 {version}",
+    "offline": "オフライン",
+    "selectMachine": "{machine} の {name} を更新"
+  },
   "aiUsage": {
     "title": "AI 使用量", "period": "集計期間",
     "periods": {

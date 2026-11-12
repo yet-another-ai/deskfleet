@@ -190,6 +190,25 @@
     "installing": "Restarting…",
     "failed": "Update failed. Retry, or quit and reopen DeskFleet."
   },
+  "providerUpdates": {
+    "available": "{name} {version} available · {count} machine | {name} {version} available · {count} machines",
+    "completed": "{name} updated to {version}",
+    "install": "Update",
+    "installAria": "Update {name}",
+    "retry": "Retry update",
+    "retryAria": "Retry update for {name}",
+    "updating": "Updating…",
+    "updatingAria": "Updating {name}…",
+    "updated": "Updated",
+    "updatedAria": "{name} updated",
+    "machineFailed": "{machine}: {error}",
+    "confirmTitle": "Update {name} to {version}",
+    "confirmDescription": "Every running agent process that uses {name} on the selected machines will stop, and active tasks will be interrupted. Make sure no tasks are running before continuing.",
+    "confirmAction": "Update {count} machine | Update {count} machines",
+    "current": "Current {version}",
+    "offline": "Offline",
+    "selectMachine": "Update {name} on {machine}"
+  },
   "aiUsage": {
     "title": "AI usage",
     "period": "Usage period",
