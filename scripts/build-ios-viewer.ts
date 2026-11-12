@@ -2,8 +2,12 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, rmSync } from "node:fs"
 import { join, resolve } from "node:path"
 
+if (process.env.CAPACITOR_PLATFORM_NAME && process.env.CAPACITOR_PLATFORM_NAME !== "ios") {
+  process.exit(0)
+}
+
 const repoRoot = resolve(import.meta.dirname, "..")
-const release = process.argv.includes("--release")
+const release = process.argv.includes("--release") || process.env.DESKFLEET_IOS_RELEASE === "1"
 const profile = release ? "release" : "debug"
 const targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"] as const
 
@@ -42,6 +46,12 @@ for (const target of targets) {
       env: {
         ...process.env,
         IPHONEOS_DEPLOYMENT_TARGET: "16.0",
+        ...(release
+          ? {
+              CARGO_PROFILE_RELEASE_DEBUG: "line-tables-only",
+              CARGO_PROFILE_RELEASE_STRIP: "none",
+            }
+          : {}),
       },
     },
   )

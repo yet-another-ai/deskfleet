@@ -215,13 +215,33 @@ run = "pnpm --filter @deskfleet/web dev"
 
 [tasks."web:dev:ios"]
 description = "Run the Vue Web development server with Capacitor iOS live reload"
-depends = ["install", "viewer:build:ios"]
+depends = ["install"]
 run = "pnpm --filter @deskfleet/web dev:ios"
 
 [tasks."web:dev:android"]
 description = "Run the Vue Web development server with Capacitor Android live reload"
 depends = ["install"]
 run = "pnpm --filter @deskfleet/web dev:android"
+
+[tasks."ios:sync"]
+description = "Build the Vue Web client and sync Capacitor iOS plugins and assets"
+depends = ["web:build"]
+run = "pnpm --filter @deskfleet/web exec cap sync ios"
+
+[tasks."ios:test"]
+description = "Sync Capacitor iOS and verify the iOS Simulator build"
+depends = ["ios:sync"]
+dir = "apps/web/ios/App"
+run = "xcodebuild -project App.xcodeproj -scheme App -destination 'generic/platform=iOS Simulator' -configuration Debug ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build"
+
+[tasks."ios:build"]
+description = "Build and archive the release iOS application with Capacitor"
+depends = ["web:build"]
+env.DESKFLEET_IOS_RELEASE = "1"
+run = [
+    "pnpm --filter @deskfleet/web exec cap sync ios",
+    "node scripts/package-ios-release.ts",
+]
 
 [tasks."android:sync"]
 description = "Build the Vue Web client and sync Capacitor Android plugins and assets"

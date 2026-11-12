@@ -168,6 +168,28 @@ jobs:
       - name: Run Android unit tests and lint
         run: mise run android:test
 
+  ios:
+    name: Tests (iOS)
+    needs: preflight
+    if: >-
+      ${{ inputs.all_platforms && !inputs.draft_pr && !(inputs.docs_only &&
+          (github.event_name == 'pull_request' ||
+          (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Build and verify iOS Simulator app
+        run: mise run ios:test
+
   backend:
     name: PostgreSQL and remote backend
     needs: preflight
