@@ -185,9 +185,13 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
                 call.reject(error)
                 return
             }
-            guard let result = response["result"] as? JSObject else {
+            guard let rawResult = response["result"] as? [String: Any],
+                  var result = JSTypes.coerceDictionaryToJSObject(rawResult) else {
                 call.reject("Missing NAT test result")
                 return
+            }
+            if result["publicAddress"] is NSNull {
+                result.removeValue(forKey: "publicAddress")
             }
             call.resolve(result)
         }
