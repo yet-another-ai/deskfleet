@@ -17,6 +17,7 @@ internal final class SpeechInput {
         var audioSessionActive = false
         var audioConfiguration: (category: AVAudioSession.Category, mode: AVAudioSession.Mode, options: AVAudioSession.CategoryOptions)?
         var stopping = false
+        var stopTimeout: DispatchWorkItem?
 
         init(id: String, recognizer: SFSpeechRecognizer, completion: @escaping () -> Void) {
             self.id = id
@@ -88,9 +89,15 @@ internal final class SpeechInput {
             return
         }
         stopCapture(session)
+        let timeout = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session, self.active === session else { return }
+            self.fail(session, code: "failed")
+        }
+        session.stopTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
         session.request.endAudio()
         event(session, type: "level", fields: ["level": 0])
-        // The recognition callback supplies a final result before emitting ended.
+        // Keep the audio session configured until the final callback or deadline.
     }
 
     func cancel(id: String) {
@@ -174,6 +181,9 @@ internal final class SpeechInput {
             session.engine.inputNode.removeTap(onBus: 0)
             session.capturing = false
         }
+    }
+
+    private func releaseAudioSession(_ session: Session) {
         let audioSession = AVAudioSession.sharedInstance()
         if session.audioSessionActive {
             try? audioSession.setActive(false, options: .notifyOthersOnDeactivation)
@@ -199,10 +209,13 @@ internal final class SpeechInput {
     private func finish(_ session: Session) {
         guard active === session else { return }
         active = nil
+        session.stopTimeout?.cancel()
+        session.stopTimeout = nil
         stopCapture(session)
         session.request.endAudio()
         session.task?.cancel()
         session.task = nil
+        releaseAudioSession(session)
         completeStart(session)
         emit(["sessionId": session.id, "type": "ended"])
     }

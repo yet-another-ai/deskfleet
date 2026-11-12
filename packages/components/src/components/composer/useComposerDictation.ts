@@ -24,6 +24,14 @@ interface Recording {
   hasResult: boolean
 }
 
+function changedRange(before: string, after: string): [number, number, number] {
+  let start = 0
+  while (start < before.length && start < after.length && before[start] === after[start]) start++
+  let oldEnd = before.length, newEnd = after.length
+  while (oldEnd > start && newEnd > start && before[oldEnd - 1] === after[newEnd - 1]) { oldEnd--; newEnd-- }
+  return [start, oldEnd, newEnd]
+}
+
 /** Recognition updates replace the dictated range directly inside the editable draft. */
 export function useComposerDictation(options: DictationOptions) {
   const supported = ref(false)
@@ -64,6 +72,10 @@ export function useComposerDictation(options: DictationOptions) {
     const trailing = word.test(text.at(-1) ?? "") && word.test(suffix[0] ?? "") ? " " : ""
     const inserted = leading + text + trailing
     const after = prefix + inserted + suffix
+    const input = options.textarea.value
+    const selection = input && input.ownerDocument.activeElement === input
+      ? { text: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection }
+      : undefined
     // defineModel can echo its parent update on the next tick. Keep successive
     // recognition events in the same tick attached to the latest emitted draft.
     const mentions = options.draft.value === before ? options.mentions.value : current.mentions
@@ -76,9 +88,14 @@ export function useComposerDictation(options: DictationOptions) {
     const scope = options.scope()
     const generation = ++selectionGeneration
     void nextTick(() => {
-      if (disposed || generation !== selectionGeneration || options.scope() !== scope || options.draft.value !== after) return
-      options.textarea.value?.focus()
-      options.textarea.value?.setSelectionRange(current.end, current.end)
+      if (!selection || !input || disposed || generation !== selectionGeneration || options.scope() !== scope
+        || options.draft.value !== after || input.value !== after || input.ownerDocument.activeElement !== input) return
+      // Map from the actual DOM value, which can lag multiple same-tick results.
+      // Only restore the already-focused input; another control keeps its focus.
+      const [start, oldEnd, newEnd] = changedRange(selection.text, after)
+      const map = (position: number) => position >= oldEnd ? position + newEnd - oldEnd : position <= start ? position : newEnd
+      const replacedSelection = selection.start !== selection.end && selection.start >= start && selection.end <= oldEnd
+      input.setSelectionRange(replacedSelection ? newEnd : map(selection.start), replacedSelection ? newEnd : map(selection.end), selection.direction)
     })
   }
 
@@ -116,10 +133,7 @@ export function useComposerDictation(options: DictationOptions) {
     if (!current || current.draft === after) return
     const before = current.draft
     current.draft = after
-    let start = 0
-    while (start < before.length && start < after.length && before[start] === after[start]) start++
-    let oldEnd = before.length, newEnd = after.length
-    while (oldEnd > start && newEnd > start && before[oldEnd - 1] === after[newEnd - 1]) { oldEnd--; newEnd-- }
+    const [start, oldEnd, newEnd] = changedRange(before, after)
     if (oldEnd <= current.start) {
       current.start += newEnd - oldEnd
       current.end += newEnd - oldEnd

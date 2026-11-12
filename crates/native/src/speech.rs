@@ -94,21 +94,31 @@ pub async fn supported(locale: String) -> bool {
 #[derive(Default)]
 struct Transcript {
     committed: String,
+    trailing_spaces: u8,
+}
+
+/// SAPI's display attributes describe phrase boundaries without locale guesses.
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy)]
+struct PhraseSpacing {
+    consume_leading: bool,
+    trailing: u8,
 }
 
 #[cfg(any(windows, test))]
 impl Transcript {
-    fn result(&mut self, text: &str, is_final: bool) -> String {
+    fn result(&mut self, text: &str, is_final: bool, spacing: PhraseSpacing) -> String {
         let text = text.trim();
         let mut result = self.committed.clone();
         if !text.is_empty() {
-            if !result.is_empty() {
-                result.push(' ');
+            if !result.is_empty() && !spacing.consume_leading {
+                result.extend(std::iter::repeat_n(' ', usize::from(self.trailing_spaces)));
             }
             result.push_str(text);
-        }
-        if is_final {
-            self.committed.clone_from(&result);
+            if is_final {
+                self.committed.clone_from(&result);
+                self.trailing_spaces = spacing.trailing;
+            }
         }
         result
     }
@@ -116,18 +126,86 @@ impl Transcript {
 
 #[cfg(test)]
 mod tests {
-    use super::Transcript;
+    use super::{PhraseSpacing, Transcript};
+
+    const WORD: PhraseSpacing = PhraseSpacing {
+        consume_leading: false,
+        trailing: 1,
+    };
+    const UNSEPARATED: PhraseSpacing = PhraseSpacing {
+        consume_leading: false,
+        trailing: 0,
+    };
 
     #[test]
     fn phrase_hypotheses_replace_each_other_and_final_phrases_accumulate() {
         let mut transcript = Transcript::default();
-        assert_eq!(transcript.result("hello", false), "hello");
-        assert_eq!(transcript.result("hello world", true), "hello world");
-        assert_eq!(transcript.result("next", false), "hello world next");
+        assert_eq!(transcript.result("hello", false, WORD), "hello");
+        assert_eq!(transcript.result("hello world", true, WORD), "hello world");
+        assert_eq!(transcript.result("next", false, WORD), "hello world next");
         assert_eq!(
-            transcript.result("another phrase", true),
+            transcript.result("another phrase", true, WORD),
             "hello world another phrase"
         );
         assert_eq!(transcript.committed, "hello world another phrase");
+    }
+
+    #[test]
+    fn chinese_and_japanese_phrases_do_not_gain_spaces() {
+        for (first, hypothesis, final_phrase, expected) in [
+            ("请检查", "新的", "最新的改动。", "请检查最新的改动。"),
+            (
+                "最新の",
+                "変更",
+                "変更を確認してください。",
+                "最新の変更を確認してください。",
+            ),
+        ] {
+            let mut transcript = Transcript::default();
+            assert_eq!(transcript.result(first, true, UNSEPARATED), first);
+            assert_eq!(
+                transcript.result(hypothesis, false, UNSEPARATED),
+                format!("{first}{hypothesis}")
+            );
+            assert_eq!(transcript.result(final_phrase, true, UNSEPARATED), expected);
+        }
+    }
+
+    #[test]
+    fn punctuation_consumes_space_and_retains_engine_sentence_spacing() {
+        let mut transcript = Transcript::default();
+        let punctuation = PhraseSpacing {
+            consume_leading: true,
+            trailing: 2,
+        };
+        transcript.result("hello", true, WORD);
+        assert_eq!(transcript.result(".", false, punctuation), "hello.");
+        // An interim punctuation hypothesis cannot change the committed separator.
+        assert_eq!(transcript.result("world", false, WORD), "hello world");
+        assert_eq!(transcript.result(".", true, punctuation), "hello.");
+        assert_eq!(transcript.result("Next", true, WORD), "hello.  Next");
+    }
+
+    #[test]
+    fn mixed_script_spacing_comes_from_the_recognizer() {
+        let mut transcript = Transcript::default();
+        transcript.result("请检查", true, UNSEPARATED);
+        assert_eq!(transcript.result("pull", true, WORD), "请检查pull");
+        assert_eq!(
+            transcript.result("request", true, WORD),
+            "请检查pull request"
+        );
+        let cjk = PhraseSpacing {
+            consume_leading: true,
+            trailing: 0,
+        };
+        assert_eq!(
+            transcript.result("的改动。", true, cjk),
+            "请检查pull request的改动。"
+        );
+        assert_eq!(
+            transcript.result("", true, WORD),
+            "请检查pull request的改动。"
+        );
     }
 }

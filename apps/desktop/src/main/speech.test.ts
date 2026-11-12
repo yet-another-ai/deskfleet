@@ -67,6 +67,20 @@ test("another window cannot stop recording and hiding the owner releases the mic
   await vi.waitFor(() => expect(recognition.cancel).toHaveBeenCalledOnce())
 })
 
+test("hash and subframe navigation preserve dictation while leaving the main document cancels it", async () => {
+  const { event, invoke, sender } = fixture()
+  const recognition = native()
+  await invoke(event, "start", { sessionId: "one", locale: "en-US" })
+  sender.emit("did-start-navigation", {}, `${BUNDLED_RENDERER_URL}#/settings`, true, true)
+  sender.emit("did-start-navigation", {}, "https://frame.test", false, false)
+  await Promise.resolve()
+  expect(recognition.cancel).not.toHaveBeenCalled()
+  expect(sender.listenerCount("did-start-navigation")).toBe(1)
+  sender.emit("did-start-navigation", {}, BUNDLED_RENDERER_URL, false, true)
+  await vi.waitFor(() => expect(recognition.cancel).toHaveBeenCalledOnce())
+  expect(sender.listenerCount("did-start-navigation")).toBe(0)
+})
+
 test("closing while creation is pending cancels the native instance without delivering events", async () => {
   const { event, invoke, service, sender } = fixture()
   const recognition = native()
@@ -89,6 +103,7 @@ test("native ended stops polling, detaches lifetime handlers, and allows a new d
   await vi.waitFor(() => expect(sender.send).toHaveBeenCalledWith(SPEECH_EVENT, { sessionId: "one", type: "ended" }))
   expect(first.nextEvent).toHaveBeenCalledOnce()
   expect(sender.listenerCount("destroyed")).toBe(0)
+  expect(sender.listenerCount("did-start-navigation")).toBe(0)
   expect(window.listenerCount("hide")).toBe(0)
   const second = native()
   await invoke(event, "start", { sessionId: "two", locale: "en-US" })

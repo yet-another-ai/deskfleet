@@ -9,11 +9,12 @@ use windows::Win32::Foundation::{E_ACCESSDENIED, E_FAIL, LPARAM};
 use windows::Win32::Globalization::{LocaleNameToLCID, ResolveLocaleName};
 use windows::Win32::Media::Speech::{
     ISpObjectToken, ISpObjectTokenCategory, ISpRecoContext, ISpRecoGrammar, ISpRecoResult,
-    ISpRecognizer, SPCAT_RECOGNIZERS, SPEI_END_SR_STREAM, SPEI_HYPOTHESIS, SPEI_RECOGNITION,
-    SPEI_RESERVED1, SPEI_RESERVED2, SPEI_SR_AUDIO_LEVEL, SPET_LPARAM_IS_OBJECT,
-    SPET_LPARAM_IS_POINTER, SPET_LPARAM_IS_STRING, SPET_LPARAM_IS_TOKEN, SPEVENT, SPLO_STATIC,
-    SPRS_ACTIVE, SPRST_ACTIVE, SPRST_INACTIVE, SPRST_INACTIVE_WITH_PURGE, SpInprocRecognizer,
-    SpMMAudioIn, SpObjectTokenCategory,
+    ISpRecognizer, SPAF_CONSUME_LEADING_SPACES, SPAF_ONE_TRAILING_SPACE, SPAF_TWO_TRAILING_SPACES,
+    SPCAT_RECOGNIZERS, SPEI_END_SR_STREAM, SPEI_HYPOTHESIS, SPEI_RECOGNITION, SPEI_RESERVED1,
+    SPEI_RESERVED2, SPEI_SR_AUDIO_LEVEL, SPET_LPARAM_IS_OBJECT, SPET_LPARAM_IS_POINTER,
+    SPET_LPARAM_IS_STRING, SPET_LPARAM_IS_TOKEN, SPEVENT, SPLO_STATIC, SPRS_ACTIVE, SPRST_ACTIVE,
+    SPRST_INACTIVE, SPRST_INACTIVE_WITH_PURGE, SpInprocRecognizer, SpMMAudioIn,
+    SpObjectTokenCategory,
 };
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
@@ -21,7 +22,7 @@ use windows::Win32::System::Com::{
 };
 use windows::core::{HRESULT, IUnknown, Interface, PCWSTR, PWSTR};
 
-use super::{EventSink, SpeechEventKind, Transcript};
+use super::{EventSink, PhraseSpacing, SpeechEventKind, Transcript};
 
 enum Command {
     Stop,
@@ -220,9 +221,9 @@ fn run(locale: &str, sink: &EventSink, commands: &Receiver<Command>) -> windows:
             }
             let id = event.0._bitfield & 0xffff;
             if id == SPEI_RECOGNITION.0 || id == SPEI_HYPOTHESIS.0 {
-                let text = event.text()?;
+                let (text, spacing) = event.text()?;
                 let is_final = id == SPEI_RECOGNITION.0;
-                let text = transcript.result(&text, is_final);
+                let text = transcript.result(&text, is_final, spacing);
                 sink.emit(SpeechEventKind::Result { text, is_final });
             } else if id == SPEI_SR_AUDIO_LEVEL.0
                 && last_level.elapsed() >= Duration::from_millis(80)
@@ -271,20 +272,35 @@ fn run(locale: &str, sink: &EventSink, commands: &Receiver<Command>) -> windows:
 struct Event(SPEVENT);
 
 impl Event {
-    fn text(&mut self) -> windows::core::Result<String> {
+    fn text(&mut self) -> windows::core::Result<(String, PhraseSpacing)> {
         // SAFETY: RECOGNITION/HYPOTHESIS LPARAM owns an ISpRecoResult reference.
         // Taking that reference clears it from Event so it is released exactly once.
         let object = unsafe { IUnknown::from_raw(self.0.lParam.0 as *mut _) };
         self.0.lParam = LPARAM(0);
         let result: ISpRecoResult = object.cast()?;
         let mut text = PWSTR::null();
-        // SAFETY: text is valid out-storage; SAPI allocates a terminated COM string.
-        unsafe { result.GetText(0, u32::MAX, true, &mut text, None)? };
+        let mut attributes = 0_u8;
+        // SAFETY: both outputs are valid storage; SAPI allocates a terminated COM string.
+        unsafe { result.GetText(0, u32::MAX, true, &mut text, Some(&mut attributes))? };
         // SAFETY: successful GetText returned a valid COM-allocated UTF-16 string.
         let value = unsafe { text.to_string() };
         // SAFETY: GetText's allocated string must be released with CoTaskMemFree.
         unsafe { CoTaskMemFree(Some(text.0.cast())) };
-        value.map_err(|error| windows::core::Error::new(E_FAIL, error.to_string()))
+        let text = value.map_err(|error| windows::core::Error::new(E_FAIL, error.to_string()))?;
+        let attributes = i32::from(attributes);
+        // GetText also supplies boundary display attributes; do not force English
+        // word spacing onto CJK phrases or punctuation.
+        let spacing = PhraseSpacing {
+            consume_leading: attributes & SPAF_CONSUME_LEADING_SPACES.0 != 0,
+            trailing: if attributes & SPAF_TWO_TRAILING_SPACES.0 != 0 {
+                2
+            } else if attributes & SPAF_ONE_TRAILING_SPACE.0 != 0 {
+                1
+            } else {
+                0
+            },
+        };
+        Ok((text, spacing))
     }
 }
 

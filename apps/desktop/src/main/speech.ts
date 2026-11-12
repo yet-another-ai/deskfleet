@@ -69,16 +69,19 @@ export function installSpeech(): { close(): Promise<void> } {
       const pending = createSpeech(id, language)
       const run: Active = { owner, id, pending, cancelled: false, dispose: () => {} }
       const abandon = () => { void cancel(run).catch(() => {}) }
+      const navigate = (_event: unknown, _url: string, inPlace: boolean, isMainFrame: boolean) => {
+        if (isMainFrame && !inPlace) abandon()
+      }
       run.dispose = () => {
         owner.removeListener("destroyed", abandon)
         owner.removeListener("render-process-gone", abandon)
-        owner.removeListener("did-start-navigation", abandon)
+        owner.removeListener("did-start-navigation", navigate)
         window?.removeListener("hide", abandon)
       }
       active = run
       owner.once("destroyed", abandon)
       owner.once("render-process-gone", abandon)
-      owner.once("did-start-navigation", abandon)
+      owner.on("did-start-navigation", navigate)
       window?.once("hide", abandon)
       try {
         const native = await pending

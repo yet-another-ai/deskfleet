@@ -33,13 +33,15 @@ async function fixture(supported = true) {
     stubs: { AgentConfigurationSelector: true },
   }
   const draft = ref("")
+  const container = document.createElement("div")
+  document.body.append(container)
   const host = mount({
     components: { SessionComposer },
     setup: () => ({ draft, location }),
     template: '<SessionComposer v-model="draft" :location="location" />',
-  }, { global })
+  }, { global, attachTo: container })
   const composer = host.getComponent(SessionComposer)
-  cleanups.push(() => { host.unmount(); disposePinia(pinia) })
+  cleanups.push(() => { host.unmount(); container.remove(); disposePinia(pinia) })
   await flushPromises()
   return { composer, speech, global, draft, emit: (event: SpeechEvent) => listener(event) }
 }
@@ -102,6 +104,35 @@ test("errors leave dictated input intact and use the microphone tooltip without 
   expect(f.composer.find("[data-dictation-error]").exists()).toBe(false)
   expect(f.composer.get("[data-composer-dictation]").attributes("title")).toBe(i18n.global.t("dictation.errors.permission-denied"))
   expect(f.composer.get("[data-composer-dictation]").classes()).toContain("text-ui-danger")
+})
+
+test("live results preserve a caret outside dictation and leave keyboard focus on cancel", async () => {
+  const f = await fixture()
+  f.draft.value = "before end"
+  await flushPromises()
+  const input = f.composer.get("textarea").element
+  input.focus()
+  input.setSelectionRange(7, 7)
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "voice", final: false, sessionId })
+  await flushPromises()
+  input.setSelectionRange(2, 2)
+  f.emit({ type: "result", text: "voice again", final: false, sessionId })
+  await flushPromises()
+  expect(input.selectionStart).toBe(2)
+  expect(input.selectionEnd).toBe(2)
+  const cancel = f.composer.get("[data-dictation-cancel]")
+  ;(cancel.element as HTMLButtonElement).focus()
+  f.emit({ type: "result", text: "voice again", final: true, sessionId })
+  f.emit({ type: "result", text: "voice again today", final: false, sessionId })
+  await flushPromises()
+  expect(document.activeElement).toBe(cancel.element)
+  expect(input.value).toBe("before voice again today end")
+  await cancel.trigger("click")
+  expect(f.speech.cancel).toHaveBeenCalledWith(sessionId)
+  expect(f.draft.value).toBe("before voice again today end")
 })
 
 test("unsupported devices hide the microphone while preserving the stored preference", async () => {

@@ -1,7 +1,7 @@
 import type { SpeechApi, SpeechEvent } from "@deskfleet/client/speech"
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
-import { computed, effectScope, ref } from "vue"
+import { computed, effectScope, ref, watch } from "vue"
 import type { ComposerMention } from "../../services/composer-mentions.ts"
 import { useComposerDictation } from "./useComposerDictation.ts"
 
@@ -26,17 +26,19 @@ async function fixture(text = "", start = text.length, end = start, deferredMode
   const textarea = document.createElement("textarea")
   textarea.value = text
   textarea.setSelectionRange(start, end)
+  document.body.append(textarea)
   const enabled = ref(true), disabled = ref(false), scope = ref("team:machine:session"), locale = ref("en-US")
   const owner = effectScope()
   const dictation = owner.run(() => useComposerDictation({
     api, draft, mentions, textarea: ref(textarea), enabled,
     locale: () => locale.value, scope: () => scope.value, disabled: () => disabled.value,
   }))!
-  cleanups.push(() => owner.stop())
+  owner.run(() => watch(draft, value => { textarea.value = value }, { flush: "post" }))
+  cleanups.push(() => { owner.stop(); textarea.remove() })
   await flushPromises()
   const id = () => vi.mocked(api.start).mock.calls.at(-1)![0].sessionId
   const emit = (event: Omit<SpeechEvent, "sessionId">, sessionId = id()) => listener?.({ ...event, sessionId } as SpeechEvent)
-  return { api, owner, dictation, enabled, disabled, scope, locale, draft, mentions, emit, id, unsubscribe, acknowledgeModel }
+  return { api, owner, dictation, enabled, disabled, scope, locale, draft, mentions, textarea, emit, id, unsubscribe, acknowledgeModel }
 }
 
 test("writes partial and cumulative final results directly at the selection without duplication, retaining mentions", async () => {
@@ -91,6 +93,60 @@ test("same-tick results use the latest emitted model before its parent acknowled
   f.acknowledgeModel()
   expect(f.draft.value).toBe("corrected @file")
   expect(f.mentions.value[0]).toMatchObject({ start: 10, end: 15 })
+})
+
+test("recognition leaves focus on another control, including a control focused before the render tick", async () => {
+  const f = await fixture("before end", 7)
+  const cancel = document.createElement("button")
+  document.body.append(cancel)
+  cleanups.push(() => cancel.remove())
+  await f.dictation.toggle()
+  cancel.focus()
+  f.emit({ type: "result", text: "voice", final: false } as SpeechEvent)
+  await flushPromises()
+  expect(document.activeElement).toBe(cancel)
+  f.textarea.focus()
+  f.emit({ type: "result", text: "voice again", final: false } as SpeechEvent)
+  cancel.focus()
+  await flushPromises()
+  expect(document.activeElement).toBe(cancel)
+  expect(f.draft.value).toBe("before voice again end")
+})
+
+test("recognition preserves the caret before its range and maps a selection after it", async () => {
+  const f = await fixture("before end", 7)
+  f.textarea.focus()
+  await f.dictation.toggle()
+  f.emit({ type: "result", text: "voice", final: false } as SpeechEvent)
+  await flushPromises()
+  expect(f.textarea.selectionStart).toBe(13)
+  f.textarea.setSelectionRange(2, 2)
+  f.emit({ type: "result", text: "voice again", final: false } as SpeechEvent)
+  await flushPromises()
+  expect(f.textarea.selectionStart).toBe(2)
+  expect(f.textarea.selectionEnd).toBe(2)
+  f.textarea.setSelectionRange(19, 22, "backward")
+  f.emit({ type: "result", text: "spoken", final: true } as SpeechEvent)
+  await flushPromises()
+  expect(f.draft.value).toBe("before spoken end")
+  expect(f.textarea.selectionStart).toBe(14)
+  expect(f.textarea.selectionEnd).toBe(17)
+  expect(f.textarea.selectionDirection).toBe("backward")
+})
+
+test("same-tick results map the DOM caret after the range while awaiting the parent model echo", async () => {
+  const f = await fixture("before end", 7, 7, true)
+  f.textarea.focus()
+  await f.dictation.toggle()
+  f.textarea.setSelectionRange(10, 10)
+  f.emit({ type: "result", text: "voice", final: true } as SpeechEvent)
+  f.emit({ type: "result", text: "voice again", final: false } as SpeechEvent)
+  f.acknowledgeModel()
+  await flushPromises()
+  expect(f.draft.value).toBe("before voice again end")
+  expect(f.textarea.selectionStart).toBe(22)
+  expect(f.textarea.selectionEnd).toBe(22)
+  expect(document.activeElement).toBe(f.textarea)
 })
 
 test("editing recognized text cancels recognition and preserves the user's correction", async () => {
@@ -155,4 +211,15 @@ test("a canceled pending start is stopped when permission resolves; errors retai
   f.emit({ type: "ended" })
   expect(f.draft.value).toBe("draft recognized")
   expect(f.dictation.error.value).toBe("permission-denied")
+})
+
+test("a no-speech error after Android partial results retains the recognized draft", async () => {
+  const f = await fixture("draft")
+  await f.dictation.toggle()
+  f.emit({ type: "result", text: "recognized words", final: false } as SpeechEvent)
+  f.emit({ type: "error", code: "no-speech" } as SpeechEvent)
+  f.emit({ type: "ended" })
+  expect(f.draft.value).toBe("draft recognized words")
+  expect(f.dictation.active.value).toBe(false)
+  expect(f.dictation.error.value).toBe("no-speech")
 })
