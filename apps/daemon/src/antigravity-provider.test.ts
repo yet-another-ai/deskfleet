@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import type { AgentConnection } from "./agents/acp.ts"
@@ -13,6 +14,18 @@ async function writeTranscript(dataDir: string, sessionId: string, steps: Record
   const dir = join(dataDir, "brain", sessionId, ".system_generated", "logs")
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, "transcript.jsonl"), toJsonl(steps), "utf8")
+}
+
+async function writeStepStatus(dataDir: string, sessionId: string, idx: number, status: number) {
+  const dir = join(dataDir, "conversations")
+  await mkdir(dir, { recursive: true })
+  const db = new DatabaseSync(join(dir, `${sessionId}.db`))
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS steps (idx integer PRIMARY KEY, status integer NOT NULL DEFAULT 0)")
+    db.prepare("INSERT OR REPLACE INTO steps (idx, status) VALUES (?, ?)").run(idx, status)
+  } finally {
+    db.close()
+  }
 }
 
 function stubConnection(overrides: Partial<AgentConnection> & Pick<AgentConnection, "prompt">): AgentConnection {
@@ -52,13 +65,6 @@ test("inspectAntigravityTranscript ignores IsDaemon commands and tracks chained 
     { step_index: 320, type: "PLANNER_RESPONSE", status: "DONE", content: "All checks completed." },
   ]
   assert.deepEqual(inspectAntigravityTranscript(toJsonl(settled), 200), { state: "settled_response", lastStepIndex: 320 })
-
-  const waiting = [
-    ...base,
-    { step_index: 248, type: "SYSTEM_MESSAGE", status: "DONE", content: "sender=s1/task-246 finished" },
-    { step_index: 249, type: "GENERIC", status: "WAITING", content: "" },
-  ]
-  assert.deepEqual(inspectAntigravityTranscript(toJsonl(waiting), 200), { state: "waiting_interaction", lastStepIndex: 249 })
 })
 
 test("createAntigravityClientWrapper waits for background settlement, flushes updates, and suppresses sync tail", async t => {
@@ -119,4 +125,66 @@ test("createAntigravityClientWrapper waits for background settlement, flushes up
   assert.equal(prompts, 2)
   assert.equal(cancels, 1)
   assert.deepEqual(messages, ["Running in background...", "Final settled output."])
+})
+
+test("createAntigravityClientWrapper reconnects when background wakeup pauses on SQLite WAITING step", async t => {
+  const dataDir = await mkdtemp(join(tmpdir(), "df-agy-wait-"))
+  t.after(() => rm(dataDir, { recursive: true, force: true }))
+  const sessionId = "session-18"
+  const messages: string[] = []
+  let prompts = 0
+  let cancels = 0
+
+  const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(
+    {
+      onUpdate(n) {
+        if (n.update.sessionUpdate === "agent_message_chunk" && n.update.content.type === "text") {
+          messages.push(n.update.content.text)
+        }
+      },
+    },
+    { dataDir, pollIntervalMs: 15 },
+  )
+
+  const initial = [
+    { step_index: 1, type: "PLANNER_RESPONSE", status: "DONE", tool_calls: [{ args: { IsDaemon: false } }] },
+    { step_index: 2, type: "GENERIC", status: "RUNNING", content: `Tool is running as a background task with task id: ${sessionId}/task-2.` },
+  ]
+
+  const conn = wrapConnection(stubConnection({
+    async prompt(params) {
+      prompts++
+      if (prompts === 1) {
+        await wrappedClient.onUpdate({
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "tool_call", toolCallId: "c1", title: "Run", status: "in_progress", rawInput: { IsDaemon: false } },
+        })
+        await writeTranscript(dataDir, sessionId, initial)
+        setTimeout(() => {
+          void writeTranscript(dataDir, sessionId, [
+            ...initial,
+            { step_index: 3, type: "SYSTEM_MESSAGE", status: "DONE", content: `sender=${sessionId}/task-2 finished` },
+            { step_index: 4, type: "PLANNER_RESPONSE", status: "DONE", tool_calls: [{ args: { IsDaemon: false } }] },
+          ]).then(() => writeStepStatus(dataDir, sessionId, 5, 9))
+        }, 25)
+        return { stopReason: "end_turn", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
+      }
+      await wrappedClient.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "c1", status: "completed" } })
+      await wrappedClient.onUpdate({
+        sessionId: params.sessionId,
+        update: { sessionUpdate: "tool_call", toolCallId: "c2", title: "Count lines", status: "completed", rawInput: { IsDaemon: false } },
+      })
+      await writeStepStatus(dataDir, sessionId, 5, 3)
+      await wrappedClient.onUpdate({ sessionId: params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "42 lines." } } })
+      return { stopReason: "end_turn", usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 } }
+    },
+    async cancel() { cancels++ },
+  }))
+
+  const res = await conn.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] })
+  assert.equal(res.stopReason, "end_turn")
+  assert.equal(res.usage?.totalTokens, 45)
+  assert.equal(prompts, 2)
+  assert.equal(cancels, 0)
+  assert.deepEqual(messages, ["42 lines."])
 })

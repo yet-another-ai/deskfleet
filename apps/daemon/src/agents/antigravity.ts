@@ -19,7 +19,7 @@ interface TranscriptStep {
 }
 
 export type AntigravityTranscriptStatus = {
-  state: "idle" | "running" | "waiting_interaction" | "settled_response"
+  state: "idle" | "running" | "settled_response"
   lastStepIndex: number
 }
 
@@ -99,6 +99,19 @@ function readContextUsage(dbPath: string): { used: number; size: number } | null
   }
 }
 
+/** Checks whether the session SQLite DB has an active `WAITING` step (`status = 9`, which `transcript.jsonl` omits). */
+function hasWaitingStep(dbPath: string): boolean {
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true, timeout: 2000 })
+    return Boolean(db.prepare("SELECT 1 FROM steps WHERE status = 9 LIMIT 1").get())
+  } catch {
+    return false
+  } finally {
+    db?.close()
+  }
+}
+
 /** Inspects `transcript.jsonl` steps after `turnStartStepIndex` for active or settled background tasks. */
 export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: number): AntigravityTranscriptStatus {
   const running = new Set<string>()
@@ -136,7 +149,6 @@ export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: nu
 
   const lastStepIndex = typeof lastStep?.step_index === "number" ? lastStep.step_index : -1
   if (!lastStep || lastStepIndex <= turnStartStepIndex) return { state: "idle", lastStepIndex }
-  if (lastStep.status === "WAITING") return { state: "waiting_interaction", lastStepIndex }
   if (
     running.size === 0
     && lastWakeup > lastRunning
@@ -201,23 +213,31 @@ export function createAntigravityClientWrapper(
         client.signal?.addEventListener("abort", onAbort, { once: true })
 
         try {
+          const dbPath = join(dataDir, "conversations", `${sessionId}.db`)
           const initRaw = await readTranscript(sessionId)
-          let startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
+          const startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
           let { stopReason, usage } = await connection.prompt(params)
 
           while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
             const startedAt = Date.now()
-            let settled: AntigravityTranscriptStatus | undefined
+            let state: "waiting" | "settled" | undefined
             while (!abort.signal.aborted && Date.now() - startedAt < 30 * 60_000) {
+              if (hasWaitingStep(dbPath)) {
+                state = "waiting"
+                break
+              }
               const raw = await readTranscript(sessionId)
               const s = raw ? inspectAntigravityTranscript(raw, startStep) : { state: "idle" as const, lastStepIndex: -1 }
               if (s.state === "idle" && Date.now() - startedAt >= pollMs * 8) break
-              if (s.state === "waiting_interaction" || s.state === "settled_response") { settled = s; break }
+              if (s.state === "settled_response") {
+                state = "settled"
+                break
+              }
               await delay(pollMs, undefined, { signal: abort.signal }).catch(() => {})
             }
-            if (!settled || abort.signal.aborted) break
+            if (!state || abort.signal.aborted) break
 
-            const isSettled = settled.state === "settled_response"
+            const isSettled = state === "settled"
             let timer: ReturnType<typeof setTimeout> | undefined
             if (isSettled) {
               t.onFlush = () => {
@@ -231,7 +251,6 @@ export function createAntigravityClientWrapper(
               t.onFlush()
             }
             try {
-              startStep = settled.lastStepIndex
               const next = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
               usage = mergeUsage(usage, next.usage)
               stopReason = isSettled ? "end_turn" : next.stopReason
@@ -242,7 +261,7 @@ export function createAntigravityClientWrapper(
             }
             if (isSettled) break
           }
-          const ctx = readContextUsage(join(dataDir, "conversations", `${sessionId}.db`))
+          const ctx = readContextUsage(dbPath)
           if (ctx) {
             await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
           }
