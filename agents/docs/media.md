@@ -363,6 +363,17 @@ Run the daemon inside the user's X11 session with its display credentials.
 This backend does not create an X server, provide remote login/unlock, or capture
 system audio. Hardware encoding remains required for desktop streaming.
 
+### Android Termux (`scrcpy-server`)
+
+On Linux (such as `linux-arm64` inside Termux `proot-distro`), setting
+`DESKFLEET_ANDROID_SCRCPY_SERVER` to an upstream `scrcpy-server` v2.4+/v3.x JAR
+routes display/codec discovery, hardware video streaming, and touch/key input
+through `com.genymobile.scrcpy.Server` in UID 2000 instead of Wayland or X11
+(`linuxDesktopBackend` stays `null`). Transport defaults to `adb`
+(`DESKFLEET_ANDROID_SERIAL` or `ANDROID_SERIAL`), or uses
+`DESKFLEET_ANDROID_SHELL` (e.g. `rish -c` or `su -c`) over an abstract Unix
+socket; `DESKFLEET_ANDROID_SCRCPY_VERSION` overrides the server version string.
+
 ### Permission status and stream lifecycle
 
 The authenticated `hello` response includes `fullDiskAccessPermission`,

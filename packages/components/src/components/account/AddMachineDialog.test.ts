@@ -9,7 +9,7 @@ import { parseDaemonStatus } from "./daemon-status.ts"
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
-afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined })
+afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; i18n.global.locale.value = "en-US" })
 const status = (value: Record<string, unknown> = {}) => JSON.stringify({ configured: false, connected: false, revoked: false, identity: { originId: "server-origin", machineId: "1" }, machineName: "ssh-box", serverUrl: "https://fleet.example", teamId: "team-1", identityToken: "host-secret", ...value }, null, 2)
 const local = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({ configured: false, connected: false, revoked: false, identity: { originId: "o", machineId: "1" }, machineName: "This Mac", ...value })
 async function setup(enrollment?: LocalEnrollment) {
@@ -98,4 +98,25 @@ test("an active registration of this computer is never reassigned", async () => 
   await flushPromises()
   expect(document.activeElement).toBe(view!.get('[name="daemon-status"]').element)
   expect(fake.central.enrollLocal).not.toHaveBeenCalled()
+})
+
+test("both the desktop chooser and headless setup link to the localized Android daemon guide", async () => {
+  await setup(local())
+  const chooserLink = view!.get<HTMLAnchorElement>("[data-android-daemon-guide]")
+  expect(chooserLink.attributes("href")).toBe("https://www.deskfleet.org/guide/android")
+  expect(chooserLink.attributes("target")).toBe("_blank")
+  expect(chooserLink.attributes("rel")).toBe("noopener noreferrer")
+
+  await view!.get('[data-add-machine="headless"]').trigger("click")
+  await flushPromises()
+  const headlessLink = view!.get<HTMLAnchorElement>("[data-android-daemon-guide]")
+  expect(headlessLink.attributes("href")).toBe("https://www.deskfleet.org/guide/android")
+
+  i18n.global.locale.value = "zh-cmn-Hans-CN"
+  await flushPromises()
+  expect(headlessLink.attributes("href")).toBe("https://www.deskfleet.org/zh/guide/android")
+
+  i18n.global.locale.value = "ja-JP"
+  await flushPromises()
+  expect(headlessLink.attributes("href")).toBe("https://www.deskfleet.org/ja/guide/android")
 })

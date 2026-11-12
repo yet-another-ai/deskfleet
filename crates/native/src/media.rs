@@ -68,6 +68,10 @@ impl MediaError {
 /// Video codec support is probed only when explicitly requested.
 pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>, MediaError> {
     tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        if crate::android_scrcpy::is_configured() {
+            return crate::android_scrcpy::supported_video_codecs_sync(display_id);
+        }
         #[cfg(windows)]
         if let Some(mut client) = crate::windows_desktop::Client::connect()? {
             return client.codecs(display_id);
@@ -89,12 +93,18 @@ pub async fn supported_video_codecs(display_id: u32) -> Result<Vec<String>, Medi
 /// Enumerating displays can require a graphical session and capture permission.
 pub async fn displays() -> Result<Vec<Display>, MediaError> {
     #[cfg(target_os = "linux")]
-    if deskfleet_linux_desktop::backend() == deskfleet_linux_desktop::Backend::Wayland {
+    if !crate::android_scrcpy::is_configured()
+        && deskfleet_linux_desktop::backend() == deskfleet_linux_desktop::Backend::Wayland
+    {
         deskfleet_wayland::restore_access()
             .await
             .map_err(|error| CaptureError::Platform(error.to_string()))?;
     }
     tokio::task::spawn_blocking(|| {
+        #[cfg(target_os = "linux")]
+        if crate::android_scrcpy::is_configured() {
+            return Ok(crate::android_scrcpy::displays_sync()?);
+        }
         #[cfg(windows)]
         if let Some(mut client) = crate::windows_desktop::Client::connect()? {
             return client.displays();
@@ -206,12 +216,20 @@ pub(crate) enum Packet {
 
 enum CaptureSource {
     Local(Box<CapturePipeline>),
+    #[cfg(target_os = "linux")]
+    Android(crate::android_scrcpy::ScrcpyCapture),
     #[cfg(windows)]
     Service(crate::windows_desktop::Client),
 }
 
 impl CaptureSource {
     fn open(config: DesktopConfig, codec: Codec, audio: bool) -> Result<Self, MediaError> {
+        #[cfg(target_os = "linux")]
+        if crate::android_scrcpy::is_configured() {
+            return Ok(Self::Android(crate::android_scrcpy::ScrcpyCapture::open(
+                config, codec, audio,
+            )?));
+        }
         #[cfg(windows)]
         if let Some(mut client) = crate::windows_desktop::Client::connect()? {
             if audio {
@@ -240,6 +258,8 @@ impl CaptureSource {
                 }
                 pipeline.poll(keyframe, video_paused)
             }
+            #[cfg(target_os = "linux")]
+            Self::Android(client) => client.poll(keyframe, video_paused),
             #[cfg(windows)]
             Self::Service(client) => {
                 let target = estimate_bps.map(|estimate| estimate as u32);
@@ -251,6 +271,8 @@ impl CaptureSource {
     fn stop(self) -> Result<(), MediaError> {
         match self {
             Self::Local(pipeline) => (*pipeline).stop(),
+            #[cfg(target_os = "linux")]
+            Self::Android(client) => client.stop(),
             #[cfg(windows)]
             Self::Service(mut client) => client.stop(),
         }
