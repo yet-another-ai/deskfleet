@@ -59,6 +59,9 @@ jobs:
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+      IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -292,3 +295,39 @@ jobs:
           releaseFiles: android-release/app-release-signed.aab
           track: internal
           status: completed
+
+  testflight:
+    name: Publish to TestFlight
+    needs: [validate, test, build, nix, aur, linux_packages]
+    runs-on: macos-latest
+    environment: production
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Download signed iOS IPA
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-ios
+          path: ios-release
+
+      - name: Upload IPA to TestFlight
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          key_dir="$RUNNER_TEMP/private_keys"
+          mkdir -p "$key_dir"
+          (umask 077 && printf '%s' "$APPLE_API_KEY_P8" | base64 -d > "$key_dir/AuthKey_${APPLE_API_KEY_ID}.p8")
+          API_PRIVATE_KEYS_DIR="$key_dir" xcrun altool --upload-app \
+            -f ios-release/App.ipa \
+            -t ios \
+            --api-key "$APPLE_API_KEY_ID" \
+            --api-issuer "$APPLE_API_ISSUER"
+
+      - name: Remove App Store Connect API key
+        if: ${{ always() }}
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/private_keys"

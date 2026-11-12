@@ -252,6 +252,9 @@ Configure these secrets in the same environment:
 | `APPLE_API_KEY_P8` | Base64 App Store Connect API private key (`.p8`). |
 | `APPLE_API_KEY_ID` | App Store Connect API key ID. |
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
+| `APPLE_TEAM_ID` | Apple Developer Team ID used for automatic iOS App Store provisioning and signing. |
+| `IOS_DIST_CERT_P12` | Base64 Apple Distribution certificate and private key in a PKCS#12 archive (`.p12`). |
+| `IOS_DIST_CERT_PASSWORD` | Password for that iOS distribution PKCS#12 archive. |
 | `ANDROID_KEYSTORE_BASE64` | Base64 Android upload keystore (`.jks` or `.keystore`). |
 | `ANDROID_KEYSTORE_PASSWORD` | Keystore password for the Android upload key. |
 | `ANDROID_KEY_ALIAS` | Key alias inside the Android upload keystore. |

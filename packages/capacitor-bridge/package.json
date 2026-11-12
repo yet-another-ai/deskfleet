@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "capacitor:sync:before": "node ../../scripts/build-android-viewer.ts"
+    "capacitor:sync:before": "node ../../scripts/build-android-viewer.ts && node ../../scripts/build-ios-viewer.ts"
   },
   "exports": {
     ".": "./src/index.ts",
