@@ -219,8 +219,14 @@ test("arms and locks Ctrl and Alt modifiers for both virtual keys and soft-keybo
   const ctrl = view.get('[data-modifier="ctrl"]')
   const alt = view.get('[data-modifier="alt"]')
 
-  // One-shot (armed) Ctrl modifies the next soft-keyboard character and resets.
+  // One-shot (armed) Ctrl modifies the next soft-keyboard character and resets,
+  // while leaving multi-character pastes, swipe words, and IME commits untouched.
   await ctrl.trigger("click")
+  expect(ctrl.attributes("data-modifier-state")).toBe("armed")
+  expect(exposed.transformInput("status")).toBe("status")
+  expect(exposed.transformInput("中")).toBe("中")
+  expect(exposed.transformInput("9")).toBe("9")
+  await nextTick()
   expect(ctrl.attributes("data-modifier-state")).toBe("armed")
   expect(exposed.transformInput("c")).toBe("\x03")
   await nextTick()
