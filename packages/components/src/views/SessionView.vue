@@ -40,9 +40,10 @@ import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
 import { useSessionFaces } from "../composables/useSessionFaces.ts"
 import UserAvatarStack from "../components/common/UserAvatarStack.vue"
-import { liveTurnStates } from "../services/agent-conversation.ts"
+import { liveTurnStates, promotedPendingInputs } from "../services/agent-conversation.ts"
 import { useConversationProjection } from "../composables/useConversationProjection.ts"
 import { createAgentUsageSelector } from "../services/agent-usage.ts"
+import { hasIncompleteAttachmentUploads } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
@@ -128,6 +129,8 @@ onScopeDispose(clearReconnect)
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
+const canStop = computed(() => active.value && (runActive.value || snapshot.value?.session.lifecycle === "provisioning"))
+const promotedInputIds = computed(() => promotedPendingInputs(snapshot.value, view.value?.events).map(input => input.id))
 const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value
   && !snapshot.value.permissions.some(permission => permission.state === "pending")
   && !snapshot.value.elicitations.some(elicitation => elicitation.state === "pending"))
@@ -152,7 +155,7 @@ const terminalWorktree = computed(() => (location.value?.machine.online || termi
 const applicationTarget = computed(() => client.platform !== "web" && location.value?.machine.local && client.applications && snapshot.value?.session.lifecycle === "ready" && (active.value || snapshot.value.session.context === "directory") && location.value.worktree && location.value.worktree.directories.length > 0
   ? { api: client.applications, machineId: location.value.machine.id, worktreeId: location.value.worktree.id } : undefined)
 const openWithMenu = ref<InstanceType<typeof OpenWithMenu> | null>(null)
-const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
+const empty = computed(() => !view.value?.loading && !agents.optimisticInputs[props.sessionId] && !snapshot.value?.inputs.length && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input") && snapshot.value?.session.lifecycle !== "provisioning" && run.value?.state !== "starting")
 const busy = ref(false)
 const forkOpen = ref(false)
 const renameOpen = ref(false)
@@ -271,7 +274,7 @@ async function action(operation: () => Promise<unknown>): Promise<void> {
   finally { if (props.sessionId === sessionId) busy.value = false }
 }
 function submit(delivery: "backlog" | "steer"): void {
-  if (agents.preparingDrafts[props.sessionId]) return
+  if (agents.preparingDrafts[props.sessionId] || hasIncompleteAttachmentUploads(attachments.value, resourceTarget.value)) return
   void action(async () => {
     const sessionId = props.sessionId
     delete agents.draftErrors[sessionId]
@@ -318,7 +321,7 @@ async function checkOperation(operationId: string): Promise<void> {
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
           <UiButton v-if="newTerminalWindow && !compact" variant="ghost" size="icon" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="compact && !windowedMainWindow && terminalWorktree" variant="ghost" size="icon" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+          <AgentSessionMenu :can-stop="canStop" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
         </template>
         <UserAvatarStack v-if="faces.length" :people="faces" :size="22" :limit="5" :class="snapshot && 'ml-1'" />
       </div>
@@ -336,7 +339,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <div class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
         <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :optimistic-input="agents.optimisticInputs[sessionId]" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
             <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
           </AgentConversation>
           <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
@@ -372,14 +375,14 @@ async function checkOperation(operationId: string): Promise<void> {
               <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
             </AgentNotice>
             <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
-            <AgentNotice v-else-if="snapshot.session.lifecycle !== 'ready'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
+            <AgentNotice v-else-if="snapshot.session.lifecycle === 'deleting'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
             <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
             <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
-            <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
-            <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
+            <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />
+            <AgentNotice v-else-if="resumeUnavailable && !runActive && snapshot.session.lifecycle === 'ready'" :text="t('agent.resumeUnavailable')" />
             <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
             <SessionAllowance :snapshot="snapshot" />
-            <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
+            <AgentBacklog :inputs="snapshot.inputs" :exclude-input-ids="promotedInputIds" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
           </template>
         </div>
         <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />

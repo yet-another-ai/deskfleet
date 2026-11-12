@@ -16,9 +16,10 @@ export class FilesService implements FileEndpoint {
   constructor(
     sessionDirectory?: (sessionId: string) => Promise<string>,
     sessionAttachmentDirectory?: (sessionId: string) => Promise<string>,
+    draftAttachmentDirectory?: (draftId: string) => Promise<string>,
   ) {
     this.#sessionDirectory = sessionDirectory
-    this.#uploads = new FileUploads(sessionAttachmentDirectory)
+    this.#uploads = new FileUploads(sessionAttachmentDirectory, draftAttachmentDirectory)
   }
 
   call<M extends FileMethod>(method: M, params: FileMethods[M]["params"], data?: Uint8Array): Promise<FileReply<FileMethods[M]["result"]>> {

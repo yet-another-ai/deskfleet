@@ -337,7 +337,7 @@ export function createBrowserFiles(central: CentralApi): FilesApi & { close(): P
     resolveResource: request => manager.resolveResource(request),
     readResource: (request, options) => manager.readResource(request, options),
     saveResource: request => manager.saveResource(request),
-    uploadAttachment: request => manager.uploadAttachment(request),
+    uploadAttachment: (request, options) => manager.uploadAttachment(request, options),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     close,
   }

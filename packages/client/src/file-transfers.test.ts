@@ -301,3 +301,56 @@ test("the host may remove the preview limit only for its verified local target",
   await expect(manager.readResource({ target: remote, sessionId: "session", uri: "large.txt" })).rejects.toThrow("too large to preview")
 })
 
+test("uploadAttachment pipelines chunks to draftId or sessionId, reports acknowledged progress, and cleans up on abort", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "deskfleet-upload-attachment-"))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const attachmentsRoot = join(directory, "session-attachments")
+  let writeEntered!: () => void, releaseWrite!: () => void
+  const waitingForWrite = new Promise<void>(resolve => { writeEntered = resolve })
+  const allowWrite = new Promise<void>(resolve => { releaseWrite = resolve })
+  let blockWrites = false
+  const service = new FilesService(
+    async () => directory,
+    async sessionId => join(attachmentsRoot, sessionId),
+    async draftId => join(attachmentsRoot, ".drafts", draftId),
+  )
+  const endpoint: FileEndpoint = {
+    close: () => service.close(),
+    async call(method, params, data) {
+      if (method === "write" && blockWrites) {
+        writeEntered()
+        await allowWrite
+      }
+      return service.call(method, params, data)
+    },
+  }
+  const manager = new FileTransferManager({ endpoint: async () => endpoint, chooseLocalDirectory: async () => null })
+  cleanups.push(() => manager.close())
+
+  const payload = new Uint8Array(300_000).map((_, index) => index % 253)
+  const progress: Array<{ transferredBytes: number; totalBytes: number }> = []
+  const draftId = "550e8400-e29b-41d4-a716-446655440000"
+  const uploaded = await manager.uploadAttachment(
+    { target: remote, draftId, name: "clip.mp4", data: payload },
+    { onProgress: update => progress.push(update) },
+  )
+  expect(await readFile(uploaded.path)).toEqual(Buffer.from(payload))
+  expect(uploaded.uri.startsWith("file://")).toBe(true)
+  expect(progress[0]).toEqual({ transferredBytes: 0, totalBytes: payload.byteLength })
+  expect(progress.at(-1)).toEqual({ transferredBytes: payload.byteLength, totalBytes: payload.byteLength })
+  expect(progress.length).toBeGreaterThan(2)
+
+  // Cancelling via AbortSignal aborts the receiver transfer and leaves no committed file
+  blockWrites = true
+  const controller = new AbortController()
+  const cancelled = manager.uploadAttachment(
+    { target: remote, sessionId: "42", name: "aborted.mp4", data: payload },
+    { signal: controller.signal },
+  )
+  await waitingForWrite
+  controller.abort()
+  releaseWrite()
+  await expect(cancelled).rejects.toThrow(/aborted|cancelled/iu)
+  expect(await readdir(join(attachmentsRoot, "42"))).toEqual([])
+})
+

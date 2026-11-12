@@ -90,6 +90,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const draftMentions = ref<Record<string, ComposerMention[]>>({})
   const draftErrors = ref<Record<string, string>>({})
   const preparingDrafts = ref<Record<string, boolean>>({})
+  const optimisticInputs = ref<Record<string, AgentInput>>({})
   const elicitationDrafts = ref<Record<string, ElicitationDraft>>({})
   const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
   const draftYolo = ref(false)
@@ -259,6 +260,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       journal(event.sessionId).set(event.seq, event)
       if (sequenceCompare(event.seq, journalTails.get(event.sessionId) ?? "0") > 0) journalTails.set(event.sessionId, event.seq)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
+      if (event.kind === "input") delete optimisticInputs.value[event.sessionId]
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
       if (event.kind === "run" && (event.payload as AgentRun).state === "starting"
         && sequenceCompare(event.seq, commandSequences.get(event.sessionId) ?? "0") > 0) {
@@ -349,6 +351,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (deletedSessions.has(snapshot.session.id)) return
     const current = view(snapshot.session.id)
     if (sequenceCompare(snapshot.session.lastEventSeq, current.snapshotSeq) < 0) return
+    if (snapshot.inputs.length) delete optimisticInputs.value[snapshot.session.id]
     current.snapshot = snapshot
     current.snapshotSeq = snapshot.session.lastEventSeq
     if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) sessions.value[snapshot.session.id] = { ...snapshot.session }
@@ -771,14 +774,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       throw reason
     }
   }
-  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string, baseRevisions?: AgentMethods["_deskfleet/session/create"]["params"]["baseRevisions"], enableYolo = draftYolo.value): Promise<AgentSnapshot> {
+  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string, baseRevisions?: AgentMethods["_deskfleet/session/create"]["params"]["baseRevisions"], enableYolo = draftYolo.value, options?: { deferStartup?: boolean }): Promise<AgentSnapshot> {
     const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
     const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
     const revisions = workspaceId && context === "worktree" && baseRevisions ? cloneFnJSON(baseRevisions) : undefined
     const branch = !revisions && workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
     const params: Omit<AgentMethods["_deskfleet/session/create"]["params"], "operationId"> = {
-      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
+      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), ...(options?.deferStartup ? { deferStartup: true } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
     }
     const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
       if (pending) {
@@ -927,6 +930,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     delete sessions.value[sessionId]
     delete activity.value[sessionId]
     delete views.value[sessionId]
+    delete optimisticInputs.value[sessionId]
     delete yolo.value[sessionId]
     delete configurations.value[sessionId]
     configurationSequences.delete(sessionId)
@@ -965,5 +969,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, elicitationDrafts, draftConfiguration, draftYolo, yolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, yolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

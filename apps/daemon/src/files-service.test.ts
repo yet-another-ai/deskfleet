@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import test, { type TestContext } from "node:test"
 import { FILE_CHUNK_BYTES } from "./files-protocol.ts"
 import { FilesService } from "./files-service.ts"
+import { SessionAttachments } from "./session-attachments.ts"
 
 test("scheme-less Windows drive pathnames convert through fileURLToPath", () => {
   // sessionResourcePath wraps matching pathnames as `file://${uri}` on win32; Node must keep the drive once.
@@ -27,6 +28,9 @@ async function fixture(context: TestContext) {
   }, async id => {
     assert.equal(id, "12")
     return join(attachments, id)
+  }, async draftId => {
+    assert.equal(draftId, "550e8400-e29b-41d4-a716-446655440000")
+    return join(attachments, ".drafts", draftId)
   })
   context.after(async () => { await service.close(); await rm(directory, { recursive: true, force: true }) })
   return { directory, attachments, service }
@@ -65,6 +69,16 @@ test("session attachment upload writes into the managed session-attachments dire
   const committed = (await service.call("commit", { transferId })).value
   assert.equal(committed.path, await realpath(join(attachments, "12", "spec.txt")))
   assert.deepEqual(await readFile(committed.path), payload)
+
+  const draftId = "550e8400-e29b-41d4-a716-446655440000"
+  await assert.rejects(service.call("begin", { sessionId: "12", draftId, name: "both.txt", kind: "file", conflict: "rename" }), { code: "invalid" })
+  const draftTransfer = (await service.call("begin", { draftId, name: "draft.mp4", kind: "file", conflict: "rename" })).value
+  const draftPayload = Buffer.from("staged video bytes")
+  await service.call("write", { transferId: draftTransfer.transferId, path: "", offset: 0 }, draftPayload)
+  await service.call("finish", { transferId: draftTransfer.transferId, path: "", size: draftPayload.byteLength })
+  const draftCommitted = (await service.call("commit", { transferId: draftTransfer.transferId })).value
+  assert.equal(draftCommitted.path, await realpath(join(attachments, ".drafts", draftId, "draft.mp4")))
+  assert.deepEqual(await readFile(draftCommitted.path), draftPayload)
 })
 
 test("folder upload commits one complete root and preserves empty files and directories", async context => {
@@ -208,4 +222,30 @@ test("failed replacement rollback retains the original even after abort and peer
   await service.call("abort", { transferId })
   await service.close()
   assert.equal(await readFile(join(backup, "original.txt"), "utf8"), "keep the original")
+})
+
+test("SessionAttachments stages draft uploads, adopts them into the Session directory, and leaves non-draft links untouched", async context => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-session-attachments-")))
+  context.after(async () => { await rm(root, { recursive: true, force: true }) })
+  const attachments = new SessionAttachments(root)
+  const draftId = "550e8400-e29b-41d4-a716-446655440000"
+  const draftDir = await attachments.draftDirectory(draftId)
+  const stagedPath = join(draftDir, "clip.mp4")
+  const payload = Buffer.from("staged video")
+  await writeFile(stagedPath, payload)
+  const externalPath = join(root, "README.md")
+  await writeFile(externalPath, "external")
+
+  const adopted = await attachments.adoptDrafts("12", [
+    { type: "resource_link", uri: pathToFileURL(stagedPath).href, name: "clip.mp4", mimeType: "video/mp4", size: payload.byteLength },
+    { type: "resource_link", uri: pathToFileURL(externalPath).href, name: "README.md", size: 8 },
+    { type: "text", text: "Trim this clip" },
+  ])
+  assert.equal(adopted.length, 3)
+  const first = adopted[0] as { type: "resource_link"; uri: string; name: string; size?: number }
+  const second = adopted[1] as { type: "resource_link"; uri: string }
+  assert.equal(fileURLToPath(first.uri), join(await attachments.directory("12"), "clip.mp4"))
+  assert.deepEqual(await readFile(fileURLToPath(first.uri)), payload)
+  await assert.rejects(readdir(draftDir), { code: "ENOENT" })
+  assert.equal(second.uri, pathToFileURL(externalPath).href)
 })

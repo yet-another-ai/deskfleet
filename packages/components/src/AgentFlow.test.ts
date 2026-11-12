@@ -203,8 +203,9 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(router.currentRoute.value.params.sessionId).toBe("30"))
-  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "directory", operationId: expect.any(String) })
-  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Implement the feature")
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "directory", deferStartup: true, operationId: expect.any(String) })
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("Implement the feature")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
   expect(wrapper.find('a[href="#/worktrees/31"]').exists()).toBe(true)
   const delivered = agentInput({ content: [{ type: "text", text: "Implement the feature" }], state: "delivered", turnId: "70", actualDelivery: "turn_start" })
   const permission = agentPermission()
@@ -285,8 +286,10 @@ test("new Session references resolve against the created Session before its firs
 
   const agents = useAgentSessionsStore(pinia)
   expect(router.currentRoute.value.params.sessionId).toBe("30")
-  expect(agents.drafts["30"]).toBe(text)
-  expect(agents.draftMentions["30"]).toEqual(mentions)
+  expect(agents.drafts["30"]).toBeUndefined()
+  expect(agents.draftMentions["30"]).toBeUndefined()
+  expect(agents.optimisticInputs["30"]?.content).toEqual([{ type: "text", text }])
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain(text)
   expect(agents.drafts[`workspace:${workspaceId}`]).toBe("")
   expect(agents.draftMentions[`workspace:${workspaceId}`]).toEqual([])
   expect(transport.call).toHaveBeenCalledWith("_deskfleet/composer/resolve", { sessionId: "30", references: mentions.map(mention => mention.reference) })
@@ -307,11 +310,13 @@ test("new Session references resolve against the created Session before its firs
   const submission = transport.call.mock.calls.find(([method]) => method === "_deskfleet/input/submit")?.[1]
   expect(submission).toEqual({ sessionId: "30", operationId: expect.any(String), delivery: "backlog", content: [{ type: "text", text }, ...resolved] })
   expect(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/session/create")).toBeLessThan(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/composer/resolve"))
-  expect(agents.drafts["30"]).toBe("")
-  expect(agents.draftMentions["30"]).toEqual([])
+  expect(agents.drafts["30"]).toBeUndefined()
+  expect(agents.draftMentions["30"]).toBeUndefined()
+  expect(agents.optimisticInputs["30"]).toBeUndefined()
   expect(agents.preparingDrafts["30"]).toBeUndefined()
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(1)
-  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("README.md")
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("README.md")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
 })
 
 test("a new Session keeps its moved draft and references when resolution fails and shows the error without submitting", async () => {
@@ -933,4 +938,117 @@ test("switching away and back restores a manual reading position before synchron
   restored.resolve(structuredClone(snapshot))
   await flushPromises()
   expect(scroll).not.toHaveBeenCalled()
+})
+
+test("deferred Session startup opens immediately with bubble animation, renders startup status in the reply area, and clears cleanly if stopped", async () => {
+  snapshot.session.lifecycle = "provisioning"
+  snapshot.runs = []
+  const cancelledAnimations = vi.fn()
+  const animate = vi.fn(() => ({ cancel: cancelledAnimations, addEventListener: vi.fn() }) as unknown as Animation)
+  Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, writable: true, value: animate })
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 200, 320, 48))
+  const submission = deferred<{ operationId: string; commandId: string; sessionId: string; inputId: string }>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") return submission.promise
+    if (method === "_deskfleet/session/stop") {
+      const stopped = { generation: 1, sessionId: "30", state: "stopped" as const, startedAt: "now", endedAt: "now" }
+      snapshot.runs = [stopped]
+      emit("run", stopped)
+      return structuredClone(snapshot)
+    }
+    return normal(method, params)
+  })
+
+  await wrapper.get("textarea").setValue("Cut the video clip")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  const conversation = wrapper.get('[aria-label="Conversation"]')
+  const initialBubble = conversation.get("[data-user-message-bubble]").element
+  expect(conversation.text()).toContain("Cut the video clip")
+  expect(animate).toHaveBeenCalled()
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.lifecycle.provisioning"))
+  expect(wrapper.findAll('[role="status"]').filter(node => node.text().includes(i18n.global.t("agent.lifecycle.provisioning")))).toHaveLength(1)
+
+  // Resolving durable input keeps the same mounted bubble without cancelling its send animation.
+  const input = agentInput({ content: [{ type: "text", text: "Cut the video clip" }] })
+  snapshot.inputs = [input]
+  emit("input", input)
+  submission.resolve({ operationId: "op-1", commandId: "50", sessionId: "30", inputId: input.id })
+  await flushPromises()
+  expect(conversation.get("[data-user-message-bubble]").element).toBe(initialBubble)
+  expect(cancelledAnimations).not.toHaveBeenCalled()
+
+  // Transition from worktree provisioning to provider startup updates the in-reply status.
+  snapshot.session.lifecycle = "ready"
+  emit("session", { ...snapshot.session })
+  const starting = { generation: 1, sessionId: "30", state: "starting" as const, startedAt: "now" }
+  snapshot.runs = [starting]
+  emit("run", starting)
+  await flushPromises()
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.runState.starting"))
+  expect(wrapper.findAll('[role="status"]').filter(node => node.text().includes(i18n.global.t("agent.runState.starting")))).toHaveLength(1)
+
+  // Stopping the Agent during startup removes the startup status without unmounting the bubble.
+  await wrapper.get('[aria-label="Session actions"]').trigger("click")
+  await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === i18n.global.t("agent.stop"))!.trigger("click")
+  await flushPromises()
+  await page().get('[role="dialog"]').findAll("button").find(item => item.text() === i18n.global.t("agent.stop"))!.trigger("click")
+  await flushPromises()
+  expect(conversation.find("[data-agent-startup-status]").exists()).toBe(false)
+  expect(conversation.get("[data-user-message-bubble]").element).toBe(initialBubble)
+  expect(cancelledAnimations).not.toHaveBeenCalled()
+
+  // Sending another message after stopping animates the new bubble in and restarts the in-reply status.
+  animate.mockClear()
+  const secondInput = agentInput({ id: "41", content: [{ type: "text", text: "Export 1080p MP4 instead" }] })
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") {
+      snapshot.inputs = [...snapshot.inputs, secondInput]
+      emit("input", secondInput)
+      const restarted = { generation: 2, sessionId: "30", state: "starting" as const, startedAt: "now" }
+      snapshot.runs = [...snapshot.runs, restarted]
+      emit("run", restarted)
+      return { operationId: "op-2", commandId: "51", sessionId: "30", inputId: secondInput.id }
+    }
+    return normal(method, params)
+  })
+  await wrapper.get("textarea").setValue("Export 1080p MP4 instead")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(conversation.text()).toContain("Export 1080p MP4 instead")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
+  expect(animate).toHaveBeenCalled()
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.runState.starting"))
+
+  // Sending a third message while startup is already active queues it in AgentBacklog instead of adding a third bubble.
+  const queuedInput = agentInput({ id: "42", content: [{ type: "text", text: "Also normalize audio" }] })
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") {
+      snapshot.inputs = [...snapshot.inputs, queuedInput]
+      emit("input", queuedInput)
+      return { operationId: "op-3", commandId: "52", sessionId: "30", inputId: queuedInput.id }
+    }
+    return normal(method, params)
+  })
+  await wrapper.get("textarea").setValue("Also normalize audio")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Also normalize audio")
+
+  // Once a turn starts, promoted bubbles stay in the conversation while the queued input remains in the backlog.
+  const turn = { id: "70", sessionId: "30", initialInputId: input.id, dispatchCommandId: "50", runGeneration: 2, state: "running" as const, startedAt: "now" }
+  snapshot.inputs[0] = { ...input, state: "dispatching", turnId: turn.id, actualDelivery: "turn_start" }
+  snapshot.turns = [turn]
+  emit("input", snapshot.inputs[0]!)
+  emit("turn", turn)
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Also normalize audio")
+  expect(wrapper.get('[aria-label="Queued"]').text()).not.toContain("Export 1080p MP4 instead")
 })

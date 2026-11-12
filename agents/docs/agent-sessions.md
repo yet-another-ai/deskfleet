@@ -727,7 +727,20 @@ turns without replaying events or interpreting context-window updates as spend.
 
 Creation atomically allocates the catalog Session, provisioning metadata, and
 command binding before filesystem work. Interrupted create retries return a full
-Session snapshot rather than allocating another Session. Deletion marks the
+Session snapshot rather than allocating another Session. Interactive new-Session
+creation sets `deferStartup: true` so `_deskfleet/session/create` returns the
+initial `provisioning` snapshot immediately while Git checkout setup and initial
+provider startup proceed asynchronously. Clients open the Session view right away
+with the user's sent-message transition and submit the first prompt into the
+shared backlog while `provisioning` is still active; once setup and startup
+complete, the daemon drains the backlog with the create command's selected model,
+reasoning effort, and mode. Stopping the Session during `provisioning` prevents
+automatic provider startup when setup finishes while retaining queued inputs.
+Inputs submitted while the Session is idle or stopped project directly into the
+conversation transcript and remain there when a turn starts; additional inputs
+submitted while startup or a turn is already active stay in the `Queued`
+backlog panel until dispatched.
+Deletion marks the
 Session `deleting`, stops admission, closes the provider and pending permissions,
 removes any owned checkouts, retained Git refs, ownership manifests, and Session
 attachments, and removes Session records. Incomplete cleanup retains
@@ -739,8 +752,17 @@ Other repository access failures remain retryable errors.
 The composer accepts text alongside image (`image`), folded pasted-text (`resource`
 with inline `text`), and file (`resource_link`) attachments. Each submission must
 contain at least one non-empty `text` or text `resource` block. Local non-image
-files upload to `<machine directory>/session-attachments/<sessionId>/` through
-the file service before submission; target-machine files selected in the file
+files start uploading immediately when dropped, picked, or pasted into the
+composer, displaying a circular byte-progress indicator and blocking Session
+creation or prompt submission until every attachment finishes uploading; removing
+an attachment aborts an in-flight upload and failed uploads can be retried inline.
+An existing Session uploads directly into
+`<machine directory>/session-attachments/<sessionId>/`; a pre-Session draft stages
+files under `<machine directory>/session-attachments/.drafts/<draftId>/`, and the
+first `_deskfleet/input/submit` atomically adopts those staged files into the
+Session's attachment directory and rewrites their `resource_link` URIs. Stale
+unclaimed `.drafts` entries older than 24 hours are swept automatically.
+Target-machine files selected in the file
 picker reference their existing path directly as a `resource_link`. Pasted text
 of at least 25 lines or 1,500 characters folds into a `resource` attachment chip
 in the composer and renders as a collapsible card in conversation history. When
@@ -1024,7 +1046,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/agent/configuration` | Discover provider configuration and advertised commands/skills for a draft in the Workspace's default directory, or home without a Workspace |
 | `_deskfleet/composer/references` | Search file or same-Workspace Session metadata for the current compose context; requires `agent:execute` |
 | `_deskfleet/composer/resolve` | Resolve selected references into prompt blocks against the receiving Session's captured context; requires `agent:execute` |
-| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it; return snapshot |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it (or return the initial `provisioning` snapshot immediately when `deferStartup: true` while setup and startup proceed asynchronously); return snapshot |
 | `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed configuration and advertised commands/skills |
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
@@ -1311,7 +1333,14 @@ and response identities. History replacement and snapshot overrides rebuild the
 projection. Committed previews are promoted in place, so a persistence batch
 split across several transport frames does not repeatedly replay history.
 
-The renderer groups the output after each user message into a response. A
+The renderer groups the output after each user message into a response. When no
+turn is currently live, the earliest pending backlog input without an error is
+promoted into the conversation timeline instead of remaining only in the queued
+drawer, and worktree provisioning (`Preparing worktree…`), provider startup
+(`Starting agent…`), or pre-step active turn state renders inline in the
+conversation reply area rather than as a bottom status banner; stopping the Agent
+during startup clears that inline status cleanly without unmounting the user
+message bubble. A
 finished turn ending with an assistant message folds its tool calls, thoughts,
 and interim messages behind its duration and leaves that final message visible.
 Without a final assistant message, the response stays expanded by default. If it

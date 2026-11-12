@@ -68,3 +68,58 @@ export async function copyFileChunks(options: {
     catch (error) { if (!failure) throw error }
   }
 }
+
+export async function writeBufferChunks(options: {
+  destination: FileEndpoint; data: Uint8Array; transferId: string; path?: string; signal?: AbortSignal
+  check(): void; progress(bytes: number): void
+}): Promise<void> {
+  const { destination, data, transferId, path = "", signal } = options
+  const active = new Set<Promise<void>>()
+  let available: (() => void) | undefined
+  let submitting = Promise.resolve()
+  let failure: { error: unknown } | undefined
+  const fail = (error: unknown) => { failure ??= { error } }
+  const check = () => { options.check(); if (failure) throw failure.error }
+  const wake = () => { available?.(); available = undefined }
+  signal?.addEventListener("abort", wake, { once: true })
+  check()
+
+  function queue(offset: number, length: number): void {
+    const chunk = data.subarray(offset, offset + length)
+    let writing: Promise<FileReply<{ bytes: number }>> | undefined
+    const submitted = submitting.then(() => {
+      check()
+      writing = destination.call("write", { transferId, path, offset }, chunk)
+      void writing.catch(fail)
+    })
+    submitting = submitted.catch(fail)
+    const completed = submitted.then(async () => {
+      const written = await writing!
+      if (written.value.bytes !== length) throw new Error("Receiver did not confirm the complete chunk")
+      check(); options.progress(length)
+    }).catch(fail).finally(() => {
+      active.delete(completed)
+      wake()
+    })
+    active.add(completed)
+  }
+
+  try {
+    let offset = 0
+    do {
+      check()
+      const length = Math.min(FILE_CHUNK_BYTES, data.byteLength - offset)
+      queue(offset, length)
+      offset += length
+      if (active.size >= FILE_PIPELINE_CHUNKS) await new Promise<void>(resolve => { available = resolve; if (signal?.aborted) wake() })
+    } while (offset < data.byteLength)
+    await Promise.all(active)
+    check()
+  } catch (error) {
+    fail(error)
+    throw error
+  } finally {
+    signal?.removeEventListener("abort", wake)
+    await Promise.all(active)
+  }
+}

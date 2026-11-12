@@ -37,11 +37,25 @@ function resource(value: unknown): FileResourceRequest {
 function attachmentUpload(value: unknown): FileAttachmentUploadRequest {
   const input = object(value)
   if (!(input.data instanceof Uint8Array)) throw new Error("Invalid attachment data")
-  return { target: target(input.target), sessionId: text(input.sessionId), name: text(input.name), data: input.data }
+  const sessionId = input.sessionId === undefined ? undefined : text(input.sessionId)
+  const draftId = input.draftId === undefined ? undefined : text(input.draftId)
+  if (Boolean(sessionId) === Boolean(draftId)) throw new Error("Choose either a Session or draft attachment target")
+  return {
+    target: target(input.target),
+    ...(sessionId ? { sessionId } : { draftId }),
+    name: text(input.name),
+    data: input.data,
+  }
 }
 
 /** Validate the narrow main-process bridge; the renderer never receives a raw filesystem API. */
-export async function invokeFiles(api: FilesApi, method: unknown, args: unknown, onResourceProgress?: (requestId: string, progress: FileReadResourceProgress) => void): Promise<unknown> {
+export async function invokeFiles(
+  api: FilesApi,
+  method: unknown,
+  args: unknown,
+  onResourceProgress?: (requestId: string, progress: FileReadResourceProgress) => void,
+  uploads?: Map<string, AbortController>,
+): Promise<unknown> {
   if (typeof method !== "string" || !Array.isArray(args)) throw new Error("Invalid file operation")
   switch (method) {
     case "list": return api.list(target(args[0]), args[1] === undefined ? undefined : text(args[1]))
@@ -70,7 +84,22 @@ export async function invokeFiles(api: FilesApi, method: unknown, args: unknown,
     }
     case "uploadAttachment": {
       if (!api.uploadAttachment) throw new Error("Attachment upload is unavailable")
-      return api.uploadAttachment(attachmentUpload(args[0]))
+      const requestId = args[1] === undefined ? undefined : text(args[1])
+      if (!requestId) return api.uploadAttachment(attachmentUpload(args[0]))
+      const controller = uploads ? new AbortController() : undefined
+      if (controller && uploads) uploads.set(requestId, controller)
+      try {
+        return await api.uploadAttachment(attachmentUpload(args[0]), {
+          ...(onResourceProgress ? { onProgress: progress => onResourceProgress(requestId, progress) } : {}),
+          ...(controller ? { signal: controller.signal } : {}),
+        })
+      } finally {
+        uploads?.delete(requestId)
+      }
+    }
+    case "abortAttachmentUpload": {
+      uploads?.get(text(args[0]))?.abort()
+      return null
     }
     default: throw new Error("Unknown file operation")
   }
@@ -82,16 +111,20 @@ export async function localSessionDirectory(_sessionId: string): Promise<string>
 }
 
 export const localSessionAttachmentDirectory = localSessionDirectory
+export const localDraftAttachmentDirectory = localSessionDirectory
 
 /** Main owns queues; each renderer document receives its own revocable authority. */
 export function installFiles(central: CentralApi): { close(): Promise<void> } {
   const owners = new Map<WebContents, WindowFiles>()
+  const uploadsByOwner = new Map<WebContents, Map<string, AbortController>>()
   const watched = new Map<WebContents, () => void>()
   const closing = new Set<Promise<void>>()
   let closed = false
   const retire = (contents: WebContents) => {
     const previous = owners.get(contents)
     owners.delete(contents)
+    for (const controller of uploadsByOwner.get(contents)?.values() ?? []) controller.abort()
+    uploadsByOwner.delete(contents)
     if (!previous) return
     // close revokes synchronously, before dialogs and queued operations resume.
     const pending = previous.close().catch(error => console.error("File transfer cleanup failed", error)).finally(() => { closing.delete(pending) })
@@ -118,6 +151,7 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
       revealPath: async path => shell.showItemInFolder(path),
       sessionDirectory: localSessionDirectory,
       sessionAttachmentDirectory: localSessionAttachmentDirectory,
+      draftAttachmentDirectory: localDraftAttachmentDirectory,
       chooseDirectory: async () => {
         const result = await dialog.showOpenDialog(window, {
           title: "Choose a local folder",
@@ -160,11 +194,16 @@ export function installFiles(central: CentralApi): { close(): Promise<void> } {
     if (!isDesktopMediaSender(event)) throw new Error("File IPC is restricted to the main renderer")
     const contents = event.sender
     const current = owner(contents)
+    let uploads = uploadsByOwner.get(contents)
+    if (!uploads) {
+      uploads = new Map()
+      uploadsByOwner.set(contents, uploads)
+    }
     return invokeFiles(current, method, args, (requestId, progress) => {
       if (owners.get(contents) === current && !contents.isDestroyed()) {
         contents.send(FILES_RESOURCE_PROGRESS_EVENT, { requestId, ...progress })
       }
-    })
+    }, uploads)
   })
   return {
     async close() {

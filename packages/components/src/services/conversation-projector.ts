@@ -1,6 +1,6 @@
 import type { AgentElicitation, AgentEvent, AgentInput, AgentPermission, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { isSubagentNotification } from "@deskfleet/client/agent-session-scope"
-import type { AgentTerminalOutput, CompactionEntry, ConversationEntry, ConversationStep, ConversationTool, SessionMessageEntry, StructuredPlanEntry, SubagentEntry } from "./agent-conversation.ts"
+import { createPromotedInputTracker, promotedPendingInputs, type AgentTerminalOutput, type CompactionEntry, type ConversationEntry, type ConversationStep, type ConversationTool, type SessionMessageEntry, type StructuredPlanEntry, type SubagentEntry } from "./agent-conversation.ts"
 
 type Content = AgentInput["content"]
 type MessageEntry = Extract<ConversationEntry, { kind: "message" }>
@@ -79,6 +79,8 @@ function createReduction(snapshot: AgentSnapshot) {
   let published: ConversationEntry[] = []
   let result: ConversationEntry[] = []
   const inputs = new Map(snapshot.inputs.map(input => [input.id, input]))
+  const promotion = createPromotedInputTracker()
+  const { promotedIds, seenPending } = promotion
   const seenInputs = new Set<string>()
   const permissions = new Map(snapshot.permissions.map(permission => [permission.id, permission]))
   const elicitations = new Map(snapshot.elicitations.map(elicitation => [elicitation.id, elicitation]))
@@ -125,6 +127,7 @@ function createReduction(snapshot: AgentSnapshot) {
     return child
   }
   function append(event: AgentEvent): void {
+    promotion.step(event)
     if (event.kind === "elicitation") {
       const elicitation = elicitations.get((event.payload as AgentElicitation).id) ?? event.payload as AgentElicitation
       if (!seenElicitations.has(elicitation.id)) {
@@ -138,7 +141,10 @@ function createReduction(snapshot: AgentSnapshot) {
     if (event.kind === "input") {
       const input = event.payload as AgentInput
       const current = inputs.get(input.id) ?? input
-      if (!["delivered", "dispatching", "uncertain"].includes(current.state) || !["delivered", "dispatching"].includes(input.state) || seenInputs.has(input.id)) return
+      const promoted = promotedIds.has(current.id) && !current.error
+        && ["pending", "dispatching", "delivered", "uncertain"].includes(current.state)
+        && input.state === "pending"
+      if (((!["delivered", "dispatching", "uncertain"].includes(current.state) || !["delivered", "dispatching"].includes(input.state)) && !promoted) || seenInputs.has(input.id)) return
       add({ id: `input-${input.id}`, kind: "input", input: current })
       seenInputs.add(input.id)
       return
@@ -306,7 +312,15 @@ function createReduction(snapshot: AgentSnapshot) {
       return value
     }
     for (const entry of dirty) publishEntry(entry)
-    result = [...published.filter((_, index) => !owners.has(entries[index]!) && !removed.has(entries[index]!)), ...restored.filter(question => !restoredOwner(question))]
+    const fallbackList = !seenPending.size
+      ? promotedPendingInputs(snapshot)
+      : snapshot.inputs.filter(input => input.state === "pending" && !input.error && promotedIds.has(input.id))
+    const promoted = fallbackList.filter(input => !seenInputs.has(input.id))
+    result = [
+      ...published.filter((_, index) => !owners.has(entries[index]!) && !removed.has(entries[index]!)),
+      ...restored.filter(question => !restoredOwner(question)),
+      ...promoted.map(input => ({ id: `input-${input.id}`, kind: "input" as const, input })),
+    ]
     return result
   }
   return { append, publish }
@@ -327,7 +341,7 @@ export function createConversationProjector() {
     // Snapshot records are replaced by the store. Tracking state also handles a
     // caller changing a decision in place, without traversing streamed payloads.
     const nextDependencies: unknown[] = [snapshot.session.id,
-      ...snapshot.inputs.flatMap(input => [input, input.state]),
+      ...snapshot.inputs.flatMap(input => [input, input.state, input.error]),
       ...snapshot.permissions.flatMap(permission => [permission, permission.state]),
       ...snapshot.elicitations.flatMap(elicitation => [elicitation, elicitation.state]),
     ]

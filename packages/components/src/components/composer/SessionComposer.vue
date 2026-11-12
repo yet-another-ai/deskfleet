@@ -6,7 +6,7 @@ import UiScrollArea from "../common/UiScrollArea.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CircleAlert, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, RotateCw, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
 import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -20,10 +20,15 @@ import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import {
   attachmentsFromFiles,
+  cancelAttachmentUpload,
   createMachineFileAttachment,
   createPastedTextAttachment,
+  getAttachmentUploadState,
+  hasIncompleteAttachmentUploads,
   hasSubmittableText,
+  retryAttachmentUpload,
   shouldFoldPastedText,
+  syncAttachmentUploads,
   type ComposerAttachment,
 } from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
@@ -154,6 +159,7 @@ useTextareaAutosize({ element: textarea, input: draft })
 const { fadeStyle: textareaFadeStyle } = useScrollFade(textarea, { size: "sm" })
 const fileTarget = useFileTarget(() => props.location?.machine.id)
 const filesApi = computed(() => client.files)
+const uploadingAttachments = computed(() => hasIncompleteAttachmentUploads(attachments.value, fileTarget.value))
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value))
 const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
@@ -228,9 +234,8 @@ const attachmentPreviewUrls = reactive(new Map<string, string>())
 function setAttachmentPreviewUrl(id: string, data: Uint8Array, type = ""): void {
   const previous = attachmentPreviewUrls.get(id)
   if (previous) URL.revokeObjectURL(previous)
-  const bytes = new Uint8Array(data.byteLength)
-  bytes.set(data)
-  attachmentPreviewUrls.set(id, URL.createObjectURL(new Blob([bytes], { type })))
+  const view = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
+  attachmentPreviewUrls.set(id, URL.createObjectURL(new Blob([view], { type })))
 }
 
 function removeAttachmentPreviewUrl(id: string): void {
@@ -295,7 +300,22 @@ function onMachineFilesSelected(entries: FileEntry[]): void {
     }
   }
 }
+watch([attachments, fileTarget, sessionId, filesApi, () => props.location?.machine.online], ([items, target, currentSessionId, api, online]) => {
+  if (online === false) return
+  syncAttachmentUploads({ attachments: items, target, sessionId: currentSessionId, filesApi: api })
+}, { immediate: true })
+
+function attachmentUpload(item: ComposerAttachment) {
+  return getAttachmentUploadState(item, fileTarget.value)
+}
+
+function retryUpload(item: ComposerAttachment): void {
+  if (item.kind !== "local_file") return
+  retryAttachmentUpload({ item, target: fileTarget.value, sessionId: sessionId.value, filesApi: filesApi.value })
+}
+
 function removeAttachment(id: string): void {
+  cancelAttachmentUpload(id)
   removeAttachmentPreviewUrl(id)
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
@@ -321,7 +341,7 @@ function onPaste(event: ClipboardEvent): void {
   }
 }
 function submit(delivery: "backlog" | "steer"): void {
-  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || !props.location || empty.value) return
+  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || uploadingAttachments.value || !props.location || empty.value) return
   dictation.cancel()
   recordSentMessageOrigin(dropZoneRef.value)
   emit("submit", commandInput.value ? "backlog" : delivery)
@@ -437,11 +457,45 @@ onBeforeUnmount(() => {
           :key="item.id"
           :data-preview="itemPreview(item) ? item.id : undefined"
           :data-preview-content="itemPreview(item)?.content"
-          class="ui-pop-in inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          class="ui-pop-in inline-flex max-w-full items-center gap-2 rounded-lg border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          :class="attachmentUpload(item)?.status === 'error' ? 'border-ui-danger/50' : 'border-ui-border'"
           :data-attachment-kind="item.kind"
         >
+          <span
+            v-if="attachmentUpload(item)?.status === 'uploading'"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="Math.round((attachmentUpload(item)?.progress ?? 0) * 100)"
+            :aria-label="t('composer.uploadingAttachment', { name: attachmentLabel(item), percent: Math.round((attachmentUpload(item)?.progress ?? 0) * 100) })"
+            :title="t('composer.uploadingAttachment', { name: attachmentLabel(item), percent: Math.round((attachmentUpload(item)?.progress ?? 0) * 100) })"
+            data-attachment-progress
+            class="inline-flex h-4 w-4 shrink-0 items-center justify-center"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 -rotate-90" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" class="stroke-ui-border" stroke-width="2" />
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                fill="none"
+                class="stroke-ui-accent transition-[stroke-dashoffset] duration-150 ease-out"
+                stroke-width="2"
+                stroke-linecap="round"
+                :stroke-dasharray="37.7"
+                :stroke-dashoffset="37.7 * (1 - (attachmentUpload(item)?.progress ?? 0))"
+              />
+            </svg>
+          </span>
+          <CircleAlert
+            v-else-if="attachmentUpload(item)?.status === 'error'"
+            :size="14"
+            class="shrink-0 text-ui-danger"
+            :title="attachmentUpload(item)?.error || t('composer.uploadFailed')"
+            aria-hidden="true"
+          />
           <img
-            v-if="itemThumbnailSrc(item)"
+            v-else-if="itemThumbnailSrc(item)"
             :src="itemThumbnailSrc(item)"
             :alt="attachmentLabel(item)"
             class="h-6 w-6 shrink-0 cursor-zoom-in rounded object-cover"
@@ -452,11 +506,23 @@ onBeforeUnmount(() => {
           <span
             class="min-w-0 truncate font-medium text-ui-text"
             :class="itemPreview(item) && 'cursor-zoom-in hover:underline'"
-            :title="item.kind === 'machine_file' ? item.path : attachmentLabel(item)"
+            :title="item.kind === 'machine_file' ? item.path : attachmentUpload(item)?.error || attachmentLabel(item)"
             @click="previewAttachment(item)"
           >{{ attachmentLabel(item) }}</span>
           <span v-if="item.kind === 'pasted_text'" class="shrink-0 rounded bg-ui-badge px-1.5 py-0.5 text-[11px] text-ui-text-muted">{{ t("composer.pastedTextLines", item.lines) }}</span>
           <span v-else-if="item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
+          <button
+            v-if="attachmentUpload(item)?.status === 'error'"
+            type="button"
+            data-attachment-retry
+            class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-danger hover:bg-ui-hover"
+            :title="attachmentUpload(item)?.error || t('composer.uploadFailed')"
+            :aria-label="t('composer.retryUpload', { name: attachmentLabel(item) })"
+            :disabled="disabled || submitting"
+            @click="retryUpload(item)"
+          >
+            <RotateCw :size="12" aria-hidden="true" />
+          </button>
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.removeAttachment', { name: attachmentLabel(item) })" :disabled="disabled || submitting" @click="removeAttachment(item.id)">
             <X :size="12" aria-hidden="true" />
           </button>
@@ -514,9 +580,9 @@ onBeforeUnmount(() => {
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
-          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
