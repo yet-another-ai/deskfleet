@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -43,7 +43,9 @@ test("semantic naming gives the provider the first task and detached roots", asy
   assert.equal(result.length, 2)
   assert.match((result[0] as { text: string }).text, /semantic prefix/)
   assert.match((result[0] as { text: string }).text, /fix\/login-timeout/)
-  assert.ok((result[0] as { text: string }).text.includes(JSON.stringify(f.checkout.replaceAll("\\", "/"))))
+  // Git resolves macOS /var aliases and Windows 8.3 paths to their physical paths.
+  const checkout = (await realpath(f.checkout)).replaceAll("\\", "/")
+  assert.ok((result[0] as { text: string }).text.includes(JSON.stringify(checkout)))
   assert.equal(result[1], prompt[0])
   assert.equal(await f.git(f.checkout, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
 })

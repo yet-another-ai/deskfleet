@@ -28,6 +28,7 @@ beforeAll(async () => {
     import("./views/ArchivedSessionsView.vue"),
     import("./views/SettingsView.vue"),
     import("./components/settings/PreferencesSettings.vue"),
+    import("./components/settings/WorktreeSettings.vue"),
     import("./components/settings/AppearanceSettings.vue"),
     import("./components/settings/DeveloperSettings.vue"),
     import("./components/settings/NatSettings.vue"),
@@ -470,10 +471,18 @@ test.each([
   await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
   expect(router.currentRoute.value.path).toBe("/settings/preferences")
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
-    "#/settings/preferences", "#/team/settings/plans", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
+    "#/settings/preferences",
+    ...(platform === "web" ? [] : ["#/settings/worktrees"]),
+    "#/team/settings/plans", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
     "#/settings/developer", "#/settings/about",
   ])
+  if (platform !== "web") {
+    await navItem("Worktrees").trigger("click")
+    await settled(() => expect(page().get("h1").text()).toBe("Worktrees"))
+    expect(router.currentRoute.value.path).toBe("/settings/worktrees")
+    expect(navItem("Worktrees").classes()).toContain("ui-nav-active")
+  }
   await navItem("Developer settings").trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Developer settings"))
   expect(router.currentRoute.value.path).toBe("/settings/developer")
