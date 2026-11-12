@@ -785,7 +785,8 @@ test("the floating toolbar moves by keyboard and drag, stays inside the stage, a
   vi.spyOn(handle.element, "setPointerCapture").mockImplementation(() => {})
 
   await handle.trigger("keydown", { key: "ArrowLeft" })
-  expect([toolbar.style.left, toolbar.style.top]).toEqual(["572px", "12px"])
+  expect([toolbar.style.left, toolbar.style.top]).toEqual(["588px", "12px"])
+  await expect.poll(() => toolbar.style.left, { timeout: 2000 }).toBe("572px")
 
   await handle.trigger("pointerdown", { button: 0, pointerId: 1, clientX: 600, clientY: 20 })
   await handle.trigger("pointermove", { pointerId: 1, clientX: -400, clientY: 520 })

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringChildren } from "../../directives/spring.ts"
 import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
@@ -45,7 +46,7 @@ useEventListener(window, "keydown", leaveOnEscape)
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
       <UiScrollArea class="min-h-0 flex-1" viewport-class="px-4 pb-[calc(2.5rem+var(--safe-area-bottom,0px))] pt-6 sm:px-5 md:px-8 md:pt-0 lg:px-14">
-        <div class="ui-route-stage mx-auto" :class="wide ? 'max-w-6xl' : 'max-w-3xl'">
+        <div v-spring-children class="ui-route-stage mx-auto" :class="wide ? 'max-w-6xl' : 'max-w-3xl'">
           <slot />
         </div>
       </UiScrollArea>

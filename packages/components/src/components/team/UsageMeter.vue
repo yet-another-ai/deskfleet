@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpring } from "../../directives/spring.ts"
 import { Info } from "@lucide/vue"
 import { computed, useId } from "vue"
 import { useI18n } from "vue-i18n"
@@ -38,7 +39,7 @@ const fill = computed(() => ratio.value >= 1 ? "bg-ui-danger" : ratio.value >= 0
       aria-valuemax="100"
       class="ui-meter mt-2"
     >
-      <div class="ui-meter-fill" :class="fill" :style="{ width: `${ratio * 100}%` }" />
+      <div class="ui-meter-fill" :class="fill" v-spring.enter="{ width: `${ratio * 100}%` }" />
     </div>
     <p v-if="caption" class="m-0 mt-1.5 text-xs text-ui-text-muted">{{ caption }}</p>
   </div>

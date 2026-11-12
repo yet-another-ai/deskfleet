@@ -61,7 +61,7 @@ test("voice input defaults on, shows genuine levels, and the web preference canc
   expect(f.composer.find("[data-dictation-transcript]").exists()).toBe(false)
   expect(f.composer.get("[data-dictation-panel]").text()).toBe("")
   expect(f.composer.get("textarea").element.value).toBe("Please review the changes.")
-  expect(f.composer.get("[data-dictation-waveform]").findAll("span").at(-1)!.attributes("style")).toContain("26px")
+  await expect.poll(() => f.composer.get("[data-dictation-waveform]").findAll("span").at(-1)!.attributes("style"), { timeout: 2000 }).toContain("26px")
   expect(f.draft.value).toBe("Please review the changes.")
   expect(f.composer.emitted("submit")).toBeUndefined()
   await toggle.trigger("click")

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { useSpring } from "../../composables/useSpring.ts"
 import { KeyRound } from "@lucide/vue"
 import githubIcon from "@lobehub/icons-static-svg/icons/github.svg?url"
-import { computed, nextTick, ref, useId, useTemplateRef } from "vue"
+import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
@@ -27,7 +28,7 @@ const callbackError = props.googleError ?? props.githubError
 const error = ref<string | undefined>(callbackError ? t(`auth.${callbackProvider}${oauthErrors[callbackError] ?? "Failed"}`) : undefined)
 const acceptedTerms = ref(false)
 const termsAttempted = ref<OAuthProvider>()
-const shakeTerms = ref(false)
+const termsMotion = useSpring(0, { duration: 0.3, bounce: 0.6 })
 const termsRequired = computed(() => !!(props.config.termsOfServiceUrl || props.config.privacyTermsUrl))
 const githubIconStyle = { maskImage: `url("${githubIcon}")` }
 const id = useId()
@@ -55,9 +56,7 @@ async function oauth(provider: OAuthProvider): Promise<void> {
   if (pending.value) return
   if (termsRequired.value && !acceptedTerms.value) {
     termsAttempted.value = provider
-    shakeTerms.value = false
-    await nextTick()
-    shakeTerms.value = true
+    termsMotion.setVelocity(termsMotion.velocity.value - 140)
     return
   }
   pending.value = provider
@@ -87,7 +86,7 @@ async function oauth(provider: OAuthProvider): Promise<void> {
         <div class="flex items-center gap-3 text-xs text-ui-text-faint" aria-hidden="true"><span class="h-px flex-1 bg-ui-border" />{{ t("auth.or") }}<span class="h-px flex-1 bg-ui-border" /></div>
         <UiButton v-if="passkeysAvailable()" class="h-9 text-sm" :loading="pending === 'passkey'" :disabled="!!pending" @click="passkey"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.signInWithPasskey") }}</UiButton>
         <div v-if="(config.githubEnabled || config.googleEnabled) && termsRequired">
-          <div class="flex items-start gap-2.5 text-sm leading-relaxed text-ui-text-muted" :class="{ 'terms-shake': shakeTerms }" @animationend="shakeTerms = false">
+          <div class="flex items-start gap-2.5 text-sm leading-relaxed text-ui-text-muted" :style="{ translate: `${termsMotion.position.value}px 0px` }">
             <UiCheckbox :id="`${id}-oauth-terms`" v-model="acceptedTerms" :aria-labelledby="`${id}-oauth-terms-label`" :aria-invalid="termsAttempted && !acceptedTerms ? 'true' : undefined" :aria-describedby="termsAttempted && !acceptedTerms ? `${id}-oauth-terms-error` : undefined" :disabled="!!pending" class="mt-1" />
             <span :id="`${id}-oauth-terms-label`">
               <label :for="`${id}-oauth-terms`">{{ `${t("auth.agreeToTerms")} ` }}</label>
@@ -121,11 +120,4 @@ async function oauth(provider: OAuthProvider): Promise<void> {
 .google-sign-in:enabled:hover { background: #f2f2f2; }
 .google-sign-in:enabled:active { background: #e3e3e3; }
 .google-icon { width: 18px; height: auto; flex: none; }
-@media (prefers-reduced-motion: no-preference) {
-  .terms-shake { animation: terms-shake 360ms ease-in-out; }
-  @keyframes terms-shake {
-    25%, 75% { transform: translateX(-4px); }
-    50% { transform: translateX(4px); }
-  }
-}
 </style>

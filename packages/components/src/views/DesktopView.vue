@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../components/common/SpringSurface.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
@@ -333,7 +334,7 @@ const errorDescription = computed(() => {
 
         <!-- Stay inside the fullscreen stage, including nested select portals. -->
         <PopoverPortal :to="stage ?? undefined">
-        <PopoverContent :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
+        <PopoverContent :as="SpringSurface" :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
           <ErrorNotice v-if="settingsFailure" :title="t('desktop.settingsFailed')" :error="settingsFailure.error ?? settingsFailure.detail">
             <UiButton size="sm" @click="applySettings">{{ t("errors.retry") }}</UiButton>
           </ErrorNotice>

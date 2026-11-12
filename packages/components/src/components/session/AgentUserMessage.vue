@@ -7,7 +7,7 @@ import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.t
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
-import { consumeSentMessageTransition } from "../../services/message-sent-transition.ts"
+import { consumeSentMessageTransition, type SentMessageTransition } from "../../services/message-sent-transition.ts"
 import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
@@ -22,7 +22,7 @@ const steered = computed(() => props.input.state === "delivered" && props.input.
 const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
 const root = useTemplateRef<HTMLElement>("root")
 const reducedMotion = usePreferredReducedMotion()
-let animations: Animation[] = []
+let animations: SentMessageTransition[] = []
 onMounted(() => queueMicrotask(() => {
   if (props.animateSend ?? !root.value?.parentElement?.nextElementSibling) {
     animations = consumeSentMessageTransition(root.value, reducedMotion.value === "reduce")

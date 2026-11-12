@@ -179,7 +179,8 @@ test("adjusts theme hue slider with live shade preview, toggles RGB cycling, and
   slider.element.value = "140"
   await slider.trigger("input")
   expect(set).not.toHaveBeenCalled()
-  expect(appearance.themeHue).toBe(140)
+  expect(appearance.themeHue).not.toBe(140)
+  await expect.poll(() => appearance.themeHue, { timeout: 2000 }).toBe(140)
   expect(shades[5]!.attributes("style")).not.toBe(initialShade500)
   expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toContain("oklch(")
   expect(reset.element.disabled).toBe(false)

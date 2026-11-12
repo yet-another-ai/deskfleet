@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring, vSpringHover } from "../../directives/spring.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useScrollFade } from "../../composables/useScrollFade.ts"
 import UiButton from "../common/UiButton.vue"
@@ -366,7 +368,7 @@ onBeforeUnmount(() => {
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+          <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
             <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
               <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
                 <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
@@ -389,7 +391,7 @@ onBeforeUnmount(() => {
             <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
                   <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
@@ -422,7 +424,7 @@ onBeforeUnmount(() => {
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup v-model="baseBranch">
                   <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
@@ -479,11 +481,11 @@ onBeforeUnmount(() => {
                 cy="8"
                 r="6"
                 fill="none"
-                class="stroke-ui-accent transition-[stroke-dashoffset] duration-150 ease-out"
+                class="stroke-ui-accent"
                 stroke-width="2"
                 stroke-linecap="round"
                 :stroke-dasharray="37.7"
-                :stroke-dashoffset="37.7 * (1 - (attachmentUpload(item)?.progress ?? 0))"
+                v-spring="{ strokeDashoffset: 37.7 * (1 - (attachmentUpload(item)?.progress ?? 0)) }"
               />
             </svg>
           </span>
@@ -538,7 +540,7 @@ onBeforeUnmount(() => {
       <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
       <div v-if="dictation.active" class="relative mx-3 mb-2 flex items-center justify-center rounded-lg bg-ui-accent/5 px-10 py-2" data-dictation-panel>
         <div class="flex h-7 shrink-0 items-center gap-0.5" role="img" :aria-label="t(`dictation.${dictation.state}`)" data-dictation-waveform>
-          <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-[height,opacity] duration-100 motion-reduce:transition-none" :style="{ height: `${3 + level * 23}px`, opacity: 0.3 + level * 0.7 }" />
+          <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-opacity duration-100 motion-reduce:transition-none" v-spring="{ height: `${3 + level * 23}px` }" :style="{ opacity: 0.3 + level * 0.7 }" />
         </div>
         <UiButton variant="ghost" size="icon" type="button" class="absolute right-2 h-7 w-7" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
       </div>
@@ -548,7 +550,7 @@ onBeforeUnmount(() => {
             <Plus :size="16" :stroke-width="2" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" data-attach-local @select="fileInput?.click()">
                 <Upload :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                 <span class="truncate text-[13px] text-ui-text">{{ t("composer.uploadLocalFiles") }}</span>
@@ -582,7 +584,7 @@ onBeforeUnmount(() => {
           </UiButton>
           <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit('backlog')"><ArrowUp v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
@@ -611,8 +613,6 @@ onBeforeUnmount(() => {
 
 /* Send springs forward when it becomes available; its arrow nudges up on hover. */
 .composer-send:enabled { animation: composer-send-ready var(--ui-duration-slow) var(--ui-ease-spring); }
-.composer-send-arrow { transition: translate var(--ui-duration-fast) var(--ui-ease-out); }
-.composer-send:enabled:hover .composer-send-arrow { translate: 0 -1px; }
 @keyframes composer-send-ready {
   from { scale: 0.8; }
 }

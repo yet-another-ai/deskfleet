@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import SpringCollapse from "../common/SpringCollapse.vue"
 import { Check, ChevronRight, CircleX, LoaderCircle, Monitor } from "@lucide/vue"
 import { computed, inject } from "vue"
-import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
+import { CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -54,7 +55,7 @@ const detailsOpen = useConversationDisclosure(() => `remote:${props.disclosureId
         <ChevronRight :size="13" class="shrink-0 ui-motion" :class="detailsOpen && 'rotate-90'" aria-hidden="true" />{{ t('agent.remoteMcp.details') }}
       </CollapsibleTrigger>
       <!-- Remote resource paths must not resolve against the source Agent's machine. -->
-      <CollapsibleContent class="ui-collapsible"><AgentToolDetails :tool="tool" :live="live" raw-content class="border-t border-ui-border p-3" /></CollapsibleContent>
+      <SpringCollapse class="ui-collapsible"><AgentToolDetails :tool="tool" :live="live" raw-content class="border-t border-ui-border p-3" /></SpringCollapse>
     </CollapsibleRoot>
   </article>
 </template>

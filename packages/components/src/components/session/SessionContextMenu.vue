@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { Archive, ArchiveRestore, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
@@ -79,7 +80,7 @@ function confirm(): void {
   <ContextMenuRoot v-model:open="open" :modal="false">
     <ContextMenuTrigger ref="trigger" as="div" @keydown="keyboardOpen"><slot :request-archive="() => choose('archive')" :pending="pending" /></ContextMenuTrigger>
     <ContextMenuPortal>
-      <ContextMenuContent :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
+      <ContextMenuContent :as="SpringSurface" :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
         <ContextMenuItem v-if="archiveState !== 'archived'" as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
         <ContextMenuItem v-if="canMarkUnread" as="button" type="button" class="ui-menu-item" :disabled="disabled || pending" @select="markUnread"><Mail :size="14" aria-hidden="true" />{{ t('agent.markUnread') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</ContextMenuItem>

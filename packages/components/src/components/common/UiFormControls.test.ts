@@ -63,6 +63,8 @@ test("checkboxes remain label-clickable and disabled switches remain inert", asy
   ;(view.get("label").element as HTMLLabelElement).click()
   await flushPromises()
   expect(view.get('[role="checkbox"]').attributes("aria-checked")).toBe("true")
+  expect(view.get(".ui-switch-thumb").attributes("data-state")).toBe("checked")
+  expect(view.get(".ui-switch-thumb").attributes("data-disabled")).toBe("")
   await view.get('[role="switch"]').trigger("click")
   expect(view.get('[role="checkbox"]').attributes("aria-checked")).toBe("true")
   expect((view.get("form").element as HTMLFormElement).checkValidity()).toBe(true)

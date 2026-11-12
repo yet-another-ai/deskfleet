@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../../directives/spring.ts"
 import { CircleAlert, ChevronRight } from "@lucide/vue"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -26,7 +27,7 @@ const detail = computed(() => presentation.value.detail !== title.value && prese
 </script>
 
 <template>
-  <div role="alert" class="ui-rise-in min-w-0 rounded-lg border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
+  <div v-spring-enter role="alert" class="ui-rise-in min-w-0 rounded-lg border border-ui-danger/25 bg-ui-danger/5 p-3 text-left" data-error-notice>
     <div class="flex items-start gap-2.5">
       <CircleAlert :size="17" :stroke-width="1.75" class="mt-0.5 shrink-0 text-ui-danger" aria-hidden="true" />
       <div class="min-w-0 flex-1">

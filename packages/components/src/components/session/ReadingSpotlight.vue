@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useElementByPoint, useEventListener, useMediaQuery, useMouse, usePreferredReducedMotion } from "@vueuse/core"
+import { vSpring } from "../../directives/spring.ts"
+import { useElementByPoint, useEventListener, useMediaQuery, useMouse } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import {
   findReadingSurface, findSpotlightBlock, padSpotlightRect, spotlightRectForBlock,
@@ -8,7 +9,6 @@ import { useAppearanceStore } from "../../stores/appearance.ts"
 
 const appearance = useAppearanceStore()
 const finePointer = useMediaQuery("(pointer: fine)")
-const reducedMotion = usePreferredReducedMotion()
 const active = computed(() => appearance.settings.readingSpotlight && finePointer.value)
 const style = computed(() => appearance.settings.readingSpotlightStyle)
 
@@ -48,7 +48,6 @@ function update(): void {
     height: `${rect.height}px`,
     left: `${rect.left}px`,
     top: `${rect.top}px`,
-    transition: reducedMotion.value === "reduce" ? "none" : "all 0.2s ease",
   }
 }
 
@@ -73,7 +72,7 @@ useEventListener("scroll", () => { if (active.value) update() }, true)
       v-show="box.display === 'block'"
       class="ui-reading-spotlight"
       :class="style === 'under' ? 'ui-reading-spotlight-under' : 'ui-reading-spotlight-aside'"
-      :style="box"
+      v-spring.enter="box"
       aria-hidden="true"
       data-reading-spotlight
       :data-reading-spotlight-style="style"

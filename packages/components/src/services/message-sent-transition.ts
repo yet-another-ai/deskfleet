@@ -1,12 +1,12 @@
-import { spring, waapi } from "animejs"
-
-const horizontalSpring = spring({ bounce: 0.28, duration: 420 })
-export const SENT_MESSAGE_DURATION_MS = horizontalSpring.settlingDuration
-export const SENT_MESSAGE_LIFT_DURATION_MS = 420
-export const SENT_MESSAGE_EASING = waapi.convertEase(horizontalSpring.ease)
-export const SENT_MESSAGE_LIFT_EASING = "cubic-bezier(0.5, 0, 0.15, 1)"
+import { animateSpring, type SpringAnimation } from "./spring.ts"
+import { scrollSpring, type SpringScroll } from "./spring-scroll.ts"
 
 let pendingOrigin: { rect: DOMRect; expiresAt: number } | undefined
+
+export interface SentMessageTransition {
+  cancel: () => void
+  finished: Promise<void>
+}
 
 export function recordSentMessageOrigin(element: Element | null | undefined): void {
   const rect = element?.getBoundingClientRect()
@@ -19,7 +19,7 @@ export function clearSentMessageOrigin(): void {
   pendingOrigin = undefined
 }
 
-export function consumeSentMessageTransition(entry: HTMLElement | null | undefined, reducedMotion = false): Animation[] {
+export function consumeSentMessageTransition(entry: HTMLElement | null | undefined, reducedMotion = false): SentMessageTransition[] {
   if (!pendingOrigin || performance.now() > pendingOrigin.expiresAt) {
     pendingOrigin = undefined
     return []
@@ -27,81 +27,92 @@ export function consumeSentMessageTransition(entry: HTMLElement | null | undefin
   const { rect: from } = pendingOrigin
   pendingOrigin = undefined
   if (reducedMotion || !entry) return []
-
   const bubble = entry.querySelector<HTMLElement>("[data-user-message-bubble]")
-  if (!bubble || typeof bubble.animate !== "function") return []
+  if (!bubble) return []
 
   const scroller = entry.closest<HTMLElement>("[data-session-scroll-viewport]")
   const remainingScroll = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : 0
+  const previousOpacity = entry.style.opacity
+  let cancelled = false
+  let scroll: SpringScroll | undefined
+  let morph: SentMessageTransition | undefined
+  let resolveFinished: () => void = () => {}
+  const finished = new Promise<void>(resolve => { resolveFinished = resolve })
+
+  function start(): void {
+    entry!.style.opacity = previousOpacity
+    if (cancelled) return
+    morph = animateSentMessage(entry!, bubble!, from)
+    if (morph) void morph.finished.then(resolveFinished)
+    else resolveFinished()
+  }
   if (scroller && remainingScroll > entry.getBoundingClientRect().height + 32) {
     entry.style.opacity = "0"
-    const animations: Animation[] = []
-    scroller.addEventListener("scrollend", () => {
-      scroller.scrollTop = scroller.scrollHeight
-      entry.style.opacity = ""
-      if (entry.isConnected) animations.push(...animateSentMessage(entry, bubble, from))
-    }, { once: true })
-    scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" })
-    return animations
+    scroll = scrollSpring(scroller, scroller.scrollHeight)
+    void scroll.finished.then(completed => {
+      entry.style.opacity = previousOpacity
+      if (completed && entry.isConnected && !cancelled) start()
+      else resolveFinished()
+    })
+  } else {
+    if (scroller && remainingScroll > 0) scroller.scrollTop = scroller.scrollHeight
+    start()
   }
-  if (scroller && remainingScroll > 0) scroller.scrollTop = scroller.scrollHeight
-  return animateSentMessage(entry, bubble, from)
+  return [{
+    finished,
+    cancel() {
+      cancelled = true
+      scroll?.cancel()
+      morph?.cancel()
+      entry.style.opacity = previousOpacity
+      resolveFinished()
+    },
+  }]
 }
 
-function animateSentMessage(entry: HTMLElement, bubble: HTMLElement, from: DOMRect): Animation[] {
-  bubble.dataset.messageSending = "true"
+function animateSentMessage(entry: HTMLElement, bubble: HTMLElement, from: DOMRect): SentMessageTransition | undefined {
   const to = bubble.getBoundingClientRect()
-  if (to.width <= 0 || to.height <= 0) {
-    delete bubble.dataset.messageSending
-    return []
-  }
-
+  if (to.width <= 0 || to.height <= 0) return
   const content = bubble.firstElementChild instanceof HTMLElement ? bubble.firstElementChild : null
+  const minWidth = content?.style.minWidth ?? ""
   if (content) content.style.minWidth = `${Math.ceil(content.getBoundingClientRect().width)}px`
-
-  const morph = bubble.animate([
-    {
-      width: `${from.width}px`,
-      height: `${from.height}px`,
-      marginLeft: `${to.width - from.width}px`,
-      marginBottom: `${to.height - from.height}px`,
-      translate: `${from.right - to.right}px 0px`,
-      paddingTop: "12px",
-      paddingBottom: "12px",
-      backgroundColor: "var(--ui-color-surface)",
-      boxShadow: "inset 0 0 0 1px var(--ui-color-border), var(--ui-shadow-card)",
-    },
-    {
-      width: `${to.width}px`,
-      height: `${to.height}px`,
-      marginLeft: "0px",
-      marginBottom: "0px",
-      translate: "0px 0px",
-      paddingTop: "10px",
-      paddingBottom: "10px",
-      backgroundColor: "color-mix(in srgb, var(--ui-color-accent) 8%, var(--ui-color-canvas))",
-      boxShadow: "inset 0 0 0 1px transparent, inset 0 1px 0 transparent, 0 1px 2px transparent, 0 2px 8px transparent",
-    },
-  ], { duration: SENT_MESSAGE_DURATION_MS, easing: SENT_MESSAGE_EASING })
-  const lift = bubble.animate([
-    { transform: `translateY(${from.top - to.top}px)` },
-    { transform: "translateY(0px)" },
-  ], { duration: SENT_MESSAGE_LIFT_DURATION_MS, easing: SENT_MESSAGE_LIFT_EASING })
-
-  const cleanup = () => {
-    delete bubble.dataset.messageSending
-    if (content) content.style.minWidth = ""
-  }
-  morph.addEventListener?.("finish", cleanup, { once: true })
-  morph.addEventListener?.("cancel", cleanup, { once: true })
-
   const adornments = [...entry.querySelectorAll<HTMLElement>("[data-user-message-meta], [data-user-message-avatar]")]
-    .flatMap(el => typeof el.animate === "function" ? [el.animate([
-      { opacity: 0, translate: "0 4px" },
-      { opacity: 0, translate: "0 4px", offset: 0.56 },
-      { opacity: 1, translate: "0 0" },
-    ], { duration: SENT_MESSAGE_LIFT_DURATION_MS, easing: "ease-out" })] : [])
+  const bubbleProperties = ["width", "height", "margin-left", "margin-bottom", "translate", "padding-top", "padding-bottom"]
+  const restoreBubble = bubbleProperties.map(name => [name, bubble.style.getPropertyValue(name)] as const)
+  const restoreAdornments = adornments.map(element => ({ element, opacity: element.style.opacity, translate: element.style.translate }))
+  const connected = entry.isConnected
+  let cleaned = false
+  let animation: SpringAnimation | undefined
+  bubble.dataset.messageSending = "true"
 
-  return [morph, lift, ...adornments]
+  function cleanup(): void {
+    if (cleaned) return
+    cleaned = true
+    delete bubble.dataset.messageSending
+    if (content) content.style.minWidth = minWidth
+    for (const [name, value] of restoreBubble) {
+      if (value) bubble.style.setProperty(name, value)
+      else bubble.style.removeProperty(name)
+    }
+    for (const { element, opacity, translate } of restoreAdornments) {
+      element.style.opacity = opacity
+      element.style.translate = translate
+    }
+  }
+  animation = animateSpring(0, 1, progress => {
+    if (connected && !entry.isConnected) { animation?.cancel(); cleanup(); return }
+    const remaining = 1 - progress
+    bubble.style.width = `${Math.max(0, to.width + (from.width - to.width) * remaining)}px`
+    bubble.style.height = `${Math.max(0, to.height + (from.height - to.height) * remaining)}px`
+    bubble.style.marginLeft = `${(to.width - from.width) * remaining}px`
+    bubble.style.marginBottom = `${(to.height - from.height) * remaining}px`
+    bubble.style.translate = `${(from.right - to.right) * remaining}px ${(from.top - to.top) * remaining}px`
+    bubble.style.paddingTop = bubble.style.paddingBottom = `${10 + 2 * remaining}px`
+    for (const element of adornments) {
+      element.style.opacity = String(Math.max(0, Math.min(1, progress)))
+      element.style.translate = `0 ${4 * remaining}px`
+    }
+  }, { positionThreshold: 0.0001, velocityThreshold: 0.001 })
+  void animation.finished.then(cleanup)
+  return { finished: animation.finished, cancel() { animation!.cancel(); cleanup() } }
 }
-

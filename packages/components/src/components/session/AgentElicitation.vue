@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../../directives/spring.ts"
 import UiButton from "../common/UiButton.vue"
 import { CircleHelp } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
@@ -105,7 +106,7 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
 
 <template>
   <AgentPlanApproval v-if="plan" :elicitation="elicitation" :plan="plan" :disabled="disabled" />
-  <section v-else class="ui-rise-in rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
+  <section v-spring-enter v-else class="ui-rise-in rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
     <p class="m-0 mb-2 flex items-center gap-2 font-medium"><CircleHelp :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span>{{ t(pending ? url ? 'agent.questions.urlTitle' : 'agent.questions.title' : `agent.questions.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span></p>
     <p class="m-0 whitespace-pre-wrap break-words">{{ elicitation.request.message }}</p>
     <form v-if="pending" ref="formElement" class="mt-4 flex flex-col gap-4" @submit.prevent="respond('accept')">

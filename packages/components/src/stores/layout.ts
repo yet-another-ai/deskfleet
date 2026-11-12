@@ -6,6 +6,7 @@ import type { FileResourceRequest } from "../../../client/src/files.ts"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
+import { springScrollIntoView } from "../services/spring-scroll.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
@@ -44,7 +45,7 @@ export function performMermaidLocateDom(request: MermaidLocateRequest | null = p
   clearTimeout(locatedTimer)
   for (const prev of document.querySelectorAll<HTMLElement>("[data-mermaid-located]")) delete prev.dataset.mermaidLocated
   target.dataset.mermaidLocated = "true"
-  target.scrollIntoView?.({ behavior: "smooth", block: "center" })
+  springScrollIntoView(target)
   locatedTimer = setTimeout(() => { delete target.dataset.mermaidLocated }, 1600)
   return true
 }

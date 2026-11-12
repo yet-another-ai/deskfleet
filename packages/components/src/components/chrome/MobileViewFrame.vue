@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { X } from "@lucide/vue"
+import { computed, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import { useSpring } from "../../composables/useSpring.ts"
 
-defineProps<{
+const props = defineProps<{
   title: string
   active: boolean
   preview: boolean
@@ -13,9 +15,36 @@ defineProps<{
   scale: number
   closable: boolean
   busy: boolean
+  direct: boolean
+  scrollOrigin: number
 }>()
-const emit = defineEmits<{ select: []; close: [] }>()
+const emit = defineEmits<{ select: []; close: []; motion: [active: boolean] }>()
 const { t } = useI18n()
+const horizontal = useSpring(props.x, { positionThreshold: 0.3, velocityThreshold: 4 })
+const vertical = useSpring(props.y, { positionThreshold: 0.3, velocityThreshold: 4 })
+const zoom = useSpring(props.scale, { positionThreshold: 0.0005, velocityThreshold: 0.005 })
+const x = horizontal.position
+const y = vertical.position
+const scale = zoom.position
+let previousScrollOrigin = props.scrollOrigin
+
+watch(() => [props.x, props.y, props.scale, props.direct, props.scrollOrigin] as const, () => {
+  // Programmatic overview scrolling changes the coordinate origin. Rebase the
+  // current position, preserving its on-screen location and its velocity.
+  vertical.rebase(props.scrollOrigin - previousScrollOrigin)
+  previousScrollOrigin = props.scrollOrigin
+  if (props.direct) {
+    horizontal.jump(props.x)
+    vertical.jump(props.y)
+    zoom.jump(props.scale)
+  } else {
+    horizontal.setTarget(props.x)
+    vertical.setTarget(props.y)
+    zoom.setTarget(props.scale)
+  }
+})
+const moving = computed(() => horizontal.isActive.value || vertical.isActive.value || zoom.isActive.value)
+watch(moving, active => emit("motion", active), { flush: "sync" })
 </script>
 
 <template>
@@ -38,11 +67,10 @@ const { t } = useI18n()
 .mobile-view-frame.is-active { z-index: 1; }
 .mobile-view-label { position: absolute; top: 0; left: 0; opacity: 0; visibility: hidden; will-change: transform, opacity; transition: opacity 180ms; }
 .is-preview .mobile-view-label { opacity: 1; visibility: visible; pointer-events: auto; }
-.mobile-view-surface { position: absolute; inset: 0; overflow: hidden; contain: layout paint; will-change: transform; backface-visibility: hidden; background: var(--ui-color-canvas); transform-origin: top left; transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1); }
+.mobile-view-surface { position: absolute; inset: 0; overflow: hidden; contain: layout paint; will-change: transform; backface-visibility: hidden; background: var(--ui-color-canvas); transform-origin: top left; }
 .is-active .mobile-view-surface, .is-preview .mobile-view-surface { pointer-events: auto; }
 .mobile-view-content { display: flex; flex-direction: column; width: 100%; height: 100%; }
 .is-preview .mobile-view-surface { outline: 3px solid var(--ui-color-border); }
 .is-preview.is-active .mobile-view-surface { outline: 6px solid var(--ui-color-accent); }
-.zooming .mobile-view-surface, .dragging .mobile-view-surface { transition: none; }
-@media (prefers-reduced-motion: reduce) { .mobile-view-surface, .mobile-view-label { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .mobile-view-label { transition: none; } }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CalendarClock, MessagesSquare, MonitorPlay, Search, SquarePen } from "@lucide/vue"
+import { vSpring } from "../../directives/spring.ts"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -53,7 +54,7 @@ function destination(section: Section) {
             @click="navigate"
           >
             <component :is="section.icon" :size="16" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-            <span class="section-label truncate" aria-hidden="true">{{ t(section.label) }}</span>
+            <span v-spring="{ maxWidth: section === activeSection ? '12rem' : '0rem', marginInlineStart: section === activeSection ? '0.5rem' : '0rem' }" class="section-label truncate" aria-hidden="true">{{ t(section.label) }}</span>
           </a>
         </UiTooltip>
       </RouterLink>
@@ -73,7 +74,7 @@ function destination(section: Section) {
   max-width: 0;
   margin-inline-start: 0;
   opacity: 0;
-  transition: max-width var(--ui-duration-base) var(--ui-ease-out), margin-inline-start var(--ui-duration-base) var(--ui-ease-out), opacity var(--ui-duration-fast) var(--ui-ease-out);
+  transition: opacity var(--ui-duration-fast) var(--ui-ease-out);
 }
 .section-link[aria-current="page"] .section-label {
   max-width: 12rem;
