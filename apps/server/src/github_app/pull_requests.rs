@@ -5,7 +5,7 @@ use crate::{
     error::{ApiError, Result},
 };
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
-use deskfleet_control_store::{MachineAction, now_ms};
+use deskfleet_control_store::{now_ms, policies::MachineAction};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
