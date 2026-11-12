@@ -1,4 +1,4 @@
-import type { ObjectDirective } from "vue"
+import { watchPostEffect, type DirectiveBinding, type DirectiveModifiers, type FunctionDirective, type VaporDirective } from "vue"
 import { animateSpring, type SpringAnimation } from "../services/spring.ts"
 
 type Values = Record<string, string | number>
@@ -7,6 +7,36 @@ type Channels = Map<string, { parts: string[]; animations: SpringAnimation[]; va
 const channels = new WeakMap<HTMLElement, Channels>()
 const numberPattern = /-?(?:\d*\.)?\d+(?:e[+-]?\d+)?/gi
 const cssName = (name: string) => name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
+
+/** Vapor supplies reactive getters; VDOM supplies a binding on each render. */
+function motionDirective<Value>(
+  render: (element: HTMLElement, value: Value, modifiers: DirectiveModifiers, first: boolean) => void,
+  dispose: (element: HTMLElement) => void,
+): FunctionDirective<HTMLElement, Value> & VaporDirective<HTMLElement, Value> {
+  const mounted = new WeakSet<HTMLElement>()
+  const directive = (
+    element: HTMLElement,
+    valueOrBinding: (() => Value) | DirectiveBinding<Value> | undefined,
+    _argument?: unknown,
+    modifiers: DirectiveModifiers = {},
+  ) => {
+    if (typeof valueOrBinding === "object") {
+      // Vue normalizes a function directive to mounted/updated hooks. Keep
+      // teardown on that binding so a v-if removal also cancels its motion.
+      valueOrBinding.dir.beforeUnmount = () => { dispose(element); mounted.delete(element) }
+      render(element, valueOrBinding.value, valueOrBinding.modifiers, !mounted.has(element))
+      mounted.add(element)
+      return
+    }
+    let first = true
+    const stop = watchPostEffect(() => {
+      render(element, valueOrBinding?.() as Value, modifiers, first)
+      first = false
+    })
+    return () => { stop(); dispose(element) }
+  }
+  return directive as FunctionDirective<HTMLElement, Value> & VaporDirective<HTMLElement, Value>
+}
 
 /** Animate numeric CSS values in their declared units, retaining each channel's velocity. */
 function update(element: HTMLElement, binding: SpringStyle | Values, entering = false): void {
@@ -50,14 +80,13 @@ function update(element: HTMLElement, binding: SpringStyle | Values, entering = 
   }
 }
 
-export const vSpring: ObjectDirective<HTMLElement, SpringStyle | Values> = {
-  mounted(element, binding) { update(element, binding.value, binding.modifiers.enter) },
-  updated(element, binding) { update(element, binding.value, binding.modifiers.enter) },
-  beforeUnmount(element) {
+export const vSpring = motionDirective<SpringStyle | Values>(
+  (element, value, modifiers) => update(element, value, modifiers.enter),
+  element => {
     channels.get(element)?.forEach(channel => channel.animations.forEach(animation => animation.cancel()))
     channels.delete(element)
   },
-}
+)
 
 const entrances = new WeakMap<HTMLElement, SpringAnimation>()
 function enter(element: HTMLElement): void {
@@ -75,15 +104,16 @@ function enter(element: HTMLElement): void {
   })
 }
 /** Shared entrance for anchored surfaces and newly mounted content. */
-export const vSpringEnter: ObjectDirective<HTMLElement> = {
-  mounted: enter,
-  beforeUnmount(element) { entrances.get(element)?.cancel(); entrances.delete(element) },
-}
+export const vSpringEnter = motionDirective<undefined>(
+  (element, _value, _modifiers, first) => { if (first) enter(element) },
+  element => { entrances.get(element)?.cancel(); entrances.delete(element) },
+)
 
 const childrenObservers = new WeakMap<HTMLElement, MutationObserver>()
 /** Route stages own their immediate content entrances; title-bar drag regions stay fixed. */
-export const vSpringChildren: ObjectDirective<HTMLElement> = {
-  mounted(element) {
+export const vSpringChildren = motionDirective<undefined>(
+  (element, _value, _modifiers, first) => {
+    if (!first) return
     const start = (child: Node) => { if (child instanceof HTMLElement && child.tagName !== "HEADER") enter(child) }
     element.childNodes.forEach(start)
     const observer = new MutationObserver(records => {
@@ -95,18 +125,19 @@ export const vSpringChildren: ObjectDirective<HTMLElement> = {
     observer.observe(element, { childList: true })
     childrenObservers.set(element, observer)
   },
-  beforeUnmount(element) {
+  element => {
     childrenObservers.get(element)?.disconnect()
     element.childNodes.forEach(child => { if (child instanceof HTMLElement) entrances.get(child)?.cancel() })
   },
-}
+)
 
 const hoverCleanup = new WeakMap<HTMLElement, () => void>()
-export const vSpringHover: ObjectDirective<HTMLElement, number> = {
-  mounted(element, binding) {
+export const vSpringHover = motionDirective<number>(
+  (element, value, _modifiers, first) => {
+    if (!first) return
     const motion = animateSpring(0, 0, y => { element.style.translate = `0px ${y}px` })
     const over = () => {
-      if (!element.closest(":disabled, [data-disabled], [aria-disabled=true]") && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) motion.setTarget(binding.value)
+      if (!element.closest(":disabled, [data-disabled], [aria-disabled=true]") && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) motion.setTarget(value)
     }
     const out = () => motion.setTarget(0)
     element.addEventListener("pointerenter", over)
@@ -117,5 +148,5 @@ export const vSpringHover: ObjectDirective<HTMLElement, number> = {
       element.removeEventListener("pointerleave", out)
     })
   },
-  beforeUnmount(element) { hoverCleanup.get(element)?.(); hoverCleanup.delete(element) },
-}
+  element => { hoverCleanup.get(element)?.(); hoverCleanup.delete(element) },
+)

@@ -126,3 +126,15 @@ test("hover starts without a jump and unmount removes its pointer listeners", as
   element.dispatchEvent(new PointerEvent("pointerenter"))
   expect(frames.size).toBe(0)
 })
+
+test("VDOM removes directive resources when a conditional child disappears", async () => {
+  const visible = ref(true)
+  wrapper = mount(defineComponent({
+    setup: () => () => h("main", visible.value ? [withDirectives(h("span"), [[vSpring, { width: "100px" }, undefined, { enter: true }]])] : []),
+  }))
+  await tick(64)
+  expect(frames.size).toBe(1)
+  visible.value = false
+  await nextTick()
+  expect(frames.size).toBe(0)
+})
