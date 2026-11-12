@@ -1,17 +1,30 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.Surface
+import androidx.activity.result.ActivityResult
+import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
+import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
 
-@CapacitorPlugin(name = "DeskFleetBridge")
+@CapacitorPlugin(
+    name = "DeskFleetBridge",
+    permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "audio")],
+)
 class DeskFleetBridge : Plugin() {
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
@@ -63,21 +76,81 @@ class DeskFleetBridge : Plugin() {
                 .fold(
                     { response ->
                         val error = response.getString("error")
-                        if (!error.isNullOrEmpty()) {
-                            call.reject(error)
-                        } else {
-                            val result = response.getJSObject("result")
-                            if (result != null) call.resolve(result)
-                            else call.reject("Missing NAT test result")
-                        }
+                        if (!error.isNullOrEmpty()) call.reject(error)
+                        else response.getJSObject("result")?.let(call::resolve) ?: call.reject("Missing NAT test result")
                     },
                     { call.reject(it.message ?: "Failed to test NAT") },
                 )
         }.start()
     }
 
+    @PluginMethod
+    fun outlineAudioStatus(call: PluginCall) {
+        val active = OutlineAudioCaptureService.isActive
+        if (active) activeOutlinePlugin = WeakReference(this)
+        call.resolve(JSObject().put("supported", true).put("active", active))
+    }
+
+    @PluginMethod
+    fun startOutlineAudio(call: PluginCall) {
+        activeOutlinePlugin = WeakReference(this)
+        if (OutlineAudioCaptureService.isActive) {
+            return call.resolve(JSObject().put("started", true))
+        }
+        if (getPermissionState("audio") != PermissionState.GRANTED) {
+            return requestPermissionForAlias("audio", call, "handleOutlineAudioPermission")
+        }
+        launchOutlineAudioProjectionPrompt(call)
+    }
+
+    @PluginMethod
+    fun stopOutlineAudio(call: PluginCall) {
+        OutlineAudioCaptureService.stop(context)
+        call.resolve()
+    }
+
+    @PermissionCallback
+    private fun handleOutlineAudioPermission(call: PluginCall) {
+        if (getPermissionState("audio") != PermissionState.GRANTED) {
+            return call.reject("Audio capture permission denied.", "permission-denied")
+        }
+        launchOutlineAudioProjectionPrompt(call)
+    }
+
+    private fun launchOutlineAudioProjectionPrompt(call: PluginCall) {
+        val manager = activity?.getSystemService(MediaProjectionManager::class.java)
+            ?: return call.reject("Screen capture service unavailable.", "unavailable")
+        val intent = manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        startActivityForResult(call, intent, "handleOutlineAudioProjectionResult")
+    }
+
+    @ActivityCallback
+    private fun handleOutlineAudioProjectionResult(call: PluginCall?, result: ActivityResult) {
+        if (call == null) return
+        val data = result.data
+        if (result.resultCode != Activity.RESULT_OK || data == null) {
+            return call.resolve(JSObject().put("started", false))
+        }
+        pendingOutlineStartCall = call
+        runCatching {
+            ContextCompat.startForegroundService(context, OutlineAudioCaptureService.createStartIntent(context, data))
+        }.onFailure { err ->
+            pendingOutlineStartCall = null
+            call.reject(err.message ?: "Failed to start system audio capture", "unavailable")
+        }
+    }
+
+    private fun emitOutlineSpectrum(sampleRate: Int, binsBase64: String) {
+        notifyListeners("outlineAudioBands", JSObject().put("sampleRate", sampleRate).put("bins", binsBase64))
+    }
+
+    private fun emitOutlineStopped() {
+        notifyListeners("outlineAudioStopped", JSObject())
+    }
+
     override fun handleOnDestroy() {
         stopSession()
+        OutlineAudioCaptureService.stop(context)
         super.handleOnDestroy()
     }
 
@@ -86,8 +159,26 @@ class DeskFleetBridge : Plugin() {
             System.loadLibrary("deskfleet_desktop_viewer")
         }
 
-        @Volatile
-        internal var activeActivity: WeakReference<RemoteDesktopActivity>? = null
+        // Activity results and service start commands both run on the main thread.
+        private var pendingOutlineStartCall: PluginCall? = null
+
+        @Volatile internal var activeActivity: WeakReference<RemoteDesktopActivity>? = null
+        @Volatile private var activeOutlinePlugin: WeakReference<DeskFleetBridge>? = null
+
+        internal fun completeOutlineAudioStart(started: Boolean, errorMessage: String?) {
+            val call = pendingOutlineStartCall ?: return
+            pendingOutlineStartCall = null
+            if (started) call.resolve(JSObject().put("started", true))
+            else call.reject(errorMessage ?: "Failed to start system audio capture", "unavailable")
+        }
+
+        internal fun onOutlineAudioSpectrum(sampleRate: Int, binsBase64: String) {
+            activeOutlinePlugin?.get()?.emitOutlineSpectrum(sampleRate, binsBase64)
+        }
+
+        internal fun onOutlineAudioStopped() {
+            activeOutlinePlugin?.get()?.emitOutlineStopped()
+        }
 
         internal fun stopSession() {
             nativeStop()

@@ -32,6 +32,7 @@ if (Capacitor.isNativePlatform() && adapter.central) {
   )
 }
 if (Capacitor.getPlatform() === "android") {
+  adapter.outlineAudio = createCapacitorOutlineAudioApi()
   const play = createPlayUpdates()
   adapter.updates = play.updates
   adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: play.getAutoDownload, setAutoDownloadUpdates: play.setAutoDownload }
