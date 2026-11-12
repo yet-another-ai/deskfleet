@@ -628,7 +628,15 @@
     "exportBuffer": "ターミナルのバッファをエクスポート", "exportAnsi": "ANSI 形式の出力をダウンロード",
     "exportHtml": "書式付き HTML をダウンロード", "progressRunning": "実行中 · {value}%",
     "progressError": "失敗 · {value}%", "progressIndeterminate": "実行中…",
-    "progressPaused": "一時停止中 · {value}%"
+    "progressPaused": "一時停止中 · {value}%",
+    "keypad": "ターミナルキーパッド", "keypadToggle": "ターミナルキーパッドを切り替え",
+    "keypadExpand": "その他のキーを表示", "keypadCollapse": "その他のキーを隠す",
+    "keyEsc": "エスケープ", "keyTab": "タブ",
+    "keyCtrl": "Ctrl 修飾キー", "keyAlt": "Alt 修飾キー",
+    "keyUp": "上矢印", "keyDown": "下矢印",
+    "keyLeft": "左矢印", "keyRight": "右矢印",
+    "keyHome": "Home", "keyEnd": "End",
+    "keyPgUp": "Page Up", "keyPgDn": "Page Down"
   },
   "remoteControl": {
     "terminal": "ターミナル", "desktop": "デスクトップ",

@@ -16,9 +16,15 @@ afterEach(async () => {
   await flushPromises()
 })
 
-function fixture() {
+function fixture(options?: { interactive?: boolean }) {
   const selection = { text: "", changed: () => {}, dispose: vi.fn() }
+  const modes = { applicationCursorKeysMode: false }
+  const input = vi.fn()
+  const focus = vi.fn()
   const terminal = {
+    modes,
+    input,
+    focus,
     hasSelection: () => Boolean(selection.text),
     getSelection: () => selection.text,
     onSelectionChange: (listener: () => void) => { selection.changed = listener; return { dispose: selection.dispose } },
@@ -34,12 +40,14 @@ function fixture() {
   const SearchStub = defineComponent({
     setup(_, { expose }) { expose(search); return () => h("div") },
   })
-  wrapper = mount(TerminalToolbar, {
+  const view = mount(TerminalToolbar, {
     attachTo: document.body,
-    props: { terminal, interactive: true },
+    props: { terminal, interactive: options?.interactive ?? true },
     global: { plugins: [i18n], stubs: { TerminalSearch: SearchStub } },
   })
-  return { view: wrapper, selection, addons, search }
+  wrapper = view
+  const exposed = view.vm as InstanceType<typeof TerminalToolbar>
+  return { view, exposed, selection, addons, search, input, focus, modes }
 }
 
 test("copies the current selection on click, reports a denied write, and clears the error on retry", async () => {
@@ -161,3 +169,148 @@ test("opens search from the toolbar button", async () => {
   await view.get('[aria-label="Search terminal"]').trigger("click")
   expect(search.open).toHaveBeenCalledOnce()
 })
+
+test("toggles the terminal keypad, sends primary and expanded keys, and respects application cursor mode", async () => {
+  const { view, input, focus, modes } = fixture()
+  expect(view.find("[data-terminal-keypad]").exists()).toBe(false)
+  const toggle = view.get('[data-terminal-keypad-toggle]')
+  expect(toggle.attributes("aria-pressed")).toBe("false")
+
+  await toggle.trigger("click")
+  expect(toggle.attributes("aria-pressed")).toBe("true")
+  expect(view.find("[data-terminal-keypad]").exists()).toBe(true)
+  expect(focus).toHaveBeenCalledOnce()
+
+  await view.get('[data-key="Escape"]').trigger("click")
+  await view.get('[data-key="Tab"]').trigger("click")
+  await view.get('[data-key="ArrowLeft"]').trigger("click")
+  await view.get('[data-key="ArrowUp"]').trigger("click")
+  expect(input.mock.calls.map(([seq]) => seq)).toEqual(["\x1b", "\t", "\x1b[D", "\x1b[A"])
+
+  modes.applicationCursorKeysMode = true
+  input.mockClear()
+  await view.get('[data-key="ArrowDown"]').trigger("click")
+  await view.get('[data-key="ArrowRight"]').trigger("click")
+  expect(input.mock.calls.map(([seq]) => seq)).toEqual(["\x1bOB", "\x1bOC"])
+
+  modes.applicationCursorKeysMode = false
+  input.mockClear()
+  expect(view.find("[data-terminal-keypad-expanded]").exists()).toBe(false)
+  await view.get("[data-keypad-expand]").trigger("click")
+  expect(view.find("[data-terminal-keypad-expanded]").exists()).toBe(true)
+
+  for (const key of ["Home", "End", "PageUp", "PageDown", "|", "/", "-", "~", "_", "*", "F1", "F5", "F12"]) {
+    await view.get(`[data-key="${key}"]`).trigger("click")
+  }
+  expect(input.mock.calls.map(([seq]) => seq)).toEqual([
+    "\x1b[H", "\x1b[F", "\x1b[5~", "\x1b[6~",
+    "|", "/", "-", "~", "_", "*",
+    "\x1bOP", "\x1b[15~", "\x1b[24~",
+  ])
+
+  await view.setProps({ interactive: false })
+  expect(view.find("[data-terminal-keypad]").exists()).toBe(false)
+  expect(view.find("[data-terminal-keypad-toggle]").exists()).toBe(false)
+})
+
+test("arms and locks Ctrl and Alt modifiers for both virtual keys and soft-keyboard input", async () => {
+  const { view, exposed, input } = fixture()
+  await view.get("[data-terminal-keypad-toggle]").trigger("click")
+  const ctrl = view.get('[data-modifier="ctrl"]')
+  const alt = view.get('[data-modifier="alt"]')
+
+  // One-shot (armed) Ctrl modifies the next soft-keyboard character and resets.
+  await ctrl.trigger("click")
+  expect(ctrl.attributes("data-modifier-state")).toBe("armed")
+  expect(exposed.transformInput("c")).toBe("\x03")
+  await nextTick()
+  expect(ctrl.attributes("data-modifier-state")).toBe("off")
+  expect(exposed.transformInput("c")).toBe("c")
+
+  // Locked Ctrl stays active across multiple inputs until toggled off or reset.
+  await ctrl.trigger("click")
+  await ctrl.trigger("click")
+  expect(ctrl.attributes("data-modifier-state")).toBe("locked")
+  expect(exposed.transformInput("n")).toBe("\x0e")
+  expect(exposed.transformInput("p")).toBe("\x10")
+  await view.get('[data-key="ArrowLeft"]').trigger("click")
+  expect(input).toHaveBeenLastCalledWith("\x1b[1;5D")
+  expect(ctrl.attributes("data-modifier-state")).toBe("locked")
+  await ctrl.trigger("click")
+  expect(ctrl.attributes("data-modifier-state")).toBe("off")
+
+  // Alt modifies word navigation arrows and soft-keyboard characters.
+  await alt.trigger("click")
+  expect(alt.attributes("data-modifier-state")).toBe("armed")
+  await view.get('[data-key="ArrowLeft"]').trigger("click")
+  expect(input).toHaveBeenLastCalledWith("\x1bb")
+  expect(alt.attributes("data-modifier-state")).toBe("off")
+
+  await alt.trigger("click")
+  expect(exposed.transformInput("f")).toBe("\x1bf")
+  await nextTick()
+  expect(alt.attributes("data-modifier-state")).toBe("off")
+
+  // Reset clears any armed/locked modifiers.
+  await ctrl.trigger("click")
+  await alt.trigger("click")
+  exposed.reset()
+  await nextTick()
+  expect(ctrl.attributes("data-modifier-state")).toBe("off")
+  expect(alt.attributes("data-modifier-state")).toBe("off")
+})
+
+test("repeats navigation keys when held down and stops on release", async () => {
+  vi.useFakeTimers()
+  try {
+    const { view, input } = fixture()
+    await view.get("[data-terminal-keypad-toggle]").trigger("click")
+    const left = view.get('[data-key="ArrowLeft"]')
+
+    await left.trigger("pointerdown", { button: 0 })
+    vi.advanceTimersByTime(399)
+    expect(input).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1)
+    expect(input).toHaveBeenCalledTimes(1)
+    expect(input).toHaveBeenLastCalledWith("\x1b[D")
+
+    vi.advanceTimersByTime(130)
+    expect(input).toHaveBeenCalledTimes(3)
+
+    await left.trigger("pointerup")
+    await left.trigger("click")
+    vi.advanceTimersByTime(200)
+    expect(input).toHaveBeenCalledTimes(3)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("opens the terminal keypad automatically on coarse-pointer touch devices while allowing manual toggle", async () => {
+  const originalMatchMedia = window.matchMedia
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query === "(pointer: coarse)",
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+  try {
+    const { view } = fixture()
+    expect(view.find("[data-terminal-keypad]").exists()).toBe(true)
+    const toggle = view.get("[data-terminal-keypad-toggle]")
+    expect(toggle.attributes("aria-pressed")).toBe("true")
+
+    await toggle.trigger("click")
+    expect(view.find("[data-terminal-keypad]").exists()).toBe(false)
+    expect(toggle.attributes("aria-pressed")).toBe("false")
+  } finally {
+    window.matchMedia = originalMatchMedia
+  }
+})
+
+
