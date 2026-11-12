@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringHover } from "../../directives/spring.ts"
 import { ChevronRight, Plus, Ticket } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -17,12 +18,12 @@ const session = useAccountSession()!
       <p class="m-0 mt-2 text-sm text-ui-text-muted">{{ t(session.site.value?.allowTeamCreation ? "team.welcomeDescription" : "siteAdmin.teamCreationDisabled") }}</p>
     </div>
     <div class="flex flex-col gap-2">
-      <button v-if="session.site.value?.allowTeamCreation" type="button" class="ui-option-card" @click="session.dialog.value = 'create-team'">
+      <button v-spring-hover="-1" v-if="session.site.value?.allowTeamCreation" type="button" class="ui-option-card" @click="session.dialog.value = 'create-team'">
         <Plus :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1"><span class="block text-sm">{{ t("team.create") }}</span><span class="mt-0.5 block text-[13px] text-ui-text-muted">{{ t("team.createDescription") }}</span></span>
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
-      <button type="button" class="ui-option-card" @click="session.dialog.value = 'join-team'">
+      <button v-spring-hover="-1" type="button" class="ui-option-card" @click="session.dialog.value = 'join-team'">
         <Ticket :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1"><span class="block text-sm">{{ t("team.join") }}</span><span class="mt-0.5 block text-[13px] text-ui-text-muted">{{ t("team.joinDescription") }}</span></span>
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />

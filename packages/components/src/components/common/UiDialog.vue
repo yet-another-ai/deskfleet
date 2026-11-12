@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../../directives/spring.ts"
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui"
 import { watch } from "vue"
 
@@ -26,17 +27,17 @@ function restoreFocus(event: Event): void {
   <DialogRoot :open="open" @update:open="changeOpen">
     <DialogPortal>
       <DialogOverlay class="ui-dialog-overlay" />
-      <DialogContent
+      <DialogContent as-child
         class="ui-dialog ui-dialog-content app-no-drag"
         v-bind="{ ...(!described && { 'aria-describedby': undefined }), ...$attrs }"
         @escape-key-down="preventClose && $event.preventDefault()"
         @pointer-down-outside.prevent
         @open-auto-focus="emit('openAutoFocus', $event)"
         @close-auto-focus="restoreFocus"
-      >
+      ><div v-spring-enter>
         <DialogTitle v-if="title" class="sr-only">{{ title }}</DialogTitle>
         <slot />
-      </DialogContent>
+      </div></DialogContent>
     </DialogPortal>
   </DialogRoot>
 </template>

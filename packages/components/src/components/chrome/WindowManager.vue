@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../../directives/spring.ts"
 import "dockview-vue/dist/styles/dockview.css"
 import { MonitorPlay, Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
@@ -470,7 +471,7 @@ onScopeDispose(() => {
         <DropdownMenuRoot :modal="false">
           <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('toolbar.addWindow')" class="app-no-drag mx-[3px]"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent align="start" :side-offset="4" :collision-padding="8" :aria-label="t('toolbar.addWindow')" class="app-no-drag ui-menu z-50 flex w-44 flex-col" loop>
+            <DropdownMenuContent as-child align="start" :side-offset="4" :collision-padding="8" :aria-label="t('toolbar.addWindow')" class="app-no-drag ui-menu z-50 flex w-44 flex-col" loop><div v-spring-enter>
               <DropdownMenuItem as="button" type="button" data-window-type="changes" class="ui-menu-item" :disabled="changesOpen" @select="openWindowTab('changes', group)">
                 <span class="text-xs font-semibold" aria-hidden="true">±</span>{{ t("panel.changes") }}
               </DropdownMenuItem>
@@ -480,7 +481,7 @@ onScopeDispose(() => {
               <DropdownMenuItem as="button" type="button" data-window-type="terminal" class="ui-menu-item" :disabled="!sessionWorktreeId" @select="openWindowTab('terminal', group)">
                 <SquareTerminal :size="14" aria-hidden="true" />{{ t("terminal.new") }}
               </DropdownMenuItem>
-            </DropdownMenuContent>
+            </div></DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
       </template>

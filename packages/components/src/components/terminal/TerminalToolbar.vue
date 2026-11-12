@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpring, vSpringEnter } from "../../directives/spring.ts"
 import { Check, Copy, Download, Keyboard, Search, X } from "@lucide/vue"
 import { useMediaQuery, useTimeoutFn } from "@vueuse/core"
 import type { Terminal } from "@xterm/xterm"
@@ -102,7 +103,7 @@ defineExpose({
         ><div
           class="ui-meter-fill rounded"
           :class="[progress.state === 2 ? 'bg-ui-danger' : progress.state === 4 ? 'bg-ui-warning' : 'bg-ui-accent', progress.state === 3 && 'ui-meter-indeterminate']"
-          :style="progress.state === 3 ? undefined : { width: `${progress.value}%` }"
+          v-spring.enter="{ width: `${progress.state === 3 ? 40 : progress.value}%` }"
         /></div>
         <span class="truncate" :title="progressLabel">{{ progressLabel }}</span>
       </template>
@@ -126,10 +127,10 @@ defineExpose({
     <DropdownMenuRoot :open="menuOpen" :modal="false" @update:open="menuOpen = $event">
       <DropdownMenuTrigger class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.exportBuffer')" :title="t('terminal.exportBuffer')"><Download :size="14" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent align="end" side="top" :side-offset="4" class="ui-menu z-50 min-w-48">
+        <DropdownMenuContent as-child align="end" side="top" :side-offset="4" class="ui-menu z-50 min-w-48"><div v-spring-enter>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="download('ansi')">{{ t('terminal.exportAnsi') }}</DropdownMenuItem>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="download('html')">{{ t('terminal.exportHtml') }}</DropdownMenuItem>
-        </DropdownMenuContent>
+        </div></DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
   </div>

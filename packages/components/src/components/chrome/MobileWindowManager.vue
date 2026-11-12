@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
 import { useElementSize, usePreferredReducedMotion } from "@vueuse/core"
-import { waapi, type WAAPIAnimation } from "animejs"
-import { computed, defineAsyncComponent, nextTick, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
+import { computed, defineAsyncComponent, nextTick, provide, reactive, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
@@ -125,52 +124,32 @@ const scroller = useTemplateRef<HTMLElement>("scroller")
 const stage = useTemplateRef<HTMLElement>("stage")
 const { width: viewportWidth, height: viewportHeight } = useElementSize(viewport)
 const reducedMotion = usePreferredReducedMotion()
-const zooming = ref(false)
+const surfaceMotion = reactive<Record<string, boolean>>({})
+const zooming = computed(() => views.value.some(view => surfaceMotion[view.id]))
+const scrollOrigin = ref(0)
 const cardWidth = computed(() => Math.max(0, (viewportWidth.value - 56) / 3))
 const cardScale = computed(() => viewportWidth.value > 0 ? cardWidth.value / viewportWidth.value : 1)
 const rowHeight = computed(() => viewportHeight.value * cardScale.value + 52)
 const gridHeight = computed(() => Math.ceil(views.value.length / 3) * rowHeight.value + 16)
-let animations: WAAPIAnimation[] = []
-let transitionId = 0
-onScopeDispose(() => { transitionId++; for (const animation of animations) animation.cancel() })
+let overviewRevision = 0
 
-// Animate the actual live surfaces between their screen positions. Their layout
-// dimensions and DOM parents stay fixed, including when the overview is scrolled.
+// Every live surface owns its spring. Reversing this transition only changes
+// the target, including while the overview has been scrolled.
 async function transitionOverview(open: boolean, selectedId = activeId.value): Promise<void> {
-  const id = ++transitionId
-  const surfaces = [...stage.value?.querySelectorAll<HTMLElement>("[data-view-surface]") ?? []]
-  const previous = new Map(surfaces.map(element => [element, element.getBoundingClientRect()]))
-  for (const animation of animations) animation.cancel()
-  animations = []
-  zooming.value = true
+  const revision = ++overviewRevision
+  const previousScroll = scroller.value?.scrollTop ?? 0
   if (!open && document.activeElement && stage.value?.contains(document.activeElement)) {
     viewport.value?.parentElement?.querySelector<HTMLButtonElement>("[data-open-overview]")?.focus({ preventScroll: true })
   }
   activeId.value = selectedId
   overviewOpen.value = open
-  await nextTick()
-  if (id !== transitionId || !stage.value || !scroller.value) return
-  scroller.value.scrollTop = open ? Math.floor(activeIndex.value / 3) * rowHeight.value : 0
-  const origin = stage.value.getBoundingClientRect()
-  const finished: Promise<unknown>[] = []
-  if (reducedMotion.value !== "reduce" && viewportWidth.value > 0) {
-    for (const [element, rect] of previous) {
-      if (!element.isConnected || rect.width === 0) continue
-      const animation = waapi.animate(element, {
-        transform: [
-          `translate3d(${rect.left - origin.left}px, ${rect.top - origin.top}px, 0) scale(${rect.width / viewportWidth.value})`,
-          element.style.transform,
-        ],
-        duration: 420,
-        ease: "outQuart",
-      })
-      animations.push(animation)
-      finished.push(Promise.resolve(animation).then(() => {}, () => {}))
-    }
-  }
+  const nextScroll = open ? Math.floor(activeIndex.value / 3) * rowHeight.value : 0
   if (open) views.value.forEach((_, index) => reveal(index))
-  await Promise.all(finished)
-  if (id === transitionId) { zooming.value = false; animations = [] }
+  await nextTick()
+  if (revision !== overviewRevision || !scroller.value) return
+  scroller.value.scrollTop = nextScroll
+  // Use the browser-clamped scroll offset after the new layout is present.
+  scrollOrigin.value += scroller.value.scrollTop - previousScroll
 }
 function dismissOverview(): void {
   if (overviewOpen.value) {
@@ -200,7 +179,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
     <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging: dragging || settling, zooming }">
       <div ref="scroller" class="absolute inset-0 overscroll-contain" :class="overviewOpen ? 'overflow-x-hidden overflow-y-auto' : 'overflow-clip'" :data-view-overview="overviewOpen ? '' : undefined">
         <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
-          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview'" :busy="busy" @select="select(index)" @close="closeView(view)">
+          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview'" :busy="busy" :direct="!overviewOpen && !zooming && (dragging || settling)" :scroll-origin="scrollOrigin" @motion="surfaceMotion[view.id] = $event" @select="select(index)" @close="closeView(view)">
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />

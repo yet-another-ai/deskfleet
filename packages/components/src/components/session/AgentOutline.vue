@@ -28,6 +28,7 @@ const PREVIEW_ITEMS: OutlineItem[] = [
 </script>
 
 <script setup lang="ts">
+import { vSpring, vSpringEnter } from "../../directives/spring.ts"
 import { watchImmediate } from "@vueuse/core"
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef, watch } from "vue"
@@ -58,7 +59,6 @@ const rows = useTemplateRef<HTMLLIElement[]>("rows")
 const hovered = ref<string>()
 const selectedPreview = ref(PREVIEW_ITEMS[7]!.id)
 const audioEnabled = computed(() => props.preview || appearance.settings.outlineAudio)
-const audioActive = computed(() => audioEnabled.value && audio.active)
 const maxWidth = computed(() => props.maxWidth ?? appearance.settings.outlineAudioMaxWidth)
 const rgb = computed(() => props.rgb ?? (audioEnabled.value && appearance.settings.outlineAudioRgb))
 
@@ -153,21 +153,22 @@ watch(currentActive, id => {
             >
               <span
                 aria-hidden="true"
-                :style="{ width: `${tickWidth(index, item.label)}px`, backgroundColor: rgb ? audio.color(index, highlighted === item.id) : undefined }"
+                v-spring="{ width: `${tickWidth(index, item.label)}px` }"
+                :style="{ backgroundColor: rgb ? audio.color(index, highlighted === item.id) : undefined }"
                 class="pointer-events-none h-0.5 shrink-0 rounded-full duration-150 ease-out"
                 :class="[
-                  audioActive && hoveredIndex < 0 ? 'transition-colors' : 'transition-[width,background-color]',
+                  'transition-colors',
                   highlighted === item.id ? 'bg-ui-accent' : 'bg-ui-text-muted/45 group-focus-visible:bg-ui-text-muted',
                 ]"
               />
             </TooltipTrigger>
             <TooltipPortal>
-              <TooltipContent
+              <TooltipContent as-child
                 side="right"
                 :side-offset="8"
                 :collision-padding="8"
                 class="ui-tooltip z-70 max-w-72 break-words rounded-md border border-ui-border bg-ui-surface px-2.5 py-1.5 text-xs leading-5 text-ui-text shadow-ui-popover"
-              >
+              ><div v-spring-enter>
                 <p class="m-0 truncate font-medium">{{ item.label }}</p>
                 <p
                   v-if="item.reply"
@@ -175,7 +176,7 @@ watch(currentActive, id => {
                 >
                   {{ item.reply }}
                 </p>
-              </TooltipContent>
+              </div></TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
         </li>

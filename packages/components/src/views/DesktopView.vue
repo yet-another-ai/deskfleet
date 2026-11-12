@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../directives/spring.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
@@ -333,7 +334,7 @@ const errorDescription = computed(() => {
 
         <!-- Stay inside the fullscreen stage, including nested select portals. -->
         <PopoverPortal :to="stage ?? undefined">
-        <PopoverContent :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
+        <PopoverContent as-child :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3"><div v-spring-enter>
           <ErrorNotice v-if="settingsFailure" :title="t('desktop.settingsFailed')" :error="settingsFailure.error ?? settingsFailure.detail">
             <UiButton size="sm" @click="applySettings">{{ t("errors.retry") }}</UiButton>
           </ErrorNotice>
@@ -354,7 +355,7 @@ const errorDescription = computed(() => {
             <UiCheckbox v-model="reverseScroll" data-desktop-reverse-scroll />
             {{ t("desktop.reverseScroll") }}
           </label>
-        </PopoverContent>
+        </div></PopoverContent>
         </PopoverPortal>
       </div>
       </PopoverRoot>

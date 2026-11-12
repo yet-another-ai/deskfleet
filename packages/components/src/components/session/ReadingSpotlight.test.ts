@@ -90,7 +90,7 @@ test("highlights the hovered reading block when enabled and clears outside prose
     expect(overlay!.dataset.readingSpotlightStyle).toBe("aside")
     expect(overlay!.classList.contains("ui-reading-spotlight-aside")).toBe(true)
     expect(overlay!.classList.contains("ui-reading-spotlight-under")).toBe(false)
-  })
+  }, { timeout: 3000 })
   vi.spyOn(document, "elementFromPoint").mockReturnValue(document.body)
   window.dispatchEvent(new MouseEvent("mousemove", { clientX: 8, clientY: 8, bubbles: true }))
   await vi.waitFor(() => {

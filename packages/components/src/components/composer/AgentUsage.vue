@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vSpring } from "../../directives/spring.ts"
+import { vSpringEnter } from "../../directives/spring.ts"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -37,20 +39,20 @@ const cost = computed(() => {
       <span>{{ percent }}</span>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4">
+      <PopoverContent as-child side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4"><div v-spring-enter>
         <div class="mb-3 flex items-center justify-between gap-4">
           <h3 class="m-0 text-[13px] font-medium">{{ t('agent.usage.context') }}</h3>
           <span class="text-xs tabular-nums" :class="tone">{{ percent }}</span>
         </div>
         <div v-if="ratio !== undefined" role="progressbar" :aria-label="t('agent.usage.context')" :aria-valuemin="0" :aria-valuemax="usage.size" :aria-valuenow="Math.min(usage.used, usage.size)" :aria-valuetext="summary" class="ui-meter mb-4">
-          <div class="ui-meter-fill" :class="ratio >= 0.9 ? 'bg-ui-warning' : 'bg-ui-accent'" :style="{ width: `${fill}%` }" />
+          <div class="ui-meter-fill" :class="ratio >= 0.9 ? 'bg-ui-warning' : 'bg-ui-accent'" v-spring.enter="{ width: `${fill}%` }" />
         </div>
         <dl class="m-0 flex flex-col gap-2 text-xs">
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.used') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-used>{{ t('agent.usage.tokens', { count: numbers.format(usage.used) }) }}</dd></div>
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.capacity') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-capacity>{{ usage.size > 0 ? t('agent.usage.tokens', { count: numbers.format(usage.size) }) : t('composer.unavailable') }}</dd></div>
           <div v-if="cost !== undefined" class="mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
         </dl>
-      </PopoverContent>
+      </div></PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
 </template>

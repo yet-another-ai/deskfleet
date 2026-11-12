@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpring } from "../../directives/spring.ts"
 import { Download, ExternalLink, FolderOpen, LocateFixed } from "@lucide/vue"
 import { getActivePinia } from "pinia"
 import { DialogTitle } from "reka-ui"
@@ -199,7 +200,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             <span v-if="loadPercent !== undefined" class="text-xs tabular-nums">{{ loadPercent }}%</span>
           </div>
           <div v-if="loadPercent !== undefined" class="h-1 w-full overflow-hidden rounded-full bg-ui-hover" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
-            <div class="h-full bg-ui-accent transition-[width] duration-150" :style="{ width: `${loadPercent}%` }" />
+            <div class="h-full bg-ui-accent" v-spring.enter="{ width: `${loadPercent}%` }" />
           </div>
         </div>
         <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
@@ -234,7 +235,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <span v-if="loadPercent !== undefined" class="text-xs tabular-nums">{{ loadPercent }}%</span>
       </div>
       <div v-if="loadPercent !== undefined" class="h-1 w-full overflow-hidden rounded-full bg-ui-hover" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
-        <div class="h-full bg-ui-accent transition-[width] duration-150" :style="{ width: `${loadPercent}%` }" />
+        <div class="h-full bg-ui-accent" v-spring.enter="{ width: `${loadPercent}%` }" />
       </div>
     </div>
     <FileBrowserPane v-else-if="entry?.kind === 'directory' && filesApi" :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />

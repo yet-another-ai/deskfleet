@@ -15,6 +15,7 @@ import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
 import type { ComposerMention } from "./services/composer-mentions.ts"
+import * as messageTransitions from "./services/message-sent-transition.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -943,9 +944,7 @@ test("switching away and back restores a manual reading position before synchron
 test("deferred Session startup opens immediately with bubble animation, renders startup status in the reply area, and clears cleanly if stopped", async () => {
   snapshot.session.lifecycle = "provisioning"
   snapshot.runs = []
-  const cancelledAnimations = vi.fn()
-  const animate = vi.fn(() => ({ cancel: cancelledAnimations, addEventListener: vi.fn() }) as unknown as Animation)
-  Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, writable: true, value: animate })
+  const transitions = vi.spyOn(messageTransitions, "consumeSentMessageTransition")
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 200, 320, 48))
   const submission = deferred<{ operationId: string; commandId: string; sessionId: string; inputId: string }>()
   const normal = transport.call.getMockImplementation()!
@@ -968,7 +967,9 @@ test("deferred Session startup opens immediately with bubble animation, renders 
   const conversation = wrapper.get('[aria-label="Conversation"]')
   const initialBubble = conversation.get("[data-user-message-bubble]").element
   expect(conversation.text()).toContain("Cut the video clip")
-  expect(animate).toHaveBeenCalled()
+  expect(initialBubble.getAttribute("data-message-sending")).toBe("true")
+  const animation = transitions.mock.results.flatMap(result => result.type === "return" ? result.value : [])[0]!
+  const cancelledAnimations = vi.spyOn(animation, "cancel")
   expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.lifecycle.provisioning"))
   expect(wrapper.findAll('[role="status"]').filter(node => node.text().includes(i18n.global.t("agent.lifecycle.provisioning")))).toHaveLength(1)
 
@@ -1003,7 +1004,6 @@ test("deferred Session startup opens immediately with bubble animation, renders 
   expect(cancelledAnimations).not.toHaveBeenCalled()
 
   // Sending another message after stopping animates the new bubble in and restarts the in-reply status.
-  animate.mockClear()
   const secondInput = agentInput({ id: "41", content: [{ type: "text", text: "Export 1080p MP4 instead" }] })
   transport.call.mockImplementation(async (method, params) => {
     if (method === "_deskfleet/input/submit") {
@@ -1022,7 +1022,7 @@ test("deferred Session startup opens immediately with bubble animation, renders 
   expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
   expect(conversation.text()).toContain("Export 1080p MP4 instead")
   expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
-  expect(animate).toHaveBeenCalled()
+  expect(conversation.findAll("[data-user-message-bubble]")[1]!.attributes("data-message-sending")).toBe("true")
   expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.runState.starting"))
 
   // Sending a third message while startup is already active queues it in AgentBacklog instead of adding a third bubble.

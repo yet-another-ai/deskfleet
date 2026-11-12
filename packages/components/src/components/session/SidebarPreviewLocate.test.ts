@@ -5,6 +5,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import * as mermaidService from "../../services/mermaid.ts"
+import * as springScroll from "../../services/spring-scroll.ts"
 import { previewKindFromMime, previewKindFromUri, resolvePreviewKind } from "../../services/preview.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import PreviewViewer from "./PreviewViewer.vue"
@@ -42,8 +43,7 @@ test.each([
   original.dataset[kind === "mermaid" ? "mermaid" : "preview"] = "0"
   original.dataset[kind === "mermaid" ? "mermaidMode" : "previewMode"] = "inline"
   original.dataset[kind === "mermaid" ? "mermaidCode" : "previewContent"] = content
-  const scroll = vi.fn()
-  original.scrollIntoView = scroll
+  const scroll = vi.spyOn(springScroll, "springScrollIntoView")
   entry.appendChild(original)
   document.body.appendChild(entry)
 
@@ -79,7 +79,7 @@ test.each([
   await wrapper.get(`[data-${kind === "mermaid" ? "mermaid" : "preview"}-action="locate-message"]`).trigger("click")
   await flushPromises()
   expect(navigate).not.toHaveBeenCalled()
-  expect(scroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
+  expect(scroll).toHaveBeenCalledWith(original)
   expect(layout.detailsOpen).toBe(false)
   expect(wrapper.find(`[data-${kind === "mermaid" ? "mermaid" : "preview"}-mode="tab"]`).exists()).toBe(!compact)
   expect(otherLayout.detailsOpen).toBe(compact)
@@ -109,9 +109,10 @@ test("ImagePreview registers toolbar actions and handles zoom/reset gestures, wh
   await flushPromises()
   const stage = wrapper.get("[data-preview-stage]")
   await wrapper.get('[data-preview-action="zoom-in"]').trigger("click")
-  expect(stage.attributes("style")).toContain("scale(1.25)")
+  expect(stage.attributes("style")).toContain("scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(1.25)")
   await wrapper.get('[data-preview-action="reset"]').trigger("click")
-  expect(stage.attributes("style")).toContain("translate(0px, 0px) scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("translate(0px, 0px) scale(1)")
   expect(wrapper.find('[data-preview-action="color-picker"]').exists()).toBe(true)
 
   await wrapper.setProps({ kind: "audio", content: "data:audio/wav;base64,AA==" })

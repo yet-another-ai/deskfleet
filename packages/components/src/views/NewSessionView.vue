@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../directives/spring.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { storeToRefs } from "pinia"
 import { computed, onScopeDispose, ref, shallowRef } from "vue"
@@ -119,7 +120,7 @@ async function submit(): Promise<void> {
   <PaneHeader />
   <div class="relative isolate flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6">
     <div class="ui-aurora" aria-hidden="true" />
-    <h1 class="ui-gradient-text ui-rise-in m-0 pb-1 text-center text-3xl font-semibold tracking-tight">{{ t("newSession.heading") }}</h1>
+    <h1 v-spring-enter class="ui-gradient-text ui-rise-in m-0 pb-1 text-center text-3xl font-semibold tracking-tight">{{ t("newSession.heading") }}</h1>
     <p v-if="!newSessionTarget" class="m-0 text-ui-text-muted">{{ t("newSession.noTarget") }}</p>
     <p v-if="submitting" role="status" class="text-sm text-ui-text-muted">{{ t("agent.creating") }}</p>
     <ErrorNotice v-if="error" :error="error" class="w-full max-w-xl" />

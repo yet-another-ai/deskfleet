@@ -183,21 +183,15 @@ textarea {
 }
 
 /*
- * Motion. Durations and easings come from theme-tokens.css; reduced motion
- * collapses the durations there, and loops below stop outright.
+ * Position and size motion use the shared spring engine. CSS owns fades,
+ * colors and decorative loops; reduced motion stops those loops below.
  */
 
 /* Popper overlays grow from their anchor and slide in from the side they open on. */
 .ui-menu,
 .ui-tooltip {
-  --ui-enter-x: 0px;
-  --ui-enter-y: 0px;
   transform-origin: var(--reka-popper-transform-origin, center);
 }
-:is(.ui-menu, .ui-tooltip)[data-side="bottom"] { --ui-enter-y: -4px; }
-:is(.ui-menu, .ui-tooltip)[data-side="top"] { --ui-enter-y: 4px; }
-:is(.ui-menu, .ui-tooltip)[data-side="left"] { --ui-enter-x: 4px; }
-:is(.ui-menu, .ui-tooltip)[data-side="right"] { --ui-enter-x: -4px; }
 .ui-menu[data-state="open"],
 .ui-tooltip:is([data-state="delayed-open"], [data-state="instant-open"]) {
   animation: ui-overlay-in var(--ui-duration-base) var(--ui-ease-out);
@@ -209,7 +203,7 @@ textarea {
 .ui-tooltip[data-state="instant-open"] { animation-duration: var(--ui-duration-fast); }
 
 @keyframes ui-overlay-in {
-  from { opacity: 0; translate: var(--ui-enter-x) var(--ui-enter-y); scale: 0.96; }
+  from { opacity: 0; }
 }
 @keyframes ui-overlay-out {
   to { opacity: 0; scale: 0.97; }
@@ -228,7 +222,7 @@ textarea {
 @keyframes ui-fade-in { from { opacity: 0; } }
 @keyframes ui-fade-out { to { opacity: 0; } }
 @keyframes ui-dialog-in {
-  from { opacity: 0; scale: 0.96; translate: 0 8px; }
+  from { opacity: 0; }
 }
 @keyframes ui-dialog-out {
   to { opacity: 0; scale: 0.98; }
@@ -241,14 +235,14 @@ textarea {
 /* Title bars stay put so their drag regions never move under the pointer. */
 .ui-route-stage > header { animation-name: ui-fade-in; }
 @keyframes ui-route-in {
-  from { opacity: 0; translate: 0 6px; }
+  from { opacity: 0; }
 }
 
 /* Generic entrances for content that appears while the user watches. */
 .ui-rise-in { animation: ui-rise-in var(--ui-duration-slow) var(--ui-ease-out); }
 .ui-pop-in { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }
 @keyframes ui-rise-in {
-  from { opacity: 0; translate: 0 8px; scale: 0.99; }
+  from { opacity: 0; }
 }
 @keyframes ui-pop-in {
   from { opacity: 0; scale: 0.85; }
@@ -264,15 +258,7 @@ textarea {
   will-change: width, height, margin, translate, transform;
 }
 
-/* Switch: the thumb springs across and stretches while held, like a native toggle. */
-.ui-switch-thumb {
-  transition-property: transform, translate, left, width;
-  transition-duration: var(--ui-duration-base);
-  transition-timing-function: var(--ui-ease-spring);
-}
-.ui-switch:enabled:active .ui-switch-thumb { width: 1.25rem; }
-.ui-switch:enabled:active .ui-switch-thumb[data-state="checked"] { left: -0.125rem; }
-
+/* Switch thumb position is driven by the shared spring. */
 /* Radios: the checked ring tints and its dot springs in. */
 [role="radio"][data-state="unchecked"]:hover:not([data-disabled]) > .ui-radio { border-color: var(--ui-color-text-faint); }
 [data-state="checked"] > .ui-radio {
@@ -296,24 +282,16 @@ textarea {
   60%, to { opacity: 0; scale: 3; }
 }
 
-/* Meters: the fill grows in from the left, eases between values, and carries a light sheen. */
+/* Meter widths use v-spring; CSS supplies the sheen and continuous busy sweep. */
 .ui-meter-fill {
   background-image: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 70%);
   transform-origin: left;
-  transition: width var(--ui-duration-slow) var(--ui-ease-out), background-color var(--ui-duration-base) var(--ui-ease-out);
-  animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out);
+  transition: background-color var(--ui-duration-base) var(--ui-ease-out);
 }
-@keyframes ui-meter-in { from { scale: 0 1; } }
-/*
- * Progress without a known value: a segment sweeps across the track. The
- * grow-in stays first in the list so it is not restarted when the sweep is
- * added or removed; a changed animation list replays only new names.
- */
+/* Progress without a known value continuously travels across the track. */
 .ui-meter-fill.ui-meter-indeterminate {
   width: 40%;
-  animation:
-    ui-meter-in var(--ui-duration-slow) var(--ui-ease-out),
-    ui-meter-sweep 1.3s var(--ui-ease-in-out) infinite;
+  animation: ui-meter-sweep 1.3s linear infinite;
 }
 @keyframes ui-meter-sweep {
   from { translate: -100% 0; }
@@ -375,18 +353,6 @@ textarea {
  * spacing, borders, and backgrounds on a child.
  */
 .ui-collapsible { overflow: hidden; }
-.ui-collapsible[data-state="open"] { animation: ui-collapsible-open var(--ui-duration-base) var(--ui-ease-out); }
-/* Hold the collapsed end state until Reka unmounts the content. */
-.ui-collapsible[data-state="closed"] { animation: ui-collapsible-close var(--ui-duration-fast) var(--ui-ease-in-out) forwards; }
-@keyframes ui-collapsible-open {
-  from { height: 0; opacity: 0; }
-  to { height: var(--reka-collapsible-content-height); }
-}
-@keyframes ui-collapsible-close {
-  from { height: var(--reka-collapsible-content-height); }
-  to { height: 0; opacity: 0; }
-}
-
 /* Live status text: a band of light sweeps across while work continues. */
 .ui-shimmer-text {
   background-image: linear-gradient(
@@ -464,7 +430,7 @@ textarea {
   .ui-attention { box-shadow: var(--ui-shadow-card); }
   .ui-status-live::after { display: none; }
   /* Without the sweep, indeterminate progress reads as a dimmed full track. */
-  .ui-meter-fill.ui-meter-indeterminate { width: 100%; opacity: 0.6; animation: ui-meter-in var(--ui-duration-slow) var(--ui-ease-out) !important; }
+  .ui-meter-fill.ui-meter-indeterminate { width: 100% !important; opacity: 0.6; animation: none !important; }
 }
 
 /* Agent-authored Markdown in the conversation. */

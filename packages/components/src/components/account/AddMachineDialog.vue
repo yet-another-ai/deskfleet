@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringHover } from "../../directives/spring.ts"
 import UiButton from "../common/UiButton.vue"
 import { ChevronRight, ExternalLink, Laptop, Server, Smartphone } from "@lucide/vue"
 import { whenever } from "@vueuse/core"
@@ -98,7 +99,7 @@ function focusInitial(event: Event): void {
     <DialogDescription class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
 
     <div v-if="step === 'choose'" class="flex flex-col gap-2">
-      <button type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
+      <button v-spring-hover="-1" type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
         <Laptop :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">
           <span class="block text-sm">{{ t("account.thisComputer") }}<span v-if="session.localStatus.value" class="text-ui-text-muted"> · {{ session.localStatus.value.machineName }}</span></span>
@@ -108,7 +109,7 @@ function focusInitial(event: Event): void {
         </span>
         <ChevronRight v-if="session.canEnrollLocal.value" :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
-      <button type="button" class="ui-option-card" :disabled="pending" data-add-machine="headless" @click="chooseHeadless">
+      <button v-spring-hover="-1" type="button" class="ui-option-card" :disabled="pending" data-add-machine="headless" @click="chooseHeadless">
         <Server :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">
           <span class="block text-sm">{{ t("addMachine.other") }}</span>
@@ -116,12 +117,12 @@ function focusInitial(event: Event): void {
         </span>
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
-      <a
+      <a v-spring-hover="-1"
         :href="guideUrl"
         target="_blank"
         rel="noopener noreferrer"
         data-android-daemon-guide
-        class="ui-option-card text-ui-text no-underline hover:-translate-y-px hover:bg-ui-control-hover hover:shadow-ui-raised active:translate-y-0 active:scale-[0.99]"
+        class="ui-option-card text-ui-text no-underline hover:bg-ui-control-hover hover:shadow-ui-raised active:scale-[0.99]"
       >
         <Smartphone :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">

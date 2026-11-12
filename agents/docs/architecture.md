@@ -231,6 +231,27 @@ Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
 The Vue Web client and the Electron client share a common UI component package.
+Targeted UI movement uses the shared `createSpring` physics controller,
+`useSpring` Vue composable, and `SpringMotion` renderless component in
+`packages/components`. Each controller retains position and velocity when a
+target changes or motion is paused. The default parameters are `duration: 0.5`
+seconds and `bounce: 0.16`, with `omega = 2 * PI / duration` and
+`zeta = 1 - bounce`. Duration sets the spring's natural frequency; it is not a
+fixed completion deadline. The controller integrates velocity before position
+with semi-implicit Euler steps, subdividing frames according to elapsed time
+and natural frequency, and stops only when both displacement and velocity are
+small. Vue adapters own frame scheduling and stop it on scope disposal.
+
+Pointer dragging directly controls position and estimates velocity in units per
+second. Releasing a snapping surface continues toward its target with that
+velocity; canvas panning and sliders instead use damping-only inertia and absorb
+momentum at bounds without bouncing. Explicit initialization uses `jump`, while
+ordinary input changes use `setTarget`, so the first input from rest also
+animates. Programmatic conversation scrolling uses the same controller and
+yields to user input. Native wheel/touch scrolling and scrollbar dragging keep
+the browser's scrolling behavior. Reduced-motion preferences settle targeted
+movement immediately and stop inertial movement at its current position.
+
 Below 1024 CSS pixels, a Session shows one full-width view at a time.
 Chat, Changes, each terminal, and each preview form one ordered list without
 nested tabs or a two-dimensional window layout. The title bar zooms the content

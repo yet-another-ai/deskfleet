@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringEnter } from "../../directives/spring.ts"
 import { Pencil, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
@@ -104,10 +105,10 @@ defineExpose({ cursor, pointerReference })
       </div>
     </ContextMenuTrigger>
     <ContextMenuPortal>
-      <ContextMenuContent :reference="pointerReference" :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
+      <ContextMenuContent as-child :reference="pointerReference" :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()"><div v-spring-enter>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled" @select="choose('edit')"><Pencil :size="14" aria-hidden="true" />{{ t('workspace.edit') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item text-ui-danger" :disabled="disabled" @select="choose('delete')"><Trash2 :size="14" aria-hidden="true" />{{ t('workspace.delete') }}</ContextMenuItem>
-      </ContextMenuContent>
+      </div></ContextMenuContent>
     </ContextMenuPortal>
   </ContextMenuRoot>
   <WorkspaceEditDialog v-if="dialog === 'edit'" v-bind="props" @close="dialog = undefined" />

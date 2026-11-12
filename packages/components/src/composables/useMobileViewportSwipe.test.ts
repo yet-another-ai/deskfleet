@@ -160,3 +160,36 @@ test.each(["[data-mermaid-canvas] svg", "[data-preview-canvas] img", "[data-offi
     }
   },
 )
+
+test("button navigation animates the first input and redirects without changing screen position", async () => {
+  index.value = 1
+  await nextTick()
+  expect(swipe.offset.value).toBe(390)
+  expect(swipe.settling.value).toBe(true)
+  await tick(96)
+  const screen = swipe.offset.value - 390
+  expect(screen).toBeLessThan(0)
+  expect(screen).toBeGreaterThan(-390)
+  index.value = 0
+  await nextTick()
+  expect(swipe.offset.value).toBeCloseTo(screen)
+  await tick(1200)
+  expect(swipe.offset.value).toBe(0)
+  expect(swipe.settling.value).toBe(false)
+})
+
+test("opening the overview during settling lets the stage finish without a frozen offset", async () => {
+  await pointer("right", "pointerdown", 380)
+  await tick(32)
+  await pointer("right", "pointermove", 180)
+  await pointer("right", "pointerup", 180)
+  await tick(48)
+  const before = swipe.offset.value
+  enabled.value = false
+  await nextTick()
+  expect(swipe.offset.value).toBe(before)
+  expect(swipe.settling.value).toBe(true)
+  await tick(1200)
+  expect(swipe.offset.value).toBe(0)
+  expect(swipe.settling.value).toBe(false)
+})

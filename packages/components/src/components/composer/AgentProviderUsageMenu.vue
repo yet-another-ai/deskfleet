@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vSpring } from "../../directives/spring.ts"
+import { vSpringEnter } from "../../directives/spring.ts"
 import { ChevronRight, LoaderCircle } from "@lucide/vue"
 import { DropdownMenuItem, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from "reka-ui"
 import { computed, ref, watch } from "vue"
@@ -76,7 +78,7 @@ function meterTone(remaining: number): string {
       <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </DropdownMenuSubTrigger>
     <DropdownMenuPortal>
-      <DropdownMenuSubContent data-agent-usage-menu :aria-label="t('composer.viewUsage')" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(22rem,var(--reka-popper-available-height))] w-68 max-w-[calc(100vw-16px)] flex-col overflow-hidden p-0">
+      <DropdownMenuSubContent as-child data-agent-usage-menu :aria-label="t('composer.viewUsage')" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(22rem,var(--reka-popper-available-height))] w-68 max-w-[calc(100vw-16px)] flex-col overflow-hidden p-0"><div v-spring-enter>
         <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-3">
           <p v-if="loading && !items?.length" role="status" class="m-0 flex items-center gap-1.5 text-xs text-ui-text-muted">
             <LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t("composer.loading") }}
@@ -95,14 +97,14 @@ function meterTone(remaining: number): string {
                   <span class="shrink-0 tabular-nums text-ui-text-muted">{{ percentFormat.format(item.remaining) }}</span>
                 </div>
                 <div role="progressbar" :aria-label="item.label" :aria-valuemin="0" :aria-valuemax="100" :aria-valuenow="Math.round(item.remaining * 100)" class="ui-meter">
-                  <div class="ui-meter-fill" :class="meterTone(item.remaining)" :style="{ width: `${item.remaining * 100}%` }" />
+                  <div class="ui-meter-fill" :class="meterTone(item.remaining)" v-spring.enter="{ width: `${item.remaining * 100}%` }" />
                 </div>
                 <span v-if="item.resetText" class="text-[11px] text-ui-text-faint">{{ item.resetText }}</span>
               </div>
             </div>
           </div>
         </UiScrollArea>
-      </DropdownMenuSubContent>
+      </div></DropdownMenuSubContent>
     </DropdownMenuPortal>
   </DropdownMenuSub>
 </template>
