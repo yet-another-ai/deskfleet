@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { ScrollAreaRoot, ScrollAreaScrollbar, ScrollAreaThumb, ScrollAreaViewport } from "reka-ui"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -158,8 +158,8 @@ const forkOpen = ref(false)
 const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? openWithMenu.value?.launchError ?? agents.draftErrors[props.sessionId])
-const scrollViewport = useTemplateRef<InstanceType<typeof ScrollAreaViewport>>("scrollViewport")
-const scroller = computed(() => scrollViewport.value?.viewportElement)
+const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
+const scroller = computed(() => scrollArea.value?.viewportElement ?? undefined)
 const overlay = useTemplateRef<HTMLElement>("overlay")
 const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("conversation")
 const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
@@ -325,26 +325,24 @@ async function checkOperation(operationId: string): Promise<void> {
     </template>
   </SessionHeader>
   <div class="relative flex min-h-0 flex-1">
-    <div
-      aria-hidden="true"
-      class="pointer-events-none absolute inset-x-0 top-0 z-10 mx-auto h-6 w-full max-w-3xl [background:linear-gradient(to_top,transparent,var(--ui-color-canvas))]"
-    />
-    <ScrollAreaRoot type="auto" class="min-h-0 min-w-0 flex-1 overflow-hidden" data-session-scroll-area>
-      <ScrollAreaViewport ref="scrollViewport" class="h-full w-full outline-none" data-session-scroll-viewport>
-        <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
-          <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
-          <template v-else-if="snapshot">
-            <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
-              <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
-            </AgentConversation>
-            <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
-          </template>
-        </div>
-      </ScrollAreaViewport>
-      <ScrollAreaScrollbar orientation="vertical" class="group z-20 flex w-2.5 touch-none select-none p-0.5">
-        <ScrollAreaThumb class="relative flex-1 rounded-full bg-ui-text-faint/50 ui-motion group-hover:bg-ui-text-faint/70" />
-      </ScrollAreaScrollbar>
-    </ScrollAreaRoot>
+    <UiScrollArea
+      ref="scrollArea"
+      fade="top"
+      class="min-h-0 min-w-0 flex-1"
+      content-class="flex min-h-full flex-col"
+      data-session-scroll-area
+      :viewport-attrs="{ 'data-session-scroll-viewport': '' }"
+    >
+      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
+        <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
+        <template v-else-if="snapshot">
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
+            <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
+          </AgentConversation>
+          <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
+        </template>
+      </div>
+    </UiScrollArea>
     <ReadingSpotlight />
     <AgentOutline
       v-if="snapshot && !view?.loading"

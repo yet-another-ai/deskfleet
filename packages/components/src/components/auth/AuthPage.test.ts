@@ -362,7 +362,7 @@ test("/auth/account renders a scrollable container within the clipped app shell"
     return {}
   }, { id: "u1", name: "Ada", email: "ada@example.test" })
   await flushPromises()
-  expect(view!.classes()).toContain("overflow-y-auto")
+  expect(view!.attributes("data-ui-scroll-area")).toBe("")
   expect(view!.classes()).toContain("h-full")
 })
 

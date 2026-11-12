@@ -3,12 +3,14 @@ import type { AiUsageDay } from "@deskfleet/client/ai-usage"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { computed, onMounted, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
+import { useScrollFade } from "../../composables/useScrollFade.ts"
 import { calendarCells, heatmapLevel } from "../../services/team-ai-usage.ts"
 
 const props = defineProps<{ days: AiUsageDay[]; from: string; to: string; selected?: string }>()
 const emit = defineEmits<{ select: [date: string] }>()
 const { t, locale } = useI18n()
 const scroll = useTemplateRef<HTMLDivElement>("scroll")
+const { fadeStyle, measure } = useScrollFade(scroll, { fade: "x", size: "sm" })
 const cells = computed(() => calendarCells(props.days))
 const maximum = computed(() => Math.max(0, ...props.days.map(day => day.totalTokens)))
 const weeks = computed(() => Math.ceil(cells.value.length / 7))
@@ -36,7 +38,10 @@ function description(day: AiUsageDay): string {
   return t("aiUsage.dayTokens", { date, tokens: numberFormat.value.format(day.totalTokens), reported: day.reportedTurnCount, turns: day.turnCount })
 }
 onMounted(() => {
-  if (scroll.value) scroll.value.scrollLeft = scroll.value.scrollWidth
+  if (scroll.value) {
+    scroll.value.scrollLeft = scroll.value.scrollWidth
+    measure()
+  }
 })
 </script>
 
@@ -45,7 +50,8 @@ onMounted(() => {
     <div class="grid shrink-0 grid-rows-7 gap-1 pt-7 text-[10px] leading-3 text-ui-text-muted" aria-hidden="true">
       <span>{{ t("aiUsage.monday") }}</span><span /><span>{{ t("aiUsage.wednesday") }}</span><span /><span>{{ t("aiUsage.friday") }}</span><span /><span />
     </div>
-    <div ref="scroll" class="min-w-0 flex-1 overflow-x-auto pb-2">
+    <div class="ui-scroll-mask flex min-w-0 flex-1" :style="fadeStyle">
+      <div ref="scroll" class="min-w-0 flex-1 overflow-x-auto pb-2">
       <div class="heatmap" :style="{ '--weeks': weeks }">
         <div class="months mb-3 h-4 text-[10px] text-ui-text-muted" aria-hidden="true">
           <span v-for="(month, index) in months" :key="index">{{ month }}</span>
@@ -61,6 +67,7 @@ onMounted(() => {
             <span v-else />
           </template>
         </div>
+      </div>
       </div>
     </div>
   </div>

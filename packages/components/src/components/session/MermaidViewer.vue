@@ -13,6 +13,7 @@ import type { PreviewMode } from "../../services/preview.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
 import { broadcastMermaidLocate, locateMermaidInMainView, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 
 const platformClient = usePlatformClient()
 
@@ -181,6 +182,8 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
         <div data-mermaid-stage class="flex w-full items-center justify-center transition-transform duration-75 ease-out" :class="dragging && 'transition-none!'" :style="{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }" v-html="svg" />
       </div>
     </div>
-    <pre v-else class="m-0 overflow-x-auto border-0 p-3"><code>{{ code }}</code></pre>
+    <UiScrollArea v-else orientation="horizontal" fade-size="sm">
+      <pre class="!m-0 !overflow-visible !border-0 p-3"><code>{{ code }}</code></pre>
+    </UiScrollArea>
   </div>
 </template>

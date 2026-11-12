@@ -6,6 +6,7 @@ import {
   ComboboxAnchor, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxItemIndicator, ComboboxPortal, ComboboxRoot, ComboboxTrigger, ComboboxViewport,
   SelectContent, SelectIcon, SelectItem, SelectItemIndicator, SelectItemText, SelectPortal, SelectRoot, SelectTrigger, SelectValue, SelectViewport,
 } from "reka-ui"
+import UiScrollArea from "./UiScrollArea.vue"
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
@@ -34,13 +35,15 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
       <ComboboxTrigger class="absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-ui-text-muted hover:text-ui-text" :disabled="disabled" :aria-label="String($attrs['aria-label'] ?? placeholder ?? label(modelValue))" tabindex="-1"><ChevronDown :size="14" aria-hidden="true" /></ComboboxTrigger>
     </ComboboxAnchor>
     <ComboboxPortal :to="portalTo">
-      <ComboboxContent position="popper" :side-offset="5" class="ui-menu z-100 max-h-[min(20rem,var(--reka-combobox-content-available-height))] min-w-[var(--reka-combobox-trigger-width)] overflow-hidden">
-        <ComboboxViewport class="max-h-72 overflow-y-auto">
-          <ComboboxEmpty class="px-3 py-5 text-center text-[13px] text-ui-text-muted">{{ t('common.noResults') }}</ComboboxEmpty>
-          <ComboboxItem v-for="option in options" :key="option.value" :value="option.value" :text-value="option.label" :disabled="option.disabled" class="ui-menu-item relative pr-8 outline-none data-[highlighted]:bg-ui-hover data-[disabled]:pointer-events-none data-[disabled]:op-40">
-            {{ option.label }}<ComboboxItemIndicator class="absolute right-2.5"><Check :size="14" aria-hidden="true" /></ComboboxItemIndicator>
-          </ComboboxItem>
-        </ComboboxViewport>
+      <ComboboxContent position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-combobox-content-available-height))] min-w-[var(--reka-combobox-trigger-width)] flex-col overflow-hidden p-0">
+        <UiScrollArea :focusable="false" fade-size="sm" class="max-h-72 min-h-0 flex-auto">
+          <ComboboxViewport class="!overflow-visible p-1">
+            <ComboboxEmpty class="px-3 py-5 text-center text-[13px] text-ui-text-muted">{{ t('common.noResults') }}</ComboboxEmpty>
+            <ComboboxItem v-for="option in options" :key="option.value" :value="option.value" :text-value="option.label" :disabled="option.disabled" class="ui-menu-item relative pr-8 outline-none data-[highlighted]:bg-ui-hover data-[disabled]:pointer-events-none data-[disabled]:op-40">
+              {{ option.label }}<ComboboxItemIndicator class="absolute right-2.5"><Check :size="14" aria-hidden="true" /></ComboboxItemIndicator>
+            </ComboboxItem>
+          </ComboboxViewport>
+        </UiScrollArea>
       </ComboboxContent>
     </ComboboxPortal>
     <!-- Validate the selected value, rather than arbitrary search text. -->
@@ -51,12 +54,14 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
       <SelectValue :placeholder="placeholder" class="min-w-0 truncate">{{ modelValue ? label(modelValue) : undefined }}</SelectValue><SelectIcon class="shrink-0 text-ui-text-muted"><ChevronDown :size="14" aria-hidden="true" /></SelectIcon>
     </SelectTrigger>
     <SelectPortal :to="portalTo">
-      <SelectContent position="popper" :side-offset="5" class="ui-menu z-100 max-h-[min(20rem,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] overflow-hidden">
-        <SelectViewport class="max-h-72 overflow-y-auto">
-          <SelectItem v-for="option in options" :key="option.value" :value="option.value" :disabled="option.disabled" class="ui-menu-item relative pr-8 outline-none data-[highlighted]:bg-ui-hover data-[disabled]:pointer-events-none data-[disabled]:op-40">
-            <SelectItemText>{{ option.label }}</SelectItemText><SelectItemIndicator class="absolute right-2.5"><Check :size="14" aria-hidden="true" /></SelectItemIndicator>
-          </SelectItem>
-        </SelectViewport>
+      <SelectContent position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] flex-col overflow-hidden p-0">
+        <UiScrollArea :focusable="false" fade-size="sm" class="max-h-72 min-h-0 flex-auto">
+          <SelectViewport class="!overflow-visible p-1">
+            <SelectItem v-for="option in options" :key="option.value" :value="option.value" :disabled="option.disabled" class="ui-menu-item relative pr-8 outline-none data-[highlighted]:bg-ui-hover data-[disabled]:pointer-events-none data-[disabled]:op-40">
+              <SelectItemText>{{ option.label }}</SelectItemText><SelectItemIndicator class="absolute right-2.5"><Check :size="14" aria-hidden="true" /></SelectItemIndicator>
+            </SelectItem>
+          </SelectViewport>
+        </UiScrollArea>
       </SelectContent>
     </SelectPortal>
   </SelectRoot>

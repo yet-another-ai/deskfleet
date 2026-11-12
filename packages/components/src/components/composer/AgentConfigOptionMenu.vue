@@ -3,6 +3,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable"
 import { Check, ChevronRight } from "@lucide/vue"
 import { DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from "reka-ui"
 import { computed } from "vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 
 const props = defineProps<{ option: SessionConfigOption; open: boolean; disabled?: boolean }>()
 const emit = defineEmits<{ "update:open": [value: boolean]; change: [value: string | boolean] }>()
@@ -36,19 +37,21 @@ function choose(value: string): void {
       <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </DropdownMenuSubTrigger>
     <DropdownMenuPortal>
-      <DropdownMenuSubContent :aria-label="option.name" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] overflow-y-auto" loop>
-        <DropdownMenuRadioGroup :model-value="String(option.currentValue)">
-          <template v-for="group in groups" :key="group.id">
-            <DropdownMenuLabel v-if="group.name" class="px-2.5 py-1.5 text-xs font-medium text-ui-text-muted">{{ group.name }}</DropdownMenuLabel>
-            <DropdownMenuRadioItem v-for="choice in group.options" :key="choice.value" as="button" type="button" :value="choice.value" :data-value="choice.value" :disabled="disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(choice.value)">
-              <span class="min-w-0 flex-1 text-left">
-                <span class="block" :class="choice.description ? 'whitespace-normal' : 'truncate'">{{ choice.name }}</span>
-                <span v-if="choice.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ choice.description }}</span>
-              </span>
-              <Check v-if="option.currentValue === choice.value" :size="15" class="shrink-0" aria-hidden="true" />
-            </DropdownMenuRadioItem>
-          </template>
-        </DropdownMenuRadioGroup>
+      <DropdownMenuSubContent :aria-label="option.name" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
+        <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+          <DropdownMenuRadioGroup :model-value="String(option.currentValue)">
+            <template v-for="group in groups" :key="group.id">
+              <DropdownMenuLabel v-if="group.name" class="px-2.5 py-1.5 text-xs font-medium text-ui-text-muted">{{ group.name }}</DropdownMenuLabel>
+              <DropdownMenuRadioItem v-for="choice in group.options" :key="choice.value" as="button" type="button" :value="choice.value" :data-value="choice.value" :disabled="disabled" class="ui-menu-item focus:outline-none" @select.prevent="choose(choice.value)">
+                <span class="min-w-0 flex-1 text-left">
+                  <span class="block" :class="choice.description ? 'whitespace-normal' : 'truncate'">{{ choice.name }}</span>
+                  <span v-if="choice.description" class="mt-0.5 block whitespace-normal text-xs text-ui-text-muted">{{ choice.description }}</span>
+                </span>
+                <Check v-if="option.currentValue === choice.value" :size="15" class="shrink-0" aria-hidden="true" />
+              </DropdownMenuRadioItem>
+            </template>
+          </DropdownMenuRadioGroup>
+        </UiScrollArea>
       </DropdownMenuSubContent>
     </DropdownMenuPortal>
   </DropdownMenuSub>

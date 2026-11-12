@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { useScrollFade } from "../../composables/useScrollFade.ts"
 import UiButton from "../common/UiButton.vue"
+import UiScrollArea from "../common/UiScrollArea.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
@@ -138,6 +140,7 @@ const completion = reactive(useComposerCompletions({
 const fileInput = useTemplateRef<HTMLInputElement>("fileInput")
 const dropZoneRef = useTemplateRef<HTMLElement>("dropZoneRef")
 useTextareaAutosize({ element: textarea, input: draft })
+const { fadeStyle: textareaFadeStyle } = useScrollFade(textarea, { size: "sm" })
 const fileTarget = useFileTarget(() => props.location?.machine.id)
 const filesApi = computed(() => client.files)
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
@@ -330,16 +333,18 @@ onBeforeUnmount(() => {
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
-            <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
-              <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
-                <component :is="machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-                <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ machine.name }}</span>
-                <Unplug v-if="!machine.online" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-warning" :title="t('machine.offline')" aria-hidden="true" />
-                <span v-if="!machine.online" class="sr-only">{{ ` ${t("machine.offline")}` }}</span>
-                <Check v-if="machine.id === location.machine.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
+          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+            <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+              <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
+                <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
+                  <component :is="machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                  <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ machine.name }}</span>
+                  <Unplug v-if="!machine.online" :size="14" :stroke-width="1.75" class="shrink-0 text-ui-warning" :title="t('machine.offline')" aria-hidden="true" />
+                  <span v-if="!machine.online" class="sr-only">{{ ` ${t("machine.offline")}` }}</span>
+                  <Check v-if="machine.id === location.machine.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </UiScrollArea>
           </DropdownMenuContent>
         </DropdownMenuPortal>
       </DropdownMenuRoot>
@@ -351,19 +356,21 @@ onBeforeUnmount(() => {
             <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
-              <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
-                <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
-                  <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ workspace.name }}</span>
-                  <Check v-if="workspace.id === location.workspace?.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem as="button" type="button" :value="noWorkspaceValue" class="ui-menu-item">
-                  <MessageCircle :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-                  <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ t("composer.noWorkspace") }}</span>
-                  <Check v-if="!location.workspace" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
+            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+              <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+                <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
+                  <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
+                    <Folder :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ workspace.name }}</span>
+                    <Check v-if="workspace.id === location.workspace?.id" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem as="button" type="button" :value="noWorkspaceValue" class="ui-menu-item">
+                    <MessageCircle :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ t("composer.noWorkspace") }}</span>
+                    <Check v-if="!location.workspace" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </UiScrollArea>
             </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
@@ -382,14 +389,16 @@ onBeforeUnmount(() => {
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-y-auto" loop>
-              <DropdownMenuRadioGroup v-model="baseBranch">
-              <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
-                <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-                <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ branch }}</span>
-                <Check v-if="!preparedBranches.length && branch === baseBranch" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
-              </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
+            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+              <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+                <DropdownMenuRadioGroup v-model="baseBranch">
+                  <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
+                    <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1 truncate text-[13px] text-ui-text">{{ branch }}</span>
+                    <Check v-if="!preparedBranches.length && branch === baseBranch" :size="15" :stroke-width="2" class="shrink-0" aria-hidden="true" />
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </UiScrollArea>
             </DropdownMenuContent>
             </DropdownMenuPortal>
           </DropdownMenuRoot>
@@ -447,7 +456,7 @@ onBeforeUnmount(() => {
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
         </li>
       </ul>
-      <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
+      <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <DropdownMenuRoot v-if="location" :modal="false">
           <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>

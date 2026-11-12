@@ -8,6 +8,7 @@ import { useI18n } from "vue-i18n"
 import type { DirectoryListing } from "../../../../client/src/filesystem.ts"
 import UiDialog from "./UiDialog.vue"
 import UiCheckbox from "./UiCheckbox.vue"
+import UiScrollArea from "./UiScrollArea.vue"
 
 const props = defineProps<{
   browse(path?: string): Promise<DirectoryListing>
@@ -140,7 +141,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
           <UiButton variant="ghost" size="icon" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </template>
       </div>
-      <div class="h-64 overflow-y-auto rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">
+      <UiScrollArea fade-size="sm" class="h-64 rounded-xl border border-ui-border bg-ui-canvas" :aria-busy="loading">
         <p v-if="loading" role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.loading") }}</p>
         <ErrorNotice v-else-if="error" :error="error" class="m-4">
           <UiButton type="button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</UiButton>
@@ -155,7 +156,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
           </li>
         </ul>
         <p v-else role="status" class="m-0 p-4 text-sm text-ui-text-muted">{{ t("folderPicker.empty") }}</p>
-      </div>
+      </UiScrollArea>
       <label class="mt-3 flex items-center gap-2 text-sm text-ui-text-muted">
         <UiCheckbox v-model="showHidden" />{{ t("folderPicker.showHidden") }}
       </label>

@@ -26,10 +26,10 @@ const THEME_HUE_PROPERTIES = [
   "--ui-color-mini-bubble-dark",
 ] as const
 
-export function chromaticShadeCss(shade: Shade, hue: number, alpha?: number): string {
+export function chromaticShadeCss(shade: Shade, hue: number, alpha?: number, chromaScale = 1): string {
   const { l, c, h } = fittedOklch(shade, hue)
   const suffix = alpha === undefined ? "" : ` / ${alpha}`
-  return `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)}deg${suffix})`
+  return `oklch(${l.toFixed(3)} ${(c * chromaScale).toFixed(3)} ${h.toFixed(1)}deg${suffix})`
 }
 
 export function chromaticShadeHex(shade: Shade, hue: number): string {
@@ -41,15 +41,17 @@ function applyThemeHueTokens(style: CSSStyleDeclaration, hue: number | null, dar
     for (const name of THEME_HUE_PROPERTIES) style.removeProperty(name)
     return
   }
-  const lightAccent = chromaticShadeCss(600, hue)
-  const darkAccent = chromaticShadeCss(400, hue)
+  const lightScale = 0.68
+  const darkScale = 0.78
+  const lightAccent = chromaticShadeCss(600, hue, undefined, lightScale)
+  const darkAccent = chromaticShadeCss(400, hue, undefined, darkScale)
   const accent = dark ? darkAccent : lightAccent
   style.setProperty("--ui-color-accent", accent)
   style.setProperty("--ui-color-action", accent)
   style.setProperty("--ui-color-focus", accent)
-  style.setProperty("--ui-color-action-hover", chromaticShadeCss(dark ? 300 : 700, hue))
-  style.setProperty("--ui-color-avatar", dark ? chromaticShadeCss(500, hue) : lightAccent)
-  style.setProperty("--ui-color-accent-alt", chromaticShadeCss(dark ? 400 : 600, hue + 40))
+  style.setProperty("--ui-color-action-hover", chromaticShadeCss(dark ? 300 : 700, hue, undefined, dark ? darkScale : lightScale))
+  style.setProperty("--ui-color-avatar", dark ? chromaticShadeCss(500, hue, undefined, 0.75) : lightAccent)
+  style.setProperty("--ui-color-accent-alt", chromaticShadeCss(dark ? 400 : 600, hue + 40, undefined, dark ? darkScale : lightScale))
   style.setProperty("--ui-color-mini-accent-light", chromaticShadeCss(500, hue))
   style.setProperty("--ui-color-mini-bubble-light", chromaticShadeCss(100, hue))
   style.setProperty("--ui-color-mini-accent-dark", darkAccent)

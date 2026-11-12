@@ -20,7 +20,7 @@ export default defineComponent({
 <template>
   <UiTooltip :text="tooltip">
     <div
-      class="ui-tab-size group flex h-full min-w-0 items-center gap-1.5 px-2.5 text-[13px] font-medium"
+      class="ui-tab-size group flex h-full min-w-0 items-center gap-1.5 px-2.5 text-[13px]"
       :data-window-tab-id="tabId"
     >
       <MessageSquare v-if="tabId === 'chat'" :size="14" class="shrink-0" aria-hidden="true" />

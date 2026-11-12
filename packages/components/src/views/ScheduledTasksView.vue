@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from "../components/common/UiButton.vue"
+import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import MachineTabs from "../components/account/MachineTabs.vue"
 import { CalendarClock, Plus, RefreshCw } from "@lucide/vue"
@@ -52,7 +53,7 @@ async function remove(): Promise<void> {
     </template>
     <template v-else>{{ t('schedules.title') }}</template>
   </PaneHeader>
-  <div class="min-h-0 flex-1 overflow-y-auto px-5 pb-10 pt-6 lg:px-8">
+  <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
     <div class="mx-auto flex flex-col gap-5" :class="selected ? 'max-w-6xl' : 'max-w-4xl'">
       <template v-if="!scheduleId">
         <div class="flex flex-wrap items-end justify-between gap-4">
@@ -91,6 +92,6 @@ async function remove(): Promise<void> {
         </template>
       </template>
     </div>
-  </div>
+  </UiScrollArea>
   <ConfirmDialog v-if="removing" :title="t('schedules.deleteTitle', { title: removing.title })" :description="t('schedules.deleteHint')" :confirm-label="t('schedules.delete')" :confirm="remove" @close="removing = undefined" />
 </template>

@@ -65,6 +65,12 @@ body {
   user-select: none;
 }
 
+/* Sidebar interactive items tint their hover and active states with the theme hue. */
+.bg-ui-sidebar {
+  --ui-color-hover: color-mix(in srgb, var(--ui-color-accent) 10%, transparent);
+  --ui-color-active: color-mix(in srgb, var(--ui-color-accent) 14%, transparent);
+}
+
 button,
 input,
 select,
@@ -99,6 +105,82 @@ textarea {
 }
 
 ::selection { background: var(--ui-color-selection); }
+
+/*
+ * Scroll containers: `UiScrollArea` uses Reka's floating pill scrollbar and
+ * `useScrollFade` drives `--ui-scroll-fade-*` on `.ui-scroll-mask` so overflowing
+ * edges fade out against any background without masking borders or scrollbars.
+ */
+.ui-scroll-mask {
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 min(var(--ui-scroll-fade-top, 0px), 35%),
+      #000 max(65%, calc(100% - var(--ui-scroll-fade-bottom, 0px))),
+      transparent
+    ),
+    linear-gradient(
+      to right,
+      transparent,
+      #000 min(var(--ui-scroll-fade-left, 0px), 35%),
+      #000 max(65%, calc(100% - var(--ui-scroll-fade-right, 0px))),
+      transparent
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      #000 min(var(--ui-scroll-fade-top, 0px), 35%),
+      #000 max(65%, calc(100% - var(--ui-scroll-fade-bottom, 0px))),
+      transparent
+    ),
+    linear-gradient(
+      to right,
+      transparent,
+      #000 min(var(--ui-scroll-fade-left, 0px), 35%),
+      #000 max(65%, calc(100% - var(--ui-scroll-fade-right, 0px))),
+      transparent
+    );
+  mask-composite: intersect;
+  transition:
+    --ui-scroll-fade-top var(--ui-duration-fast) var(--ui-ease-out),
+    --ui-scroll-fade-bottom var(--ui-duration-fast) var(--ui-ease-out),
+    --ui-scroll-fade-left var(--ui-duration-fast) var(--ui-ease-out),
+    --ui-scroll-fade-right var(--ui-duration-fast) var(--ui-ease-out);
+}
+
+:where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none))::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+:where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none))::-webkit-scrollbar-track,
+:where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none))::-webkit-scrollbar-corner {
+  background: transparent;
+}
+:where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none))::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--ui-color-text-faint) 50%, transparent);
+  background-clip: content-box;
+}
+:where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none))::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ui-color-text-faint) 70%, transparent);
+  background-clip: content-box;
+}
+@supports not selector(::-webkit-scrollbar) {
+  :where(*:not([data-reka-scroll-area-viewport]):not([data-reka-select-viewport]):not([data-reka-combobox-viewport]):not(.scrollbar-none)) {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--ui-color-text-faint) 50%, transparent) transparent;
+  }
+}
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
 
 /*
  * Motion. Durations and easings come from theme-tokens.css; reduced motion
@@ -455,8 +537,7 @@ textarea {
 .ui-markdown img { max-width: 100%; border-radius: 0.5rem; }
 .ui-markdown .ui-math-block {
   position: relative;
-  overflow-x: auto;
-  padding: 0.625rem 2.5rem 0.625rem 0.875rem;
+  overflow: hidden;
   border: 1px solid var(--ui-color-border);
   border-radius: 0.625rem;
   background: var(--ui-color-surface);
@@ -560,7 +641,7 @@ span[style*="--shiki-light"] {
   :where(html, body, body *) { touch-action: pan-x pan-y; }
   [data-mobile-viewport] { overscroll-behavior-x: none; }
   [data-mobile-viewport] :where(*) { touch-action: pan-y; }
-  [data-mobile-viewport] :where(pre, pre *, table, table *, .ui-math-block, .ui-math-block *, .git-diff-content, .git-diff-content *, .overflow-x-auto, .overflow-x-auto *, .overflow-auto, .overflow-auto *) {
+  [data-mobile-viewport] :where(pre, pre *, table, table *, .ui-math-block, .ui-math-block *, .git-diff-content, .git-diff-content *, .overflow-x-auto, .overflow-x-auto *, .overflow-auto, .overflow-auto *, [data-ui-scroll-area][data-orientation="both"] *, [data-ui-scroll-area][data-orientation="horizontal"] *) {
     touch-action: pan-x pan-y;
   }
   [data-mobile-viewport] :where([data-mermaid-canvas], [data-mermaid-canvas] *, [data-preview-kind="image"] [data-preview-canvas], [data-preview-kind="image"] [data-preview-canvas] *, [data-preview-kind="model"] [data-preview-canvas], [data-preview-kind="model"] [data-preview-canvas] *) {

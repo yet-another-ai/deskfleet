@@ -131,3 +131,7 @@
  */
 @property --un-duration { syntax: "*"; inherits: false; }
 @property --un-ease { syntax: "*"; inherits: false; }
+@property --ui-scroll-fade-top { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --ui-scroll-fade-bottom { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --ui-scroll-fade-left { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --ui-scroll-fade-right { syntax: "<length>"; inherits: false; initial-value: 0px; }
