@@ -1053,9 +1053,12 @@ dictation engine. Other hosts have no dictation entry point. System recognition
 may use the platform provider's online service; no bundled model or application
 ASR service is involved.
 
-The shared composer previews partial text and microphone levels, then inserts
-the confirmed transcript at the saved selection when recognition ends. It does
-not send the draft automatically. Changing Team, Machine, Session, language,
+The shared composer shows only a microphone-level waveform during recognition.
+Partial and final transcripts update the dictated range directly in the input;
+cumulative results replace that range instead of appending duplicate text.
+Editing within the dictated range stops recognition and preserves the user's
+edit. Stopping or canceling retains text already entered, and no operation sends
+the draft automatically. Changing Team, Machine, Session, language,
 or the preference, submitting the draft, hiding the page, or closing the composer
 cancels recognition. Desktop IPC restricts control and events to the owning
 trusted renderer and cancels capture when its window hides or closes. Native

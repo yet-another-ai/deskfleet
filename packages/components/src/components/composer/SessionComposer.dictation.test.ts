@@ -3,6 +3,7 @@ import type { SpeechApi, SpeechEvent } from "@deskfleet/client/speech"
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
+import { ref } from "vue"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { DICTATION_STORAGE_KEY } from "../../composables/useDictationPreference.ts"
 import { i18n } from "../../i18n/index.ts"
@@ -31,10 +32,16 @@ async function fixture(supported = true) {
     provide: { [platformClientKey as symbol]: { ...getClient(), platform: "web", speech } },
     stubs: { AgentConfigurationSelector: true },
   }
-  const composer = mount(SessionComposer, { props: { location }, global })
-  cleanups.push(() => { composer.unmount(); disposePinia(pinia) })
+  const draft = ref("")
+  const host = mount({
+    components: { SessionComposer },
+    setup: () => ({ draft, location }),
+    template: '<SessionComposer v-model="draft" :location="location" />',
+  }, { global })
+  const composer = host.getComponent(SessionComposer)
+  cleanups.push(() => { host.unmount(); disposePinia(pinia) })
   await flushPromises()
-  return { composer, speech, global, emit: (event: SpeechEvent) => listener(event) }
+  return { composer, speech, global, draft, emit: (event: SpeechEvent) => listener(event) }
 }
 
 test("voice input defaults on, shows genuine levels, and the web preference cancels and hides it immediately", async () => {
@@ -47,17 +54,54 @@ test("voice input defaults on, shows genuine levels, and the web preference canc
   const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
   f.emit({ type: "started", sessionId })
   f.emit({ type: "level", level: 1, sessionId })
-  f.emit({ type: "result", text: "Voice preview", final: false, sessionId })
+  f.emit({ type: "result", text: "Please review the changes.", final: false, sessionId })
   await flushPromises()
-  expect(f.composer.get("[data-dictation-transcript]").text()).toBe("Voice preview")
+  expect(f.composer.find("[data-dictation-transcript]").exists()).toBe(false)
+  expect(f.composer.get("[data-dictation-panel]").text()).toBe("")
+  expect(f.composer.get("textarea").element.value).toBe("Please review the changes.")
   expect(f.composer.get("[data-dictation-waveform]").findAll("span").at(-1)!.attributes("style")).toContain("26px")
-  expect(f.composer.emitted("update:modelValue")).toBeUndefined()
+  expect(f.draft.value).toBe("Please review the changes.")
+  expect(f.composer.emitted("submit")).toBeUndefined()
   await toggle.trigger("click")
   await flushPromises()
   expect(localStorage.getItem(DICTATION_STORAGE_KEY)).toBe("false")
   expect(f.composer.find("[data-composer-dictation]").exists()).toBe(false)
   expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
   expect(f.speech.cancel).toHaveBeenCalledWith(sessionId)
+  expect(f.draft.value).toBe("Please review the changes.")
+})
+
+test("cumulative results update the input in place before parent model rendering and finish without duplication", async () => {
+  const f = await fixture()
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "Please", final: true, sessionId })
+  f.emit({ type: "result", text: "Please review", final: false, sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Please review")
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  expect(f.composer.get("[data-dictation-panel]").text()).toBe("")
+  f.emit({ type: "result", text: "Please review the changes.", final: true, sessionId })
+  f.emit({ type: "ended", sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Please review the changes.")
+  expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
+  expect(f.composer.emitted("submit")).toBeUndefined()
+})
+
+test("errors leave dictated input intact and use the microphone tooltip without adding visible text", async () => {
+  const f = await fixture()
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "result", text: "Keep this draft.", final: false, sessionId })
+  f.emit({ type: "error", code: "permission-denied", sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Keep this draft.")
+  expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
+  expect(f.composer.find("[data-dictation-error]").exists()).toBe(false)
+  expect(f.composer.get("[data-composer-dictation]").attributes("title")).toBe(i18n.global.t("dictation.errors.permission-denied"))
+  expect(f.composer.get("[data-composer-dictation]").classes()).toContain("text-ui-danger")
 })
 
 test("unsupported devices hide the microphone while preserving the stored preference", async () => {

@@ -19,14 +19,15 @@ interface Recording {
   id: string
   start: number
   end: number
-  finalText: string
+  draft: string
+  mentions: ComposerMention[]
+  hasResult: boolean
 }
 
-/** Interim recognition stays outside the editable draft until recognition ends. */
+/** Recognition updates replace the dictated range directly inside the editable draft. */
 export function useComposerDictation(options: DictationOptions) {
   const supported = ref(false)
   const state = ref<"idle" | "starting" | "listening" | "stopping">("idle")
-  const transcript = ref("")
   const levels = ref<number[]>(Array.from({ length: 18 }, () => 0))
   const error = ref<SpeechError>()
   const active = computed(() => state.value !== "idle")
@@ -34,12 +35,13 @@ export function useComposerDictation(options: DictationOptions) {
   let recording: Recording | undefined
   let disposed = false
   let statusGeneration = 0
+  let selectionGeneration = 0
 
   function cancel(): void {
     const previous = recording
     recording = undefined
     state.value = "idle"
-    transcript.value = ""
+    selectionGeneration++
     levels.value = levels.value.map(() => 0)
     if (previous) void options.api?.cancel(previous.id).catch(() => {})
   }
@@ -52,26 +54,31 @@ export function useComposerDictation(options: DictationOptions) {
   useEventListener(document, "visibilitychange", () => { if (document.hidden) cancel() })
   useEventListener(window, "pagehide", cancel)
 
-  function finish(current: Recording): void {
-    const text = current.finalText.trim()
-    recording = undefined
-    state.value = "idle"
-    transcript.value = ""
-    if (!text) return
-    const before = options.draft.value
+  function updateDraft(current: Recording, recognized: string): void {
+    const text = recognized.trim()
+    if (!text && !current.hasResult) return
+    const before = current.draft
     const prefix = before.slice(0, current.start), suffix = before.slice(current.end)
     const word = /[\p{Script=Latin}\p{N}]/u
-    const leading = word.test(prefix.at(-1) ?? "") && word.test(text[0]!) ? " " : ""
-    const trailing = word.test(text.at(-1)!) && word.test(suffix[0] ?? "") ? " " : ""
+    const leading = word.test(prefix.at(-1) ?? "") && word.test(text[0] ?? "") ? " " : ""
+    const trailing = word.test(text.at(-1) ?? "") && word.test(suffix[0] ?? "") ? " " : ""
     const inserted = leading + text + trailing
     const after = prefix + inserted + suffix
-    options.mentions.value = reconcileComposerMentions(before, after, options.mentions.value)
+    // defineModel can echo its parent update on the next tick. Keep successive
+    // recognition events in the same tick attached to the latest emitted draft.
+    const mentions = options.draft.value === before ? options.mentions.value : current.mentions
+    current.mentions = reconcileComposerMentions(before, after, mentions)
+    current.draft = after
+    current.end = current.start + inserted.length
+    current.hasResult = true
+    options.mentions.value = current.mentions
     options.draft.value = after
     const scope = options.scope()
+    const generation = ++selectionGeneration
     void nextTick(() => {
-      if (disposed || options.scope() !== scope || options.draft.value !== after) return
+      if (disposed || generation !== selectionGeneration || options.scope() !== scope || options.draft.value !== after) return
       options.textarea.value?.focus()
-      options.textarea.value?.setSelectionRange(current.start + inserted.length, current.start + inserted.length)
+      options.textarea.value?.setSelectionRange(current.end, current.end)
     })
   }
 
@@ -80,13 +87,10 @@ export function useComposerDictation(options: DictationOptions) {
     if (!current || event.sessionId !== current.id) return
     switch (event.type) {
       case "started": if (state.value === "starting") state.value = "listening"; break
-      case "result":
-        transcript.value = event.text
-        if (event.final) current.finalText = event.text
-        break
+      case "result": updateDraft(current, event.text); break
       case "level": levels.value = [...levels.value.slice(1), Math.max(0, Math.min(1, event.level))]; break
       case "error": fail(event.code); break
-      case "ended": finish(current); break
+      case "ended": recording = undefined; state.value = "idle"; break
     }
   })
 
@@ -105,20 +109,23 @@ export function useComposerDictation(options: DictationOptions) {
     error.value = undefined
   }, { flush: "sync" })
 
-  // Keep the insertion range attached to the draft as the user edits around it.
-  // An overlapping edit becomes an insertion after that edit, preserving typed text.
-  watch(options.draft, (after, before) => {
-    if (!recording || before === after) return
+  // Edits around dictated text move its range; editing the text itself takes
+  // ownership away from recognition so subsequent hypotheses cannot overwrite it.
+  watch(options.draft, after => {
+    const current = recording
+    if (!current || current.draft === after) return
+    const before = current.draft
+    current.draft = after
     let start = 0
     while (start < before.length && start < after.length && before[start] === after[start]) start++
     let oldEnd = before.length, newEnd = after.length
     while (oldEnd > start && newEnd > start && before[oldEnd - 1] === after[newEnd - 1]) { oldEnd--; newEnd-- }
-    if (oldEnd <= recording.start) {
-      recording.start += newEnd - oldEnd
-      recording.end += newEnd - oldEnd
-    } else if (start < recording.end) {
-      recording.start = newEnd
-      recording.end = newEnd
+    if (oldEnd <= current.start) {
+      current.start += newEnd - oldEnd
+      current.end += newEnd - oldEnd
+    } else if (start < current.end) {
+      if (current.hasResult) cancel()
+      else current.start = current.end = newEnd
     }
   }, { flush: "sync" })
 
@@ -137,12 +144,13 @@ export function useComposerDictation(options: DictationOptions) {
       id: crypto.randomUUID(),
       start: input?.selectionStart ?? options.draft.value.length,
       end: input?.selectionEnd ?? options.draft.value.length,
-      finalText: "",
+      draft: options.draft.value,
+      mentions: options.mentions.value,
+      hasResult: false,
     }
     recording = current
     state.value = "starting"
     error.value = undefined
-    transcript.value = ""
     levels.value = levels.value.map(() => 0)
     try {
       await options.api.start({ sessionId: current.id, locale: options.locale() })
@@ -155,5 +163,5 @@ export function useComposerDictation(options: DictationOptions) {
   }
 
   onScopeDispose(() => { disposed = true; statusGeneration++; cancel(); unsubscribe?.() })
-  return { supported, visible, state, active, transcript, levels, error, toggle, cancel }
+  return { supported, visible, state, active, levels, error, toggle, cancel }
 }

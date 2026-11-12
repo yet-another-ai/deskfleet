@@ -237,13 +237,13 @@ export const ActiveTurnWithSteerAndCancel: Story = {
 }
 
 export const VoiceInput: Story = {
-  args: { location: existingSessionTarget, showTarget: false, modelValue: "Please" },
+  args: { location: existingSessionTarget, showTarget: false, modelValue: "" },
   render: args => ({
     components: { SessionComposer },
     setup() {
       const draft = ref(args.modelValue)
       let emit: ((event: SpeechEvent) => void) | undefined
-      const text = "add voice input to the conversation composer."
+      const text = "Please review the latest changes."
       // Deterministic microphone samples for the story; production uses SpeechApi levels.
       const speech: SpeechApi = {
         status: async () => ({ supported: true }),

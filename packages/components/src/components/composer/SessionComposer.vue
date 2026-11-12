@@ -121,6 +121,7 @@ const dictation = reactive(useComposerDictation({
   disabled: () => !!(props.disabled || props.submitting || !props.location),
   draft, mentions, textarea,
 }))
+const dictationLabel = computed(() => t(dictation.error ? `dictation.errors.${dictation.error}` : dictation.active ? "dictation.stop" : "dictation.start"))
 const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
 const yoloConfirmation = useConfirmDialog()
 const { isRevealed: confirmingYolo } = yoloConfirmation
@@ -460,17 +461,12 @@ onBeforeUnmount(() => {
         </li>
       </ul>
       <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
-      <div v-if="dictation.active" class="mx-3 mb-2 flex items-center gap-3 rounded-lg bg-ui-accent/5 px-3 py-2" data-dictation-panel>
-        <div class="flex h-7 shrink-0 items-center gap-0.5" aria-hidden="true" data-dictation-waveform>
+      <div v-if="dictation.active" class="relative mx-3 mb-2 flex items-center justify-center rounded-lg bg-ui-accent/5 px-10 py-2" data-dictation-panel>
+        <div class="flex h-7 shrink-0 items-center gap-0.5" role="img" :aria-label="t(`dictation.${dictation.state}`)" data-dictation-waveform>
           <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-[height,opacity] duration-100 motion-reduce:transition-none" :style="{ height: `${3 + level * 23}px`, opacity: 0.3 + level * 0.7 }" />
         </div>
-        <div class="min-w-0 flex-1">
-          <div class="text-xs text-ui-accent" role="status">{{ t(`dictation.${dictation.state}`) }}</div>
-          <p v-if="dictation.transcript" class="m-0 mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-[13px] text-ui-text" data-dictation-transcript>{{ dictation.transcript }}</p>
-        </div>
-        <UiButton variant="ghost" size="icon" type="button" class="h-7 w-7 shrink-0" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
+        <UiButton variant="ghost" size="icon" type="button" class="absolute right-2 h-7 w-7" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
       </div>
-      <p v-if="dictation.error" role="alert" class="m-0 px-4 pb-2 text-xs text-ui-danger" data-dictation-error>{{ t(`dictation.errors.${dictation.error}`) }}</p>
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <DropdownMenuRoot v-if="location" :modal="false">
           <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
@@ -505,7 +501,7 @@ onBeforeUnmount(() => {
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active && 'bg-ui-accent/10 text-ui-accent'" :aria-pressed="dictation.active" :title="t(dictation.active ? 'dictation.stop' : 'dictation.start')" :aria-label="t(dictation.active ? 'dictation.stop' : 'dictation.start')" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'bg-ui-accent/10 text-ui-accent' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
