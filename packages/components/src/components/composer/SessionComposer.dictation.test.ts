@@ -135,6 +135,30 @@ test("live results preserve a caret outside dictation and leave keyboard focus o
   expect(f.draft.value).toBe("before voice again today end")
 })
 
+test.each([0, 5])("dictation appends to an unfocused draft instead of using its stale selection (end: %s)", async selectionEnd => {
+  const f = await fixture()
+  f.draft.value = "Existing draft"
+  await flushPromises()
+  const input = f.composer.get("textarea").element
+  input.setSelectionRange(0, selectionEnd)
+  const microphone = f.composer.get("[data-composer-dictation]")
+  ;(microphone.element as HTMLButtonElement).focus()
+  await microphone.trigger("mousedown")
+  await microphone.trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "spoken", final: false, sessionId })
+  await flushPromises()
+  expect(input.value).toBe("Existing draft spoken")
+  expect(document.activeElement).toBe(microphone.element)
+  f.emit({ type: "result", text: "spoken words", final: true, sessionId })
+  f.emit({ type: "ended", sessionId })
+  await flushPromises()
+  expect(f.draft.value).toBe("Existing draft spoken words")
+  expect(document.activeElement).toBe(microphone.element)
+  expect(f.composer.emitted("submit")).toBeUndefined()
+})
+
 test("unsupported devices hide the microphone while preserving the stored preference", async () => {
   const f = await fixture(false)
   expect(f.composer.find("[data-composer-dictation]").exists()).toBe(false)

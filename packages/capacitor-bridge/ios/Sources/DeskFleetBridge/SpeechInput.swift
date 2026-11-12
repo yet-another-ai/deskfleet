@@ -48,7 +48,8 @@ internal final class SpeechInput {
     }
 
     func isSupported(locale: String) -> Bool {
-        !disposed && SFSpeechRecognizer(locale: Locale(identifier: locale))?.isAvailable == true
+        // Capability is cached by the composer; transient availability is checked at start.
+        !disposed && SFSpeechRecognizer(locale: Locale(identifier: locale)) != nil
     }
 
     func start(id: String, locale: String, completion: @escaping () -> Void) {
@@ -137,7 +138,13 @@ internal final class SpeechInput {
                     }
                 }
                 if let error {
-                    let code = (error as NSError).domain == NSURLErrorDomain ? "network" : "failed"
+                    let error = error as NSError
+                    let code: String
+                    if error.domain == "kAFAssistantErrorDomain" && error.code == 1110 {
+                        code = "no-speech"
+                    } else {
+                        code = error.domain == NSURLErrorDomain ? "network" : "failed"
+                    }
                     self.fail(session, code: code)
                 }
             }

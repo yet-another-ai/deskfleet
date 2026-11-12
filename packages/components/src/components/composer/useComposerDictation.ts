@@ -163,10 +163,11 @@ export function useComposerDictation(options: DictationOptions) {
     }
     if (!visible.value || options.disabled() || !options.api) return
     const input = options.textarea.value
+    const focused = input && input.ownerDocument.activeElement === input
     const current: Recording = {
       id: crypto.randomUUID(),
-      start: input?.selectionStart ?? options.draft.value.length,
-      end: input?.selectionEnd ?? options.draft.value.length,
+      start: focused ? input.selectionStart : options.draft.value.length,
+      end: focused ? input.selectionEnd : options.draft.value.length,
       draft: options.draft.value,
       mentions: options.mentions.value,
       hasResult: false,

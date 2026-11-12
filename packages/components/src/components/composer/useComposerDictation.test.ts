@@ -27,6 +27,7 @@ async function fixture(text = "", start = text.length, end = start, deferredMode
   textarea.value = text
   textarea.setSelectionRange(start, end)
   document.body.append(textarea)
+  textarea.focus()
   const enabled = ref(true), disabled = ref(false), scope = ref("team:machine:session"), locale = ref("en-US")
   const owner = effectScope()
   const dictation = owner.run(() => useComposerDictation({

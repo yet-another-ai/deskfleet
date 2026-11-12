@@ -3,6 +3,8 @@ package io.github.yet_another_ai.deskfleet.nativedesktop
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -16,8 +18,10 @@ internal class SpeechInput(
     private class Session(val id: String, val locale: String) {
         var recognizer: SpeechRecognizer? = null
         var stopped = false
+        var completionDeadline: Runnable? = null
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var active: Session? = null
     private var disposed = false
 
@@ -109,6 +113,12 @@ internal class SpeechInput(
         else {
             event(session, "level") { put("level", 0) }
             try {
+                // Some recognition services never deliver a final callback after stop.
+                val deadline = Runnable {
+                    if (active === session) fail(session.id, "failed")
+                }
+                session.completionDeadline = deadline
+                mainHandler.postDelayed(deadline, 10_000)
                 // onResults delivers the final transcript before finish emits ended.
                 recognizer.stopListening()
             } catch (_: Exception) {
@@ -140,6 +150,8 @@ internal class SpeechInput(
     private fun finish(session: Session) {
         if (active !== session) return
         active = null
+        session.completionDeadline?.let(mainHandler::removeCallbacks)
+        session.completionDeadline = null
         session.recognizer?.apply {
             cancel()
             destroy()
