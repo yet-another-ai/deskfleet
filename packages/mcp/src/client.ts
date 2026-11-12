@@ -14,7 +14,7 @@ export async function invokeMcp(
 ): Promise<unknown> {
   await authorize()
   signal.throwIfAborted()
-  const client = new Client({ name: "deskfleet-remote", version: "0.13.1" })
+  const client = new Client({ name: "deskfleet-remote", version: "0.14.0" })
   const networkFetch: typeof fetch = (input, init) => fetch(input, {
     ...init,
     // Session deletion must still reach the server after the call or transport was aborted.
