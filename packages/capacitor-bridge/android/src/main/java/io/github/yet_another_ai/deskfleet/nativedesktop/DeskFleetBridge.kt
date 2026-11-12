@@ -7,6 +7,8 @@ import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
@@ -26,6 +28,62 @@ import java.lang.ref.WeakReference
     permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "audio")],
 )
 class DeskFleetBridge : Plugin() {
+    private var speechInput: SpeechInput? = null
+
+    private fun speech(): SpeechInput = speechInput ?: SpeechInput(context) {
+        notifyListeners("speechEvent", it)
+    }.also { speechInput = it }
+
+    @PluginMethod
+    fun speechStatus(call: PluginCall) {
+        Handler(Looper.getMainLooper()).post {
+            call.resolve(JSObject().put("supported", speech().isSupported()))
+        }
+    }
+
+    @PluginMethod
+    fun startSpeech(call: PluginCall) {
+        val sessionId = call.getString("sessionId")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing speech session ID")
+        val locale = call.getString("locale")?.takeIf { it.isNotEmpty() }
+            ?: return call.reject("Missing speech locale")
+        Handler(Looper.getMainLooper()).post {
+            speech().prepare(sessionId, locale)
+            if (getPermissionState("audio") != PermissionState.GRANTED) {
+                requestPermissionForAlias("audio", call, "handleSpeechPermission")
+            } else {
+                speech().start(sessionId)
+                call.resolve()
+            }
+        }
+    }
+
+    @PermissionCallback
+    private fun handleSpeechPermission(call: PluginCall) {
+        val sessionId = call.getString("sessionId") ?: return call.resolve()
+        Handler(Looper.getMainLooper()).post {
+            if (getPermissionState("audio") == PermissionState.GRANTED) speech().start(sessionId)
+            else speech().fail(sessionId, "permission-denied")
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun stopSpeech(call: PluginCall) {
+        Handler(Looper.getMainLooper()).post {
+            call.getString("sessionId")?.let { speechInput?.stop(it) }
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun cancelSpeech(call: PluginCall) {
+        Handler(Looper.getMainLooper()).post {
+            call.getString("sessionId")?.let { speechInput?.cancel(it) }
+            call.resolve()
+        }
+    }
+
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
@@ -156,7 +214,13 @@ class DeskFleetBridge : Plugin() {
         notifyListeners("outlineAudioStopped", JSObject())
     }
 
+    override fun handleOnPause() {
+        Handler(Looper.getMainLooper()).post { speechInput?.pause() }
+        super.handleOnPause()
+    }
+
     override fun handleOnDestroy() {
+        Handler(Looper.getMainLooper()).post { speechInput?.dispose() }
         stopSession()
         OutlineAudioCaptureService.stop(context)
         super.handleOnDestroy()

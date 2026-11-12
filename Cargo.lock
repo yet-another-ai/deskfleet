@@ -2671,6 +2671,7 @@ version = "0.13.1"
 dependencies = [
  "async-trait",
  "bytes",
+ "cc",
  "deskfleet-capture",
  "deskfleet-encoder",
  "deskfleet-input",

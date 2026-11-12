@@ -10,6 +10,7 @@ pub mod nat;
 #[cfg(target_os = "macos")]
 mod permission_settings;
 pub mod rtc;
+pub mod speech;
 pub mod system_status;
 pub mod terminal;
 #[cfg(any(windows, test))]

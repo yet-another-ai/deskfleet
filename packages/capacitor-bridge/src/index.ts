@@ -14,8 +14,9 @@ import {
   type NetworkDiagnosticsApi,
 } from "@deskfleet/client/network-diagnostics"
 import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outline-audio"
+import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "./speech.ts"
 
-export interface DeskFleetBridgeCapacitorPlugin {
+export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   getInstallSource?(): Promise<{ installerPackageName: string | null }>
   openExternal(options: { url: string }): Promise<void>
@@ -26,6 +27,10 @@ export interface DeskFleetBridgeCapacitorPlugin {
   startOutlineAudio(): Promise<{ started: boolean }>
   stopOutlineAudio(): Promise<void>
   outlineAudioStatus(): Promise<OutlineAudioStatus>
+  addListener(
+    eventName: "speechEvent",
+    listenerFunc: Parameters<SpeechBridgePlugin["addListener"]>[1],
+  ): Promise<PluginListenerHandle>
   addListener(
     eventName: "viewerEvent",
     listenerFunc: (data: { payload: string }) => void,
@@ -51,6 +56,10 @@ export type OutlineAudioBridgePlugin = Pick<
 >
 
 export const DeskFleetBridge = registerPlugin<DeskFleetBridgeCapacitorPlugin>("DeskFleetBridge")
+
+export function createCapacitorSpeechApi(plugin: SpeechBridgePlugin = DeskFleetBridge) {
+  return speechApi(plugin)
+}
 
 const toErrorEvent = (error: unknown): ViewerEvent => ({
   type: "error",

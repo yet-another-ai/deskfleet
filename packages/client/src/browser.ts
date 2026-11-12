@@ -3,6 +3,7 @@ import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
 import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
+import { createBrowserSpeechApi } from "./browser-speech.ts"
 import { reportingCentral, type CentralErrorReporter } from "./reporting-central.ts"
 
 export interface BrowserClientOptions {
@@ -37,6 +38,7 @@ export async function browserClient(
     locale: resolveAppLocale(navigator.languages), central,
     siteAdministration: options.mobile ? undefined : central,
     files: createBrowserFiles(central),
+    speech: options.mobile ? undefined : createBrowserSpeechApi(),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,

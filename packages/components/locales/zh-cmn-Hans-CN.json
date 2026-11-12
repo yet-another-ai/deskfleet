@@ -1885,5 +1885,23 @@
     "loading": "正在搜索…",
     "more": "加载更多",
     "untitled": "未命名对话"
+  },
+  "dictation": {
+    "inputSettings": "输入",
+    "setting": "语音输入",
+    "settingDescription": "设备支持语音识别时显示麦克风按钮，识别语言跟随当前界面语言。",
+    "start": "开始语音输入",
+    "stop": "完成语音输入",
+    "cancel": "取消语音输入",
+    "starting": "正在启动麦克风…",
+    "listening": "正在聆听…",
+    "stopping": "正在完成识别…",
+    "errors": {
+      "permission-denied": "请允许使用麦克风和语音识别，以启用语音输入。",
+      "unavailable": "此设备暂不支持该语言的语音识别。",
+      "no-speech": "未检测到语音，请重试。",
+      "network": "无法连接语音识别服务，请重试。",
+      "failed": "语音输入失败，请重试。"
+    }
   }
 }

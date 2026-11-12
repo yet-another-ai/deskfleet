@@ -1885,5 +1885,23 @@
     "loading": "Searching…",
     "more": "Load more",
     "untitled": "Untitled chat"
+  },
+  "dictation": {
+    "inputSettings": "Input",
+    "setting": "Voice input",
+    "settingDescription": "Show the microphone button when speech recognition is available on this device. Uses the current interface language.",
+    "start": "Start voice input",
+    "stop": "Finish voice input",
+    "cancel": "Cancel voice input",
+    "starting": "Starting microphone…",
+    "listening": "Listening…",
+    "stopping": "Finishing recognition…",
+    "errors": {
+      "permission-denied": "Allow microphone and speech recognition access to use voice input.",
+      "unavailable": "Speech recognition is unavailable for this language on this device.",
+      "no-speech": "No speech detected. Try again.",
+      "network": "The speech recognition service could not connect. Try again.",
+      "failed": "Voice input failed. Try again."
+    }
   }
 }

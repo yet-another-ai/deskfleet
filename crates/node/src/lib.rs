@@ -9,6 +9,7 @@ mod media;
 mod nat;
 mod permissions;
 mod rtc;
+mod speech;
 mod system_status;
 mod terminal;
 
@@ -35,6 +36,9 @@ pub use permissions::{
 };
 pub use rtc::{
     IceCandidate, IceServer, NativePeer, PeerConfig, PeerEvent, VideoCodec, create_peer,
+};
+pub use speech::{
+    NativeSpeech, NativeSpeechEvent, NativeSpeechStatus, create_speech, speech_status,
 };
 pub use system_status::{SystemStatus, system_status};
 pub use terminal::{NativeTerminal, TerminalConfig, TerminalEvent, create_terminal};

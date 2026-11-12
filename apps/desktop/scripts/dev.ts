@@ -5,6 +5,7 @@ import { resolve } from "node:path"
 import { build, createServer } from "vite"
 import type { ViteDevServer } from "vite"
 import { stageAuv } from "./stage-auv.ts"
+import { prepareDevelopmentElectron } from "./dev-electron.ts"
 
 // Vite's build API defaults NODE_ENV to production even with development mode.
 // Set it before starting either watcher so the dev server uses Vue's dev runtime.
@@ -15,7 +16,7 @@ const electronModule: unknown = createRequire(import.meta.url)("electron")
 if (typeof electronModule !== "string") {
   throw new TypeError("electron did not resolve to its executable path")
 }
-const electronPath = electronModule
+const electronPath = await prepareDevelopmentElectron(electronModule)
 type BuildWatcher = Extract<Awaited<ReturnType<typeof build>>, { close(): Promise<void> }>
 
 let electronProcess: ChildProcess | null = null
