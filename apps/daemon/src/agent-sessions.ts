@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
+import { AgentUsageCache } from "./agent-usage.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { validateProviderId } from "./provider-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
@@ -114,6 +115,7 @@ export class AgentSessions {
   readonly #discovery = new Set<Promise<unknown>>()
   readonly #presence = new SessionPresence()
   readonly #configurationProbes = new AgentConfigurationProbes()
+  readonly #usage = new AgentUsageCache()
   readonly #unsubscribeProviders?: () => void
   readonly #closing = new AbortController()
   #closed = false
@@ -131,6 +133,7 @@ export class AgentSessions {
       return { provider, config: { name: "Codex" } }
     }
     this.#unsubscribeProviders = providers?.onChanged(() => {
+      this.#usage.clear()
       void this.#configurationProbes.invalidate().catch(error => console.error("Could not close Agent configuration probes", error))
     })
   }
@@ -335,6 +338,12 @@ export class AgentSessions {
       const pending = request.probeId
         ? this.#configurationProbes.read(scope, request, cwd, launch)
         : readAgentConfiguration(request, cwd, { ...launch, signal: this.#closing.signal })
+      this.#discovery.add(pending)
+      try { return await pending } finally { this.#discovery.delete(pending) }
+    }
+    if (method === "_deskfleet/agent/usage") {
+      validateProviderId(params.provider)
+      const pending = this.#usage.read(params.provider, this.#resolveProvider(params.provider), this.#closing.signal)
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
     }
@@ -928,6 +937,7 @@ export class AgentSessions {
   async close(): Promise<void> {
     this.#closed = true
     this.#unsubscribeProviders?.()
+    this.#usage.clear()
     this.#closing.abort(new Error("Agent service is stopping"))
     this.#git.close()
     const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])

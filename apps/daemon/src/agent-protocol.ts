@@ -2,7 +2,7 @@ import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse,
 import type { GitBranchesSnapshot, GitDiffRequest, GitFileDiff, GitPreparationSnapshot, GitPreparedRevision, GitStatusSnapshot } from "./git-protocol.ts"
 import type { ComposerReferenceResolve, ComposerReferenceResult, ComposerReferenceSearch } from "./composer-reference-protocol.ts"
 
-import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities } from "./agent-configuration-protocol.ts"
+import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities, AgentQuotaItem } from "./agent-configuration-protocol.ts"
 
 export const AGENT_CHANNEL = "deskfleet-acp"
 export const AGENT_CHUNK_BYTES = 16 * 1024
@@ -199,6 +199,7 @@ export interface AgentReceipt { operationId: string; commandId: string; inputId?
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
   "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration | null }
+  "_deskfleet/agent/usage": { params: { provider: string }; result: AgentQuotaItem[] }
   "_deskfleet/session/configuration": { params: { sessionId: string; composer?: boolean }; result: AgentConfiguration }
   "_deskfleet/composer/references": { params: ComposerReferenceSearch; result: ComposerReferenceResult }
   "_deskfleet/composer/resolve": { params: ComposerReferenceResolve; result: ContentBlock[] }

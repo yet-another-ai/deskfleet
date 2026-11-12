@@ -15,12 +15,12 @@ import { legacyDataChannel } from "./legacy-data-channel.ts"
 
 interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout>; telemetry: PeerConnectionTelemetry }
 const management = new Set<string>([
-  "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
+  "_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
   "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/delete", "_deskfleet/command/get",
   "_deskfleet/git/branches",
 ])
 
-const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
+const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
 
 /** One opened machine owns this adapter until its account/Team scope is released. */
 export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean; rosterReady?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine, rosterRefreshed?: boolean): void; setLocal(local: boolean): void; dispose(): void } {

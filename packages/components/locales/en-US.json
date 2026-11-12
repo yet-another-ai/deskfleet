@@ -765,6 +765,9 @@
     "unavailable": "Unavailable",
     "loadingConfiguration": "Reading configuration from the agent…",
     "reloadConfiguration": "Reload from agent",
+    "viewUsage": "View usage",
+    "usageEmpty": "No quota information available.",
+    "usageResetsAt": "Resets {time}",
     "yolo": "YOLO",
     "yoloHint": "Auto-approve agent permission requests in this session",
     "yoloConfirmation": {

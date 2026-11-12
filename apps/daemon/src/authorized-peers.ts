@@ -21,7 +21,7 @@ const DAY_MS = 86_400_000
 const AGENT_READ = new Set<AgentMethod>([
   "_deskfleet/session/list", "_deskfleet/session/subscribe", "_deskfleet/session/history", "_deskfleet/command/get",
   "_deskfleet/session/read", "_deskfleet/session/unread",
-  "_deskfleet/session/configuration", "_deskfleet/agent/configuration",
+  "_deskfleet/session/configuration", "_deskfleet/agent/configuration", "_deskfleet/agent/usage",
 ])
 const AGENT_EXECUTE = new Set<AgentMethod>([
   "_deskfleet/git/prepare",

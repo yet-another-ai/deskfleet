@@ -1,3 +1,4 @@
+export { supportsProviderUsage } from "../../../apps/daemon/src/provider-protocol.ts"
 import type { AgentProviderConfig, AgentProviderInput, AgentProviderSettings, ProviderSnapshot, ProviderTestResult, ProviderProbeResult } from "../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 

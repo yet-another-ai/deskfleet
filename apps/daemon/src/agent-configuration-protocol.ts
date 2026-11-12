@@ -37,6 +37,15 @@ export interface AgentComposerCatalog {
   skills: AgentComposerSkill[]
 }
 
+/** One remaining quota bucket reported by a provider CLI or API. */
+export interface AgentQuotaItem {
+  id: string
+  label: string
+  group?: string
+  remaining: number
+  resetsAt?: string
+}
+
 /** Configuration reported by the installed agent for a draft or live Session. */
 export interface AgentConfiguration {
   provider: AgentChoice
