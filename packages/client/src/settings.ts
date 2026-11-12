@@ -15,6 +15,7 @@ export interface KeepAwakeState {
 }
 
 export interface AutoDownloadUpdatesState {
+  available?: boolean
   enabled: boolean
 }
 

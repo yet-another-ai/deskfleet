@@ -5,7 +5,7 @@ import {
   createCapacitorNetworkDiagnosticsApi,
   createCapacitorOutlineAudioApi,
 } from "@deskfleet/capacitor-bridge"
-import { createPlayUpdates } from "@deskfleet/capacitor-bridge/app-updates"
+import { createAndroidUpdates } from "@deskfleet/capacitor-bridge/app-updates"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
@@ -33,11 +33,11 @@ if (Capacitor.isNativePlatform() && adapter.central) {
 }
 if (Capacitor.getPlatform() === "android") {
   adapter.outlineAudio = createCapacitorOutlineAudioApi()
-  const play = createPlayUpdates()
-  adapter.updates = play.updates
-  adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: play.getAutoDownload, setAutoDownloadUpdates: play.setAutoDownload }
-  // Background checks are silent: failures (such as builds not installed from Google Play) keep the current state.
-  const check = (): void => { void play.updates.check().catch(() => {}) }
+  const androidUpdates = createAndroidUpdates({ getAppInfo: () => CapApp.getInfo() })
+  adapter.updates = androidUpdates.updates
+  adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: androidUpdates.getAutoDownload, setAutoDownloadUpdates: androidUpdates.setAutoDownload }
+  // Background checks are silent: transient network or Play failures keep the current state.
+  const check = (): void => { void androidUpdates.updates.check().catch(() => {}) }
   check()
   void CapApp.addListener("resume", check)
 }

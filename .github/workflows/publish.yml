@@ -124,6 +124,17 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Download Android APK
+        uses: actions/download-artifact@v8
+        with:
+          name: deskfleet-android-apk
+          path: android-apk
+
+      - name: Stage the Android APK
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: mv android-apk/app-release-signed.apk "release-assets/deskfleet-$VERSION-android-arm64.apk"
+
       - name: Package the Nix release flake
         env:
           VERSION: ${{ needs.validate.outputs.version }}
@@ -150,6 +161,7 @@ jobs:
             "deskfleet-$VERSION-linux-aarch64.rpm"
             "deskfleet-$VERSION-linux-x64.tar.gz"
             "deskfleet-$VERSION-linux-arm64.tar.gz"
+            "deskfleet-$VERSION-android-arm64.apk"
             deskfleet-nix.tar.gz
             "deskfleet-$VERSION-mac-arm64.zip.blockmap"
             "deskfleet-$VERSION-win-x64.exe.blockmap"

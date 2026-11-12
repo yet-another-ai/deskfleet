@@ -32,6 +32,14 @@ class DeskFleetBridge : Plugin() {
     }
 
     @PluginMethod
+    fun getInstallSource(call: PluginCall) {
+        runCatching {
+            val installer = context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
+            call.resolve(JSObject().put("installerPackageName", installer))
+        }.getOrElse { call.reject(it.message ?: "Failed to read install source") }
+    }
+
+    @PluginMethod
     fun openExternal(call: PluginCall) {
         val url = call.getString("url")?.takeIf { it.isNotEmpty() }
             ?: return call.reject("Missing URL")
