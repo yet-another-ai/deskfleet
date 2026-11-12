@@ -1,9 +1,23 @@
 export { supportsProviderUsage } from "../../../apps/daemon/src/provider-protocol.ts"
-import type { AgentProviderConfig, AgentProviderInput, AgentProviderSettings, ProviderSnapshot, ProviderTestResult, ProviderProbeResult } from "../../../apps/daemon/src/provider-protocol.ts"
+import type {
+  AgentProviderConfig,
+  AgentProviderInput,
+  AgentProviderSettings,
+  ProviderSnapshot,
+  ProviderTemplateUpdates,
+  ProviderTestResult,
+  ProviderProbeResult,
+  ProviderUpdate,
+} from "../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 
+export type { ProviderTemplateUpdates, ProviderUpdate }
 export type ProviderDisplay = Pick<AgentProviderConfig, "id" | "name" | "icon" | "template">
-export interface ProviderDisplaySnapshot { revision?: string; providers: ProviderDisplay[] }
+export interface ProviderDisplaySnapshot {
+  revision?: string
+  providers: ProviderDisplay[]
+  updates?: ProviderTemplateUpdates
+}
 
 export const PROVIDERS_CHANGED_EVENT = "deskfleet:providers-changed"
 

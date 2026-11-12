@@ -224,6 +224,15 @@ export class AgentSessions {
   }
   preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
+  /** Stops these providers' runtimes so their executable can be replaced; a failed stop aborts the replacement. */
+  async stopProviders(providerIds: string[]): Promise<void> {
+    const ids = new Set(providerIds)
+    const sessions = (await this.journal.list()).filter(session => ids.has(session.provider))
+    await Promise.all([
+      this.#configurationProbes.invalidate(),
+      ...sessions.map(session => this.#runtimes.get(session.id)?.stop()),
+    ])
+  }
   async resumeArchiving(): Promise<void> {
     // Register before awaiting journal I/O so close() drains this startup work
     // while the catalog pool is still open (fire-and-forget from openMachine).

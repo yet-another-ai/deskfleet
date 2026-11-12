@@ -27,6 +27,16 @@ export interface AgentProviderConfig extends AgentProviderInput {
   id: string
 }
 
+export interface ProviderUpdate {
+  currentVersion: string
+  latestVersion: string
+  status: "available" | "updating" | "error"
+  error?: string
+}
+
+/** Pending updates keyed by CLI template; a machine has one official installation per template. */
+export type ProviderTemplateUpdates = Partial<Record<AgentProviderTemplateId, ProviderUpdate>>
+
 export interface ProviderSnapshot {
   /** Opaque settings revision; contains no launch settings or credential-derived data. */
   revision: string
