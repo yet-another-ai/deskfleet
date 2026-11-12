@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { symbolicShadeValues } from "@proj-airi/chromatic"
-import { computed } from "vue"
+import { computed, onScopeDispose } from "vue"
 import { useI18n } from "vue-i18n"
 import { useInertialRange } from "../../composables/useInertialRange.ts"
 import { chromaticShadeHex, useAppearanceStore } from "../../stores/appearance.ts"
@@ -24,9 +24,12 @@ const { value: hue, startDrag, moveDrag, endDrag, onInput, onChange, onKeydown }
     if (!appearance.error) appearance.previewThemeHue(null)
   },
 })
+// Preview belongs to the mounted editor; late saves cannot clean up a new editor.
+onScopeDispose(() => appearance.previewThemeHue(null))
 
 async function toggleDynamic(enabled: boolean): Promise<void> {
   await appearance.set({ themeHueDynamic: enabled })
+  if (enabled && appearance.settings.themeHueDynamic && !appearance.error) appearance.previewThemeHue(null)
 }
 
 async function reset(): Promise<void> {
