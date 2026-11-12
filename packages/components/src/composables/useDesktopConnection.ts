@@ -47,6 +47,11 @@ export function commonDesktopCodecs(nativeCodecs: VideoCodec[], browserCodecs: R
   )
 }
 
+/** Live previews stay on H.264: thumbnails must decode on every client, while HEVC and AV1 receive support is not portable. */
+export function commonPreviewCodecs(nativeCodecs: VideoCodec[], browserCodecs: RTCRtpCodec[]): VideoCodec[] {
+  return commonDesktopCodecs(nativeCodecs.filter((codec) => codec === "h264"), browserCodecs)
+}
+
 interface Session {
   id: string
   peer: RTCPeerConnection

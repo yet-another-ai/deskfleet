@@ -71,6 +71,7 @@ test("defaults to every display on the Session's machine with bounded, silent, r
   expect(remote.api.capabilities).toHaveBeenCalledOnce()
   expect(wrapper!.find('[data-preview-machine="offline"]').exists()).toBe(false)
   expect(TestPeer.instances).toHaveLength(2)
+  expect(remote.api.offer.mock.calls.map(([options]) => options.codec)).toEqual(["h264", "h264"])
   for (const peer of TestPeer.instances) {
     expect(peer.createDataChannel).not.toHaveBeenCalled()
     expect(peer.addTransceiver.mock.calls.map(([kind]) => kind)).toEqual(["video"])

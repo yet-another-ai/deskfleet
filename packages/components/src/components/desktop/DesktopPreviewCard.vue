@@ -4,7 +4,7 @@ import { watchImmediate } from "@vueuse/core"
 import { computed, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DesktopDisplay, DesktopMediaApi } from "@deskfleet/client/desktop-media"
-import { commonDesktopCodecs, useDesktopConnection } from "../../composables/useDesktopConnection.ts"
+import { commonPreviewCodecs, useDesktopConnection } from "../../composables/useDesktopConnection.ts"
 import UiButton from "../common/UiButton.vue"
 
 const props = defineProps<{ api: DesktopMediaApi; display: DesktopDisplay; machineName: string; active: boolean; showMachineName?: boolean }>()
@@ -14,7 +14,7 @@ const connection = useDesktopConnection(props.api)
 const { state, stream, failure } = connection
 const video = useTemplateRef<HTMLVideoElement>("video")
 const playbackBlocked = ref(false)
-const codecs = computed(() => commonDesktopCodecs(props.display.codecs, typeof RTCRtpReceiver === "undefined" ? [] : RTCRtpReceiver.getCapabilities("video")?.codecs ?? []))
+const codecs = computed(() => commonPreviewCodecs(props.display.codecs, typeof RTCRtpReceiver === "undefined" ? [] : RTCRtpReceiver.getCapabilities("video")?.codecs ?? []))
 const connecting = computed(() => state.value === "connecting" || state.value === "starting")
 const status = computed(() => {
   if (props.active && state.value === "connected") return ""

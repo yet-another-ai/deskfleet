@@ -473,6 +473,9 @@ The Session's right-hand Desktops tab requests one silent, read-only stream per 
 with `fps: 1`, `bitrateBps: 150_000`, `maxWidth: 320`, and `maxHeight: 180`.
 Multiple viewers using the same negotiated codec reuse this preview's capture
 and encoder. A full-resolution viewer or a different codec uses a separate profile.
+Preview peers negotiate H.264 only, because HEVC and AV1 receive support varies
+across clients and platforms and a thumbnail must decode everywhere it is shown.
+The full viewer keeps the AV1 → HEVC → H.264 preference.
 It initially shows the Session's owning machine. Users can switch to all
 remote machines in the current Team; narrowing the scope closes the other peers.
 Offline machines, unavailable capture, and individual connection failures remain
