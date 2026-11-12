@@ -5,7 +5,7 @@ import { HttpError } from "../../../client/src/http-central.ts"
 import { DESKTOP_START_TIMEOUT_MS } from "../../../client/src/desktop-media.ts"
 import { PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
-import { browserCodecPreferences, commonDesktopCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
+import { browserCodecPreferences, commonDesktopCodecs, commonPreviewCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
 
 const scopes: ReturnType<typeof effectScope>[] = []
 function setup() {
@@ -32,6 +32,12 @@ test("matches native profiles in AV1, HEVC, H264 preference order", () => {
     { mimeType: "video/H265", clockRate: 90000, sdpFmtpLine: "profile-id=2" },
     { mimeType: "video/AV1", clockRate: 90000, sdpFmtpLine: "profile=1" },
   ])).toEqual([])
+})
+
+test("previews negotiate only H.264 and ignore faster host codecs", () => {
+  expect(commonPreviewCodecs(["av1", "h265", "h264"], browserCodecs)).toEqual(["h264"])
+  expect(commonPreviewCodecs(["av1", "h265"], browserCodecs)).toEqual([])
+  expect(commonPreviewCodecs(["h264"], browserCodecs.filter(codec => codec.mimeType === "video/H264"))).toEqual(["h264"])
 })
 
 test("negotiates receive-only media and starts capture only after the answer and connection", async () => {
