@@ -15,6 +15,7 @@ import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
 import { applicationsApi } from "./applications.ts"
 import { networkDiagnosticsApi } from "./network-diagnostics.ts"
+import { speechApi } from "./speech.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { muxChannelsApi } from "./mux-channels.ts"
@@ -61,6 +62,7 @@ return {
   appearance: appearanceApi(),
   applications: applicationsApi(),
   networkDiagnostics: networkDiagnosticsApi(),
+  ...(process.platform === "darwin" || process.platform === "win32" ? { speech: speechApi() } : {}),
   updates: updatesApi(),
   ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
   ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),

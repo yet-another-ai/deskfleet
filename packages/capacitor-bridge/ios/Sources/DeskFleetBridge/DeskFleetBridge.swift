@@ -48,12 +48,59 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "testNat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "outlineAudioStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startOutlineAudio", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopOutlineAudio", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stopOutlineAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "speechStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startSpeech", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopSpeech", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelSpeech", returnType: CAPPluginReturnPromise)
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
     private var authSession: ASWebAuthenticationSession?
+    private var speechInput: SpeechInput?
+
+    private func speech() -> SpeechInput {
+        if let speechInput { return speechInput }
+        let input = SpeechInput { [weak self] event in
+            self?.notifyListeners("speechEvent", data: event)
+        }
+        speechInput = input
+        return input
+    }
+
+    @objc func speechStatus(_ call: CAPPluginCall) {
+        let locale = call.getString("locale") ?? Locale.current.identifier
+        DispatchQueue.main.async { [weak self] in
+            call.resolve(["supported": self?.speech().isSupported(locale: locale) ?? false])
+        }
+    }
+
+    @objc func startSpeech(_ call: CAPPluginCall) {
+        guard let id = call.getString("sessionId"), !id.isEmpty,
+              let locale = call.getString("locale"), !locale.isEmpty else {
+            call.reject("Missing speech session ID or locale")
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return call.reject("Speech bridge unavailable", "unavailable") }
+            self.speech().start(id: id, locale: locale) { call.resolve() }
+        }
+    }
+
+    @objc func stopSpeech(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            if let id = call.getString("sessionId") { self?.speechInput?.stop(id: id) }
+            call.resolve()
+        }
+    }
+
+    @objc func cancelSpeech(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            if let id = call.getString("sessionId") { self?.speechInput?.cancel(id: id) }
+            call.resolve()
+        }
+    }
 
     @objc func authenticate(_ call: CAPPluginCall) {
         guard let rawUrl = call.getString("url"),
@@ -311,6 +358,8 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
     }
 
     deinit {
+        let speech = speechInput
+        DispatchQueue.main.async { speech?.dispose() }
         pollTimer?.cancel()
         for observer in appLifecycleObservers { NotificationCenter.default.removeObserver(observer) }
         let session = authSession

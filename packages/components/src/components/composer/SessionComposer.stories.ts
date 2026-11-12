@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
+import { getClient } from "@deskfleet/client/platform"
+import type { SpeechApi, SpeechEvent } from "@deskfleet/client/speech"
 import { computed, provide, ref } from "vue"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import type { ComposerAttachment } from "../../services/composer-attachments.ts"
 import type { ComposerMention } from "../../services/composer-mentions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
@@ -231,4 +234,31 @@ export const ActiveTurnWithSteerAndCancel: Story = {
       size: 200_000,
     },
   },
+}
+
+export const VoiceInput: Story = {
+  args: { location: existingSessionTarget, showTarget: false, modelValue: "Please" },
+  render: args => ({
+    components: { SessionComposer },
+    setup() {
+      const draft = ref(args.modelValue)
+      let emit: ((event: SpeechEvent) => void) | undefined
+      const text = "add voice input to the conversation composer."
+      // Deterministic microphone samples for the story; production uses SpeechApi levels.
+      const speech: SpeechApi = {
+        status: async () => ({ supported: true }),
+        onEvent: listener => { emit = listener; return () => { emit = undefined } },
+        start: async ({ sessionId }) => {
+          emit?.({ type: "started", sessionId })
+          for (const level of [0.1, 0.2, 0.4, 0.7, 0.5, 0.3, 0.2, 0.4, 0.8, 1, 0.8, 0.6, 0.3, 0.1, 0.2, 0.5, 0.4, 0.2]) emit?.({ type: "level", level, sessionId })
+          emit?.({ type: "result", text, final: false, sessionId })
+        },
+        stop: async sessionId => { emit?.({ type: "result", text, final: true, sessionId }); emit?.({ type: "ended", sessionId }) },
+        cancel: async () => {},
+      }
+      provide(platformClientKey, { ...getClient(), speech })
+      return { args, draft }
+    },
+    template: '<SessionComposer v-bind="args" v-model="draft" />',
+  }),
 }

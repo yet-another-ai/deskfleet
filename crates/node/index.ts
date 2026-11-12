@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
 import type { DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 import type { NatTestResult } from "./bindings.d.ts"
+import type { NativeSpeech, NativeSpeechStatus } from "./bindings.d.ts"
 
 export type { DesktopConfig, DesktopStreamPool, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
@@ -11,6 +12,7 @@ export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
 export type { LocalNetworkAccessRequest } from "./bindings.d.ts"
 export type { NatMapping, NatFiltering, NatTestStatus, NatTestResult } from "./bindings.d.ts"
+export type { NativeSpeech, NativeSpeechEvent, NativeSpeechStatus } from "./bindings.d.ts"
 
 type Bindings = typeof import("./bindings.d.ts")
 let bindings: Bindings | undefined
@@ -84,6 +86,16 @@ export function createDesktopStreamPool(): DesktopStreamPool {
 
 export function createTerminal(config: TerminalConfig): Promise<NativeTerminal> {
   return (bindings ??= loadBindings()).createTerminal(config)
+}
+
+/** Probe native dictation without requesting microphone or speech permission. */
+export function speechStatus(locale: string): Promise<NativeSpeechStatus> {
+  return (bindings ??= loadBindings()).speechStatus(locale)
+}
+
+/** Start one local microphone dictation and consume its event stream. */
+export function createSpeech(sessionId: string, locale: string): Promise<NativeSpeech> {
+  return (bindings ??= loadBindings()).createSpeech(sessionId, locale)
 }
 
 export function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog> {

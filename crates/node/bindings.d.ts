@@ -317,3 +317,26 @@ export type VideoCodec = 'h264' | 'h265' | 'av1'
 
 /** Wait for Linux authorization changes; X11 has no retained Portal grant. */
 export declare function waitLinuxDesktopAccessChange(seen: number): Promise<number | null>
+
+export interface NativeSpeechStatus {
+  supported: boolean
+}
+
+export interface NativeSpeechEvent {
+  sessionId: string
+  type: string
+  text?: string
+  final?: boolean
+  level?: number
+  code?: string
+  message?: string
+}
+
+export declare class NativeSpeech {
+  nextEvent(): Promise<NativeSpeechEvent | null>
+  stop(): Promise<void>
+  cancel(): Promise<void>
+}
+
+export declare function speechStatus(locale: string): Promise<NativeSpeechStatus>
+export declare function createSpeech(sessionId: string, locale: string): Promise<NativeSpeech>

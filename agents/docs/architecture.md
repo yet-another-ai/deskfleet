@@ -1044,6 +1044,29 @@ authority. Machine-scoped composition has no `@` candidates. The
 [Agent Session guide](agent-sessions.md#composer-references-and-commands) owns
 completion, serialization, and command queue semantics.
 
+Composer dictation is a capability of the device displaying the UI. Its
+device-local preference defaults on; the microphone button appears only when
+the host reports a supported recognizer for the UI language. Chrome uses its
+Web Speech service, macOS and iOS use Apple's Speech framework, Android uses
+the installed system recognition service, and Windows uses an installed SAPI
+dictation engine. Other hosts have no dictation entry point. System recognition
+may use the platform provider's online service; no bundled model or application
+ASR service is involved.
+
+The shared composer previews partial text and microphone levels, then inserts
+the confirmed transcript at the saved selection when recognition ends. It does
+not send the draft automatically. Changing Team, Machine, Session, language,
+or the preference, submitting the draft, hiding the page, or closing the composer
+cancels recognition. Desktop IPC restricts control and events to the owning
+trusted renderer and cancels capture when its window hides or closes. Native
+speech operations live behind the Rust/napi-rs boundary on desktop and the
+Capacitor bridge on mobile; they do not belong to the selected remote daemon.
+macOS distribution includes microphone and speech usage descriptions. The
+desktop dev launcher prepares a cached, ad-hoc-signed `DeskFleet Dev.app` with
+the same descriptions and a separate development bundle ID, allowing dictation
+testing with Vite hot reload. A plain Electron host without those descriptions
+does not advertise speech support; use the repository's dev launcher.
+
 All authorized users and devices can operate on a Session concurrently, without
 control ownership or transfer. Commands record the initiating user and source
 machine separately from the executing machine. Pending inputs appear in a shared

@@ -66,6 +66,8 @@ mac:
   category: public.app-category.developer-tools
   hardenedRuntime: true
   extendInfo:
+    NSMicrophoneUsageDescription: DeskFleet uses your microphone to dictate messages.
+    NSSpeechRecognitionUsageDescription: DeskFleet uses system speech recognition to transcribe dictated messages.
     NSLocalNetworkUsageDescription: DeskFleet connects to your other machines for terminals, agent sessions, files, and remote desktops.
   target:
     - dmg

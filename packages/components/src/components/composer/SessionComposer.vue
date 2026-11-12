@@ -4,7 +4,7 @@ import UiButton from "../common/UiButton.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
 import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -39,6 +39,8 @@ import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 import { recordSentMessageOrigin } from "../../services/message-sent-transition.ts"
+import { useDictationPreference } from "../../composables/useDictationPreference.ts"
+import { useComposerDictation } from "./useComposerDictation.ts"
 
 const client = usePlatformClient()
 const configurationLoading = ref(false)
@@ -68,7 +70,7 @@ const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>
 const branchLabel = computed(() => preparedBranches.value.length
   ? t("composer.prepare.base", { branches: preparedBranches.value.join(", ") }) : baseBranch.value)
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: []; selectMachine: [machineId: string]; selectWorkspace: [workspaceId: string | null] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const account = useAccountSession()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
@@ -111,6 +113,14 @@ const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
 const sessionId = computed(() => props.location?.session?.id)
+const dictation = reactive(useComposerDictation({
+  api: client.speech,
+  enabled: useDictationPreference(),
+  locale: () => locale.value === "zh-cmn-Hans-CN" ? "zh-Hans-CN" : locale.value,
+  scope: () => JSON.stringify([account?.teamId?.value, account?.machineId?.value, props.location?.machine.id, props.location?.workspace?.id, sessionId.value]),
+  disabled: () => !!(props.disabled || props.submitting || !props.location),
+  draft, mentions, textarea,
+}))
 const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
 const yoloConfirmation = useConfirmDialog()
 const { isRevealed: confirmingYolo } = yoloConfirmation
@@ -308,10 +318,12 @@ function onPaste(event: ClipboardEvent): void {
 }
 function submit(delivery: "backlog" | "steer"): void {
   if (props.disabled || props.submitting || preparing.value || configurationLoading.value || !props.location || empty.value) return
+  dictation.cancel()
   recordSentMessageOrigin(dropZoneRef.value)
   emit("submit", commandInput.value ? "backlog" : delivery)
 }
 function keydown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && dictation.active) { event.preventDefault(); dictation.cancel(); return }
   if (completion.keydown(event)) return
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit("backlog") }
 }
@@ -448,6 +460,17 @@ onBeforeUnmount(() => {
         </li>
       </ul>
       <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" class="block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
+      <div v-if="dictation.active" class="mx-3 mb-2 flex items-center gap-3 rounded-lg bg-ui-accent/5 px-3 py-2" data-dictation-panel>
+        <div class="flex h-7 shrink-0 items-center gap-0.5" aria-hidden="true" data-dictation-waveform>
+          <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-[height,opacity] duration-100 motion-reduce:transition-none" :style="{ height: `${3 + level * 23}px`, opacity: 0.3 + level * 0.7 }" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-xs text-ui-accent" role="status">{{ t(`dictation.${dictation.state}`) }}</div>
+          <p v-if="dictation.transcript" class="m-0 mt-0.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-[13px] text-ui-text" data-dictation-transcript>{{ dictation.transcript }}</p>
+        </div>
+        <UiButton variant="ghost" size="icon" type="button" class="h-7 w-7 shrink-0" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
+      </div>
+      <p v-if="dictation.error" role="alert" class="m-0 px-4 pb-2 text-xs text-ui-danger" data-dictation-error>{{ t(`dictation.errors.${dictation.error}`) }}</p>
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <DropdownMenuRoot v-if="location" :modal="false">
           <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
@@ -482,6 +505,10 @@ onBeforeUnmount(() => {
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active && 'bg-ui-accent/10 text-ui-accent'" :aria-pressed="dictation.active" :title="t(dictation.active ? 'dictation.stop' : 'dictation.start')" :aria-label="t(dictation.active ? 'dictation.stop' : 'dictation.start')" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+            <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
+            <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
+          </UiButton>
           <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
           <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>

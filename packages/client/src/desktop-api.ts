@@ -21,6 +21,7 @@ import type { NativeDesktopApi } from "./native-desktop.ts"
 import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
 import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
+import type { SpeechApi } from "./speech.ts"
 
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
@@ -39,6 +40,7 @@ export interface DeskfleetDesktopApi {
   networkDiagnostics?: NetworkDiagnosticsApi
   outlineAudio?: OutlineAudioApi
   application?: ApplicationApi
+  speech?: SpeechApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi
