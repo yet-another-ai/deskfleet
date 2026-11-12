@@ -12,6 +12,7 @@ export interface AgentChannelSessions {
   readonly journal: { readonly identity: unknown }
   sessionDirectory?(sessionId: string): Promise<string>
   sessionAttachmentDirectory?(sessionId: string): Promise<string>
+  draftAttachmentDirectory?(draftId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
   onPreview?(listener: (preview: AgentPreview) => void): () => void

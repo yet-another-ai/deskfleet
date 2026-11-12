@@ -58,11 +58,17 @@ export class FileGrants {
   readonly #endpoints = new Set<GrantedFilesEndpoint>()
   readonly #confirmOverwrite: (path: string) => Promise<boolean>
   readonly #sessionAttachmentDirectory?: (sessionId: string) => Promise<string>
+  readonly #draftAttachmentDirectory?: (draftId: string) => Promise<string>
   #active = true
 
-  constructor(options: { confirmOverwrite?(path: string): Promise<boolean>; sessionAttachmentDirectory?(sessionId: string): Promise<string> } = {}) {
+  constructor(options: {
+    confirmOverwrite?(path: string): Promise<boolean>
+    sessionAttachmentDirectory?(sessionId: string): Promise<string>
+    draftAttachmentDirectory?(draftId: string): Promise<string>
+  } = {}) {
     this.#confirmOverwrite = options.confirmOverwrite ?? (async () => false)
     this.#sessionAttachmentDirectory = options.sessionAttachmentDirectory
+    this.#draftAttachmentDirectory = options.draftAttachmentDirectory
   }
 
   #checkActive(): void { if (!this.#active) throw denied() }
@@ -152,7 +158,7 @@ export class FileGrants {
 
   endpoint(target: FileTarget): FileEndpoint {
     const grant = this.#get(target)
-    const endpoint = new GrantedFilesEndpoint(this, { ...target } as LocalTarget, grant.scope, this.#sessionAttachmentDirectory)
+    const endpoint = new GrantedFilesEndpoint(this, { ...target } as LocalTarget, grant.scope, this.#sessionAttachmentDirectory, this.#draftAttachmentDirectory)
     this.#endpoints.add(endpoint)
     return endpoint
   }
@@ -176,6 +182,7 @@ class GrantedFilesEndpoint implements FileEndpoint {
   readonly #scope: Grant["scope"]
   readonly #service: FilesService
   readonly #sessionAttachmentDirectory?: (sessionId: string) => Promise<string>
+  readonly #draftAttachmentDirectory?: (draftId: string) => Promise<string>
   readonly #uploads = new Map<string, Upload>()
   #running: Promise<unknown> = Promise.resolve()
   #closed = false
@@ -185,12 +192,14 @@ class GrantedFilesEndpoint implements FileEndpoint {
     target: LocalTarget,
     scope: Grant["scope"],
     sessionAttachmentDirectory?: (sessionId: string) => Promise<string>,
+    draftAttachmentDirectory?: (draftId: string) => Promise<string>,
   ) {
     this.#grants = grants
     this.#target = target
     this.#scope = scope
     this.#sessionAttachmentDirectory = sessionAttachmentDirectory
-    this.#service = new FilesService(undefined, sessionAttachmentDirectory)
+    this.#draftAttachmentDirectory = draftAttachmentDirectory
+    this.#service = new FilesService(undefined, sessionAttachmentDirectory, draftAttachmentDirectory)
   }
 
   call<M extends FileMethod>(method: M, params: FileMethods[M]["params"], data?: Uint8Array): Promise<FileReply<FileMethods[M]["result"]>> {
@@ -254,11 +263,14 @@ class GrantedFilesEndpoint implements FileEndpoint {
         if (!rawDirectory && request.sessionId && this.#sessionAttachmentDirectory) {
           rawDirectory = await this.#sessionAttachmentDirectory(request.sessionId)
           await mkdir(rawDirectory, { recursive: true, mode: 0o700 })
+        } else if (!rawDirectory && request.draftId && this.#draftAttachmentDirectory) {
+          rawDirectory = await this.#draftAttachmentDirectory(request.draftId)
+          await mkdir(rawDirectory, { recursive: true, mode: 0o700 })
         }
         const directory = await this.#grants.assert(this.#target, "write", rawDirectory)
         await this.#grants.destination(this.#target, directory, request.name)
         if (request.conflict === "replace") await this.#grants.overwrite(this.#target, directory, request.name)
-        const reply = await this.#service.call("begin", { ...request, directory })
+        const reply = await this.#service.call("begin", { ...request, sessionId: undefined, draftId: undefined, directory })
         if (reply.value.transferId) this.#uploads.set(reply.value.transferId, { directory, name: request.name })
         return reply
       }

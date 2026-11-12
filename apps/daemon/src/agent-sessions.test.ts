@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { setTimeout as delay } from "node:timers/promises"
 import { test } from "node:test"
@@ -1816,4 +1816,70 @@ test("a person opening a Session is remembered, and live attendance ends when th
   assert.ok(Date.parse(leftAt) >= Date.parse(visited.session.viewers![0]!.seenAt))
   await f.service.attend(f.sessionId, "local", f.service.actor())
   assert.deepEqual(f.service.presence(), [])
+})
+
+test("deferStartup creates a provisioning Session immediately, adopts staged draft attachments on submit, and respects stop during provisioning", async t => {
+  const f = await setup(t)
+  f.provider.finishImmediately = true
+  const draftId = randomUUID()
+  const draftDir = await f.service.draftAttachmentDirectory(draftId)
+  const stagedFile = join(draftDir, "clip.mp4")
+  const stagedBytes = Buffer.from("staged-video-payload")
+  await writeFile(stagedFile, stagedBytes)
+
+  const created = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: f.create.workspaceId,
+    operationId: randomUUID(),
+    provider: f.create.provider,
+    context: "worktree",
+    deferStartup: true,
+    model: "second",
+    reasoningEffort: "low",
+  }, f.actor) as AgentSnapshot
+  assert.equal(created.session.lifecycle, "provisioning")
+  const deferredSessionId = created.session.id
+
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: deferredSessionId,
+    operationId: randomUUID(),
+    delivery: "backlog",
+    content: [
+      { type: "resource_link", uri: pathToFileURL(stagedFile).href, name: "clip.mp4", mimeType: "video/mp4", size: stagedBytes.byteLength },
+      { type: "text", text: "Trim this clip" },
+    ],
+  }, f.actor)
+
+  const finished = await until(() => f.service.journal.read(deferredSessionId), current => current.turns.some(turn => turn.state === "completed"))
+  assert.equal(finished.session.lifecycle, "ready")
+  const adoptedLink = finished.inputs[0]!.content[0] as acp.ContentBlock & { type: "resource_link" }
+  const adoptedPath = fileURLToPath(adoptedLink.uri)
+  assert.notEqual(adoptedPath, stagedFile)
+  assert.deepEqual(await readFile(adoptedPath), stagedBytes)
+  await assert.rejects(readdir(draftDir), { code: "ENOENT" })
+  assert.deepEqual(f.provider.promptConfigurations.at(-1), { model: "second", effort: "low" })
+
+  // Stopping a deferred Session before provisioning finishes prevents starting the provider run.
+  const runsBeforeStopCase = f.provider.cwds.length
+  const stoppedCreate = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: f.create.workspaceId,
+    operationId: randomUUID(),
+    provider: f.create.provider,
+    context: "worktree",
+    deferStartup: true,
+  }, f.actor) as AgentSnapshot
+  assert.equal(stoppedCreate.session.lifecycle, "provisioning")
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: stoppedCreate.session.id,
+    operationId: randomUUID(),
+    delivery: "backlog",
+    content: [{ type: "text", text: "Do not auto-start after stop" }],
+  }, f.actor)
+  await f.service.handle("_deskfleet/session/stop", {
+    sessionId: stoppedCreate.session.id,
+    operationId: randomUUID(),
+  }, f.actor)
+  const readyWithoutRun = await until(() => f.service.journal.read(stoppedCreate.session.id), current => current.session.lifecycle === "ready")
+  assert.equal(readyWithoutRun.runs.length, 0)
+  assert.equal(readyWithoutRun.inputs[0]?.state, "pending")
+  assert.equal(f.provider.cwds.length, runsBeforeStopCase)
 })

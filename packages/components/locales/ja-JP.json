@@ -544,7 +544,9 @@
     "attach": "添付ファイルを追加", "attachments": "添付ファイル",
     "uploadLocalFiles": "ローカルファイルをアップロード", "chooseMachineFiles": "マシンからファイルを選択",
     "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
-    "removeAttachment": "{name} を削除", "dropFiles": "ファイルをドロップして添付",
+    "removeAttachment": "{name} を削除", "uploadingAttachment": "{name} をアップロード中 ({percent}%)",
+    "uploadFailed": "アップロードに失敗しました", "retryUpload": "{name} のアップロードを再試行",
+    "dropFiles": "ファイルをドロップして添付",
     "completions": {
       "label": "プロンプトの候補", "references": "選択した参照",
       "file": "ファイル", "session": "セッション",

@@ -1,6 +1,6 @@
 import type { FileEndpoint } from "../../../daemon/src/files-protocol.ts"
 import { FileTransferManager } from "@deskfleet/client/file-transfers"
-import type { FileAttachmentUploadRequest, FileAttachmentUploadResult, FileConflict, FileListing, FileReadResourceOptions, FileResource, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
+import type { FileAttachmentUploadOptions, FileAttachmentUploadRequest, FileAttachmentUploadResult, FileConflict, FileListing, FileReadResourceOptions, FileResource, FileResourceRequest, FilesApi, FileTarget, FileTransfer, FileTransferRequest } from "@deskfleet/client/files"
 import { FileGrants } from "./files-grants.ts"
 
 interface FileDialogs {
@@ -26,6 +26,7 @@ export class WindowFiles implements FilesApi {
     remoteEndpoint(target: Extract<FileTarget, { kind: "machine" }>): Promise<FileEndpoint>
     sessionDirectory(sessionId: string): Promise<string>
     sessionAttachmentDirectory?(sessionId: string): Promise<string>
+    draftAttachmentDirectory?(draftId: string): Promise<string>
     isLocalTarget(target: FileTarget): Promise<boolean>
     openPath(path: string): Promise<void>
     revealPath(path: string): Promise<void>
@@ -39,6 +40,7 @@ export class WindowFiles implements FilesApi {
     this.#grants = new FileGrants({
       confirmOverwrite: path => options.confirmOverwrite(path),
       sessionAttachmentDirectory: options.sessionAttachmentDirectory,
+      draftAttachmentDirectory: options.draftAttachmentDirectory,
     })
     this.#manager = new FileTransferManager({
       endpoint: async target => target.kind === "local" ? this.#grants.endpoint(target) : options.remoteEndpoint(target),
@@ -138,10 +140,10 @@ export class WindowFiles implements FilesApi {
   openResource(request: FileResourceRequest) { return this.#live(async () => this.#openPath(await this.#localFilePath(request, "open"))) }
   revealResource(request: FileResourceRequest) { return this.#live(async () => this.#revealPath(await this.#localFilePath(request, "reveal"))) }
   saveResource(request: FileResourceRequest) { return this.#live(async () => this.#manager.saveResource(await this.#resource(request))) }
-  uploadAttachment(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult> {
+  uploadAttachment(request: FileAttachmentUploadRequest, options?: FileAttachmentUploadOptions): Promise<FileAttachmentUploadResult> {
     return this.#live(async () => {
       const target = await this.#target(request.target)
-      return this.#manager.uploadAttachment({ ...request, target })
+      return this.#manager.uploadAttachment({ ...request, target }, options)
     })
   }
 

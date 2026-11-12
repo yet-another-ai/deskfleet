@@ -24,7 +24,7 @@ export interface FileMethods {
   openRead: { params: { path: string; modifiedAt?: number }; result: { readId: string } }
   read: { params: { path: string; offset: number; length: number; modifiedAt?: number; readId?: string }; result: { bytes: number } }
   closeRead: { params: { readId: string }; result: null }
-  begin: { params: { directory?: string; sessionId?: string; name: string; kind: FileKind; conflict: FileConflict }; result: { transferId: string; skipped: boolean } }
+  begin: { params: { directory?: string; sessionId?: string; draftId?: string; name: string; kind: FileKind; conflict: FileConflict }; result: { transferId: string; skipped: boolean } }
   mkdir: { params: { transferId: string; path: string }; result: null }
   write: { params: { transferId: string; path: string; offset: number }; result: { bytes: number } }
   finish: { params: { transferId: string; path: string; size: number }; result: null }

@@ -702,6 +702,9 @@
     "pastedText": "粘贴的文本",
     "pastedTextLines": "{n} 行",
     "removeAttachment": "移除 {name}",
+    "uploadingAttachment": "正在上传 {name}（{percent}%）",
+    "uploadFailed": "上传失败",
+    "retryUpload": "重试上传 {name}",
     "dropFiles": "拖放文件以添加附件",
     "completions": {
       "label": "提示词补全",

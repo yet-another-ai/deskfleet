@@ -283,6 +283,7 @@ export class AuthorizedPeers {
       new FilesService(
         this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
         this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
+        this.#agents.draftAttachmentDirectory ? draftId => this.#agents.draftAttachmentDirectory!(draftId) : undefined,
       ),
       bytes => send(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), false),
       method => { this.#live(id, fileAction(method)) },

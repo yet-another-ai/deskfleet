@@ -7,16 +7,19 @@ import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
+import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
-import { hasSubmittableText, sessionTitleFromDraft } from "../services/composer-attachments.ts"
+import { hasIncompleteAttachmentUploads, hasSubmittableText, previewPromptContent, sessionTitleFromDraft } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useLayoutStore } from "../stores/layout.ts"
 import { useProvidersStore } from "../stores/providers.ts"
+import type { AgentActor } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { GitPreparationSnapshot } from "../../../../apps/daemon/src/git-protocol.ts"
 
 const client = usePlatformClient()
+const account = useAccountSession()
 const { t } = useI18n()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
@@ -47,29 +50,49 @@ async function submit(): Promise<void> {
   const submittedDraft = { mentions: currentMentions, attachmentIds: currentAttachments.map(item => item.id) }
   const fileTarget = resourceTarget.value
   const key = draftKey.value
-  if (!target || submitting.value || !hasSubmittableText(text, currentAttachments) || !providers.ready || !providers.selectedId) return
+  if (!target || submitting.value || !hasSubmittableText(text, currentAttachments) || hasIncompleteAttachmentUploads(currentAttachments, fileTarget) || !providers.ready || !providers.selectedId) return
   const context = target.workspace ? sessionContext.value : "directory"
   submitting.value = true
   error.value = null
   let preparingSessionId: string | undefined
   try {
     const snapshot = await agents.create(target.workspace?.id, sessionTitleFromDraft(text, currentAttachments), context, providers.selectedId,
-      context === "worktree" && !baseRevisions.value ? baseBranch.value : undefined, context === "worktree" ? baseRevisions.value : undefined)
+      context === "worktree" && !baseRevisions.value ? baseBranch.value : undefined, context === "worktree" ? baseRevisions.value : undefined,
+      undefined, { deferStartup: true })
     const id = snapshot.session.id
     preparingSessionId = id
     agents.preparingDrafts[id] = true
-    agents.drafts[id] = text
-    agents.draftAttachments[id] = currentAttachments
-    agents.draftMentions[id] = currentMentions
+    const canStartPrompt = snapshot.session.lifecycle === "ready" || snapshot.session.lifecycle === "provisioning"
+    if (canStartPrompt) {
+      const userId = account?.account.value.user?.id
+      const author: AgentActor = userId
+        ? { kind: "user", userId, sourceMachine: { originId: "", id: target.machine.id } }
+        : { kind: "local_token", sourceMachine: { originId: "", id: target.machine.id } }
+      agents.optimisticInputs[id] = {
+        id: "optimistic",
+        sessionId: id,
+        submissionCommandId: "",
+        author,
+        content: previewPromptContent(text, currentAttachments),
+        acceptedSeq: "0",
+        state: "pending",
+        requestedDelivery: "backlog",
+        createdAt: new Date().toISOString(),
+      }
+    } else {
+      agents.drafts[id] = text
+      agents.draftAttachments[id] = currentAttachments
+      agents.draftMentions[id] = currentMentions
+    }
     if (agents.drafts[key] === text && JSON.stringify(agents.draftMentions[key] ?? []) === JSON.stringify(currentMentions)) agents.drafts[key] = ""
     if (agents.draftAttachments[key] === currentAttachments) agents.draftAttachments[key] = []
     if (agents.draftMentions[key] === currentMentions) agents.draftMentions[key] = []
-    await fleet.refreshLocalCatalog()
+    void fleet.refreshLocalCatalog().catch(() => undefined)
     const sameTarget = newSessionTarget.value?.workspace?.id === target.workspace?.id
       && newSessionTarget.value?.machine.id === target.machine.id
     if (!disposed && router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
     // A rejected or disconnected submission remains in the Session draft for reconciliation.
-    if (snapshot.session.lifecycle === "ready") {
+    if (canStartPrompt) {
       await (async () => {
         const content = currentAttachments.length || currentMentions.length
           ? await buildComposerPrompt({ draft: text, attachments: currentAttachments, mentions: currentMentions, providerId: snapshot.session.provider,
@@ -77,6 +100,10 @@ async function submit(): Promise<void> {
           : text
         await agents.submit(id, content, "backlog", undefined, text, submittedDraft)
       })().catch(reason => {
+        delete agents.optimisticInputs[id]
+        if (!agents.drafts[id]) agents.drafts[id] = text
+        if (!agents.draftAttachments[id]?.length && currentAttachments.length) agents.draftAttachments[id] = currentAttachments
+        if (!agents.draftMentions[id]?.length && currentMentions.length) agents.draftMentions[id] = currentMentions
         agents.draftErrors[id] = reason instanceof Error ? reason.message : String(reason)
       })
     }

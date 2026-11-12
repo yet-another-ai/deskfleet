@@ -130,10 +130,13 @@ abort bypasses that queue to interrupt publication and reject pending writes.
 
 The endpoint operations are `list`, `stat`, `resolve`, `openRead`, `read`,
 `closeRead`, `begin`, `mkdir`, `write`, `finish`, `commit`, and `abort`.
-`begin` accepts either a destination
-`directory` or a `sessionId` that targets the Session's daemon-managed
-`<machine directory>/session-attachments/<sessionId>/` directory for composer
-file attachments. An upload's paths are relative to its
+`begin` accepts exactly one destination target: a `directory`, a `sessionId`
+targeting `<machine directory>/session-attachments/<sessionId>/`, or a UUID
+`draftId` targeting `<machine directory>/session-attachments/.drafts/<draftId>/`
+for pre-Session composer file attachments (adopted into `session-attachments/<sessionId>/`
+on `_deskfleet/input/submit`). Composer attachment uploads reuse the same
+516-chunk write pipeline with acknowledged-byte progress reporting and
+`AbortSignal` cancellation (`abort`). An upload's paths are relative to its
 selected root: the empty path names a root file or directory, and slash-separated
 paths name descendants. Absolute paths, traversal segments, backslashes, and
 alternate-stream colons are rejected in upload paths. Reads and writes check

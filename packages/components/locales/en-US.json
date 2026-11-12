@@ -702,6 +702,9 @@
     "pastedText": "Pasted text",
     "pastedTextLines": "{n} line | {n} lines",
     "removeAttachment": "Remove {name}",
+    "uploadingAttachment": "Uploading {name} ({percent}%)",
+    "uploadFailed": "Upload failed",
+    "retryUpload": "Retry uploading {name}",
     "dropFiles": "Drop files to attach",
     "completions": {
       "label": "Prompt suggestions",
