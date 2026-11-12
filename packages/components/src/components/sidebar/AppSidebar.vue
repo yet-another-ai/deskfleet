@@ -130,8 +130,8 @@ function refresh(): void {
       :aria-valuenow="width"
       :aria-valuemin="minimum"
       :aria-valuemax="maximum"
-      class="app-no-drag absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize outline-none after:absolute after:inset-y-0 after:left-3.5px after:w-0.5 after:ui-motion after:content-[''] hover:after:bg-ui-focus/50 focus-visible:after:bg-ui-focus"
-      :class="resizing && 'after:!bg-ui-focus'"
+      class="ui-sash app-no-drag absolute inset-y-0 -right-1 z-30 w-2 cursor-col-resize outline-none"
+      :class="resizing && 'ui-sash-active'"
       @pointerdown="startResize"
       @keydown="keyResize"
     />

@@ -79,17 +79,19 @@ provide(newTerminalWindowKey, () => {
   if (group) void openTerminalTab(group, "below")
 })
 
-function tabPresentation(params: IDockviewPanelHeaderProps): { title: string; tooltip: string; closable: boolean } {
+function tabPresentation(params: IDockviewPanelHeaderProps): { title: string; tooltip: string; closable: boolean; overflow: boolean } {
+  const overflow = params.tabLocation === "headerOverflow"
   if (params.api.id === "chat") {
     return {
       title: chatTitle.value,
       tooltip: chatTooltip.value ?? chatTitle.value,
       closable: false,
+      overflow,
     }
   }
 
   const title = params.api.title ?? params.api.id
-  return { title, tooltip: title, closable: true }
+  return { title, tooltip: title, closable: true, overflow }
 }
 
 function updateTerminalTitle(panel: DockviewPanelApi, terminalId: string, title: string): void {
@@ -512,9 +514,9 @@ onScopeDispose(() => {
   --dv-inactivegroup-visiblepanel-tab-color: var(--ui-color-accent);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--ui-color-text);
   --dv-tab-divider-color: var(--ui-color-border);
+  --dv-tabs-container-scrollbar-color: color-mix(in srgb, var(--ui-color-text-faint) 50%, transparent);
   --dv-separator-border: var(--ui-color-border);
   --dv-icon-hover-background-color: var(--ui-color-hover);
-  --dv-active-sash-color: var(--ui-color-focus);
   --dv-drag-over-background-color: color-mix(in srgb, var(--ui-color-accent) 18%, transparent);
   --dv-drag-over-border: 1px solid var(--ui-color-accent);
   --dv-drag-over-border-color: var(--ui-color-accent);
@@ -530,12 +532,9 @@ onScopeDispose(() => {
   padding-left: 2px;
   border-bottom: 1px solid var(--ui-color-border);
 }
-.deskfleet-windows :deep(.dv-tab),
-.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default) {
+.deskfleet-windows :deep(.dv-tabs-container .dv-tab) {
   app-region: no-drag;
   -webkit-app-region: no-drag;
-}
-.deskfleet-windows :deep(.dv-tab) {
   height: 36px;
   cursor: pointer;
   padding: 0;
@@ -543,28 +542,49 @@ onScopeDispose(() => {
   transition: background-color var(--ui-duration-fast) var(--ui-ease-out), color var(--ui-duration-fast) var(--ui-ease-out);
 }
 /* The window that comes forward settles into its highlight, like a selected nav item. */
-.deskfleet-windows :deep(.dv-active-tab) { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
-.deskfleet-windows :deep(.dv-tab:focus-visible) {
+.deskfleet-windows :deep(.dv-tabs-container .dv-active-tab) { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
+.deskfleet-windows :deep(.dv-tabs-container .dv-tab:focus-visible) {
   outline: 2px solid var(--ui-color-focus);
   outline-offset: -2px;
 }
 .deskfleet-windows :deep(.dv-tab::before),
 .deskfleet-windows :deep(.dv-tab::after) { display: none; }
 /* Override Dockview's tab background custom properties on the tab itself so its 6-class group rule resolves hover colors. */
-.deskfleet-windows :deep(.dv-active-tab:hover) {
+.deskfleet-windows :deep(.dv-tabs-container .dv-active-tab:hover) {
   --dv-activegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
   --dv-inactivegroup-visiblepanel-tab-background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
 }
-.deskfleet-windows :deep(.dv-inactive-tab:hover) {
+.deskfleet-windows :deep(.dv-tabs-container .dv-inactive-tab:hover) {
   --dv-activegroup-hiddenpanel-tab-background-color: var(--ui-color-hover);
   --dv-inactivegroup-hiddenpanel-tab-background-color: var(--ui-color-hover);
 }
 .deskfleet-windows :deep(.dv-pre-actions-container > .dv-vue-part),
 .deskfleet-windows :deep(.dv-left-actions-container > .dv-vue-part),
-.deskfleet-windows :deep(.dv-right-actions-container > .dv-vue-part) {
+.deskfleet-windows :deep(.dv-right-actions-container > .dv-vue-part),
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-root) {
   display: flex;
   align-items: center;
 }
-.deskfleet-windows :deep(.dv-sash) { transition: background-color var(--ui-duration-fast) var(--ui-ease-out); }
-.deskfleet-windows :deep(.dv-sash:hover) { background: color-mix(in srgb, var(--ui-color-focus) 45%, transparent); }
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default) {
+  @apply ui-text-button mx-[3px] my-0 tabular-nums;
+}
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default > span) { padding-left: 0; }
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default > svg) { display: none; }
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default::after) {
+  content: "";
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.deskfleet-windows :deep(.dv-tabs-overflow-container) {
+  @apply app-no-drag ui-menu mt-3.5 flex max-w-72 min-w-44 flex-col;
+}
+.deskfleet-windows :deep(.dv-tabs-overflow-container .dv-tab) {
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
 </style>

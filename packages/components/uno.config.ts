@@ -1,4 +1,4 @@
-import { defineConfig, presetWind4 } from "unocss"
+import { defineConfig, presetWind4, transformerDirectives } from "unocss"
 
 const colorNames = [
   "canvas",
@@ -33,11 +33,13 @@ const colorNames = [
 
 // Buttons share a shape; each variant sets its colors. Utilities on the element still override the shortcut.
 // Pressing a button settles it slightly; inert buttons stay still.
+const interactive = "[&:not(:disabled,[aria-disabled=true])]"
 const button =
-  "app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap squircle-lg border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion enabled:active:scale-[0.97] [&[aria-disabled=true]]:active:scale-100 disabled:cursor-default [&[aria-disabled=true]]:cursor-default"
+  `app-no-drag inline-flex items-center justify-center gap-1.5 whitespace-nowrap squircle-lg border px-3 py-1.5 text-[13px] font-medium leading-5 cursor-pointer ui-motion ${interactive}:active:scale-[0.97] disabled:cursor-default [&[aria-disabled=true]]:cursor-default`
 
 export default defineConfig({
   presets: [presetWind4()],
+  transformers: [transformerDirectives()],
   content: {
     pipeline: {
       include: [/\.(vue|[jt]sx|mdx?|html)($|\?)/, /\.stories\.ts($|\?)/],
@@ -62,12 +64,12 @@ export default defineConfig({
     "ui-badge": "rounded-md bg-ui-badge px-1.5 text-xs leading-5 text-ui-text-muted",
 
     // Controls
-    "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text enabled:hover:bg-ui-control-hover enabled:active:bg-ui-active disabled:op-50`,
-    "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text enabled:hover:bg-ui-action-hover disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
-    "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger enabled:hover:border-ui-danger/45 enabled:hover:bg-ui-danger/14 enabled:active:bg-ui-danger/20 disabled:op-50`,
-    "ui-button-ghost": `${button} border-transparent bg-transparent text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text enabled:active:bg-ui-active disabled:op-40`,
+    "ui-button": `${button} border-ui-border-strong bg-ui-control text-ui-text ${interactive}:hover:bg-ui-control-hover ${interactive}:active:bg-ui-active disabled:op-50`,
+    "ui-button-primary": `${button} border-transparent bg-ui-action text-ui-action-text ${interactive}:hover:bg-ui-action-hover disabled:bg-ui-action-disabled disabled:text-ui-text-faint`,
+    "ui-button-danger": `${button} border-ui-danger/30 bg-ui-danger/8 text-ui-danger ${interactive}:hover:border-ui-danger/45 ${interactive}:hover:bg-ui-danger/14 ${interactive}:active:bg-ui-danger/20 disabled:op-50`,
+    "ui-button-ghost": `${button} border-transparent bg-transparent text-ui-text-muted ${interactive}:hover:bg-ui-hover ${interactive}:hover:text-ui-text ${interactive}:active:bg-ui-active disabled:op-40`,
     "ui-text-button":
-      `${button} h-7 border-transparent bg-transparent px-2 text-ui-text-muted enabled:hover:bg-ui-hover enabled:hover:text-ui-text disabled:op-40`,
+      `${button} h-7 border-transparent bg-transparent px-2 text-ui-text-muted ${interactive}:hover:bg-ui-hover ${interactive}:hover:text-ui-text ${interactive}:active:bg-ui-active disabled:op-40`,
     "ui-input":
       "w-full min-w-0 rounded-lg border border-ui-border-strong bg-ui-control px-2.5 py-1.5 leading-5 text-ui-text select-text ui-motion hover:border-ui-text-faint focus-visible:border-ui-accent focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ui-accent/20 disabled:cursor-default disabled:op-50 disabled:hover:border-ui-border-strong",
     "ui-switch":
