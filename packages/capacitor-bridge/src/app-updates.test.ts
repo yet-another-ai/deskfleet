@@ -143,7 +143,7 @@ test("APK updates ignore equal/older versions, drafts, prereleases, and releases
 
 test("createAndroidUpdates selects Play for com.android.vending and GitHub Releases for sideloaded installs", async () => {
   const { plugin } = fakePlay({}, AppUpdateResultCode.OK)
-  const playOnly = createAndroidUpdates({
+  const playOnly = await createAndroidUpdates({
     getAppInfo: async () => ({ version: "0.13.1", build: "1301999" }),
     bridge: { getInstallSource: async () => ({ installerPackageName: "com.android.vending" }), openExternal: vi.fn(async () => {}) },
     playPlugin: plugin,
@@ -155,7 +155,7 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
 
   const openExternal = vi.fn(async () => {})
   const apkUrl = "https://github.com/yet-another-ai/deskfleet/releases/download/v0.14.0/deskfleet-0.14.0-android-arm64.apk"
-  const sideloaded = createAndroidUpdates({
+  const sideloaded = await createAndroidUpdates({
     getAppInfo: async () => ({ version: "0.13.1", build: "1301999" }),
     bridge: { getInstallSource: async () => ({ installerPackageName: "com.google.android.packageinstaller" }), openExternal },
     playPlugin: plugin,
