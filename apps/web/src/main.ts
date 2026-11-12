@@ -3,6 +3,7 @@ import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
 import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
+  createCapacitorOutlineAudioApi,
 } from "@deskfleet/capacitor-bridge"
 import { createPlayUpdates } from "@deskfleet/capacitor-bridge/app-updates"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
@@ -16,6 +17,9 @@ import "virtual:uno.css"
 initializeErrorReporting("web")
 const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
 const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
+if (Capacitor.getPlatform() === "ios") {
+  adapter.outlineAudio = createCapacitorOutlineAudioApi()
+}
 if (Capacitor.isNativePlatform() && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
   adapter.networkDiagnostics = createCapacitorNetworkDiagnosticsApi(

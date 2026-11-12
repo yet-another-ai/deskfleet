@@ -87,6 +87,8 @@ mise run android:test
 mise run android:build
 ```
 
+On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`ai.yetanother.deskfleet.BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.ai.yetanother.deskfleet` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
+
 ## Backend and integrations
 
 The welcome page signs in to this compiled backend and has no address setting.

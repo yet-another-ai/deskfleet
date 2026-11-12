@@ -38,6 +38,7 @@ let package = Package(
                 .linkedFramework("IOSurface"),
                 .linkedFramework("Metal"),
                 .linkedFramework("QuartzCore"),
+                .linkedFramework("ReplayKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("UIKit"),
