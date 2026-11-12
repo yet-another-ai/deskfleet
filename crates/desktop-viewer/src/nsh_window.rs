@@ -268,6 +268,8 @@ impl Viewer {
 
     fn sync_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let enabled = self.toolbar_state.controls_enabled();
+        self.controls
+            .set_reverse_scroll(self.toolbar_state.reverse_scroll);
         let release = self.controls.set_enabled(enabled);
         self.send(release, window, cx);
         let pointer = window.is_window_hovered().then(|| window.mouse_position());
@@ -451,6 +453,10 @@ impl Viewer {
             }
             ToolbarAction::SetControl(control) => {
                 Some(json!({"type":"setControl", "control":control}))
+            }
+            ToolbarAction::SetReverseScroll(reverse_scroll) => {
+                self.toolbar_state.reverse_scroll = reverse_scroll;
+                None
             }
             ToolbarAction::SecureAttention
                 if self.toolbar_state.controls_enabled()

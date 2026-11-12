@@ -912,6 +912,7 @@
     "codecStatus": "Video codec: {codec}",
     "audio": "System audio",
     "control": "Mouse and keyboard control",
+    "reverseScroll": "Reverse mouse scrolling",
     "pauseControl": "Pause control",
     "resumeControl": "Resume control",
     "sendSecureAttention": "Send Ctrl+Alt+Del",

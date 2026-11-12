@@ -908,3 +908,30 @@ test.each([false, undefined])("Windows hides secure attention when the service c
   expect(wrapper.find("[data-desktop-secure-attention]").exists()).toBe(false)
   expect(peer.input.send).not.toHaveBeenCalled()
 })
+
+test("reverse mouse scrolling flips wheel deltas without reconnecting", async () => {
+  const { wrapper, peer } = await connectDesktop()
+  peer.input.ready()
+  await flushPromises()
+  const video = wrapper.get("video").element as HTMLVideoElement
+  Object.defineProperties(video, { videoWidth: { value: 1920 }, videoHeight: { value: 1080 } })
+  vi.spyOn(video, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 960, height: 540 } as DOMRect)
+  const wheel = (deltaX: number, deltaY: number) => {
+    const event = new WheelEvent("wheel", { deltaX, deltaY, cancelable: true })
+    Object.defineProperties(event, { clientX: { value: 480 }, clientY: { value: 270 } })
+    video.dispatchEvent(event)
+  }
+
+  wheel(12, -24)
+  expect(JSON.parse(peer.input.send.mock.calls.at(-1)![0])).toEqual({ type: "wheel", deltaX: 12, deltaY: -24 })
+
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  const checkbox = wrapper.get("[data-desktop-reverse-scroll]")
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+  await checkbox.trigger("click")
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  expect(TestPeer.instances).toHaveLength(1)
+
+  wheel(12, -24)
+  expect(JSON.parse(peer.input.send.mock.calls.at(-1)![0])).toEqual({ type: "wheel", deltaX: -12, deltaY: 24 })
+})
