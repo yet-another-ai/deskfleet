@@ -240,12 +240,13 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
 
   const stage = view.get('[data-mermaid="0"] [data-mermaid-stage]')
   await view.get('[data-mermaid-action="zoom-in"]').trigger("click")
-  expect(stage.attributes("style")).toContain("scale(1.25)")
+  expect(stage.attributes("style")).toContain("scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(1.25)")
   await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
   await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
-  expect(stage.attributes("style")).toContain("scale(0.75)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(0.75)")
   await view.get('[data-mermaid-action="reset"]').trigger("click")
-  expect(stage.attributes("style")).toContain("translate(0px, 0px) scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("translate(0px, 0px) scale(1)")
 
   await view.get('[data-mermaid-action="focus"]').trigger("click")
   await flushPromises()
