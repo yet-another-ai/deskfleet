@@ -11,7 +11,7 @@ const assetNames = [
   "deskfleet-0.2.0-linux-x64.tar.gz", "deskfleet-0.2.0-linux-arm64.tar.gz", "deskfleet-nix.tar.gz",
   "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
   "deskfleet-0.2.0-linux-amd64.deb", "deskfleet-0.2.0-linux-arm64.deb",
-  "deskfleet-0.2.0-linux-x86_64.rpm", "deskfleet-0.2.0-linux-aarch64.rpm",
+  "deskfleet-0.2.0-linux-x86_64.rpm", "deskfleet-0.2.0-linux-aarch64.rpm", "deskfleet-0.2.0-android-arm64.apk",
   "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
 const release: LatestRelease = {
@@ -62,6 +62,7 @@ test("release verification requires installers, packaging archives, and update m
       `deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`,
       `deskfleet-${version}-linux-amd64.deb`, `deskfleet-${version}-linux-aarch64.rpm`,
       `deskfleet-${version}-linux-x64.tar.gz`, `deskfleet-${version}-linux-arm64.tar.gz`, "deskfleet-nix.tar.gz",
+      `deskfleet-${version}-android-arm64.apk`,
     ]) {
       const path = join(directory, "release-assets", required)
       unlinkSync(path)

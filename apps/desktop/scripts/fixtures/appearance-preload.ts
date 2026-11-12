@@ -10,7 +10,7 @@ api.terminal.list = async () => []
 api.settings.get = async () => ({ enabled: false, status: "stopped" })
 api.settings.getLaunchAtStartup = async () => ({ available: false, enabled: false })
 api.settings.getKeepAwake = async () => ({ enabled: false })
-api.settings.getAutoDownloadUpdates = async () => ({ enabled: true })
+api.settings.getAutoDownloadUpdates = async () => ({ enabled: true, installSource: "desktop_installer" })
 api.settings.getWorktreeRoot = async () => ({ root: null, defaultRoot: "/smoke/worktrees" })
 api.settings.getRemoteAgentSettings = async () => ({ allowRead: false, allowOperate: false })
 api.settings.setRemoteAgentSettings = async (settings) => settings

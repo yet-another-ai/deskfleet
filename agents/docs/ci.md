@@ -287,9 +287,15 @@ renderer can initiate a direct peer connection.
 Each tag produces a **draft** GitHub Release containing the desktop installers,
 two Linux desktop archives, four Linux distribution packages (`.deb` for amd64
 and arm64, `.rpm` for x86_64 and aarch64), the `deskfleet-nix.tar.gz` flake
-bundle, four server/daemon archives, updater metadata and blockmaps. Review its
+bundle, four server/daemon archives, updater metadata and blockmaps, and the
+Android arm64 APK (`deskfleet-<version>-android-arm64.apk`). Review its
 generated notes and assets, then publish it in GitHub. Prerelease tags create
 prerelease drafts.
+The APK is signed with the Android upload key, while Google Play installs carry
+Play's app signing key. Android cannot update one installation from the other
+source; switching requires uninstalling first. APK installations check GitHub's
+`releases/latest` endpoint instead of Google Play and open the newer signed APK
+in the system browser when the user accepts an update.
 Reruns can replace assets on a draft; they refuse to modify an already published
 release.
 

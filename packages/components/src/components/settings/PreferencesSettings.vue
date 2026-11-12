@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import AutoDownloadUpdatesSettings from "./AutoDownloadUpdatesSettings.vue"
 import KeepAwakeSettings from "./KeepAwakeSettings.vue"
@@ -11,6 +12,17 @@ import RemoteAgentSettings from "./RemoteAgentSettings.vue"
 const client = usePlatformClient()
 
 const { t } = useI18n()
+const showWebUpdatesSection = ref(false)
+if (client.platform === "web" && client.updates) {
+  onMounted(async () => {
+    try {
+      const state = await client.settings.getAutoDownloadUpdates()
+      showWebUpdatesSection.value = state.installSource === "google_play"
+    } catch {
+      showWebUpdatesSection.value = false
+    }
+  })
+}
 </script>
 
 <template>
@@ -26,7 +38,7 @@ const { t } = useI18n()
       <LocalAgentSettings />
     </div>
   </section>
-  <section v-else-if="client.updates" aria-labelledby="updates-heading">
+  <section v-else-if="showWebUpdatesSection" aria-labelledby="updates-heading">
     <h2 id="updates-heading" class="ui-section-title mb-2">{{ t("updatesSettings.title") }}</h2>
     <div class="ui-card">
       <AutoDownloadUpdatesSettings />

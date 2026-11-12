@@ -17,7 +17,7 @@ const { handle, app, loadUpdater, createDriver, driver } = vi.hoisted(() => ({
 vi.mock("electron", () => ({ ipcMain: { handle }, app }))
 vi.mock("electron-updater", () => { loadUpdater(); return { default: { autoUpdater: {} } } })
 vi.mock("./electron-update-driver.ts", () => ({ electronUpdateDriver: createDriver }))
-import { attachUpdates, installUpdateIpc, installUpdates, publishUpdateState } from "./updates.ts"
+import { attachUpdates, installUpdateIpc, installUpdates, publishUpdateState, resolveDesktopInstallSource } from "./updates.ts"
 
 const renderers: EventEmitter[] = []
 const controllers: UpdateController[] = []
@@ -66,6 +66,7 @@ function lifecycle(): BackgroundLifecycle {
 }
 
 test("development installs disabled IPC without importing or creating the updater", async () => {
+  expect(resolveDesktopInstallSource()).toBe("development")
   const controller = await installUpdates(lifecycle(), vi.fn())
   controllers.push(controller)
   expect(controller.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
@@ -78,11 +79,13 @@ test("extracted Linux bundles are disabled while AppImage installs can update", 
   app.isPackaged = true
   Object.defineProperty(process, "platform", { value: "linux" })
   vi.stubEnv("APPIMAGE", "")
+  expect(resolveDesktopInstallSource()).toBe("package_manager")
   const extracted = await installUpdates(lifecycle(), vi.fn())
   controllers.push(extracted)
   expect(extracted.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
   expect(createDriver).not.toHaveBeenCalled()
   vi.stubEnv("APPIMAGE", "/opt/deskfleet.AppImage")
+  expect(resolveDesktopInstallSource()).toBe("desktop_installer")
   const appImage = await installUpdates(lifecycle(), vi.fn())
   controllers.push(appImage)
   expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
@@ -97,12 +100,14 @@ test("Nix-managed macOS installs are disabled while ordinary app installs update
     "/Applications/Nix Apps/DeskFleet.app/Contents/MacOS/deskfleet",
   ]) {
     app.getPath.mockReturnValue(executable)
+    expect(resolveDesktopInstallSource()).toBe("package_manager")
     const controller = await installUpdates(lifecycle(), vi.fn())
     controllers.push(controller)
     expect(controller.get()).toEqual({ status: "disabled", currentVersion: "0.1.0" })
   }
   expect(createDriver).not.toHaveBeenCalled()
   app.getPath.mockReturnValue("/Applications/DeskFleet.app/Contents/MacOS/deskfleet")
+  expect(resolveDesktopInstallSource()).toBe("desktop_installer")
   const controller = await installUpdates(lifecycle(), vi.fn())
   controllers.push(controller)
   expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })

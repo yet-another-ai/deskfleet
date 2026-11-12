@@ -1,4 +1,5 @@
 import { app, ipcMain, type BrowserWindow, type WebContents } from "electron"
+import type { UpdateInstallSource } from "../../../../packages/client/src/settings.ts"
 import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateState } from "../../../../packages/client/src/updates.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { electronUpdateDriver } from "./electron-update-driver.ts"
@@ -49,12 +50,17 @@ function nixManagedDarwinInstall(): boolean {
   return executable.startsWith("/nix/store/") || executable.includes("/Applications/Nix Apps/")
 }
 
+export function resolveDesktopInstallSource(): Extract<UpdateInstallSource, "desktop_installer" | "package_manager" | "development"> {
+  if (!app.isPackaged) return "development"
+  if (nixManagedDarwinInstall()) return "package_manager"
+  if (process.platform === "linux" && !process.env.APPIMAGE) return "package_manager"
+  return "desktop_installer"
+}
+
 export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInstall: () => Promise<void>): Promise<UpdateController> {
   // Development launches, extracted Linux bundles, and Nix-managed macOS
   // installs have no installable update target.
-  const enabled = app.isPackaged
-    && !nixManagedDarwinInstall()
-    && (process.platform !== "linux" || Boolean(process.env.APPIMAGE))
+  const enabled = resolveDesktopInstallSource() === "desktop_installer"
   let driver: UpdateDriver | null = null
   if (enabled) {
     const { default: module } = await import("electron-updater")
