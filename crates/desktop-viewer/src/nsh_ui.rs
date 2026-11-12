@@ -148,6 +148,7 @@ mod tests {
                 "settings",
                 "displayOption",
                 "control",
+                "reverseScroll",
                 "disconnect",
                 "connect",
                 "moveControls",
