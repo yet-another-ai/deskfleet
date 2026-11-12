@@ -14,9 +14,17 @@ export interface KeepAwakeState {
   enabled: boolean
 }
 
+export type UpdateInstallSource =
+  | "desktop_installer"
+  | "package_manager"
+  | "development"
+  | "google_play"
+  | "apk"
+  | "web"
+
 export interface AutoDownloadUpdatesState {
-  available?: boolean
   enabled: boolean
+  installSource: UpdateInstallSource
 }
 
 export interface WorktreeRootState {

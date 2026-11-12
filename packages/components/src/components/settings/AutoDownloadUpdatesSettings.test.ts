@@ -13,7 +13,7 @@ function render() {
 }
 
 beforeEach(() => {
-  vi.spyOn(platformClient.settings, "getAutoDownloadUpdates").mockResolvedValue({ enabled: true })
+  vi.spyOn(platformClient.settings, "getAutoDownloadUpdates").mockResolvedValue({ enabled: true, installSource: "desktop_installer" })
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -31,7 +31,7 @@ test("waits for the saved setting and reflects the confirmed result after saving
   const toggle = view.get('[role="switch"]')
   expect(toggle.attributes("disabled")).toBeDefined()
   expect(view.get('[role="status"]').text()).toBe("Loading settings…")
-  loaded({ enabled: true })
+  loaded({ enabled: true, installSource: "desktop_installer" })
   await flushPromises()
   expect(toggle.attributes("disabled")).toBeUndefined()
   expect(toggle.attributes("aria-checked")).toBe("true")
@@ -40,14 +40,14 @@ test("waits for the saved setting and reflects the confirmed result after saving
   expect(toggle.attributes("disabled")).toBeDefined()
   expect(toggle.attributes("aria-checked")).toBe("true")
   expect(view.get('[role="status"]').text()).toBe("Saving…")
-  saved({ enabled: false })
+  saved({ enabled: false, installSource: "desktop_installer" })
   await flushPromises()
   expect(toggle.attributes("aria-checked")).toBe("false")
   expect(toggle.attributes("disabled")).toBeUndefined()
 })
 
 test("preserves the setting after a rejected change and allows updating on retry", async () => {
-  vi.mocked(platformClient.settings.getAutoDownloadUpdates).mockResolvedValue({ enabled: true })
+  vi.mocked(platformClient.settings.getAutoDownloadUpdates).mockResolvedValue({ enabled: true, installSource: "desktop_installer" })
   const save = vi.spyOn(platformClient.settings, "setAutoDownloadUpdates").mockRejectedValueOnce(new Error("Could not save update preference"))
   const view = render()
   await flushPromises()
@@ -58,7 +58,7 @@ test("preserves the setting after a rejected change and allows updating on retry
   expect(toggle.attributes("aria-checked")).toBe("true")
   expect(toggle.attributes("disabled")).toBeUndefined()
   expect(view.get('[role="alert"]').text()).toBe("Could not save update preference")
-  save.mockResolvedValueOnce({ enabled: false })
+  save.mockResolvedValueOnce({ enabled: false, installSource: "desktop_installer" })
   await toggle.trigger("click")
   await flushPromises()
   expect(toggle.attributes("aria-checked")).toBe("false")

@@ -197,7 +197,7 @@ export function createPlayUpdates(
 
   return {
     updates,
-    async getAutoDownload() { return { available: true, enabled: autoDownload } },
+    async getAutoDownload() { return { enabled: autoDownload, installSource: "google_play" } },
     async setAutoDownload(enabled) {
       storage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, String(enabled))
       autoDownload = enabled
@@ -205,7 +205,7 @@ export function createPlayUpdates(
         declinedVersion = undefined
         void consent().catch(() => {})
       }
-      return { available: true, enabled }
+      return { enabled, installSource: "google_play" }
     },
   }
 }
@@ -293,7 +293,7 @@ export function createGitHubApkUpdates(options: GitHubApkUpdatesOptions): PlayUp
 
   return {
     updates,
-    async getAutoDownload() { return { available: false, enabled: false } },
+    async getAutoDownload() { return { enabled: false, installSource: "apk" } },
     async setAutoDownload() { throw new Error("Automatic update downloads are unavailable for APK installs") },
   }
 }

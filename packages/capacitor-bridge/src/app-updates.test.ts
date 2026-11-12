@@ -54,7 +54,7 @@ test("without automatic download a check only reports the available version", as
   const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }))
   expect(await play.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
-  expect(await play.getAutoDownload()).toEqual({ available: true, enabled: false })
+  expect(await play.getAutoDownload()).toEqual({ enabled: false, installSource: "google_play" })
 })
 
 test("automatic download prompts once and waits for a click before restarting", async () => {
@@ -104,7 +104,7 @@ test("a download already finished in an earlier run is reported as downloaded", 
   expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
 })
 
-test("APK updates check GitHub releases/latest, open the APK asset in the browser, and mark auto-download unavailable", async () => {
+test("APK updates check GitHub releases/latest, open the APK asset in the browser, and report installSource apk", async () => {
   const openExternal = vi.fn(async () => {})
   const apkUrl = "https://github.com/yet-another-ai/deskfleet/releases/download/v0.14.0/deskfleet-0.14.0-android-arm64.apk"
   const github = createGitHubApkUpdates({
@@ -119,7 +119,7 @@ test("APK updates check GitHub releases/latest, open the APK asset in the browse
     }),
   })
 
-  expect(await github.getAutoDownload()).toEqual({ available: false, enabled: false })
+  expect(await github.getAutoDownload()).toEqual({ enabled: false, installSource: "apk" })
   expect(await github.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   await github.updates.install()
   expect(openExternal).toHaveBeenCalledExactlyOnceWith(apkUrl)
@@ -149,7 +149,7 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
     playPlugin: plugin,
     storage: memoryStorage({ "deskfleet.updates.autoDownload": "false" }),
   })
-  expect(await playOnly.getAutoDownload()).toEqual({ available: true, enabled: false })
+  expect(await playOnly.getAutoDownload()).toEqual({ enabled: false, installSource: "google_play" })
   expect(await playOnly.updates.check()).toMatchObject({ status: "available", version: "0.14.0" })
   expect(plugin.getAppUpdateInfo).toHaveBeenCalledOnce()
 
@@ -168,7 +168,7 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
       assets: [{ name: "deskfleet-0.14.0-android-arm64.apk", browser_download_url: apkUrl }],
     }),
   })
-  expect(await sideloaded.getAutoDownload()).toEqual({ available: false, enabled: false })
+  expect(await sideloaded.getAutoDownload()).toEqual({ enabled: false, installSource: "apk" })
   expect(await sideloaded.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   expect(plugin.getAppUpdateInfo).toHaveBeenCalledOnce() // not called again for sideloaded
   await sideloaded.updates.install()

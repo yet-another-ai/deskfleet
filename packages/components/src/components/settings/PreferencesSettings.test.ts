@@ -20,14 +20,14 @@ const stubUpdates = {
   onChanged: () => () => {},
 }
 
-test("shows the Updates section on Web hosts whose updater supports auto-download (Play)", async () => {
+test("shows the Updates section on Web hosts installed from Google Play", async () => {
   configureClient({
     ...host,
     platform: "web",
     updates: stubUpdates,
     settings: {
       ...host.settings,
-      getAutoDownloadUpdates: vi.fn(async () => ({ available: true, enabled: true })),
+      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: true, installSource: "google_play" as const })),
     },
   })
   wrapper = mount(PreferencesSettings, { global: { plugins: [i18n] } })
@@ -36,14 +36,14 @@ test("shows the Updates section on Web hosts whose updater supports auto-downloa
   expect(wrapper.find('[role="switch"]').exists()).toBe(true)
 })
 
-test("hides the Updates section on Web hosts whose updater has no auto-download (sideloaded APK)", async () => {
+test("hides the Updates section on Web hosts installed from a sideloaded APK", async () => {
   configureClient({
     ...host,
     platform: "web",
     updates: stubUpdates,
     settings: {
       ...host.settings,
-      getAutoDownloadUpdates: vi.fn(async () => ({ available: false, enabled: false })),
+      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: false, installSource: "apk" as const })),
     },
   })
   wrapper = mount(PreferencesSettings, { global: { plugins: [i18n] } })

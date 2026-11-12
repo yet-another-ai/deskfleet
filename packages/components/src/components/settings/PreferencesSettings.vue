@@ -17,9 +17,9 @@ if (client.platform === "web" && client.updates) {
   onMounted(async () => {
     try {
       const state = await client.settings.getAutoDownloadUpdates()
-      showWebUpdatesSection.value = state.available !== false
+      showWebUpdatesSection.value = state.installSource === "google_play"
     } catch {
-      showWebUpdatesSection.value = true
+      showWebUpdatesSection.value = false
     }
   })
 }
