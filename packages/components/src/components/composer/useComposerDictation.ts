@@ -22,6 +22,7 @@ interface Recording {
   draft: string
   mentions: ComposerMention[]
   hasResult: boolean
+  replacementSelection?: { text: string; start: number; end: number }
 }
 
 function changedRange(before: string, after: string): [number, number, number] {
@@ -76,6 +77,11 @@ export function useComposerDictation(options: DictationOptions) {
     const selection = input && input.ownerDocument.activeElement === input
       ? { text: input.value, start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection }
       : undefined
+    if (!current.hasResult && selection && selection.text === before && selection.start !== selection.end
+      && selection.start === current.start && selection.end === current.end) current.replacementSelection = selection
+    const replacedInitialSelection = selection && current.replacementSelection
+      && selection.text === current.replacementSelection.text && selection.start === current.replacementSelection.start
+      && selection.end === current.replacementSelection.end
     // defineModel can echo its parent update on the next tick. Keep successive
     // recognition events in the same tick attached to the latest emitted draft.
     const mentions = options.draft.value === before ? options.mentions.value : current.mentions
@@ -88,6 +94,7 @@ export function useComposerDictation(options: DictationOptions) {
     const scope = options.scope()
     const generation = ++selectionGeneration
     void nextTick(() => {
+      if (generation === selectionGeneration) current.replacementSelection = undefined
       if (!selection || !input || disposed || generation !== selectionGeneration || options.scope() !== scope
         || options.draft.value !== after || input.value !== after || input.ownerDocument.activeElement !== input) return
       // Map from the actual DOM value, which can lag multiple same-tick results.
@@ -95,7 +102,9 @@ export function useComposerDictation(options: DictationOptions) {
       const [start, oldEnd, newEnd] = changedRange(selection.text, after)
       const map = (position: number) => position >= oldEnd ? position + newEnd - oldEnd : position <= start ? position : newEnd
       const replacedSelection = selection.start !== selection.end && selection.start >= start && selection.end <= oldEnd
-      input.setSelectionRange(replacedSelection ? newEnd : map(selection.start), replacedSelection ? newEnd : map(selection.end), selection.direction)
+      // A selected replacement can share a prefix with the result, outside the diff.
+      const replacementEnd = replacedInitialSelection ? current.end : replacedSelection ? newEnd : undefined
+      input.setSelectionRange(replacementEnd ?? map(selection.start), replacementEnd ?? map(selection.end), selection.direction)
     })
   }
 

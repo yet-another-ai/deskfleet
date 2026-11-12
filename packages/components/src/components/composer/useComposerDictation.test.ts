@@ -149,6 +149,21 @@ test("same-tick results map the DOM caret after the range while awaiting the par
   expect(document.activeElement).toBe(f.textarea)
 })
 
+test.each([false, true])("replacing a selected shared prefix collapses the selection (deferred model: %s)", async deferred => {
+  const f = await fixture("Please", 0, 6, deferred)
+  f.textarea.focus()
+  await f.dictation.toggle()
+  if (deferred) f.emit({ type: "result", text: "Please", final: true } as SpeechEvent)
+  const text = "Please review the latest changes."
+  f.emit({ type: "result", text, final: false } as SpeechEvent)
+  if (deferred) f.acknowledgeModel()
+  await flushPromises()
+  expect(f.draft.value).toBe(text)
+  expect(f.textarea.selectionStart).toBe(text.length)
+  expect(f.textarea.selectionEnd).toBe(text.length)
+  expect(document.activeElement).toBe(f.textarea)
+})
+
 test("editing recognized text cancels recognition and preserves the user's correction", async () => {
   const f = await fixture("before end", 7)
   await f.dictation.toggle()
