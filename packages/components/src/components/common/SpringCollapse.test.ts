@@ -45,13 +45,16 @@ function fixture(initial = false) {
   return { open, surface: () => wrapper.get<HTMLElement>(".ui-collapsible") }
 }
 
-test("closing keeps content until rest and reopening continues from the current height", async () => {
+test("the first user opening animates, closing retains content, and reopening preserves height", async () => {
   const { open, surface } = fixture()
   expect(wrapper.find("[data-inner-content]").exists()).toBe(false)
   open.value = true
   await nextTick()
   await nextTick()
   expect(surface().element.style.height).toBe("0px")
+  await tick(96)
+  expect(parseFloat(surface().element.style.height)).toBeGreaterThan(0)
+  expect(parseFloat(surface().element.style.height)).toBeLessThan(120)
   await tick(2000)
   expect(surface().element.style.height).toBe("auto")
   open.value = false
@@ -77,8 +80,30 @@ test("closing keeps content until rest and reopening continues from the current 
   expect(wrapper.find("[data-inner-content]").exists()).toBe(false)
 })
 
+test("initially open content uses natural height without animation and closes from its measured height", async () => {
+  const { open, surface } = fixture(true)
+  expect(surface().element.style.height).toBe("auto")
+  expect(wrapper.find("[data-inner-content]").exists()).toBe(true)
+  await nextTick()
+  await nextTick()
+  expect(surface().element.style.height).toBe("auto")
+  // Reka schedules one layout frame of its own when content mounts.
+  await tick(32)
+  expect(surface().element.style.height).toBe("auto")
+  expect(frames.size).toBe(0)
+  open.value = false
+  await nextTick()
+  expect(surface().element.style.height).toBe("120px")
+  await tick(96)
+  expect(parseFloat(surface().element.style.height)).toBeGreaterThan(0)
+  expect(parseFloat(surface().element.style.height)).toBeLessThan(120)
+  await tick(2000)
+  expect(wrapper.find("[data-inner-content]").exists()).toBe(false)
+})
+
 test("unmounting a moving collapse releases its frame loop", async () => {
-  fixture(true)
+  const { open } = fixture()
+  open.value = true
   await nextTick()
   await nextTick()
   await tick(80)

@@ -8,14 +8,22 @@ defineOptions({ inheritAttrs: false })
 const context = injectCollapsibleRootContext()
 const content = useTemplateRef<HTMLElement>("content")
 const mounted = ref(context.open.value)
+const initializeOpenHeight = ref(context.open.value)
 const height = useSpring(0, { min: 0 })
-const settledOpen = computed(() => context.open.value && !height.isActive.value && height.target.value > 0)
+const settledOpen = computed(() => context.open.value && (initializeOpenHeight.value || (!height.isActive.value && height.target.value > 0)))
 function measure(): void {
-  if (context.open.value && content.value) height.setTarget(content.value.getBoundingClientRect().height)
+  if (!context.open.value || !content.value) return
+  const measured = content.value.getBoundingClientRect().height
+  if (initializeOpenHeight.value) {
+    // Restored open content already occupies its natural height on mount.
+    height.jump(measured)
+    initializeOpenHeight.value = false
+  } else height.setTarget(measured)
 }
 watch(context.open, async open => {
   if (open) { mounted.value = true; await nextTick(); measure() }
   else {
+    initializeOpenHeight.value = false
     height.setTarget(0)
     if (!height.isActive.value) mounted.value = false
   }
