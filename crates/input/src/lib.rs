@@ -161,16 +161,29 @@ impl InputEvent {
     }
 }
 
-/// Injectable backend boundary used to test input ownership without OS events.
-trait Backend {
+/// Injectable backend boundary used for custom transports and input tests.
+pub trait Backend {
     /// Rebind to the current desktop; true discards the previous held state.
+    ///
+    /// # Errors
+    /// Returns backend access errors.
     fn prepare(&mut self) -> Result<bool> {
         Ok(false)
     }
+    /// # Errors
+    /// Returns pointer injection errors.
     fn move_pointer(&mut self, x: f64, y: f64) -> Result<()>;
+    /// # Errors
+    /// Returns button injection errors.
     fn button(&mut self, button: u8, pressed: bool) -> Result<()>;
+    /// # Errors
+    /// Returns scroll injection errors.
     fn wheel(&mut self, dx: f64, dy: f64) -> Result<()>;
+    /// # Errors
+    /// Returns key injection errors or [`InputError::UnsupportedKey`].
     fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()>;
+    /// # Errors
+    /// Returns unsupported or OS injection errors.
     fn secure_attention(&mut self) -> Result<()> {
         Err(InputError::Unsupported(
             "secure attention requires the Windows desktop service",
@@ -178,22 +191,25 @@ trait Backend {
     }
 }
 
-impl Backend for PlatformInput {
+/// Native OS input backend used by [`InputSession::new`].
+pub struct OsBackend(PlatformInput);
+
+impl Backend for OsBackend {
     #[cfg(target_os = "windows")]
     fn prepare(&mut self) -> Result<bool> {
-        self.prepare()
+        self.0.prepare()
     }
     fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {
-        self.move_pointer(x, y)
+        self.0.move_pointer(x, y)
     }
     fn button(&mut self, button: u8, pressed: bool) -> Result<()> {
-        self.button(button, pressed)
+        self.0.button(button, pressed)
     }
     fn wheel(&mut self, dx: f64, dy: f64) -> Result<()> {
-        self.wheel(dx, dy)
+        self.0.wheel(dx, dy)
     }
     fn key(&mut self, code: &str, pressed: bool, repeat: bool) -> Result<()> {
-        self.key(code, pressed, repeat)
+        self.0.key(code, pressed, repeat)
     }
     #[cfg(target_os = "windows")]
     fn secure_attention(&mut self) -> Result<()> {
@@ -229,22 +245,32 @@ impl Drop for ControlLease {
 ///
 /// The controller is initialized only on explicit control requests. Loading the
 /// library does not enumerate displays or request operating-system permissions.
-pub struct InputSession {
+pub struct InputSession<B: Backend = OsBackend> {
     // Fields drop in declaration order: release inputs before relinquishing the lease.
-    controller: Controller<PlatformInput>,
+    controller: Controller<B>,
     _lease: ControlLease,
 }
 
-impl InputSession {
+impl InputSession<OsBackend> {
     /// Open the same display ID used by screen capture.
     ///
     /// # Errors
     /// Returns an error for missing displays, denied permissions, unsupported
     /// platforms, or another controller already holding the desktop.
     pub fn new(display_id: u32) -> Result<Self> {
+        Self::with_backend(|| PlatformInput::new(display_id).map(OsBackend))
+    }
+}
+
+impl<B: Backend> InputSession<B> {
+    /// Acquire the process control lease before opening a custom input backend.
+    ///
+    /// # Errors
+    /// Returns [`InputError::Busy`] or backend initialization errors.
+    pub fn with_backend(open: impl FnOnce() -> Result<B>) -> Result<Self> {
         let lease = ControlLease::acquire()?;
         Ok(Self {
-            controller: Controller::new(PlatformInput::new(display_id)?),
+            controller: Controller::new(open()?),
             _lease: lease,
         })
     }

@@ -81,7 +81,7 @@ For remote workstations, VMs, or build servers without a desktop session, run th
    ```sh
    ./deskfleet-daemon enroll --server-url https://your-backend.example < machine-credentials.json
    ```
-5. Run `./deskfleet-daemon status` at any time to inspect registered teams without exposing secrets. See the [daemon guide](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md) for the full CLI reference and storage layout.
+5. Run `./deskfleet-daemon status` at any time to inspect registered teams without exposing secrets. See the [daemon guide](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md) for the full CLI reference and storage layout, or [Run on Android (Termux)](./android) to set up `deskfleet-daemon` on an Android device.
 
 ## Run from source (local development stack)
 

@@ -974,6 +974,8 @@
     "localDescription": "現在使用中のコンピューターでエージェントを実行します。", "localRevoked": "以前のセッションを保持して、このチームに再接続します。",
     "localConnected": "すでに {team} に接続しています。", "connecting": "接続中…",
     "other": "別のマシン", "otherDescription": "deskfleet-daemon を実行しているサーバーまたは別のコンピューター。",
+    "android": "Android（Termux）", "androidDescription": "公式ガイドを開いて Android 上で deskfleet-daemon を起動し、「別のマシン」から登録します。",
+    "androidGuide": "Android デーモン設定ガイド",
     "statusStep": "そのマシンでデーモンを起動し、次を実行します", "pasteStep": "コマンドの出力を貼り付けます",
     "pasteHint": "このチームの登録情報を貼り付けます。マシンの秘密認証情報が含まれるため、このサーバー以外と共有しないでください。", "identityFound": "マシン ID が見つかりました。",
     "status": {

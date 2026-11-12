@@ -1,5 +1,7 @@
 //! Native platform capabilities, independent of Node.js and the HTTP server.
 
+#[cfg(any(target_os = "linux", test))]
+pub(crate) mod android_scrcpy;
 pub mod desktop_access;
 pub mod filesystem_permissions;
 pub mod input;

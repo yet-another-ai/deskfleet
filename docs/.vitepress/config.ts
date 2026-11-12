@@ -61,7 +61,7 @@ export default defineConfig({
       label: "English", lang: "en-US",
       themeConfig: {
         nav: [{ text: "Explore", link: "/#explore" }, { text: "Guide", link: "/guide/" }, { text: "Privacy", link: "/privacy" }, { text: "Get DeskFleet", link: "/#get-deskfleet" }],
-        sidebar: [{ text: "Get started", items: [{ text: "Welcome", link: "/guide/" }, { text: "Run DeskFleet", link: "/guide/getting-started" }, { text: "Agents & collaboration", link: "/guide/agents" }, { text: "Privacy", link: "/privacy" }] }],
+        sidebar: [{ text: "Get started", items: [{ text: "Welcome", link: "/guide/" }, { text: "Run DeskFleet", link: "/guide/getting-started" }, { text: "Android (Termux)", link: "/guide/android" }, { text: "Agents & collaboration", link: "/guide/agents" }, { text: "Privacy", link: "/privacy" }] }],
         footer: { message: "Client and server, open source under Apache-2.0.", copyright: "DeskFleet contributors" },
         editLink: { pattern: `${repository}/edit/main/docs/content/:path`, text: "Improve this page" },
       },
@@ -71,7 +71,7 @@ export default defineConfig({
       description: "所有 Agent，如同在一起工作。随时远程介入，与同事共同操作，继续使用你喜欢的 Agent。前后端完全开源。",
       themeConfig: {
         nav: [{ text: "探索", link: "/zh/#explore" }, { text: "指南", link: "/zh/guide/" }, { text: "隐私", link: "/zh/privacy" }, { text: "开始使用", link: "/zh/#get-deskfleet" }],
-        sidebar: [{ text: "开始使用", items: [{ text: "欢迎", link: "/zh/guide/" }, { text: "运行 DeskFleet", link: "/zh/guide/getting-started" }, { text: "Agent 与协作", link: "/zh/guide/agents" }, { text: "隐私", link: "/zh/privacy" }] }],
+        sidebar: [{ text: "开始使用", items: [{ text: "欢迎", link: "/zh/guide/" }, { text: "运行 DeskFleet", link: "/zh/guide/getting-started" }, { text: "Android（Termux）", link: "/zh/guide/android" }, { text: "Agent 与协作", link: "/zh/guide/agents" }, { text: "隐私", link: "/zh/privacy" }] }],
         footer: { message: "客户端与服务端均以 Apache-2.0 协议开源。", copyright: "DeskFleet 贡献者" },
         editLink: { pattern: `${repository}/edit/main/docs/content/:path`, text: "改进此页" },
         outline: { label: "页面导航" },
@@ -84,7 +84,7 @@ export default defineConfig({
       description: "エージェントのコンピューターに入り、チームと共同作業。使い慣れたエージェントをそのまま使えます。クライアントもサーバーも、すべてオープンソース。",
       themeConfig: {
         nav: [{ text: "体験する", link: "/ja/#explore" }, { text: "ガイド", link: "/ja/guide/" }, { text: "プライバシー", link: "/ja/privacy" }, { text: "DeskFleet を使う", link: "/ja/#get-deskfleet" }],
-        sidebar: [{ text: "はじめに", items: [{ text: "ようこそ", link: "/ja/guide/" }, { text: "DeskFleet を実行する", link: "/ja/guide/getting-started" }, { text: "エージェントと共同作業", link: "/ja/guide/agents" }, { text: "プライバシー", link: "/ja/privacy" }] }],
+        sidebar: [{ text: "はじめに", items: [{ text: "ようこそ", link: "/ja/guide/" }, { text: "DeskFleet を実行する", link: "/ja/guide/getting-started" }, { text: "Android（Termux）", link: "/ja/guide/android" }, { text: "エージェントと共同作業", link: "/ja/guide/agents" }, { text: "プライバシー", link: "/ja/privacy" }] }],
         footer: { message: "クライアントとサーバーは Apache-2.0 ライセンスで公開しています。", copyright: "DeskFleet コントリビューター" },
         editLink: { pattern: `${repository}/edit/main/docs/content/:path`, text: "このページを改善する" },
         outline: { label: "このページの内容" },

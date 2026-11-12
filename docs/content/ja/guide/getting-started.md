@@ -76,7 +76,7 @@ brew install --cask yet-another-ai/tap/deskfleet
    ```sh
    ./deskfleet-daemon enroll --server-url https://your-backend.example < machine-credentials.json
    ```
-5. 登録済みのチーム状態は、秘密情報を露出せずに `./deskfleet-daemon status` でいつでも確認できます。コマンドや保存先の詳細はリポジトリの[デーモンガイド](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)をご覧ください。
+5. 登録済みのチーム状態は、秘密情報を露出せずに `./deskfleet-daemon status` でいつでも確認できます。コマンドや保存先の詳細はリポジトリの[デーモンガイド](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)、Android 端末での構築手順は [Android で実行する（Termux）](./android) をご覧ください。
 
 ## ソースコードから実行する（ローカル開発環境）
 
