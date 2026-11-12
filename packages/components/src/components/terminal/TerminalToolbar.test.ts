@@ -257,6 +257,19 @@ test("arms and locks Ctrl and Alt modifiers for both virtual keys and soft-keybo
   await nextTick()
   expect(alt.attributes("data-modifier-state")).toBe("off")
 
+  // Sticky Alt also prefixes OS Backspace (DEL) and Enter (CR) while ignoring multi-char/non-ASCII input.
+  await alt.trigger("click")
+  expect(exposed.transformInput("status")).toBe("status")
+  expect(exposed.transformInput("中")).toBe("中")
+  expect(exposed.transformInput("\x7f")).toBe("\x1b\x7f")
+  await nextTick()
+  expect(alt.attributes("data-modifier-state")).toBe("off")
+
+  await alt.trigger("click")
+  expect(exposed.transformInput("\r")).toBe("\x1b\r")
+  await nextTick()
+  expect(alt.attributes("data-modifier-state")).toBe("off")
+
   // Reset clears any armed/locked modifiers.
   await ctrl.trigger("click")
   await alt.trigger("click")

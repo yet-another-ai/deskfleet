@@ -159,10 +159,8 @@ function transformInput(data: string): string {
     consumeArmedModifiers()
     return csiCursor(cursorMatch[1]!, ctrlActive, altActive, Boolean(props.terminal.modes?.applicationCursorKeysMode))
   }
-  // Ignore multi-character payloads (paste, swipe/autocorrect words, IME commits) and non-printable/non-ASCII input.
-  if (data.length !== 1) return data
-  const code = data.charCodeAt(0)
-  if (code < 0x20 || code > 0x7e) return data
+  // Ignore multi-character payloads (paste, swipe/autocorrect words, IME commits) and non-ASCII input.
+  if (data.length !== 1 || data.charCodeAt(0) > 0x7f) return data
   const modified = ctrlActive ? ctrlChar(data) : data
   if (!altActive && modified === data) return data
   consumeArmedModifiers()
