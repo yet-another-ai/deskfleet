@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { vSpring } from "../../directives/spring.ts"
-import { vSpringEnter } from "../../directives/spring.ts"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -39,7 +39,7 @@ const cost = computed(() => {
       <span>{{ percent }}</span>
     </PopoverTrigger>
     <PopoverPortal>
-      <PopoverContent as-child side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4"><div v-spring-enter>
+      <PopoverContent :as="SpringSurface" side="top" align="end" :side-offset="8" :collision-padding="8" :aria-label="t('agent.usage.title')" class="ui-menu z-50 w-64 max-w-[calc(100vw-2rem)] p-4">
         <div class="mb-3 flex items-center justify-between gap-4">
           <h3 class="m-0 text-[13px] font-medium">{{ t('agent.usage.context') }}</h3>
           <span class="text-xs tabular-nums" :class="tone">{{ percent }}</span>
@@ -52,7 +52,7 @@ const cost = computed(() => {
           <div class="flex items-baseline justify-between gap-4"><dt class="text-ui-text-muted">{{ t('agent.usage.capacity') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-capacity>{{ usage.size > 0 ? t('agent.usage.tokens', { count: numbers.format(usage.size) }) : t('composer.unavailable') }}</dd></div>
           <div v-if="cost !== undefined" class="mt-1 flex items-baseline justify-between gap-4 border-t border-ui-border pt-3"><dt class="text-ui-text-muted">{{ t('agent.usage.cost') }}</dt><dd class="m-0 tabular-nums" data-agent-usage-cost>{{ cost }}</dd></div>
         </dl>
-      </div></PopoverContent>
+      </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
 </template>

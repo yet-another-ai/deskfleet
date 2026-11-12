@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { vSpring, vSpringEnter, vSpringHover } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring, vSpringHover } from "../../directives/spring.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useScrollFade } from "../../composables/useScrollFade.ts"
 import UiButton from "../common/UiButton.vue"
@@ -367,7 +368,7 @@ onBeforeUnmount(() => {
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuContent as-child side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop><div v-spring-enter>
+          <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
             <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
               <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
                 <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
@@ -379,7 +380,7 @@ onBeforeUnmount(() => {
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </UiScrollArea>
-          </div></DropdownMenuContent>
+          </DropdownMenuContent>
         </DropdownMenuPortal>
       </DropdownMenuRoot>
       <span v-else class="inline-flex min-w-0 items-center gap-1.5" :title="location.machine.local ? t('machine.local') : undefined" data-composer-context><component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span></span>
@@ -390,7 +391,7 @@ onBeforeUnmount(() => {
             <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent as-child side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop><div v-spring-enter>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
                   <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
@@ -405,7 +406,7 @@ onBeforeUnmount(() => {
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </UiScrollArea>
-            </div></DropdownMenuContent>
+            </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
         <span v-else-if="location.workspace" class="inline-flex min-w-0 items-center gap-1.5" data-composer-context><Folder :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /><span class="truncate">{{ location.workspace.name }}</span></span>
@@ -423,7 +424,7 @@ onBeforeUnmount(() => {
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
-            <DropdownMenuContent as-child side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop><div v-spring-enter>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup v-model="baseBranch">
                   <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
@@ -433,7 +434,7 @@ onBeforeUnmount(() => {
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </UiScrollArea>
-            </div></DropdownMenuContent>
+            </DropdownMenuContent>
             </DropdownMenuPortal>
           </DropdownMenuRoot>
         </template>
@@ -549,7 +550,7 @@ onBeforeUnmount(() => {
             <Plus :size="16" :stroke-width="2" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent as-child side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop><div v-spring-enter>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" data-attach-local @select="fileInput?.click()">
                 <Upload :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                 <span class="truncate text-[13px] text-ui-text">{{ t("composer.uploadLocalFiles") }}</span>
@@ -558,7 +559,7 @@ onBeforeUnmount(() => {
                 <HardDrive :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                 <span class="truncate text-[13px] text-ui-text">{{ t("composer.chooseMachineFiles") }}</span>
               </DropdownMenuItem>
-            </div></DropdownMenuContent>
+            </DropdownMenuContent>
           </DropdownMenuPortal>
         </DropdownMenuRoot>
         <AgentConfigurationSelector v-if="location" ref="configurationSelector" :workspace-id="location.workspace?.id" :session-id="location.session?.id" :disabled="disabled || submitting || activeTurn" @loading="configurationLoading = $event" @configuration="configuration = $event" />

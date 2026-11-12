@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
 import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
@@ -119,7 +119,7 @@ async function confirmSwitch(): Promise<void> {
         <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent as-child ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop><div v-spring-enter>
+        <DropdownMenuContent :as="SpringSurface" ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
           <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
             <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
               <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
@@ -129,7 +129,7 @@ async function confirmSwitch(): Promise<void> {
                 <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
               </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
-                <DropdownMenuSubContent as-child data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop><div v-spring-enter>
+                <DropdownMenuSubContent :as="SpringSurface" data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
                   <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                     <DropdownMenuRadioGroup :model-value="control.value">
                       <template v-for="group in optionGroups(control)" :key="group.id">
@@ -145,7 +145,7 @@ async function confirmSwitch(): Promise<void> {
                       </template>
                     </DropdownMenuRadioGroup>
                   </UiScrollArea>
-                </div></DropdownMenuSubContent>
+                </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>
             <DropdownMenuSeparator v-if="extraOptions.length" class="-mx-1 my-1 h-px bg-ui-border" />
@@ -160,7 +160,7 @@ async function confirmSwitch(): Promise<void> {
               <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>
             </div>
           </UiScrollArea>
-        </div></DropdownMenuContent>
+        </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
     <ConfirmDialog

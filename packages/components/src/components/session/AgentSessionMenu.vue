@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
 import UiButton from "../common/UiButton.vue"
 import { Archive, ArchiveRestore, Ellipsis, GitFork, Pencil, Square } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
@@ -47,13 +47,13 @@ function restoreFocus(event: Event): void {
     <DropdownMenuRoot :open="open" :modal="false" @update:open="changeOpen">
       <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('agent.sessionActions')" :disabled="disabled"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent as-child align="end" :side-offset="4" :collision-padding="8" :aria-label="t('agent.sessionActions')" class="ui-menu z-50 flex w-44 flex-col" @close-auto-focus="(confirming || openingDialog) && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()" loop><div v-spring-enter>
+        <DropdownMenuContent :as="SpringSurface" align="end" :side-offset="4" :collision-padding="8" :aria-label="t('agent.sessionActions')" class="ui-menu z-50 flex w-44 flex-col" @close-auto-focus="(confirming || openingDialog) && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()" loop>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</DropdownMenuItem>
           <DropdownMenuItem v-if="canFork" as="button" type="button" class="ui-menu-item" :disabled="disabled || forkDisabled" @select="openDialog('fork')"><GitFork :size="14" aria-hidden="true" />{{ t('agent.fork') }}</DropdownMenuItem>
           <DropdownMenuItem v-if="canStop" as="button" type="button" class="ui-menu-item" @select="choose('stop')"><Square :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.stop') }}</DropdownMenuItem>
           <DropdownMenuItem v-if="archiveState === 'archived'" as="button" type="button" class="ui-menu-item" @select="choose('restore')"><ArchiveRestore :size="14" aria-hidden="true" />{{ t('agent.restore') }}</DropdownMenuItem>
           <DropdownMenuItem v-else as="button" type="button" class="ui-menu-item" @select="choose('archive')"><Archive :size="14" aria-hidden="true" />{{ t(archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive') }}</DropdownMenuItem>
-        </div></DropdownMenuContent>
+        </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
     <SessionConfirmDialog :action="confirming" :context="context" @close="confirming = null" @confirm="confirm" @close-auto-focus="restoreFocus" />

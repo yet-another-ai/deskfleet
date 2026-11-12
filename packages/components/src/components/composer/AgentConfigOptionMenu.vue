@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
 import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable"
 import { Check, ChevronRight } from "@lucide/vue"
 import { DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from "reka-ui"
@@ -38,7 +38,7 @@ function choose(value: string): void {
       <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
     </DropdownMenuSubTrigger>
     <DropdownMenuPortal>
-      <DropdownMenuSubContent as-child :aria-label="option.name" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop><div v-spring-enter>
+      <DropdownMenuSubContent :as="SpringSurface" :aria-label="option.name" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
         <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
           <DropdownMenuRadioGroup :model-value="String(option.currentValue)">
             <template v-for="group in groups" :key="group.id">
@@ -53,7 +53,7 @@ function choose(value: string): void {
             </template>
           </DropdownMenuRadioGroup>
         </UiScrollArea>
-      </div></DropdownMenuSubContent>
+      </DropdownMenuSubContent>
     </DropdownMenuPortal>
   </DropdownMenuSub>
 </template>

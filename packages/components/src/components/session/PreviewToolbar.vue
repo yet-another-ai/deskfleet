@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
 import { Download, Ellipsis, ExternalLink, FolderOpen, LocateFixed, Maximize2, PanelRight } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { ref } from "vue"
@@ -53,7 +53,7 @@ function select(action: () => void): void {
     <DropdownMenuRoot v-model:open="menuOpen" :modal="false">
       <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('mermaid.more')" data-preview-action="more"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent as-child align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex min-w-44 flex-col" loop><div v-spring-enter>
+        <DropdownMenuContent :as="SpringSurface" align="end" :side-offset="4" :collision-padding="8" :aria-label="t('mermaid.more')" class="ui-menu z-50 flex min-w-44 flex-col" loop>
           <DropdownMenuItem v-if="canOpen" as="button" type="button" class="ui-menu-item" data-preview-action="open" @select="select(() => emit('open'))">
             <ExternalLink :size="14" aria-hidden="true" />{{ t('files.openResource') }}
           </DropdownMenuItem>
@@ -72,7 +72,7 @@ function select(action: () => void): void {
           <DropdownMenuItem v-if="mode !== 'inline'" as="button" type="button" class="ui-menu-item" data-preview-action="locate-message" @select="select(() => emit('locateMessage'))">
             <LocateFixed :size="14" aria-hidden="true" />{{ t('mermaid.locateMessage') }}
           </DropdownMenuItem>
-        </div></DropdownMenuContent>
+        </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
   </div>

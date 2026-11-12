@@ -28,7 +28,8 @@ const PREVIEW_ITEMS: OutlineItem[] = [
 </script>
 
 <script setup lang="ts">
-import { vSpring, vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring } from "../../directives/spring.ts"
 import { watchImmediate } from "@vueuse/core"
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef, watch } from "vue"
@@ -163,12 +164,12 @@ watch(currentActive, id => {
               />
             </TooltipTrigger>
             <TooltipPortal>
-              <TooltipContent as-child
+              <TooltipContent :as="SpringSurface"
                 side="right"
                 :side-offset="8"
                 :collision-padding="8"
                 class="ui-tooltip z-70 max-w-72 break-words rounded-md border border-ui-border bg-ui-surface px-2.5 py-1.5 text-xs leading-5 text-ui-text shadow-ui-popover"
-              ><div v-spring-enter>
+              >
                 <p class="m-0 truncate font-medium">{{ item.label }}</p>
                 <p
                   v-if="item.reply"
@@ -176,7 +177,7 @@ watch(currentActive, id => {
                 >
                   {{ item.reply }}
                 </p>
-              </div></TooltipContent>
+              </TooltipContent>
             </TooltipPortal>
           </TooltipRoot>
         </li>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "./SpringSurface.ts"
 import { Check, ChevronDown } from "@lucide/vue"
 import { computed, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
@@ -36,7 +36,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
       <ComboboxTrigger class="absolute right-1 flex h-7 w-7 items-center justify-center rounded-md text-ui-text-muted hover:text-ui-text" :disabled="disabled" :aria-label="String($attrs['aria-label'] ?? placeholder ?? label(modelValue))" tabindex="-1"><ChevronDown :size="14" aria-hidden="true" /></ComboboxTrigger>
     </ComboboxAnchor>
     <ComboboxPortal :to="portalTo">
-      <ComboboxContent as-child position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-combobox-content-available-height))] min-w-[var(--reka-combobox-trigger-width)] flex-col overflow-hidden p-0"><div v-spring-enter>
+      <ComboboxContent :as="SpringSurface" position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-combobox-content-available-height))] min-w-[var(--reka-combobox-trigger-width)] flex-col overflow-hidden p-0">
         <UiScrollArea :focusable="false" fade-size="sm" class="max-h-72 min-h-0 flex-auto">
           <ComboboxViewport class="!overflow-visible p-1">
             <ComboboxEmpty class="px-3 py-5 text-center text-[13px] text-ui-text-muted">{{ t('common.noResults') }}</ComboboxEmpty>
@@ -45,7 +45,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
             </ComboboxItem>
           </ComboboxViewport>
         </UiScrollArea>
-      </div></ComboboxContent>
+      </ComboboxContent>
     </ComboboxPortal>
     <!-- Validate the selected value, rather than arbitrary search text. -->
     <input v-if="name || required" class="sr-only" tabindex="-1" aria-hidden="true" :name="name" :value="modelValue" :required="required" :disabled="disabled" @focus="focus" />
@@ -55,7 +55,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
       <SelectValue :placeholder="placeholder" class="min-w-0 truncate">{{ modelValue ? label(modelValue) : undefined }}</SelectValue><SelectIcon class="shrink-0 text-ui-text-muted"><ChevronDown :size="14" aria-hidden="true" /></SelectIcon>
     </SelectTrigger>
     <SelectPortal :to="portalTo">
-      <SelectContent as-child position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] flex-col overflow-hidden p-0"><div v-spring-enter>
+      <SelectContent :as="SpringSurface" position="popper" :side-offset="5" class="ui-menu z-100 flex max-h-[min(20rem,var(--reka-select-content-available-height))] min-w-[var(--reka-select-trigger-width)] flex-col overflow-hidden p-0">
         <UiScrollArea :focusable="false" fade-size="sm" class="max-h-72 min-h-0 flex-auto">
           <SelectViewport class="!overflow-visible p-1">
             <SelectItem v-for="option in options" :key="option.value" :value="option.value" :disabled="option.disabled" class="ui-menu-item relative pr-8 outline-none data-[highlighted]:bg-ui-hover data-[disabled]:pointer-events-none data-[disabled]:op-40">
@@ -63,7 +63,7 @@ function focus(): void { (input.value?.$el as HTMLInputElement | undefined)?.foc
             </SelectItem>
           </SelectViewport>
         </UiScrollArea>
-      </div></SelectContent>
+      </SelectContent>
     </SelectPortal>
   </SelectRoot>
 </template>

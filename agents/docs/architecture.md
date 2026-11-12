@@ -241,6 +241,9 @@ fixed completion deadline. The controller integrates velocity before position
 with semi-implicit Euler steps, subdividing frames according to elapsed time
 and natural frequency, and stops only when both displacement and velocity are
 small. Vue adapters own frame scheduling and stop it on scope disposal.
+Motion directives support both VDOM and Vapor lifecycles. Reka popovers and
+dialogs render through the thin VDOM `SpringSurface` so their attributes,
+event handlers, and positioning refs reach the animated native element.
 
 Pointer dragging directly controls position and estimates velocity in units per
 second. Releasing a snapping surface continues toward its target with that

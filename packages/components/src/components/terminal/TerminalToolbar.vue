@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { vSpring, vSpringEnter } from "../../directives/spring.ts"
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring } from "../../directives/spring.ts"
 import { Check, Copy, Download, Keyboard, Search, X } from "@lucide/vue"
 import { useMediaQuery, useTimeoutFn } from "@vueuse/core"
 import type { Terminal } from "@xterm/xterm"
@@ -127,10 +128,10 @@ defineExpose({
     <DropdownMenuRoot :open="menuOpen" :modal="false" @update:open="menuOpen = $event">
       <DropdownMenuTrigger class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.exportBuffer')" :title="t('terminal.exportBuffer')"><Download :size="14" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent as-child align="end" side="top" :side-offset="4" class="ui-menu z-50 min-w-48"><div v-spring-enter>
+        <DropdownMenuContent :as="SpringSurface" align="end" side="top" :side-offset="4" class="ui-menu z-50 min-w-48">
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="download('ansi')">{{ t('terminal.exportAnsi') }}</DropdownMenuItem>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="download('html')">{{ t('terminal.exportHtml') }}</DropdownMenuItem>
-        </div></DropdownMenuContent>
+        </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
   </div>
