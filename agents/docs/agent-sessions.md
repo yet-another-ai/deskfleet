@@ -839,6 +839,11 @@ Both advertise `_meta.steering.supported` and
 `_meta.steering.idleBehavior: "promptRequired"`; DeskFleet also includes its
 delivery command ID under `_meta.deskfleet`.
 
+The Antigravity wrapper advertises this steering capability for `agy acp`.
+When a turn is active, the wrapper sends another `session/prompt` and merges
+token usage across the turn. When no turn is active, the wrapper returns
+`inactive` without calling `agy acp`.
+
 The adapter returns `injected` if it accepted the input into the active turn.
 If the turn ended before injection, it returns `promptRequired` without starting
 an internal prompt. The daemon then waits for the old prompt's completion and

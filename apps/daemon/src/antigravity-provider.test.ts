@@ -5,7 +5,8 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
-import type { AgentConnection } from "./agents/acp.ts"
+import type { PromptRequest, PromptResponse } from "@agentclientprotocol/sdk/unstable"
+import { supportsSteering, type AgentConnection } from "./agents/acp.ts"
 import { createAntigravityClientWrapper, inspectAntigravityTranscript } from "./agents/antigravity.ts"
 
 const toJsonl = (steps: Record<string, unknown>[]) => steps.map(s => JSON.stringify(s)).join("\n") + "\n"
@@ -187,4 +188,42 @@ test("createAntigravityClientWrapper reconnects when background wakeup pauses on
   assert.equal(prompts, 2)
   assert.equal(cancels, 0)
   assert.deepEqual(messages, ["42 lines."])
+})
+
+test("createAntigravityClientWrapper bridges active-turn and poll-wait steering and reports inactive when idle", async () => {
+  const sessionId = "session-steer"
+  const msg = (text: string): PromptRequest => ({ sessionId, prompt: [{ type: "text", text }] })
+  const received: string[] = []
+  const resolvers: ((value: PromptResponse) => void)[] = []
+
+  const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(
+    { onUpdate() {} },
+    { dataDir: join(tmpdir(), "df-agy-nonexistent"), pollIntervalMs: 500 },
+  )
+  const conn = wrapConnection(stubConnection({
+    prompt(params) {
+      received.push(params.prompt[0]?.type === "text" ? params.prompt[0].text : "")
+      resolvers.shift()?.({ stopReason: "cancelled", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } })
+      return new Promise<PromptResponse>(resolve => { resolvers.push(resolve) })
+    },
+  }))
+
+  assert.equal(supportsSteering(conn.initialization), true)
+  assert.deepEqual(await conn.steer(msg("early"), "d0"), { outcome: "inactive" })
+
+  const turn = conn.prompt(msg("first"))
+  while (received.length < 1) await delay(5)
+  assert.deepEqual(await conn.steer(msg("second"), "d1"), { outcome: "injected" })
+  await wrappedClient.onUpdate({ sessionId, update: { sessionUpdate: "tool_call", toolCallId: "bg-1", title: "Build", status: "in_progress" } })
+  resolvers.shift()!({ stopReason: "end_turn", usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 } })
+  await delay(15)
+  assert.deepEqual(await conn.steer(msg("third"), "d2"), { outcome: "injected" })
+  await wrappedClient.onUpdate({ sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "bg-1", status: "completed" } })
+  resolvers.shift()!({ stopReason: "end_turn", usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } })
+
+  const res = await turn
+  assert.equal(res.stopReason, "end_turn")
+  assert.equal(res.usage?.totalTokens, 40)
+  assert.deepEqual(await conn.steer(msg("late"), "d3"), { outcome: "inactive" })
+  assert.deepEqual(received, ["first", "second", "third"])
 })

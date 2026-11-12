@@ -3,7 +3,7 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as delay } from "node:timers/promises"
-import type { Usage } from "@agentclientprotocol/sdk/unstable"
+import type { PromptResponse, Usage } from "@agentclientprotocol/sdk/unstable"
 import type { AgentQuotaItem } from "../agent-configuration-protocol.ts"
 import { clampQuota, runUsageJsonCommand } from "../agent-usage.ts"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
@@ -164,7 +164,7 @@ export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: nu
   return { state: "running", lastStepIndex }
 }
 
-/** Wraps an Antigravity ACP client + connection to await backgrounded commands before ending the turn. */
+/** Wraps an Antigravity ACP client + connection to await backgrounded commands and bridge turn steering. */
 export function createAntigravityClientWrapper(
   client: AgentClient,
   options: { dataDir?: string; pollIntervalMs?: number } = {},
@@ -174,6 +174,7 @@ export function createAntigravityClientWrapper(
   const pollMs = options.pollIntervalMs ?? 250
   const trackers = new Map<string, { pending: Set<string>; suppress: boolean; onFlush?: () => void }>()
   const aborts = new Map<string, AbortController>()
+  const turns = new Map<string, { steered: Promise<PromptResponse>[]; wake?: () => void }>()
 
   const getTracker = (id: string) => {
     let t = trackers.get(id)
@@ -201,9 +202,13 @@ export function createAntigravityClientWrapper(
   }
 
   function wrapConnection(connection: AgentConnection): AgentConnection {
+    const initialization = {
+      ...connection.initialization,
+      _meta: { ...connection.initialization._meta, steering: { supported: true, supportsPromptRequired: true } },
+    }
     return {
       ...connection,
-      get initialization() { return connection.initialization },
+      initialization,
       async prompt(params) {
         const { sessionId } = params
         const t = getTracker(sessionId)
@@ -211,19 +216,35 @@ export function createAntigravityClientWrapper(
         t.suppress = false
         const abort = new AbortController()
         aborts.set(sessionId, abort)
-        const onAbort = () => abort.abort()
+        const onAbort = () => {
+          turns.delete(sessionId)
+          abort.abort()
+        }
         client.signal?.addEventListener("abort", onAbort, { once: true })
+        const turn: { steered: Promise<PromptResponse>[]; wake?: () => void } = { steered: [] }
+        let stopReason: PromptResponse["stopReason"] = "end_turn"
+        let usage: Usage | undefined
+        const runLeg = async (leg: Promise<PromptResponse>) => {
+          for (let next: Promise<PromptResponse> | undefined = leg; next; next = turn.steered.shift()) {
+            const res = await next
+            usage = mergeUsage(usage, res.usage)
+            stopReason = res.stopReason
+          }
+        }
 
+        const dbPath = join(dataDir, "conversations", `${sessionId}.db`)
         try {
-          const dbPath = join(dataDir, "conversations", `${sessionId}.db`)
           const initRaw = await readTranscript(sessionId)
           const startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
-          let { stopReason, usage } = await connection.prompt(params)
+          if (!abort.signal.aborted) turns.set(sessionId, turn)
+          await runLeg(connection.prompt(params))
 
           while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
             const startedAt = Date.now()
+            const wake = new AbortController()
+            turn.wake = () => wake.abort()
             let state: "waiting" | "settled" | undefined
-            while (!abort.signal.aborted && Date.now() - startedAt < 30 * 60_000) {
+            while (!abort.signal.aborted && !turn.steered.length && Date.now() - startedAt < 30 * 60_000) {
               if (hasWaitingStep(dbPath)) {
                 state = "waiting"
                 break
@@ -235,11 +256,16 @@ export function createAntigravityClientWrapper(
                 state = "settled"
                 break
               }
-              await delay(pollMs, undefined, { signal: abort.signal }).catch(() => {})
+              await delay(pollMs, undefined, { signal: AbortSignal.any([abort.signal, wake.signal]) }).catch(() => {})
+            }
+            if (turn.steered.length > 0) {
+              await runLeg(turn.steered.shift()!)
+              continue
             }
             if (!state || abort.signal.aborted) break
 
             const isSettled = state === "settled"
+            if (isSettled) turns.delete(sessionId)
             let timer: ReturnType<typeof setTimeout> | undefined
             if (isSettled) {
               t.onFlush = () => {
@@ -253,9 +279,8 @@ export function createAntigravityClientWrapper(
               t.onFlush()
             }
             try {
-              const next = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
-              usage = mergeUsage(usage, next.usage)
-              stopReason = isSettled ? "end_turn" : next.stopReason
+              await runLeg(connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] }))
+              if (isSettled) stopReason = "end_turn"
             } finally {
               clearTimeout(timer)
               t.onFlush = undefined
@@ -263,17 +288,28 @@ export function createAntigravityClientWrapper(
             }
             if (isSettled) break
           }
-          const ctx = readContextUsage(dbPath)
-          if (ctx) {
-            await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
-          }
-          return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
         } finally {
           client.signal?.removeEventListener("abort", onAbort)
+          turns.delete(sessionId)
           if (aborts.get(sessionId) === abort) aborts.delete(sessionId)
         }
+        const ctx = readContextUsage(dbPath)
+        if (ctx) {
+          await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
+        }
+        return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
+      },
+      async steer(params) {
+        const turn = turns.get(params.sessionId)
+        if (!turn) return { outcome: "inactive" }
+        const next = connection.prompt(params)
+        next.catch(() => {})
+        turn.steered.push(next)
+        turn.wake?.()
+        return { outcome: "injected" }
       },
       async cancel(sessionId) {
+        turns.delete(sessionId)
         aborts.get(sessionId)?.abort()
         await connection.cancel(sessionId)
       },
