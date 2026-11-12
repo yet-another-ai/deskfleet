@@ -177,6 +177,9 @@ importers:
       '@capacitor/ios':
         specifier: 8.6.0
         version: 8.6.0(@capacitor/core@8.6.0)
+      '@capawesome/capacitor-app-update':
+        specifier: 8.1.1
+        version: 8.1.1(@capacitor/core@8.6.0)
       '@deskfleet/capacitor-bridge':
         specifier: workspace:*
         version: link:../../packages/capacitor-bridge
@@ -296,6 +299,9 @@ importers:
       '@capacitor/core':
         specifier: 8.6.0
         version: 8.6.0
+      '@capawesome/capacitor-app-update':
+        specifier: 8.1.1
+        version: 8.1.1(@capacitor/core@8.6.0)
       '@deskfleet/client':
         specifier: workspace:*
         version: link:../client
@@ -784,6 +790,11 @@ packages:
     resolution: {integrity: sha512-Y2PE4zoBqMrSTWoVMJmX2byBznjn6egmATzoEUJiGVbVubkNpAvkF/tl0SBKDyP67ngyedTx1tQq5IGYIhby1A==}
     peerDependencies:
       '@capacitor/core': ^8.6.0
+
+  '@capawesome/capacitor-app-update@8.1.1':
+    resolution: {integrity: sha512-1TzM4hMN4wgCDu3O0UhaIIoVspUFNfNJ+q+K/EKSQRKkfCbG79S1Fn/sXwMdtMO1Me55LQxdjw1I9rctFtKBOQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@chenglou/pretext@0.0.9':
     resolution: {integrity: sha512-vInlpC//3vjRfWTs78k2BBIq/0bUdpjIp8TIn9fXe0NvnChhTQZfjioVzERQQbkQvCVpPpw7PDOrTWMHpq27VA==}
@@ -10499,6 +10510,10 @@ snapshots:
       tslib: 2.9.1
 
   '@capacitor/ios@8.6.0(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
+
+  '@capawesome/capacitor-app-update@8.1.1(@capacitor/core@8.6.0)':
     dependencies:
       '@capacitor/core': 8.6.0
 

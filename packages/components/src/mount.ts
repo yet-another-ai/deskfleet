@@ -3,6 +3,7 @@ import { createApp, vaporInteropPlugin } from "vue"
 import { getClient } from "@deskfleet/client/platform"
 import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
+import { useOutlineAudioStore } from "./stores/outline-audio.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
 import { installErrorReporting, installErrorReportingAccount, shutdownErrorReporting } from "./services/error-reporting.ts"
@@ -29,9 +30,12 @@ export async function mountDeskfleet(target: string | Element = "#root") {
     const central = getClient().central
     if (central) installErrorReportingAccount(app, central)
     app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
-    app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
+    app.use(nativeDragPolicy)
+    if (vaporInteropPlugin) app.use(vaporInteropPlugin)
+    app.use(state).use((await import("./router/index.ts")).router).use(i18n).mount(target)
     return app
   }
+  await useOutlineAudioStore(state).initialize()
   const host = getClient()
   // Account sign-in and the local workspace are separate graphs.
   const root = host.central
@@ -42,7 +46,7 @@ export async function mountDeskfleet(target: string | Element = "#root") {
   installAnalytics(app, router)
   installErrorReporting(app)
   app.use(nativeDragPolicy)
-  app.use(vaporInteropPlugin)
+  if (vaporInteropPlugin) app.use(vaporInteropPlugin)
   app.use(state)
   app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
   app.use(router)

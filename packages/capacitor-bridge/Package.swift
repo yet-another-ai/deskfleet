@@ -28,6 +28,7 @@ let package = Package(
             path: "ios/Sources/DeskFleetBridge",
             linkerSettings: [
                 .linkedFramework("AudioToolbox"),
+                .linkedFramework("AuthenticationServices"),
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("CoreGraphics"),
@@ -37,6 +38,7 @@ let package = Package(
                 .linkedFramework("IOSurface"),
                 .linkedFramework("Metal"),
                 .linkedFramework("QuartzCore"),
+                .linkedFramework("ReplayKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("UIKit"),

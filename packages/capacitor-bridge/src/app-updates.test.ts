@@ -1,0 +1,89 @@
+import { AppUpdateAvailability, AppUpdateResultCode, FlexibleUpdateInstallStatus, type AppUpdateInfo, type FlexibleUpdateState } from "@capawesome/capacitor-app-update"
+import { expect, test, vi } from "vitest"
+import { createPlayUpdates, playVersionName, type PlayUpdatePlugin } from "./app-updates.ts"
+
+function fakePlay(info: Partial<AppUpdateInfo>, consent = AppUpdateResultCode.OK) {
+  let emit: ((state: FlexibleUpdateState) => void) | undefined
+  const plugin = {
+    getAppUpdateInfo: vi.fn(async () => ({
+      currentVersionName: "0.13.1", currentVersionCode: "1301999",
+      updateAvailability: AppUpdateAvailability.UPDATE_AVAILABLE, availableVersionCode: "1400999",
+      flexibleUpdateAllowed: true, installStatus: FlexibleUpdateInstallStatus.UNKNOWN, ...info,
+    })),
+    startFlexibleUpdate: vi.fn(async () => ({ code: consent })),
+    completeFlexibleUpdate: vi.fn(async () => {}),
+    addListener: vi.fn(async (_event: string, listener: (state: FlexibleUpdateState) => void) => {
+      emit = listener
+      return { remove: async () => {} }
+    }),
+  } satisfies PlayUpdatePlugin
+  const event = (installStatus: FlexibleUpdateInstallStatus, bytesDownloaded?: number, totalBytesToDownload?: number) =>
+    emit!({ installStatus, bytesDownloaded, totalBytesToDownload })
+  return { plugin, event }
+}
+
+function memoryStorage(values: Record<string, string> = {}) {
+  return { getItem: (key: string) => values[key] ?? null, setItem: (key: string, value: string) => { values[key] = value } }
+}
+
+test("decodes the Gradle versionCode formula", () => {
+  expect(playVersionName("1400999")).toBe("0.14.0")
+  expect(playVersionName("102030999")).toBe("10.20.30")
+  expect(playVersionName("1400002")).toBe("0.14.0 (1400002)")
+  expect(playVersionName("not-a-code")).toBe("not-a-code")
+})
+
+test("without automatic download a check only reports the available version", async () => {
+  const { plugin } = fakePlay({})
+  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }))
+  expect(await play.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+  expect(await play.getAutoDownload()).toEqual({ enabled: false })
+})
+
+test("automatic download prompts once and waits for a click before restarting", async () => {
+  const { plugin, event } = fakePlay({})
+  const play = createPlayUpdates(plugin, memoryStorage())
+  const states: unknown[] = []
+  play.updates.onChanged(state => states.push(state.status))
+  await play.updates.check()
+  await vi.waitFor(() => expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce())
+  event(FlexibleUpdateInstallStatus.DOWNLOADING, 50, 200)
+  expect(await play.updates.get()).toMatchObject({ status: "downloading", percent: 25 })
+  event(FlexibleUpdateInstallStatus.DOWNLOADED)
+  expect(plugin.completeFlexibleUpdate).not.toHaveBeenCalled()
+
+  await play.updates.install()
+  expect(plugin.completeFlexibleUpdate).toHaveBeenCalledOnce()
+  expect(states.at(-1)).toBe("installing")
+})
+
+test("an explicit install downloads through Play and completes when the download finishes", async () => {
+  const { plugin, event } = fakePlay({})
+  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }))
+  await play.updates.check()
+  await play.updates.install()
+  expect(await play.updates.get()).toMatchObject({ status: "downloading", percent: 0 })
+  event(FlexibleUpdateInstallStatus.DOWNLOADED)
+  await vi.waitFor(() => expect(plugin.completeFlexibleUpdate).toHaveBeenCalledOnce())
+})
+
+test("a declined Play dialog is not reopened automatically, and an explicit install still can", async () => {
+  const { plugin } = fakePlay({}, AppUpdateResultCode.CANCELED)
+  const play = createPlayUpdates(plugin, memoryStorage())
+  await play.updates.check()
+  await vi.waitFor(() => expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce())
+  await vi.waitFor(async () => expect((await play.updates.get()).status).toBe("available"))
+  await play.updates.check()
+  expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce()
+  await play.updates.install()
+  expect(plugin.startFlexibleUpdate).toHaveBeenCalledTimes(2)
+  expect((await play.updates.get()).status).toBe("available")
+})
+
+test("a download already finished in an earlier run is reported as downloaded", async () => {
+  const { plugin } = fakePlay({ installStatus: FlexibleUpdateInstallStatus.DOWNLOADED })
+  const play = createPlayUpdates(plugin, memoryStorage())
+  expect(await play.updates.check()).toMatchObject({ status: "downloaded", version: "0.14.0" })
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+})

@@ -1,7 +1,50 @@
 import groovy.json.JsonSlurper
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
+}
+
+val fallbackNdkVersion = libs.versions.ndk.get()
+val minNdkMajor = fallbackNdkVersion.substringBefore(".").toInt()
+val resolvedNdkVersion = run {
+    val localProperties = Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.isFile) file.inputStream().use(::load)
+    }
+    val home = System.getProperty("user.home")
+    val sdkCandidates = listOfNotNull(
+        localProperties.getProperty("sdk.dir"),
+        System.getenv("ANDROID_HOME"),
+        System.getenv("ANDROID_SDK_ROOT"),
+        "$home/Library/Android/sdk",
+        "$home/Android/Sdk",
+        "/usr/local/lib/android/sdk",
+    )
+    data class InstalledNdk(val revision: String, val prerelease: Boolean, val numbers: List<Int>)
+    val installed = sdkCandidates
+        .asSequence()
+        .map { file("$it/ndk") }
+        .filter { it.isDirectory }
+        .flatMap { ndkDir -> (ndkDir.listFiles() ?: emptyArray()).asSequence() }
+        .mapNotNull { candidate ->
+            val sourceProps = File(candidate, "source.properties")
+            if (!sourceProps.isFile) return@mapNotNull null
+            val props = Properties().apply { sourceProps.inputStream().use(::load) }
+            val revision = props.getProperty("Pkg.Revision")?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val numbers = revision.substringBefore("-").split(".").map { it.toIntOrNull() ?: return@mapNotNull null }
+            if (numbers.firstOrNull()?.let { it >= minNdkMajor } != true) return@mapNotNull null
+            InstalledNdk(revision, revision.contains("-"), numbers)
+        }
+        .toList()
+    installed.firstOrNull { it.revision == fallbackNdkVersion }?.revision
+        ?: installed.sortedWith(
+            compareBy<InstalledNdk> { it.prerelease }
+                .thenByDescending { it.numbers.getOrElse(0) { 0 } }
+                .thenByDescending { it.numbers.getOrElse(1) { 0 } }
+                .thenByDescending { it.numbers.getOrElse(2) { 0 } },
+        ).firstOrNull()?.revision
+        ?: fallbackNdkVersion
 }
 
 val packageJson = JsonSlurper().parse(file("../../package.json")) as Map<*, *>
@@ -24,6 +67,7 @@ val defaultVersionCode = run {
 android {
     namespace = "ai.yetanother.deskfleet"
     compileSdk = libs.versions.compileSdk.get().toInt()
+    ndkVersion = resolvedNdkVersion
 
     defaultConfig {
         applicationId = "ai.yetanother.deskfleet"
@@ -39,7 +83,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

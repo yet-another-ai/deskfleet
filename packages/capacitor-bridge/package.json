@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@capacitor/core": "8.6.0",
+    "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/client": "workspace:*"
   },
   "devDependencies": {

@@ -26,4 +26,10 @@ const { t } = useI18n()
       <LocalAgentSettings />
     </div>
   </section>
+  <section v-else-if="client.updates" aria-labelledby="updates-heading">
+    <h2 id="updates-heading" class="ui-section-title mb-2">{{ t("updatesSettings.title") }}</h2>
+    <div class="ui-card">
+      <AutoDownloadUpdatesSettings />
+    </div>
+  </section>
 </template>

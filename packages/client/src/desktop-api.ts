@@ -19,6 +19,7 @@ import type { MuxChannelsApi } from "./mux-channels.ts"
 import type { WindowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import type { NativeDesktopApi } from "./native-desktop.ts"
 import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
+import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
 
 /** The host platform adapter configured for the shared application. */
@@ -36,6 +37,7 @@ export interface DeskfleetDesktopApi {
   windowsDesktopService?: WindowsDesktopServiceApi
   nativeDesktop?: NativeDesktopApi
   networkDiagnostics?: NetworkDiagnosticsApi
+  outlineAudio?: OutlineAudioApi
   application?: ApplicationApi
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }

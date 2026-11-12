@@ -5,13 +5,27 @@ import type { BrowserClientOptions } from "@deskfleet/client/browser"
 import { serverAddress, type HttpCentralClient, type SavedAccount } from "@deskfleet/client/http-central"
 
 const ACCOUNT_STORAGE_KEY = "deskfleet.capacitor.account"
-const CUSTOM_AUTH_CALLBACK_URL = "ai.yetanother.deskfleet://auth/callback"
+const CUSTOM_AUTH_CALLBACK_SCHEME = "ai.yetanother.deskfleet"
+const CUSTOM_AUTH_CALLBACK_URL = `${CUSTOM_AUTH_CALLBACK_SCHEME}://auth/callback`
 const AUTH_TIMEOUT_MS = 5 * 60_000
 
 interface StoredCapacitorAccount {
   serverUrl?: string
   token?: string
   user?: SavedAccount["user"]
+}
+
+function isAuthCallbackUrl(url: string): boolean {
+  const next = url[CUSTOM_AUTH_CALLBACK_URL.length]
+  return url.slice(0, CUSTOM_AUTH_CALLBACK_URL.length).toLowerCase() === CUSTOM_AUTH_CALLBACK_URL
+    && (next === undefined || next === "#" || next === "?" || next === "/")
+}
+
+function extractLoginCode(url: string): string {
+  const hashIndex = url.indexOf("#")
+  const loginCode = hashIndex >= 0 ? new URLSearchParams(url.slice(hashIndex + 1)).get("loginCode") : null
+  if (!loginCode) throw new Error("Missing login code")
+  return loginCode
 }
 
 function readCapacitorAccount(configuredServerUrl: string): SavedAccount {
@@ -63,6 +77,18 @@ async function authorizeCapacitor(client: HttpCentralClient): Promise<void> {
     throw new Error("Invalid authorization URL")
   }
 
+  if (Capacitor.getPlatform() === "ios") {
+    const callback = await DeskFleetBridge.authenticate({
+      url: parsed.toString(),
+      callbackScheme: CUSTOM_AUTH_CALLBACK_SCHEME,
+    })
+    if (!isAuthCallbackUrl(callback.url)) {
+      throw new Error("Invalid authentication callback URL")
+    }
+    await client.exchange(extractLoginCode(callback.url), result.loginVerifier)
+    return
+  }
+
   let complete!: (code: string) => void
   let fail!: (error: Error) => void
   const codePromise = new Promise<string>((resolve, reject) => {
@@ -72,12 +98,12 @@ async function authorizeCapacitor(client: HttpCentralClient): Promise<void> {
   void codePromise.catch(() => {})
 
   const handle = await CapApp.addListener("appUrlOpen", ({ url }) => {
-    if (!url.startsWith(CUSTOM_AUTH_CALLBACK_URL)) return
-    const hashIndex = url.indexOf("#")
-    const hash = hashIndex >= 0 ? url.slice(hashIndex + 1) : ""
-    const loginCode = new URLSearchParams(hash).get("loginCode")
-    if (loginCode) complete(loginCode)
-    else fail(new Error("Missing login code"))
+    if (!isAuthCallbackUrl(url)) return
+    try {
+      complete(extractLoginCode(url))
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)))
+    }
   })
 
   const timeout = setTimeout(() => fail(new Error("Sign-in timed out")), AUTH_TIMEOUT_MS)

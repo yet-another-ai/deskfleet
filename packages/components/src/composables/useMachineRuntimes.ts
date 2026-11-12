@@ -9,6 +9,7 @@ import { platformClientKey } from "./usePlatformClient.ts"
 import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearance.ts"
+import { outlineAudioStoreKey, type useOutlineAudioStore } from "../stores/outline-audio.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { installErrorReporting } from "../services/error-reporting.ts"
@@ -30,7 +31,12 @@ export const machineRuntimesKey: InjectionKey<MachineRuntimes> = Symbol("deskfle
 export const useMachineRuntimes = () => inject(machineRuntimesKey, undefined)
 
 /** Opened machines own their stores and peers until they leave the account's Team. */
-export function createMachineRuntimes(host: DeskfleetDesktopApi, session: AccountSession, appearance: ReturnType<typeof useAppearanceStore>): MachineRuntimes {
+export function createMachineRuntimes(
+  host: DeskfleetDesktopApi,
+  session: AccountSession,
+  appearance: ReturnType<typeof useAppearanceStore>,
+  outlineAudio: ReturnType<typeof useOutlineAudioStore>,
+): MachineRuntimes {
   const opened = shallowReactive(new Map<string, MachineRuntime>())
   function release(id: string): void {
     const runtime = opened.get(id)
@@ -92,6 +98,7 @@ export function createMachineRuntimes(host: DeskfleetDesktopApi, session: Accoun
             .provide(conversationCacheKey, cache)
             .provide(accountSessionKey, session)
             .provide(appearanceStoreKey, appearance)
+            .provide(outlineAudioStoreKey, outlineAudio)
             .provide(platformClientKey, remote.api)
             .provide(machineRuntimesKey, runtimes)
             .use(state).use(router).use(i18n)

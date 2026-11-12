@@ -3,7 +3,9 @@ import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
 import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
+  createCapacitorOutlineAudioApi,
 } from "@deskfleet/capacitor-bridge"
+import { createPlayUpdates } from "@deskfleet/capacitor-bridge/app-updates"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
@@ -15,7 +17,10 @@ import "virtual:uno.css"
 initializeErrorReporting("web")
 const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
 const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
-if ((Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios") && adapter.central) {
+if (Capacitor.getPlatform() === "ios") {
+  adapter.outlineAudio = createCapacitorOutlineAudioApi()
+}
+if (Capacitor.isNativePlatform() && adapter.central) {
   adapter.nativeDesktop = createCapacitorNativeDesktopApi(adapter.central)
   adapter.networkDiagnostics = createCapacitorNetworkDiagnosticsApi(
     adapter.central as HttpCentralClient,
@@ -25,6 +30,16 @@ if ((Capacitor.getPlatform() === "android" || Capacitor.getPlatform() === "ios")
       return i18n.global.t("developerSettings.noStunServer")
     },
   )
+}
+if (Capacitor.getPlatform() === "android") {
+  adapter.outlineAudio = createCapacitorOutlineAudioApi()
+  const play = createPlayUpdates()
+  adapter.updates = play.updates
+  adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: play.getAutoDownload, setAutoDownloadUpdates: play.setAutoDownload }
+  // Background checks are silent: failures (such as builds not installed from Google Play) keep the current state.
+  const check = (): void => { void play.updates.check().catch(() => {}) }
+  check()
+  void CapApp.addListener("resume", check)
 }
 configureClient(adapter)
 if (location.pathname.startsWith("/auth/")) {

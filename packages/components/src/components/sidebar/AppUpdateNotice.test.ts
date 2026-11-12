@@ -78,6 +78,13 @@ test("points the web download CTA at the marketing get-deskfleet section", async
   expect(link.attributes("rel")).toBe("noopener noreferrer")
 })
 
+test("a Web host with an updater, such as Android, offers the update instead of the desktop download", async () => {
+  configureClient({ ...host, platform: "web", updates: api })
+  const view = await render()
+  expect(view.find("[data-app-download]").exists()).toBe(false)
+  expect(view.text()).toContain("Version 0.2.0 is available")
+})
+
 test("shows download progress and restart state and prevents repeated clicks", async () => {
   let finish!: () => void
   install.mockImplementation(() => new Promise(resolve => { finish = resolve }))
