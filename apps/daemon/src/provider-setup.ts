@@ -249,12 +249,19 @@ export async function probeProvider(input: AgentProviderInput, dependencies: Pro
 export async function resolveProviderInstaller(
   input: AgentProviderInput,
   dependencies: ProbeDependencies = {},
+  options: { nonInteractive?: boolean } = {},
 ): Promise<ProviderInstallerLaunch> {
   const provider = providerInput(input)
   const ctx = await context(provider, dependencies, dependencies.signal)
   const launch = await installer(provider.template, ctx)
   if (typeof launch === "string") throw new Error(launch)
-  return { ...launch, env: ctx.env, cwd: ctx.home }
+  // Background upgrades have no terminal for installer prompts. Codex's official
+  // installer uses this flag to skip its final "Start Codex now?" question.
+  const env = options.nonInteractive && provider.template === "codex"
+    ? { ...ctx.env, CODEX_NON_INTERACTIVE: "1" } : ctx.env
+  const args = options.nonInteractive && ctx.platform === "win32" && provider.template !== "grok"
+    ? ["-NonInteractive", ...launch.args] : launch.args
+  return { ...launch, args, env, cwd: ctx.home }
 }
 
 async function probe(input: AgentProviderInput, dependencies: ProbeDependencies, signal: AbortSignal): Promise<ProviderProbeResult> {

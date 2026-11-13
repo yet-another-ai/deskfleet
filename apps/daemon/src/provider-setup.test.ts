@@ -8,7 +8,7 @@ import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRunti
 import { createTerminal } from "@deskfleet/native"
 import type { AgentProviderInput } from "./provider-protocol.ts"
 import { interactiveProviderProcess, launchProviderCommand, runProbeCommand, type ProbeCommand, type ProbeCommandResult } from "./provider-setup-process.ts"
-import { probeProvider, ProviderSetup } from "./provider-setup.ts"
+import { probeProvider, ProviderSetup, resolveProviderInstaller } from "./provider-setup.ts"
 import type { TerminalRun } from "./terminals.ts"
 
 const input = (template: AgentProviderInput["template"], overrides: Partial<AgentProviderInput> = {}): AgentProviderInput => ({
@@ -654,6 +654,34 @@ test("Windows uses case-insensitive environment overrides and official install l
   assert.equal(f.calls[0]!.env.Path, undefined)
   await f.setup.install(input("codex"))
   assert.ok(f.runs[0]!.args?.join(" ").includes("https://chatgpt.com/codex/install.ps1"))
+})
+
+test("background installer mode preserves interactive setup and only opts Codex out of its prompts", async () => {
+  const f = fixture({ platform: "win32", env: { PATH: "C:\\tools" }, files: ["C:\\tools\\pwsh.exe"] })
+  for (const template of ["codex", "claude-code", "cursor", "pi", "omp", "antigravity", "codebuddy"] as const) {
+    const provider = input(template)
+    const interactive = await resolveProviderInstaller(provider, f.dependencies)
+    const background = await resolveProviderInstaller(provider, f.dependencies, { nonInteractive: true })
+    assert.equal(interactive.args.includes("-NonInteractive"), false)
+    assert.equal(interactive.env.CODEX_NON_INTERACTIVE, undefined)
+    assert.equal(background.args.includes("-NonInteractive"), true)
+    assert.equal(background.env.CODEX_NON_INTERACTIVE, template === "codex" ? "1" : undefined)
+  }
+})
+
+test("background Codex installer exits without answering its final launch prompt", { skip: process.platform !== "win32" }, async () => {
+  const shell = "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+  const launch = await resolveProviderInstaller(input("codex"), {
+    platform: "win32", env: { ...process.env, PATH: "C:\\Program Files\\PowerShell\\7" },
+    executable: async path => path === shell,
+  }, { nonInteractive: true })
+  // Keep the real command construction and PowerShell runner, replacing only the
+  // network response with the installer's final prompt and its supported opt-out.
+  const script = `function Invoke-RestMethod { 'if ($env:CODEX_NON_INTERACTIVE -ne "1") { Read-Host "Start Codex now?" }; Write-Output "Installed"' }; ${launch.args.at(-1)}`
+  const value = await runProbeCommand(launch.command, [...launch.args.slice(0, -1), script], launch.env, launch.cwd, undefined, 10_000)
+  assert.equal(value.code, 0)
+  assert.match(value.stdout, /Installed/u)
+  assert.doesNotMatch(value.stdout, /Start Codex now/u)
 })
 
 test("Windows Grok requires Git Bash and never uses the WSL bash launcher", async () => {

@@ -478,6 +478,23 @@ imply authentication: completion triggers a new probe, and successful installati
 fills the executable's absolute path. Custom ACP providers have discovery but no
 built-in installation or login action. Setup uses authenticated machine management
 RPC; terminal interaction uses the shared terminal message transport.
+
+The sidebar collects available CLI upgrades across all tools and machines into
+one notice. Its confirmation lists each tool's target version and lets the user
+select individual tool/machine pairs; offline machines cannot be selected.
+Progress remains reviewable, and dismissing the notice does not cancel an
+installer. Dismissals apply to the current target version within the account's
+client session, scoped by Team and Machine, and survive sidebar remounts. A new
+target version is shown again.
+
+Background upgrades use non-interactive installers, including
+`CODEX_NON_INTERACTIVE=1` for Codex and `-NonInteractive` for PowerShell installers.
+Before stopping agent sessions or installing, the daemon probes the installed
+version again. If a manual update already satisfies the target, it clears the
+stale notice and refreshes other registrations on the same host without stopping
+sessions or reinstalling. Interactive Settings installation retains its terminal
+and prompts.
+
 Pi installation uses the official `pi.dev` installer. Its **Log in** action opens
 Pi; enter `/login`, complete provider setup, then `/quit`. Discovery leaves Pi's
 credential status unknown because its credential check requires a specific model

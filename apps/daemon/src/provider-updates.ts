@@ -289,11 +289,19 @@ export class ProviderUpdates {
   ): Promise<void> {
     try {
       const targets = await this.#defaultEntries(template)
+      if (targets.length === 0) throw new Error("No update is available for this CLI")
       const outdated = targets.find(({ version }) => isProviderVersionNewer(template, version, update.latestVersion))
-      if (!outdated) throw new Error("No update is available for this CLI")
-      const probe = { ...this.#dependencies.probe, signal: this.#closing.signal }
-      const launch = await resolveProviderInstaller(toDefaultProviderInput(outdated.entry), probe)
       const peers = [...(this.#dependencies.peers?.() ?? [])]
+      if (!outdated) {
+        // A manual installation may have satisfied the notice since its last check.
+        // Reconcile it without reinstalling or stopping otherwise healthy sessions.
+        this.#updates.delete(template)
+        for (const peer of peers) void peer.check()
+        this.#notify()
+        return
+      }
+      const probe = { ...this.#dependencies.probe, signal: this.#closing.signal }
+      const launch = await resolveProviderInstaller(toDefaultProviderInput(outdated.entry), probe, { nonInteractive: true })
       await Promise.all([
         this.#dependencies.stopProviders(targets.map(target => target.entry.id)),
         ...peers.map(peer => peer.stopTemplate(template)),
