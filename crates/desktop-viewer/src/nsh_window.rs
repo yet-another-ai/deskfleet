@@ -7,8 +7,8 @@ use deskfleet_input::InputEvent;
 use gpui::{
     AppContext, Bounds, Context, DispatchPhase, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, KeyUpEvent, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollEvent, Styled, Subscription, Window,
-    WindowBounds, WindowOptions, canvas, div, point, px, size,
+    ParentElement, Pixels, Point, Render, ScrollEvent, Styled, Subscription, Window, WindowBounds,
+    WindowOptions, canvas, div, point, px, size,
 };
 use serde_json::json;
 use tokio::sync::watch;

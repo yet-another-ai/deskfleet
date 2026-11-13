@@ -103,11 +103,7 @@ impl Input {
         }]
     }
 
-    pub(crate) fn scroll(
-        &mut self,
-        event: &ScrollEvent,
-        video: Bounds<Pixels>,
-    ) -> Vec<InputEvent> {
+    pub(crate) fn scroll(&mut self, event: &ScrollEvent, video: Bounds<Pixels>) -> Vec<InputEvent> {
         if !self.enabled || normalized_point(event.position, video, false).is_none() {
             return Vec::new();
         }
