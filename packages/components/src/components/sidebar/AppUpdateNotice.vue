@@ -55,7 +55,7 @@ function install(): void {
 </script>
 
 <template>
-  <div v-if="client.platform === 'web' && !api" data-app-download class="app-no-drag hidden shrink-0 px-2 pb-2 lg:block">
+  <div v-if="client.platform === 'web' && !client.mobile && !api" data-app-download class="app-no-drag hidden shrink-0 px-2 pb-2 lg:block">
     <div class="rounded-lg border border-ui-accent/25 bg-ui-accent/8 p-2">
       <p class="m-0 mb-2 px-0.5 text-xs text-ui-text-muted">{{ t("desktopDownload.description") }}</p>
       <a
