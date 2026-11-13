@@ -362,6 +362,8 @@ downloaded profiles, and the archive itself are not uploaded there.
 The `deskfleet-ios` artifact contains `App.ipa` and `release.json`, which records
 the Bundle ID, marketing version, and build number. CI assigns the build number
 from its run number and attempt, using the same value in the app and extension.
+The first tagged release with this numbering scheme must use a new marketing
+version; an already-uploaded version may have a higher legacy build number.
 An upload retry uses the artifact's existing version rather than allocating a
 new build number. `scripts/publish-ios-release.ts` checks Apple's upload records
 before sending the IPA: completed uploads are reused, processing uploads are
