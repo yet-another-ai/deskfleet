@@ -52,13 +52,25 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "speechStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startSpeech", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopSpeech", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "cancelSpeech", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "cancelSpeech", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "filesOpen", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "filesCall", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "filesChooseDirectory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "filesClose", returnType: CAPPluginReturnPromise)
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
     private var authSession: ASWebAuthenticationSession?
     private var speechInput: SpeechInput?
+    private let localFiles = LocalFilesBridge()
+
+    @objc func filesOpen(_ call: CAPPluginCall) { localFiles.open(call) }
+    @objc func filesCall(_ call: CAPPluginCall) { localFiles.perform(call) }
+    @objc func filesChooseDirectory(_ call: CAPPluginCall) {
+        localFiles.choose(call) { [weak self] in self?.bridge?.viewController }
+    }
+    @objc func filesClose(_ call: CAPPluginCall) { localFiles.close(call) }
 
     private func speech() -> SpeechInput {
         if let speechInput { return speechInput }
@@ -362,6 +374,7 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
     }
 
     deinit {
+        localFiles.dispose()
         let speech = speechInput
         DispatchQueue.main.async { speech?.dispose() }
         pollTimer?.cancel()

@@ -5,6 +5,9 @@ import type { FilesApi, FileTransfer } from "./files.ts"
 import { FILE_CHUNK_BYTES, FILE_MAX_OPEN_READS, type FileConflict, type FileEndpoint, type FileEntry, type FileKind, type FileListing, type FileMethod, type FileMethods, type FileReply } from "../../../apps/daemon/src/files-protocol.ts"
 
 type DirectoryHandle = FileSystemDirectoryHandle
+export interface LocalFilesEndpoint extends FileEndpoint {
+  choose(): Promise<FileListing | null>
+}
 interface Upload {
   directory: DirectoryHandle; directoryPath: string; requestedName: string; name: string; kind: FileKind; stage: DirectoryHandle
   files: Map<string, { stream: FileSystemWritableFileStream; offset: number }>
@@ -22,7 +25,7 @@ const segments = (path: string) => {
 }
 
 /** Only explicitly selected browser directory handles are accessible to the local pane. */
-export class BrowserFilesEndpoint implements FileEndpoint {
+export class BrowserFilesEndpoint implements LocalFilesEndpoint {
   readonly #roots = new Map<string, DirectoryHandle>()
   readonly #uploads = new Map<string, Upload>()
   readonly #reads = new Map<string, ReadSession>()
@@ -297,22 +300,33 @@ export class BrowserFilesEndpoint implements FileEndpoint {
 }
 
 /** Page/account lifetime, rather than the current machine view, owns browser transfers. */
-export function createBrowserFiles(central: CentralApi): FilesApi & { close(): Promise<void> } {
+export function createBrowserFiles(
+  central: CentralApi,
+  createLocal: () => LocalFilesEndpoint = () => new BrowserFilesEndpoint(),
+): FilesApi & { close(): Promise<void> } {
   const listeners = new Set<(transfers: FileTransfer[]) => void>()
   const create = () => {
-    const local = new BrowserFilesEndpoint()
-    return new FileTransferManager({
-      endpoint: async target => target.kind === "local" ? local : createBrowserFileEndpoint(central, target),
+    const local = createLocal()
+    let closing: Promise<void> | undefined
+    const endpoint: FileEndpoint = { call: local.call.bind(local), close: () => closing ??= local.close() }
+    const manager = new FileTransferManager({
+      endpoint: async target => target.kind === "local" ? endpoint : createBrowserFileEndpoint(central, target),
       chooseLocalDirectory: () => local.choose(),
     })
+    return {
+      manager,
+      // A chooser can grant native access before the first list/transfer has
+      // registered this endpoint with the manager. The page still owns it.
+      close: async () => { await Promise.all([manager.close(), endpoint.close()]) },
+    }
   }
   const publish = (transfers: FileTransfer[]) => { for (const listener of listeners) listener(transfers) }
-  let manager = create()
-  let unpublish = manager.onChanged(publish)
+  let current = create()
+  let unpublish = current.manager.onChanged(publish)
   const closing = new Set<Promise<void>>()
   const reset = () => {
-    const previous = manager
-    unpublish(); manager = create(); unpublish = manager.onChanged(publish)
+    const previous = current
+    unpublish(); current = create(); unpublish = current.manager.onChanged(publish)
     const pending = previous.close().catch(error => console.error("File transfer cleanup failed", error)).finally(() => { closing.delete(pending) })
     closing.add(pending)
     publish([])
@@ -320,24 +334,25 @@ export function createBrowserFiles(central: CentralApi): FilesApi & { close(): P
   const unsubscribe = central.onEvent(event => {
     if (event.type === "accountChanged") reset()
   })
-  const close = async () => {
+  let closed: Promise<void> | undefined
+  const close = () => closed ??= (async () => {
     unsubscribe(); unpublish(); window.removeEventListener("pagehide", pagehide)
-    await Promise.all([manager.close(), ...closing]); listeners.clear()
-  }
+    await Promise.all([current.close(), ...closing]); listeners.clear()
+  })()
   // Back/forward-cache pages can return with the same JS objects. Cancel access
   // while frozen, but leave the wrapper usable after the page is restored.
   const pagehide = (event: PageTransitionEvent) => { if (event.persisted) reset(); else void close() }
   window.addEventListener("pagehide", pagehide)
   return {
-    list: (target, path) => manager.list(target, path),
-    chooseLocalDirectory: () => manager.chooseLocalDirectory(),
-    enqueue: request => manager.enqueue(request),
-    transfers: () => manager.transfers(),
-    cancel: id => manager.cancel(id), retry: (id, conflict) => manager.retry(id, conflict),
-    resolveResource: request => manager.resolveResource(request),
-    readResource: (request, options) => manager.readResource(request, options),
-    saveResource: request => manager.saveResource(request),
-    uploadAttachment: (request, options) => manager.uploadAttachment(request, options),
+    list: (target, path) => current.manager.list(target, path),
+    chooseLocalDirectory: () => current.manager.chooseLocalDirectory(),
+    enqueue: request => current.manager.enqueue(request),
+    transfers: () => current.manager.transfers(),
+    cancel: id => current.manager.cancel(id), retry: (id, conflict) => current.manager.retry(id, conflict),
+    resolveResource: request => current.manager.resolveResource(request),
+    readResource: (request, options) => current.manager.readResource(request, options),
+    saveResource: request => current.manager.saveResource(request),
+    uploadAttachment: (request, options) => current.manager.uploadAttachment(request, options),
     onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     close,
   }

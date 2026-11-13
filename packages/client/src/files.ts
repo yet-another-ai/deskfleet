@@ -37,7 +37,7 @@ export interface FileAttachmentUploadOptions { onProgress?: (progress: FileReadR
 
 export interface FilesApi {
   list(target: FileTarget, path?: string): Promise<FileListing>
-  /** A browser grants access to a local directory; desktop opens a native directory chooser. */
+  /** Grants a browser directory handle or opens the host's native directory chooser. */
   chooseLocalDirectory(): Promise<FileListing | null>
   enqueue(request: FileTransferRequest): Promise<string>
   transfers(): Promise<FileTransfer[]>

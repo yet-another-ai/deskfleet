@@ -14,9 +14,11 @@ import {
   type NetworkDiagnosticsApi,
 } from "@deskfleet/client/network-diagnostics"
 import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outline-audio"
+import { createBrowserFiles } from "@deskfleet/client/browser-files"
+import { CapacitorFilesEndpoint, type FilesBridgePlugin } from "./files.ts"
 import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "./speech.ts"
 
-export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin {
+export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   getInstallSource?(): Promise<{ installerPackageName: string | null }>
   openExternal(options: { url: string }): Promise<void>
@@ -56,6 +58,10 @@ export type OutlineAudioBridgePlugin = Pick<
 >
 
 export const DeskFleetBridge = registerPlugin<DeskFleetBridgeCapacitorPlugin>("DeskFleetBridge")
+
+export function createCapacitorFilesApi(central: CentralApi, plugin: FilesBridgePlugin = DeskFleetBridge) {
+  return createBrowserFiles(central, () => new CapacitorFilesEndpoint(plugin))
+}
 
 export function createCapacitorSpeechApi(plugin: SpeechBridgePlugin = DeskFleetBridge) {
   return speechApi(plugin)

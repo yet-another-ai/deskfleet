@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Surface
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -22,6 +23,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
+import java.util.UUID
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -29,6 +31,40 @@ import java.lang.ref.WeakReference
 )
 class DeskFleetBridge : Plugin() {
     private var speechInput: SpeechInput? = null
+    private var nativeFiles: NativeFilesBridge? = null
+
+    private fun files(): NativeFilesBridge = nativeFiles ?: NativeFilesBridge(context).also { nativeFiles = it }
+
+    @PluginMethod
+    fun filesOpen(call: PluginCall) = files().open(call)
+
+    @PluginMethod
+    fun filesCall(call: PluginCall) = files().call(call)
+
+    @PluginMethod
+    fun filesClose(call: PluginCall) = files().close(call)
+
+    @PluginMethod
+    fun filesChooseDirectory(call: PluginCall) {
+        val currentActivity = activity ?: return call.reject("Activity unavailable")
+        files().choose(
+            call,
+            dispatch = { task -> currentActivity.runOnUiThread { task() } },
+            launch = { intent, receive ->
+                // Capacitor shares lastPluginCallId across activity callbacks. A separate
+                // registry key binds even a late result to this exact folder request.
+                val launcher = currentActivity.activityResultRegistry.register(
+                    "deskfleet-files-${UUID.randomUUID()}",
+                    ActivityResultContracts.StartActivityForResult(),
+                    { result -> receive(result) },
+                )
+                try { launcher.launch(intent) }
+                catch (error: Exception) { launcher.unregister(); throw error }
+                val unregister: () -> Unit = { currentActivity.runOnUiThread { launcher.unregister() } }
+                unregister
+            },
+        )
+    }
 
     private fun speech(): SpeechInput = speechInput ?: SpeechInput(context) {
         notifyListeners("speechEvent", it)
@@ -221,6 +257,7 @@ class DeskFleetBridge : Plugin() {
 
     override fun handleOnDestroy() {
         Handler(Looper.getMainLooper()).post { speechInput?.dispose() }
+        nativeFiles?.dispose()
         stopSession()
         OutlineAudioCaptureService.stop(context)
         super.handleOnDestroy()
