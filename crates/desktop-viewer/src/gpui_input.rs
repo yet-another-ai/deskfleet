@@ -4,7 +4,7 @@
 use deskfleet_input::InputEvent;
 use gpui::{
     Bounds, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels,
-    Point, ScrollWheelEvent, px,
+    Point, ScrollEvent, px,
 };
 
 #[derive(Default)]
@@ -105,7 +105,7 @@ impl Input {
 
     pub(crate) fn scroll(
         &mut self,
-        event: &ScrollWheelEvent,
+        event: &ScrollEvent,
         video: Bounds<Pixels>,
     ) -> Vec<InputEvent> {
         if !self.enabled || normalized_point(event.position, video, false).is_none() {
@@ -296,7 +296,7 @@ mod tests {
         let mut input = active();
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Pixels(point(px(2.), px(-12.))),
                     ..Default::default()
@@ -310,7 +310,7 @@ mod tests {
         );
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Lines(point(1., -2.)),
                     ..Default::default()
@@ -325,7 +325,7 @@ mod tests {
         input.set_reverse_scroll(true);
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Pixels(point(px(2.), px(-12.))),
                     ..Default::default()
@@ -339,7 +339,7 @@ mod tests {
         );
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Lines(point(1., -2.)),
                     ..Default::default()

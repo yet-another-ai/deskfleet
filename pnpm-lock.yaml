@@ -166,27 +166,27 @@ importers:
   apps/web:
     dependencies:
       '@capacitor/android':
-        specifier: 8.6.0
-        version: 8.6.0(@capacitor/core@8.6.0)
+        specifier: 8.6.2
+        version: 8.6.2(@capacitor/core@8.6.2)
       '@capacitor/app':
         specifier: ^8.1.2
-        version: 8.1.2(@capacitor/core@8.6.0)
+        version: 8.1.2(@capacitor/core@8.6.2)
       '@capacitor/core':
-        specifier: 8.6.0
-        version: 8.6.0
+        specifier: 8.6.2
+        version: 8.6.2
       '@capacitor/ios':
-        specifier: 8.6.0
-        version: 8.6.0(@capacitor/core@8.6.0)
+        specifier: 8.6.2
+        version: 8.6.2(@capacitor/core@8.6.2)
       '@capawesome/capacitor-app-update':
         specifier: 8.1.1
-        version: 8.1.1(@capacitor/core@8.6.0)
+        version: 8.1.1(@capacitor/core@8.6.2)
       '@deskfleet/capacitor-bridge':
         specifier: workspace:*
         version: link:../../packages/capacitor-bridge
     devDependencies:
       '@capacitor/cli':
-        specifier: 8.6.0
-        version: 8.6.0(supports-color@7.2.0)
+        specifier: 8.6.2
+        version: 8.6.2(supports-color@7.2.0)
       '@deskfleet/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -198,7 +198,7 @@ importers:
         version: 11.2.8(@typescript/typescript6@6.0.2)(supports-color@7.2.0)(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vue-i18n@11.4.18(vue@3.6.0-rc.14(@typescript/typescript6@6.0.2)))(vue@3.6.0-rc.14(@typescript/typescript6@6.0.2))
       '@proj-airi/cap-vite':
         specifier: 0.15.2
-        version: 0.15.2(@capacitor/cli@8.6.0(supports-color@7.2.0))(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+        version: 0.15.2(@capacitor/cli@8.6.2(supports-color@7.2.0))(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -297,11 +297,11 @@ importers:
   packages/capacitor-bridge:
     dependencies:
       '@capacitor/core':
-        specifier: 8.6.0
-        version: 8.6.0
+        specifier: 8.6.2
+        version: 8.6.2
       '@capawesome/capacitor-app-update':
         specifier: 8.1.1
-        version: 8.1.1(@capacitor/core@8.6.0)
+        version: 8.1.1(@capacitor/core@8.6.2)
       '@deskfleet/client':
         specifier: workspace:*
         version: link:../client
@@ -768,8 +768,8 @@ packages:
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
 
-  '@capacitor/android@8.6.0':
-    resolution: {integrity: sha512-6IJS0TCfV/F/8+324CCwYd3xL6r+TH0W7zzaxYzPz9IV3YWCNvsZDuCCPHUIBC5iASb9od827ddSJ6rz+9Pu1Q==}
+  '@capacitor/android@8.6.2':
+    resolution: {integrity: sha512-dWXnXmOVTtxU91n5h11MzoQ7PAMjyzU1qguw0mBJZiwSuhGvLKTG/IlsQ75H8qeE0a1acV2f573x15wYvyzuVA==}
     peerDependencies:
       '@capacitor/core': ^8.6.0
 
@@ -778,16 +778,16 @@ packages:
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
-  '@capacitor/cli@8.6.0':
-    resolution: {integrity: sha512-TyLo1v6AqK39inlB5Edm7eFc+dyk4r+Du5bbyD+cRm/u/3b+LkNIeyp5wwYp3ToO3rWiLs4T/PabXGADO0Rlxg==}
+  '@capacitor/cli@8.6.2':
+    resolution: {integrity: sha512-3HeNPX3cEWBSljJT0sJviZCxXRoToTLAufhUcIJh+JMj1xOhLFZpuj8oFRnJ0kNYAf7DIBHQDmilIXloK9+YYg==}
     engines: {node: '>=22.0.0'}
     hasBin: true
 
-  '@capacitor/core@8.6.0':
-    resolution: {integrity: sha512-9F2zzuGYTJu+wqmQSEmqnFBfGrhC/njjMCfmxbvg9mq8xJT4wNh5pxbMFZxvW/yDhYJWPEBFQxeqzfo1gKrvxg==}
+  '@capacitor/core@8.6.2':
+    resolution: {integrity: sha512-UEb9crRuqEAe2Iu2eGOEuQ8rLQxpwg7ZZIpl17UJoytEpnV1e4oXXW0K7yYS2NsCOGmJjyLeKjNlgG7tkAoX8g==}
 
-  '@capacitor/ios@8.6.0':
-    resolution: {integrity: sha512-Y2PE4zoBqMrSTWoVMJmX2byBznjn6egmATzoEUJiGVbVubkNpAvkF/tl0SBKDyP67ngyedTx1tQq5IGYIhby1A==}
+  '@capacitor/ios@8.6.2':
+    resolution: {integrity: sha512-YnVm0lRA1mQWK0SKd2bdJIOG+PXRRDDdndZ1+nGqeiob+QmHZmb4wWo5gVpWhoHO37pGi2qzH5w5WGvfKrs+Gg==}
     peerDependencies:
       '@capacitor/core': ^8.6.0
 
@@ -10492,15 +10492,15 @@ snapshots:
 
   '@braintree/sanitize-url@7.1.2': {}
 
-  '@capacitor/android@8.6.0(@capacitor/core@8.6.0)':
+  '@capacitor/android@8.6.2(@capacitor/core@8.6.2)':
     dependencies:
-      '@capacitor/core': 8.6.0
+      '@capacitor/core': 8.6.2
 
-  '@capacitor/app@8.1.2(@capacitor/core@8.6.0)':
+  '@capacitor/app@8.1.2(@capacitor/core@8.6.2)':
     dependencies:
-      '@capacitor/core': 8.6.0
+      '@capacitor/core': 8.6.2
 
-  '@capacitor/cli@8.6.0(supports-color@7.2.0)':
+  '@capacitor/cli@8.6.2(supports-color@7.2.0)':
     dependencies:
       '@ionic/cli-framework-output': 2.2.8(supports-color@7.2.0)
       '@ionic/utils-subprocess': 3.0.1(supports-color@7.2.0)
@@ -10523,17 +10523,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@capacitor/core@8.6.0':
+  '@capacitor/core@8.6.2':
     dependencies:
       tslib: 2.9.1
 
-  '@capacitor/ios@8.6.0(@capacitor/core@8.6.0)':
+  '@capacitor/ios@8.6.2(@capacitor/core@8.6.2)':
     dependencies:
-      '@capacitor/core': 8.6.0
+      '@capacitor/core': 8.6.2
 
-  '@capawesome/capacitor-app-update@8.1.1(@capacitor/core@8.6.0)':
+  '@capawesome/capacitor-app-update@8.1.1(@capacitor/core@8.6.2)':
     dependencies:
-      '@capacitor/core': 8.6.0
+      '@capacitor/core': 8.6.2
 
   '@chenglou/pretext@1.0.0': {}
 
@@ -15793,9 +15793,9 @@ snapshots:
 
   '@pmndrs/pointer-events@6.6.32': {}
 
-  '@proj-airi/cap-vite@0.15.2(@capacitor/cli@8.6.0(supports-color@7.2.0))(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
+  '@proj-airi/cap-vite@0.15.2(@capacitor/cli@8.6.2(supports-color@7.2.0))(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
-      '@capacitor/cli': 8.6.0(supports-color@7.2.0)
+      '@capacitor/cli': 8.6.2(supports-color@7.2.0)
       '@moeru/std': 0.1.0-beta.17
       cac: 7.1.0
       tinyexec: 1.3.1

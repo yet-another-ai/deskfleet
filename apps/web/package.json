@@ -11,15 +11,15 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@capacitor/android": "8.6.0",
+    "@capacitor/android": "8.6.2",
     "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "8.6.0",
-    "@capacitor/ios": "8.6.0",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2",
     "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/capacitor-bridge": "workspace:*"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.0",
+    "@capacitor/cli": "8.6.2",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.8",
