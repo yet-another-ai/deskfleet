@@ -7,8 +7,8 @@ use deskfleet_input::InputEvent;
 use gpui::{
     AppContext, Bounds, Context, DispatchPhase, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, KeyUpEvent, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Subscription, Window,
-    WindowBounds, WindowOptions, canvas, div, point, px, size,
+    ParentElement, Pixels, Point, Render, ScrollEvent, Styled, Subscription, Window, WindowBounds,
+    WindowOptions, canvas, div, point, px, size,
 };
 use serde_json::json;
 use tokio::sync::watch;
@@ -620,7 +620,7 @@ impl Viewer {
         self.send(events, window, cx);
     }
 
-    fn scroll(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn scroll(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.keyboard_focus.pointer_moved();
         if self.local_ui(event.position, window)
             || Chrome::for_window(window)
@@ -658,7 +658,7 @@ impl Viewer {
         mouse!(MouseDownEvent, mouse_down);
         mouse!(MouseMoveEvent, mouse_move);
         mouse!(MouseUpEvent, mouse_up);
-        mouse!(ScrollWheelEvent, scroll);
+        mouse!(ScrollEvent, scroll);
         mouse!(MouseExitEvent, mouse_exit);
     }
 }
