@@ -156,6 +156,7 @@ const meta = {
       const mentions = ref<ComposerMention[]>([...(args.mentions ?? [])])
       const context = ref(args.context ?? "directory")
       const baseBranch = ref(args.baseBranch ?? "main")
+      const cwd = ref<string | undefined>((args as { cwd?: string }).cwd)
       function selectMachine(machineId: string): void {
         const machine = sampleMachines.find(item => item.id === machineId)
         if (machine) location.value = { machine, workspace: machine.workspaces[0] }
@@ -174,7 +175,7 @@ const meta = {
         localMachineId: computed(() => sampleMachine.id),
         selectMachine,
       } as unknown as AccountSession)
-      return { args, location, draft, attachments, mentions, context, baseBranch, selectMachine, selectWorkspace }
+      return { args, location, draft, attachments, mentions, context, baseBranch, cwd, selectMachine, selectWorkspace }
     },
     template: `
       <SessionComposer
@@ -185,6 +186,7 @@ const meta = {
         v-model:mentions="mentions"
         v-model:context="context"
         v-model:base-branch="baseBranch"
+        v-model:cwd="cwd"
         @select-machine="selectMachine"
         @select-workspace="selectWorkspace"
       />
@@ -196,6 +198,29 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const NewSessionWithTargetBar: Story = {}
+
+/** Workspace directory Session showing the default working-directory control. */
+export const WorkingDirectoryWorkspaceDefault: Story = {
+  args: { context: "directory", modelValue: "Inspect the default workspace directory." },
+}
+
+/** Machine-scoped Session with Home as the inherited working directory. */
+export const WorkingDirectoryMachineHome: Story = {
+  args: {
+    location: { machine: sampleMachine },
+    context: "directory",
+    modelValue: "Start without a workspace.",
+  },
+}
+
+/** Explicit working directory chosen for this chat. */
+export const WorkingDirectoryCustom: Story = {
+  args: {
+    context: "directory",
+    cwd: "/workspace/deskfleet/packages/components",
+    modelValue: "Work in the chosen package directory.",
+  } as Story["args"],
+}
 
 export const PrepareDirectoryWithChanges: Story = {
   args: { context: "directory", modelValue: "Start the next task from the latest default branch." },

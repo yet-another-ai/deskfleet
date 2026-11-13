@@ -445,6 +445,39 @@ test("the new-session composer defaults to the working directory and remembers a
   window.localStorage.removeItem("deskfleet.session-context")
 })
 
+test("choosing a working directory on the new-session composer passes cwd through session create", async () => {
+  const home = {
+    path: "/home/agent",
+    parentPath: "/home",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [{ name: "project", path: "/home/agent/project", hidden: false }],
+  }
+  const project = {
+    path: "/home/agent/project",
+    parentPath: "/home/agent",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [],
+  }
+  vi.spyOn(platformClient.filesystem, "listDirectories")
+    .mockResolvedValueOnce(home)
+    .mockResolvedValueOnce(project)
+  expect(wrapper.find("[data-composer-cwd]").exists()).toBe(true)
+  await wrapper.get("[data-composer-cwd]").trigger("click")
+  await flushPromises()
+  await page().get('button[data-path="/home/agent/project"]').trigger("click")
+  await flushPromises()
+  await page().findAll("button").find(button => button.text() === "Select folder")!.trigger("click")
+  await flushPromises()
+  await wrapper.get("textarea").setValue("Work in the chosen folder")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({
+    workspaceId, context: "directory", cwd: "/home/agent/project", deferStartup: true,
+  })
+})
+
 test("the new-session composer lists local and remote branches, defaults to currentBranch, hides when New worktree is unchecked, and passes the chosen baseBranch for worktree sessions", async () => {
   wrapper.unmount()
   disposePinia(pinia)

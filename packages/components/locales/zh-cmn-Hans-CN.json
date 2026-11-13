@@ -747,6 +747,10 @@
       "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
       "directory": "直接在工作区目录中工作，包括未提交的更改"
     },
+    "workingDirectoryHome": "主目录",
+    "workingDirectoryHomeHint": "机器主目录",
+    "workingDirectoryChoice": "工作目录：{path}",
+    "workingDirectoryClear": "使用默认工作目录",
     "machine": "机器",
     "machineChoice": "机器：{machine}",
     "workspace": "工作区",

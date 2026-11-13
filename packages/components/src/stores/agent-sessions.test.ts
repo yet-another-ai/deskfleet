@@ -182,6 +182,22 @@ test.each([
   ])
 })
 
+test("session creation passes an explicit directory cwd and omits it for worktree or default", async () => {
+  const store = useAgentSessionsStore(); await store.open("30")
+  mock.call.mockResolvedValue(agentSnapshot())
+  await store.create(undefined, "Home chat", "directory", "codex", undefined, undefined, false, { cwd: "/home/agent/code" })
+  expect(mock.call.mock.calls.at(-1)?.[0]).toBe("_deskfleet/session/create")
+  expect(mock.call.mock.calls.at(-1)?.[1]).toMatchObject({ context: "directory", cwd: "/home/agent/code" })
+
+  await store.create("20", "Workspace chat", "directory", "codex", undefined, undefined, false, { deferStartup: true })
+  expect(mock.call.mock.calls.at(-1)?.[1]).toMatchObject({ workspaceId: "20", context: "directory", deferStartup: true })
+  expect(mock.call.mock.calls.at(-1)?.[1]).not.toHaveProperty("cwd")
+
+  await store.create("20", "Worktree chat", "worktree", "codex", "main", undefined, false, { cwd: "/ignored" })
+  expect(mock.call.mock.calls.at(-1)?.[1]).toMatchObject({ workspaceId: "20", context: "worktree", baseBranch: "main" })
+  expect(mock.call.mock.calls.at(-1)?.[1]).not.toHaveProperty("cwd")
+})
+
 test.each(["backlog", "steer"] as const)("acknowledged %s input records only delivery", async delivery => {
   const store = useAgentSessionsStore(); await store.open("30")
   mock.call.mockResolvedValueOnce(agentInput())

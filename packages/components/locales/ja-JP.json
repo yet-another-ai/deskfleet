@@ -579,6 +579,10 @@
     "contextHint": {
       "worktree": "各ディレクトリのコミット済み HEAD から独立した Git チェックアウトを作成", "directory": "未コミットの変更を含むワークスペースのディレクトリで作業"
     },
+    "workingDirectoryHome": "ホーム",
+    "workingDirectoryHomeHint": "マシンのホームディレクトリ",
+    "workingDirectoryChoice": "作業ディレクトリ: {path}",
+    "workingDirectoryClear": "デフォルトの作業ディレクトリを使う",
     "machine": "マシン", "machineChoice": "マシン: {machine}",
     "workspace": "ワークスペース", "workspaceChoice": "ワークスペース: {workspace}", "noWorkspace": "ワークスペースなし",
     "baseBranch": "ベースブランチ", "baseBranchChoice": "ベースブランチ: {branch}",

@@ -774,14 +774,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       throw reason
     }
   }
-  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string, baseRevisions?: AgentMethods["_deskfleet/session/create"]["params"]["baseRevisions"], enableYolo = draftYolo.value, options?: { deferStartup?: boolean }): Promise<AgentSnapshot> {
+  async function create(workspaceId: string | undefined, title: string, context: AgentSessionContext, provider: string, baseBranch?: string, baseRevisions?: AgentMethods["_deskfleet/session/create"]["params"]["baseRevisions"], enableYolo = draftYolo.value, options?: { deferStartup?: boolean; cwd?: string }): Promise<AgentSnapshot> {
     const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/create" && operation.workspaceId === workspaceId)
     const choices = draftConfiguration.value.provider === provider ? draftConfiguration.value : undefined
     const revisions = workspaceId && context === "worktree" && baseRevisions ? cloneFnJSON(baseRevisions) : undefined
     const branch = !revisions && workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
+    const cwd = context === "directory" && options?.cwd?.trim() ? options.cwd.trim() : undefined
     const params: Omit<AgentMethods["_deskfleet/session/create"]["params"], "operationId"> = {
-      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), ...(options?.deferStartup ? { deferStartup: true } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
+      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(cwd ? { cwd } : {}), ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), ...(options?.deferStartup ? { deferStartup: true } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
     }
     const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
       if (pending) {

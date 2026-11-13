@@ -100,6 +100,103 @@ const yoloLocation: SessionTarget = {
   session: { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory" },
 }
 
+test("new-session composer picks, cancels, clears, and defaults the working directory", async () => {
+  const home = {
+    path: "/home/agent",
+    parentPath: "/home",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [
+      { name: "code", path: "/home/agent/code", hidden: false },
+      { name: "hidden", path: "/home/agent/hidden", hidden: true },
+    ],
+  }
+  const code = {
+    path: "/home/agent/code",
+    parentPath: "/home/agent",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [],
+  }
+  const browse = vi.spyOn(platformClient.filesystem, "listDirectories")
+    .mockResolvedValueOnce(home)
+    .mockResolvedValueOnce(code)
+    .mockResolvedValueOnce(home)
+  pinia = createPinia()
+  const cwd = ref<string | undefined>()
+  const location: WorkspaceLocation = {
+    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+    workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo" }, { path: "/repo/apps" }], sessions: [], terminals: [] },
+  }
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: {
+      location,
+      showTarget: true,
+      context: "directory",
+      cwd: cwd.value,
+      "onUpdate:cwd": (value: string | undefined) => {
+        cwd.value = value
+        void wrapper.setProps({ cwd: value })
+      },
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true, SessionPreparation: true } },
+  })
+  const page = new DOMWrapper(document.body)
+  try {
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("repo")
+    expect(wrapper.find("[data-composer-cwd-clear]").exists()).toBe(false)
+
+    await wrapper.get("[data-composer-cwd]").trigger("click")
+    await flushPromises()
+    expect(browse).toHaveBeenCalled()
+    await page.get('button[data-path="/home/agent/code"]').trigger("click")
+    await flushPromises()
+    await page.findAll("button").find(button => button.text() === i18n.global.t("folderPicker.select"))!.trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBe("/home/agent/code")
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("code")
+    expect(wrapper.find("[data-composer-cwd-clear]").exists()).toBe(true)
+
+    await wrapper.get("[data-composer-cwd]").trigger("click")
+    await flushPromises()
+    await page.findAll("button").find(button => button.text() === i18n.global.t("catalog.cancel"))!.trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBe("/home/agent/code")
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+
+    await wrapper.get("[data-composer-cwd-clear]").trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBeUndefined()
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("repo")
+
+    await wrapper.setProps({ context: "worktree" })
+    await flushPromises()
+    expect(wrapper.find("[data-composer-cwd]").exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test("machine-scoped new chats offer Home as the default working directory", async () => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: {
+      location: { machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] } },
+      showTarget: true,
+      context: "directory",
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+  try {
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain(i18n.global.t("composer.workingDirectoryHome"))
+    expect(wrapper.get("[data-composer-cwd]").attributes("title")).toBe(i18n.global.t("composer.workingDirectoryHomeHint"))
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 test.each(["draft", "session"] as const)("YOLO in a %s requires confirmation to enable and disables immediately", async (scope) => {
   pinia = createPinia()
   const wrapper = mount(SessionComposer, {

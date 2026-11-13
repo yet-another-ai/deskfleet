@@ -594,6 +594,22 @@ test("directory sessions ignore worktree storage settings and never remove works
   assert.equal(await readFile(join(source, "keep.txt"), "utf8"), "workspace")
 })
 
+test("directory sessions can reorder or prepend an explicit primary working directory", async context => {
+  const directory = await fixture(context)
+  const first = join(directory, "first")
+  const second = join(directory, "second")
+  const custom = join(directory, "custom")
+  for (const path of [first, second, custom]) await mkdir(path)
+  const state = catalogFixture([{ path: first }, { path: second }])
+  const managed = new ManagedSessionWorktrees(state.catalog, join(directory, "daemon"))
+  const reordered = await managed.useDirectories(await state.catalog.createWorkspaceSession("1"), second)
+  assert.deepEqual(reordered.worktree.directories.map(item => item.path), [second, first])
+  const prepended = await managed.useDirectories(await state.catalog.createWorkspaceSession("1"), custom)
+  assert.deepEqual(prepended.worktree.directories.map(item => item.path), [custom, first, second])
+  await managed.destroy(reordered.id)
+  await managed.destroy(prepended.id)
+})
+
 test("separate revisions of the same Git repository receive separate session trees", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

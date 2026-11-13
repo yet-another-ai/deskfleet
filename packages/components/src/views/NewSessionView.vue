@@ -41,6 +41,7 @@ const attachments = computed({ get: () => agents.draftAttachments[draftKey.value
 const mentions = computed({ get: () => agents.draftMentions[draftKey.value] ?? [], set: value => { agents.draftMentions[draftKey.value] = value } })
 const baseBranch = ref<string>()
 const baseRevisions = ref<GitPreparationSnapshot["baseRevisions"]>()
+const workingDirectory = ref<string>()
 const submitting = ref(false)
 const error = shallowRef<unknown>()
 async function submit(): Promise<void> {
@@ -57,9 +58,10 @@ async function submit(): Promise<void> {
   error.value = null
   let preparingSessionId: string | undefined
   try {
+    const cwd = context === "directory" ? workingDirectory.value : undefined
     const snapshot = await agents.create(target.workspace?.id, sessionTitleFromDraft(text, currentAttachments), context, providers.selectedId,
       context === "worktree" && !baseRevisions.value ? baseBranch.value : undefined, context === "worktree" ? baseRevisions.value : undefined,
-      undefined, { deferStartup: true })
+      undefined, { deferStartup: true, ...(cwd ? { cwd } : {}) })
     const id = snapshot.session.id
     preparingSessionId = id
     agents.preparingDrafts[id] = true
@@ -127,5 +129,5 @@ async function submit(): Promise<void> {
     <ErrorNotice v-if="newSessionTarget?.machine.online && providers.error" :error="providers.error" class="w-full max-w-xl" />
     <p v-else-if="newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="text-ui-accent hover:underline">{{ t('providers.manage') }}</RouterLink></p>
   </div>
-  <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
+  <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" v-model:cwd="workingDirectory" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
 </template>
