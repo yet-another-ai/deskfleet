@@ -1220,6 +1220,7 @@
     "operationPending": "The operation result needs to be checked.",
     "checkResult": "Check result",
     "empty": "Send a message to start working.",
+    "scrollToBottom": "Scroll to bottom",
     "toolStatus": {
       "pending": "Pending",
       "in_progress": "Running",

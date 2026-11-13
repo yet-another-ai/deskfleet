@@ -888,6 +888,7 @@
     "disconnected": "接続が切れました。エージェントはマシン上で引き続き実行されています。", "reconnect": "再接続",
     "operationPending": "操作結果の確認が必要です。", "checkResult": "結果を確認",
     "empty": "メッセージを送信して作業を開始してください。",
+    "scrollToBottom": "一番下へスクロール",
     "toolStatus": {
       "pending": "待機中", "in_progress": "実行中",
       "completed": "完了", "failed": "失敗"

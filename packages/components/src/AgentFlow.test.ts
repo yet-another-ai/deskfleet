@@ -16,6 +16,7 @@ import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
 import type { ComposerMention } from "./services/composer-mentions.ts"
 import * as messageTransitions from "./services/message-sent-transition.ts"
+import * as springScroll from "./services/spring-scroll.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -972,6 +973,59 @@ test("switching away and back restores a manual reading position before synchron
   restored.resolve(structuredClone(snapshot))
   await flushPromises()
   expect(scroll).not.toHaveBeenCalled()
+})
+
+test("scroll-to-bottom appears when reading history and restores follow on click", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const session = wrapper.findComponent(SessionView)
+  const scroller = session.get<HTMLElement>("[data-session-scroll-viewport]")
+  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 1200, writable: true } })
+  await scroller.trigger("scroll")
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  scroller.element.scrollTop = 200
+  await scroller.trigger("scroll")
+  const button = session.get("[data-scroll-to-bottom]")
+  expect(button.attributes("aria-label")).toBe("Scroll to bottom")
+  expect(button.classes()).toContain("pointer-events-auto")
+  expect(button.element.parentElement?.classList.contains("pointer-events-auto")).toBe(false)
+
+  const springs: Array<{ resolve: (completed: boolean) => void; cancel: ReturnType<typeof vi.fn> }> = []
+  const spring = vi.spyOn(springScroll, "scrollSpring").mockImplementation(() => {
+    let resolveFinished!: (completed: boolean) => void
+    const finished = new Promise<boolean>(resolve => { resolveFinished = resolve })
+    const cancel = vi.fn()
+    springs.push({ resolve: resolveFinished, cancel })
+    return { finished, cancel }
+  })
+  const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {})
+  await button.trigger("click")
+  expect(spring).toHaveBeenCalledExactlyOnceWith(scroller.element, 1600)
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  scroller.element.scrollTop = 400
+  await scroller.trigger("scroll")
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  spring.mockClear()
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Followed update" } } })
+  await flushPromises()
+  await vi.waitFor(() => expect(spring).toHaveBeenCalledWith(scroller.element, 1600))
+  expect(scrollTo).not.toHaveBeenCalled()
+  expect(springs).toHaveLength(2)
+
+  // Retarget resolves the first handle as incomplete; follow must stay armed on the latest spring.
+  springs[0]!.resolve(false)
+  await flushPromises()
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  springs[1]!.resolve(true)
+  await flushPromises()
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After spring" } } })
+  await flushPromises()
+  await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 1600 }))
 })
 
 test("deferred Session startup opens immediately with bubble animation, renders startup status in the reply area, and clears cleanly if stopped", async () => {

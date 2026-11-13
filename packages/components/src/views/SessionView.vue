@@ -3,7 +3,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import { LoaderCircle, SquareTerminal } from "@lucide/vue"
+import { ArrowDown, LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
@@ -47,6 +47,7 @@ import { hasIncompleteAttachmentUploads } from "../services/composer-attachments
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
+import { scrollSpring, type SpringScroll } from "../services/spring-scroll.ts"
 
 const client = usePlatformClient()
 
@@ -167,12 +168,17 @@ const overlay = useTemplateRef<HTMLElement>("overlay")
 const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("conversation")
 const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
 const followBottom = ref(true)
+const showScrollToBottom = computed(() => !!snapshot.value && !view.value?.loading && !followBottom.value)
 const activeEntry = ref<string>()
 let locatedEntry: string | undefined
 let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
-onScopeDispose(() => { clearTimeout(entryHighlightTimer) })
-
 let restoringScroll = false
+let followingSpring: SpringScroll | undefined
+onScopeDispose(() => {
+  clearTimeout(entryHighlightTimer)
+  followingSpring?.cancel()
+  followingSpring = undefined
+})
 function saveReading(id: string): void {
   if (scroller.value && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
 }
@@ -180,11 +186,30 @@ onBeforeUnmount(() => saveReading(props.sessionId))
 const { arrivedState } = useScroll(scroller, {
   offset: { bottom: 100 },
   onScroll() {
-    if (restoringScroll) return
+    if (restoringScroll || followingSpring) return
     followBottom.value = arrivedState.bottom
     updateOutline()
   },
 })
+
+function followSpringToBottom(el: HTMLElement): void {
+  // Retargets keep the latest handle so the prior finished(false) is ignored and cancel stays current.
+  const spring = scrollSpring(el, el.scrollHeight)
+  followingSpring = spring
+  void spring.finished.then(completed => {
+    if (followingSpring !== spring) return
+    followingSpring = undefined
+    if (!completed) followBottom.value = arrivedState.bottom
+    updateOutline()
+  })
+}
+
+function scrollToBottom(): void {
+  followBottom.value = true
+  const el = scroller.value
+  if (!el) return
+  followSpringToBottom(el)
+}
 
 function updateOutline(): void {
   const el = scroller.value
@@ -210,6 +235,8 @@ function locateEntry(id: string): void {
 const faces = useSessionFaces(() => props.sessionId)
 watchImmediate(() => props.sessionId, (id, previous) => {
   if (previous) saveReading(previous)
+  followingSpring?.cancel()
+  followingSpring = undefined
   restoringScroll = true
   busy.value = false
   forkOpen.value = false
@@ -237,7 +264,10 @@ watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _
 })
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading, view.value?.syncing], () => {
-  if (!view.value?.loading && followBottom.value && !pendingLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+  if (!view.value?.loading && followBottom.value && !pendingLocate.value && scroller.value) {
+    if (followingSpring) followSpringToBottom(scroller.value)
+    else scroller.value.scrollTo({ top: scroller.value.scrollHeight })
+  }
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
 watch([focusedEntry, () => props.sessionId, () => view.value?.loading, () => view.value?.events.length], async ([entry, id, loading]) => {
@@ -356,6 +386,24 @@ async function checkOperation(operationId: string): Promise<void> {
       class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2"
       @select="locateEntry"
     />
+    <div
+      v-if="showScrollToBottom"
+      class="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+      :style="{ bottom: `${overlayHeight + 8}px` }"
+    >
+      <div class="relative mx-auto flex w-full max-w-3xl justify-end px-6">
+        <UiButton
+          type="button"
+          size="icon"
+          class="pointer-events-auto h-8 w-8 rounded-full border border-ui-border bg-ui-surface text-ui-text shadow-ui-popover"
+          :label="t('agent.scrollToBottom')"
+          data-scroll-to-bottom
+          @click="scrollToBottom"
+        >
+          <ArrowDown :size="16" :stroke-width="1.75" aria-hidden="true" />
+        </UiButton>
+      </div>
+    </div>
     <div v-if="location" ref="overlay" class="pointer-events-none absolute inset-x-0 bottom-0 z-10">
       <div class="pointer-events-auto relative mx-auto flex w-full max-w-3xl flex-col bg-ui-canvas">
         <div
