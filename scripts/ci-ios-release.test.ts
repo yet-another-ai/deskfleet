@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import test from "node:test"
 
-const workflow = (name: string) => readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), "utf8")
+const workflow = (name: string) => readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const job = (source: string, name: string) => source.split(`\n  ${name}:\n`)[1]?.split(/^  \w+:\n/m)[0] ?? ""
 const step = (source: string, name: string) => source.split(`      - name: ${name}\n`)[1]?.split(/^      - /m)[0] ?? ""
 const script = (source: string) => {
