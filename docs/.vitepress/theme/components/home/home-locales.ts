@@ -13,6 +13,8 @@ const enUS = {
     heroLead: "Connect your team's computers. Bring the agents you love. Follow the work, step in, and move it forward together.",
     heroPrimary: "Get DeskFleet",
     heroSecondary: "Explore the workflow",
+    heroDiscord: "Join Discord",
+    heroX: "Follow on X",
   },
   showcase: {
     label: "Explore DeskFleet",
@@ -102,6 +104,8 @@ const enUS = {
     guide: "Setup guide",
     allDownloads: "All downloads",
     repository: "Explore the source",
+    discord: "Join Discord",
+    x: "Follow on X",
   },
 }
 
@@ -113,6 +117,8 @@ const zhCmnHansCN: typeof enUS = {
     heroLead: "连接你和团队的电脑。使用熟悉的 Agent，随时查看进展、亲自介入，一起把事情做好。",
     heroPrimary: "开始使用 DeskFleet",
     heroSecondary: "探索工作方式",
+    heroDiscord: "加入 Discord",
+    heroX: "关注 X",
   },
   showcase: {
     label: "探索 DeskFleet",
@@ -202,6 +208,8 @@ const zhCmnHansCN: typeof enUS = {
     guide: "入门指南",
     allDownloads: "所有下载",
     repository: "查看完整源码",
+    discord: "加入 Discord",
+    x: "关注 X",
   },
 }
 
@@ -213,6 +221,8 @@ const jaJP: typeof enUS = {
     heroLead: "チームのコンピューターをつなぎ、使い慣れたエージェントで作業。進み具合を見守り、必要なときは手を貸して、一緒に仕事を進めましょう。",
     heroPrimary: "DeskFleet を始める",
     heroSecondary: "使い方を見る",
+    heroDiscord: "Discord に参加",
+    heroX: "X をフォロー",
   },
   showcase: {
     label: "DeskFleet を体験",
@@ -302,6 +312,8 @@ const jaJP: typeof enUS = {
     guide: "セットアップガイド",
     allDownloads: "すべてのダウンロード",
     repository: "ソースコードを見る",
+    discord: "Discord に参加",
+    x: "X をフォロー",
   },
 }
 

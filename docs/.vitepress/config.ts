@@ -3,6 +3,8 @@ import { defineConfig } from "vitepress"
 import UnoCSS from "unocss/vite"
 
 const repository = "https://github.com/yet-another-ai/deskfleet"
+const discord = "https://discord.gg/YmxPdN4HvD"
+const xAccount = "https://x.com/askdeskfleet"
 const siteUrl = "https://www.deskfleet.org"
 const description = "All your agents, working together. Step into their computers, collaborate with your team, and keep using the agents you love. Fully open source."
 
@@ -119,6 +121,6 @@ export default defineConfig({
         },
       },
     },
-    socialLinks: [{ icon: "github", link: repository }],
+    socialLinks: [{ icon: "discord", link: discord }, { icon: "x", link: xAccount }, { icon: "github", link: repository }],
   },
 })
