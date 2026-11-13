@@ -83,7 +83,7 @@ afterEach(async () => {
 test("the app targets a workspace and waits for Session metadata without exposing an internal main worktree", async () => {
   const pinia = createPinia()
   const wrapper = await mountApp("/", pinia)
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "web", "Codex"])
   expect(wrapper.get<HTMLButtonElement>('[aria-label="Send"]').element.disabled).toBe(true)
   expect(wrapper.get("aside").text()).not.toContain("Example team")
   expect(wrapper.get('button[aria-label="storefront"]').attributes("aria-expanded")).toBe("true")
@@ -161,7 +161,7 @@ test("workspace creation opens a dialog, requires paths, supports choosing the f
   expect(wrapper.find("[role=dialog]").exists()).toBe(false)
   expect(wrapper.get("main").text()).not.toContain("Main worktree")
   expect(wrapper.get("main").find('a[href*="/worktrees/"]').exists()).toBe(false)
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"].map((item, index) => index === 1 ? "notes" : item))
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "code", "Codex"])
   expect(wrapper.find(".deskfleet-windows").exists()).toBe(false)
 })
 
@@ -218,21 +218,21 @@ test("workspace New session chooses that workspace before opening the composer a
     const wrapper = await mountApp("/", createPinia(), false, { [accountSessionKey as symbol]: account })
     await wrapper.findAll('.workspace-row button[aria-label="New session"]')[1]!.trigger("click")
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe("new-session"))
-    expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "Codex"])
+    expect(chips(wrapper)).toEqual(["test-hostThis machine", "notes", "New worktree", "notes", "Codex"])
     await wrapper.get("[data-composer-workspace]").trigger("click")
     await flushPromises()
     const workspaceItems = wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')
     expect(workspaceItems.map(item => item.text())).toEqual(["storefront", "notes", "No workspace"])
     await workspaceItems.at(-1)!.trigger("click")
     await vi.waitFor(() => {
-      expect(chips(wrapper)).toEqual(["test-hostThis machine", "No workspace", "Codex"])
+      expect(chips(wrapper)).toEqual(["test-hostThis machine", "No workspace", "Home", "Codex"])
       expect(wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')).toHaveLength(0)
     })
     await wrapper.get("[data-composer-workspace]").trigger("click")
     await flushPromises()
     await wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]').find(item => item.text() === "storefront")!.trigger("click")
     await vi.waitFor(() => {
-      expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "Codex"])
+      expect(chips(wrapper)).toEqual(["test-hostThis machine", "storefront", "New worktree", "web", "Codex"])
       expect(wrapper.findAll('[aria-label="Workspace"] [role="menuitemradio"]')).toHaveLength(0)
     })
     await vi.waitFor(async () => {
@@ -266,7 +266,7 @@ test("workspace deletion requires confirmation and clears its composer target", 
   expect(removeSession).toHaveBeenCalledWith(sessionId)
   expect(remove).toHaveBeenCalledWith(workspaceId)
   // Without a Workspace, the composer still targets the machine for chat.
-  expect(chips(wrapper)).toEqual(["test-hostThis machine", "Codex"])
+  expect(chips(wrapper)).toEqual(["test-hostThis machine", "Home", "Codex"])
 })
 
 test("the workspace sidebar opens a terminal in its default directory and retains machine ownership", async () => {
@@ -377,9 +377,10 @@ test("the internal main worktree has no directly accessible page", async () => {
 test("the localized composer and local footer do not expose an internal main worktree", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   const wrapper = await mountApp()
-  expect(chips(wrapper)).toHaveLength(4)
+  expect(chips(wrapper)).toHaveLength(5)
   expect(chips(wrapper)).toContain("新建工作树")
   expect(chips(wrapper)).toContain("storefront")
+  expect(chips(wrapper)).toContain("web")
   expect(wrapper.text()).not.toContain("主工作树")
   expect(wrapper.get("footer").text()).toBe("本本地")
 })
