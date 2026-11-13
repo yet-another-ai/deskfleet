@@ -126,6 +126,32 @@ test("does not automatically connect a different display if the overview display
   expect(TestPeer.instances).toHaveLength(0)
 })
 
+test.each([[65537, 65539], [3, 4]])("display labels use list numbers while selection keeps capture IDs %s and %s", async (firstId, secondId) => {
+  mock.api.capabilities.mockResolvedValue({
+    displays: [firstId, secondId].map(id => ({ id, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264"] })),
+    audio: false,
+  })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 1 · 1920 × 1080")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 1920 × 1080")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: secondId }))
+})
+
+test("display options show the host's number and monitor name", async () => {
+  mock.api.capabilities.mockResolvedValue({ displays: [{
+    id: 65537, displayNumber: 2, name: "Dell U2723QE (DP-1)",
+    width: 3840, height: 2160, refreshRateHz: 60, codecs: ["h264"],
+  }], audio: false })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 2 · Dell U2723QE (DP-1) · 3840 × 2160")
+})
+
 test("opens the selected display in an independent native window without a browser peer", async () => {
   await enableNativeViewer()
   const openNative = vi.fn(async () => {})

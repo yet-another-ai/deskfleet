@@ -20,6 +20,7 @@ import { useFleetStore } from "../stores/fleet.ts"
 import { useAppearanceStore } from "../stores/appearance.ts"
 import { errorPresentation } from "../services/error-presentation.ts"
 import { useFeatureGate } from "../services/analytics.ts"
+import { displayOptionLabel } from "../components/desktop/display-label.ts"
 
 const platformClient = usePlatformClient()
 const nativePresenterEnabled = useFeatureGate("native_presentor")
@@ -340,7 +341,7 @@ const errorDescription = computed(() => {
           </ErrorNotice>
           <label v-if="capabilities?.displays.length" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
             {{ t("desktop.display") }}
-            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map(display => ({ value: String(display.id), label: t('desktop.displayOption', { id: display.id, width: display.width, height: display.height }) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
+            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map((display, index) => ({ value: String(display.id), label: displayOptionLabel(display, index, t) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
           </label>
           <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">

@@ -10,6 +10,8 @@ publish.workspace = true
 futures-util = "0.3"
 reis = { version = "0.7.1", features = ["tokio"] }
 rustix = { version = "1", features = ["time"] }
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -928,7 +928,7 @@
     "noDisplays": "未找到显示器。",
     "displayCount": "{count} 个显示器",
     "display": "显示器 {id}",
-    "openDisplay": "打开 {machine} 的显示器 {display}",
+    "openDisplay": "打开 {machine} 的{display}",
     "connecting": "正在连接预览…"
   },
   "desktop": {
@@ -947,7 +947,8 @@
     "settingsFailed": "无法应用桌面设置",
     "moveControls": "移动控制栏",
     "display": "显示器",
-    "displayOption": "显示器 {id} · {width} × {height}",
+    "displayName": "显示器 {number}",
+    "displayOption": "{display} · {width} × {height}",
     "codecStatus": "视频编码：{codec}",
     "audio": "系统音频",
     "control": "鼠标和键盘控制",
@@ -1611,15 +1612,15 @@
       "shared": "屏幕共享与鼠标键盘控制使用同一次授权。批准后，依次完成这两个步骤即可。",
       "requesting": "正在等待桌面授权…",
       "retry": "重试访问",
-      "changeScreensLater": "如果稍后发现缺少屏幕，可以前往「设置 → 权限 → 屏幕共享」重新选择。",
+      "changeScreensLater": "如果稍后发现缺少屏幕，可以前往「设置 → 权限 → 屏幕共享」重新授权。",
       "screenCapture": {
         "title": "屏幕共享",
         "description": "允许 DeskFleet 在远程桌面会话中共享这台电脑的屏幕。",
-        "instructions": "在系统授权对话框中，逐个选中所有需要远程访问的显示器，然后允许共享。",
-        "selection": "远程端只会显示已选中的屏幕。重新连接时，DeskFleet 会继续使用这次选择。",
-        "choose": "选择共享屏幕",
-        "reselect": "重新选择共享屏幕",
-        "reselectHint": "重新选择会停止当前的远程画面和控制，并打开新的屏幕选择对话框。",
+        "instructions": "在系统对话框中允许屏幕共享。如果出现屏幕选择，请选中所有需要远程访问的显示器。",
+        "selection": "远程端只会显示已授权的屏幕。重新连接时，DeskFleet 会继续使用这次授权。",
+        "choose": "授权屏幕共享",
+        "reselect": "重新授权",
+        "reselectHint": "重新授权会停止当前的远程画面和控制，并重新请求桌面授权。如果出现屏幕选择，请同时选中缺少的显示器。",
         "skip": "授权之前，无法使用远程屏幕共享。你可以先跳过此步骤，稍后再开启权限。"
       },
       "accessibility": {

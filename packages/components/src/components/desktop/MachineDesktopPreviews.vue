@@ -60,7 +60,7 @@ onBeforeUnmount(() => { ++generation; remote.dispose() })
       <span v-else-if="capabilities?.displays.length" class="shrink-0 whitespace-nowrap text-xs text-ui-text-faint">{{ t('desktopOverview.displayCount', { count: capabilities.displays.length }) }}</span>
     </header>
     <div v-if="capabilities?.displays.length" :class="tiled ? 'contents' : 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))] gap-4'">
-      <DesktopPreviewCard v-for="display in capabilities.displays" :key="`${revision}:${display.id}`" :api="remote.api.desktop" :display="display" :machine-name="machine.name" :show-machine-name="tiled" :active="active && machine.online" @open="$emit('open', display.id)" />
+      <DesktopPreviewCard v-for="(display, index) in capabilities.displays" :key="`${revision}:${display.id}`" :api="remote.api.desktop" :display="display" :display-index="index" :machine-name="machine.name" :show-machine-name="tiled" :active="active && machine.online" @open="$emit('open', display.id)" />
     </div>
     <div v-else class="flex min-h-28 items-center gap-3 rounded-xl border border-ui-border bg-ui-surface px-5 py-4 text-sm text-ui-text-muted">
       <LoaderCircle v-if="loading" :size="18" class="shrink-0 animate-spin" aria-hidden="true" />

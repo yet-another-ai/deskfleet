@@ -16,7 +16,10 @@ export interface IceCandidate {
 }
 
 export interface DesktopDisplay {
+  /** Opaque capture/input identifier; never a user-facing monitor number. */
   id: number
+  name?: string
+  displayNumber?: number
   width: number
   height: number
   refreshRateHz: number

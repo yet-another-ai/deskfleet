@@ -624,14 +624,14 @@ test("a replacement waits for a late grant and fences its unused start", async (
 test.each([["linux", true], ["darwin", true], ["win32", true], ["win32", false]] as const)("UI metadata uses target %s and secure-attention capability %s", async (platform, secureAttention) => {
   const f = fixture()
   f.central.machines.mockResolvedValue([{ id: "machine", name: "Workstation", capabilities: { platform } }])
-  f.central.rpc.mockResolvedValue({ displays: [{ id: 7, width: 1920, height: 1080, codecs: ["h264"] }], audio: true, secureAttention } as never)
+  f.central.rpc.mockResolvedValue({ displays: [{ id: 7, name: "Dell U2723QE (DP-1)", displayNumber: 2, width: 1920, height: 1080, codecs: ["h264"] }], audio: true, secureAttention } as never)
   const session = f.open({ locale: "zh-CN", theme: "light" })
   await session.opened
   await connect(f)
   await session.ready
   expect(f.child.send).toHaveBeenCalledWith({ type: "ui", state: expect.objectContaining({
     status: "connected", title: "Workstation", codec: "h264", control: true, inputReady: true,
-    displays: [{ id: 7, width: 1920, height: 1080 }], displayId: 7,
+    displays: [{ id: 7, name: "Dell U2723QE (DP-1)", displayNumber: 2, width: 1920, height: 1080 }], displayId: 7,
     secureAttention: platform === "win32" && secureAttention, locale: "zh-CN", theme: "light",
   }) })
   expect(f.central.offerPeer).toHaveBeenCalledWith("peer", "offer-1", { codec: "h264", audio: false })

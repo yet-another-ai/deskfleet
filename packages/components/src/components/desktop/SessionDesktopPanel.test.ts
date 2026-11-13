@@ -36,7 +36,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function setup(machines = [desktopMachine("local"), desktopMachine("remote"), desktopMachine("offline", false)], active = true) {
+async function setup(machines = [desktopMachine("local"), desktopMachine("remote"), desktopMachine("offline", false)], active = true, displays?: DesktopCapabilities["displays"]) {
   const fake = fakeCentral({ machines, enrollment: { configured: true, connected: true, revoked: false, serverUrl: "https://fleet.example", machineId: "local", teamId: "team-1", identity: { originId: "origin-local", machineId: "1" }, machineName: "local" } })
   const account = createAccountSession(fake.central)
   await flushPromises()
@@ -44,6 +44,7 @@ async function setup(machines = [desktopMachine("local"), desktopMachine("remote
   const adapters: Array<ReturnType<typeof mockDesktopApi> & { machineId: string; dispose: ReturnType<typeof vi.fn> }> = []
   vi.mocked(remoteMachineClient).mockImplementation((_host, _central, machine) => {
     const mock = { ...mockDesktopApi(), machineId: machine.id, dispose: vi.fn() }
+    if (displays) mock.api.capabilities.mockResolvedValue({ displays, audio: false })
     adapters.push(mock)
     return { api: { ...platformClient, desktop: mock.api }, dispose: mock.dispose, updateMachine: vi.fn(), refreshCatalog: vi.fn(), setLocal: vi.fn() }
   })
@@ -82,6 +83,21 @@ test("defaults to every display on the Session's machine with bounded, silent, r
   expect(remote.api.start.mock.calls.map(([options]) => options)).toEqual([1, 2].map(displayId => ({ sessionId: expect.any(String), displayId, fps: 1, bitrateBps: 150_000, maxWidth: 320, maxHeight: 180 })))
   await wrapper!.get('[data-preview-display="2"] button').trigger("click")
   expect(current.open).toHaveBeenCalledWith("remote", { name: "machine-control", params: { machineId: "remote" }, query: { tab: "desktop", display: "2", connect: "1" } })
+})
+
+test("previews show monitor metadata and list numbers while routing with opaque IDs", async () => {
+  const current = await setup([desktopMachine("remote")], true, [
+    { id: 65537, displayNumber: 1, name: "Dell U2723QE (DP-1)", width: 3840, height: 2160, refreshRateHz: 60, codecs: ["h264"] },
+    { id: 65539, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264"] },
+  ])
+  const first = wrapper!.get('[data-preview-display="65537"]')
+  const second = wrapper!.get('[data-preview-display="65539"]')
+  expect(first.text()).toContain("Display 1 · Dell U2723QE (DP-1)")
+  expect(first.get("button").attributes("aria-label")).toBe("Open remote, Display 1 · Dell U2723QE (DP-1)")
+  expect(second.text()).toContain("Display 2")
+  expect(second.text()).not.toContain("65539")
+  await second.get("button").trigger("click")
+  expect(current.open).toHaveBeenCalledWith("remote", { name: "machine-control", params: { machineId: "remote" }, query: { tab: "desktop", display: "65539", connect: "1" } })
 })
 
 test("switching to all machines adds previews and switching back releases only the other machines", async () => {

@@ -6,6 +6,7 @@
 
 mod identity;
 mod input;
+mod monitor_metadata;
 mod portal;
 mod runtime;
 mod token;
@@ -69,7 +70,9 @@ pub struct PermissionSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Source {
     pub id: u32,
-    pub name: String,
+    /// User-visible number, independent of the replaceable capture identifier.
+    pub display_number: u32,
+    pub name: Option<String>,
     /// Compositor logical dimensions; negotiate actual image pixels with PipeWire.
     pub width: u32,
     pub height: u32,
@@ -77,6 +80,7 @@ pub struct Source {
     /// ScreenCast v6's stable PipeWire object serial; absent with older portals.
     pub pipewire_serial: Option<u64>,
     pub mapping_id: Option<String>,
+    pub(crate) position: Option<(i32, i32)>,
 }
 
 /// Checks the current graphical user's portal without opening a permission dialog.

@@ -155,6 +155,8 @@ export declare function desktopSupported(): Promise<boolean>
 
 export interface DisplayInfo {
   id: number
+  name?: string
+  displayNumber?: number
   width: number
   height: number
   refreshRateHz: number

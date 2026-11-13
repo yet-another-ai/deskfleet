@@ -6,10 +6,12 @@ import { useI18n } from "vue-i18n"
 import type { DesktopDisplay, DesktopMediaApi } from "@deskfleet/client/desktop-media"
 import { commonPreviewCodecs, useDesktopConnection } from "../../composables/useDesktopConnection.ts"
 import UiButton from "../common/UiButton.vue"
+import { displayLabel } from "./display-label.ts"
 
-const props = defineProps<{ api: DesktopMediaApi; display: DesktopDisplay; machineName: string; active: boolean; showMachineName?: boolean }>()
+const props = defineProps<{ api: DesktopMediaApi; display: DesktopDisplay; displayIndex: number; machineName: string; active: boolean; showMachineName?: boolean }>()
 defineEmits<{ open: [] }>()
 const { t } = useI18n()
+const displayTitle = computed(() => displayLabel(props.display, props.displayIndex, t))
 const connection = useDesktopConnection(props.api)
 const { state, stream, failure } = connection
 const video = useTemplateRef<HTMLVideoElement>("video")
@@ -46,7 +48,7 @@ watch([video, stream], ([element, media]) => {
 
 <template>
   <article class="max-w-full overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :class="showMachineName ? 'w-full' : 'w-80'" :data-preview-display="display.id">
-    <button type="button" class="group relative block aspect-video w-full cursor-pointer overflow-hidden bg-ui-desktop text-white focus-visible:outline-2 focus-visible:outline-ui-accent" :aria-label="t('desktopOverview.openDisplay', { machine: machineName, display: display.id })" @click="$emit('open')">
+    <button type="button" class="group relative block aspect-video w-full cursor-pointer overflow-hidden bg-ui-desktop text-white focus-visible:outline-2 focus-visible:outline-ui-accent" :aria-label="t('desktopOverview.openDisplay', { machine: machineName, display: displayTitle })" @click="$emit('open')">
       <video ref="video" v-show="stream && state === 'connected'" class="absolute inset-0 h-full w-full object-contain" :aria-label="t('desktop.video')" width="320" height="180" muted autoplay playsinline />
       <span v-if="!stream || state !== 'connected'" class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-white/60">
         <LoaderCircle v-if="connecting" :size="22" class="animate-spin" aria-hidden="true" />
@@ -58,7 +60,7 @@ watch([video, stream], ([element, media]) => {
     <footer class="flex items-center justify-between gap-2 px-3 py-2.5">
       <span class="min-w-0 text-[13px] font-medium">
         <span v-if="showMachineName" class="block truncate">{{ machineName }}</span>
-        <span class="block truncate" :class="showMachineName && 'text-xs font-normal text-ui-text-muted'">{{ t('desktopOverview.display', { id: display.id }) }}</span>
+        <span class="block truncate" :class="showMachineName && 'text-xs font-normal text-ui-text-muted'" :title="displayTitle">{{ displayTitle }}</span>
       </span>
       <span v-if="status" class="flex shrink-0 items-center gap-1.5 text-xs text-ui-text-muted"><span class="ui-status-dot text-ui-text-faint" aria-hidden="true" />{{ status }}</span>
     </footer>

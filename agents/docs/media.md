@@ -57,6 +57,33 @@ depacketization, and decoding belong to the receiving media pipeline; the
 transport does not discard compressed reference pictures to follow presentation
 backpressure.
 
+## Display names and numbers
+
+Capture IDs are opaque routing identifiers, not user-facing monitor numbers.
+Windows uses an `HMONITOR` handle and Wayland allocates a new ID for every
+authorized source generation. Preview cards and both viewers use separate
+optional `name` and `displayNumber` metadata, falling back to the current list's
+one-based ordinal. Selecting a label still sends the original capture ID.
+
+Windows joins active DisplayConfig targets to the GDI source name and exposes
+the friendly monitor name with its GDI device label. Its display number comes
+from `DISPLAYn`, with an enumeration fallback. These numbers identify Windows
+outputs and are not a promise of permanent physical identity. X11 forwards its
+existing RandR output name.
+
+Wayland keeps monitor presentation metadata in its native authorization owner.
+KDE output names and unambiguously matched GNOME DisplayConfig monitors can
+retain their user-facing numbers across authorization resets. The local number
+mapping (`wayland-monitor-numbers.json` in the daemon directory) is independent
+of the restore token and never authorizes capture or input. GNOME matching uses
+the logical layout, scale, and transform; ambiguous
+or mirrored matches keep a generic label. Metadata lookup or storage failures
+must not discard an otherwise valid Portal grant. A missing identity falls back
+to a current-list number. The generic Portal stream ID is scoped to restoration
+and is not treated as a permanent physical monitor identifier.
+GNOME identities include the connector and hardware tuple; KDE identities use
+the output name. Changing ports or docks may therefore assign a new number.
+
 ## Capture and encoding
 
 | Platform | Capture | Video encoder | System audio |
@@ -256,8 +283,8 @@ access, remote unlock, clipboard, and system audio are outside this backend.
 
 After discovery and local IPC are ready, both standalone and Electron-hosted
 daemons request screen and input access together. This runs asynchronously so a
-pending dialog does not block other daemon work. The user selects the monitors
-and grants access locally. `deskfleet-wayland` owns one shared portal session on
+pending dialog does not block other daemon work. The user grants access locally
+and selects monitors when the desktop provides a picker. `deskfleet-wayland` owns one shared portal session on
 a dedicated runtime thread. Viewer disconnect and controller release keep that
 session alive; daemon shutdown cancels pending consent and closes it.
 
@@ -273,10 +300,11 @@ unattended restoration depends on the portal retaining the grant: a revoked or
 expired token may require local consent again. A saved token alone never reports
 granted permission. Permission refresh only reads current state.
 
-Welcome and Settings → Permissions explain that remote viewers can see only the
-monitors selected in the system dialog, and that each wanted monitor must be
-selected before sharing. Their Wayland screen-sharing action remains available
-after access is granted so the user can choose shared screens again. This
+Welcome and Settings → Permissions explain that each wanted monitor must be
+selected when the system dialog provides a picker. GNOME can offer monitor
+selection, while KDE's combined remote-desktop flow can authorize all outputs
+without a separate picker. Their Wayland screen-sharing action remains available
+after access is granted so the user can authorize screen sharing again. This
 explicit local action closes the current screen/input session, discards its
 saved restore token, and opens fresh combined consent with multiple monitor
 selection enabled. Existing viewers and controllers lose the old source IDs;

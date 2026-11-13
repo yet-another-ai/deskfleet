@@ -731,12 +731,14 @@ mod tests {
             },
             vec![Source {
                 id: 4,
-                name: "Display 1".into(),
+                display_number: 1,
+                name: None,
                 width: 1920,
                 height: 1080,
                 node_id: 7,
                 pipewire_serial: None,
                 mapping_id: None,
+                position: None,
             }],
         );
         assert!(retained.snapshot.screen_capture);
@@ -779,12 +781,14 @@ mod tests {
     fn permission_publication_tracks_input_loss_without_repeating() {
         let source = Source {
             id: 4,
-            name: "Display 1".into(),
+            display_number: 1,
+            name: None,
             width: 1920,
             height: 1080,
             node_id: 7,
             pipewire_serial: None,
             mapping_id: None,
+            position: None,
         };
         let granted = Observed {
             snapshot: PermissionSnapshot {

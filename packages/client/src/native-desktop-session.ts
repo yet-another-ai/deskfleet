@@ -8,7 +8,7 @@ export interface ViewerUiState {
   status: "connecting" | "starting" | "connected" | "disconnected" | "error"
   title: string
   codec?: VideoCodec
-  displays: { id: number; width: number; height: number }[]
+  displays: { id: number; name?: string; displayNumber?: number; width: number; height: number }[]
   displayId: number
   control: boolean
   inputReady: boolean
