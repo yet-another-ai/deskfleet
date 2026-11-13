@@ -234,3 +234,52 @@ test("silent upgrade stops every entry of the CLI and handles failure + retry", 
   assert.deepEqual(updates.snapshot(), {})
   assert.deepEqual(peerUpdates.snapshot(), {})
 })
+
+for (const manuallyUpdated of [false, true]) {
+  test(manuallyUpdated ? "reconciles a manual update before upgrade without stopping sessions or reinstalling"
+    : "silent Windows Codex upgrade disables installer prompts and verifies the installed version", async context => {
+    const directory = await mkdtemp(join(tmpdir(), "df-codex-upgrade-"))
+    context.after(() => rm(directory, { recursive: true, force: true }))
+    const providers = new AgentProviders(directory)
+    await providers.init()
+    const codex = await providers.create({ template: "codex", name: "Codex", inheritShellEnvironment: false, env: { CODEX_NON_INTERACTIVE: "0" } })
+    let version = "0.160.0"
+    let installs = 0
+    let peerChecks = 0
+    const stopped: string[][] = []
+    const updates = new ProviderUpdates(providers, {
+      stopProviders: async ids => { stopped.push(ids) },
+      peers: () => [{ stopTemplate: async () => {}, check: async () => { peerChecks++ } }],
+      fetch: (async () => Response.json({ version: "0.167.2" })) as typeof fetch,
+      probe: {
+        platform: "win32", arch: "x64", env: { PATH: "C:\\tools" }, home: "C:\\Users\\dev",
+        executable: async path => ["C:\\tools\\codex.exe", "C:\\tools\\pwsh.exe"].includes(path),
+        run: async (command, args, env) => {
+          if (command === "C:\\tools\\pwsh.exe") {
+            assert.ok(args.includes("-NonInteractive"))
+            assert.equal(env.CODEX_NON_INTERACTIVE, "1")
+            installs++
+            version = "0.167.2"
+            return ok("Installed")
+          }
+          assert.equal(env.CODEX_NON_INTERACTIVE, "0")
+          return ok(args[0] === "--version" ? `codex-cli ${version}` : "Logged in")
+        },
+      },
+    })
+    context.after(() => updates.close())
+    await updates.check()
+    assert.equal(updates.snapshot().codex?.status, "available")
+    if (manuallyUpdated) version = "0.168.0"
+
+    const finished = deferred()
+    updates.onChanged(() => { if (updates.snapshot().codex?.status !== "updating") finished.resolve() })
+    await updates.upgrade("codex")
+    await finished.promise
+
+    assert.deepEqual(updates.snapshot(), {})
+    assert.deepEqual(stopped, manuallyUpdated ? [] : [[codex.id]])
+    assert.equal(installs, manuallyUpdated ? 0 : 1)
+    assert.equal(peerChecks, 1)
+  })
+}

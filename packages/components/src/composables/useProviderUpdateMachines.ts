@@ -7,9 +7,13 @@ import { useAccountSession } from "./useAccountSession.ts"
 
 export interface MachineProviderUpdates {
   id: string
+  teamId: string
   name: string
   online: boolean
   updates: ProviderTemplateUpdates
+  dismissed: Partial<Record<AgentProviderTemplateId, string>>
+  /** Hides this target version without changing the machine's update or installer state. */
+  dismiss(template: AgentProviderTemplateId, latestVersion: string): void
   /** Resolves once the machine has accepted the update and its state shows it. */
   upgrade(template: AgentProviderTemplateId): Promise<void>
 }
@@ -19,6 +23,7 @@ interface TeamUpdatesState {
   appliedSeq: Map<string, number>
   nextSeq: number
   updates: Ref<Record<string, ProviderTemplateUpdates>>
+  dismissed: Ref<Record<string, Partial<Record<AgentProviderTemplateId, string>>>>
 }
 
 const teamStates = new WeakMap<AccountSession, TeamUpdatesState>()
@@ -34,11 +39,12 @@ function teamMachines(account: AccountSession): ComputedRef<MachineProviderUpdat
   const user = withCentralRequestTrigger(account.central, "user")
   let cached = teamStates.get(account)
   if (!cached) {
-    cached = { appliedSeq: new Map(), nextSeq: 0, updates: ref({}) }
+    cached = { appliedSeq: new Map(), nextSeq: 0, updates: ref({}), dismissed: ref({}) }
     teamStates.set(account, cached)
   }
   const state = cached
-  const { appliedSeq, updates } = state
+  const { appliedSeq, updates, dismissed } = state
+  const dismissalScope = (teamId: string, machineId: string) => JSON.stringify([teamId, machineId])
 
   async function load(teamId: string, machineId: string): Promise<void> {
     if (!appliedSeq.has(machineId)) appliedSeq.set(machineId, 0)
@@ -77,9 +83,15 @@ function teamMachines(account: AccountSession): ComputedRef<MachineProviderUpdat
 
   return computed(() => account.machines.value.map(machine => ({
     id: machine.id,
+    teamId: machine.teamId,
     name: machine.name,
     online: machine.online,
     updates: updates.value[machine.id] ?? {},
+    dismissed: dismissed.value[dismissalScope(machine.teamId, machine.id)] ?? {},
+    dismiss(template, latestVersion) {
+      const scope = dismissalScope(machine.teamId, machine.id)
+      dismissed.value = { ...dismissed.value, [scope]: { ...dismissed.value[scope], [template]: latestVersion } }
+    },
     async upgrade(template) {
       const seq = ++state.nextSeq
       await user.rpc(machine.teamId, machine.id, "providerUpgrade", { template })
