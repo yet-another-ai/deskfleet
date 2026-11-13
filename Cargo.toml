@@ -33,7 +33,7 @@ portable-pty = { path = "vendor/portable-pty" }
 nix = { git = "https://github.com/nix-rust/nix", rev = "f9ba3ed0698255d93240b07ecbf39ecb05a8a5cd" }
 
 [workspace.package]
-version = "0.15.1"
+version = "0.16.0"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
