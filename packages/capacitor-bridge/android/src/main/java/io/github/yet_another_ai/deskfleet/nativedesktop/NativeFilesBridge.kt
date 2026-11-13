@@ -57,17 +57,27 @@ internal class NativeFilesBridge(private val context: Context) {
     }
 
     @Synchronized
-    fun choose(call: PluginCall, launch: (Intent, (ActivityResult) -> Unit) -> (() -> Unit)) {
+    fun choose(
+        call: PluginCall,
+        dispatch: (() -> Unit) -> Unit,
+        launch: (Intent, (ActivityResult) -> Unit) -> (() -> Unit),
+    ) {
         try {
             val id = id(call)
             val session = sessions[id] ?: throw NativeFileException("Unknown file endpoint")
             session.endpoint.checkOpen()
             val pending = picker.begin(id, call)
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
-            }
-            try { pending.unregister = launch(intent) { result -> selected(pending, result) } }
-            catch (error: Exception) { picker.finish(pending); throw error }
+            picker.schedule(
+                pending,
+                dispatch = { task -> dispatch { synchronized(this) { task() } } },
+                launch = {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                    }
+                    launch(intent) { result -> selected(pending, result) }
+                },
+                failed = { error -> reject(call, error) },
+            )
         } catch (error: Exception) { reject(call, error) }
     }
 

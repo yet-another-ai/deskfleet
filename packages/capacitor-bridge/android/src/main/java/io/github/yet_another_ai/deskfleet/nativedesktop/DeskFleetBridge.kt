@@ -47,8 +47,10 @@ class DeskFleetBridge : Plugin() {
     @PluginMethod
     fun filesChooseDirectory(call: PluginCall) {
         val currentActivity = activity ?: return call.reject("Activity unavailable")
-        currentActivity.runOnUiThread {
-            files().choose(call) { intent, receive ->
+        files().choose(
+            call,
+            dispatch = { task -> currentActivity.runOnUiThread { task() } },
+            launch = { intent, receive ->
                 // Capacitor shares lastPluginCallId across activity callbacks. A separate
                 // registry key binds even a late result to this exact folder request.
                 val launcher = currentActivity.activityResultRegistry.register(
@@ -60,8 +62,8 @@ class DeskFleetBridge : Plugin() {
                 catch (error: Exception) { launcher.unregister(); throw error }
                 val unregister: () -> Unit = { currentActivity.runOnUiThread { launcher.unregister() } }
                 unregister
-            }
-        }
+            },
+        )
     }
 
     private fun speech(): SpeechInput = speechInput ?: SpeechInput(context) {
