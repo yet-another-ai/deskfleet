@@ -180,16 +180,19 @@ fn gnome_monitors((_, physical, logical, properties): CurrentState) -> Vec<Monit
         .collect()
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 fn logical_extent(pixels: i32, scale: f64) -> Option<u32> {
     if pixels <= 0 || !scale.is_finite() || scale <= 0.0 {
         return None;
     }
-    let extent = f64::from(pixels) / scale;
-    let rounded = extent.round();
-    // Decline a non-integral result instead of guessing the compositor's rounding.
-    (rounded >= 1.0 && rounded <= f64::from(u32::MAX) && (extent - rounded).abs() < 0.01)
-        .then_some(rounded as u32)
+    // Match Mutter's scale_logical_monitor_width: its scale is a float exposed
+    // as a D-Bus double, and it rounds mode dimensions with roundf(pixels / scale).
+    let rounded = (pixels as f32 / scale as f32).round();
+    (rounded >= 1.0 && f64::from(rounded) <= f64::from(i32::MAX)).then_some(rounded as u32)
 }
 
 fn identify(desktop: &Desktop, sources: &mut [Source]) -> Vec<Option<String>> {

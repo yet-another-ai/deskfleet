@@ -108,6 +108,44 @@ fn gnome_names_match_logical_geometry_with_rotation_and_scaling() {
 }
 
 #[test]
+fn gnome_fractional_scale_rounding_preserves_names_and_numbers_after_reauthorization() {
+    let monitors = gnome_monitors((
+        0,
+        vec![
+            physical("DP-1", (2560, 1440)),
+            physical("DP-2", (2560, 1440)),
+        ],
+        vec![
+            logical("DP-1", (0, 0), 1.5, 0),
+            logical("DP-2", (1707, 0), 1.5, 1),
+        ],
+        Properties::new(),
+    ));
+    assert_eq!(monitors[0].size, (1707, 960));
+    assert_eq!(monitors[1].size, (960, 1707));
+    let desktop = Desktop::Gnome(monitors);
+    let mut numbers = Numbers::new();
+    let mut before = [
+        source(1, Some((0, 0)), (1707, 960), Some("old-uuid-1")),
+        source(2, Some((1707, 0)), (960, 1707), Some("old-uuid-2")),
+    ];
+    let identities = identify(&desktop, &mut before);
+    assign_numbers(&mut before, &identities, &mut numbers);
+    assert_eq!((before[0].display_number, before[1].display_number), (1, 2));
+
+    let mut after = [
+        source(3, Some((1707, 0)), (960, 1707), Some("new-uuid-2")),
+        source(4, Some((0, 0)), (1707, 960), Some("new-uuid-1")),
+    ];
+    let identities = identify(&desktop, &mut after);
+    assign_numbers(&mut after, &identities, &mut numbers);
+    assert_eq!(after[0].name.as_deref(), Some("Dell U2723QE (DP-2)"));
+    assert_eq!(after[1].name.as_deref(), Some("Dell U2723QE (DP-1)"));
+    assert_eq!((after[0].display_number, after[1].display_number), (2, 1));
+    assert_eq!((after[0].id, after[1].id), (3, 4));
+}
+
+#[test]
 fn gnome_physical_layout_ignores_scale_and_ambiguous_or_mirrored_outputs_have_no_name() {
     let monitors = gnome_monitors((
         0,
