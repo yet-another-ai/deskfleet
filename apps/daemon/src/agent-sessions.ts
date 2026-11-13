@@ -899,7 +899,7 @@ export class AgentSessions {
           toResolve.push({ id: previous.id, optionId: option.optionId })
         }
       }
-      const events: AgentEvent[] = [this.journal.event(sessionId, "session", session, { commandId: command.id })]
+      const events = [this.journal.event(sessionId, "session", session, { commandId: command.id })]
       for (const permission of permissions) events.push(this.journal.event(sessionId, "permission", permission, { commandId: command.id }))
       await this.journal.commit(current, { session, ...(permissions.length ? { permissions } : {}), events })
       return await this.journal.read(sessionId)
