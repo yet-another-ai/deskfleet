@@ -1,7 +1,8 @@
+import { EventEmitter } from "node:events"
 import { join, resolve } from "node:path"
 import type { Session, WebContents } from "electron"
 import { expect, test, vi } from "vitest"
-import { handleRendererProtocolRequest, installRendererPermissions, resolveRendererResourcePath } from "./renderer-protocol.ts"
+import { handleRendererProtocolRequest, installRendererDownloadGuard, installRendererPermissions, resolveRendererResourcePath } from "./renderer-protocol.ts"
 
 // Outside Electron the package resolves to its executable path, not the API.
 vi.mock("electron", () => ({ net: {}, protocol: {}, session: {} }))
@@ -44,6 +45,30 @@ test("only GET requests for bundled files are served", async () => {
   const missing = vi.fn(async () => new Response(null, { status: 500 }))
   const index = { method: "GET", url: "deskfleet-app://bundle/index.html" }
   expect((await handleRendererProtocolRequest(index, missing)).status).toBe(404)
+})
+
+test.each([
+  "deskfleet-app://bundle/index.html#/settings/appearance",
+  "deskfleet-app://bundle/index.html#/sessions/one",
+  "http://127.0.0.1:5173/#/settings/appearance",
+])("internal document downloads are canceled before the save dialog: %s", url => {
+  const target = new EventEmitter()
+  installRendererDownloadGuard(target as unknown as Session)
+  const event = { preventDefault: vi.fn() }
+  target.emit("will-download", event, { getURL: () => url })
+  expect(event.preventDefault).toHaveBeenCalledOnce()
+})
+
+test.each([
+  "blob:deskfleet-app://bundle/terminal-export",
+  "blob:http://127.0.0.1:5173/file-export",
+  "https://example.com/index.html",
+])("file exports and external downloads remain available: %s", url => {
+  const target = new EventEmitter()
+  installRendererDownloadGuard(target as unknown as Session)
+  const event = { preventDefault: vi.fn() }
+  target.emit("will-download", event, { getURL: () => url })
+  expect(event.preventDefault).not.toHaveBeenCalled()
 })
 
 function permissionHandlers() {

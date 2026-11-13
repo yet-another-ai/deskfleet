@@ -31,6 +31,7 @@ import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 import { configureApplicationDisplay } from "./application-display.ts"
 import {
+  installRendererDownloadGuard,
   installRendererPermissions,
   installRendererProtocol,
   registerRendererScheme,
@@ -59,6 +60,7 @@ function start(): void {
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
+    installRendererDownloadGuard()
     installDesktopMediaIpc()
     const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
