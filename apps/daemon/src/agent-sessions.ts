@@ -720,9 +720,9 @@ export class AgentSessions {
       command.sessionId = child.id
       command.workspaceId = child.workspaceId
       try {
-        // Directory forks keep the source Session's primary path so a custom
-        // cwd chosen at create is not replaced by the Workspace default / home.
-        const cwd = context === "directory"
+        // Only directory→directory forks keep the source primary path. Forking
+        // from a worktree Session must not attach the owned checkout as cwd.
+        const cwd = context === "directory" && source.session.context === "directory"
           ? (await this.#catalog.sessionWorktree(sourceId))?.directories[0]?.path
           : undefined
         await this.#catalog.provisionSession(child.id, child.workspaceId, context, undefined, undefined, cwd)

@@ -193,6 +193,27 @@ test("directory fork keeps the source Session's custom working directory", async
   assert.equal((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, custom)
 })
 
+test("directory fork from a worktree Session uses Workspace directories, not the owned checkout", async t => {
+  const f = await setup(t)
+  const worktreeSource = await f.sessions.handle("_deskfleet/session/create", {
+    workspaceId: (await f.catalog.native.snapshot()).workspaces[0]!.id,
+    operationId: randomUUID(), provider: "codex", context: "worktree", title: "Owned checkout",
+  }, f.actor) as AgentSnapshot
+  assert.equal(worktreeSource.session.lifecycle, "ready")
+  const owned = (await f.catalog.sessionWorktree(worktreeSource.session.id))!.directories[0]!.path
+  assert.notEqual(owned, f.repository)
+
+  await f.sessions.handle("_deskfleet/input/submit", {
+    sessionId: worktreeSource.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Fork into directory" }], delivery: "backlog",
+  }, f.actor)
+  await until(() => f.sessions.journal.read(worktreeSource.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: child } = await forkAfterTurn(operationId =>
+    f.sessions.handle("_deskfleet/session/fork", { sessionId: worktreeSource.session.id, operationId, context: "directory" }, f.actor) as Promise<AgentSnapshot>)
+  assert.equal(child.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, f.repository)
+  assert.notEqual((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, owned)
+})
+
 test("failed fork remains failed and cannot turn into a blank conversation after retry or restart", async t => {
   const f = await setup(t)
   f.provider.failFork = true
