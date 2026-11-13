@@ -110,17 +110,25 @@ impl DesktopStreamPool {
         let (ready, started) = oneshot::channel();
         let source = Arc::clone(&membership.source);
         let delivery = tokio::spawn(async move {
-            let result = deliver(&source, &viewer, packets, shutdown_rx, ready, audio).await;
+            let mut media = deliver(&source, &viewer, packets, shutdown_rx, ready, audio).await;
             let last = membership.detach();
-            let result = if last {
-                source.finished().await.and(result)
+            let completion = if last {
+                source.finished().await.map(Some)
             } else {
-                result
+                Ok(source.completion.borrow().clone())
             };
-            if let Err(error) = &result {
+            let cleanup = match completion {
+                Ok(Some(outcome)) => {
+                    media = media.and(outcome.media.map_err(MediaError::Shared));
+                    outcome.cleanup.map_err(MediaError::Shared)
+                }
+                Ok(None) => Ok(()),
+                Err(error) => Err(error),
+            };
+            if let Err(error) = media.as_ref().and(cleanup.as_ref()) {
                 viewer.report_error(error);
             }
-            result
+            DeliveryOutcome { media, cleanup }
         });
         let stream = DesktopStream {
             shutdown: Some(shutdown),
@@ -129,7 +137,9 @@ impl DesktopStreamPool {
         match started.await {
             Ok(()) => Ok(stream),
             Err(_) => {
-                stream.stop().await?;
+                let outcome = stream.finish().await?;
+                outcome.media?;
+                outcome.cleanup?;
                 Err(MediaError::Startup)
             }
         }
@@ -140,7 +150,12 @@ impl DesktopStreamPool {
 /// other viewers remain; the final stop waits for capture/encoder cleanup.
 pub struct DesktopStream {
     shutdown: Option<watch::Sender<()>>,
-    delivery: Option<JoinHandle<Result<(), MediaError>>>,
+    delivery: Option<JoinHandle<DeliveryOutcome>>,
+}
+
+struct DeliveryOutcome {
+    media: Result<(), MediaError>,
+    cleanup: Result<(), MediaError>,
 }
 
 impl DesktopStream {
@@ -153,11 +168,19 @@ impl DesktopStream {
         self.delivery.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
-    pub async fn stop(mut self) -> Result<(), MediaError> {
+    /// Wait for release without replaying a media failure already reported to the peer.
+    pub async fn stop(self) -> Result<(), MediaError> {
+        self.finish().await?.cleanup
+    }
+
+    async fn finish(mut self) -> Result<DeliveryOutcome, MediaError> {
         self.shutdown.take();
         match self.delivery.take() {
-            Some(delivery) => delivery.await?,
-            None => Ok(()),
+            Some(delivery) => Ok(delivery.await?),
+            None => Ok(DeliveryOutcome {
+                media: Ok(()),
+                cleanup: Ok(()),
+            }),
         }
     }
 }
@@ -243,7 +266,20 @@ struct Members {
     viewers: HashMap<u64, Member>,
 }
 
-type Completion = Option<Result<(), Arc<MediaError>>>;
+#[derive(Clone)]
+struct CaptureOutcome {
+    media: Result<(), Arc<MediaError>>,
+    cleanup: Result<(), Arc<MediaError>>,
+}
+
+impl CaptureOutcome {
+    fn new(media: Result<(), MediaError>, cleanup: Result<(), MediaError>) -> Self {
+        Self {
+            media: media.map_err(Arc::new),
+            cleanup: cleanup.map_err(Arc::new),
+        }
+    }
+}
 
 struct Source {
     members: Mutex<Members>,
@@ -253,7 +289,7 @@ struct Source {
     encoder_started: AtomicBool,
     packets: broadcast::Sender<Packet>,
     video_ready: watch::Sender<bool>,
-    completion: watch::Sender<Completion>,
+    completion: watch::Sender<Option<CaptureOutcome>>,
 }
 
 impl Source {
@@ -310,16 +346,21 @@ impl Source {
         let capture = tokio::task::spawn_blocking(move || source.capture(open));
         let source = Arc::clone(self);
         tokio::spawn(async move {
-            let result = capture
-                .await
-                .map_err(MediaError::from)
-                .and_then(|result| result);
+            let outcome = match capture.await {
+                Ok(outcome) => outcome,
+                Err(error) => {
+                    // A panicked worker has not confirmed hardware cleanup.
+                    let error = Arc::new(MediaError::from(error));
+                    CaptureOutcome {
+                        media: Err(Arc::clone(&error)),
+                        cleanup: Err(error),
+                    }
+                }
+            };
             // Fence attachment before publishing completion, including worker panics.
             let _members = source.members.lock().unwrap_or_else(|e| e.into_inner());
             source.stopping.store(true, Ordering::Relaxed);
-            source
-                .completion
-                .send_replace(Some(result.map_err(Arc::new)));
+            source.completion.send_replace(Some(outcome));
         });
     }
 
@@ -346,8 +387,11 @@ impl Source {
     fn capture(
         &self,
         open: impl FnOnce() -> Result<Box<dyn Capture>, MediaError>,
-    ) -> Result<(), MediaError> {
-        let mut capture = open()?;
+    ) -> CaptureOutcome {
+        let mut capture = match open() {
+            Ok(capture) => capture,
+            Err(error) => return CaptureOutcome::new(Err(error), Ok(())),
+        };
         let deadline = Instant::now() + FIRST_FRAME_TIMEOUT;
         let mut has_video = false;
         let result = (|| {
@@ -381,7 +425,7 @@ impl Source {
             }
             Ok(())
         })();
-        result.and(capture.stop())
+        CaptureOutcome::new(result, capture.stop())
     }
 
     fn startup_error(&self) -> MediaError {
@@ -392,17 +436,21 @@ impl Source {
         }
     }
 
-    async fn finished(&self) -> Result<(), MediaError> {
+    async fn finished(&self) -> Result<CaptureOutcome, MediaError> {
         let mut completion = self.completion.subscribe();
         loop {
             if let Some(result) = completion.borrow_and_update().clone() {
-                return result.map_err(MediaError::Shared);
+                return Ok(result);
             }
             completion
                 .changed()
                 .await
                 .map_err(|_| MediaError::Startup)?;
         }
+    }
+
+    async fn media_finished(&self) -> Result<(), MediaError> {
+        self.finished().await?.media.map_err(MediaError::Shared)
     }
 }
 
@@ -454,7 +502,7 @@ async fn deliver(
     tokio::select! {
         biased;
         _ = shutdown.changed() => return Ok(()),
-        result = source.finished() => return result,
+        result = source.media_finished() => return result,
         result = video_ready.wait_for(|ready| *ready) => {
             result.map_err(|_| MediaError::Startup)?;
         }
@@ -467,7 +515,7 @@ async fn deliver(
         let packet = tokio::select! {
             biased;
             _ = shutdown.changed() => return Ok(()),
-            result = source.finished() => return result,
+            result = source.media_finished() => return result,
             _ = &mut deadline, if ready.is_some() => {
                 return Err(MediaError::Transport("desktop media delivery did not start within 30 seconds".to_owned()));
             }
@@ -498,7 +546,7 @@ async fn deliver(
         tokio::select! {
             biased;
             _ = shutdown.changed() => return Ok(()),
-            result = source.finished() => return result,
+            result = source.media_finished() => return result,
             _ = &mut deadline, if ready.is_some() => {
                 return Err(MediaError::Transport("desktop media delivery did not start within 30 seconds".to_owned()));
             }

@@ -32,6 +32,13 @@ function machineCredentialRejected(error: unknown): boolean {
     && error.response?.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
 }
 
+function reportPeerCleanupFailure(error: unknown): void {
+  // AuthorizedPeers aggregates resource shutdown failures. Malformed messages
+  // must still reject the control handler and close the control socket.
+  if (!(error instanceof AggregateError)) throw error
+  console.error("Central peer cleanup failed", error)
+}
+
 /** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
 export class CentralClient {
   readonly #path: string
@@ -297,8 +304,8 @@ export class CentralClient {
     if (message.type === "ping") { this.#send({ type: "pong" }); return }
     if (message.type === "pong") return
     if (!this.#connected) throw new Error("Authenticate the control channel first")
-    if (message.type === "peerRevoked") { await this.#peers.close(message.peerId); return }
-    if (message.type === "reconcilePeers") { await this.#peers.reconcile(message.peers); return }
+    if (message.type === "peerRevoked") { await this.#peers.close(message.peerId).catch(reportPeerCleanupFailure); return }
+    if (message.type === "reconcilePeers") { await this.#peers.reconcile(message.peers).catch(reportPeerCleanupFailure); return }
     if (message.type !== "request") throw new Error("Unknown control message")
     // Each RPC is independent: a slow Provider operation must not block revocation.
     try {
