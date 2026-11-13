@@ -1,72 +1,157 @@
-import { execFileSync } from "node:child_process"
-import { mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { spawn } from "node:child_process"
+import { closeSync, existsSync, mkdirSync, openSync, rmSync, writeFileSync, writeSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { readReleaseVersions } from "./release-version.ts"
 
-const repoRoot = resolve(import.meta.dirname, "..")
-const iosAppDir = join(repoRoot, "apps/web/ios/App")
-const signed = process.argv.includes("--signed") || process.env.DESKFLEET_IOS_SIGNED === "1"
-const version = process.env.IOS_VERSION_NAME?.trim() || readReleaseVersions(repoRoot).root
-const [core = "0.0.0", suffix] = version.split("-", 2)
-const [major = 0, minor = 0, patch = 0] = core.split(".").map(n => Number.parseInt(n, 10) || 0)
-const pre = suffix === undefined
-  ? 999
-  : Math.min(998, Math.max(1, Number.parseInt(suffix.match(/(\d+)$/u)?.[1] ?? "1", 10) || 1))
-const buildNumber = process.env.IOS_BUILD_NUMBER?.trim() || String(major * 10_000_000 + minor * 100_000 + patch * 1_000 + pre)
+export interface IosRelease {
+  bundleId: "ai.yetanother.deskfleet"
+  version: string
+  buildNumber: string
+  ipa: "App.ipa"
+}
 
-const archivePath = join(iosAppDir, "App.xcarchive")
-const exportDir = join(iosAppDir, "output")
-const exportOptionsPath = join(iosAppDir, "ExportOptions.plist")
-rmSync(archivePath, { recursive: true, force: true })
-rmSync(exportDir, { recursive: true, force: true })
+interface IosSigning {
+  teamId: string
+  identity: string
+  appProfile: string
+  broadcastProfile: string
+}
 
-const authArgs = signed
-  ? [
-      "-allowProvisioningUpdates",
-      "-authenticationKeyPath",
-      process.env.APPLE_API_KEY_PATH!,
-      "-authenticationKeyID",
-      process.env.APPLE_API_KEY_ID!,
-      "-authenticationKeyIssuerID",
-      process.env.APPLE_API_ISSUER!,
-    ]
-  : []
-
-execFileSync(
-  "xcodebuild",
-  [
-    "-project",
-    "App.xcodeproj",
-    "-scheme",
-    "App",
-    "-destination",
-    "generic/platform=iOS",
-    "-configuration",
-    "Release",
-    "-archivePath",
-    archivePath,
-    `MARKETING_VERSION=${core}`,
-    `CURRENT_PROJECT_VERSION=${buildNumber}`,
-    ...(signed ? [`DEVELOPMENT_TEAM=${process.env.APPLE_TEAM_ID}`, ...authArgs] : ["CODE_SIGNING_ALLOWED=NO"]),
-    "archive",
-  ],
-  { cwd: iosAppDir, stdio: "inherit" },
-)
-
-if (signed) {
-  mkdirSync(exportDir, { recursive: true })
-  writeFileSync(
-    exportOptionsPath,
-    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n\t<key>method</key>\n\t<string>app-store-connect</string>\n\t<key>signingStyle</key>\n\t<string>automatic</string>\n\t<key>teamID</key>\n\t<string>${process.env.APPLE_TEAM_ID}</string>\n\t<key>uploadSymbols</key>\n\t<true/>\n</dict>\n</plist>\n`,
-  )
-  try {
-    execFileSync(
-      "xcodebuild",
-      ["-exportArchive", "-archivePath", archivePath, "-exportOptionsPlist", exportOptionsPath, "-exportPath", exportDir, ...authArgs],
-      { cwd: iosAppDir, stdio: "inherit" },
-    )
-  } finally {
-    rmSync(exportOptionsPath, { force: true })
-    rmSync(archivePath, { recursive: true, force: true })
+export function iosRelease(version: string, env: NodeJS.ProcessEnv): IosRelease {
+  const core = version.split("-", 1)[0]!
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(core)) {
+    throw new Error("iOS marketing version must be MAJOR.MINOR.PATCH")
   }
+  let buildNumber = env.IOS_BUILD_NUMBER?.trim()
+  if (!buildNumber) {
+    if (env.GITHUB_RUN_NUMBER || env.GITHUB_RUN_ATTEMPT) {
+      if (!/^[1-9]\d*$/u.test(env.GITHUB_RUN_NUMBER ?? "") || !/^[1-9]\d*$/u.test(env.GITHUB_RUN_ATTEMPT ?? "")) {
+        throw new Error("GITHUB_RUN_NUMBER and GITHUB_RUN_ATTEMPT must both be positive integers")
+      }
+      buildNumber = `${env.GITHUB_RUN_NUMBER}.${env.GITHUB_RUN_ATTEMPT}`
+    } else {
+      // Local smoke builds need no shared counter. Set IOS_BUILD_NUMBER when
+      // making another local distribution of the same marketing version.
+      buildNumber = "1"
+    }
+  }
+  if (!/^[1-9]\d*(?:\.(?:0|[1-9]\d*)){0,2}$/u.test(buildNumber)) {
+    throw new Error("IOS_BUILD_NUMBER must contain one to three non-negative integers, beginning with a positive integer")
+  }
+  return { bundleId: "ai.yetanother.deskfleet", version: core, buildNumber, ipa: "App.ipa" }
+}
+
+function signingConfiguration(env: NodeJS.ProcessEnv): IosSigning {
+  const required = (name: string): string => {
+    const value = env[name]?.trim()
+    if (!value) throw new Error(`Missing prepared iOS signing setting: ${name}`)
+    return value
+  }
+  return {
+    teamId: required("APPLE_TEAM_ID"),
+    identity: required("DESKFLEET_IOS_SIGNING_IDENTITY"),
+    appProfile: required("DESKFLEET_IOS_APP_PROFILE_UUID"),
+    broadcastProfile: required("DESKFLEET_IOS_BROADCAST_PROFILE_UUID"),
+  }
+}
+
+function exportOptions(signing: IosSigning): string {
+  const xml = (value: string): string => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>teamID</key><string>${xml(signing.teamId)}</string>
+  <key>signingCertificate</key><string>${xml(signing.identity)}</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>ai.yetanother.deskfleet</key><string>${xml(signing.appProfile)}</string>
+    <key>ai.yetanother.deskfleet.BroadcastUpload</key><string>${xml(signing.broadcastProfile)}</string>
+  </dict>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+  <key>uploadSymbols</key><true/>
+</dict>
+</plist>
+`
+}
+
+export async function runLoggedCommand(command: string, args: string[], cwd: string, logPath: string): Promise<void> {
+  const log = openSync(logPath, "w")
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
+      child.stdout.on("data", (chunk: Buffer) => { writeSync(log, chunk); process.stdout.write(chunk) })
+      child.stderr.on("data", (chunk: Buffer) => { writeSync(log, chunk); process.stderr.write(chunk) })
+      child.once("error", reject)
+      child.once("close", (code, signal) => {
+        if (code === 0) resolve()
+        else reject(new Error(`${command} ${args.includes("-exportArchive") ? "export" : "archive"} failed (${signal ?? code}); see ${logPath}`))
+      })
+    })
+  } finally {
+    closeSync(log)
+  }
+}
+
+export async function packageIosRelease(
+  repoRoot: string,
+  signed: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+  run: typeof runLoggedCommand = runLoggedCommand,
+): Promise<void> {
+  const release = iosRelease(env.IOS_VERSION_NAME?.trim() || readReleaseVersions(repoRoot).root, env)
+  const signing = signed ? signingConfiguration(env) : undefined
+  const iosAppDir = join(repoRoot, "apps/web/ios/App")
+  const archivePath = join(iosAppDir, "App.xcarchive")
+  const exportDir = join(iosAppDir, "output")
+  const exportOptionsPath = join(iosAppDir, "ExportOptions.plist")
+  const diagnosticsDir = join(iosAppDir, "diagnostics")
+  for (const directory of [archivePath, exportDir, diagnosticsDir]) rmSync(directory, { recursive: true, force: true })
+  mkdirSync(diagnosticsDir, { recursive: true })
+
+  await run("xcodebuild", [
+    "-project", "App.xcodeproj",
+    "-scheme", "App",
+    "-destination", "generic/platform=iOS",
+    "-configuration", "Release",
+    "-archivePath", archivePath,
+    "-resultBundlePath", join(diagnosticsDir, "archive.xcresult"),
+    `MARKETING_VERSION=${release.version}`,
+    `CURRENT_PROJECT_VERSION=${release.buildNumber}`,
+    ...(signing
+      ? [
+          `DEVELOPMENT_TEAM=${signing.teamId}`,
+          // Only the two application targets reference these settings. A global
+          // PROVISIONING_PROFILE_SPECIFIER would also reach SwiftPM libraries.
+          `DESKFLEET_IOS_SIGNING_IDENTITY=${signing.identity}`,
+          `DESKFLEET_IOS_APP_PROFILE_UUID=${signing.appProfile}`,
+          `DESKFLEET_IOS_BROADCAST_PROFILE_UUID=${signing.broadcastProfile}`,
+        ]
+      : ["CODE_SIGNING_ALLOWED=NO"]),
+    "archive",
+  ], iosAppDir, join(diagnosticsDir, "archive.log"))
+
+  if (!signing) return
+  mkdirSync(exportDir, { recursive: true })
+  writeFileSync(exportOptionsPath, exportOptions(signing))
+  try {
+    await run("xcodebuild", [
+      "-exportArchive", "-archivePath", archivePath,
+      "-exportOptionsPlist", exportOptionsPath,
+      "-exportPath", exportDir,
+    ], iosAppDir, join(diagnosticsDir, "export.log"))
+    if (!existsSync(join(exportDir, release.ipa))) throw new Error(`iOS export did not produce ${release.ipa}`)
+    writeFileSync(join(exportDir, "release.json"), `${JSON.stringify(release, null, 2)}\n`)
+    rmSync(archivePath, { recursive: true, force: true })
+  } finally {
+    // Keep a failed archive until the job ends so export failures remain
+    // inspectable. CI uploads diagnostics, never the archive or signing assets.
+    rmSync(exportOptionsPath, { force: true })
+  }
+}
+
+if (import.meta.main) {
+  await packageIosRelease(resolve(import.meta.dirname, ".."), process.argv.includes("--signed") || process.env.DESKFLEET_IOS_SIGNED === "1")
 }

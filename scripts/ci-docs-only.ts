@@ -33,6 +33,7 @@ export function isPackagingPath(path: string): boolean {
   return /^(?:packaging|nix)\//u.test(path) ||
     /^(?:flake\.nix|flake\.lock)$/u.test(path) ||
     /^scripts\/(?:package-|check-(?:aur|linux-release)|smoke-linux-package|stage-native-binaries|build-(?:android|ios)-viewer\.ts)/u.test(path) ||
+    /^scripts\/(?:app-store-connect|prepare-ios-signing|publish-ios-release)\.ts$/u.test(path) ||
     /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
     path === "apps/desktop/package.json" ||
     path === "apps/web/capacitor.config.ts" ||

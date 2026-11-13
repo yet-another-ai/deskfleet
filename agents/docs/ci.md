@@ -222,6 +222,8 @@ Configure these environment variables:
 | `VITE_SENTRY_ENVIRONMENT` | Optional Sentry environment for both clients; defaults to the Vite mode, `production`. |
 | `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry organization and project slugs; required for source-map upload when a valid DSN is configured. |
 | `SENTRY_URL` | Optional self-hosted Sentry URL; defaults to `https://sentry.io/`. |
+| `IOS_APP_PROFILE_NAME` | Exact name of the existing App Store Connect provisioning profile for `ai.yetanother.deskfleet`. |
+| `IOS_BROADCAST_PROFILE_NAME` | Exact name of the existing App Store Connect provisioning profile for `ai.yetanother.deskfleet.BroadcastUpload`. |
 
 The reusable Build workflow binds its packaging job to `production` only when
 Publish requests a production release. The caller passes the signing secret
@@ -249,10 +251,10 @@ Configure these secrets in the same environment:
 | `SENTRY_AUTH_TOKEN` | Token with source-map upload access, required when Sentry reporting is configured. Available only in the upload step. |
 | `MAC_CSC_LINK` | Base64 Developer ID Application certificate and private key in a PKCS#12 archive. |
 | `MAC_CSC_KEY_PASSWORD` | Password for that archive. |
-| `APPLE_API_KEY_P8` | Base64 App Store Connect API private key (`.p8`). |
+| `APPLE_API_KEY_P8` | Base64 App Store Connect Team API private key (`.p8`). Developer access is sufficient for downloading existing iOS profiles and uploading builds. Individual keys cannot access provisioning endpoints. |
 | `APPLE_API_KEY_ID` | App Store Connect API key ID. |
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
-| `APPLE_TEAM_ID` | Apple Developer Team ID used for automatic iOS App Store provisioning and signing. |
+| `APPLE_TEAM_ID` | Apple Developer Team ID that owns the iOS distribution certificate and provisioning profiles. |
 | `IOS_DIST_CERT_P12` | Base64 Apple Distribution certificate and private key in a PKCS#12 archive (`.p12`). |
 | `IOS_DIST_CERT_PASSWORD` | Password for that iOS distribution PKCS#12 archive. |
 | `ANDROID_KEYSTORE_BASE64` | Base64 Android upload keystore (`.jks` or `.keystore`). |
@@ -262,8 +264,10 @@ Configure these secrets in the same environment:
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Google Play Developer API service account JSON credentials for publishing to the `internal` track. |
 
 The release overlay requires signing and notarization; missing credentials or a
-failure prevents publication. PR, main, and manual Build runs package without
-those credentials. Windows installers are unsigned in this initial pipeline.
+failure prevents publication. PR, main, and ordinary manual Build runs package
+without those credentials. The explicit `signed_ios` manual Build option binds
+only the iOS job to `production`. Windows installers are unsigned in this initial
+pipeline.
 
 Signed macOS builds use the desktop `package` script with the release overlay,
 so the native viewer is built and staged before electron-builder bundles and
@@ -320,6 +324,62 @@ GitHub release assets. Neither Homebrew nor AUR displays GitHub's release
 version as its own. Headless downloads remain separate server/daemon archives.
 English, Chinese, and Japanese pages share the same selection logic and
 localized instructions.
+
+### iOS distribution signing and TestFlight
+
+Tagged iOS releases and signed rehearsals reuse one Apple Distribution identity
+and two existing App Store Connect provisioning profiles. The main app and
+BroadcastUpload extension each have their own profile; both profiles must contain
+the certificate in `IOS_DIST_CERT_P12` and the
+`group.ai.yetanother.deskfleet` entitlement. In Apple Developer's Certificates,
+Identifiers & Profiles, an Admin or Account Holder creates these profiles once,
+selecting the explicit Bundle ID and the same distribution certificate for each.
+Set the two profile names in the production variables above. No profile file
+Secrets, Development certificates, device UDIDs, or development profiles are
+needed for this release path.
+
+The signing preparation step imports the P12 into a temporary keychain, then
+`scripts/prepare-ios-signing.ts` downloads the named profiles through read-only
+App Store Connect API calls. Before compiling, it validates the usable
+Distribution identity, certificate and profile expiry, Team, Bundle IDs,
+certificate binding, and App Group. Profile UUIDs and the signing certificate's
+fingerprint are derived from the validated materials. A Developer **Team** key
+can perform this preparation; the CI never creates or repairs certificates or
+profiles. Renew the distribution certificate and regenerate its profiles when
+they expire, are revoked, or the required entitlements change.
+
+`scripts/package-ios-release.ts` explicitly uses manual distribution signing for
+both archive and export. Profiles apply only to their owning application targets,
+not SwiftPM libraries. Xcode receives no API credentials or permission to create
+signing assets. Local Debug signing remains automatic, while ordinary CI builds
+without signing. iOS packaging and TestFlight upload select Xcode 26.6 explicitly
+on `macos-26`; changing the pinned toolchain requires a reviewed workflow change.
+Credentials and the installed profiles are removed even when a step fails.
+Failed builds retain the archive result bundle and build/export logs in the
+`deskfleet-ios-diagnostics` artifact for seven days; private keys, keychains,
+downloaded profiles, and the archive itself are not uploaded there.
+
+The `deskfleet-ios` artifact contains `App.ipa` and `release.json`, which records
+the Bundle ID, marketing version, and build number. CI assigns the build number
+from its run number and attempt, using the same value in the app and extension.
+The first tagged release with this numbering scheme must use a new marketing
+version; an already-uploaded version may have a higher legacy build number.
+An upload retry uses the artifact's existing version rather than allocating a
+new build number. `scripts/publish-ios-release.ts` checks Apple's upload records
+before sending the IPA: completed uploads are reused, processing uploads are
+polled, and failed uploads report Apple's error. Transmission errors also check
+the upload state before reporting failure. The job succeeds only after Apple
+finishes processing; a processing timeout can be retried without rebuilding.
+This publishes to TestFlight and does not submit the app for App Review.
+
+Before the next release tag, run **Build → Run workflow → signed_ios = true** on
+a branch allowed by the production environment's deployment rules. This skips
+desktop and Android jobs, uses the same signing path, and produces the IPA and
+metadata without uploading to TestFlight. Inspect the main app and extension's
+signatures and profiles in that artifact. Validate the proposed Developer Team
+key in this rehearsal before switching production back from an Admin key. The
+`APPLE_API_*` secrets are also used by macOS notarization, so keep their declarations
+and verify that shared consumer when rotating the key.
 
 ### Desktop updates
 

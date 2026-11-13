@@ -1,6 +1,9 @@
 App/build
 App/Pods
 App/output
+App/diagnostics
+App/App.xcarchive
+App/ExportOptions.plist
 App/App/public
 DerivedData
 xcuserdata
