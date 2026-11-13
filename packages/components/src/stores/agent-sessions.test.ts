@@ -1631,41 +1631,31 @@ test("only durable contiguous history is persisted, without streaming previews",
   expect(persistence.write).toHaveBeenCalledWith("30", { snapshot: agentSnapshot(), events: [] })
 })
 
-test("yolo mode auto-approves every pending and subsequent permission until disabled", async () => {
+test("yolo mode delegates to daemon on create and setYolo and projects snapshot state", async () => {
   const store = useAgentSessionsStore()
   await store.open("30")
-  const pending = agentPermission({ id: "70" })
-  pending.request.options.unshift({ optionId: "always", kind: "allow_always", name: "Always allow" })
-  const always = agentPermission({ id: "71", request: {
-    ...pending.request,
-    options: [{ optionId: "deny", kind: "reject_once", name: "Reject" }, { optionId: "always", kind: "allow_always", name: "Always allow" }],
-  } })
-  receive(agentEvent(1, "permission", pending))
-  receive(agentEvent(2, "permission", always))
-  expect(store.views["30"]?.snapshot?.permissions.map(permission => permission.state)).toEqual(["pending", "pending"])
+  expect(store.sessions["30"]?.yolo).toBeFalsy()
 
-  mock.call.mockResolvedValueOnce({ ...pending, state: "resolved", optionId: "allow" })
-    .mockResolvedValueOnce({ ...always, state: "resolved", optionId: "always" })
-  store.setYolo("30", true)
-  await flushPromises()
-  const responses = () => mock.call.mock.calls.filter(([method]) => method === "_deskfleet/permission/respond").map(([, params]) => params)
-  expect(responses()).toEqual([
-    expect.objectContaining({ sessionId: "30", permissionId: "70", optionId: "allow" }),
-    expect.objectContaining({ sessionId: "30", permissionId: "71", optionId: "always" }),
-  ])
+  const enabledSnapshot = agentSnapshot()
+  enabledSnapshot.session = { ...enabledSnapshot.session, lastEventSeq: "1", yolo: true }
+  mock.call.mockResolvedValueOnce(enabledSnapshot)
+  await store.setYolo("30", true)
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/yolo", expect.objectContaining({ sessionId: "30", enabled: true }))
+  expect(store.sessions["30"]?.yolo).toBe(true)
 
-  const next = agentPermission({ id: "72" })
-  mock.call.mockResolvedValueOnce({ ...next, state: "resolved", optionId: "allow" })
-  receive(agentEvent(3, "permission", next))
-  await flushPromises()
-  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/permission/respond", expect.objectContaining({
-    sessionId: "30", permissionId: "72", optionId: "allow",
-  }))
+  const disabledSnapshot = agentSnapshot()
+  disabledSnapshot.session = { ...disabledSnapshot.session, lastEventSeq: "2", yolo: false }
+  mock.call.mockResolvedValueOnce(disabledSnapshot)
+  await store.setYolo("30", false)
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/yolo", expect.objectContaining({ sessionId: "30", enabled: false }))
+  expect(store.sessions["30"]?.yolo).toBe(false)
 
-  store.setYolo("30", false)
-  const manual = agentPermission({ id: "73" })
-  receive(agentEvent(4, "permission", manual))
-  await flushPromises()
-  expect(responses()).toHaveLength(3)
-  expect(store.views["30"]?.snapshot?.permissions.at(-1)).toEqual(manual)
+  store.draftYolo = true
+  const createdSnapshot = agentSnapshot()
+  createdSnapshot.session = { ...createdSnapshot.session, id: "31", yolo: true }
+  mock.call.mockResolvedValueOnce(createdSnapshot)
+  await store.create("20", "YOLO session", "worktree", "codex")
+  expect(mock.call).toHaveBeenLastCalledWith("_deskfleet/session/create", expect.objectContaining({ yolo: true }))
+  expect(store.draftYolo).toBe(false)
+  expect(store.sessions["31"]?.yolo).toBe(true)
 })

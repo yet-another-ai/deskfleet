@@ -205,9 +205,11 @@ test.each(["draft", "session"] as const)("YOLO in a %s requires confirmation to 
     global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
   })
   const agents = useAgentSessionsStore(pinia)
-  agents.yolo = {}
-  const setYolo = vi.spyOn(agents, "setYolo")
-  const enabled = () => scope === "session" ? !!agents.yolo["yolo-session"] : agents.draftYolo
+  if (scope === "session") agents.sessions["yolo-session"] = { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory", lifecycle: "ready", lastEventSeq: "0", createdAt: "", updatedAt: "" }
+  const setYolo = vi.spyOn(agents, "setYolo").mockImplementation(async (id, value) => {
+    if (agents.sessions[id]) agents.sessions[id] = { ...agents.sessions[id], yolo: value }
+  })
+  const enabled = () => scope === "session" ? !!agents.sessions["yolo-session"]?.yolo : agents.draftYolo
   const page = new DOMWrapper(document.body)
   const toggle = wrapper.get("[data-composer-yolo]")
   try {
@@ -258,7 +260,7 @@ test.each(["escape", "session change"])("YOLO confirmation is cancelled by %s", 
     global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
   })
   const agents = useAgentSessionsStore(pinia)
-  agents.yolo = {}
+  agents.sessions["yolo-session"] = { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory", lifecycle: "ready", lastEventSeq: "0", createdAt: "", updatedAt: "" }
   const setYolo = vi.spyOn(agents, "setYolo")
   const page = new DOMWrapper(document.body)
   try {
@@ -270,7 +272,7 @@ test.each(["escape", "session change"])("YOLO confirmation is cancelled by %s", 
     await flushPromises()
     expect(page.find('[role="dialog"]').exists()).toBe(false)
     expect(setYolo).not.toHaveBeenCalled()
-    expect(agents.yolo).toEqual({})
+    expect(agents.sessions["yolo-session"]?.yolo).toBeFalsy()
     expect(agents.draftYolo).toBe(false)
   } finally {
     wrapper.unmount()

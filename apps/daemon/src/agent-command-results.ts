@@ -7,7 +7,7 @@ export interface AgentSnapshotReference {
 }
 
 const snapshotMethods = new Set([
-  "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/rename",
+  "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/rename", "_deskfleet/session/yolo",
   "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/switch-agent",
   "_deskfleet/session/resume", "_deskfleet/session/stop", "_deskfleet/session/archive", "_deskfleet/session/restore",
 ])

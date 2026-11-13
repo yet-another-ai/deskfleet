@@ -27,7 +27,7 @@ const AGENT_EXECUTE = new Set<AgentMethod>([
   "_deskfleet/git/prepare",
   "_deskfleet/composer/references", "_deskfleet/composer/resolve",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
-  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop", "_deskfleet/session/yolo",
   "_deskfleet/elicitation/respond",
 ])
 
