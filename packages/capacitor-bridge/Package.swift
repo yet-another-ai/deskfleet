@@ -26,6 +26,7 @@ let package = Package(
                 "DeskfleetDesktopViewerFFI"
             ],
             path: "ios/Sources/DeskFleetBridge",
+            resources: [.process("PrivacyInfo.xcprivacy")],
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("AudioToolbox"),

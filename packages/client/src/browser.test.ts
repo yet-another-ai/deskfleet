@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest"
 import { browserClient } from "./browser.ts"
 import { HttpCentralClient } from "./http-central.ts"
+import type { FilesApi } from "./files.ts"
 
 const clients: HttpCentralClient[] = []
 afterEach(() => {
@@ -90,4 +91,17 @@ test("native bearer options omit cookies and attach the saved bearer token", asy
     accept: "application/json",
     authorization: "Bearer native-token",
   })
+})
+
+test("a native files factory replaces browser file creation without adding browser lifecycle listeners", async () => {
+  await setup()
+  const addListener = vi.spyOn(window, "addEventListener")
+  const files = {} as FilesApi
+  const createFiles = vi.fn(() => files)
+  const api = await browserClient(serverUrl, () => {}, { mobile: true, createFiles })
+  clients.push(api.central as HttpCentralClient)
+
+  expect(api.files).toBe(files)
+  expect(createFiles).toHaveBeenCalledExactlyOnceWith(api.central)
+  expect(addListener).not.toHaveBeenCalledWith("pagehide", expect.any(Function))
 })

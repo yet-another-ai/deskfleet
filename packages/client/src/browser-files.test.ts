@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { BrowserFilesEndpoint, createBrowserFiles } from "./browser-files.ts"
+import { BrowserFilesEndpoint, createBrowserFiles, type LocalFilesEndpoint } from "./browser-files.ts"
 import type { CentralApi, CentralEvent } from "./central.ts"
 
 afterEach(() => vi.unstubAllGlobals())
@@ -81,4 +81,54 @@ test("account changes and cached-page suspension discard local grants without br
   await files.close()
   expect(unsubscribe).toHaveBeenCalledOnce()
   expect(events.has("pagehide")).toBe(false)
+})
+
+function nativeLocal(path = "/Documents") {
+  const listing = { path, homePath: path, parentPath: null, roots: [{ path, name: "Documents" }], entries: [] }
+  return {
+    choose: vi.fn(async () => listing),
+    call: vi.fn(async () => ({ value: listing })) as LocalFilesEndpoint["call"],
+    close: vi.fn(async () => {}),
+  }
+}
+
+test("the page closes a native local endpoint used only by the chooser exactly once", async () => {
+  vi.stubGlobal("window", new EventTarget())
+  const local = nativeLocal()
+  const unsubscribe = vi.fn()
+  const files = createBrowserFiles({ onEvent: () => unsubscribe } as unknown as CentralApi, () => local)
+
+  const choosing = files.chooseLocalDirectory()
+  // Browser factories must still invoke their chooser in the user gesture.
+  expect(local.choose).toHaveBeenCalledOnce()
+  expect((await choosing)?.path).toBe("/Documents")
+  expect(local.call).not.toHaveBeenCalled()
+  await Promise.all([files.close(), files.close()])
+  expect(local.close).toHaveBeenCalledOnce()
+  expect(unsubscribe).toHaveBeenCalledOnce()
+})
+
+test("native local factories reset account and cached-page access while keeping the wrapper usable", async () => {
+  const events = new EventTarget()
+  vi.stubGlobal("window", events)
+  let account!: (event: CentralEvent) => void
+  const locals: ReturnType<typeof nativeLocal>[] = []
+  const files = createBrowserFiles({
+    onEvent(listener: (event: CentralEvent) => void) { account = listener; return () => {} },
+  } as unknown as CentralApi, () => {
+    const local = nativeLocal(`/Documents-${locals.length + 1}`)
+    locals.push(local)
+    return local
+  })
+
+  await files.chooseLocalDirectory()
+  account({ type: "accountChanged" })
+  expect(locals[0]!.close).toHaveBeenCalledOnce()
+  expect((await files.list({ kind: "local" })).path).toBe("/Documents-2")
+
+  events.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: true }))
+  expect((await files.list({ kind: "local" })).path).toBe("/Documents-3")
+  await files.close()
+  expect(locals).toHaveLength(3)
+  for (const local of locals) expect(local.close).toHaveBeenCalledOnce()
 })

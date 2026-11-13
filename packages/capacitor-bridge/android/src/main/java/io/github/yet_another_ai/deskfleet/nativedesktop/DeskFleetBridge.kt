@@ -29,6 +29,28 @@ import java.lang.ref.WeakReference
 )
 class DeskFleetBridge : Plugin() {
     private var speechInput: SpeechInput? = null
+    private var nativeFiles: NativeFilesBridge? = null
+
+    private fun files(): NativeFilesBridge = nativeFiles ?: NativeFilesBridge(context).also { nativeFiles = it }
+
+    @PluginMethod
+    fun filesOpen(call: PluginCall) = files().open(call)
+
+    @PluginMethod
+    fun filesCall(call: PluginCall) = files().call(call)
+
+    @PluginMethod
+    fun filesClose(call: PluginCall) = files().close(call)
+
+    @PluginMethod
+    fun filesChooseDirectory(call: PluginCall) = files().choose(call) { intent ->
+        startActivityForResult(call, intent, "handleFilesDirectory")
+    }
+
+    @ActivityCallback
+    private fun handleFilesDirectory(call: PluginCall?, result: ActivityResult) {
+        nativeFiles?.selected(call, result)
+    }
 
     private fun speech(): SpeechInput = speechInput ?: SpeechInput(context) {
         notifyListeners("speechEvent", it)
@@ -221,6 +243,7 @@ class DeskFleetBridge : Plugin() {
 
     override fun handleOnDestroy() {
         Handler(Looper.getMainLooper()).post { speechInput?.dispose() }
+        nativeFiles?.dispose()
         stopSession()
         OutlineAudioCaptureService.stop(context)
         super.handleOnDestroy()
