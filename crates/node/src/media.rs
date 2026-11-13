@@ -22,6 +22,8 @@ impl DesktopStreamPool {
 #[napi(object)]
 pub struct DisplayInfo {
     pub id: u32,
+    pub name: Option<String>,
+    pub display_number: Option<u32>,
     pub width: u32,
     pub height: u32,
     pub refresh_rate_hz: f64,
@@ -44,6 +46,8 @@ pub async fn capture_displays() -> Result<Vec<DisplayInfo>> {
         .into_iter()
         .map(|display| DisplayInfo {
             id: display.id,
+            name: display.name,
+            display_number: display.display_number,
             width: display.width,
             height: display.height,
             refresh_rate_hz: display.refresh_rate_hz,

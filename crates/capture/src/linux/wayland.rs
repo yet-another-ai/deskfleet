@@ -9,6 +9,8 @@ pub(super) fn displays() -> Result<Vec<Display>, CaptureError> {
                 .into_iter()
                 .map(|source| Display {
                     id: source.id,
+                    name: source.name,
+                    display_number: Some(source.display_number),
                     // Portal dimensions are logical. Captured Frame dimensions come
                     // from negotiated PipeWire pixels and supersede these for encoding.
                     width: source.width,

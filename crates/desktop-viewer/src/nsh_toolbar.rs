@@ -432,22 +432,23 @@ fn settings_checkbox(
 fn settings(state: &ToolbarState, p: Palette) -> impl IntoElement + use<> {
     let ui = &state.ui;
     let locale = ui.locale.as_deref();
-    let display_label = |display: &crate::protocol::Display| {
-        label(locale, "displayOption")
-            .replace("{id}", &display.id.to_string())
-            .replace("{width}", &display.width.to_string())
-            .replace("{height}", &display.height.to_string())
-    };
     let current = ui
         .displays
         .iter()
-        .find(|display| display.id == ui.display_id)
-        .map(display_label)
+        .enumerate()
+        .find(|(_, display)| display.id == ui.display_id)
+        .map(|(index, display)| nsh_ui::display_label(locale, display, index))
         .unwrap_or_default();
     let items = ui
         .displays
         .iter()
-        .map(|display| SelectItem::new(display.id.to_string(), display_label(display)))
+        .enumerate()
+        .map(|(index, display)| {
+            SelectItem::new(
+                display.id.to_string(),
+                nsh_ui::display_label(locale, display, index),
+            )
+        })
         .collect::<Vec<_>>();
     let dropdown = select()
         .items(items)
@@ -475,7 +476,14 @@ fn settings(state: &ToolbarState, p: Palette) -> impl IntoElement + use<> {
                 .border_1()
                 .border_color(rgb(p.border))
                 .bg(rgb(p.control))
-                .child(text(current).text_size(px(13.)).text_color(rgb(p.text)))
+                .child(
+                    text(current)
+                        .flex_1()
+                        .min_w(px(0.))
+                        .truncate()
+                        .text_size(px(13.))
+                        .text_color(rgb(p.text)),
+                )
                 .child(icon("chevron", p.muted, 14.)),
         )
         .on_change(|value: &Option<SharedString>| {

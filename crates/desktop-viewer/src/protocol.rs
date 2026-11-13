@@ -48,8 +48,11 @@ pub(crate) enum Status {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct Display {
     pub(crate) id: u32,
+    pub(crate) name: Option<String>,
+    pub(crate) display_number: Option<u32>,
     pub(crate) width: u32,
     pub(crate) height: u32,
 }

@@ -75,6 +75,8 @@ impl From<VideoCodec> for Codec {
 #[derive(Serialize, Deserialize)]
 pub(super) struct DisplayInfo {
     id: u32,
+    name: Option<String>,
+    display_number: Option<u32>,
     width: u32,
     height: u32,
     refresh_rate_hz: f64,
@@ -84,6 +86,8 @@ impl From<Display> for DisplayInfo {
     fn from(display: Display) -> Self {
         Self {
             id: display.id,
+            name: display.name,
+            display_number: display.display_number,
             width: display.width,
             height: display.height,
             refresh_rate_hz: display.refresh_rate_hz,
@@ -95,6 +99,8 @@ impl From<DisplayInfo> for Display {
     fn from(display: DisplayInfo) -> Self {
         Self {
             id: display.id,
+            name: display.name,
+            display_number: display.display_number,
             width: display.width,
             height: display.height,
             refresh_rate_hz: display.refresh_rate_hz,

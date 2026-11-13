@@ -11,7 +11,8 @@ use futures_util::StreamExt;
 use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy, Variant, proxy::SignalStream};
 
 use crate::{
-    APP_ID, Error, PermissionSnapshot, PermissionStatus, Result, Source, input::Eis, token,
+    APP_ID, AuthorizationMode, Error, PermissionSnapshot, PermissionStatus, Result, Source,
+    input::Eis, token,
 };
 
 const DESTINATION: &str = "org.freedesktop.portal.Desktop";
@@ -106,18 +107,15 @@ async fn capabilities(connection: &Connection) -> Result<()> {
 
 pub async fn authorize(
     directory: &Path,
-    restore_only: bool,
+    mode: AuthorizationMode,
     connection_slot: &mut Option<Connection>,
     next_id: &mut u32,
 ) -> Result<Live> {
+    let restore = token::prepare(directory, mode)?;
     if !is_wayland_session() {
         return Err(Error::Unavailable(
             "a logged-in Wayland session is required".into(),
         ));
-    }
-    let restore = token::read(directory)?;
-    if restore_only && restore.is_none() {
-        return Err(Error::PermissionDenied);
     }
     crate::identity::ensure_desktop_entry()?;
     let connection = Connection::session().await?;
@@ -210,7 +208,8 @@ pub async fn authorize(
         .map(Vec::<(u32, Properties)>::try_from)
         .transpose()?
         .unwrap_or_default();
-    let sources = parse_sources(raw_streams, next_id)?;
+    let mut sources = parse_sources(raw_streams, next_id)?;
+    crate::monitor_metadata::describe(&connection, directory, &mut sources).await;
     // Input setup must not discard streams the user already granted.
     let input = if grants & 3 == 3 && !sources.is_empty() {
         connect_input(&connection, &session).await
@@ -276,7 +275,9 @@ fn parse_sources(raw_streams: Vec<(u32, Properties)>, next_id: &mut u32) -> Resu
         let id = allocate_id(next_id)?;
         sources.push(Source {
             id,
-            name: format!("Display {}", index + 1),
+            display_number: u32::try_from(index + 1)
+                .map_err(|_| malformed("too many screen sources"))?,
+            name: None,
             width: u32::try_from(width).unwrap_or_default(),
             height: u32::try_from(height).unwrap_or_default(),
             node_id,
@@ -288,6 +289,9 @@ fn parse_sources(raw_streams: Vec<(u32, Properties)>, next_id: &mut u32) -> Resu
                 .remove("mapping_id")
                 .map(String::try_from)
                 .transpose()?,
+            position: properties
+                .remove("position")
+                .and_then(|value| <(i32, i32)>::try_from(value).ok()),
         });
     }
     Ok(sources)
@@ -379,6 +383,10 @@ mod tests {
     fn source_parser_retains_v6_serial_and_logical_mapping_with_v5_fallback() {
         let properties: Properties = HashMap::from([
             (
+                "position".into(),
+                Variant::from((-1920i32, 0i32)).try_to_owned().unwrap(),
+            ),
+            (
                 "size".into(),
                 Variant::from((1920i32, 1080i32)).try_to_owned().unwrap(),
             ),
@@ -395,9 +403,14 @@ mod tests {
         let streams = Vec::<(u32, Properties)>::try_from(wire).unwrap();
         let sources = parse_sources(streams, &mut 1).unwrap();
         assert_eq!((sources[0].width, sources[0].height), (1920, 1080));
+        assert_eq!(sources[0].position, Some((-1920, 0)));
+        assert_eq!(sources[0].display_number, 1);
+        assert_eq!(sources[0].name, None);
         assert_eq!(sources[0].pipewire_serial, Some(u64::MAX - 1));
         assert_eq!(sources[0].mapping_id.as_deref(), Some("monitor-b"));
         assert_eq!(sources[1].pipewire_serial, None);
+        assert_eq!(sources[1].position, None);
+        assert_eq!(sources[1].display_number, 2);
         assert_eq!(sources[1].node_id, 43);
         assert_ne!(sources[0].id, sources[1].id);
     }

@@ -928,7 +928,7 @@
     "noDisplays": "No displays found.",
     "displayCount": "{count} displays",
     "display": "Display {id}",
-    "openDisplay": "Open {machine}, display {display}",
+    "openDisplay": "Open {machine}, {display}",
     "connecting": "Connecting preview…"
   },
   "desktop": {
@@ -947,7 +947,8 @@
     "settingsFailed": "Could not apply desktop settings",
     "moveControls": "Move controls",
     "display": "Display",
-    "displayOption": "Display {id} · {width} × {height}",
+    "displayName": "Display {number}",
+    "displayOption": "{display} · {width} × {height}",
     "codecStatus": "Video codec: {codec}",
     "audio": "System audio",
     "control": "Mouse and keyboard control",
@@ -1611,10 +1612,15 @@
       "shared": "Screen sharing and mouse and keyboard control share one authorization. Once approved, continue through both steps.",
       "requesting": "Waiting for desktop authorization…",
       "retry": "Retry access",
+      "changeScreensLater": "To add a missing screen later, open Settings → Permissions → Screen sharing.",
       "screenCapture": {
         "title": "Screen sharing",
         "description": "Allow DeskFleet to share this computer’s screen during remote desktop sessions.",
-        "instructions": "Select the screens to share and approve access in your desktop’s authorization dialog.",
+        "instructions": "Allow screen sharing in the system dialog. If a screen picker appears, select every monitor you want to access remotely.",
+        "selection": "Only authorized screens appear remotely. DeskFleet reuses your authorization when you reconnect.",
+        "choose": "Authorize screen sharing",
+        "reselect": "Authorize again",
+        "reselectHint": "Authorizing again stops current remote viewing and control and requests fresh desktop authorization. If a screen picker appears, include any missing monitors.",
         "skip": "Remote screen sharing will be unavailable until you authorize it. You can skip this step and enable access later."
       },
       "accessibility": {

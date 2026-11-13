@@ -94,6 +94,7 @@ objc2-io-surface = "0.3"
 objc2-screen-capture-kit = "0.3"
 objc2-video-toolbox = "0.3"
 windows = { version = "0.62", features = [
+    "Win32_Devices_Display",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",

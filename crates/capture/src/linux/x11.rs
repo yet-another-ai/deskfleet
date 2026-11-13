@@ -9,6 +9,8 @@ pub(super) fn displays() -> Result<Vec<Display>, CaptureError> {
                 .into_iter()
                 .map(|source| Display {
                     id: source.id,
+                    name: Some(source.name),
+                    display_number: None,
                     width: source.width,
                     height: source.height,
                     refresh_rate_hz: source.refresh_rate_hz,

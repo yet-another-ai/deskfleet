@@ -26,14 +26,23 @@ use crate::error::CaptureError;
 use crate::surface::windows::TexturePool;
 use crate::types::Display;
 
+use super::display_metadata::DisplayNames;
+
 /// Enumerate displays using the Win32 GDI API.
 pub fn displays() -> Result<Vec<Display>, CaptureError> {
     deskfleet_windows_desktop::desktop::bind_input_desktop().map_err(|error| {
         CaptureError::Platform(format!("bind display discovery desktop: {error}"))
     })?;
-    let mut monitors: Vec<Display> = Vec::new();
+    struct Enumeration {
+        monitors: Vec<Display>,
+        names: DisplayNames,
+    }
+    let mut enumeration = Enumeration {
+        monitors: Vec::new(),
+        names: DisplayNames::query(),
+    };
 
-    // SAFETY: Enumeration is synchronous; LPARAM points to the live monitors Vec.
+    // SAFETY: Enumeration is synchronous; LPARAM points to the live context.
     unsafe {
         // EnumDisplayMonitors callback — pushes each monitor into the vec.
         unsafe extern "system" fn enum_cb(
@@ -42,9 +51,9 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
             _rect: *mut windows::Win32::Foundation::RECT,
             lparam: windows::Win32::Foundation::LPARAM,
         ) -> windows::core::BOOL {
-            // SAFETY: EnumDisplayMonitors receives the live monitors Vec pointer below
+            // SAFETY: EnumDisplayMonitors receives the live context pointer below
             // and invokes this callback synchronously on the enumerating thread.
-            let monitors = unsafe { &mut *(lparam.0 as *mut Vec<Display>) };
+            let enumeration = unsafe { &mut *(lparam.0 as *mut Enumeration) };
             let mut info = MONITORINFOEXW::default();
             info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
             // SAFETY: Windows supplied hmon; info has its required size initialized.
@@ -80,8 +89,13 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
                         refresh_rate_hz = freq as f64;
                     }
                 }
-                monitors.push(Display {
+                let (name, display_number) = enumeration
+                    .names
+                    .for_display(&info.szDevice, enumeration.monitors.len());
+                enumeration.monitors.push(Display {
                     id: hmon.0 as usize as u32,
+                    name,
+                    display_number,
                     width,
                     height,
                     refresh_rate_hz,
@@ -90,15 +104,15 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
             windows::core::BOOL(1) // continue enumeration
         }
 
-        let lp = windows::Win32::Foundation::LPARAM(std::ptr::addr_of_mut!(monitors) as isize);
+        let lp = windows::Win32::Foundation::LPARAM(std::ptr::addr_of_mut!(enumeration) as isize);
         let _ = EnumDisplayMonitors(None, None, Some(enum_cb), lp);
     }
 
-    if monitors.is_empty() {
+    if enumeration.monitors.is_empty() {
         return Err(CaptureError::NoDisplays);
     }
 
-    Ok(monitors)
+    Ok(enumeration.monitors)
 }
 
 /// Create a D3D11 device on the adapter that owns the selected display.

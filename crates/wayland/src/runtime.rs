@@ -11,7 +11,7 @@ use futures_util::StreamExt;
 use tokio::sync::{Notify, mpsc, oneshot};
 
 use crate::{
-    Error, PermissionSnapshot, PermissionStatus, Result, Source,
+    AuthorizationMode, Error, PermissionSnapshot, PermissionStatus, Result, Source,
     input::Action,
     portal::{self, Live},
 };
@@ -19,7 +19,11 @@ use crate::{
 type Reply<T> = oneshot::Sender<Result<T>>;
 
 enum Command {
-    Request(Option<PathBuf>, Reply<PermissionSnapshot>),
+    Request(
+        Option<PathBuf>,
+        AuthorizationMode,
+        Reply<PermissionSnapshot>,
+    ),
     Shutdown(Reply<()>),
     Open(u32, Reply<(OwnedFd, Source)>),
     Attach(u64, u32, Reply<()>),
@@ -68,9 +72,12 @@ fn send(command: Command) -> Result<()> {
     handle()?.commands.send(command).map_err(|_| Error::Stopped)
 }
 
-pub async fn request(directory: Option<PathBuf>) -> Result<PermissionSnapshot> {
+pub async fn request(
+    directory: Option<PathBuf>,
+    mode: AuthorizationMode,
+) -> Result<PermissionSnapshot> {
     let (reply, response) = oneshot::channel();
-    send(Command::Request(directory, reply))?;
+    send(Command::Request(directory, mode, reply))?;
     response.await.map_err(|_| Error::Stopped)?
 }
 
@@ -309,12 +316,20 @@ async fn run(
             continue;
         };
         match command {
-            Command::Request(requested_directory, reply) => {
+            Command::Request(requested_directory, mode, reply) => {
+                if mode == AuthorizationMode::Reselect {
+                    // Invalidate old display IDs before releasing capture and input.
+                    // This is an access change, not daemon shutdown: watches continue.
+                    clear(&observed, PermissionStatus::Requesting);
+                    if let Some(session) = live.take() {
+                        session.close().await;
+                    }
+                }
                 if let Some(session) = live.as_mut() {
                     // A dropped handshake stays on this session. Retry it only for an
                     // explicit request so display listing does not wait on EIS.
                     if should_retry_remote_input(
-                        requested_directory.is_some(),
+                        mode == AuthorizationMode::Request,
                         session.input.is_some(),
                         session.snapshot.screen_capture,
                     ) {
@@ -330,7 +345,6 @@ async fn run(
                     let _ = reply.send(Ok(session.snapshot.clone()));
                     continue;
                 }
-                let restore_only = requested_directory.is_none();
                 if let Some(requested) = requested_directory {
                     directory = Some(requested);
                 }
@@ -340,12 +354,7 @@ async fn run(
                 };
                 clear(&observed, PermissionStatus::Requesting);
                 let outcome = authorizer
-                    .authorize(
-                        request_directory,
-                        restore_only,
-                        &mut next_source,
-                        &mut receiver,
-                    )
+                    .authorize(request_directory, mode, &mut next_source, &mut receiver)
                     .await;
                 if outcome.shutdown.is_some() {
                     directory = None;
@@ -464,7 +473,7 @@ trait Authorizer {
     async fn authorize(
         &mut self,
         directory: &std::path::Path,
-        restore_only: bool,
+        mode: AuthorizationMode,
         next_source: &mut u32,
         receiver: &mut mpsc::UnboundedReceiver<Command>,
     ) -> AuthorizationOutcome;
@@ -476,15 +485,14 @@ impl Authorizer for PortalAuthorizer {
     async fn authorize(
         &mut self,
         directory: &std::path::Path,
-        restore_only: bool,
+        mode: AuthorizationMode,
         next_source: &mut u32,
         receiver: &mut mpsc::UnboundedReceiver<Command>,
     ) -> AuthorizationOutcome {
         let mut connection = None;
         let outcome = {
-            let authorization =
-                portal::authorize(directory, restore_only, &mut connection, next_source);
-            pending_authorization(authorization, receiver).await
+            let authorization = portal::authorize(directory, mode, &mut connection, next_source);
+            pending_authorization(authorization, mode, receiver).await
         };
         if outcome.result.is_err()
             && let Some(connection) = connection
@@ -497,6 +505,7 @@ impl Authorizer for PortalAuthorizer {
 
 async fn pending_authorization(
     authorization: impl std::future::Future<Output = Result<Live>>,
+    mode: AuthorizationMode,
     receiver: &mut mpsc::UnboundedReceiver<Command>,
 ) -> AuthorizationOutcome {
     let mut shutdown = None;
@@ -508,9 +517,14 @@ async fn pending_authorization(
                 result = &mut authorization => break result,
                 command = receiver.recv() => match command {
                     Some(Command::Shutdown(reply)) => { shutdown = Some(reply); break Err(Error::Cancelled); }
+                    // A restore may reuse the old monitor selection. Do not report
+                    // it as a successful response to an explicit fresh selection.
+                    Some(Command::Request(_, AuthorizationMode::Reselect, reply)) if mode != AuthorizationMode::Reselect => {
+                        let _ = reply.send(Err(Error::Busy));
+                    }
                     // The startup dialog already owns this connection. Listing displays
                     // waits for its result instead of failing the refresh as busy.
-                    Some(Command::Request(_, reply)) => waiting.push(reply),
+                    Some(Command::Request(_, _, reply)) => waiting.push(reply),
                     Some(Command::Open(_, reply)) => { let _ = reply.send(Err(Error::PermissionDenied)); }
                     Some(Command::Attach(_, _, reply)) => { let _ = reply.send(Err(Error::PermissionDenied)); }
                     Some(Command::Input(_, action, reply)) => {
@@ -544,13 +558,13 @@ mod tests {
         async fn authorize(
             &mut self,
             _: &std::path::Path,
-            _: bool,
+            mode: AuthorizationMode,
             _: &mut u32,
             receiver: &mut mpsc::UnboundedReceiver<Command>,
         ) -> AuthorizationOutcome {
             self.calls.fetch_add(1, Ordering::Relaxed);
             if self.pending {
-                pending_authorization(std::future::pending(), receiver).await
+                pending_authorization(std::future::pending(), mode, receiver).await
             } else {
                 AuthorizationOutcome {
                     result: Err(Error::PermissionDenied),
@@ -575,6 +589,7 @@ mod tests {
             sender
                 .send(Command::Request(
                     Some(PathBuf::from("/unused-test-directory")),
+                    AuthorizationMode::Request,
                     reply,
                 ))
                 .unwrap();
@@ -583,7 +598,9 @@ mod tests {
             assert!(first.await.unwrap().is_err());
             closed.await.unwrap().unwrap();
             let (reply, restored) = oneshot::channel();
-            sender.send(Command::Request(None, reply)).unwrap();
+            sender
+                .send(Command::Request(None, AuthorizationMode::Restore, reply))
+                .unwrap();
             assert!(matches!(
                 restored.await.unwrap(),
                 Err(Error::PermissionDenied)
@@ -614,6 +631,37 @@ mod tests {
 
     #[tokio::test]
     async fn display_listing_waits_for_the_open_consent_dialog() {
+        assert_display_listing_waits_for_consent(AuthorizationMode::Request).await;
+    }
+
+    #[tokio::test]
+    async fn display_listing_waits_for_monitor_reselection() {
+        assert_display_listing_waits_for_consent(AuthorizationMode::Reselect).await;
+    }
+
+    #[tokio::test]
+    async fn reselection_does_not_join_authorization_that_can_restore_old_monitors() {
+        for mode in [AuthorizationMode::Restore, AuthorizationMode::Request] {
+            let (sender, mut receiver) = mpsc::unbounded_channel();
+            let (reply, reselected) = oneshot::channel();
+            sender
+                .send(Command::Request(
+                    Some(PathBuf::from("/unused-test-directory")),
+                    AuthorizationMode::Reselect,
+                    reply,
+                ))
+                .unwrap();
+            let (reply, _closed) = oneshot::channel();
+            sender.send(Command::Shutdown(reply)).unwrap();
+
+            let outcome = pending_authorization(std::future::pending(), mode, &mut receiver).await;
+            assert!(matches!(reselected.await.unwrap(), Err(Error::Busy)));
+            assert!(outcome.waiting.is_empty());
+            assert!(matches!(outcome.result, Err(Error::Cancelled)));
+        }
+    }
+
+    async fn assert_display_listing_waits_for_consent(mode: AuthorizationMode) {
         let (sender, receiver) = mpsc::unbounded_channel();
         let observed = Arc::new(Mutex::new(Observed::default()));
         let calls = Arc::new(AtomicUsize::new(0));
@@ -624,6 +672,7 @@ mod tests {
             DeferredAuthorizer {
                 calls: calls.clone(),
                 release: Some(grant),
+                mode,
             },
         );
         let client = async {
@@ -631,6 +680,7 @@ mod tests {
             sender
                 .send(Command::Request(
                     Some(PathBuf::from("/unused-test-directory")),
+                    mode,
                     reply,
                 ))
                 .unwrap();
@@ -642,7 +692,9 @@ mod tests {
                 tokio::task::yield_now().await;
             }
             let (reply, mut listing) = oneshot::channel();
-            sender.send(Command::Request(None, reply)).unwrap();
+            sender
+                .send(Command::Request(None, AuthorizationMode::Restore, reply))
+                .unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             assert!(
                 matches!(listing.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
@@ -679,12 +731,14 @@ mod tests {
             },
             vec![Source {
                 id: 4,
-                name: "Display 1".into(),
+                display_number: 1,
+                name: None,
                 width: 1920,
                 height: 1080,
                 node_id: 7,
                 pipewire_serial: None,
                 mapping_id: None,
+                position: None,
             }],
         );
         assert!(retained.snapshot.screen_capture);
@@ -727,12 +781,14 @@ mod tests {
     fn permission_publication_tracks_input_loss_without_repeating() {
         let source = Source {
             id: 4,
-            name: "Display 1".into(),
+            display_number: 1,
+            name: None,
             width: 1920,
             height: 1080,
             node_id: 7,
             pipewire_serial: None,
             mapping_id: None,
+            position: None,
         };
         let granted = Observed {
             snapshot: PermissionSnapshot {
@@ -788,23 +844,25 @@ mod tests {
     struct DeferredAuthorizer {
         calls: Arc<AtomicUsize>,
         release: Option<oneshot::Receiver<()>>,
+        mode: AuthorizationMode,
     }
 
     impl Authorizer for DeferredAuthorizer {
         async fn authorize(
             &mut self,
             _: &std::path::Path,
-            _: bool,
+            mode: AuthorizationMode,
             _: &mut u32,
             receiver: &mut mpsc::UnboundedReceiver<Command>,
         ) -> AuthorizationOutcome {
+            assert_eq!(mode, self.mode);
             self.calls.fetch_add(1, Ordering::Relaxed);
             let release = self.release.take().unwrap();
             let authorization = async move {
                 release.await.unwrap();
                 Err(Error::PermissionDenied)
             };
-            pending_authorization(authorization, receiver).await
+            pending_authorization(authorization, mode, receiver).await
         }
     }
 }

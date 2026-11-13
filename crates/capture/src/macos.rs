@@ -72,6 +72,8 @@ pub fn displays() -> Result<Vec<Display>, CaptureError> {
                     .map_or(0.0, |mode| CGDisplayMode::refresh_rate(Some(&mode)));
                 result.push(Display {
                     id,
+                    name: None,
+                    display_number: None,
                     width: width as u32,
                     height: height as u32,
                     refresh_rate_hz,

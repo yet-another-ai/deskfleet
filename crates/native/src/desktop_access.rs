@@ -79,7 +79,11 @@ pub async fn supported() -> Result<bool, String> {
 
 /// Request a shared Wayland grant or check X11 access without a Portal dialog.
 /// Only Wayland persists a restoration token under the daemon directory.
-pub async fn request_linux(directory: String) -> Result<DesktopAccess, String> {
+/// `reselect_sources` replaces Wayland's grant with a fresh local screen selection.
+pub async fn request_linux(
+    directory: String,
+    reselect_sources: bool,
+) -> Result<DesktopAccess, String> {
     #[cfg(target_os = "linux")]
     {
         if crate::android_scrcpy::is_configured() {
@@ -88,16 +92,19 @@ pub async fn request_linux(directory: String) -> Result<DesktopAccess, String> {
         }
         match backend() {
             Backend::Wayland => {
-                let access = match deskfleet_wayland::request_access(directory.into()).await {
-                    Ok(access) => access,
-                    Err(
-                        deskfleet_wayland::Error::Cancelled
-                        | deskfleet_wayland::Error::PermissionDenied,
-                    ) => {
-                        return Ok(DesktopAccess::default());
-                    }
-                    Err(error) => return Err(error.to_string()),
-                };
+                let access =
+                    match deskfleet_wayland::request_access(directory.into(), reselect_sources)
+                        .await
+                    {
+                        Ok(access) => access,
+                        Err(
+                            deskfleet_wayland::Error::Cancelled
+                            | deskfleet_wayland::Error::PermissionDenied,
+                        ) => {
+                            return Ok(DesktopAccess::default());
+                        }
+                        Err(error) => return Err(error.to_string()),
+                    };
                 Ok(DesktopAccess {
                     screen_capture: access.screen_capture,
                     control: access.control,
@@ -108,7 +115,7 @@ pub async fn request_linux(directory: String) -> Result<DesktopAccess, String> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = directory;
+        let _ = (directory, reselect_sources);
         Ok(DesktopAccess::default())
     }
 }

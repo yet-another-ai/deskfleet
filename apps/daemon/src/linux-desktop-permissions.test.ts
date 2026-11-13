@@ -62,6 +62,50 @@ test("requesting either linked permission refreshes both from the same Portal re
   assert.equal(requests, 1)
 })
 
+test("only an explicit Wayland screen request replaces the shared monitor selection", async () => {
+  const consent = deferred<LinuxDesktopAccess>()
+  const started = deferred<void>()
+  const requests: { directory: string; reselectSources: boolean | undefined }[] = []
+  const native = new LinuxDesktopPermissions("/daemon", {
+    request: async (directory, reselectSources) => {
+      requests.push({ directory, reselectSources })
+      if (reselectSources) { started.resolve(); return consent.promise }
+      return { screenCapture: true, control: true }
+    },
+    check: async () => ({ screenCapture: true, control: true }),
+    close: async () => {},
+  })
+  const permissions = new DesktopPermissions("wayland")
+  permissions.initialize(native.requests, native.checks, "automatic", {
+    linked: [["screenCapture", "accessibility"]], refreshOnRead: true,
+  })
+  await permissions.refreshAfterChange()
+  assert.deepEqual(requests, [{ directory: "/daemon", reselectSources: false }])
+
+  permissions.requestPermission("accessibility")
+  await permissions.refreshAfterChange()
+  assert.deepEqual(requests.map(request => request.reselectSources), [false, false])
+
+  const pending = permissions.requestPermission("screenCapture")
+  assert.equal(pending.screenCapturePermission.status, "requesting")
+  assert.equal(pending.accessibilityPermission.status, "requesting")
+  permissions.requestPermission("screenCapture")
+  permissions.requestPermission("accessibility")
+  await started.promise
+  assert.equal((await permissions.readState()).screenCapturePermission.status, "requesting")
+  assert.deepEqual(requests, [
+    { directory: "/daemon", reselectSources: false },
+    { directory: "/daemon", reselectSources: false },
+    { directory: "/daemon", reselectSources: true },
+  ])
+
+  consent.resolve({ screenCapture: true, control: true })
+  await permissions.refreshAfterChange()
+  assert.equal(permissions.state.screenCapturePermission.status, "granted")
+  assert.equal(permissions.state.accessibilityPermission.status, "granted")
+  assert.equal(requests.length, 3)
+})
+
 test("closing cancels a pending Portal dialog and prevents another request", async () => {
   const access = deferred<LinuxDesktopAccess>()
   const started = deferred<void>()

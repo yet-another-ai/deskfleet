@@ -7,7 +7,7 @@ export interface LinuxDesktopAccess {
 }
 
 export interface LinuxDesktopPermissionApi {
-  request(directory: string): Promise<LinuxDesktopAccess>
+  request(directory: string, reselectSources?: boolean): Promise<LinuxDesktopAccess>
   check(): Promise<LinuxDesktopAccess>
   close(): Promise<void>
   /** Fires when the shared grant changes without a new request. */
@@ -28,11 +28,11 @@ export class LinuxDesktopPermissions {
   constructor(directory: string, native: LinuxDesktopPermissionApi, backend: LinuxDesktopBackend = "wayland") {
     this.#native = native
     this.#backend = backend
-    const request = () => {
+    const request = (reselectSources = false) => {
       if (this.#closing) return Promise.reject(new Error("Linux desktop access is closing"))
       return this.#request ??= Promise.resolve().then(() => {
         if (this.#closing) throw new Error("Linux desktop access is closing")
-        return backend === "wayland" ? native.request(directory) : native.check()
+        return backend === "wayland" ? native.request(directory, reselectSources) : native.check()
       })
         .finally(() => { this.#request = undefined })
     }
@@ -43,8 +43,8 @@ export class LinuxDesktopPermissions {
     }
     const access = (granted: boolean) => backend === "x11" && granted ? null : granted
     this.requests = {
-      screenCapture: async () => access((await request()).screenCapture),
-      accessibility: async () => access((await request()).control),
+      screenCapture: async reselectSources => access((await request(reselectSources)).screenCapture),
+      accessibility: async reselectSources => access((await request(reselectSources)).control),
       fullDiskAccess: async () => null,
     }
     this.checks = {

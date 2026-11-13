@@ -883,6 +883,13 @@ Only a permission action opens authorization or requests access. These controls
 belong to this computer even when a remote Machine is selected. Local Network
 retains its request-attempt status and links to System Settings for confirmation;
 Wayland screen and input permissions share the same authorization session.
+The welcome screen-sharing step and Settings → Permissions explain multi-monitor
+selection when the desktop offers a picker and retain an explicit action to
+authorize screen sharing again after authorization. That local screen-sharing
+request replaces the shared Wayland
+session and its saved selection; it stops active capture/control while fresh
+consent is pending. Refreshes, startup restoration, and input retries keep their
+existing authorization behavior.
 
 Startup reuses an authenticated standalone daemon only when it was explicitly
 configured to own the same `<userData>/daemon` discovery directory. Explicitly
@@ -1293,6 +1300,12 @@ input, and GPU presentation. Display changes, control settings, and reconnects
 replace the peer inside the same native window; disconnect releases the peer
 and leaves the window ready to reconnect. Its lifetime is independent of the
 hosted daemon.
+Desktop discovery carries optional human-readable names and display numbers
+separately from opaque capture IDs. The native platform adapter owns metadata
+lookup; Wayland's authorization owner also retains its local monitor-number
+mapping. Clients use those labels for presentation and keep the capture ID for
+stream selection and input. Metadata never expands the set of authorized
+screens. See [display names and numbers](media.md#display-names-and-numbers).
 Within each Machine registration, a native desktop stream pool shares capture
 and encoding for matching display, codec, audio, and quality parameters across
 viewing peers. Peer authorization and transport remain independent; releasing

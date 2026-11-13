@@ -698,7 +698,7 @@
     "noDisplays": "ディスプレイが見つかりません。",
     "displayCount": "{count} 台のディスプレイ",
     "display": "ディスプレイ {id}",
-    "openDisplay": "{machine} のディスプレイ {display} を開く",
+    "openDisplay": "{machine} の{display}を開く",
     "connecting": "プレビューに接続中…"
   },
   "desktop": {
@@ -712,7 +712,7 @@
     "retry": "ディスプレイを更新", "settings": "ストリーム設定",
     "settingsFailed": "デスクトップ設定を適用できませんでした",
     "moveControls": "操作パネルを移動",
-    "display": "ディスプレイ", "displayOption": "ディスプレイ {id} · {width} × {height}",
+    "display": "ディスプレイ", "displayName": "ディスプレイ {number}", "displayOption": "{display} · {width} × {height}",
     "codecStatus": "映像コーデック: {codec}", "audio": "システム音声",
     "control": "マウスとキーボードの操作", "reverseScroll": "マウススクロールを反転", "pauseControl": "操作を一時停止",
     "resumeControl": "操作を再開", "controlHint": "デスクトップをクリックすると、マウスとキーボードの入力を送信できます。",
@@ -1132,9 +1132,15 @@
     "wayland": {
       "dialog": "デスクトップのアクセス許可", "shared": "画面共有とマウス・キーボードの操作は、1 回の許可で有効になります。許可したら、両方のステップを進めてください。",
       "requesting": "デスクトップのアクセス許可を待っています…", "retry": "アクセス許可を再試行",
+      "changeScreensLater": "後から不足している画面を追加するには、「設定 → 権限 → 画面共有」でもう一度許可してください。",
       "screenCapture": {
         "title": "画面共有", "description": "リモートデスクトップセッションで、DeskFleet がこのコンピューターの画面を共有することを許可します。",
-        "instructions": "デスクトップの許可ダイアログで、共有する画面を選択してアクセスを許可してください。", "skip": "許可するまでリモート画面共有は利用できません。このステップをスキップして、後で許可することもできます。"
+        "instructions": "システムのダイアログで画面共有を許可してください。画面選択が表示された場合は、リモートから使用するモニターをすべて選択してください。",
+        "selection": "リモートには許可された画面だけが表示されます。再接続時も、この許可が使用されます。",
+        "choose": "画面共有を許可",
+        "reselect": "もう一度許可",
+        "reselectHint": "もう一度許可すると現在のリモート表示と操作が停止し、デスクトップの許可を再度要求します。画面選択が表示された場合は、不足しているモニターも選択してください。",
+        "skip": "許可するまでリモート画面共有は利用できません。このステップをスキップして、後で許可することもできます。"
       },
       "accessibility": {
         "title": "マウスとキーボードの操作", "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。",

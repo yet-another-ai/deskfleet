@@ -295,6 +295,8 @@ fn parse_display_info(text: &str) -> Option<Display> {
     }
     Some(Display {
         id: 0,
+        name: None,
+        display_number: Some(1),
         width,
         height,
         refresh_rate_hz: fps,
