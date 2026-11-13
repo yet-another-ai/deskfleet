@@ -110,7 +110,7 @@ function close(): void {
       <p v-if="imported" role="status" class="m-0 mt-3 text-sm text-ui-text-muted">{{ t("providers.workspaceImport.importedCount", imported) }}</p>
     </template>
     <p v-if="importError" role="alert" class="m-0 mt-3 text-sm text-ui-danger">{{ importError }}</p>
-    <div class="ui-dialog-actions">
+    <div class="ui-dialog-actions flex-wrap">
       <UiButton type="button" :disabled="importing" data-workspace-import-close @click="close">{{ t(imported ? "providers.workspaceImport.done" : "providers.workspaceImport.skip") }}</UiButton>
       <UiButton v-if="rows.length" variant="primary" type="button" :disabled="loading || importing || !selected.length" data-import-selected @click="importSelected">{{ importing ? t("providers.workspaceImport.importing") : t("providers.workspaceImport.importSelected", selected.length) }}</UiButton>
     </div>
