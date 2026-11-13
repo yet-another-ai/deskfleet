@@ -91,6 +91,14 @@ test("browses synchronized history with the machine offline and isolates equal l
   await router.push("/sessions/30")
   await settled(() => expect(view!.text()).toContain("Message from 101"))
   expect(central.createPeer).not.toHaveBeenCalled()
+  const sessionScroll = page().get<HTMLElement>("[data-session-scroll-viewport]")
+  let conversationTop = 320
+  Object.defineProperties(sessionScroll.element, {
+    scrollHeight: { value: 1600 },
+    clientHeight: { value: 400 },
+    scrollTop: { get: () => sessionScroll.element.isConnected ? conversationTop : 0, set: value => { conversationTop = value } },
+  })
+  await sessionScroll.trigger("scroll")
   // Expanding another machine retains the current session view, sidebar scroll, and first machine's expanded resource tree.
   expect(page().find("aside [data-sidebar-scroll-area]").exists()).toBe(true)
   const sidebarScroll = page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element
@@ -109,11 +117,18 @@ test("browses synchronized history with the machine offline and isolates equal l
   await settled(() => expect(view!.text()).toContain("Message from 102"))
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
+  const switchedSidebarScroll = page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element
+  expect(switchedSidebarScroll).not.toBe(sidebarScroll)
+  expect(switchedSidebarScroll.scrollTop).toBe(120)
   // An explicit Session destination survives the fresh Machine mount, even when
   // both machines use the same local Session ID and synchronized offline history.
   const account = view.getComponent({ name: "MachineSurface" }).props("session") as AccountSession
+  const scrollTo = vi.spyOn(HTMLElement.prototype, "scrollTo")
   await page().get('aside section[data-machine-id="101"] a[href="#/sessions/30"]').trigger("click")
   await settled(() => expect(view!.text()).toContain("Message from 101"))
+  expect(page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element.scrollTop).toBe(120)
+  expect(scrollTo).toHaveBeenCalledWith({ top: 320 })
+  scrollTo.mockRestore()
   expect(router.currentRoute.value.path).toBe("/sessions/30")
   expect(view.text()).not.toContain("Message from 102")
   expect(page().get("aside").text()).toContain("Workspace 102")
@@ -133,6 +148,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(view.text()).not.toContain("Workspace 102")
   await page().get("form").trigger("submit")
   await settled(() => expect(view!.text()).toContain("Workspace 101"))
+  expect(page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element.scrollTop).toBe(0)
 })
 
 const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin", mobile = false) => {
