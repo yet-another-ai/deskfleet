@@ -14,7 +14,8 @@ pub(super) fn depay(codec: Codec) -> &'static str {
 
 pub(super) fn codec_description(payload_type: u8, codec: Codec, factory: &str) -> String {
     let settings = match factory {
-        "vah264dec" | "nvh264dec" | "vah265dec" | "nvh265dec" => "compliance=flexible",
+        // compliance is a GstH264Decoder property, not a GstH265Decoder property.
+        "vah264dec" | "nvh264dec" => "compliance=flexible",
         "vaapih264dec" | "vaapih265dec" => "low-latency=true",
         "avdec_h264" | "avdec_h265" | "avdec_av1" => "max-threads=1",
         _ => "",

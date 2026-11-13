@@ -13,6 +13,8 @@ struct CaptureState {
     stopped: AtomicUsize,
     stopping: AtomicUsize,
     block_stop: AtomicBool,
+    fail_stop: AtomicBool,
+    panic_stop: AtomicBool,
     automatic_keyframes: AtomicBool,
     commands: Mutex<VecDeque<Result<Vec<Packet>, MediaError>>>,
     feedback: Mutex<Vec<(bool, Option<f64>, bool)>>,
@@ -86,6 +88,16 @@ impl Capture for TestCapture {
             std::thread::sleep(Duration::from_millis(2));
         }
         self.0.stopped.fetch_add(1, Ordering::Relaxed);
+        assert!(
+            !self.0.panic_stop.load(Ordering::Relaxed),
+            "test cleanup panic"
+        );
+        if self.0.fail_stop.load(Ordering::Relaxed) {
+            return Err(MediaError::Service {
+                message: "test capture cleanup failure".to_owned(),
+                encoder: false,
+            });
+        }
         Ok(())
     }
 }
@@ -393,18 +405,92 @@ async fn capture_failure_reaches_every_viewer_and_next_start_retries() {
         assert!(errors[0].0.contains("test encoder failure"));
         assert_eq!(errors[0].1, Some("encoder"));
     }
-    assert_eq!(
-        a.stop().await.unwrap_err().fallback_reason(),
-        Some("encoder")
-    );
-    assert_eq!(
-        b.stop().await.unwrap_err().fallback_reason(),
-        Some("encoder")
-    );
+    a.stop().await.unwrap();
+    b.stop().await.unwrap();
     assert_eq!(capture.stopped.load(Ordering::Relaxed), 1);
     let next = start(&pool, &first, &capture).await;
     assert_eq!(capture.opened.load(Ordering::Relaxed), 2);
     next.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn media_failure_does_not_hide_capture_cleanup_failure() {
+    let pool = DesktopStreamPool::default();
+    let capture = CaptureState::new();
+    let first = TestViewer::new();
+    let second = TestViewer::new();
+    let (a, b) = tokio::join!(
+        start(&pool, &first, &capture),
+        start(&pool, &second, &capture)
+    );
+    capture.fail_stop.store(true, Ordering::Relaxed);
+    capture
+        .commands
+        .lock()
+        .unwrap()
+        .push_back(Err(MediaError::EncoderStall));
+    until(|| a.is_finished() && b.is_finished()).await;
+    for stream in [a, b] {
+        let error = stream.stop().await.unwrap_err();
+        assert!(error.to_string().contains("test capture cleanup failure"));
+        assert_eq!(error.fallback_reason(), None);
+    }
+    for viewer in [&first, &second] {
+        let errors = viewer.errors.lock().unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].1, Some("encoder"));
+    }
+    assert_eq!(capture.stopped.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn explicit_stop_reports_capture_cleanup_errors_and_worker_panics() {
+    for panic in [false, true] {
+        let pool = DesktopStreamPool::default();
+        let capture = CaptureState::new();
+        let viewer = TestViewer::new();
+        let stream = start(&pool, &viewer, &capture).await;
+        capture.fail_stop.store(!panic, Ordering::Relaxed);
+        capture.panic_stop.store(panic, Ordering::Relaxed);
+        let error = stream.stop().await.unwrap_err().to_string();
+        assert!(error.contains(if panic {
+            "test cleanup panic"
+        } else {
+            "test capture cleanup failure"
+        }));
+        assert_eq!(viewer.errors.lock().unwrap().len(), 1);
+        assert_eq!(capture.stopped.load(Ordering::Relaxed), 1);
+    }
+}
+
+#[tokio::test]
+async fn startup_keeps_the_media_failure_when_cleanup_also_fails() {
+    let pool = DesktopStreamPool::default();
+    let capture = CaptureState::new();
+    let viewer = TestViewer::new();
+    capture.fail_stop.store(true, Ordering::Relaxed);
+    capture
+        .commands
+        .lock()
+        .unwrap()
+        .push_back(Err(MediaError::EncoderStall));
+    let error = pool
+        .start_with(
+            viewer.clone(),
+            config(),
+            Codec::H264,
+            false,
+            Arc::clone(&capture).open(),
+        )
+        .await
+        .err()
+        .expect("failed media startup must not be acknowledged");
+    assert_eq!(error.to_string(), MediaError::EncoderStall.to_string());
+    assert_eq!(error.fallback_reason(), Some("encoder"));
+    assert_eq!(capture.stopped.load(Ordering::Relaxed), 1);
+    let errors = viewer.errors.lock().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].1, Some("encoder"));
 }
 
 #[tokio::test]
@@ -640,7 +726,7 @@ async fn audio_overrun_stops_only_the_lagging_viewer() {
     until(|| fast.values().contains(&30)).await;
     slow.blocked.send_replace(false);
     until(|| b.is_finished()).await;
-    assert!(matches!(b.stop().await, Err(MediaError::Transport(_))));
+    b.stop().await.unwrap();
     assert!(!a.is_finished());
     assert_eq!(capture.opened.load(Ordering::Relaxed), 1);
     assert_eq!(capture.stopped.load(Ordering::Relaxed), 0);
