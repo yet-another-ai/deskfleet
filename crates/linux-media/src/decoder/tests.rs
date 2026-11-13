@@ -227,6 +227,22 @@ fn runtime_depay_recovery_keeps_parameter_sets_with_the_keyframe() {
 }
 
 #[test]
+#[ignore = "requires a working GStreamer VA-API HEVC decoder"]
+fn runtime_vaapi_decodes_hevc_rtp_fixture() {
+    let decoder = RtpVideoDecoder::with_codec_factory(96, Codec::H265, "vah265dec").unwrap();
+    let bytes = include_bytes!("../../../native/examples/fixtures/red-64x64.h265");
+    for packet in packetize(bytes, 3000, &mut 100) {
+        assert!(decoder.try_push(&packet).unwrap());
+    }
+    let frame = decoder
+        .next_frame(Duration::from_secs(2))
+        .unwrap()
+        .expect("HEVC fixture must produce a decoded frame");
+    assert_red(&frame);
+    decoder.stop().unwrap();
+}
+
+#[test]
 #[ignore = "requires a working GStreamer VA-API or NVDEC H.264 decoder"]
 fn runtime_reports_static_fixture_hardware_output_delay() {
     let decoder = RtpVideoDecoder::new(96).unwrap();
