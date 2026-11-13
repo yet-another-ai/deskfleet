@@ -14,7 +14,7 @@
     "@deepseek-ai/dsh": "0.2.2-rc.1"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "2.4.0"
+    "@agentclientprotocol/sdk": "2.5.0"
   },
   "files": [
     "package.json",

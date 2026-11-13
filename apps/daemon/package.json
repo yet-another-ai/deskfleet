@@ -13,9 +13,9 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.101.0",
+    "@agentclientprotocol/claude-agent-acp": "0.104.1",
     "@agentclientprotocol/codex-acp": "2.3.0",
-    "@agentclientprotocol/sdk": "2.4.0",
+    "@agentclientprotocol/sdk": "2.5.0",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",

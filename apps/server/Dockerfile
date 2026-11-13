@@ -1,7 +1,7 @@
 # The release workflow supplies binaries built on Ubuntu 24.04 runners in
 # amd64/deskfleet-server and arm64/deskfleet-server beneath the build context,
 # alongside the same release's Web build in web/.
-FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \

@@ -27,11 +27,11 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-gpui = { package = "gpui-fast", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
-gpui_platform = { package = "gpui-fast-platform", version = "=0.1.9", default-features = false, features = ["font-kit", "wayland", "x11"] }
-nsh-core = "=0.4.0"
-nsh-base = { version = "=0.4.0", default-features = false }
-nsh-platform-gpui = { version = "=0.4.0", default-features = false }
+gpui = { package = "gpui-fast", version = "=0.1.15", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.15", default-features = false, features = ["font-kit", "wayland", "x11"] }
+nsh-core = "=0.5.0"
+nsh-base = { version = "=0.5.0", default-features = false }
+nsh-platform-gpui = { version = "=0.5.0", default-features = false }
 async-channel = "2"
 image = { version = "0.25", default-features = false }
 raw-window-handle = { version = "0.6", features = ["std"] }
@@ -86,7 +86,7 @@ nix = { workspace = true, features = ["poll"] }
 wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
 wayland-client = "0.31"
 x11rb.workspace = true
-xkbcommon = "0.8"
+xkbcommon = "0.9"
 
 [lints]
 workspace = true
