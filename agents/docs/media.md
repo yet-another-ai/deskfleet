@@ -685,6 +685,14 @@ to be released. Navigating away from the
 Desktop tab leaves the separate native window running. Closing a native viewer
 does not stop the hosted daemon or another session.
 
+Remote release waits for input, capture, and transport cleanup. A previously
+reported media failure does not make a completed capture teardown fail again;
+startup still returns its original media failure and codec classification.
+Actual teardown failures for an established stream still reject `peer.close`.
+Revocation and reconciliation cleanup errors are logged without disconnecting
+the daemon's authenticated control channel, so other requests and cleanup
+receipts can still complete.
+
 Once ICE is connected, a failed outgoing trickle-candidate request is logged
 without closing the established viewer; remaining candidates still get sent.
 Before connection, the same failure ends startup and releases the grant.
