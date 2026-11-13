@@ -3,6 +3,7 @@ import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
 import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
+import type { CatalogSnapshot } from "./catalog.ts"
 import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./desktop-media.ts"
 import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -150,7 +151,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     ...host,
     target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
-      list: async () => {
+      list: async options => {
+        if (options?.live) return { ...await userRpc<CatalogSnapshot>("catalogList"), machineName: name }
         const { snapshot } = await central.catalog(machine.teamId, machine.id)
         name = snapshot.machineName
         return snapshot
@@ -168,6 +170,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       update: (providerId, changes) => userRpc("providerUpdate", { providerId, changes }),
       remove: providerId => userRpc("providerRemove", { providerId }), test: provider => userRpc("providerTest", { provider }),
       probe: provider => userRpc("providerProbe", { provider }),
+      discoverWorkspaces: providerId => userRpc("providerDiscoverWorkspaces", { providerId }),
       install: provider => userRpc("providerInstall", { provider }), login: provider => userRpc("providerLogin", { provider }),
       onChanged: listener => { providerEvents.add(listener); return () => { providerEvents.delete(listener) } },
     },

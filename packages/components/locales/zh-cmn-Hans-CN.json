@@ -1292,6 +1292,23 @@
     "archiving": "正在归档会话。Agent 和终端停止、生成的 worktree 清理完成之前无法继续执行。"
   },
   "providers": {
+    "workspaceImport": {
+      "action": "导入工作区…",
+      "title": "导入工作区",
+      "description": "选择 {provider} 在 {machine} 上记录的项目目录。每个选中的目录将使用现有文件创建一个工作区。",
+      "loading": "正在查找项目目录…",
+      "empty": "未找到现有项目目录。你可以手动添加工作区。",
+      "unsupported": "此提供方暂不支持发现工作区。",
+      "select": "导入 {name}",
+      "source": "来源：{source}",
+      "existing": "已在工作区中",
+      "importing": "正在导入…",
+      "imported": "已导入",
+      "importedCount": "已导入 {n} 个工作区",
+      "done": "完成",
+      "skip": "暂时跳过",
+      "importSelected": "导入 {n} 个工作区"
+    },
     "choose": "选择 Provider",
     "manage": "管理 Providers",
     "noneConfigured": "请先在设置中添加 Provider，再创建会话。",

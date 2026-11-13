@@ -82,6 +82,41 @@ test("adds a provider and edits its settings without sending a template change",
   expect(view.get('[data-provider-id="codex"]').text()).toContain("Renamed")
 })
 
+test("offers workspace import after adding Codex and skipping retains the provider", async () => {
+  vi.spyOn(platformClient.providers, "create").mockImplementation(async input => {
+    const created = { id: "second", ...input }
+    snapshot.providers.push(created)
+    return created
+  })
+  const discover = vi.spyOn(platformClient.providers, "discoverWorkspaces").mockResolvedValue({
+    supported: true, candidates: [{ name: "Project", path: "/code/project", source: "config.toml" }], warnings: [],
+  })
+  vi.spyOn(platformClient.catalog, "list").mockResolvedValue({ teamId: "team", machineId: "local-daemon", machineName: "my-machine", workspaces: [], sessions: [], sessionIds: [] })
+  const createWorkspace = vi.spyOn(platformClient.catalog, "createWorkspace")
+  const view = render()
+  await flushPromises()
+  await button(view, "Add provider").trigger("click")
+  await view.get('[data-provider-template-choice="codex"]').trigger("click")
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(discover).toHaveBeenCalledExactlyOnceWith("second")
+  expect(view.find("form").exists()).toBe(false)
+  expect(view.get("[data-provider-workspace-import]").text()).toContain("Project")
+  expect(view.find('[data-provider-id="second"]').exists()).toBe(true)
+  await view.get("[data-workspace-import-close]").trigger("click")
+  expect(createWorkspace).not.toHaveBeenCalled()
+  expect(view.find("[data-provider-workspace-import]").exists()).toBe(false)
+  expect(view.find('[data-provider-id="second"]').exists()).toBe(true)
+  // Existing providers can reopen the same flow later.
+  await view.get('[aria-label="Actions for Codex"]').trigger("click")
+  await view.findAll('[role="menuitem"]').find(item => item.text() === "Import workspaces…")!.trigger("click")
+  await flushPromises()
+  expect(view.find("[data-provider-workspace-import]").exists()).toBe(true)
+  fleet.machines[0]!.online = false
+  await flushPromises()
+  expect(view.find("[data-provider-workspace-import]").exists()).toBe(false)
+})
+
 test("keeps unsaved provider edits open when the same machine's resource tree refreshes", async () => {
   const view = render()
   await flushPromises()

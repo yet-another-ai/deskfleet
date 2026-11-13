@@ -55,6 +55,25 @@ test("system status rejects malformed parameters and preserves native sampling f
   assert.equal(reads, 1)
 })
 
+test("workspace discovery requires a verified user and resolves only the registration's provider", async () => {
+  const reads: string[] = []
+  const operations = new MachineOperations({
+    agents: {}, catalog: {}, terminals: {}, setup: {},
+    providers: { get(id: string) {
+      reads.push(id)
+      if (id !== "registered-agent") throw new Error("Agent provider is unavailable")
+      return { id, name: "Custom", template: "acp", inheritShellEnvironment: false, env: {} }
+    } },
+    capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, undefined), /verified user and login/u)
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "../agent" }, actor), /Invalid provider ID/u)
+  assert.deepEqual(reads, [])
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "other-registration" }, actor), /unavailable/u)
+  assert.deepEqual(await operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, actor), { supported: false, candidates: [], warnings: [] })
+  assert.deepEqual(reads, ["other-registration", "registered-agent"])
+})
+
 test("Session rename passes only the server-verified actor to the Agent service", async () => {
   const calls: unknown[][] = []
   const operations = new MachineOperations({

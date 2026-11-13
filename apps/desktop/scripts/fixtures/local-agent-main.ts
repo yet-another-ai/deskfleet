@@ -128,7 +128,10 @@ async function exerciseSettings(context: LocalAgentSmokeContext): Promise<LocalA
   }
   async function saveProvider(dialog: HTMLElement): Promise<void> {
     dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
-    await until(() => !document.querySelector("[role=dialog][data-state=open]"), "Saved provider")
+    await until(() => !document.querySelector("[role=dialog][data-state=open]")
+      || !!document.querySelector("[data-provider-workspace-import]"), "Saved provider")
+    document.querySelector<HTMLButtonElement>("[data-workspace-import-close]")?.click()
+    await until(() => !document.querySelector("[role=dialog][data-state=open]"), "Skipped optional workspace import")
   }
   async function settledBinaryPath(dialog: HTMLElement, fallback: string): Promise<string | undefined> {
     // Let the last input update start its probe before inspecting the rendered status.

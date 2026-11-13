@@ -3,7 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 
-import { Bot, Ellipsis, Pencil, Plus, Trash2 } from "@lucide/vue"
+import { Bot, Ellipsis, FolderInput, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { DialogTitle, DialogDescription, DropdownMenuItem } from "reka-ui"
 import { computed, onBeforeUnmount, ref } from "vue"
@@ -13,6 +13,7 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import MachineTabs from "../account/MachineTabs.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderDialog from "./ProviderDialog.vue"
+import ProviderWorkspaceImportDialog from "./ProviderWorkspaceImportDialog.vue"
 import MenuPopover from "../common/MenuPopover.vue"
 import UiDialog from "../common/UiDialog.vue"
 
@@ -28,6 +29,9 @@ const snapshot = ref<ProviderSnapshot | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const editor = ref<{ initial?: AgentProviderConfig } | null>(null)
+const importing = ref<AgentProviderConfig | null>(null)
+let pendingImport: AgentProviderConfig | null = null
+let scopeRevision = 0
 const removing = ref<AgentProviderConfig | null>(null)
 const removePending = ref(false)
 const removeError = ref<string | null>(null)
@@ -45,21 +49,38 @@ async function refresh(): Promise<void> {
     if (request === revision) error.value = reason instanceof Error ? reason.message : String(reason)
   } finally { if (request === revision) loading.value = false }
 }
-watchImmediate([() => machine.value?.id, available], () => { editor.value = null; void refresh() })
+watchImmediate([() => machine.value?.id, () => account?.teamId.value, available], () => {
+  scopeRevision++
+  editor.value = null
+  importing.value = null
+  pendingImport = null
+  void refresh()
+})
 const unsubscribe = platformClient.providers.onChanged(() => { void refresh() })
-onBeforeUnmount(() => { revision++; unsubscribe() })
+onBeforeUnmount(() => { revision++; scopeRevision++; unsubscribe() })
 const templateName = (provider: AgentProviderConfig) => snapshot.value?.templates.find(template => template.id === provider.template)?.name ?? provider.template
 
 function edit(provider: AgentProviderConfig): void {
   editor.value = { initial: provider }
 }
+const supportsWorkspaceImport = (provider: AgentProviderConfig) => provider.template === "codex" || provider.template === "claude-code"
+
 async function save(provider: AgentProviderInput): Promise<void> {
+  const scope = scopeRevision
   const initial = editor.value?.initial
   if (initial) {
     const { name, binaryPath, env, icon, inheritShellEnvironment } = provider
     await platformClient.providers.update(initial.id, { name, binaryPath, env, icon, inheritShellEnvironment })
-  } else await platformClient.providers.create(provider)
-  await refresh()
+  } else {
+    const created = await platformClient.providers.create(provider)
+    if (scope === scopeRevision && supportsWorkspaceImport(created)) pendingImport = created
+  }
+  if (scope === scopeRevision) await refresh()
+}
+function saved(): void {
+  editor.value = null
+  importing.value = pendingImport
+  pendingImport = null
 }
 function test(provider: AgentProviderInput): Promise<ProviderTestResult> {
   return platformClient.providers.test(provider)
@@ -113,6 +134,7 @@ async function remove(): Promise<void> {
             <template #default="{ openDialog }">
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog(() => edit(provider))"><Pencil :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.edit") }}</DropdownMenuItem>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item text-ui-danger" @select="openDialog(() => askRemove(provider))"><Trash2 :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.remove") }}</DropdownMenuItem>
+              <DropdownMenuItem v-if="supportsWorkspaceImport(provider)" as="button" type="button" class="ui-menu-item" @select="openDialog(() => importing = provider)"><FolderInput :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.workspaceImport.action") }}</DropdownMenuItem>
             </template>
           </MenuPopover>
         </div>
@@ -124,7 +146,8 @@ async function remove(): Promise<void> {
       </div>
     </template>
   </div>
-  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :shell-environment-default="snapshot.shellEnvironmentDefault" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="editor = null" @cancel="editor = null" />
+  <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :shell-environment-default="snapshot.shellEnvironmentDefault" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="saved" @cancel="editor = null" />
+  <ProviderWorkspaceImportDialog v-if="importing" :provider="importing" :machine-name="machine?.name ?? ''" @close="importing = null" />
   <UiDialog v-if="removing" class="w-[26rem]" described :prevent-close="removePending" @close="cancelRemove">
     <DialogTitle class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing.name }) }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("providers.removeDescription") }}</DialogDescription>

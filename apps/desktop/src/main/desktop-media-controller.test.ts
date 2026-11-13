@@ -48,6 +48,7 @@ test("provider settings are validated and changes reach only their event stream"
     ["providerRemove", { providerId: "codex" }],
     ["providerTest", { provider }],
     ["providerProbe", { provider }],
+    ["providerDiscoverWorkspaces", { providerId: "codex" }],
     ["providerInstall", { provider }],
     ["providerLogin", { provider }],
   ] as const) {
@@ -56,7 +57,8 @@ test("provider settings are validated and changes reach only their event stream"
   }
   await expect(controller.invoke("providerUpdate", { providerId: "codex", changes: { ...changes, template: "acp" } })).rejects.toThrow()
   await expect(controller.invoke("providerTest", { provider: { ...provider, template: "unknown" } })).rejects.toThrow()
-  expect(client.call).toHaveBeenCalledTimes(8)
+  await expect(controller.invoke("providerDiscoverWorkspaces", { providerId: "../codex" })).rejects.toThrow("Invalid provider ID")
+  expect(client.call).toHaveBeenCalledTimes(9)
   event({ kind: "providersChanged" })
   expect(emitProviders).toHaveBeenCalledOnce()
   expect(emit).not.toHaveBeenCalled()

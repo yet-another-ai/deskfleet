@@ -326,6 +326,26 @@ Settings → Agents, where executable discovery, installation, login, and
 connection testing are available. Startup preserves existing provider settings,
 including an empty list after all providers are removed.
 
+Adding Codex or Claude Code offers an optional Workspace import step. The same
+action is available from an existing provider's menu. The target registration's
+authenticated `providerDiscoverWorkspaces` management operation reads the
+provider's project directory records using its effective environment, including
+shell inheritance and explicit overrides. Codex reads the `projects` table in
+`$CODEX_HOME/config.toml` (default `~/.codex/config.toml`); Claude Code reads the
+`projects` object in `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`).
+Discovery returns existing absolute directories and source paths, with warnings
+for unreadable or malformed configuration. It does not launch an Agent.
+
+Users choose which directories to import; each selected directory creates one
+Workspace through the existing `workspaceCreate` operation in that Team and
+Machine. The UI reads the daemon's live catalog when discovering and before
+importing, so recent Workspace changes do not depend on catalog replication.
+It marks directories already present in Workspace configuration and retains
+completed imports if another directory fails. Import creates catalog
+records only: it does not copy files, credentials, MCP settings, trust decisions,
+rules, or conversation history. Skipping or failing import retains the saved
+provider. Other provider templates do not currently offer project discovery.
+
 Background ACP and MCP subprocesses started by DeskFleet must hide their Windows
 console windows. Each nested launch needs its own `windowsHide` option; hiding
 the outer ACP process does not configure its descendants. This covers the AUV

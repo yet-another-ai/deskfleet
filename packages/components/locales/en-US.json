@@ -1292,6 +1292,23 @@
     "archiving": "Archiving this session. Execution is blocked until running agents and terminals stop and any generated worktree is removed."
   },
   "providers": {
+    "workspaceImport": {
+      "action": "Import workspaces…",
+      "title": "Import workspaces",
+      "description": "Choose project directories recorded by {provider} on {machine}. Each selection becomes a Workspace using its existing files.",
+      "loading": "Looking for project directories…",
+      "empty": "No existing project directories found. You can add Workspaces manually.",
+      "unsupported": "Workspace discovery is not available for this provider.",
+      "select": "Import {name}",
+      "source": "Source: {source}",
+      "existing": "Already in Workspaces",
+      "importing": "Importing…",
+      "imported": "Imported",
+      "importedCount": "{n} Workspace imported | {n} Workspaces imported",
+      "done": "Done",
+      "skip": "Skip for now",
+      "importSelected": "Import {n} Workspace | Import {n} Workspaces"
+    },
     "choose": "Choose provider",
     "manage": "Manage providers",
     "noneConfigured": "Add a provider in Settings to start a session.",

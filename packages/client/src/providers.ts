@@ -8,6 +8,7 @@ import type {
   ProviderTestResult,
   ProviderProbeResult,
   ProviderUpdate,
+  ProviderWorkspaceDiscovery,
 } from "../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 
@@ -31,6 +32,8 @@ export interface ProvidersApi {
   /** Starts unsaved settings on the daemon's machine without sending a prompt. */
   test(provider: AgentProviderInput): Promise<ProviderTestResult>
   probe(provider: AgentProviderInput): Promise<ProviderProbeResult>
+  /** Read existing projects without creating Workspaces or changing provider settings. */
+  discoverWorkspaces(providerId: string): Promise<ProviderWorkspaceDiscovery>
   /** Explicit setup actions run in a machine terminal with live output and input. */
   install(provider: AgentProviderInput): Promise<TerminalSummary>
   login(provider: AgentProviderInput): Promise<TerminalSummary>
