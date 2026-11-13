@@ -6,7 +6,7 @@ import type { MachineSummary } from "../../stores/fleet-types.ts"
 import { Plus } from "@lucide/vue"
 import { useEventListener } from "@vueuse/core"
 import { storeToRefs } from "pinia"
-import { computed, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
@@ -31,6 +31,15 @@ const fleet = useFleetStore()
 const account = useAccountSession()
 const runtimes = useMachineRuntimes()
 const { compact, sidebarWidth } = storeToRefs(useLayoutStore())
+const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
+onMounted(() => {
+  const el = scrollArea.value?.viewportElement
+  if (runtimes?.sidebarScrollTop && el) el.scrollTop = runtimes.sidebarScrollTop
+})
+onBeforeUnmount(() => {
+  const el = scrollArea.value?.viewportElement
+  if (runtimes && el) runtimes.sidebarScrollTop = el.scrollTop
+})
 const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = platformClient.platform
 // Each opened machine retains its own catalog and action scope.
@@ -94,6 +103,7 @@ function refresh(): void {
     <SidebarNavigation />
 
     <UiScrollArea
+      ref="scrollArea"
       class="min-h-0 min-w-0 flex-1"
       content-class="px-2 pt-4 pb-3"
       data-sidebar-scroll-area

@@ -957,7 +957,13 @@ test("switching away and back restores a manual reading position before synchron
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   const scroller = wrapper.findComponent(SessionView).get<HTMLElement>("[data-session-scroll-viewport]")
-  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 350, writable: true } })
+  let top = 350
+  // Match CSSOM View behavior where detached elements return 0 for scrollTop during DockviewVue disposal.
+  Object.defineProperties(scroller.element, {
+    scrollHeight: { value: 1600 },
+    clientHeight: { value: 400 },
+    scrollTop: { get: () => scroller.element.isConnected ? top : 0, set: value => { top = value } },
+  })
   await scroller.trigger("scroll")
   await router.push({ name: "new-session" })
   await flushPromises()
@@ -981,7 +987,12 @@ test("scroll-to-bottom appears when reading history and restores follow on click
   await flushPromises()
   const session = wrapper.findComponent(SessionView)
   const scroller = session.get<HTMLElement>("[data-session-scroll-viewport]")
-  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 1200, writable: true } })
+  let top = 1200
+  Object.defineProperties(scroller.element, {
+    scrollHeight: { value: 1600 },
+    clientHeight: { value: 400 },
+    scrollTop: { get: () => scroller.element.isConnected ? top : 0, set: value => { top = value } },
+  })
   await scroller.trigger("scroll")
   expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
 
@@ -1026,6 +1037,32 @@ test("scroll-to-bottom appears when reading history and restores follow on click
   emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After spring" } } })
   await flushPromises()
   await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 1600 }))
+
+  await router.push({ name: "new-session" })
+  await flushPromises()
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(1600)
+  const returnScroll = vi.spyOn(HTMLElement.prototype, "scrollTo")
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(returnScroll).toHaveBeenCalledWith({ top: 1600 })
+})
+
+test("returning to an already-loaded session without a saved scroll offset still scrolls to the bottom", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await router.push({ name: "new-session" })
+  await flushPromises()
+  const restored = deferred<AgentSnapshot>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/subscribe" ? restored.promise : normal(method, params))
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(1600)
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollTo")
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(scroll).toHaveBeenCalledWith({ top: 1600 })
+  restored.resolve(structuredClone(snapshot))
+  await flushPromises()
 })
 
 test("deferred Session startup opens immediately with bubble animation, renders startup status in the reply area, and clears cleanly if stopped", async () => {

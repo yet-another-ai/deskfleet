@@ -24,6 +24,7 @@ export interface MachineRuntime {
 }
 export interface MachineRuntimes {
   opened: Map<string, MachineRuntime>
+  sidebarScrollTop: number
   open(machine: Machine): MachineRuntime
 }
 
@@ -46,7 +47,10 @@ export function createMachineRuntimes(
   const identity = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id, session.teamId.value]))
   const owner = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id]))
   watch(owner, (_, previous) => { void clearConversationOwner(previous) })
-  watch(identity, () => { for (const id of opened.keys()) release(id) }, { flush: "sync" })
+  watch(identity, () => {
+    for (const id of opened.keys()) release(id)
+    runtimes.sidebarScrollTop = 0
+  }, { flush: "sync" })
   watch(() => [session.machines.value.map(machine => ({ ...machine })), session.machineRosterVersion.value] as const, ([machines, version], [, previousVersion]) => {
     for (const [id, runtime] of opened) {
       const machine = machines.find(value => value.id === id)
@@ -58,6 +62,7 @@ export function createMachineRuntimes(
 
   const runtimes: MachineRuntimes = {
     opened,
+    sidebarScrollTop: 0,
     open(machine) {
       const existing = opened.get(machine.id)
       if (existing) return existing

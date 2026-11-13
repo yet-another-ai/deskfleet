@@ -180,7 +180,7 @@ onScopeDispose(() => {
   followingSpring = undefined
 })
 function saveReading(id: string): void {
-  if (scroller.value && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
+  if (scroller.value?.isConnected && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
 }
 onBeforeUnmount(() => saveReading(props.sessionId))
 const { arrivedState } = useScroll(scroller, {
@@ -188,6 +188,7 @@ const { arrivedState } = useScroll(scroller, {
   onScroll() {
     if (restoringScroll || followingSpring) return
     followBottom.value = arrivedState.bottom
+    saveReading(props.sessionId)
     updateOutline()
   },
 })
@@ -199,13 +200,15 @@ function followSpringToBottom(el: HTMLElement): void {
   void spring.finished.then(completed => {
     if (followingSpring !== spring) return
     followingSpring = undefined
-    if (!completed) followBottom.value = arrivedState.bottom
+    if (!completed && el.isConnected) followBottom.value = arrivedState.bottom
+    saveReading(props.sessionId)
     updateOutline()
   })
 }
 
 function scrollToBottom(): void {
   followBottom.value = true
+  saveReading(props.sessionId)
   const el = scroller.value
   if (!el) return
   followSpringToBottom(el)
@@ -250,7 +253,9 @@ watchImmediate(() => props.sessionId, (id, previous) => {
   void agents.open(id)
   void nextTick(() => {
     if (props.sessionId !== id) return
-    if (saved && !focusedEntry.value && !pendingLocate.value) scroller.value?.scrollTo({ top: saved.bottom ? scroller.value.scrollHeight : saved.top })
+    if (!focusedEntry.value && !pendingLocate.value && (saved || !view.value?.loading)) {
+      scroller.value?.scrollTo({ top: !saved || saved.bottom ? scroller.value.scrollHeight : saved.top })
+    }
     restoringScroll = false
     updateOutline()
   })
