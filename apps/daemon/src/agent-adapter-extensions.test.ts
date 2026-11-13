@@ -7,7 +7,7 @@ import { supportsSteering } from "./agents/acp.ts"
 
 const require = createRequire(import.meta.url)
 const codex = readFileSync(require.resolve("@agentclientprotocol/codex-acp"), "utf8")
-const claude = readFileSync(require.resolve("@agentclientprotocol/claude-agent-acp/dist/acp-agent.js"), "utf8")
+const claude = readFileSync(require.resolve("@agentclientprotocol/claude-agent-acp/dist/v1/acp-agent.js"), "utf8")
 
 function method(source: string, name: string, indent: number, globals: Record<string, unknown> = {}): (...args: unknown[]) => Promise<unknown> {
   const spaces = " ".repeat(indent)
