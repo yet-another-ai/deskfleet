@@ -179,6 +179,15 @@ test("a workspace terminal on another machine opens that machine's terminal rout
   wrapper.unmount()
 })
 
+function markWorking(sessionId: string, extras: Partial<ReturnType<typeof agentSnapshot>> = {}) {
+  const live = agentSnapshot()
+  live.session.id = sessionId
+  live.turns = [{ id: "70", sessionId, initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
+  Object.assign(live, extras)
+  useAgentSessionsStore().views[sessionId] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  return live
+}
+
 test("session rows distinguish working, permission, and question indicators", async () => {
   const { wrapper } = await setup({
     sessions: [{ id: "machine-session", title: "Machine chat", provider: "Codex", archiveState: "active" }],
@@ -189,10 +198,7 @@ test("session rows distinguish working, permission, and question indicators", as
   })
   expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
   const agents = useAgentSessionsStore()
-  const live = agentSnapshot()
-  live.session.id = "workspace-session"
-  live.turns = [{ id: "70", sessionId: "workspace-session", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "running", startedAt: "now" }]
-  agents.views["workspace-session"] = { snapshot: live, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+  const live = markWorking("workspace-session")
   await flushPromises()
   const working = wrapper.findAll("[data-session-working]")
   expect(working).toHaveLength(1)
@@ -216,6 +222,69 @@ test("session rows distinguish working, permission, and question indicators", as
   agents.views["workspace-session"]!.snapshot = { ...live, turns: [{ ...live.turns[0]!, state: "completed", endedAt: "now" }] }
   await flushPromises()
   expect(wrapper.findAll("[data-session-working]")).toHaveLength(0)
+  wrapper.unmount()
+})
+
+test("collapsed workspace rows bubble a descendant working indicator", async () => {
+  const { wrapper } = await setup({
+    workspaces: [{
+      id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [],
+      sessions: [{ id: "workspace-session", title: "Implement feature", provider: "Codex", archiveState: "active" }],
+    }],
+  })
+  const folder = wrapper.get('button[aria-label="Project"]')
+  markWorking("workspace-session")
+  await flushPromises()
+  expect(wrapper.get('a[href="/sessions/workspace-session"] [data-session-working]').attributes("data-session-working")).toBe("working")
+  expect(folder.find("[data-session-working]").exists()).toBe(false)
+
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('a[href="/sessions/workspace-session"]').exists()).toBe(false)
+  expect(folder.get("[data-session-working]").attributes("data-session-working")).toBe("working")
+  expect(wrapper.findAll("[data-session-working]")).toHaveLength(1)
+
+  await folder.trigger("click")
+  expect(folder.attributes("aria-expanded")).toBe("true")
+  expect(folder.find("[data-session-working]").exists()).toBe(false)
+  expect(wrapper.get('a[href="/sessions/workspace-session"] [data-session-working]').attributes("data-session-working")).toBe("working")
+  wrapper.unmount()
+})
+
+test("collapsed machine rows bubble the highest-priority descendant working indicator", async () => {
+  const { wrapper } = await setup({
+    sessions: [{ id: "machine-session", title: "Machine chat", provider: "Codex", archiveState: "active" }],
+    workspaces: [{
+      id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [],
+      sessions: [
+        { id: "working-session", title: "Working chat", provider: "Codex", archiveState: "active" },
+        { id: "permission-session", title: "Permission chat", provider: "Codex", archiveState: "active" },
+      ],
+    }],
+  })
+  const machine = wrapper.get('[data-machine-id="local-daemon"]')
+  const trigger = machine.get("button")
+  markWorking("machine-session")
+  markWorking("working-session")
+  markWorking("permission-session", { permissions: [agentPermission({ sessionId: "permission-session", state: "pending" })] })
+  await flushPromises()
+  expect(wrapper.get('a[href="/sessions/machine-session"]').find("[data-session-working]").exists()).toBe(true)
+  expect(wrapper.get('a[href="/sessions/working-session"] [data-session-working]').attributes("data-session-working")).toBe("working")
+  expect(wrapper.get('a[href="/sessions/permission-session"] [data-session-working]').attributes("data-session-working")).toBe("permission")
+  expect(trigger.find("[data-session-working]").exists()).toBe(false)
+
+  await trigger.trigger("click")
+  expect(machine.attributes("data-state")).toBe("closed")
+  expect(wrapper.find('a[href^="/sessions/"]').exists()).toBe(false)
+  expect(trigger.get("[data-session-working]").attributes("data-session-working")).toBe("permission")
+  expect(wrapper.findAll("[data-session-working]")).toHaveLength(1)
+
+  await trigger.trigger("click")
+  expect(machine.attributes("data-state")).toBe("open")
+  expect(trigger.find("[data-session-working]").exists()).toBe(false)
+  expect(wrapper.get('a[href="/sessions/machine-session"]').find("[data-session-working]").exists()).toBe(true)
+  expect(wrapper.get('a[href="/sessions/working-session"]').find("[data-session-working]").exists()).toBe(true)
+  expect(wrapper.get('a[href="/sessions/permission-session"]').find('[data-session-working="permission"]').exists()).toBe(true)
   wrapper.unmount()
 })
 
