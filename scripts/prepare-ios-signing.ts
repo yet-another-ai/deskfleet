@@ -50,7 +50,7 @@ export function validateProfile(profile: SigningProfile, bundleId: string, teamI
   if (!profile.applicationIdentifierPrefixes.some(prefix => profile.entitlements["application-identifier"] === `${prefix}.${bundleId}`)) fail(`does not authorize ${bundleId}`)
   const groups = profile.entitlements["com.apple.security.application-groups"]
   if (!Array.isArray(groups) || !groups.includes(appGroup)) fail(`does not include App Group ${appGroup}`)
-  if (profile.entitlements["get-task-allow"] !== false || profile.provisionedDevices || profile.provisionsAllDevices) fail("is not an App Store distribution profile")
+  if (profile.entitlements["get-task-allow"] === true || profile.provisionedDevices || profile.provisionsAllDevices) fail("is not an App Store distribution profile")
 }
 
 function command(executable: string, args: string[], input?: string): string {

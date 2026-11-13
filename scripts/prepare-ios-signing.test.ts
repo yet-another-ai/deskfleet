@@ -25,6 +25,12 @@ test("a matching App Store profile accepts an existing identity and a legacy App
   assert.doesNotThrow(() => validateProfile(profile(), bundle, team, new Set([fingerprint]), now))
 })
 
+test("an App Store profile need not explicitly deny the debugging entitlement", () => {
+  const value = profile()
+  delete value.entitlements["get-task-allow"]
+  assert.doesNotThrow(() => validateProfile(value, bundle, team, new Set([fingerprint]), now))
+})
+
 test("signing preflight rejects the actual mismatches before building", () => {
   const cases: [string, (value: SigningProfile) => void, RegExp][] = [
     ["wrong team", value => { value.teamIdentifiers = ["OTHERTEAM"] }, /does not belong/],
