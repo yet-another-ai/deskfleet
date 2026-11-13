@@ -989,14 +989,30 @@ test("scroll-to-bottom appears when reading history and restores follow on click
   await scroller.trigger("scroll")
   const button = session.get("[data-scroll-to-bottom]")
   expect(button.attributes("aria-label")).toBe("Scroll to bottom")
+  expect(button.classes()).toContain("pointer-events-auto")
+  expect(button.element.parentElement?.classList.contains("pointer-events-auto")).toBe(false)
 
-  const spring = vi.spyOn(springScroll, "scrollSpring").mockReturnValue({ finished: Promise.resolve(true), cancel() {} })
+  let resolveSpring!: (completed: boolean) => void
+  const springFinished = new Promise<boolean>(resolve => { resolveSpring = resolve })
+  const spring = vi.spyOn(springScroll, "scrollSpring").mockReturnValue({ finished: springFinished, cancel() {} })
   const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {})
   await button.trigger("click")
   expect(spring).toHaveBeenCalledExactlyOnceWith(scroller.element, 1600)
   expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
 
+  scroller.element.scrollTop = 400
+  await scroller.trigger("scroll")
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  spring.mockClear()
   emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Followed update" } } })
+  await flushPromises()
+  await vi.waitFor(() => expect(spring).toHaveBeenCalledWith(scroller.element, 1600))
+  expect(scrollTo).not.toHaveBeenCalled()
+
+  resolveSpring(true)
+  await flushPromises()
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After spring" } } })
   await flushPromises()
   await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 1600 }))
 })
