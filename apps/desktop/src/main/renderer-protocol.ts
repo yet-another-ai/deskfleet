@@ -93,6 +93,16 @@ export function installRendererProtocol(target: Pick<Protocol, "handle"> = proto
   target.handle(RENDERER_SCHEME, (request) => handleRendererProtocolRequest(request))
 }
 
+/** Alt-clicking an internal route must not save the application's HTML document. */
+export function installRendererDownloadGuard(
+  target: Pick<Session, "on"> = session.defaultSession,
+): void {
+  target.on("will-download", (event, item) => {
+    // Chromium downloads bypass will-navigate; Blob exports remain allowed.
+    if (isMainRendererUrl(item.getURL())) event.preventDefault()
+  })
+}
+
 function allowsRendererPermission(
   webContents: WebContents | null,
   permission: string,
