@@ -192,10 +192,8 @@ const { arrivedState } = useScroll(scroller, {
   },
 })
 
-function scrollToBottom(): void {
-  followBottom.value = true
-  const el = scroller.value
-  if (!el) return
+function followSpringToBottom(el: HTMLElement): void {
+  // Retargets keep the latest handle so the prior finished(false) is ignored and cancel stays current.
   const spring = scrollSpring(el, el.scrollHeight)
   followingSpring = spring
   void spring.finished.then(completed => {
@@ -204,6 +202,13 @@ function scrollToBottom(): void {
     if (!completed) followBottom.value = arrivedState.bottom
     updateOutline()
   })
+}
+
+function scrollToBottom(): void {
+  followBottom.value = true
+  const el = scroller.value
+  if (!el) return
+  followSpringToBottom(el)
 }
 
 function updateOutline(): void {
@@ -260,7 +265,7 @@ watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading, view.value?.syncing], () => {
   if (!view.value?.loading && followBottom.value && !pendingLocate.value && scroller.value) {
-    if (followingSpring) scrollSpring(scroller.value, scroller.value.scrollHeight)
+    if (followingSpring) followSpringToBottom(scroller.value)
     else scroller.value.scrollTo({ top: scroller.value.scrollHeight })
   }
   if (followBottom.value || !activeEntry.value) updateOutline()

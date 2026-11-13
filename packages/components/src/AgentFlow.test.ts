@@ -992,9 +992,14 @@ test("scroll-to-bottom appears when reading history and restores follow on click
   expect(button.classes()).toContain("pointer-events-auto")
   expect(button.element.parentElement?.classList.contains("pointer-events-auto")).toBe(false)
 
-  let resolveSpring!: (completed: boolean) => void
-  const springFinished = new Promise<boolean>(resolve => { resolveSpring = resolve })
-  const spring = vi.spyOn(springScroll, "scrollSpring").mockReturnValue({ finished: springFinished, cancel() {} })
+  const springs: Array<{ resolve: (completed: boolean) => void; cancel: ReturnType<typeof vi.fn> }> = []
+  const spring = vi.spyOn(springScroll, "scrollSpring").mockImplementation(() => {
+    let resolveFinished!: (completed: boolean) => void
+    const finished = new Promise<boolean>(resolve => { resolveFinished = resolve })
+    const cancel = vi.fn()
+    springs.push({ resolve: resolveFinished, cancel })
+    return { finished, cancel }
+  })
   const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {})
   await button.trigger("click")
   expect(spring).toHaveBeenCalledExactlyOnceWith(scroller.element, 1600)
@@ -1009,8 +1014,14 @@ test("scroll-to-bottom appears when reading history and restores follow on click
   await flushPromises()
   await vi.waitFor(() => expect(spring).toHaveBeenCalledWith(scroller.element, 1600))
   expect(scrollTo).not.toHaveBeenCalled()
+  expect(springs).toHaveLength(2)
 
-  resolveSpring(true)
+  // Retarget resolves the first handle as incomplete; follow must stay armed on the latest spring.
+  springs[0]!.resolve(false)
+  await flushPromises()
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  springs[1]!.resolve(true)
   await flushPromises()
   emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After spring" } } })
   await flushPromises()
