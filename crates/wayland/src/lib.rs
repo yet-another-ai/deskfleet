@@ -16,6 +16,13 @@ pub const APP_ID: &str = "io.github.yet_another_ai.deskfleet";
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AuthorizationMode {
+    Restore,
+    Request,
+    Reselect,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Wayland desktop access is unavailable: {0}")]
@@ -81,8 +88,18 @@ pub async fn supported() -> Result<bool> {
 ///
 /// A live capture session whose remote input is disconnected connects again.
 /// Display listing uses [`restore_access`] and does not open another input connection.
-pub async fn request_access(directory: PathBuf) -> Result<PermissionSnapshot> {
-    runtime::request(Some(directory)).await
+/// Setting `reselect_sources` closes the current session and discards its saved
+/// grant so the local user can choose the shared monitors again.
+pub async fn request_access(
+    directory: PathBuf,
+    reselect_sources: bool,
+) -> Result<PermissionSnapshot> {
+    let mode = if reselect_sources {
+        AuthorizationMode::Reselect
+    } else {
+        AuthorizationMode::Request
+    };
+    runtime::request(Some(directory), mode).await
 }
 
 /// Restores previously configured access during an explicit remote connection attempt.
@@ -90,7 +107,7 @@ pub async fn request_access(directory: PathBuf) -> Result<PermissionSnapshot> {
 /// Requires a saved token. A revoked token may still cause the portal to ask the
 /// local user again; there is no standard portal "restore without dialog" flag.
 pub async fn restore_access() -> Result<PermissionSnapshot> {
-    runtime::request(None).await
+    runtime::request(None, AuthorizationMode::Restore).await
 }
 
 /// Reads locally observed grants. This function never contacts the portal.

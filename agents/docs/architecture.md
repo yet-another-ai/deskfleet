@@ -883,6 +883,12 @@ Only a permission action opens authorization or requests access. These controls
 belong to this computer even when a remote Machine is selected. Local Network
 retains its request-attempt status and links to System Settings for confirmation;
 Wayland screen and input permissions share the same authorization session.
+The welcome screen-sharing step and Settings → Permissions explain multi-monitor
+selection and retain an explicit action to choose shared screens again after
+authorization. That local screen-sharing request replaces the shared Wayland
+session and its saved selection; it stops active capture/control while fresh
+consent is pending. Refreshes, startup restoration, and input retries keep their
+existing authorization behavior.
 
 Startup reuses an authenticated standalone daemon only when it was explicitly
 configured to own the same `<userData>/daemon` discovery directory. Explicitly

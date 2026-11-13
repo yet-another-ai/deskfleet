@@ -159,9 +159,9 @@ export function linuxDesktopBackend(): "wayland" | "x11" | null {
   return (bindings ??= loadBindings()).linuxDesktopBackend()
 }
 
-/** Authorize Wayland or check X11 screen/input access during daemon startup. */
-export function requestLinuxDesktopAccess(directory: string): Promise<LinuxDesktopAccess> {
-  return (bindings ??= loadBindings()).requestLinuxDesktopAccess(directory)
+/** Authorize Linux access; explicit Wayland reselection replaces the saved screen selection. */
+export function requestLinuxDesktopAccess(directory: string, reselectSources = false): Promise<LinuxDesktopAccess> {
+  return (bindings ??= loadBindings()).requestLinuxDesktopAccess(directory, reselectSources)
 }
 
 /** Check Linux desktop access without opening a consent dialog. */

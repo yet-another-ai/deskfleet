@@ -1,6 +1,6 @@
 import { DESKTOP_PERMISSION_KINDS, type DesktopPermission, type DesktopPermissionKind, type DesktopPermissionsState, type LinuxDesktopBackend } from "./control-protocol.ts"
 
-export type PermissionAccess = Record<DesktopPermissionKind, () => Promise<boolean | null>>
+export type PermissionAccess = Record<DesktopPermissionKind, (reselectSources?: boolean) => Promise<boolean | null>>
 
 /** OS permissions belong to the daemon process that accesses files and controls the desktop. */
 export class DesktopPermissions {
@@ -50,7 +50,7 @@ export class DesktopPermissions {
     this.#refreshOnRead = options.refreshOnRead ?? false
     // Guided setup checks silently; automatic startup requests without blocking IPC.
     if (mode === "guided") void this.refresh()
-    else for (const kind of DESKTOP_PERMISSION_KINDS) this.requestPermission(kind)
+    else for (const kind of DESKTOP_PERMISSION_KINDS) this.#requestLinked(kind)
   }
 
   readState(): Promise<DesktopPermissionsState> {
@@ -60,19 +60,24 @@ export class DesktopPermissions {
   }
 
   requestPermission(kind: DesktopPermissionKind): DesktopPermissionsState {
-    if (!this.#requests) throw new Error("Daemon permissions are not initialized")
-    // Wayland grants screen and input access together in one Portal session.
-    for (const permission of this.#linked.find(group => group.includes(kind)) ?? [kind]) this.#request(permission)
+    // Only a local screen-sharing action replaces the saved Wayland selection.
+    this.#requestLinked(kind, this.#state.linuxDesktopBackend === "wayland" && kind === "screenCapture")
     // A system dialog must not hold up IPC, welcome navigation, or daemon shutdown.
     return this.state
   }
 
-  #request(kind: DesktopPermissionKind): void {
+  #requestLinked(kind: DesktopPermissionKind, reselectSources = false): void {
+    if (!this.#requests) throw new Error("Daemon permissions are not initialized")
+    // Wayland grants screen and input access together in one Portal session.
+    for (const permission of this.#linked.find(group => group.includes(kind)) ?? [kind]) this.#request(permission, reselectSources)
+  }
+
+  #request(kind: DesktopPermissionKind, reselectSources: boolean): void {
     if (this.#pending.has(kind)) return
     ++this.#revisions[kind]
     if (this.#state[`${kind}Permission`].status !== "requesting") this.#update(kind, { status: "requesting" })
     const request = this.#requests![kind]
-    const pending = this.#read(request).then(permission => this.#update(kind, permission))
+    const pending = this.#read(() => request(reselectSources)).then(permission => this.#update(kind, permission))
       .finally(() => { this.#pending.delete(kind) })
     this.#pending.set(kind, pending)
   }

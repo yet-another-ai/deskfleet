@@ -1611,10 +1611,15 @@
       "shared": "Screen sharing and mouse and keyboard control share one authorization. Once approved, continue through both steps.",
       "requesting": "Waiting for desktop authorization…",
       "retry": "Retry access",
+      "changeScreensLater": "To add a missing screen later, open Settings → Permissions → Screen sharing.",
       "screenCapture": {
         "title": "Screen sharing",
         "description": "Allow DeskFleet to share this computer’s screen during remote desktop sessions.",
-        "instructions": "Select the screens to share and approve access in your desktop’s authorization dialog.",
+        "instructions": "In the desktop authorization dialog, select every monitor you want to access remotely, then approve sharing.",
+        "selection": "Only selected screens appear remotely. DeskFleet reuses this selection when you reconnect.",
+        "choose": "Choose shared screens",
+        "reselect": "Choose shared screens again",
+        "reselectHint": "Choosing again stops current remote viewing and control and opens a new screen selection dialog.",
         "skip": "Remote screen sharing will be unavailable until you authorize it. You can skip this step and enable access later."
       },
       "accessibility": {

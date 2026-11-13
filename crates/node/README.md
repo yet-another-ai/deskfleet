@@ -13,6 +13,10 @@ unavailable (`null`) session without opening a display. The daemon uses
 Portal grant; `waitLinuxDesktopAccessChange()` wakes its owner when that grant
 changes, including when remote input disconnects. Viewer cleanup does not own
 the grant. Its directory stores only the local restore token, never sent to viewers.
+An explicit local screen-sharing action passes `true` as the second argument to
+`requestLinuxDesktopAccess(directory, true)` to close the active Wayland session,
+discard the saved selection, and let the user choose shared monitors again.
+Startup and input retries retain the existing selection.
 X11 checks the user's X server access without a Portal dialog or token; capture
 and input workers own their connections, and the authorization watch returns
 `null`. Blocking X11 checks run off Node's event loop.

@@ -11,7 +11,8 @@ use futures_util::StreamExt;
 use zbus::{Connection, OwnedObjectPath, OwnedVariant, Proxy, Variant, proxy::SignalStream};
 
 use crate::{
-    APP_ID, Error, PermissionSnapshot, PermissionStatus, Result, Source, input::Eis, token,
+    APP_ID, AuthorizationMode, Error, PermissionSnapshot, PermissionStatus, Result, Source,
+    input::Eis, token,
 };
 
 const DESTINATION: &str = "org.freedesktop.portal.Desktop";
@@ -106,18 +107,15 @@ async fn capabilities(connection: &Connection) -> Result<()> {
 
 pub async fn authorize(
     directory: &Path,
-    restore_only: bool,
+    mode: AuthorizationMode,
     connection_slot: &mut Option<Connection>,
     next_id: &mut u32,
 ) -> Result<Live> {
+    let restore = token::prepare(directory, mode)?;
     if !is_wayland_session() {
         return Err(Error::Unavailable(
             "a logged-in Wayland session is required".into(),
         ));
-    }
-    let restore = token::read(directory)?;
-    if restore_only && restore.is_none() {
-        return Err(Error::PermissionDenied);
     }
     crate::identity::ensure_desktop_entry()?;
     let connection = Connection::session().await?;

@@ -273,6 +273,17 @@ unattended restoration depends on the portal retaining the grant: a revoked or
 expired token may require local consent again. A saved token alone never reports
 granted permission. Permission refresh only reads current state.
 
+Welcome and Settings → Permissions explain that remote viewers can see only the
+monitors selected in the system dialog, and that each wanted monitor must be
+selected before sharing. Their Wayland screen-sharing action remains available
+after access is granted so the user can choose shared screens again. This
+explicit local action closes the current screen/input session, discards its
+saved restore token, and opens fresh combined consent with multiple monitor
+selection enabled. Existing viewers and controllers lose the old source IDs;
+the permission watch stays active and publishes the replacement grant. Cancelling
+does not restore the old selection. Startup restoration, permission refresh,
+and input-only retries do not reselect screens.
+
 The D-Bus connection registers `io.github.yet_another_ai.deskfleet` before portal
 calls. Linux desktop packaging uses the matching `.desktop` basename; standalone
 launches create a hidden user desktop entry only when no installed entry exists.

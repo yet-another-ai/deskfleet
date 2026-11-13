@@ -6,9 +6,23 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::Result;
+use crate::{AuthorizationMode, Error, Result};
 
 const FILE: &str = "wayland-restore-token";
+
+pub fn prepare(directory: &Path, mode: AuthorizationMode) -> Result<Option<String>> {
+    if mode == AuthorizationMode::Reselect {
+        // Forget the old selection before opening consent. Cancellation must not
+        // let a later discovery or restart silently restore that selection.
+        write(directory, None)?;
+        return Ok(None);
+    }
+    let token = read(directory)?;
+    if mode == AuthorizationMode::Restore && token.is_none() {
+        return Err(Error::PermissionDenied);
+    }
+    Ok(token)
+}
 
 // Tokens are opaque portal secrets, including non-UUID tokens from newer portals.
 pub fn read(directory: &Path) -> Result<Option<String>> {
@@ -61,6 +75,50 @@ mod tests {
         os::unix::fs::PermissionsExt,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn reselection_forgets_the_old_grant_even_without_a_replacement() {
+        let directory = std::env::temp_dir().join(format!(
+            "deskfleet-reselect-token-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        write(&directory, Some("single-monitor-grant")).unwrap();
+        for mode in [AuthorizationMode::Request, AuthorizationMode::Restore] {
+            assert_eq!(
+                prepare(&directory, mode).unwrap().as_deref(),
+                Some("single-monitor-grant")
+            );
+        }
+
+        assert_eq!(
+            prepare(&directory, AuthorizationMode::Reselect).unwrap(),
+            None
+        );
+        assert_eq!(read(&directory).unwrap(), None);
+        // A cancelled prompt never writes a replacement. Discovery must not
+        // restore the old selection, and a retry must open fresh consent.
+        assert!(matches!(
+            prepare(&directory, AuthorizationMode::Restore),
+            Err(Error::PermissionDenied)
+        ));
+        assert_eq!(
+            prepare(&directory, AuthorizationMode::Request).unwrap(),
+            None
+        );
+
+        write(&directory, Some("both-monitors-grant")).unwrap();
+        assert_eq!(
+            prepare(&directory, AuthorizationMode::Restore)
+                .unwrap()
+                .as_deref(),
+            Some("both-monitors-grant")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn opaque_tokens_rotate_atomically_and_can_be_revoked() {
