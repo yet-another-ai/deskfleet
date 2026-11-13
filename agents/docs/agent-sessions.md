@@ -931,10 +931,15 @@ supported and yield `_deskfleet/permission/receipt` notifications.
 
 The composer's YOLO toggle requires confirmation before activation, warning that
 all Agent permission requests in the Session will be approved automatically,
-including requests already pending. The client selects the offered `allow_once`
-option, falling back to `allow_always`, through the same audited response path.
-Cancelling the confirmation leaves YOLO disabled; turning it off takes effect
-without another confirmation and leaves future requests for manual approval.
+including requests already pending. Enabling YOLO persists the flag and
+authorizing actor on the Session via `_deskfleet/session/create` or
+`_deskfleet/session/yolo` so it remains active across connected and
+disconnected clients. The daemon immediately approves any pending requests and
+subsequent `session/request_permission` calls by selecting the offered
+`allow_once` option, falling back to `allow_always`, attributed to the
+authorizing actor. Cancelling the confirmation leaves YOLO disabled; turning it
+off takes effect without another confirmation and leaves future requests for
+manual approval.
 
 The service broadcasts resolution and the deciding actor. `$/cancel_request`
 closes obsolete fan-outs. Disconnects and RPC errors leave the shared request

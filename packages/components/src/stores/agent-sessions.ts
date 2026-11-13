@@ -3,11 +3,10 @@ import { useAgentLiveState } from "../composables/useAgentLiveState.ts"
 import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
 import type { AgentLiveUpdate } from "../../../client/src/agent-live.ts"
 import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
-import { useAccountSession } from "../composables/account-session-context.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { hasInjectionContext, markRaw, onScopeDispose, ref, watch } from "vue"
+import { markRaw, onScopeDispose, ref, watch } from "vue"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentPreviews } from "../services/agent-preview.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
@@ -55,8 +54,6 @@ export interface SubmittedAgentDraft {
 }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
 const sequenceCompare = (left: string, right: string) => BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0
-const autoApproveOption = (options: readonly AgentPermission["request"]["options"][number][]) =>
-  options.find(option => option.kind === "allow_once") ?? options.find(option => option.kind === "allow_always")
 function replace<T>(values: T[], value: T, key: (value: T) => string | number): void {
   const index = values.findIndex(item => key(item) === key(value))
   if (index === -1) values.push(value)
@@ -65,7 +62,6 @@ function replace<T>(values: T[], value: T, key: (value: T) => string | number): 
 
 /** Shared projections outlive the visible route; the daemon owns execution and history. */
 export const useAgentSessionsStore = defineStore("agent-sessions", () => {
-  const account = hasInjectionContext() ? useAccountSession() : undefined
   const platformClient = usePlatformClient()
   const api = platformClient.agent
   const cache = useConversationCache()
@@ -94,7 +90,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const elicitationDrafts = ref<Record<string, ElicitationDraft>>({})
   const draftConfiguration = useLocalStorage<AgentSelection>("deskfleet.agent-configuration", { provider: "codex" })
   const draftYolo = ref(false)
-  const yolo = useLocalStorage<Record<string, boolean>>(() => `deskfleet.agent-yolo:${account?.teamId?.value ?? ""}:${platformClient.target?.id ?? ""}`, {})
   const configurations = ref<Record<string, AgentConfiguration>>({})
   const configurationReads = new Map<string, Promise<AgentConfiguration>>()
   const configurationSequences = new Map<string, string>()
@@ -165,22 +160,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       permissionRequests.delete(id)
     }
   }
-  function autoApprovePermissions(sessionId: string): void {
-    if (!yolo.value[sessionId]) return
-    const snapshot = views.value[sessionId]?.snapshot
-    if (!snapshot) return
-    for (const permission of [...snapshot.permissions]) {
-      if (permission.state !== "pending") continue
-      const option = autoApproveOption(permission.request.options)
-      if (!option) continue
-      if (Object.values(operations.value).some(operation => operation.sessionId === sessionId && operation.method === "_deskfleet/permission/respond" && operation.params.permissionId === permission.id)) continue
-      replace(snapshot.permissions, { ...permission, state: "resolved", optionId: option.optionId }, value => value.id)
-      resolvePermissions()
-      void respond(sessionId, permission.id, option.optionId).catch(() => {
-        if (views.value[sessionId]?.snapshot) replace(views.value[sessionId]!.snapshot!.permissions, permission, value => value.id)
-      })
-    }
-  }
   function resolveElicitations(snapshot: AgentSnapshot): void {
     for (const elicitation of snapshot.elicitations) {
       if (elicitation.state === "pending") continue
@@ -248,7 +227,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (sequenceCompare(current.snapshotSeq, sessions.value[id]?.lastEventSeq ?? "0") >= 0) sessions.value[id] = { ...current.snapshot.session }
     if (cache) { cacheDirty.add(id); if (!cacheTimer.isPending.value) cacheTimer.start() }
     resolvePermissions()
-    autoApprovePermissions(id)
     resolveElicitations(current.snapshot)
   }
   function remember(events: AgentEvent[]): void {
@@ -672,7 +650,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (!pending) return
     const received = async (result: unknown): Promise<unknown> => {
       const resolved = await resolveCommandResult(result)
-      if (isSnapshotReference(result) || pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/read" || pending.method === "_deskfleet/session/unread") snapshotReceived(resolved as AgentSnapshot)
+      if (isSnapshotReference(result) || pending.method === "_deskfleet/session/fork" || pending.method === "_deskfleet/session/rename" || pending.method === "_deskfleet/session/yolo" || pending.method === "_deskfleet/session/read" || pending.method === "_deskfleet/session/unread") snapshotReceived(resolved as AgentSnapshot)
       completeOperation(operationId)
       return resolved
     }
@@ -782,7 +760,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const branch = !revisions && workspaceId && context === "worktree" && baseBranch?.trim() ? baseBranch.trim() : undefined
     const cwd = context === "directory" && options?.cwd?.trim() ? options.cwd.trim() : undefined
     const params: Omit<AgentMethods["_deskfleet/session/create"]["params"], "operationId"> = {
-      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(cwd ? { cwd } : {}), ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), ...(options?.deferStartup ? { deferStartup: true } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
+      ...(workspaceId ? { workspaceId } : {}), title, provider, context, ...(cwd ? { cwd } : {}), ...(branch ? { baseBranch: branch } : {}), ...(revisions ? { baseRevisions: revisions } : {}), ...(options?.deferStartup ? { deferStartup: true } : {}), ...(enableYolo ? { yolo: true } : {}), model: choices?.model, reasoningEffort: choices?.reasoningEffort, mode: choices?.mode, configValues: choices?.configValues,
     }
     const snapshot = await capacityAction("create", { context, scope: workspaceId ? "workspace" : "machine" }, async () => {
       if (pending) {
@@ -808,7 +786,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       return mutation("_deskfleet/session/create", params)
     }, track)
     draftYolo.value = false
-    if (enableYolo) yolo.value[snapshot.session.id] = true
     snapshotReceived(snapshot)
     track("session_created", { context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
     return snapshot
@@ -818,7 +795,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/fork" && operation.sessionId === sessionId)
     const source = sessions.value[sessionId]
     const snapshot = await capacityAction("fork", { context, ...(source ? { scope: source.workspaceId ? "workspace" : "machine" } as const : {}) }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/fork", { sessionId, context }), track)
-    if (yolo.value[sessionId]) yolo.value[snapshot.session.id] = true
     snapshotReceived(snapshot)
     track("session_forked", { context: snapshot.session.context })
     return snapshot
@@ -899,13 +875,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
     snapshotReceived(await mutation("_deskfleet/session/rename", { sessionId, title }))
   }
-  function setYolo(sessionId: string, enabled: boolean): void {
-    if (enabled) {
-      yolo.value[sessionId] = true
-      autoApprovePermissions(sessionId)
-    } else {
-      delete yolo.value[sessionId]
+  async function setYolo(sessionId: string, enabled: boolean): Promise<void> {
+    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/yolo"
+      && operation.sessionId === sessionId && operation.params.enabled === enabled)
+    if (pending) {
+      await checkOperation(pending.operationId)
+      return
     }
+    snapshotReceived(await mutation("_deskfleet/session/yolo", { sessionId, enabled }))
   }
   async function archive(sessionId: string): Promise<void> {
     const track = captureAnalyticsContext()
@@ -932,7 +909,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     delete activity.value[sessionId]
     delete views.value[sessionId]
     delete optimisticInputs.value[sessionId]
-    delete yolo.value[sessionId]
     delete configurations.value[sessionId]
     configurationSequences.delete(sessionId)
     journals.delete(sessionId)
@@ -970,5 +946,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, yolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

@@ -62,6 +62,8 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
             context: SessionContext::Worktree,
             inherited_turn_count: 0,
             admission_generation: None,
+            yolo: false,
+            yolo_actor: None,
         })
         .await
         .unwrap()
@@ -140,6 +142,8 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
                 context: SessionContext::Worktree,
                 inherited_turn_count: 0,
                 admission_generation: None,
+                yolo: false,
+                yolo_actor: None,
             })
             .await
             .is_err()
@@ -776,6 +780,8 @@ async fn admission_deletion_requires_a_local_creation_and_deletion_receipt() {
             context: SessionContext::Directory,
             inherited_turn_count: 7,
             admission_generation: Some(operation_id.clone()),
+            yolo: false,
+            yolo_actor: None,
         })
         .await
         .unwrap();

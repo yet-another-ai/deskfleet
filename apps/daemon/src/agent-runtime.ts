@@ -4,7 +4,7 @@ import { commandPath } from "./agent-command-path.ts"
 import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
-import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSessionRecord, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
+import { autoApproveOption, type AgentCommand, type AgentInput, type AgentPermission, type AgentRun, type AgentSessionRecord, type AgentSnapshot, type AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
@@ -488,6 +488,15 @@ export class AgentRuntime {
           permission.state = "cancelled"
           permission.resolvedAt = timestamp()
           resolve({ outcome: { outcome: "cancelled" } })
+        } else if (session.yolo) {
+          const option = autoApproveOption(permission.request.options)
+          if (option) {
+            permission.state = "resolved"
+            permission.optionId = option.optionId
+            if (session.yoloActor) permission.actor = session.yoloActor
+            permission.resolvedAt = timestamp()
+            resolve({ outcome: { outcome: "selected", optionId: option.optionId } })
+          }
         }
         await this.journal.commit(session, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
       })

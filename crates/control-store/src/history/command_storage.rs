@@ -1,10 +1,11 @@
 //! Snapshot command results are references, not another copy of conversation data.
 use serde_json::{Value, json};
 
-pub(super) const SNAPSHOT_METHODS: [&str; 10] = [
+pub(super) const SNAPSHOT_METHODS: [&str; 11] = [
     "_deskfleet/session/create",
     "_deskfleet/session/fork",
     "_deskfleet/session/rename",
+    "_deskfleet/session/yolo",
     "_deskfleet/session/read",
     "_deskfleet/session/unread",
     "_deskfleet/session/switch-agent",

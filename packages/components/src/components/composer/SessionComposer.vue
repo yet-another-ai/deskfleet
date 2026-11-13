@@ -175,7 +175,7 @@ const dictation = reactive(useComposerDictation({
   draft, mentions, textarea,
 }))
 const dictationLabel = computed(() => t(dictation.error ? `dictation.errors.${dictation.error}` : dictation.active ? "dictation.stop" : "dictation.start"))
-const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
+const yoloEnabled = computed(() => sessionId.value ? !!agents.sessions[sessionId.value]?.yolo : agents.draftYolo)
 const yoloConfirmation = useConfirmDialog()
 const { isRevealed: confirmingYolo } = yoloConfirmation
 watch([
@@ -191,7 +191,7 @@ async function toggleYolo(): Promise<void> {
   const next = !yoloEnabled.value
   if (next && (await yoloConfirmation.reveal()).isCanceled) return
   if (!id) agents.draftYolo = next
-  else agents.setYolo(id, next)
+  else await agents.setYolo(id, next)
 }
 const completionId = useId()
 const completion = reactive(useComposerCompletions({

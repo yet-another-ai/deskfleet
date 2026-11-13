@@ -1410,6 +1410,47 @@ test("a cancel waiting on persistence cannot cancel the next turn or its permiss
   assert.equal((await permission).outcome.outcome, "selected")
 })
 
+test("session YOLO mode persists in the daemon and auto-approves pending and subsequent permissions", async t => {
+  const f = await setup(t)
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: f.sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Run" }], delivery: "backlog",
+  }, f.actor)
+  await until(f.read, state => state.turns.length === 1 && f.provider.prompts.length === 1)
+
+  const pending = f.provider.askPermission()
+  await until(f.read, state => state.permissions.length === 1 && state.permissions[0]!.state === "pending")
+
+  const enabled = await f.service.handle("_deskfleet/session/yolo", {
+    sessionId: f.sessionId, operationId: randomUUID(), enabled: true,
+  }, f.actor) as AgentSnapshot
+  assert.equal(enabled.session.yolo, true)
+  assert.deepEqual(enabled.session.yoloActor, f.actor)
+  assert.deepEqual(await pending, { outcome: { outcome: "selected", optionId: "allow" } })
+  assert.equal(enabled.permissions[0]?.state, "resolved")
+  assert.equal(enabled.permissions[0]?.optionId, "allow")
+
+  const subsequent = f.provider.askPermission()
+  assert.deepEqual(await subsequent, { outcome: { outcome: "selected", optionId: "allow" } })
+  const afterSubsequent = await f.read()
+  assert.equal(afterSubsequent.permissions.length, 2)
+  assert.equal(afterSubsequent.permissions[1]?.state, "resolved")
+  assert.deepEqual(afterSubsequent.permissions[1]?.actor, f.actor)
+
+  const disabled = await f.service.handle("_deskfleet/session/yolo", {
+    sessionId: f.sessionId, operationId: randomUUID(), enabled: false,
+  }, f.actor) as AgentSnapshot
+  assert.ok(!disabled.session.yolo)
+  assert.equal(disabled.session.yoloActor, undefined)
+
+  const manual = f.provider.askPermission()
+  const waiting = await until(f.read, state => state.permissions.length === 3)
+  assert.equal(waiting.permissions[2]?.state, "pending")
+  await f.service.handle("_deskfleet/permission/respond", {
+    sessionId: f.sessionId, operationId: randomUUID(), permissionId: waiting.permissions[2]!.id, optionId: "allow",
+  }, f.actor)
+  assert.deepEqual(await manual, { outcome: { outcome: "selected", optionId: "allow" } })
+})
+
 test("shutdown also stops a resume already queued behind another stop", async t => {
   const f = await setup(t)
   let release!: () => void
