@@ -25,7 +25,7 @@ import { prepareGitWorkspace } from "./git-preparation.ts"
 import type { GitPreparedRevision } from "./git-protocol.ts"
 import { ComposerReferences } from "./composer-references.ts"
 import {
-  autoApproveOption,
+  autoApprovePermission,
   type AgentActor, type AgentCommand, type AgentEvent, type AgentInput, type AgentMethod, type AgentPermission, type AgentPreview, type AgentReceipt, type AgentSnapshot,
 } from "./agent-protocol.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
@@ -640,7 +640,7 @@ export class AgentSessions {
     if (command.params.yolo !== undefined && typeof command.params.yolo !== "boolean") {
       throw new Error("Invalid YOLO flag")
     }
-    const yolo = command.params.yolo === true
+    const yoloFields = command.params.yolo ? { yolo: true, yoloActor: command.actor } : {}
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
@@ -659,7 +659,8 @@ export class AgentSessions {
     const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : ""
     const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
       this.journal.create(command, command.workspaceId, title, context, provider, {
-        admissionGeneration, ...(yolo ? { yolo: true, yoloActor: command.actor } : {}),
+        admissionGeneration,
+        ...yoloFields,
       }))
     command.sessionId = session.id
     const provision = async (includeCommandEvent: boolean): Promise<void> => {
@@ -722,9 +723,13 @@ export class AgentSessions {
       this.#resolveProvider(source.session.provider)
       const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
+      const yoloFields = source.session.yolo ? { yolo: true, yoloActor: command.actor } : {}
       const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
-        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider,
-          { admissionGeneration, inheritedTurnCount: consumedTurns(source), ...(source.session.yolo ? { yolo: true, yoloActor: command.actor } : {}) }))
+        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider, {
+          admissionGeneration,
+          inheritedTurnCount: consumedTurns(source),
+          ...yoloFields,
+        }))
       command.sessionId = child.id
       command.workspaceId = child.workspaceId
       try {
@@ -879,33 +884,48 @@ export class AgentSessions {
     const sessionId = command.sessionId!
     const enabled = command.params.enabled
     if (typeof enabled !== "boolean") throw new Error("Invalid YOLO flag")
-    const toResolve: { id: string; optionId: string }[] = []
+
+    const pendingResolutions: { id: string; optionId: string }[] = []
     const snapshot = await this.journal.serial(sessionId, async () => {
       const current = await this.journal.read(sessionId)
       requireActiveSession(current.session)
+
+      const now = timestamp()
       const session = enabled
-        ? { ...current.session, yolo: true, yoloActor: command.actor, updatedAt: timestamp() }
-        : { ...current.session, yolo: false, yoloActor: undefined, updatedAt: timestamp() }
-      const permissions: AgentPermission[] = []
-      if (enabled) {
-        for (const previous of current.permissions) {
-          if (previous.state !== "pending") continue
-          const option = autoApproveOption(previous.request.options)
-          if (!option) continue
-          const resolved: AgentPermission = {
-            ...previous, state: "resolved", optionId: option.optionId, decisionCommandId: command.id, actor: command.actor, resolvedAt: timestamp(),
-          }
-          permissions.push(resolved)
-          toResolve.push({ id: previous.id, optionId: option.optionId })
+        ? { ...current.session, yolo: true, yoloActor: command.actor, updatedAt: now }
+        : { ...current.session, yolo: false, yoloActor: undefined, updatedAt: now }
+
+      const resolvedPermissions = enabled
+        ? current.permissions
+            .map(previous => autoApprovePermission(previous, now, { actor: command.actor, decisionCommandId: command.id }))
+            .filter((permission): permission is AgentPermission => permission !== undefined)
+        : []
+
+      for (const permission of resolvedPermissions) {
+        if (permission.optionId) {
+          pendingResolutions.push({ id: permission.id, optionId: permission.optionId })
         }
       }
-      const events = [this.journal.event(sessionId, "session", session, { commandId: command.id })]
-      for (const permission of permissions) events.push(this.journal.event(sessionId, "permission", permission, { commandId: command.id }))
-      await this.journal.commit(current, { session, ...(permissions.length ? { permissions } : {}), events })
+
+      const events = [
+        this.journal.event(sessionId, "session", session, { commandId: command.id }),
+        ...resolvedPermissions.map(permission =>
+          this.journal.event(sessionId, "permission", permission, { commandId: command.id }),
+        ),
+      ]
+
+      await this.journal.commit(current, {
+        session,
+        ...(resolvedPermissions.length > 0 ? { permissions: resolvedPermissions } : {}),
+        events,
+      })
       return await this.journal.read(sessionId)
     })
+
     await this.#complete(command, snapshot)
-    for (const item of toResolve) this.#runtime(sessionId).resolvePermission(item.id, item.optionId)
+    for (const resolution of pendingResolutions) {
+      this.#runtime(sessionId).resolvePermission(resolution.id, resolution.optionId)
+    }
     return snapshot
   }
 

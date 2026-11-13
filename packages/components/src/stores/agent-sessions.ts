@@ -876,8 +876,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(await mutation("_deskfleet/session/rename", { sessionId, title }))
   }
   async function setYolo(sessionId: string, enabled: boolean): Promise<void> {
-    const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/yolo"
-      && operation.sessionId === sessionId && operation.params.enabled === enabled)
+    const pending = Object.values(operations.value).find(
+      operation =>
+        operation.method === "_deskfleet/session/yolo"
+        && operation.sessionId === sessionId
+        && operation.params.enabled === enabled,
+    )
     if (pending) {
       await checkOperation(pending.operationId)
       return

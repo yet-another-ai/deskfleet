@@ -249,3 +249,21 @@ export type AgentMethod = keyof AgentMethods
 export function autoApproveOption(options: readonly RequestPermissionRequest["options"][number][]) {
   return options.find(option => option.kind === "allow_once") ?? options.find(option => option.kind === "allow_always")
 }
+
+export function autoApprovePermission(
+  permission: AgentPermission,
+  resolvedAt: string,
+  attribution: { actor?: AgentActor; decisionCommandId?: string } = {},
+): AgentPermission | undefined {
+  if (permission.state !== "pending") return undefined
+  const option = autoApproveOption(permission.request.options)
+  if (!option) return undefined
+  return {
+    ...permission,
+    state: "resolved",
+    optionId: option.optionId,
+    ...(attribution.decisionCommandId ? { decisionCommandId: attribution.decisionCommandId } : {}),
+    ...(attribution.actor ? { actor: attribution.actor } : {}),
+    resolvedAt,
+  }
+}
