@@ -1236,7 +1236,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.3",
  "shlex",
- "syn 3.0.10",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -5705,8 +5705,7 @@ dependencies = [
 [[package]]
 name = "nix"
 version = "0.31.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+source = "git+https://github.com/nix-rust/nix?rev=f9ba3ed0698255d93240b07ecbf39ecb05a8a5cd#f9ba3ed0698255d93240b07ecbf39ecb05a8a5cd"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
