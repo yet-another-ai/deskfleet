@@ -214,6 +214,9 @@ requesting broad storage permissions. A selected directory that cannot be read
 is not retained as a new root or home directory. iOS uses security-scoped access
 for external folders; folders already inside the app's Documents need no extra
 security scope.
+Each Android folder selection registers its own activity-result callback. Closing
+its endpoint clears the pending selection and unregisters that callback immediately;
+late results from an old picker cannot resolve or block a replacement endpoint.
 
 Displayed paths are labels beneath the app's Documents root or explicitly chosen
 native roots. They cannot address arbitrary device paths. Each endpoint has a

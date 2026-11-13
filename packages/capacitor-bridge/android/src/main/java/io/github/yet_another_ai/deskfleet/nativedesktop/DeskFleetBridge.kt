@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Surface
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -22,6 +23,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
+import java.util.UUID
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -43,13 +45,23 @@ class DeskFleetBridge : Plugin() {
     fun filesClose(call: PluginCall) = files().close(call)
 
     @PluginMethod
-    fun filesChooseDirectory(call: PluginCall) = files().choose(call) { intent ->
-        startActivityForResult(call, intent, "handleFilesDirectory")
-    }
-
-    @ActivityCallback
-    private fun handleFilesDirectory(call: PluginCall?, result: ActivityResult) {
-        nativeFiles?.selected(call, result)
+    fun filesChooseDirectory(call: PluginCall) {
+        val currentActivity = activity ?: return call.reject("Activity unavailable")
+        currentActivity.runOnUiThread {
+            files().choose(call) { intent, receive ->
+                // Capacitor shares lastPluginCallId across activity callbacks. A separate
+                // registry key binds even a late result to this exact folder request.
+                val launcher = currentActivity.activityResultRegistry.register(
+                    "deskfleet-files-${UUID.randomUUID()}",
+                    ActivityResultContracts.StartActivityForResult(),
+                    { result -> receive(result) },
+                )
+                try { launcher.launch(intent) }
+                catch (error: Exception) { launcher.unregister(); throw error }
+                val unregister: () -> Unit = { currentActivity.runOnUiThread { launcher.unregister() } }
+                unregister
+            }
+        }
     }
 
     private fun speech(): SpeechInput = speechInput ?: SpeechInput(context) {

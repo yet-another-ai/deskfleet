@@ -16,10 +16,8 @@ internal class NativeFilesBridge(private val context: Context) {
     private class Session(val endpoint: NativeFilesEndpoint) {
         val worker = Executors.newSingleThreadExecutor()
     }
-    private class Picker(val call: PluginCall, val id: String) { var cancelled = false }
-
     private val sessions = mutableMapOf<String, Session>()
-    private var picker: Picker? = null
+    private val picker = NativeFilePicker<PluginCall>()
     private var disposed = false
 
     private fun id(call: PluginCall): String = call.getString("id")?.takeIf { it.isNotEmpty() }
@@ -59,36 +57,33 @@ internal class NativeFilesBridge(private val context: Context) {
     }
 
     @Synchronized
-    fun choose(call: PluginCall, launch: (Intent) -> Unit) {
+    fun choose(call: PluginCall, launch: (Intent, (ActivityResult) -> Unit) -> (() -> Unit)) {
         try {
             val id = id(call)
             val session = sessions[id] ?: throw NativeFileException("Unknown file endpoint")
             session.endpoint.checkOpen()
-            check(picker == null) { "A folder picker is already open" }
-            picker = Picker(call, id)
+            val pending = picker.begin(id, call)
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
             }
-            try { launch(intent) }
-            catch (error: Exception) { picker = null; throw error }
+            try { pending.unregister = launch(intent) { result -> selected(pending, result) } }
+            catch (error: Exception) { picker.finish(pending); throw error }
         } catch (error: Exception) { reject(call, error) }
     }
 
     @Synchronized
-    fun selected(call: PluginCall?, result: ActivityResult) {
-        val pending = picker ?: return
-        if (call == null || call.callbackId != pending.call.callbackId) return
-        picker = null
-        if (pending.cancelled) return
-        val session = sessions[pending.id]
+    private fun selected(request: NativeFilePicker.Request<PluginCall>, result: ActivityResult) {
+        val pending = picker.finish(request) ?: return
+        val call = pending.value
+        val session = sessions[pending.owner]
         val uri = result.data?.data
         if (session == null || result.resultCode != Activity.RESULT_OK || uri == null) {
-            pending.call.resolve(JSObject().put("value", JSONObject.NULL))
+            call.resolve(JSObject().put("value", JSONObject.NULL))
             return
         }
         val requiredAccess = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         if (((result.data?.flags ?: 0) and requiredAccess) != requiredAccess) {
-            reject(pending.call, SecurityException("The selected folder did not grant read and write access"))
+            reject(call, SecurityException("The selected folder did not grant read and write access"))
             return
         }
         // Do not persist grants: endpoint/account closure discards the capability and a
@@ -96,9 +91,9 @@ internal class NativeFilesBridge(private val context: Context) {
         session.worker.execute {
             try {
                 val document = DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
-                pending.call.resolve(JSObject().put("value", session.endpoint.select(DocumentFileNode(context.contentResolver, document))))
+                call.resolve(JSObject().put("value", session.endpoint.select(DocumentFileNode(context.contentResolver, document))))
             }
-            catch (error: Exception) { reject(pending.call, error) }
+            catch (error: Exception) { reject(call, error) }
         }
     }
 
@@ -119,9 +114,8 @@ internal class NativeFilesBridge(private val context: Context) {
     }
 
     private fun cancelPicker(id: String) {
-        picker?.takeIf { it.id == id && !it.cancelled }?.let {
-            it.cancelled = true
-            it.call.resolve(JSObject().put("value", JSONObject.NULL))
+        picker.cancel(id)?.let {
+            it.value.resolve(JSObject().put("value", JSONObject.NULL))
         }
     }
 
