@@ -172,6 +172,27 @@ test("unsupported and busy source sessions cannot allocate a fork", async t => {
   finally { release() }
 })
 
+test("directory fork keeps the source Session's custom working directory", async t => {
+  const f = await setup(t)
+  const custom = join(f.repository, "..", "custom-cwd")
+  await mkdir(custom)
+  const source = await f.sessions.handle("_deskfleet/session/create", {
+    workspaceId: (await f.catalog.native.snapshot()).workspaces[0]!.id,
+    operationId: randomUUID(), provider: "codex", context: "directory", cwd: custom, title: "Custom cwd",
+  }, f.actor) as AgentSnapshot
+  assert.equal(source.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(source.session.id))!.directories[0]!.path, custom)
+
+  await f.sessions.handle("_deskfleet/input/submit", {
+    sessionId: source.session.id, operationId: randomUUID(), content: [{ type: "text", text: "Remember cwd" }], delivery: "backlog",
+  }, f.actor)
+  await until(() => f.sessions.journal.read(source.session.id), value => value.turns.at(-1)?.state === "completed")
+  const { snapshot: child } = await forkAfterTurn(operationId =>
+    f.sessions.handle("_deskfleet/session/fork", { sessionId: source.session.id, operationId, context: "directory" }, f.actor) as Promise<AgentSnapshot>)
+  assert.equal(child.session.lifecycle, "ready")
+  assert.equal((await f.catalog.sessionWorktree(child.session.id))!.directories[0]!.path, custom)
+})
+
 test("failed fork remains failed and cannot turn into a blank conversation after retry or restart", async t => {
   const f = await setup(t)
   f.provider.failFork = true
