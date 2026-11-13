@@ -55,6 +55,19 @@ export interface ProviderTestResult {
   agentName: string
 }
 
+export interface ProviderWorkspaceCandidate {
+  name: string
+  path: string
+  source: string
+}
+
+/** Existing project directories discovered on the configured provider's machine. */
+export interface ProviderWorkspaceDiscovery {
+  supported: boolean
+  candidates: ProviderWorkspaceCandidate[]
+  warnings: string[]
+}
+
 /** Executable discovery and read-only credential status, independent of ACP sessions. */
 export interface ProviderProbeResult {
   status: "found" | "missing" | "invalid"
@@ -77,6 +90,7 @@ export interface ProviderMethods {
   providerRemove: { params: { providerId: string }; result: null }
   providerTest: { params: { provider: AgentProviderInput }; result: ProviderTestResult }
   providerProbe: { params: { provider: AgentProviderInput }; result: ProviderProbeResult }
+  providerDiscoverWorkspaces: { params: { providerId: string }; result: ProviderWorkspaceDiscovery }
   providerInstall: { params: { provider: AgentProviderInput }; result: TerminalSummary }
   providerLogin: { params: { provider: AgentProviderInput }; result: TerminalSummary }
 }
@@ -153,7 +167,7 @@ export function providerInput(value: unknown): AgentProviderInput {
 }
 
 export function validateProviderParams(method: keyof ProviderMethods, params: Record<string, unknown>): void {
-  if (method === "providerUpdate" || method === "providerRemove") validateProviderId(params.providerId)
+  if (method === "providerUpdate" || method === "providerRemove" || method === "providerDiscoverWorkspaces") validateProviderId(params.providerId)
   if (["providerCreate", "providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(method)) providerInput(params.provider)
   if (method === "providerUpdate") providerSettings(params.changes)
 }

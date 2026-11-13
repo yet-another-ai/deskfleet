@@ -63,6 +63,9 @@ importers:
       pi-acp:
         specifier: 0.0.34
         version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -9400,6 +9403,10 @@ packages:
   slice-ansi@4.0.0:
     resolution: {integrity: sha512-qMCMfhY040cVHT43K9BFygqYbUPFZKHOg7K73mtTWJRb8pyP3fzf4Ixd5SzdEJQ6MRUg/WBnOLxghZtKKurENQ==}
     engines: {node: '>=10'}
+
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
 
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
@@ -20059,6 +20066,8 @@ snapshots:
       ansi-styles: 4.3.0
       astral-regex: 2.0.0
       is-fullwidth-code-point: 3.0.0
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.2: {}
 

@@ -21,6 +21,7 @@
     "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
     "pi-acp": "0.0.34",
+    "smol-toml": "1.9.1",
     "zod": "4.6.7"
   }
 }

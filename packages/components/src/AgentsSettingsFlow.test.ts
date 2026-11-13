@@ -161,7 +161,7 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerCreate", { provider: expect.objectContaining({ name: "Second custom agent" }) })
   await page().get('[aria-label="Actions for Renamed second provider"]').trigger("click")
-  await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(2))
+  await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(3))
   await page().findAll('[role="menuitem"]').find(item => item.text() === i18n.global.t("providers.remove"))!.trigger("click")
   await page().get('[role=dialog] .ui-button-danger').trigger("click")
   await settled(() => expect(page().find('[data-provider-id="shared-provider"]').exists()).toBe(false))

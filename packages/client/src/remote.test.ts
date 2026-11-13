@@ -48,6 +48,28 @@ test("automatic read acknowledgements and explicit mutations retain their trigge
   expect(mutation.diagnostics.trigger).toBe("user")
 })
 
+test("workspace discovery uses the provider's Team and Machine without opening a peer", async () => {
+  const f = fixture()
+  const discovery = { supported: true, candidates: [{ name: "Project", path: "/code/project", source: "config.toml" }], warnings: [] }
+  vi.mocked(f.central.rpc).mockResolvedValueOnce(discovery)
+  await expect(f.remote.api.providers.discoverWorkspaces("configured-agent")).resolves.toEqual(discovery)
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "providerDiscoverWorkspaces", { providerId: "configured-agent" })
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+})
+
+test("live catalog reads bypass a stale replica while ordinary browsing retains it", async () => {
+  const f = fixture()
+  const snapshot = { teamId: "team2", machineId: "central7", machineName: "Remote", sessionIds: [], sessions: [], workspaces: [] }
+  f.central.catalog = vi.fn(async () => ({ machineId: "central7", snapshot, lastObservedAt: "2026-11-14T00:00:00Z" }))
+  const live = { ...snapshot, machineName: "Daemon hostname", workspaces: [{ id: "1", name: "Created just now", worktrees: [{ id: "1", directories: [{ path: "/code/project" }] }] }] }
+  vi.mocked(f.central.rpc).mockResolvedValueOnce(live)
+  await expect(f.remote.api.catalog.list()).resolves.toEqual(snapshot)
+  await expect(f.remote.api.catalog.list({ live: true })).resolves.toEqual({ ...live, machineName: "Remote" })
+  expect(f.central.catalog).toHaveBeenCalledExactlyOnceWith("team2", "central7")
+  expect(f.central.rpc).toHaveBeenCalledExactlyOnceWith("team2", "central7", "catalogList", {})
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+})
+
 test.each(["terminal", "agent"] as const)("legacy %s offers omit media options from the HTTP request", async purpose => {
   const f = offerHttpFixture(), signaling = f.remote.api[purpose]
   const sdp = `v=0\r\na=x-test:${"x".repeat(2_048)}\r\n`

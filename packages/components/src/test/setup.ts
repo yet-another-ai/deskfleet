@@ -18,6 +18,7 @@ const api: DeskfleetDesktopApi = {
       templates: [...AGENT_PROVIDER_TEMPLATES],
       providers: [{ id: "codex", template: "codex", name: "Codex", env: {} }],
     }),
+    discoverWorkspaces: async () => ({ supported: true, candidates: [], warnings: [] }),
     create: async () => { throw new Error("Daemon unavailable") },
     update: async () => { throw new Error("Daemon unavailable") },
     remove: async () => { throw new Error("Daemon unavailable") },

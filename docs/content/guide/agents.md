@@ -33,6 +33,18 @@ automatically. Then use **Test connection** to check session creation.
 In the login terminal, follow CodeBuddy's startup prompts or enter `/login`,
 then `/exit` to return to setup.
 
+### Import existing project directories
+
+After adding **Codex** or **Claude Code**, you can select their recorded project
+directories to create DeskFleet Workspaces. Each selected directory becomes one
+Workspace on the same machine and in the current Team. Existing Workspace
+directories are marked as already added; missing directories are omitted.
+
+You can skip this step or reopen **Import Workspaces** from the agent's menu.
+DeskFleet uses the agent's configured environment, including custom `CODEX_HOME`
+or `CLAUDE_CONFIG_DIR` locations. Import registers existing directories without
+moving files or copying credentials, MCP settings, rules, or conversation history.
+
 ## Share a session with your team
 
 Authorized teammates can open and operate the same session concurrently from the desktop app or Web client:

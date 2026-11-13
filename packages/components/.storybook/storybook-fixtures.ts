@@ -1022,6 +1022,15 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
         providers: structuredClone(storybookProviders),
       }),
       create: async (input) => ({ ...input, id: `prov-${Date.now()}` }),
+      discoverWorkspaces: async () => ({
+        supported: true,
+        candidates: [
+          { name: "deskfleet", path: "/workspace/deskfleet", source: "/Users/ada/.codex/config.toml" },
+          { name: "team-website", path: "/Users/ada/Projects/team-website", source: "/Users/ada/.codex/config.toml" },
+          { name: "design-system", path: "/Users/ada/Projects/design-system", source: "/Users/ada/.codex/config.toml" },
+        ],
+        warnings: [],
+      }),
       update: async (id, changes) => ({ ...(profiles[0]!), ...changes, id }),
       remove: async () => {},
       test: async (provider) => ({ agentName: provider.name }),

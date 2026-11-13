@@ -9,6 +9,7 @@ import { listDirectories } from "./filesystem.ts"
 import type { TerminalDial, TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalSessions } from "./terminals.ts"
 import type { ProviderSetup } from "./provider-setup.ts"
+import { discoverProviderWorkspaces } from "./provider-workspaces.ts"
 import { AGENT_PROVIDER_TEMPLATES, type AgentProviderTemplateId } from "./provider-protocol.ts"
 import type { ProviderUpdates } from "./provider-updates.ts"
 import type { ScheduledTasks } from "./scheduled-tasks.ts"
@@ -112,6 +113,7 @@ export class MachineOperations {
       case "providerRemove": await this.providers.remove(request.params.providerId); return null
       case "providerTest": return this.providers.test(request.params.provider)
       case "providerProbe": return this.setup.probe(request.params.provider)
+      case "providerDiscoverWorkspaces": return discoverProviderWorkspaces(this.providers.get(request.params.providerId))
       case "providerInstall": return this.setup.install(request.params.provider)
       case "providerLogin": return this.setup.login(request.params.provider)
       case "capabilities": return this.#capabilities()

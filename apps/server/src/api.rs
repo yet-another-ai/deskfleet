@@ -291,6 +291,7 @@ const MANAGEMENT: &[&str] = &[
     "providerRemove",
     "providerTest",
     "providerProbe",
+    "providerDiscoverWorkspaces",
     "providerInstall",
     "providerLogin",
     "providerUpgrade",
