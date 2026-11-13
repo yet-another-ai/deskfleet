@@ -186,19 +186,31 @@ export class ManagedSessionWorktrees {
   /**
    * Records the Workspace's current directories as the Session's execution
    * context without generating checkouts; the agent works in those directories.
+   * An optional primary path becomes directories[0]; a path outside the Workspace
+   * is prepended and the Workspace directories remain additionalDirectories.
    */
-  async useDirectories(allocated: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+  async useDirectories(allocated: CatalogWorkspaceSession, primary?: string): Promise<ManagedWorkspaceSession> {
     if (!allocated.workspaceId) throw new Error("Session has no workspace")
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === allocated.workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
-    for (const { path } of main.directories) {
+    let directories = main.directories.map(({ path }) => ({ path }))
+    if (primary) {
+      const index = directories.findIndex(directory => directory.path === primary)
+      if (index > 0) {
+        const [chosen] = directories.splice(index, 1)
+        directories.unshift(chosen!)
+      } else if (index === -1) {
+        directories = [{ path: primary }, ...directories]
+      }
+    }
+    for (const { path } of directories) {
       let info
       try { info = await stat(path) }
       catch (error) { throw new Error(`Cannot access directory: ${path}`, { cause: error }) }
       if (!info.isDirectory()) throw new Error(`Not a directory: ${path}`)
     }
-    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, main.directories.map(({ path }) => ({ path })))
+    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, directories)
     return { ...allocated, worktree }
   }
 

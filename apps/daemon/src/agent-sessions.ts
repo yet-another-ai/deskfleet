@@ -1,4 +1,5 @@
 import { homedir } from "node:os"
+import { isAbsolute } from "node:path"
 import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
@@ -637,6 +638,10 @@ export class AgentSessions {
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
+    const cwd = command.params.cwd === undefined ? undefined : string(command.params.cwd, "working directory").trim()
+    if (cwd !== undefined && (context !== "directory" || !cwd || !isAbsolute(cwd) || cwd.includes("\0") || cwd.length > 4096)) {
+      throw new Error("Invalid Session working directory")
+    }
     const baseBranch = command.params.baseBranch === undefined ? undefined : string(command.params.baseBranch, "base branch").trim()
     if (baseBranch !== undefined && (!baseBranch || context !== "worktree")) throw new Error("Invalid base branch")
     const baseRevisions = command.params.baseRevisions as GitPreparedRevision[] | undefined
@@ -651,7 +656,7 @@ export class AgentSessions {
     command.sessionId = session.id
     const provision = async (includeCommandEvent: boolean): Promise<void> => {
       try {
-        await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch, baseRevisions)
+        await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch, baseRevisions, cwd)
         await this.journal.serial(session.id, async () => {
           const snapshot = await this.journal.read(session.id)
           const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }

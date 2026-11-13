@@ -68,15 +68,16 @@ export class DaemonCatalog {
     return { ...snapshot, sessionIds: sessions.map(session => session.id), githubBranches: await this.#github.snapshot(snapshot, inactive) }
   }
 
-  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string, baseRevisions?: GitPreparedRevision[]): Promise<void> {
+  async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string, baseRevisions?: GitPreparedRevision[], cwd?: string): Promise<void> {
     if (!this.#sessions) throw new Error("Local catalog is not available")
+    if (cwd !== undefined) await checkDirectories([{ path: cwd }])
     if (!workspaceId) {
       if (context !== "directory") throw new Error("Sessions without a workspace use the home directory")
-      await this.native.attachSessionWorktree(id, [{ path: homedir() }])
+      await this.native.attachSessionWorktree(id, [{ path: cwd ?? homedir() }])
     } else {
       const machineId = (await this.native.snapshot()).machineId
       const allocated = { id, machineId, workspaceId }
-      if (context === "directory") await this.#sessions.useDirectories(allocated)
+      if (context === "directory") await this.#sessions.useDirectories(allocated, cwd)
       else await this.#sessions.create(workspaceId, allocated, baseBranch, baseRevisions)
     }
     this.changed()

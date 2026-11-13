@@ -7,6 +7,7 @@ import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
+import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import { ArrowUp, Check, ChevronDown, CircleAlert, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, RotateCw, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
 import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
@@ -70,10 +71,53 @@ const attachments = defineModel<ComposerAttachment[]>("attachments", { default: 
 const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] })
 /** The execution context a new Session will use; only offered with `showTarget`. */
 const context = defineModel<AgentSessionContext>("context", { default: "directory" })
+/** Absolute working directory for a new directory Session; omitted means the machine/workspace default. */
+const cwd = defineModel<string | undefined>("cwd")
 /** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
 const baseBranch = defineModel<string>("baseBranch")
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
 const preparing = ref(false)
+const folderPickerOpen = ref(false)
+const browseDirectories = (path?: string) => client.filesystem.listDirectories(path)
+const defaultWorkingDirectory = computed(() => props.location?.workspace?.directories[0]?.path)
+const showWorkingDirectory = computed(() => !!props.showTarget && (!props.location?.workspace || context.value === "directory"))
+function workingDirectoryBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/u, "")
+  const parts = trimmed.split(/[\\/]/u).filter(Boolean)
+  return parts.at(-1) || trimmed || path
+}
+const workingDirectoryLabel = computed(() => {
+  const path = cwd.value ?? defaultWorkingDirectory.value
+  return path ? workingDirectoryBasename(path) : t("composer.workingDirectoryHome")
+})
+const workingDirectoryTitle = computed(() => cwd.value ?? defaultWorkingDirectory.value ?? t("composer.workingDirectoryHomeHint"))
+function openWorkingDirectoryPicker(): void {
+  if (!props.location || preparing.value || props.submitting || props.disabled) return
+  folderPickerOpen.value = true
+}
+function onWorkingDirectorySelected(path: string): void {
+  folderPickerOpen.value = false
+  const trimmed = path.trim()
+  if (!trimmed) return
+  cwd.value = trimmed === defaultWorkingDirectory.value ? undefined : trimmed
+}
+function clearWorkingDirectory(): void {
+  cwd.value = undefined
+}
+watch([
+  () => props.location?.machine.id,
+  () => props.location?.workspace?.id,
+  context,
+], () => {
+  folderPickerOpen.value = false
+  cwd.value = undefined
+})
+watch(showWorkingDirectory, visible => {
+  if (!visible) {
+    folderPickerOpen.value = false
+    cwd.value = undefined
+  }
+})
 const preparedBranches = ref<string[]>([])
 const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>>("preparationButton")
 const branchLabel = computed(() => preparedBranches.value.length
@@ -439,6 +483,33 @@ onBeforeUnmount(() => {
           </DropdownMenuRoot>
         </template>
       </template>
+      <template v-if="showWorkingDirectory">
+        <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
+        <button
+          type="button"
+          class="-mx-1 inline-flex h-7 min-w-0 max-w-[12rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover disabled:cursor-default disabled:opacity-50"
+          :disabled="preparing || submitting || disabled"
+          :title="workingDirectoryTitle"
+          :aria-label="t('composer.workingDirectoryChoice', { path: workingDirectoryTitle })"
+          data-composer-context
+          data-composer-cwd
+          @click="openWorkingDirectoryPicker"
+        >
+          <FolderOpen :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <span class="truncate">{{ workingDirectoryLabel }}</span>
+        </button>
+        <button
+          v-if="cwd"
+          type="button"
+          class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          :disabled="preparing || submitting || disabled"
+          :aria-label="t('composer.workingDirectoryClear')"
+          data-composer-cwd-clear
+          @click="clearWorkingDirectory"
+        >
+          <X :size="14" :stroke-width="2" aria-hidden="true" />
+        </button>
+      </template>
       <template v-else-if="location.worktree">
         <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted ui-motion hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
           <FolderOpen v-if="location.session?.context === 'directory'" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
@@ -604,6 +675,14 @@ onBeforeUnmount(() => {
       :machine-name="location.machine.name"
       @select="onMachineFilesSelected"
       @cancel="filePickerOpen = false"
+    />
+    <FolderPickerDialog
+      v-if="folderPickerOpen && location"
+      :browse="browseDirectories"
+      :initial-path="cwd ?? defaultWorkingDirectory"
+      :machine-name="location.machine.name"
+      @select="onWorkingDirectorySelected"
+      @cancel="folderPickerOpen = false"
     />
   </div>
 </template>

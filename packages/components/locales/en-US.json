@@ -747,6 +747,10 @@
       "worktree": "Isolated Git checkouts from each directory's committed HEAD",
       "directory": "Work in the Workspace's directories, including uncommitted changes"
     },
+    "workingDirectoryHome": "Home",
+    "workingDirectoryHomeHint": "Machine home directory",
+    "workingDirectoryChoice": "Working directory: {path}",
+    "workingDirectoryClear": "Use the default working directory",
     "machine": "Machine",
     "machineChoice": "Machine: {machine}",
     "workspace": "Workspace",
