@@ -50,6 +50,10 @@ const downloads = computed(() => [
             <Download v-if="item.platform === 'android' && androidFile" :size="16" aria-hidden="true" />
             <ArrowUpRight v-else :size="16" aria-hidden="true" />
           </a>
+          <a v-if="item.platform === 'ios'" class="mobile-download__action mobile-download__action--secondary" href="https://testflight.apple.com/join/p35j7ubC">
+            {{ t.testFlight }}
+            <ArrowUpRight :size="16" aria-hidden="true" />
+          </a>
         </div>
         <a class="mobile-download__qr" :href="item.href" :aria-label="item.scan">
           <img v-if="item.qr" :src="item.qr" :alt="item.scan" width="132" height="132" />
@@ -72,6 +76,7 @@ const downloads = computed(() => [
 .mobile-download__detail { margin: 2px 0 0; color: var(--home-ink-2); font-size: 12px; }
 .mobile-download__status { margin: 12px 0 16px; color: var(--home-ink-2); font-size: 12px; line-height: 1.5; }
 .mobile-download__action { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: auto; color: var(--home-ink); font-size: 14px; font-weight: 650; line-height: 1.5; text-decoration: none; }
+.mobile-download__action--secondary { min-height: 28px; margin-top: 0; color: var(--home-ink-2); font-size: 13px; font-weight: 500; }
 .mobile-download__action svg { flex: none; }
 .mobile-download__action:hover { text-decoration: underline; text-underline-offset: 4px; }
 .mobile-download__qr { display: block; width: 132px; height: 132px; overflow: hidden; border-radius: 12px; background: #fff; }
