@@ -1612,8 +1612,8 @@ The Rust workspace contains:
 | `deskfleet-linux-desktop` | Shared Linux session backend selection for permissions, capture, and input |
 | `deskfleet-wayland` | Daemon-owned Portal authorization, PipeWire source IDs, and EIS input |
 | `deskfleet-x11` | X server access, shared RandR source geometry, GetImage capture, and XTEST/XKB input |
-| `deskfleet-linux-media` | Optional GStreamer PipeWire capture and hardware video encoding |
-| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation/GStreamer hardware video encoding and Opus audio encoding |
+| `deskfleet-linux-media` | Optional GStreamer PipeWire capture and video encoding |
+| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation/GStreamer video encoding and Opus audio encoding |
 | `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
@@ -1656,7 +1656,7 @@ machine is offline. Validate direct and TURN-relayed connections.
 
 Cross-machine MCP coordination follows that workflow. Bundling provider binaries,
 additional terminal backends, and Linux system audio remain separate follow-up
-work. Linux Wayland and X11 capture share the existing hardware encoding path.
+work. Linux Wayland and X11 capture share the existing GStreamer encoding path.
 
 ## References
 
