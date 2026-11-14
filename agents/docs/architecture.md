@@ -254,6 +254,12 @@ owns this state; replacing a Machine runtime starts with a nondirectional entran
 Standalone settings shells own the same state when no Machine App is mounted.
 Successful route changes update it, so redirects classify their final destination
 and canceled navigation cannot animate the current page.
+Views opt their main content into the navigation directive. Settings animates
+only its inner content, leaving its navigation and title-bar drag regions fixed.
+The directive runs for a changed navigation key, not for arbitrary DOM insertion;
+loading results and same-page updates do not replay it. Mobile Session view
+movement stays with the existing swipe/overview surfaces. No route animation
+retains a departing live Session, terminal, or media view to wait for an exit.
 
 Pointer dragging directly controls position and estimates velocity in units per
 second. Releasing a snapping surface continues toward its target with that

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
@@ -57,6 +59,7 @@ const props = defineProps<{ sessionId: string }>()
 const reading = useConversationReadingStore()
 provide(conversationReadingKey, () => reading.session(props.sessionId))
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const route = useRoute()
 const router = useRouter()
 const newTerminalWindow = inject(newTerminalWindowKey, undefined)
@@ -362,7 +365,7 @@ async function checkOperation(operationId: string): Promise<void> {
       </div>
     </template>
   </SessionHeader>
-  <div class="relative flex min-h-0 flex-1">
+  <div v-navigation-motion="compact ? undefined : motion" class="relative flex min-h-0 flex-1">
     <UiScrollArea
       ref="scrollArea"
       fade="top"

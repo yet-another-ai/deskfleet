@@ -5,11 +5,13 @@ import { RouterView, useRoute, useRouter } from "vue-router"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const client = usePlatformClient()
+const motion = useNavigationMotion()
 
 // Section links replace their history entry, preserving the page the team settings opened from.
 function leave(): void {
@@ -20,7 +22,7 @@ function leave(): void {
 </script>
 
 <template>
-  <SettingsLayout :wide="route.name === 'team-settings-ai-usage'" @back="leave">
+  <SettingsLayout :motion="motion" :wide="route.name === 'team-settings-ai-usage'" @back="leave">
     <template #nav>
       <SidebarLink :to="{ name: 'team-settings' }" :icon="Users" :label="t('team.settings')" replace />
       <SidebarLink :to="{ name: 'team-settings-plans' }" :icon="client.mobile ? Gauge : CreditCard" :label="t(client.mobile ? 'team.usage' : 'team.plansUsage')" replace />

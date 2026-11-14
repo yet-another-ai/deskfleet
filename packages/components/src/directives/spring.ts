@@ -9,7 +9,7 @@ const numberPattern = /-?(?:\d*\.)?\d+(?:e[+-]?\d+)?/gi
 const cssName = (name: string) => name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
 
 /** Vapor supplies reactive getters; VDOM supplies a binding on each render. */
-function motionDirective<Value>(
+export function motionDirective<Value>(
   render: (element: HTMLElement, value: Value, modifiers: DirectiveModifiers, first: boolean) => void,
   dispose: (element: HTMLElement) => void,
 ): FunctionDirective<HTMLElement, Value> & VaporDirective<HTMLElement, Value> {
@@ -107,28 +107,6 @@ function enter(element: HTMLElement): void {
 export const vSpringEnter = motionDirective<undefined>(
   (element, _value, _modifiers, first) => { if (first) enter(element) },
   element => { entrances.get(element)?.cancel(); entrances.delete(element) },
-)
-
-const childrenObservers = new WeakMap<HTMLElement, MutationObserver>()
-/** Route stages own their immediate content entrances; title-bar drag regions stay fixed. */
-export const vSpringChildren = motionDirective<undefined>(
-  (element, _value, _modifiers, first) => {
-    if (!first) return
-    const start = (child: Node) => { if (child instanceof HTMLElement && child.tagName !== "HEADER") enter(child) }
-    element.childNodes.forEach(start)
-    const observer = new MutationObserver(records => {
-      for (const record of records) {
-        record.removedNodes.forEach(child => { if (child instanceof HTMLElement) entrances.get(child)?.cancel() })
-        record.addedNodes.forEach(start)
-      }
-    })
-    observer.observe(element, { childList: true })
-    childrenObservers.set(element, observer)
-  },
-  element => {
-    childrenObservers.get(element)?.disconnect()
-    element.childNodes.forEach(child => { if (child instanceof HTMLElement) entrances.get(child)?.cancel() })
-  },
 )
 
 const hoverCleanup = new WeakMap<HTMLElement, () => void>()

@@ -229,16 +229,6 @@ textarea {
   to { opacity: 0; scale: 0.98; }
 }
 
-/* Routed content fades up as it replaces the previous page. */
-.ui-route-stage > * {
-  animation: ui-route-in var(--ui-duration-slow) var(--ui-ease-out);
-}
-/* Title bars stay put so their drag regions never move under the pointer. */
-.ui-route-stage > header { animation-name: ui-fade-in; }
-@keyframes ui-route-in {
-  from { opacity: 0; }
-}
-
 /* Generic entrances for content that appears while the user watches. */
 .ui-rise-in { animation: ui-rise-in var(--ui-duration-slow) var(--ui-ease-out); }
 .ui-pop-in { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }

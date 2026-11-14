@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { Archive, ArchiveRestore, RefreshCw, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { DialogTitle } from "reka-ui"
@@ -18,6 +20,7 @@ import UiScrollArea from "../components/common/UiScrollArea.vue"
 import SessionContextMenu from "../components/session/SessionContextMenu.vue"
 
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const router = useRouter()
 const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
@@ -78,7 +81,7 @@ async function confirmAction(): Promise<void> {
 <template>
   <PaneHeader>{{ t('archivedSessions.title') }}</PaneHeader>
   <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
-    <div class="mx-auto flex max-w-4xl flex-col gap-5">
+    <div v-navigation-motion="motion" class="mx-auto flex max-w-4xl flex-col gap-5">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
           <h1 class="ui-page-title">{{ t('archivedSessions.title') }}</h1>

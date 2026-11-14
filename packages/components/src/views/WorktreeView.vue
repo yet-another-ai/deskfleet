@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
@@ -12,6 +14,7 @@ import { useFleetStore } from "../stores/fleet.ts"
 
 const props = defineProps<{ worktreeId: string }>()
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const worktreeLabel = useWorktreeLabel()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
@@ -32,7 +35,7 @@ const archived = computed(() => archiveState.value === "archiving" || archiveSta
     {{ fleet.catalogLoading ? t("catalog.loading") : t("worktree.notFound") }}
   </div>
   <UiScrollArea v-else class="min-h-0 flex-1">
-    <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-10 pt-6">
+    <div v-navigation-motion="motion" class="mx-auto flex max-w-3xl flex-col gap-8 px-6 pb-10 pt-6">
       <p v-if="!available" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t("catalog.offline") }}</p>
       <p v-if="archived" class="ui-notice m-0 border-ui-border bg-ui-surface text-ui-text-muted">{{ t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving') }}</p>
       <section>

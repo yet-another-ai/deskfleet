@@ -7,12 +7,14 @@ import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const account = useAccountSession()
 const client = usePlatformClient()
+const motion = useNavigationMotion()
 
 // Section links replace their history entry, so the previous entry is the page Settings opened from.
 function leave(): void {
@@ -23,7 +25,7 @@ function leave(): void {
 </script>
 
 <template>
-  <SettingsLayout @back="leave">
+  <SettingsLayout :motion="motion" @back="leave">
     <template #nav>
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
       <SidebarLink v-if="client.platform !== 'web'" :to="{ name: 'settings-worktrees' }" :icon="GitBranch" :label="t('worktreeSettings.title')" replace />

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { CalendarClock, LoaderCircle, MessagesSquare, Search } from "@lucide/vue"
 import { useFocus } from "@vueuse/core"
 import { computed, ref, useTemplateRef, watch } from "vue"
@@ -13,6 +15,7 @@ import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useSearch, type SearchKind } from "../composables/useSearch.ts"
 
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const route = useRoute()
 const router = useRouter()
 const account = useAccountSession()
@@ -50,7 +53,7 @@ function open(result: SearchResult): void {
 <template>
   <PaneHeader>{{ t('search.title') }}</PaneHeader>
   <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
-    <div class="mx-auto flex max-w-4xl flex-col gap-5">
+    <div v-navigation-motion="motion" class="mx-auto flex max-w-4xl flex-col gap-5">
       <header>
         <h1 class="ui-page-title">{{ t('search.title') }}</h1>
         <p class="m-0 mt-1 text-sm text-ui-text-muted">{{ t('search.description', { team: account?.team.value?.name ?? '' }) }}</p>

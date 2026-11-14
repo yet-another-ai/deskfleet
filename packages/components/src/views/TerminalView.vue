@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { watchImmediate, whenever } from "@vueuse/core"
 import { computed, ref } from "vue"
 import { useI18n } from "vue-i18n"
@@ -15,6 +17,7 @@ import { useSessionLabel } from "../composables/useSessionLabel.ts"
 
 const props = defineProps<{ terminalId?: string; machineId?: string }>()
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const worktreeLabel = useWorktreeLabel()
 const sessionLabel = useSessionLabel()
 const fleet = useFleetStore()
@@ -76,16 +79,18 @@ const banner = computed(() => `\x1b[2m${t("terminal.unavailable")}\x1b[0m\n`)
     </template>
   </PaneHeader>
 
-  <div v-if="localWorkspace && !redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
-    <TerminalWorkspace v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
-  </div>
-  <div
-    v-else-if="!location"
-    class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted"
-  >{{ t("terminal.notFound") }}</div>
-  <div v-else-if="!redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
-    <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal">
-      <TerminalSurface :key="terminalId" :banner="banner" />
+  <div v-navigation-motion="motion" class="flex min-h-0 flex-1 flex-col">
+    <div v-if="localWorkspace && !redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+      <TerminalWorkspace v-model:active-id="activeTerminal" :terminals="machineTerminals" :create="() => terminals.create()" />
+    </div>
+    <div
+      v-else-if="!location"
+      class="flex min-h-0 flex-1 items-center justify-center px-6 text-ui-text-muted"
+    >{{ t("terminal.notFound") }}</div>
+    <div v-else-if="!redirecting" class="flex min-h-0 flex-1 flex-col px-4 pb-4">
+      <div class="min-h-0 flex-1 overflow-hidden rounded-xl bg-ui-terminal">
+        <TerminalSurface :key="terminalId" :banner="banner" />
+      </div>
     </div>
   </div>
 </template>

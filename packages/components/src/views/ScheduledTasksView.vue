@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
@@ -20,6 +22,7 @@ import { absoluteTime } from "../components/schedules/schedule-format.ts"
 // `/schedules` lists the machine's tasks, `/schedules/new` creates one, and `/schedules/:id` shows one.
 const props = defineProps<{ scheduleId?: string }>()
 const { t, locale } = useI18n()
+const motion = useNavigationMotion()
 const router = useRouter()
 const fleet = useFleetStore()
 const schedules = useScheduledTasks()
@@ -54,7 +57,7 @@ async function remove(): Promise<void> {
     <template v-else>{{ t('schedules.title') }}</template>
   </PaneHeader>
   <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
-    <div class="mx-auto flex flex-col gap-5" :class="selected ? 'max-w-6xl' : 'max-w-4xl'">
+    <div v-navigation-motion="motion" class="mx-auto flex flex-col gap-5" :class="selected ? 'max-w-6xl' : 'max-w-4xl'">
       <template v-if="!scheduleId">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0">

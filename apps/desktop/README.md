@@ -562,7 +562,6 @@ and production builds emit them as a static stylesheet.
 utilities can't express:
 - Overlay and dialog enter and exit keyframes. Reka keeps closing content mounted
   until its exit animation ends.
-- The `ui-route-stage` page entrance.
 - `ui-rise-in` and `ui-pop-in`.
 - `ui-collapsible` height animation. Keep that element bare and put spacing,
   borders, and backgrounds on a child; padding or a border would stop it
@@ -575,10 +574,14 @@ utilities can't express:
 - `ui-attention` for pending decisions.
 - `ui-aurora` and `ui-gradient-text` for hero content.
 
-The renderer runs in Vue Vapor mode, so these are CSS animations that run on
-insertion or on a `data-state` change, not `<Transition>` wrappers. Animations use
-the individual `translate` and `scale` properties so they compose with an element's
-own `transform`.
+The renderer runs in Vue Vapor mode. Explicit navigation content boundaries use
+the shared spring: peer destinations fade, while Developer/NAT and Scheduled Task
+list/detail navigation enter from opposite horizontal directions. The navigation
+identity excludes query/hash state and never becomes a Vue component key. Headers,
+settings navigation, and focus overlays are outside this page entrance; async DOM
+insertion does not replay it. Local CSS effects run on insertion or `data-state`
+changes. Motion uses individual `translate` and `scale` properties so it composes
+with an element's own `transform`, without `<Transition>` wrappers.
 
 ## Renderer security
 
