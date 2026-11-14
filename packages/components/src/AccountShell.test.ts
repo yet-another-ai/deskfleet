@@ -489,7 +489,7 @@ test.each([
   expect(settingsLinks().map(link => link.attributes("href"))).toEqual([
     "#/settings/preferences",
     ...(platform === "web" ? [] : ["#/settings/worktrees"]),
-    "#/team/settings/plans", "#/settings/appearance", "#/settings/notifications", "#/settings/github",
+    "#/settings/appearance", "#/settings/notifications", "#/settings/github",
     ...(hasMachine ? ["#/settings/agents", "#/settings/mcp-servers"] : []),
     "#/settings/developer", "#/settings/about",
   ])
@@ -655,7 +655,7 @@ test("the selected machine shows when central presence reports it offline", asyn
   await vi.waitFor(() => expect(page().get("aside").text()).toContain("Offline"))
 })
 
-test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens current Team plans and records its source without a machine", async source => {
+test.each(["sidebar", "team_menu"] as const)("billing entry %s opens current Team plans and records its source without a machine", async source => {
   const events = vi.spyOn(analytics, "trackEvent")
   const fake = fakeCentral()
   mountShell(fake.central, "web")
@@ -663,13 +663,9 @@ test.each(["sidebar", "team_menu", "settings"] as const)("billing entry %s opens
   const origin = "/?from=billing-entry"
   await router.push(origin)
   if (source === "sidebar") await page().get("[data-billing-entry] button").trigger("click")
-  else if (source === "team_menu") {
+  else {
     await page().get('button[aria-label="Team"]').trigger("click")
     await page().findAll('[role="menuitem"]').find(item => item.text() === "Plans & billing")!.trigger("click")
-  } else {
-    await page().get('button[aria-label="Settings"]').trigger("click")
-    await settled(() => expect(page().get("h1").text()).toBe("Preferences"))
-    await page().findAll('nav a').find(item => item.text() === "Plans & billing")!.trigger("click")
   }
   await settled(() => expect(page().get("h1").text()).toBe("Plans & Usages"))
   expect(page().get("section header").text()).toContain("Design team")
