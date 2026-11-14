@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { Bell, Bot, Code, CreditCard, Gauge, GitBranch, Info, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
+import { Bell, Bot, Code, GitBranch, Info, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRoute, useRouter } from "vue-router"
-import { trackEvent } from "../services/analytics.ts"
 import GithubIcon from "../components/common/GithubIcon.vue"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
@@ -28,7 +27,6 @@ function leave(): void {
     <template #nav>
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
       <SidebarLink v-if="client.platform !== 'web'" :to="{ name: 'settings-worktrees' }" :icon="GitBranch" :label="t('worktreeSettings.title')" replace />
-      <SidebarLink v-if="account?.team.value" :to="{ name: 'team-settings-plans' }" :icon="client.mobile ? Gauge : CreditCard" :label="t(client.mobile ? 'team.usage' : 'billing.plansAndBilling')" replace @click="!client.mobile && trackEvent('billing_entry_clicked', { source: 'settings' })" />
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
       <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink v-if="account" :to="{ name: 'settings-github' }" :icon="GithubIcon" :label="t('githubSettings.title')" replace />
