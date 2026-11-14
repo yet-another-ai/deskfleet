@@ -43,7 +43,8 @@ function restoreFocus(event: Event): void {
 </script>
 
 <template>
-  <DialogRoot :open="open" @update:open="changeOpen">
+  <!-- Reka owns focus and dismissal until the visible spring exit completes. -->
+  <DialogRoot :open="present" @update:open="changeOpen">
     <DialogPortal v-if="present">
       <DialogOverlay force-mount class="ui-dialog-overlay" :style="{ opacity: Math.max(0, Math.min(1, progress)) }" />
       <DialogContent :as="SpringSurface" motion="none" force-mount
@@ -51,7 +52,7 @@ function restoreFocus(event: Event): void {
         v-bind="{ ...(!described && { 'aria-describedby': undefined }), ...$attrs }"
         :style="{ opacity: Math.max(0, Math.min(1, progress)), scale: 0.98 + 0.02 * progress }"
         :inert="!open"
-        @escape-key-down="preventClose && $event.preventDefault()"
+        @escape-key-down="(!open || preventClose) && $event.preventDefault()"
         @pointer-down-outside.prevent
         @open-auto-focus="emit('openAutoFocus', $event)"
         @close-auto-focus="restoreFocus"

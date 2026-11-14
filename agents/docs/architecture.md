@@ -267,7 +267,8 @@ progress with the scrim. `UiDialog.close()` (also exposed to its default slot)
 requests closure; its `close` event fires after the exit settles. Callers retain
 their dialog data until that event, including picker selections and confirmation
 results. Reopening reverses the current spring while preserving the original
-focus destination. Reka still owns modal semantics and focus restoration.
+focus destination. Reka keeps the dialog in its modal and focus stacks throughout
+the visible exit, so repeated Escape cannot dismiss an underlying dialog.
 Focus previews keep their last content descriptor through their fade-out and
 report removal after their DOM is gone, including when a route unmounts them.
 Directive-driven springs also observe reduced-motion changes during an active

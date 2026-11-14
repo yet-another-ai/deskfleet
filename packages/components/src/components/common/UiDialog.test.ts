@@ -126,6 +126,49 @@ test("a close request retains the inert panel until its spring settles before cl
   expect(document.querySelector('[role="dialog"]')).toBeNull()
 })
 
+test("a nested dialog protects its parent and focus until its exit finishes", async () => {
+  const tick = springFrames()
+  view = mount(defineComponent({
+    components: { UiDialog },
+    setup: () => ({ parent: ref(false), child: ref(false), draft: ref("") }),
+    template: '<button @click="parent = true">Open</button><UiDialog v-if="parent" title="Parent" @close="parent = false"><input v-model="draft" aria-label="Draft" /><button @click="child = true">Browse</button><UiDialog v-if="child" title="Folder" @close="child = false"><input aria-label="Folder" /></UiDialog></UiDialog>',
+  }), { attachTo: document.body })
+  const opener = view.get("button")
+  opener.element.focus()
+  await opener.trigger("click")
+  await flushPromises()
+  await tick(1600)
+  const parent = content()
+  await parent.get("input").setValue("Unsaved draft")
+  const browse = parent.get("button")
+  browse.element.focus()
+  await browse.trigger("click")
+  await flushPromises()
+  await tick(1600)
+  const child = new DOMWrapper(document.querySelectorAll<HTMLElement>('[role="dialog"]')[1]!)
+  expect(document.activeElement).toBe(child.get("input").element)
+
+  await child.get("input").trigger("keydown", { key: "Escape" })
+  await tick(96)
+  expect(child.element.hasAttribute("inert")).toBe(true)
+  expect.soft(document.activeElement).not.toBe(browse.element)
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+  await nextTick()
+  expect.soft(parent.element.hasAttribute("inert")).toBe(false)
+  await tick(1600)
+  await flushPromises()
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+  expect(content().element).toBe(parent.element)
+  expect(parent.get<HTMLInputElement>("input").element.value).toBe("Unsaved draft")
+  expect(document.activeElement).toBe(browse.element)
+
+  await browse.trigger("keydown", { key: "Escape" })
+  await tick(1600)
+  await flushPromises()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(document.activeElement).toBe(opener.element)
+})
+
 test.each([
   { focus: "without a focus change", blur: false },
   { focus: "after focus moves to the body", blur: true },
