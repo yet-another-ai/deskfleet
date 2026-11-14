@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { writeFile } from "node:fs/promises"
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { connect, type Socket } from "node:net"
 import { join } from "node:path"
 import type { Duplex } from "node:stream"
@@ -116,9 +116,14 @@ async function smoke() {
   })
   const actualPort = await listen(backend)
   proxy.on("connect", (request, socket, head) => {
+    // This session also carries Chromium background HTTPS traffic. Only the
+    // synthetic backend belongs to the fixture; deny other tunnels locally.
+    if (request.url !== `127.0.0.1:${backendPort}`) {
+      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+      return
+    }
     proxyRequests++
     try {
-      assert.equal(request.url, `127.0.0.1:${backendPort}`)
       const upstream = connect(actualPort, "127.0.0.1", () => {
         socket.write("HTTP/1.1 200 Connection Established\r\n\r\n")
         if (head.length) upstream.write(head)
@@ -148,6 +153,16 @@ async function smoke() {
     assert.equal(await session.defaultSession.resolveProxy(serverUrl), `PROXY 127.0.0.1:${proxyPort}`)
     await session.defaultSession.cookies.set({ url: serverUrl, name: "unrelated-session", value: "must-not-be-sent" })
     await Promise.race([failed, (async () => {
+      // Chromium can send background component downloads through the same proxy.
+      // Exercise that traffic deterministically without connecting to the internet.
+      const rejectedTunnel = await new Promise<number | undefined>((resolve, reject) => {
+        const request = httpRequest({ hostname: "127.0.0.1", port: proxyPort, method: "CONNECT", path: "background.invalid:443" })
+        request.once("connect", (response, socket) => { socket.destroy(); resolve(response.statusCode) })
+        request.once("error", reject)
+        request.end()
+      })
+      assert.equal(rejectedTunnel, 403)
+      assert.equal(proxyRequests, 0, "Background traffic must not count as backend traffic")
       assert.deepEqual(await client.authorizationUrl("http://127.0.0.1/auth/callback"), {
         authorizationUrl: `${serverUrl}/auth/authorize`, loginVerifier: "proxy-verifier",
       })
