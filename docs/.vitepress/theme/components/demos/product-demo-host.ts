@@ -85,6 +85,7 @@ const host: DeskfleetDesktopApi = {
     remove: async id => { const index = providers.findIndex(provider => provider.id === id); if (index >= 0) providers.splice(index, 1) },
     test: async provider => ({ agentName: provider.name }),
     discoverWorkspaces: async () => ({ supported: true, candidates: [], warnings: [] }),
+    discoverMcpServers: async () => ({ supported: true, candidates: [], warnings: [] }),
     probe: async provider => ({ status: "found", binaryPath: provider.binaryPath || `/usr/local/bin/${AGENT_PROVIDER_TEMPLATES.find(template => template.id === provider.template)!.defaultBinaryPath}`,
       auth: "unknown", installable: false, loginAvailable: false }),
     install: unavailable,

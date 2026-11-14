@@ -117,6 +117,7 @@ return {
     test: (provider) => invokeDesktop("providerTest", { provider }),
     probe: (provider) => invokeDesktop("providerProbe", { provider }),
     discoverWorkspaces: (providerId) => invokeDesktop("providerDiscoverWorkspaces", { providerId }),
+    discoverMcpServers: (providerId) => invokeDesktop("providerDiscoverMcpServers", { providerId }),
     install: (provider) => invokeDesktop("providerInstall", { provider }),
     login: (provider) => invokeDesktop("providerLogin", { provider }),
     onChanged: (listener) => {

@@ -25,6 +25,7 @@ import type { AgentProvider } from "./agents/acp.ts"
 import type { AgentProviders } from "./agent-providers.ts"
 import type { ProviderSetup } from "./provider-setup.ts"
 import { discoverProviderWorkspaces } from "./provider-workspaces.ts"
+import { discoverProviderMcpServers } from "./provider-mcp-servers.ts"
 import type { CentralClient } from "./central-client.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
 import { DesktopInputChannel, DESKTOP_INPUT_CHANNEL } from "./desktop-input.ts"
@@ -179,7 +180,7 @@ class ControlConnection {
               this.#desktopOperations.add(operation)
               continue
             }
-            if (["providerTest", "providerProbe", "providerDiscoverWorkspaces", "providerInstall", "providerLogin"].includes(request.method) && this.#authenticated) {
+            if (["providerTest", "providerProbe", "providerDiscoverWorkspaces", "providerDiscoverMcpServers", "providerInstall", "providerLogin"].includes(request.method) && this.#authenticated) {
               // Probes and setup can take seconds; keep terminal I/O and other requests responsive.
               void this.#handle(request).then(
                 result => this.#send({ id: request.id, result }),
@@ -285,6 +286,8 @@ class ControlConnection {
         return this.#setup.probe(request.params.provider)
       case "providerDiscoverWorkspaces":
         return discoverProviderWorkspaces(this.#providers.get(request.params.providerId))
+      case "providerDiscoverMcpServers":
+        return discoverProviderMcpServers(this.#providers.get(request.params.providerId))
       case "providerInstall":
         return this.#setup.install(request.params.provider)
       case "providerLogin":

@@ -38,6 +38,7 @@ test("local discovery grants only host setup and never imports development resou
   const status = await client.call("centralStatus", {})
   assert.deepEqual(status.registrations, [])
   for (const method of ["catalogList", "providerList", "terminalList", "systemStatus"] as const) await assert.rejects(client.call(method, {}), /Sign in and select a team/)
+  await assert.rejects(client.call("providerDiscoverMcpServers", { providerId: "agent" }), /Sign in and select a team/)
   await assert.rejects(client.call("workspaceCreate", { name: "Unauthorized", directories: [{ path: directory }] }), /backend API/)
 })
 

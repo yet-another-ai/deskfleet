@@ -1,4 +1,6 @@
 import type { TerminalSummary } from "./terminal-protocol.ts"
+import type { ProviderMcpServerDiscovery } from "./provider-mcp-server-types.ts"
+export type { ProviderMcpServerCandidate, ProviderMcpServerDiscovery } from "./provider-mcp-server-types.ts"
 
 export type AgentProviderTemplateId = "codex" | "claude-code" | "cursor" | "grok" | "pi" | "omp" | "deepseek-harness" | "antigravity" | "codebuddy" | "acp"
 
@@ -91,6 +93,7 @@ export interface ProviderMethods {
   providerTest: { params: { provider: AgentProviderInput }; result: ProviderTestResult }
   providerProbe: { params: { provider: AgentProviderInput }; result: ProviderProbeResult }
   providerDiscoverWorkspaces: { params: { providerId: string }; result: ProviderWorkspaceDiscovery }
+  providerDiscoverMcpServers: { params: { providerId: string }; result: ProviderMcpServerDiscovery }
   providerInstall: { params: { provider: AgentProviderInput }; result: TerminalSummary }
   providerLogin: { params: { provider: AgentProviderInput }; result: TerminalSummary }
 }
@@ -167,7 +170,7 @@ export function providerInput(value: unknown): AgentProviderInput {
 }
 
 export function validateProviderParams(method: keyof ProviderMethods, params: Record<string, unknown>): void {
-  if (method === "providerUpdate" || method === "providerRemove" || method === "providerDiscoverWorkspaces") validateProviderId(params.providerId)
+  if (["providerUpdate", "providerRemove", "providerDiscoverWorkspaces", "providerDiscoverMcpServers"].includes(method)) validateProviderId(params.providerId)
   if (["providerCreate", "providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(method)) providerInput(params.provider)
   if (method === "providerUpdate") providerSettings(params.changes)
 }

@@ -57,6 +57,15 @@ test("workspace discovery uses the provider's Team and Machine without opening a
   expect(f.central.createPeer).not.toHaveBeenCalled()
 })
 
+test("MCP discovery uses the provider's Team and Machine without opening a peer", async () => {
+  const f = fixture()
+  const discovery = { supported: true, candidates: [{ id: "candidate", name: "Docs", scope: "user", source: "config.toml", server: { name: "Docs", enabled: true, transport: "http", url: "https://example.com/mcp", headers: {} } }], warnings: [] }
+  vi.mocked(f.central.rpc).mockResolvedValueOnce(discovery)
+  await expect(f.remote.api.providers.discoverMcpServers("configured-agent")).resolves.toEqual(discovery)
+  expect(f.central.rpc).toHaveBeenCalledWith("team2", "central7", "providerDiscoverMcpServers", { providerId: "configured-agent" })
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+})
+
 test("live catalog reads bypass a stale replica while ordinary browsing retains it", async () => {
   const f = fixture()
   const snapshot = { teamId: "team2", machineId: "central7", machineName: "Remote", sessionIds: [], sessions: [], workspaces: [] }

@@ -70,6 +70,8 @@ function fixture() {
   const rpc = vi.fn(async (_teamId: string, machineId: string, method: string, params: Record<string, unknown>) => {
     const snapshot = snapshots.get(machineId)!
     if (method === "providerList") return list(machineId)
+    if (method === "providerDiscoverMcpServers") return { supported: true, candidates: [], warnings: [] }
+    if (method === "mcpServerList") return { revision: "1", servers: [] }
     if (method === "providerProbe") return { status: "found", auth: "authenticated", installable: true, loginAvailable: true }
     if (method === "providerTest") return { agentName: `Agent ${machineId}` }
     if (method === "providerCreate") {
@@ -131,6 +133,14 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   expect(useAgentSessionsStore(first.state).drafts["30"]).toBe("Keep the first machine's draft")
 
   f.rpc.mockClear()
+  await page().get('[aria-label="Actions for Codex m2"]').trigger("click")
+  await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(4))
+  await page().findAll('[role="menuitem"]').find(item => item.text() === "Import MCP servers…")!.trigger("click")
+  await settled(() => expect(page().get('[data-provider-mcp-import]').text()).toContain("No MCP servers found"))
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerDiscoverMcpServers", { providerId: "shared-provider" })
+  expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "mcpServerList", {})
+  await page().get('[data-mcp-import-close]').trigger("click")
+  await vi.waitFor(() => expect(page().find('[data-provider-mcp-import]').exists()).toBe(false))
   await page().get('[data-provider-id="shared-provider"] [data-provider-open]').trigger("click")
   await settled(() => expect(page().find('[data-provider-status="found"]').exists()).toBe(true))
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerProbe", expect.anything())
@@ -161,7 +171,7 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   await vi.waitFor(() => expect(page().find("[role=dialog]").exists()).toBe(false))
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerCreate", { provider: expect.objectContaining({ name: "Second custom agent" }) })
   await page().get('[aria-label="Actions for Renamed second provider"]').trigger("click")
-  await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(3))
+  await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(4))
   await page().findAll('[role="menuitem"]').find(item => item.text() === i18n.global.t("providers.remove"))!.trigger("click")
   await page().get('[role=dialog] .ui-button-danger').trigger("click")
   await settled(() => expect(page().find('[data-provider-id="shared-provider"]').exists()).toBe(false))

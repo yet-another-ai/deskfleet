@@ -3,7 +3,7 @@ import UiButton from "../common/UiButton.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 
-import { Bot, Ellipsis, FolderInput, Pencil, Plus, Trash2 } from "@lucide/vue"
+import { Bot, Ellipsis, FolderInput, Import, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { DialogTitle, DialogDescription, DropdownMenuItem } from "reka-ui"
 import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
@@ -14,6 +14,7 @@ import MachineTabs from "../account/MachineTabs.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ProviderDialog from "./ProviderDialog.vue"
 import ProviderWorkspaceImportDialog from "./ProviderWorkspaceImportDialog.vue"
+import ProviderMcpImportDialog from "./ProviderMcpImportDialog.vue"
 import MenuPopover from "../common/MenuPopover.vue"
 import UiDialog from "../common/UiDialog.vue"
 
@@ -31,6 +32,8 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const editor = ref<{ initial?: AgentProviderConfig } | null>(null)
 const importing = ref<AgentProviderConfig | null>(null)
+const importingMcp = ref<AgentProviderConfig | null>(null)
+const importMcpPending = ref(false)
 let pendingImport: AgentProviderConfig | null = null
 let scopeRevision = 0
 const removing = ref<AgentProviderConfig | null>(null)
@@ -54,6 +57,7 @@ watchImmediate([() => machine.value?.id, () => account?.teamId.value, available]
   scopeRevision++
   editor.value = null
   importing.value = null
+  importingMcp.value = null
   pendingImport = null
   void refresh()
 })
@@ -110,7 +114,7 @@ async function remove(): Promise<void> {
       <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.add") }}
     </UiButton>
   </div>
-  <MachineTabs :label="t('providers.machines')" class="mb-5" />
+  <MachineTabs :disabled="importMcpPending" :label="t('providers.machines')" class="mb-5" />
   <p v-if="!available" role="status" class="m-0 py-6 text-sm text-ui-text-muted">{{ t("providers.offline") }}</p>
   <div v-else>
     <div v-if="error" class="mb-4 flex items-center justify-between gap-4">
@@ -132,6 +136,7 @@ async function remove(): Promise<void> {
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog(() => edit(provider))"><Pencil :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.edit") }}</DropdownMenuItem>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item text-ui-danger" @select="openDialog(() => askRemove(provider))"><Trash2 :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.remove") }}</DropdownMenuItem>
               <DropdownMenuItem v-if="supportsWorkspaceImport(provider)" as="button" type="button" class="ui-menu-item" @select="openDialog(() => importing = provider)"><FolderInput :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("providers.workspaceImport.action") }}</DropdownMenuItem>
+              <DropdownMenuItem v-if="supportsWorkspaceImport(provider)" as="button" type="button" class="ui-menu-item" :disabled="!account || !available || loading || importMcpPending" @select="openDialog(() => importingMcp = provider)"><Import :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("mcpServers.import.action") }}</DropdownMenuItem>
             </template>
           </MenuPopover>
         </div>
@@ -145,6 +150,7 @@ async function remove(): Promise<void> {
   </div>
   <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :shell-environment-default="snapshot.shellEnvironmentDefault" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="saved" @cancel="editor = null" />
   <ProviderWorkspaceImportDialog v-if="importing" :provider="importing" :machine-name="machine?.name ?? ''" @close="importing = null" />
+  <ProviderMcpImportDialog v-if="importingMcp" :provider="importingMcp" :machine-name="machine?.name ?? ''" @busy="importMcpPending = $event" @close="importingMcp = null" />
   <UiDialog v-if="removing" ref="removeDialog" v-slot="{ close }" class="w-[26rem]" described :prevent-close="removePending" @close="removing = null">
     <DialogTitle class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing.name }) }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("providers.removeDescription") }}</DialogDescription>
