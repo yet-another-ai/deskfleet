@@ -37,6 +37,8 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); vi.mocked(platformClient.catalog.list).mockRestore(); vi.useRealTimers() })
 const receive = (event: AgentEvent) => mock.notification({ method: "_deskfleet/session/event", params: event })
 const tracked = (event: string) => vi.mocked(trackEvent).mock.calls.filter(([name]) => name === event).map(([, metadata]) => metadata)
+// The mock records every event's metadata as one union, so the name filter cannot narrow it.
+const sessionActions = () => tracked("session_action") as Array<{ action: string; outcome?: string; context?: string; scope?: string; provider?: string }>
 
 test("an attend interrupted by a dropped connection does not register on the replacement channel", async () => {
   const store = useAgentSessionsStore()
@@ -497,7 +499,7 @@ test("fork retries preserve the original context and operation ID while installi
   const forked = agentSnapshot(); forked.session.id = "31"; forked.session.context = "directory"
   mock.call.mockRejectedValueOnce(new Error("Lost fork response"))
   await expect(store.fork("30", "directory")).rejects.toThrow("Lost fork response")
-  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([])
+  expect(sessionActions().filter(event => event.outcome === "success")).toEqual([])
   const original = mock.call.mock.calls.at(-1)!
   expect(original).toEqual(["_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) }])
   mock.call.mockResolvedValueOnce(null).mockResolvedValueOnce(forked)
@@ -588,7 +590,7 @@ test.each([false, true])("a completed create event survives a lost response with
   expect(store.views["31"]?.snapshot).toEqual(created)
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
   expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31").length).toBeGreaterThan(0)
-  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
+  expect(sessionActions().filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
   expect(store.operations).toEqual({})
 })
 
@@ -608,7 +610,7 @@ test("a completed create receipt resolves its session snapshot without creating 
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/command/get")).toHaveLength(1)
   expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31")).toHaveLength(1)
   expect(store.views["31"]?.snapshot).toEqual(created)
-  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
+  expect(sessionActions().filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
   expect(store.operations).toEqual({})
 })
 

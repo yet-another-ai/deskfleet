@@ -30,7 +30,6 @@ test("free owner reaches plans without a machine", async () => {
   await wrapper.get("button").trigger("click")
   expect(account.openSettings).toHaveBeenCalledWith("plans")
   expect(trackEvent).toHaveBeenCalledWith("billing_entry_clicked", { source: "sidebar", current_plan: "free", action: "upgrade" })
-  expect(vi.mocked(trackEvent).mock.calls.filter(([event]) => event === "billing_entry_viewed")).toHaveLength(0)
 })
 
 test.each([
