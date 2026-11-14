@@ -67,7 +67,7 @@ impl PlatformEncoder {
                 deskfleet_linux_media::Encoder::start(&self.settings, pixels, frame.timestamp_ns)
                     .map_err(map_error)?;
             self.active = Some(active);
-            self.keyframe = false; // The initial hardware output is already a keyframe.
+            self.keyframe = false; // The initial output is already a keyframe.
             packets
         };
         Ok(convert(packets))

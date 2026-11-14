@@ -1,6 +1,6 @@
 [package]
 name = "deskfleet-linux-media"
-description = "Optional Linux capture and hardware video encoding runtime"
+description = "Optional Linux capture and video encoding runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

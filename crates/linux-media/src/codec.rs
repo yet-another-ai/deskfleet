@@ -9,11 +9,17 @@ pub enum Codec {
 impl Codec {
     pub const ALL: [Self; 3] = [Self::H264, Self::H265, Self::Av1];
 
-    // Explicit hardware factories only. Never use encodebin or software fallback.
-    // VA registers the normal or low-power factory according to driver support.
+    // Try hardware first. VA registers the normal or low-power factory according
+    // to driver support.
     pub(crate) fn factories(self) -> &'static [&'static str] {
         match self {
-            Self::H264 => &["nvh264enc", "nvautogpuh264enc", "vah264enc", "vah264lpenc"],
+            Self::H264 => &[
+                "nvh264enc",
+                "nvautogpuh264enc",
+                "vah264enc",
+                "vah264lpenc",
+                "x264enc",
+            ],
             Self::H265 => &["nvh265enc", "nvautogpuh265enc", "vah265enc", "vah265lpenc"],
             Self::Av1 => &["nvav1enc", "nvautogpuav1enc", "vaav1enc", "vaav1lpenc"],
         }
@@ -80,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn software_encoders_do_not_make_a_codec_available() {
+    fn x264_advertises_only_h264_and_requires_the_h264_parser() {
         let installed = [
             "appsrc",
             "appsink",
@@ -94,8 +100,11 @@ mod tests {
             "rav1enc",
             "svtav1enc",
         ];
-        for codec in Codec::ALL {
-            assert!(!has_encoder(codec, |name| installed.contains(&name)));
-        }
+        let available = |name: &str| installed.contains(&name);
+        assert!(has_encoder(Codec::H264, available));
+        assert!(!has_encoder(Codec::H264, |name| name != "h264parse" && available(name)));
+        assert!(!has_encoder(Codec::H265, available));
+        assert!(!has_encoder(Codec::Av1, available));
+        assert_eq!(Codec::H264.factories().last(), Some(&"x264enc"));
     }
 }

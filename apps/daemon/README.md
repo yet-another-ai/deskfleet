@@ -152,6 +152,7 @@ opaque restoration token in `<daemon directory>/wayland-restore-token` with mode
 Shutdown cancels pending consent and releases the session. This backend
 supports logged-in, unlocked GNOME/KDE desktops, with PipeWire capture, EIS input,
 and hardware AV1, H.265, or H.264 through optional GStreamer VA-API/NVENC plugins.
+The optional GStreamer `x264enc` plugin provides an H.264 software fallback.
 The viewer negotiates AV1 → H.265 → H.264 from the host's runtime capabilities
 and its own decoder support. It does not provide remote login or unlock.
 
@@ -161,8 +162,8 @@ are unsupported. Discovery has a two-second deadline, so an unresponsive X
 server does not indefinitely block capability queries. RandR supplies display bounds, GetImage captures
 pixels with optional XFixes cursor compositing, and XTEST/XKB provide mouse and
 physical-key input. Successful access checks report `not-required`; the welcome
-page skips Portal permission steps. X11 uses the same optional GStreamer hardware
-encoders as Wayland, but capture needs no PipeWire or Portal runtime. Display
+page skips Portal permission steps. X11 uses the same optional GStreamer encoders
+as Wayland, but capture needs no PipeWire or Portal runtime. Display
 changes invalidate active sources so viewers refresh and reconnect. Run the
 daemon in the logged-in user's session; this does not create a remote login or
 unlock service. Headless Agent and terminal use remains independent of these

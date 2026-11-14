@@ -27,11 +27,11 @@ pub struct EncodedFrame {
     pub is_keyframe: bool,
 }
 
-/// Hardware video encoder, owned and polled on the native capture worker.
+/// Video encoder owned and polled on the native capture worker.
 pub struct Encoder {
     pipeline: Pipeline,
     input: Object,
-    hardware: Object,
+    element: Object,
     factory: &'static str,
     settings: EncoderSettings,
     in_flight: usize,
@@ -40,9 +40,17 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    /// Verify a hardware candidate with the real first frame before accepting it.
-    /// If one candidate fails, another hardware implementation of this codec is tried.
+    /// Verify encoder candidates in priority order using the first real frame.
     pub fn start(
+        settings: &EncoderSettings,
+        pixels: &[u8],
+        timestamp_ns: u64,
+    ) -> Result<(Self, Vec<EncodedFrame>)> {
+        Self::start_with(settings.codec.factories(), settings, pixels, timestamp_ns)
+    }
+
+    fn start_with(
+        factories: &[&'static str],
         settings: &EncoderSettings,
         pixels: &[u8],
         timestamp_ns: u64,
@@ -50,20 +58,15 @@ impl Encoder {
         validate(settings, pixels)?;
         let api = ffi::api()?;
         let mut errors = Vec::new();
-        for &factory in settings
-            .codec
-            .factories()
-            .iter()
-            .filter(|name| api.has_factory(name))
-        {
+        for &factory in factories.iter().filter(|name| api.has_factory(name)) {
             let attempt = (|| {
                 let pipeline = Pipeline::new(&description(settings, factory))?;
                 let input = pipeline.child(c"input")?;
-                let hardware = pipeline.child(c"hardware")?;
+                let element = pipeline.child(c"encoder")?;
                 let mut encoder = Self {
                     pipeline,
                     input,
-                    hardware,
+                    element,
                     factory,
                     settings: settings.clone(),
                     in_flight: 0,
@@ -77,14 +80,14 @@ impl Encoder {
                 }
                 if packets.is_empty() {
                     return Err(Error::Pipeline(
-                        "hardware encoder produced no first packet".into(),
+                        "video encoder produced no first packet".into(),
                     ));
                 }
                 Ok((encoder, packets))
             })();
             match attempt {
                 Ok(value) => {
-                    tracing::info!(factory, codec = ?settings.codec, "Linux hardware encoder started");
+                    tracing::info!(factory, codec = ?settings.codec, "Linux video encoder started");
                     return Ok(value);
                 }
                 Err(error) => errors.push(format!("{factory}: {error}")),
@@ -92,7 +95,7 @@ impl Encoder {
         }
         if errors.is_empty() {
             Err(Error::Unavailable(format!(
-                "no VA-API or NVENC {:?} encoder is installed",
+                "no supported {:?} video encoder is installed",
                 settings.codec
             )))
         } else {
@@ -119,30 +122,42 @@ impl Encoder {
             if event.is_null() {
                 return Err(Error::Pipeline("cannot allocate keyframe request".into()));
             }
-            // SAFETY: hardware is a live encoder element; event is owned above.
-            if unsafe { (api.element_send_event)(self.hardware.ptr.as_ptr(), event) } == 0 {
+            // SAFETY: element is a live encoder; event is owned above.
+            if unsafe { (api.element_send_event)(self.element.ptr.as_ptr(), event) } == 0 {
                 return Err(Error::Pipeline(
-                    "hardware encoder rejected keyframe request".into(),
+                    "video encoder rejected keyframe request".into(),
                 ));
             }
             self.force_keyframe = false;
         }
+        let (width, height) = input_size(&self.settings, self.factory);
+        let row = width as usize * 4;
+        let length = row * height as usize;
         // SAFETY: Null allocator/params select GStreamer's default allocator.
         let buffer = unsafe {
-            (api.buffer_new_allocate)(std::ptr::null_mut(), pixels.len(), std::ptr::null_mut())
+            (api.buffer_new_allocate)(std::ptr::null_mut(), length, std::ptr::null_mut())
         };
         if buffer.is_null() {
             return Err(Error::Pipeline("cannot allocate encoder input".into()));
         }
-        // SAFETY: We exclusively own the fresh buffer; pixels is readable for
-        // its full length. Public timestamp fields use GStreamer's stable ABI.
+        // SAFETY: We exclusively own the fresh buffer; validated pixels cover
+        // every copied row. Public timestamp fields use GStreamer's stable ABI.
         let copied = unsafe {
             (*buffer).pts = timestamp_ns;
             (*buffer).dts = timestamp_ns;
             (*buffer).duration = self.frame_duration();
-            (api.buffer_fill)(buffer, 0, pixels.as_ptr().cast(), pixels.len())
+            if width == self.settings.width {
+                (api.buffer_fill)(buffer, 0, pixels.as_ptr().cast(), length)
+            } else {
+                pixels
+                    .chunks_exact(self.settings.width as usize * 4)
+                    .take(height as usize)
+                    .enumerate()
+                    .map(|(y, line)| (api.buffer_fill)(buffer, y * row, line.as_ptr().cast(), row))
+                    .sum()
+            }
         };
-        if copied != pixels.len() {
+        if copied != length {
             // SAFETY: The buffer has not been transferred to appsrc yet.
             unsafe { (api.mini_unref)(buffer.cast()) };
             return Err(Error::Pipeline("cannot fill encoder input".into()));
@@ -205,13 +220,13 @@ impl Encoder {
             return Err(Error::Pipeline("invalid encoder bitrate".into()));
         }
         set_property(
-            &self.hardware,
+            &self.element,
             c"bitrate",
             &bitrate_property(self.factory, average).to_string(),
         )?;
         if self.factory.starts_with("nv") {
             set_property(
-                &self.hardware,
+                &self.element,
                 c"max-bitrate",
                 &bitrate_property(self.factory, maximum).to_string(),
             )?;
@@ -237,7 +252,7 @@ impl Encoder {
                 Ok(None) => {}
             }
             if Instant::now() >= deadline {
-                return Err(Error::Pipeline("hardware encoder did not finish".into()));
+                return Err(Error::Pipeline("video encoder did not finish".into()));
             }
         }
     }
@@ -257,13 +272,13 @@ fn validate(settings: &EncoderSettings, pixels: &[u8]) -> Result<()> {
         || (settings.max_bitrate_bps != 0 && settings.max_bitrate_bps < settings.bitrate_bps)
         || !settings.codec.accepts_profile(settings.profile)
     {
-        return Err(Error::Pipeline("invalid hardware encoder input".into()));
+        return Err(Error::Pipeline("invalid video encoder input".into()));
     }
     Ok(())
 }
 
 // nvcodec labels these properties "kbit/sec" but multiplies them by 1024;
-// VA uses decimal kbps. Use the same conversion at startup and on live updates.
+// VA and x264 use decimal kbps for the bitrate property.
 // See GStreamer's sys/nvcodec/gstnvh264encoder.cpp (set_format/check_reconfigure):
 // https://github.com/GStreamer/gstreamer/blob/1.26/subprojects/gst-plugins-bad/sys/nvcodec/gstnvh264encoder.cpp
 fn bitrate_property(factory: &str, bits_per_second: u32) -> u32 {
@@ -275,16 +290,34 @@ fn bitrate_property(factory: &str, bits_per_second: u32) -> u32 {
     bits_per_second.div_ceil(unit)
 }
 
+// x264 rejects odd 4:2:0 dimensions, so its input drops a trailing odd column
+// and row.
+fn input_size(settings: &EncoderSettings, factory: &str) -> (u32, u32) {
+    let mask = if factory == "x264enc" { !1 } else { !0 };
+    (settings.width & mask, settings.height & mask)
+}
+
 fn description(settings: &EncoderSettings, factory: &str) -> String {
     let bitrate = bitrate_property(factory, settings.bitrate_bps);
     let baseline = settings.profile == "constrained-baseline";
-    let hardware = if factory.starts_with("nv") {
+    let (width, height) = input_size(settings, factory);
+    let encoder = if factory == "x264enc" {
+        // Explicit properties override the preset and tuning, so CABAC and 8x8
+        // transforms follow the negotiated profile. Zero-latency tuning turns
+        // the two threads into slice threads, which add no frame delay.
+        format!(
+            "x264enc name=encoder bitrate={bitrate} speed-preset=ultrafast \
+             tune=zerolatency threads=2 byte-stream=true bframes=0 cabac={} dct8x8={}",
+            !baseline,
+            settings.profile == "high"
+        )
+    } else if factory.starts_with("nv") {
         let codec_options = match settings.codec {
             Codec::H264 => format!("bframes=0 cabac={}", !baseline),
             Codec::H265 | Codec::Av1 => "bframes=0".into(),
         };
         format!(
-            "{factory} name=hardware bitrate={bitrate} max-bitrate={} rc-mode=cbr \
+            "{factory} name=encoder bitrate={bitrate} max-bitrate={} rc-mode=cbr \
             rc-lookahead=0 zerolatency=true {codec_options}",
             bitrate_property(factory, settings.max_bitrate_bps),
         )
@@ -300,7 +333,7 @@ fn description(settings: &EncoderSettings, factory: &str) -> String {
             // one disables future references so an idle desktop emits promptly.
             Codec::Av1 => "hierarchical-level=1".into(),
         };
-        format!("{factory} name=hardware bitrate={bitrate} rate-control=cbr {codec_options}")
+        format!("{factory} name=encoder bitrate={bitrate} rate-control=cbr {codec_options}")
     };
     let media_type = settings.codec.media_type();
     let parser = settings.codec.parser();
@@ -312,164 +345,16 @@ fn description(settings: &EncoderSettings, factory: &str) -> String {
     format!(
         "appsrc name=input is-live=true format=time block=false max-buffers=4 \
          caps=video/x-raw,format=BGRA,width={},height={},framerate={}/1000 ! \
-         videoconvert ! video/x-raw,format=NV12 ! {hardware} ! \
+         videoconvert ! video/x-raw,format=NV12 ! {encoder} ! \
          {media_type},profile={} ! {parser}{parser_options} ! {output_caps} ! \
          appsink name=frames sync=false max-buffers=4 drop=false \
          enable-last-sample=false wait-on-eos=false",
-        settings.width,
-        settings.height,
+        width,
+        height,
         (settings.fps * 1000.0).round() as u32,
         settings.profile
     )
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn settings(codec: Codec) -> EncoderSettings {
-        EncoderSettings {
-            codec,
-            width: 320,
-            height: 240,
-            fps: 30.0,
-            bitrate_bps: 1_000_000,
-            max_bitrate_bps: 2_000_000,
-            profile: if codec == Codec::H264 {
-                "constrained-baseline"
-            } else {
-                "main"
-            },
-        }
-    }
-
-    #[test]
-    fn malformed_frame_fails_without_loading_runtime() {
-        assert!(Encoder::start(&settings(Codec::H264), &[0; 12], 0).is_err());
-        let mut options = settings(Codec::H264);
-        options.fps = f64::NAN;
-        assert!(validate(&options, &vec![0; 320 * 240 * 4]).is_err());
-        options = settings(Codec::Av1);
-        options.profile = "high";
-        assert!(validate(&options, &vec![0; 320 * 240 * 4]).is_err());
-    }
-
-    #[test]
-    fn bitrate_properties_match_each_hardware_plugins_units() {
-        for codec in Codec::ALL {
-            for factory in codec.factories() {
-                let (average, maximum, unit) = if factory.starts_with("nv") {
-                    (977, 1954, 1024)
-                } else {
-                    (1000, 2000, 1000)
-                };
-                let pipeline = description(&settings(codec), factory);
-                assert!(pipeline.contains(&format!(" bitrate={average} ")));
-                if factory.starts_with("nv") {
-                    assert!(pipeline.contains(&format!(" max-bitrate={maximum} ")));
-                }
-                // Quantization may add at most one property unit, not 2.4%.
-                let effective = bitrate_property(factory, 1_000_000) * unit;
-                assert!((1_000_000..1_000_000 + unit).contains(&effective));
-                assert_eq!(bitrate_property(factory, 0), 0);
-            }
-        }
-    }
-
-    #[test]
-    #[ignore = "requires GStreamer and a working VA-API or NVENC hardware encoder"]
-    fn advertised_hardware_encodes_and_decodes_idle_keyframes() {
-        let codecs: Vec<_> = Codec::ALL
-            .into_iter()
-            .filter(|codec| crate::has_encoder(*codec))
-            .collect();
-        assert!(
-            !codecs.is_empty(),
-            "hardware smoke requires at least one advertised codec"
-        );
-        for codec in codecs {
-            hardware_encodes_one_frame_and_idle_keyframe(codec);
-        }
-    }
-
-    fn hardware_encodes_one_frame_and_idle_keyframe(codec: Codec) {
-        let pixels = vec![100; 320 * 240 * 4];
-        let (mut encoder, first) = Encoder::start(&settings(codec), &pixels, 0)
-            .unwrap_or_else(|error| panic!("{codec:?}: {error}"));
-        assert!(first[0].is_keyframe);
-        if codec != Codec::Av1 {
-            assert!(first[0].data.starts_with(&[0, 0, 0, 1]));
-        }
-        decode_frame(codec, &first[0]);
-        encoder.request_keyframe();
-        let mut packets = encoder.encode(&pixels, 1_000_000_000).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while packets.is_empty() && Instant::now() < deadline {
-            packets.extend(encoder.pull(Duration::from_millis(20)).unwrap());
-        }
-        assert!(
-            !packets.is_empty(),
-            "static desktop keyframe was never encoded"
-        );
-        assert!(packets[0].is_keyframe);
-        assert!(packets[0].timestamp_ns > first[0].timestamp_ns);
-        // A fresh decoder verifies that requested keyframes include the headers
-        // needed for a viewer to recover after packet loss or join an idle stream.
-        decode_frame(codec, &packets[0]);
-        encoder.flush().unwrap();
-        println!(
-            "{codec:?}: {} encoded/decoded initial and requested idle keyframes",
-            encoder.factory
-        );
-    }
-
-    fn decode_frame(codec: Codec, packet: &EncodedFrame) {
-        let api = ffi::api().unwrap();
-        let candidates: &[&str] = match codec {
-            Codec::H264 => &["vah264dec", "nvh264dec", "avdec_h264"],
-            Codec::H265 => &["vah265dec", "nvh265dec", "avdec_h265"],
-            Codec::Av1 => &["vaav1dec", "nvav1dec", "dav1ddec", "av1dec"],
-        };
-        let decoder = candidates
-            .iter()
-            .find(|name| api.has_factory(name))
-            .expect("hardware smoke also requires a matching decoder plugin");
-        let pipeline = Pipeline::new(&format!(
-            "appsrc name=input format=time caps={} ! \
-             {} ! {decoder} ! videoconvert ! video/x-raw,format=BGRA ! \
-             appsink name=frames sync=false",
-            codec.output_caps(),
-            codec.parser()
-        ))
-        .unwrap();
-        let input = pipeline.child(c"input").unwrap();
-        // SAFETY: This test allocates an owned buffer and initializes it before
-        // transferring it to appsrc, using the same public ABI as the encoder.
-        let buffer = unsafe {
-            (api.buffer_new_allocate)(
-                std::ptr::null_mut(),
-                packet.data.len(),
-                std::ptr::null_mut(),
-            )
-        };
-        assert!(!buffer.is_null());
-        // SAFETY: Fresh buffer is exclusively owned and packet data is readable.
-        unsafe {
-            (*buffer).pts = packet.timestamp_ns;
-            (*buffer).duration = packet.duration_ns;
-            assert_eq!(
-                (api.buffer_fill)(buffer, 0, packet.data.as_ptr().cast(), packet.data.len()),
-                packet.data.len()
-            );
-            assert_eq!((api.source_push_buffer)(input.ptr.as_ptr(), buffer), 0);
-            assert_eq!((api.source_end_of_stream)(input.ptr.as_ptr()), 0);
-        }
-        let decoded = pipeline.pull(Duration::from_secs(2)).unwrap().unwrap();
-        assert_eq!(decoded.dimensions().unwrap(), (320, 240));
-        let pixels = decoded.bytes().unwrap();
-        assert_eq!(pixels.len(), 320 * 240 * 4);
-        for channel in &pixels[..3] {
-            assert!(channel.abs_diff(100) <= 5);
-        }
-    }
-}
+mod tests;

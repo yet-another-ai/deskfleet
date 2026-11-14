@@ -90,13 +90,13 @@ the output name. Changing ports or docks may therefore assign a new number.
 | --- | --- | --- | --- |
 | macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
 | Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264/H.265/AV1 fallback, subject to GPU/driver support | Unsupported |
-| Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support | Unsupported |
-| Linux X11 | RandR / GetImage with XFixes cursor | Same GStreamer hardware encoders as Wayland | Unsupported |
+| Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support; optional x264 H.264 software fallback | Unsupported |
+| Linux X11 | RandR / GetImage with XFixes cursor | Same GStreamer encoders as Wayland | Unsupported |
 
 WebRTC DataChannels and Opus encoding work without a display. Loading the addon,
 creating a peer does not enumerate displays or probe video encoders. On Linux,
 daemon capability discovery checks the selected desktop backend and optional
-hardware encoding runtime without requesting consent. `captureDisplays()`,
+video encoding runtime without requesting consent. `captureDisplays()`,
 `supportedVideoCodecs(displayId)`, and `startDesktop()` are explicit operations. Capture requires an interactive
 graphical session and any platform recording permission.
 
@@ -334,20 +334,24 @@ input is disconnected. Display listing reuses the session without retrying it.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
 to the pool. Capture pacing leaves the newest sample in the bounded appsink queue
 until the next frame is due, so the final update is delivered even when the
-desktop becomes idle. GStreamer converts and uploads these frames to VA-API or NVENC;
-there is no software encoder fallback. Linux probes H.264, H.265, and AV1
-independently, requiring each codec's parser and a registered hardware encoder.
+desktop becomes idle. GStreamer tries VA-API and NVENC hardware encoders when
+available. H.264 can fall back to the optional CPU-based `x264enc` plugin. Linux
+probes H.264, H.265, and AV1 independently, requiring a registered encoder and
+parser for each advertised codec.
 The viewer uses the existing AV1 → HEVC → H.264 preference among the codecs both
 ends support. An encoder failure retains the existing fallback to a new peer
 with the next common codec.
 
-This path uses CPU copies, not DMA-BUF zero-copy. Hardware candidates are checked
+This path uses CPU copies, not DMA-BUF zero-copy. Encoder candidates are checked
 with the first real frame. H.264 constrained baseline and H.265 Main produce
 Annex B access units with parameter sets on keyframes; AV1 Main produces OBU
 temporal units. Codec-specific settings disable frame reordering/lookahead so
-an idle desktop can emit a frame immediately. Requested keyframes use the latest
-retained frame. Portal closure invalidates capture and input; every bounded capture poll
-checks the source generation so retained frames cannot outlive authorization.
+an idle desktop can emit a frame immediately. x264 uses its `ultrafast` preset
+with `zerolatency` tuning on two slice threads. It cannot encode odd 4:2:0
+sizes, so its input drops a trailing odd pixel column and row. Requested
+keyframes use the latest retained frame. Portal closure invalidates capture and
+input; every bounded capture poll checks the source generation so retained
+frames cannot outlive authorization.
 
 One EIS connection belongs to the portal session and is retained between
 controllers. The existing exclusive-controller rule, Team grants, input
@@ -383,7 +387,7 @@ compositing. Each stream owns a paced producer and one replaceable queued frame;
 consumer polling honors its timeout, and stopping discards pending frames and
 interrupts any outstanding capture reply before joining its producer.
 This path has CPU copies and does not use MIT-SHM or XDamage. The BGRA frames feed
-the same GStreamer hardware encoder and WebRTC pipeline as Wayland. X11 capture
+the same GStreamer encoder and WebRTC pipeline as Wayland. X11 capture
 does not require PipeWire, a Portal grant, libei, or Xlib initialization.
 
 XTEST injects keys and mouse buttons. Physical DOM keys map through evdev to the
@@ -400,7 +404,7 @@ server stops responding or the connection is lost.
 
 Run the daemon inside the user's X11 session with its display credentials.
 This backend does not create an X server, provide remote login/unlock, or capture
-system audio. Hardware encoding remains required for desktop streaming.
+system audio. Desktop streaming still requires one of the GStreamer encoders above.
 
 ### Android Termux (`scrcpy-server`)
 
@@ -429,7 +433,7 @@ Reconnecting a client reads the existing daemon's status without requesting
 again. Tests inject permission checks and requests so ordinary test runs do not
 open OS dialogs.
 
-The native desktop stream pool owns capture and hardware encoding on one blocking
+The native desktop stream pool owns capture and encoding on one blocking
 worker per matching stream profile, preserving D3D11 thread ownership and retained
 GPU surface lifetimes. A profile includes the display, negotiated codec, audio,
 frame rate, bitrate limits, and resolution bounds. Each authenticated Machine
@@ -951,9 +955,10 @@ acceptance remain unverified.
 That removed presenter reported `fifo-hint`; these runs did not measure actual
 display completion or comparative end-to-end latency.
 
-`DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host
-GPU. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240,
-defaulting to 10. Capture deadlines follow an elapsed monotonic clock so encoder
+`DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host's
+video encoder, including the optional x264 fallback on Linux. In that mode,
+`DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240, defaulting to 10.
+Capture deadlines follow an elapsed monotonic clock so encoder
 work does not add to every frame interval; missed slots are skipped after a
 stall. The pre-encoded 64×64 fixture keeps its fixed 10 fps rate.
 
@@ -1056,7 +1061,7 @@ binary is redistributed.
 
 Linux media libraries are optional at runtime: GStreamer 1.x core, app and video
 libraries, GLib, `videoconvert`, `appsrc`, and `appsink`, plus at least one
-available hardware codec and its parser. Wayland capture additionally requires
+available encoder and its codec parser. Wayland capture additionally requires
 `pipewiresrc`; X11 capture uses the X protocol directly:
 
 | Codec | VA-API factories | NVENC factories | Parser |
@@ -1065,8 +1070,11 @@ available hardware codec and its parser. Wayland capture additionally requires
 | H.265 | `vah265enc`, `vah265lpenc` | `nvh265enc`, `nvautogpuh265enc` | `h265parse` |
 | AV1 | `vaav1enc`, `vaav1lpenc` | `nvav1enc`, `nvautogpuav1enc` | `av1parse` |
 
-Factory availability depends on the installed GPU and driver; one codec's missing
-plugin does not disable other codecs. The [VA-API](https://gstreamer.freedesktop.org/documentation/va/index.html)
+Hardware factory availability depends on the installed GPU and driver; one codec's
+missing plugin does not disable other codecs. The H.264 software fallback needs
+[`x264enc`](https://gstreamer.freedesktop.org/documentation/x264/index.html),
+typically in `gstreamer1.0-plugins-ugly` on Debian and Ubuntu. It also needs
+`h264parse`, typically in `gstreamer1.0-plugins-bad`. The [VA-API](https://gstreamer.freedesktop.org/documentation/va/index.html)
 and [NVENC](https://gstreamer.freedesktop.org/documentation/nvcodec/index.html)
 plugins generally come from the distribution's GStreamer bad package, alongside
 the base and PipeWire packages. The addon has no ELF dependency on
@@ -1139,12 +1147,19 @@ mise exec -- cargo test -p deskfleet-linux-media --locked -- --ignored --nocaptu
 
 These tests copy a generated GStreamer frame, retain the last update of a burst
 across paced reads, and check capture timeouts and stop handling. They also encode
-a generated frame and an idle keyframe for every advertised codec. Both keyframes
-must decode in fresh decoder pipelines, with increasing timestamps and correct
-dimensions/pixels.
+a generated frame and an idle keyframe with the hardware encoders of every
+advertised codec, and with `x264enc`. Both keyframes must decode in fresh decoder
+pipelines, with increasing timestamps and correct dimensions/pixels.
 No desktop authorization is requested.
 
-To send generated hardware-encoded video through WebRTC to Chromium, run each
+The x264 tests need `x264enc` and never select a hardware encoder. On a host
+without GPU encoding, run them alone:
+
+```sh
+mise exec -- cargo test -p deskfleet-linux-media --locked x264_ -- --ignored --nocapture
+```
+
+To send generated video through WebRTC to Chromium, run each
 codec explicitly:
 
 ```sh

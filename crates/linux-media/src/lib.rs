@@ -3,7 +3,7 @@
 //! No desktop shared library is linked into the daemon's addon. A headless
 //! installation can load the addon and use agents/terminals without GStreamer.
 //! Captured system-memory frames are copied before releasing PipeWire buffers;
-//! hardware encoding uploads these owned frames. This is not a zero-copy path.
+//! encoding consumes these owned frames. This is not a zero-copy path.
 //! The native viewer's RTP decoder likewise returns owned RGBA pixels, leaving
 //! display timing and the shallow presentation queue to the viewer.
 
@@ -44,7 +44,7 @@ pub fn capture_available() -> bool {
     })
 }
 
-/// Probe shared hardware encoding independently of the desktop capture backend.
+/// Probe video encoding independently of the desktop capture backend.
 #[must_use]
 pub fn encoding_available() -> bool {
     ffi::api().is_ok_and(|api| {
@@ -57,7 +57,7 @@ pub fn encoding_available() -> bool {
     })
 }
 
-/// Whether an installed hardware encoder and parser are candidates for this codec.
+/// Whether an installed video encoder and parser are candidates for this codec.
 /// Actual device/format initialization is verified on the first input frame.
 #[must_use]
 pub fn has_encoder(codec: Codec) -> bool {

@@ -42,7 +42,7 @@ pub async fn secure_attention_supported() -> Result<bool, String> {
     }
 }
 
-/// Discover capture and hardware encoding without requesting OS authorization.
+/// Discover capture and encoding without requesting OS authorization.
 pub async fn supported() -> Result<bool, String> {
     #[cfg(target_os = "linux")]
     {
