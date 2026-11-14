@@ -77,7 +77,7 @@ async function discover(): Promise<void> {
   } catch (reason) { if (!disposed && request === revision) discoveryError.value = message(reason) }
   finally { if (!disposed && request === revision) loading.value = false }
 }
-watchImmediate([providerId, online], () => {
+watchImmediate(providerId, () => {
   revision++
   rows.value = []
   discovery.value = undefined
@@ -86,6 +86,13 @@ watchImmediate([providerId, online], () => {
   loading.value = false
   if (providerId.value && online.value) void discover()
 })
+watch(online, connected => {
+  // Preserve reviewed names and confirmed imports. Even a brief disconnect ends
+  // the current batch; reconnecting must not resume its remaining writes.
+  revision++
+  loading.value = false
+  if (connected && providerId.value && !discovery.value) void discover()
+}, { flush: "sync" })
 watch([() => account?.teamId.value, () => account?.machineId.value], ([team, machine]) => {
   if (team !== teamId || (machine && machine !== machineId)) {
     disposed = true
@@ -100,12 +107,13 @@ async function importSelected(): Promise<void> {
   importing.value = true
   importError.value = undefined
   const pending = [...selected.value]
+  const batchRevision = revision
   try {
     const snapshot = await api.list()
-    if (disposed || !online.value) return
+    if (disposed || !online.value || batchRevision !== revision) return
     existingNames.value = new Set(snapshot.servers.map(server => nameKey(server.name)))
     for (const row of pending) {
-      if (disposed || !online.value) break
+      if (disposed || !online.value || batchRevision !== revision) break
       row.error = undefined
       const problem = nameProblem(row)
       if (problem) { row.selected = false; row.error = problem; continue }

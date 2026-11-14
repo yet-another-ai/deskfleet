@@ -107,6 +107,72 @@ test("keeps partial successes and retries only failed selected servers", async (
   expect(view.text()).toContain("2 MCP servers imported")
 })
 
+test("reconnecting during a create preserves reviewed rows and requires an explicit retry for the remaining imports", async () => {
+  let finish!: () => void
+  create.mockImplementationOnce(input => new Promise(resolve => {
+    finish = () => {
+      const created = { ...input, id: "in-flight" }
+      servers.push(created)
+      resolve(created)
+    }
+  }))
+  const view = await render()
+  await row(view, "github").get("input.ui-input").setValue("GitHub work")
+  await row(view, "files").get("input.ui-input").setValue("Project files")
+  await row(view, "github").get('[role="checkbox"]').trigger("click")
+  await row(view, "files").get('[role="checkbox"]').trigger("click")
+  await view.get("[data-mcp-import-selected]").trigger("click")
+  await flushPromises()
+  expect(create).toHaveBeenCalledTimes(1)
+
+  account.machines.value[0]!.online = false
+  await flushPromises()
+  expect((row(view, "github").get("input.ui-input").element as HTMLInputElement).value).toBe("GitHub work")
+  expect((row(view, "files").get("input.ui-input").element as HTMLInputElement).value).toBe("Project files")
+  account.machines.value[0]!.online = true
+  await flushPromises()
+  expect(client.providers.discoverMcpServers).toHaveBeenCalledOnce()
+
+  finish()
+  await flushPromises()
+  expect(create).toHaveBeenCalledTimes(1)
+  expect(row(view, "github").text()).toContain("Imported")
+  expect(row(view, "github").get('[role="checkbox"]').attributes("disabled")).toBeDefined()
+  expect(row(view, "files").get('[role="checkbox"]').attributes("aria-checked")).toBe("true")
+  expect(view.text()).toContain("1 MCP server imported")
+
+  const reads = rpc.mock.calls.filter(([, , method]) => method === "mcpServerList").length
+  await view.get("[data-mcp-import-selected]").trigger("click")
+  await flushPromises()
+  expect(rpc.mock.calls.filter(([, , method]) => method === "mcpServerList")).toHaveLength(reads + 1)
+  expect(create).toHaveBeenCalledTimes(2)
+  expect(create).toHaveBeenLastCalledWith({ ...discovery.candidates[1]!.server!, name: "Project files" })
+  expect(view.text()).toContain("2 MCP servers imported")
+  expect(client.providers.discoverMcpServers).toHaveBeenCalledOnce()
+})
+
+test("a brief disconnect while checking existing names stops the batch even after connectivity returns", async () => {
+  const view = await render()
+  let finish!: () => void
+  rpc.mockImplementationOnce(() => new Promise(resolve => {
+    finish = () => resolve({ revision: "1", servers: [] })
+  }))
+  await row(view, "github").get('[role="checkbox"]').trigger("click")
+  await view.get("[data-mcp-import-selected]").trigger("click")
+  await flushPromises()
+  // Both transitions occur before Vue's next render, while the list read is pending.
+  account.machines.value[0]!.online = false
+  account.machines.value[0]!.online = true
+  finish()
+  await flushPromises()
+  expect(create).not.toHaveBeenCalled()
+  expect(row(view, "github").get('[role="checkbox"]').attributes("aria-checked")).toBe("true")
+  expect(client.providers.discoverMcpServers).toHaveBeenCalledOnce()
+  await view.get("[data-mcp-import-selected]").trigger("click")
+  await flushPromises()
+  expect(create).toHaveBeenCalledExactlyOnceWith(server)
+})
+
 test("rechecks names before import and blocks duplicates among selected candidates", async () => {
   const view = await render()
   await row(view, "github").get('[role="checkbox"]').trigger("click")

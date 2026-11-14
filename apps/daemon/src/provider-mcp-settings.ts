@@ -129,7 +129,10 @@ async function codex(name: string, value: Record<string, unknown>, context: McpI
         if (entry.source !== undefined && entry.source !== "local") throw new McpImportError("Environment variables from a remote executor cannot be imported on this machine.")
         variableName = string(entry.name)
       }
-      env[variableName] = requiredVariable(variableName, context)
+      // Codex forwards only variables present in the parent environment; literal
+      // env entries below still apply when a forwarded variable is absent.
+      const forwarded = variable(variableName, context)
+      if (forwarded !== undefined) env[variableName] = forwarded
     }
     return stdio(name, enabled, string(value.command), strings(value.args), { ...env, ...stringMap(value.env) }, context)
   }

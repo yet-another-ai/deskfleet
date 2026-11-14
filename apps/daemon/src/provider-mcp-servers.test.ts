@@ -61,6 +61,21 @@ test("Codex HTTP imports static headers, environment headers and bearer authenti
   assert.deepEqual(result.warnings, [])
 })
 
+test("Codex skips missing forwarded variables while retaining literal overrides and empty values", async t => {
+  const f = await fixture(t)
+  await f.codex(`[mcp_servers.local]\ncommand = 'fixture-mcp'\nenv_vars = ['ABSENT_OPTIONAL', { name = 'ABSENT_LOCAL', source = 'local' }, 'OVERRIDE_MISSING', 'FORWARDED_EMPTY', 'OVERRIDE_EMPTY']\n[mcp_servers.local.env]\nOVERRIDE_MISSING = 'explicit-value'\nOVERRIDE_EMPTY = ''\n`)
+  const result = await discoverProviderMcpServers(input("codex", {
+    env: { FORWARDED_EMPTY: "", OVERRIDE_EMPTY: "parent-value" },
+  }), f.dependencies)
+  assert.deepEqual(result.warnings, [])
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0]?.unsupportedReason, undefined)
+  assert.deepEqual(result.candidates[0]?.server, {
+    name: "local", enabled: true, transport: "stdio", command: f.command, args: [],
+    env: { PATH: f.bin, FORWARDED_EMPTY: "", OVERRIDE_MISSING: "explicit-value", OVERRIDE_EMPTY: "" },
+  })
+})
+
 test("Claude resolves substitutions, unset defaults and explicitly empty variables with provider environment precedence", async t => {
   const f = await fixture(t)
   const custom = join(f.home, "custom-claude")
