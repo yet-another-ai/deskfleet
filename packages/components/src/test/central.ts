@@ -2,6 +2,7 @@ import { vi } from "vitest"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
+import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
@@ -61,6 +62,10 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     logout: vi.fn(async () => { state.signedIn = false }),
     site: vi.fn(async () => ({ ...state.site })),
     siteSettings: vi.fn(async () => ({ ...state.site })),
+    usageTrends: vi.fn(async (period: SiteUsagePeriod): Promise<SiteUsageTrends> => ({
+      period, timeZone: "UTC", from: "2026-10-16T00:00:00Z", to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z",
+      relayHistoryIncomplete: false, totals: { users: 2, teams: state.teams.length, sessions: 0 }, buckets: [],
+    })),
     updateSiteSettings: vi.fn(async (settings: SiteSettings) => { state.site = { ...settings }; return { ...state.site } }),
     turnSettings: vi.fn(async () => ({ ...state.turn, urls: [...state.turn.urls] })),
     updateTurnSettings: vi.fn(async (settings: TurnSettings) => { state.turn = { ...settings, urls: [...settings.urls] }; return { ...state.turn, urls: [...state.turn.urls] } }),

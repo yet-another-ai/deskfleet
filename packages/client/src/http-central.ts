@@ -7,6 +7,7 @@ import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { apiRequest, API_RETRY_STATUS_CODES, type ApiRequestOptions } from "./api-request.ts"
@@ -243,6 +244,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     })
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
+  usageTrends(period: SiteUsagePeriod) { return this.request<SiteUsageTrends>("GET", `/api/admin/usage-trends?${new URLSearchParams({ period })}`) }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
   turnSettings() { return this.request<TurnSettings>("GET", "/api/admin/turn-settings") }
   updateTurnSettings(settings: TurnSettings) { return this.request<TurnSettings>("PATCH", "/api/admin/turn-settings", settings) }

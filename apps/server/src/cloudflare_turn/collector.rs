@@ -68,8 +68,8 @@ async fn collect_one(
             query.query_end,
         )
         .await;
-    let bytes = match result {
-        Ok(bytes) => bytes,
+    let snapshot = match result {
+        Ok(snapshot) => snapshot,
         Err(error) => {
             // A broken or retired key must not monopolize the oldest-due slot.
             // Failure postpones this source without marking its usage fresh.
@@ -80,10 +80,19 @@ async fn collect_one(
             return Err(error);
         }
     };
-    if !store
-        .save_cloudflare_turn_usage(&query, bytes, owner)
-        .await?
-    {
+    let saved = if let Some(days) = &snapshot.days {
+        store
+            .save_cloudflare_turn_usage_with_daily(&query, snapshot.egress_bytes, days, owner)
+            .await?
+    } else {
+        tracing::warn!(
+            "Cloudflare TURN daily analytics are incomplete; retaining billing aggregate"
+        );
+        store
+            .save_cloudflare_turn_usage(&query, snapshot.egress_bytes, owner)
+            .await?
+    };
+    if !saved {
         return Ok(false);
     }
     store.heartbeat_cloudflare_turn_collector(owner).await?;

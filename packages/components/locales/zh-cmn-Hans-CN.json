@@ -257,6 +257,27 @@
     "sessionsTruncated": "显示 Token 用量最多的 {count} 个会话。",
     "dataNote": "统计基于 Agent 报告并已同步的用量。未报告的用量不计入 Token 总量；输入、输出与缓存分类遵循各 Agent 的报告口径，可能存在重叠。活跃时段指已报告 Token 消耗的时段。日期使用 {timeZone} 时区。"
   },
+  "siteUsage": {
+    "title": "用量趋势",
+    "description": "查看整个 DeskFleet 站点的每日统计。",
+    "period": "日期范围",
+    "periods": { "7d": "7 天", "30d": "30 天", "90d": "90 天" },
+    "refresh": "刷新用量趋势",
+    "loading": "正在加载用量趋势…",
+    "error": "无法加载用量趋势。",
+    "users": "用户总数",
+    "teams": "团队总数",
+    "sessions": "会话总数",
+    "turnCount": "对话轮数",
+    "relayedBytes": "中继流量",
+    "currentTotal": "当前总数 · 下方为每日趋势",
+    "periodTotal": "所选时段合计 · 下方为每日用量",
+    "dailyTurns": "每日对话轮数",
+    "dailyRelay": "每日中继流量",
+    "totalsNote": "总数包含已停用用户和已归档会话。历史创建日期根据保留的记录回填，部分日期可能为估算值。",
+    "dataNote": "按 UTC 自然日统计，今天的数据仍在累积。对话轮数及站点管理的中继流量随用量同步更新。",
+    "relayHistoryIncomplete": "部分较早的中继数据尚不可用。"
+  },
   "siteAdmin": {
     "title": "站点管理",
     "generalTitle": "站点设置",

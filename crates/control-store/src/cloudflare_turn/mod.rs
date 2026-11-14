@@ -1,6 +1,8 @@
 //! Private Cloudflare credentials and replaceable, period-attributed usage snapshots.
+mod daily;
 pub(crate) mod metering;
 mod usage;
+pub use daily::CloudflareTurnDailyUsage;
 pub use usage::CloudflareTurnUsageQuery;
 
 use crate::entities::{

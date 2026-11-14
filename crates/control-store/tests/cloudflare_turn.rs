@@ -561,6 +561,11 @@ async fn crossing_month_boundaries_keeps_distinct_periods_and_migration_reverts(
     }
     f.store
         .database()
+        .execute_unprepared(include_str!("../src/cloudflare_turn_daily_down.sql"))
+        .await
+        .unwrap();
+    f.store
+        .database()
         .execute_unprepared(include_str!("../src/cloudflare_turn_down.sql"))
         .await
         .unwrap();
@@ -570,6 +575,11 @@ async fn crossing_month_boundaries_keeps_distinct_periods_and_migration_reverts(
         .await
         .unwrap();
     deskfleet_control_store::schema::migrate(f.store.database())
+        .await
+        .unwrap();
+    f.store
+        .database()
+        .execute_unprepared(include_str!("../src/cloudflare_turn_daily.sql"))
         .await
         .unwrap();
     assert!(!f.store.cloudflare_turn_config().await.unwrap().enabled);
@@ -652,6 +662,7 @@ async fn failures_yield_to_other_teams_and_token_repair_applies_without_new_cred
 #[tokio::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn replacement_subscription_requeries_finalized_usage_without_new_issuance() {
+    use deskfleet_control_store::CloudflareTurnDailyUsage;
     let f = Fixture::new().await;
     f.store
         .update_cloudflare_turn_settings(&f.admin, &update())
@@ -701,8 +712,20 @@ async fn replacement_subscription_requeries_finalized_usage_without_new_issuance
         .unwrap()
         .pop()
         .unwrap();
+    // Finalized collection now includes the calendar-day projection as well as
+    // its billing aggregate; otherwise the collector correctly requests backfill.
+    let day_ms = 86_400_000;
+    let first_day = first.period_start.div_euclid(day_ms) * day_ms;
+    let last_day = (first.query_end - 1).div_euclid(day_ms) * day_ms;
+    let daily = (first_day..first.query_end)
+        .step_by(day_ms as usize)
+        .map(|day_start| CloudflareTurnDailyUsage {
+            day_start,
+            egress_bytes: if day_start == last_day { 100 } else { 0 },
+        })
+        .collect::<Vec<_>>();
     f.store
-        .save_cloudflare_turn_usage(&first, 100, "collector")
+        .save_cloudflare_turn_usage_with_daily(&first, 100, &daily, "collector")
         .await
         .unwrap();
     assert!(
@@ -860,5 +883,119 @@ async fn expired_unsettled_usage_still_blocks_grants_and_cannot_reset_bootstrap_
         .unwrap();
     // A completed final query needs no periodic heartbeat after its source expires.
     assert!(f.store.relay_allowed(&f.team).await.unwrap());
+    f.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn daily_snapshots_replace_without_double_counting_overlapping_billing_windows() {
+    use deskfleet_control_store::{CloudflareTurnDailyUsage, CloudflareTurnUsageQuery};
+    let f = Fixture::new().await;
+    f.store
+        .update_cloudflare_turn_settings(&f.admin, &update())
+        .await
+        .unwrap();
+    let config = f.store.cloudflare_turn_config().await.unwrap();
+    let identifier = f
+        .store
+        .prepare_cloudflare_turn_usage(&f.team, &config, now_ms() + 86_400_000)
+        .await
+        .unwrap();
+    f.store
+        .claim_cloudflare_turn_collector("collector")
+        .await
+        .unwrap();
+    let day = 86_400_000_i64;
+    let today = now_ms().div_euclid(day) * day;
+    let first = CloudflareTurnUsageQuery {
+        identifier: identifier.clone(),
+        team_id: f.team.clone(),
+        account_id: config.account_id.clone(),
+        key_id: config.key_id.clone(),
+        analytics_token: config.analytics_token.clone(),
+        period_start: today - day / 2,
+        period_end: today + day / 2,
+        query_end: today + day / 2,
+        expires_at: today + day / 2,
+    };
+    let second = CloudflareTurnUsageQuery {
+        identifier: identifier.clone(),
+        team_id: f.team.clone(),
+        account_id: config.account_id,
+        key_id: config.key_id,
+        analytics_token: config.analytics_token,
+        period_start: today + day / 2,
+        period_end: today + day + day / 2,
+        query_end: today + day,
+        expires_at: today + day + day / 2,
+    };
+    for query in [&first, &second] {
+        f.store.database().execute_raw(sql(
+            "INSERT INTO cp_cloudflare_turn_usage(identifier,period_start,period_end,expires_at) VALUES($1,$2,$3,$4)",
+            vec![identifier.as_str().into(),query.period_start.into(),query.period_end.into(),query.expires_at.into()],
+        )).await.unwrap();
+    }
+    let first_days = [
+        CloudflareTurnDailyUsage {
+            day_start: today - day,
+            egress_bytes: 200,
+        },
+        CloudflareTurnDailyUsage {
+            day_start: today,
+            egress_bytes: 100,
+        },
+    ];
+    let mut second_days = [CloudflareTurnDailyUsage {
+        day_start: today,
+        egress_bytes: 300,
+    }];
+    assert!(
+        !f.store
+            .save_cloudflare_turn_usage_with_daily(&first, 220, &first_days, "other")
+            .await
+            .unwrap()
+    );
+    assert!(
+        f.store
+            .save_cloudflare_turn_usage_with_daily(&first, 220, &first_days, "collector")
+            .await
+            .unwrap()
+    );
+    f.store
+        .save_cloudflare_turn_usage_with_daily(&second, 80, &second_days, "collector")
+        .await
+        .unwrap();
+    // An earlier window's shorter day prefix must not overwrite the complete day.
+    f.store
+        .save_cloudflare_turn_usage_with_daily(&first, 220, &first_days, "collector")
+        .await
+        .unwrap();
+    let sum = || async {
+        f.store.database().query_one_raw(sql(
+            "SELECT SUM(egress_bytes)::text AS bytes FROM cp_cloudflare_turn_daily WHERE identifier=$1",
+            vec![identifier.as_str().into()],
+        )).await.unwrap().unwrap().try_get::<String>("", "bytes").unwrap()
+    };
+    assert_eq!(sum().await, "500");
+    // Repeated provider values and downward corrections replace instead of add.
+    second_days[0].egress_bytes = 250;
+    for _ in 0..2 {
+        f.store
+            .save_cloudflare_turn_usage_with_daily(&second, 75, &second_days, "collector")
+            .await
+            .unwrap();
+    }
+    assert_eq!(sum().await, "450");
+    assert!(
+        f.store
+            .save_cloudflare_turn_usage_with_daily(&first, 220, &first_days[1..], "collector")
+            .await
+            .is_err()
+    );
+    let recorded = f.store.database().query_one_raw(sql(
+        "SELECT daily_collected_at FROM cp_cloudflare_turn_usage WHERE identifier=$1 AND period_start=$2",
+        vec![identifier.into(),second.period_start.into()],
+    )).await.unwrap().unwrap().try_get::<Option<i64>>("", "daily_collected_at").unwrap();
+    assert!(recorded.is_some());
     f.close().await;
 }

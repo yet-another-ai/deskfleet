@@ -7,6 +7,7 @@ pub(crate) mod cp_billing_profiles;
 pub(crate) mod cp_catalogs;
 pub(crate) mod cp_checkout_attempts;
 pub(crate) mod cp_cloudflare_turn_collector;
+pub(crate) mod cp_cloudflare_turn_daily;
 pub(crate) mod cp_cloudflare_turn_settings;
 pub(crate) mod cp_cloudflare_turn_sources;
 pub(crate) mod cp_cloudflare_turn_usage;

@@ -35,6 +35,7 @@ pub enum SiteAction {
     ReadTurnSettings,
     UpdateTurnSettings,
     ReadAudit,
+    ReadUsage,
 }
 
 /// Authority over the deployment, independent of membership in any Team.
@@ -58,7 +59,8 @@ impl Policy for SitePolicy {
             | SiteAction::UpdateSettings
             | SiteAction::ReadTurnSettings
             | SiteAction::UpdateTurnSettings
-            | SiteAction::ReadAudit => self.is_site_admin,
+            | SiteAction::ReadAudit
+            | SiteAction::ReadUsage => self.is_site_admin,
         }
     }
 }

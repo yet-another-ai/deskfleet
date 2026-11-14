@@ -353,6 +353,18 @@ grant and revoke this role through the server's `site-admin` command; neither
 the first login nor an email address confers authority. Each administrative API
 operation reads the current grant, so existing login sessions observe revocation.
 
+Site administration's Usage trends page reads installation-wide aggregates through
+`GET /api/admin/usage-trends?period=7d|30d|90d`. UTC daily totals include disabled
+users and archived Sessions, and subtract user/Session deletions from their
+deletion date onward. Team totals use retained Team records; physically deleted
+Teams cannot be reconstructed. Creation timestamps are separate from sync and
+billing updates. Historical user dates come from UUIDv7 IDs where available,
+Session dates from captured creation times, and older Team dates are approximated
+from their earliest retained activity. Daily conversation counts use durable,
+terminal consumed AI turns, and relay traffic combines coturn minute counters
+with Cloudflare daily egress estimates. Today is partial. The page does not expose
+individual conversations or grant site administrators access to Team resources.
+
 Central authorization uses resource policies with typed actions and explicit
 `authorize` calls. `TeamPolicy` and `MachinePolicy` receive membership in the
 target registration's Team; `SitePolicy` receives the current site grant.

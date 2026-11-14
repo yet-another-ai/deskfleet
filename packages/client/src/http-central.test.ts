@@ -76,6 +76,16 @@ test("loads deployment STUN configuration without creating a peer and preserves 
   })
 })
 
+test("loads installation usage trends through the authenticated admin endpoint", async () => {
+  const f = setup()
+  const usage = { period: "30d", timeZone: "UTC", totals: { users: 12, teams: 3, sessions: 42 }, buckets: [] }
+  f.responses.push(usage)
+  expect(await f.client.usageTrends("30d")).toEqual(usage)
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/usage-trends?period=30d", {
+    method: "GET", headers: { Authorization: "Bearer application-token" },
+  })
+})
+
 test("recovers from transient configuration route 404s and refreshes configuration on the next probe", async () => {
   const f = setup()
   const configuration = { stunUrls: ["stun:primary.example:3478"] }

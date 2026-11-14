@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheck, Cloud, RadioTower, Settings2, UserX, Users } from "@lucide/vue"
+import { BadgeCheck, ChartNoAxesCombined, Cloud, RadioTower, Settings2, UserX, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRoute } from "vue-router"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
@@ -23,10 +23,11 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
 </script>
 
 <template>
-  <SettingsLayout :motion="motion" @back="router.replace('/')">
+  <SettingsLayout :motion="motion" :wide="route.name === 'site-admin-usage'" @back="router.replace('/')">
     <template #nav>
       <template v-if="session?.account.value.siteAdmin && api">
         <SidebarLink :to="{ name: 'site-admin-settings' }" :icon="Settings2" :label="t('siteAdmin.generalTitle')" replace />
+        <SidebarLink :to="{ name: 'site-admin-usage' }" :icon="ChartNoAxesCombined" :label="t('siteUsage.title')" replace />
         <SidebarLink :to="{ name: 'site-admin-accounts' }" :icon="Users" :label="t('siteAdmin.accounts')" replace />
         <SidebarLink :to="{ name: 'site-admin-turn' }" :icon="RadioTower" :label="t('siteAdmin.turnTitle')" replace />
         <SidebarLink :to="{ name: 'site-admin-cloudflare-turn' }" :icon="Cloud" :label="t('siteAdmin.cloudflareTurnTitle')" replace />
