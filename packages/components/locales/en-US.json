@@ -257,6 +257,27 @@
     "sessionsTruncated": "Showing the {count} sessions with the most tokens.",
     "dataNote": "Based on synced, agent-reported usage. Missing reports are excluded from token totals; input, output and cache categories follow each agent's reporting and may overlap. Activity counts periods with reported token use. Dates use {timeZone}."
   },
+  "siteUsage": {
+    "title": "Usage trends",
+    "description": "Daily statistics across this DeskFleet site.",
+    "period": "Date range",
+    "periods": { "7d": "7 days", "30d": "30 days", "90d": "90 days" },
+    "refresh": "Refresh usage trends",
+    "loading": "Loading usage trends…",
+    "error": "Could not load usage trends.",
+    "users": "Total users",
+    "teams": "Total teams",
+    "sessions": "Total sessions",
+    "turnCount": "Conversation turns",
+    "relayedBytes": "Relay traffic",
+    "currentTotal": "Current total · daily trend below",
+    "periodTotal": "Total in selected period · daily usage below",
+    "dailyTurns": "Daily conversation turns",
+    "dailyRelay": "Daily relay traffic",
+    "totalsNote": "Totals include disabled users and archived sessions. Older creation dates are reconstructed from retained records and may be approximate.",
+    "dataNote": "Days use UTC. Today is still in progress. Conversation turns and site-managed relay traffic update as usage is synchronized.",
+    "relayHistoryIncomplete": "Some older relay data is not available yet."
+  },
   "siteAdmin": {
     "title": "Site administration",
     "generalTitle": "Site settings",

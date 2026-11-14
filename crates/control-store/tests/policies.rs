@@ -93,6 +93,7 @@ fn site_authority_and_team_creation_policy_are_independent() {
         SiteAction::ReadTurnSettings,
         SiteAction::UpdateTurnSettings,
         SiteAction::ReadAudit,
+        SiteAction::ReadUsage,
     ] {
         assert!(authorize(&SitePolicy::new(true), action).is_ok());
         assert!(matches!(

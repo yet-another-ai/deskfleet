@@ -1,5 +1,5 @@
-use super::CloudflareTurnConfig;
 use super::metering::incomplete_usage;
+use super::{CloudflareTurnConfig, CloudflareTurnDailyUsage, daily};
 use crate::entities::{
     cp_billing_profiles as profiles, cp_cloudflare_turn_collector as collector,
     cp_cloudflare_turn_sources as sources, cp_cloudflare_turn_usage as usage,
@@ -272,7 +272,21 @@ impl ControlStore {
                                     .lte(now - 60_000),
                             ),
                     )
-                    .cond_where(incomplete_usage())
+                    .cond_where(
+                        Cond::any().add(incomplete_usage()).add(
+                            Cond::all()
+                                .add(
+                                    Expr::col((usage::Entity, usage::Column::DailyCollectedAt))
+                                        .is_null(),
+                                )
+                                // Backfill retained recent periods once on upgrade. Older
+                                // provider history may already be outside its lookback.
+                                .add(
+                                    Expr::col((usage::Entity, usage::Column::ExpiresAt))
+                                        .gt(now - 2_764_800_000_i64),
+                                ),
+                        ),
+                    )
                     .order_by_with_nulls(
                         (usage::Entity, usage::Column::LastAttemptAt),
                         Order::Asc,
@@ -307,6 +321,30 @@ impl ControlStore {
         egress_bytes: i64,
         owner: &str,
     ) -> Result<bool> {
+        self.save_cloudflare_turn_snapshot(query, egress_bytes, None, owner)
+            .await
+    }
+
+    /// Daily provider snapshots remain separate from the authoritative billing total.
+    pub async fn save_cloudflare_turn_usage_with_daily(
+        &self,
+        query: &CloudflareTurnUsageQuery,
+        egress_bytes: i64,
+        days: &[CloudflareTurnDailyUsage],
+        owner: &str,
+    ) -> Result<bool> {
+        daily::validate(query, days)?;
+        self.save_cloudflare_turn_snapshot(query, egress_bytes, Some(days), owner)
+            .await
+    }
+
+    async fn save_cloudflare_turn_snapshot(
+        &self,
+        query: &CloudflareTurnUsageQuery,
+        egress_bytes: i64,
+        days: Option<&[CloudflareTurnDailyUsage]>,
+        owner: &str,
+    ) -> Result<bool> {
         if egress_bytes < 0
             || query.query_end < query.period_start
             || query.query_end > query.period_end
@@ -315,22 +353,22 @@ impl ControlStore {
         }
         let now = now_ms();
         let tx = self.db.begin().await?;
-        let changed = tx
-            .execute(
-                Query::update()
-                    .table(usage::Entity)
-                    .value(usage::Column::EgressBytes, egress_bytes)
-                    .value(usage::Column::QueryEnd, query.query_end)
-                    .value(usage::Column::CollectedAt, now)
-                    .value(usage::Column::LastAttemptAt, now)
-                    .and_where(Expr::col(usage::Column::Identifier).eq(query.identifier.as_str()))
-                    .and_where(Expr::col(usage::Column::PeriodStart).eq(query.period_start))
-                    .and_where(Expr::col(usage::Column::PeriodEnd).eq(query.period_end))
-                    .and_where(lease(owner, now)),
-            )
-            .await?
-            .rows_affected()
-            == 1;
+        let mut update = Query::update();
+        update
+            .table(usage::Entity)
+            .value(usage::Column::EgressBytes, egress_bytes)
+            .value(usage::Column::QueryEnd, query.query_end)
+            .value(usage::Column::CollectedAt, now)
+            .value(usage::Column::LastAttemptAt, now)
+            .value(usage::Column::DailyCollectedAt, days.map(|_| now))
+            .and_where(Expr::col(usage::Column::Identifier).eq(query.identifier.as_str()))
+            .and_where(Expr::col(usage::Column::PeriodStart).eq(query.period_start))
+            .and_where(Expr::col(usage::Column::PeriodEnd).eq(query.period_end))
+            .and_where(lease(owner, now));
+        let changed = tx.execute(&update).await?.rows_affected() == 1;
+        if changed && let Some(days) = days {
+            daily::save(&tx, query, days, now).await?;
+        }
         tx.commit().await?;
         Ok(changed)
     }

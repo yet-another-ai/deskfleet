@@ -4,6 +4,7 @@ import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -52,6 +53,7 @@ export type CentralEvent =
 
 /** Site management is available to the Web host, separately from the desktop bridge. */
 export interface SiteAdministrationApi {
+  usageTrends(period: SiteUsagePeriod): Promise<SiteUsageTrends>
   siteSettings(): Promise<SiteSettings>
   updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
   turnSettings(): Promise<TurnSettings>

@@ -29,6 +29,11 @@ export const router = createRouter({
           component: () => import("../components/settings/SiteSettings.vue"),
         },
         {
+          path: "usage",
+          name: "site-admin-usage",
+          component: () => import("../components/settings/SiteUsageTrends.vue"),
+        },
+        {
           path: "accounts",
           name: "site-admin-accounts",
           component: () => import("../components/settings/SiteIdentitySettings.vue"),

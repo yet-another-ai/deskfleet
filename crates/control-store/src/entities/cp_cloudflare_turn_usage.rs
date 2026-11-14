@@ -15,6 +15,7 @@ pub struct Model {
     pub query_end: Option<i64>,
     pub collected_at: Option<i64>,
     pub last_attempt_at: Option<i64>,
+    pub daily_collected_at: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

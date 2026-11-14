@@ -236,7 +236,8 @@ async fn analytics_requests_one_identifier_and_returns_cumulative_egress() {
                     60000
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .egress_bytes,
             123456
         );
     }
@@ -254,7 +255,8 @@ async fn analytics_requests_one_identifier_and_returns_cumulative_egress() {
             assert!(query.contains("datetime_lt: \"1970-01-01T00:01:00.000Z\""));
             assert!(query.contains("limit: 1"));
             assert!(query.contains("sum { egressBytes }"));
-            assert!(!query.contains("dimensions"));
+            assert!(query.contains("daily: callsTurnUsageAdaptiveGroups(limit: 1000"));
+            assert!(query.contains("dimensions { datetimeHour }"));
             assert!(!query.contains("ingressBytes"));
         }
     }
@@ -272,7 +274,8 @@ async fn analytics_distinguishes_zero_usage_from_invalid_or_partial_results() {
                 .client
                 .usage("account", "key", "token", "peer", 0, 60000)
                 .await
-                .unwrap(),
+                .unwrap()
+                .egress_bytes,
             0
         );
     }
@@ -325,9 +328,150 @@ async fn analytics_rounds_sampled_fractional_totals_without_losing_exact_integer
                 .client
                 .usage("account", "key", "token", "peer", 0, 60000)
                 .await
-                .unwrap(),
+                .unwrap()
+                .egress_bytes,
             expected
         );
     }
     fixture.stop().await;
+}
+
+#[actix_web::test]
+async fn daily_analytics_expand_billing_start_to_midnight_and_keep_billing_total() {
+    let fixture = Fixture::new().await;
+    let mut response = usage_response(json!(90));
+    response["data"]["viewer"]["accounts"][0]["daily"] = json!([
+        {"dimensions": {"datetimeHour": "1970-01-01T00:00:00Z"}, "sum": {"egressBytes": 40}},
+        {"dimensions": {"datetimeHour": "1970-01-01T23:00:00Z"}, "sum": {"egressBytes": 70}},
+        {"dimensions": {"datetimeHour": "1970-01-02T00:00:00Z"}, "sum": {"egressBytes": 20}},
+    ]);
+    fixture.reply(StatusCode::OK, response);
+    let snapshot = fixture
+        .client
+        .usage(
+            "account",
+            "key",
+            "token",
+            "peer",
+            12 * HOUR_MS,
+            DAY_MS + HOUR_MS,
+        )
+        .await
+        .unwrap();
+    assert_eq!(snapshot.egress_bytes, 90);
+    assert_eq!(
+        snapshot.days.unwrap(),
+        vec![
+            CloudflareTurnDailyUsage {
+                day_start: 0,
+                egress_bytes: 110
+            },
+            CloudflareTurnDailyUsage {
+                day_start: DAY_MS,
+                egress_bytes: 20
+            },
+        ]
+    );
+    {
+        let state = fixture.state.lock().unwrap();
+        let query = state.requests[0].body["query"].as_str().unwrap();
+        assert!(query.contains("datetime_geq: \"1970-01-01T12:00:00.000Z\""));
+        assert!(query.contains("datetime_geq: \"1970-01-01T00:00:00.000Z\""));
+    }
+    // Missing timeseries preserves the independently valid billing aggregate.
+    fixture.reply(StatusCode::OK, usage_response(json!(91)));
+    let snapshot = fixture
+        .client
+        .usage("account", "key", "token", "peer", 0, DAY_MS)
+        .await
+        .unwrap();
+    assert_eq!(snapshot.egress_bytes, 91);
+    assert!(snapshot.days.is_none());
+    fixture.stop().await;
+}
+
+#[actix_web::test]
+async fn daily_only_graphql_errors_preserve_billing_but_discard_partial_daily_data() {
+    let fixture = Fixture::new().await;
+    for path in [
+        json!(["viewer", "accounts", 0, "daily"]),
+        json!(["viewer", "accounts", 0, "daily", 0, "sum", "egressBytes"]),
+    ] {
+        let mut response = usage_response(json!(123));
+        // Even a parseable empty series is incomplete when its resolver errored.
+        response["data"]["viewer"]["accounts"][0]["daily"] = json!([]);
+        response["errors"] = json!([{ "message": "private-provider-secret", "path": path }]);
+        fixture.reply(StatusCode::OK, response);
+        let snapshot = fixture
+            .client
+            .usage("account", "key", "token", "peer", 0, DAY_MS)
+            .await
+            .unwrap();
+        assert_eq!(snapshot.egress_bytes, 123);
+        assert!(snapshot.days.is_none());
+    }
+    fixture.stop().await;
+}
+
+#[actix_web::test]
+async fn graphql_errors_outside_daily_and_incomplete_billing_still_fail_closed() {
+    let fixture = Fixture::new().await;
+    let daily_error = json!({"path": ["viewer", "accounts", 0, "daily"]});
+    for errors in [
+        json!([{"message": "private-provider-secret"}]),
+        json!([{"path": ["viewer", "accounts", 0]}]),
+        json!([{"path": ["viewer", "accounts", 0, "callsTurnUsageAdaptiveGroups", 0, "sum", "egressBytes"]}]),
+        json!([{"path": ["viewer", "accounts", 0, "unknown"]}]),
+        json!([{"path": ["viewer", "accounts", 1, "daily"]}]),
+        json!([daily_error, {"path": ["viewer"]}]),
+        json!([{"path": ["viewer", "accounts", 0, "daily", null]}]),
+        json!({"path": ["viewer", "accounts", 0, "daily"]}),
+    ] {
+        let mut response = usage_response(json!(123));
+        response["errors"] = errors;
+        fixture.reply(StatusCode::OK, response);
+        assert_provider_error(
+            fixture
+                .client
+                .usage("account", "key", "token", "peer", 0, DAY_MS)
+                .await
+                .unwrap_err(),
+        );
+    }
+    let mut response = usage_response(Value::Null);
+    response["errors"] = json!([daily_error]);
+    fixture.reply(StatusCode::OK, response);
+    assert_provider_error(
+        fixture
+            .client
+            .usage("account", "key", "token", "peer", 0, DAY_MS)
+            .await
+            .unwrap_err(),
+    );
+    fixture.stop().await;
+}
+
+#[actix_web::test]
+async fn daily_analytics_fill_empty_dates_and_reject_duplicate_or_out_of_window_hours() {
+    let mut response = usage_response(json!(0));
+    response["data"]["viewer"]["accounts"][0]["daily"] = json!([]);
+    assert_eq!(
+        daily_usage(&response, 0, DAY_MS * 2).unwrap(),
+        vec![
+            CloudflareTurnDailyUsage {
+                day_start: 0,
+                egress_bytes: 0
+            },
+            CloudflareTurnDailyUsage {
+                day_start: DAY_MS,
+                egress_bytes: 0
+            },
+        ]
+    );
+    let group =
+        json!({"dimensions": {"datetimeHour": "1970-01-01T00:00:00Z"}, "sum": {"egressBytes": 5}});
+    response["data"]["viewer"]["accounts"][0]["daily"] = json!([group, group]);
+    assert!(daily_usage(&response, 0, DAY_MS).is_err());
+    response["data"]["viewer"]["accounts"][0]["daily"] = json!([group]);
+    assert!(daily_usage(&response, DAY_MS, DAY_MS * 2).is_err());
 }

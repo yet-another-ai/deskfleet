@@ -45,6 +45,11 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_cloudflare_turn_collector mapping");
+    cp_cloudflare_turn_daily::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_cloudflare_turn_daily mapping");
     cp_cloudflare_turn_settings::Entity::find()
         .limit(0)
         .all(db)

@@ -194,6 +194,13 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 33).await?;
     }
+    if !version_present(&tx, 34).await? {
+        tx.execute_unprepared(include_str!("creation_timestamps.sql"))
+            .await?;
+        tx.execute_unprepared(include_str!("cloudflare_turn_daily.sql"))
+            .await?;
+        record_version(&tx, 34).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -206,6 +213,13 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 34).await? {
+        tx.execute_unprepared(include_str!("cloudflare_turn_daily_down.sql"))
+            .await?;
+        tx.execute_unprepared(include_str!("creation_timestamps_down.sql"))
+            .await?;
+        remove_version(&tx, 34).await?;
+    }
     if version_present(&tx, 33).await? {
         tx.execute_unprepared(include_str!("account_create_down.sql"))
             .await?;

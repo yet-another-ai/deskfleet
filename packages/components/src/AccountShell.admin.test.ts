@@ -20,6 +20,7 @@ beforeAll(async () => {
   await Promise.all([
     import("./views/SiteAdminView.vue"),
     import("./components/settings/SiteSettings.vue"),
+    import("./components/settings/SiteUsageTrends.vue"),
     import("./components/settings/SiteIdentitySettings.vue"),
     import("./components/settings/TurnSettings.vue"),
     import("./components/settings/CloudflareTurnSettings.vue"),
@@ -117,7 +118,11 @@ test("administration navigation opens one settings section at a time", async () 
   await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(fake.central.turnSettings).not.toHaveBeenCalled()
   const nav = page().get('nav[aria-label="Settings sections"]')
-  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants", "Deletion requests"])
+  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Usage trends", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants", "Deletion requests"])
+  await nav.findAll("a").find(link => link.text() === "Usage trends")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Usage trends"))
+  expect(router.currentRoute.value.path).toBe("/admin/usage")
+  expect(fake.central.usageTrends).toHaveBeenCalledWith("30d")
   await nav.findAll("a").find(link => link.text() === "Accounts")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Accounts"))
   expect(router.currentRoute.value.path).toBe("/admin/accounts")
@@ -151,6 +156,15 @@ test("an ordinary Team admin has no site menu entry and direct navigation never 
   expect(page().find("form").exists()).toBe(false)
   expect(fake.central.siteSettings).not.toHaveBeenCalled()
   expect(fake.central.turnSettings).not.toHaveBeenCalled()
+})
+
+test("direct usage trends navigation never loads aggregates for ordinary members", async () => {
+  const fake = fakeCentral()
+  await router.push("/admin/usage")
+  mountShell(fake)
+  await flushPromises()
+  expect(page().get('[role="alert"]').text()).toBe("Site administrator access is required.")
+  expect(fake.central.usageTrends).not.toHaveBeenCalled()
 })
 
 test.each(["darwin", "linux", "win32"] as const)("%s keeps public site settings but does not expose administration to a site admin", async platform => {

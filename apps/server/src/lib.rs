@@ -14,6 +14,7 @@ mod peers;
 mod remote_mcp;
 mod search;
 mod site;
+mod site_usage;
 mod turn_settings;
 mod turn_usage;
 mod web_assets;
@@ -111,6 +112,7 @@ pub fn configure(config: &mut ServiceConfig) {
                 web::get().to(network_configuration::read),
             )
             .route("/admin/site-settings", web::get().to(site::admin_settings))
+            .route("/admin/usage-trends", web::get().to(site_usage::read))
             .route(
                 "/admin/site-settings",
                 web::patch().to(site::update_settings),

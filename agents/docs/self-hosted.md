@@ -559,6 +559,16 @@ monthly usage window; the generation token is not copied into usage records.
 Changing the analytics token for the same account/key also repairs outstanding
 collection.
 
+The same analytics request also collects hourly egress grouped into UTC days for
+the site administrator's Usage trends page. Daily snapshots replace previous
+values, including downward corrections, and overlapping billing windows do not
+double-count a day. Retained billing periods without daily data are backfilled
+while their analytics credentials remain available. Older periods whose source
+credentials have expired may remain incomplete; Usage trends marks this when
+retained billing snapshots lack daily coverage. Daily sums of hourly estimates
+can differ slightly from independently sampled billing-period totals. The latter
+continue to control allowances.
+
 The Team's `relayedBytes` and allowance checks add **coturn sent bytes + Cloudflare
 egress bytes**. The provider conventions remain distinct: coturn includes both
 client- and peer-socket sends, while Cloudflare measures TURN-to-client egress.
@@ -662,6 +672,16 @@ Later starts take the same lock and apply any migration that is not recorded.
 Version 6 backfills summaries and TURN aggregates, so its first startup performs
 work proportional to existing history and holds the usage write lock during
 that backfill. Subsequent starts do not repeat it.
+
+Version 34 adds `created_at` to users, Teams, and synchronized Sessions, plus
+Cloudflare daily relay aggregates. Existing UUIDv7 user IDs provide original
+creation timestamps; legacy IDs fall back to account-creation audit records and
+then the migration time. Session snapshots supply their original `createdAt`,
+with the retained observation time used if the snapshot has already been purged.
+Older Team dates use the earliest retained billing, admission, or Session date;
+these are estimates, with migration time as the fallback. New records receive
+creation timestamps directly, and later Session syncs preserve them. This
+backfill runs once at startup and scans the retained records.
 
 Version 11 backfills `transport: "webrtc"` in stored peer authorizations created
 before local IPC channels were introduced. Existing explicit transports are

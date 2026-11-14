@@ -13,6 +13,7 @@ pub struct Model {
     pub event_seq: i64,
     pub observed_at: i64,
     pub deleted_at: Option<i64>,
+    pub created_at: i64,
     /// Database-generated projection; leave unset in inserts and updates.
     pub summary: Option<Json>,
 }
