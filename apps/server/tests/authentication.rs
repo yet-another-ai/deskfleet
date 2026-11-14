@@ -135,6 +135,27 @@ async fn mailbox_proof_cookies_csrf_recovery_desktop_and_disable() {
             .unwrap()
             .starts_with("$argon2id$")
     );
+    for (address, secret) in [
+        (email.as_str(), "definitely-not-the-password"),
+        (
+            "missing-account@example.test",
+            "A distinctive initial password 738",
+        ),
+    ] {
+        let rejected = test::call_service(
+            &app,
+            request(Method::POST, "/api/auth/login", &csrf, None)
+                .set_json(json!({"email":address,"password":secret}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+        let failure: Value = test::read_body_json(rejected).await;
+        assert_eq!(
+            failure,
+            json!({"error":{"code":"invalid_credentials","message":"Wrong username or password."}})
+        );
+    }
     let replay=test::call_service(&app,request(Method::POST,"/api/auth/verify",&csrf,None).set_json(json!({"token":token,"name":"Intruder","password":"A distinctive attacker password 738"})).to_request()).await;
     assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
     let missing_csrf = test::call_service(

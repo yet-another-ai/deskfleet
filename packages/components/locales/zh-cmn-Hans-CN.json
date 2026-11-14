@@ -1741,6 +1741,8 @@
   },
   "auth": {
     "signIn": "登录",
+    "invalidCredentials": "用户名或密码错误。",
+    "signInFailed": "登录失败，请重试。",
     "signInTitle": "登录 DeskFleet",
     "accountSignInDescription": "登录后管理密码、Passkey 和已登录的设备。",
     "emailSignInDescription": "请使用当前邮箱登录，以确认新邮箱地址。",

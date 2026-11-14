@@ -191,15 +191,21 @@ pub(super) async fn login(
     )
     .await?
     {
-        return Err(ApiError::unauthorized());
+        return Err(ApiError::invalid_credentials());
     }
-    let record = record.ok_or_else(ApiError::unauthorized)?;
+    let record = record.ok_or_else(ApiError::invalid_credentials)?;
     session_response(
         &state,
         state
             .store
             .new_session_at_version(field(&record, "userId")?, record["version"].as_i64())
-            .await?,
+            .await
+            .map_err(|error| match error {
+                // Session establishment can fail for the same opaque reasons as a
+                // bad password (disabled account race). Keep the public reply identical.
+                deskfleet_control_store::Error::Unauthorized => ApiError::invalid_credentials(),
+                error => error.into(),
+            })?,
     )
 }
 pub(super) async fn recovery(

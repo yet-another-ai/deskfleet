@@ -94,6 +94,28 @@ impl DatabaseError for DatabaseFailure {
 }
 
 #[actix_web::test]
+async fn invalid_credentials_are_safe_and_distinct_from_generic_unauthorized() {
+    let unauthorized = ApiError::unauthorized().error_response();
+    let credentials = ApiError::invalid_credentials().error_response();
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(credentials.status(), StatusCode::UNAUTHORIZED);
+    let unauthorized_body = actix_web::body::to_bytes(unauthorized.into_body())
+        .await
+        .unwrap();
+    let credentials_body = actix_web::body::to_bytes(credentials.into_body())
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&unauthorized_body).unwrap(),
+        json!({"error": {"code": "unauthorized", "message": "authentication required"}})
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&credentials_body).unwrap(),
+        json!({"error": {"code": "invalid_credentials", "message": "Wrong username or password."}})
+    );
+}
+
+#[actix_web::test]
 async fn database_failures_log_diagnostics_without_row_or_credential_details() {
     let source = SqlxError::Database(Box::new(DatabaseFailure {
         private_detail: "private-row-value postgres://user:private-password@localhost/db",

@@ -1741,6 +1741,8 @@
   },
   "auth": {
     "signIn": "Sign in",
+    "invalidCredentials": "Wrong username or password.",
+    "signInFailed": "Sign-in failed. Please try again.",
     "signInTitle": "Sign in to DeskFleet",
     "accountSignInDescription": "Sign in to manage your password, Passkeys, and signed-in devices.",
     "emailSignInDescription": "Sign in with your current email to confirm the new address.",

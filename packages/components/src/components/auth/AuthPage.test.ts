@@ -202,6 +202,35 @@ test.each(oauthProviders.flatMap(value => [
   expect(location.search).toBe("")
 })
 
+test("password sign-in shows a localized invalid-credentials message", async () => {
+  const request = mountAt("/auth/login", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true }
+    if (path === "/api/auth/login") throw new HttpError(401, "Wrong username or password.", undefined, "invalid_credentials")
+    return {}
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("not-the-right-password")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/login", { email: "ada@example.test", password: "not-the-right-password" })
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.invalidCredentials"))
+})
+
+test("password sign-in falls back to a safe message for unexpected server failures", async () => {
+  mountAt("/auth/login", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true }
+    if (path === "/api/auth/login") throw new HttpError(500, "postgres://user:secret@db/private detail", undefined, "internal")
+    return {}
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("A deliberately long password")
+  await view!.get("form").trigger("submit"); await flushPromises()
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.signInFailed"))
+  expect(view!.get('[role="alert"]').text()).not.toContain("secret")
+  expect(view!.get('[role="alert"]').text()).not.toContain("postgres")
+})
+
 test.each(oauthProviders)("$provider sign-in restores an email verification token without sending it in the return path", async ({ provider, label, authorizationUrl }) => {
   vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/email/verify#token=secret", async (_method, path) => {

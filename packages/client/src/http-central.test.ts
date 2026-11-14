@@ -284,7 +284,7 @@ test("reports API errors and falls back to HTTP status for non-JSON failures", a
 
 test("HTTP response codes are allowlisted before crossing the diagnostic boundary", async () => {
   const f = setup()
-  for (const code of ["daemon_timeout", "daemon_error", "turn_service_unavailable", "private-token"] as const) {
+  for (const code of ["daemon_timeout", "daemon_error", "turn_service_unavailable", "invalid_credentials", "private-token"] as const) {
     f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code, message: "request failed" } }), { status: 503 }))
     const failure = await f.client.rpc("team", "machine", "terminalList", {}).catch(error => error)
     if (!(failure instanceof HttpError)) throw failure
