@@ -3,7 +3,7 @@ import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, LocalMachineStatus, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { router } from "../router/index.ts"
-import { captureAnalyticsContext } from "../services/analytics.ts"
+import { captureAnalyticsContext, identifyAnalytics, trackEvent } from "../services/analytics.ts"
 
 export { accountSessionKey, useAccountSession } from "./account-session-context.ts"
 
@@ -267,10 +267,12 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
     openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,
     async createTeam(name) {
-      const track = captureAnalyticsContext()
       const created = await user.createTeam(name)
-      track("team_created", {})
       teams.value = [...teams.value, created]
+      // The request started under the previously selected Team. Identify the created Team before recording it.
+      const accountUser = account.value.user
+      if (accountUser) identifyAnalytics(accountUser.id, { id: created.id, role: created.role }, accountUser.email)
+      trackEvent("team_created", {})
       await selectTeam(created.id)
     },
     async joinTeam(code) {

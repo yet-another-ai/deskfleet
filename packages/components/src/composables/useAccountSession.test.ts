@@ -6,12 +6,15 @@ import { reportingCentral } from "@deskfleet/client/reporting-central"
 import { fakeCentral, machineFixture } from "../test/central.ts"
 import { router } from "../router/index.ts"
 import { createAccountSession, type AccountSession } from "./useAccountSession.ts"
-import { captureAnalyticsContext, trackEvent } from "../services/analytics.ts"
+import { captureAnalyticsContext, identifyAnalytics, trackEvent } from "../services/analytics.ts"
 
-vi.mock("../services/analytics.ts", () => { const trackEvent = vi.fn(); return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent) } })
+vi.mock("../services/analytics.ts", () => {
+  const trackEvent = vi.fn()
+  return { trackEvent, captureAnalyticsContext: vi.fn(() => trackEvent), identifyAnalytics: vi.fn() }
+})
 
 let session: AccountSession | undefined
-beforeEach(() => vi.mocked(trackEvent).mockClear())
+beforeEach(() => { vi.mocked(trackEvent).mockClear(); vi.mocked(identifyAnalytics).mockClear() })
 afterEach(() => { session?.dispose(); session = undefined; vi.restoreAllMocks() })
 const enrollment = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({
   configured: false, connected: false, revoked: false, identity: { originId: "local-origin", machineId: "1" }, machineName: "This Mac", ...value,
@@ -328,6 +331,18 @@ test("user actions reject for their caller while background refreshes report a n
   expect(session.notice.value).toBe("Server unavailable")
 })
 
+test("creating a Team identifies that Team before the event is recorded", async () => {
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.team.value?.id).toBe("team-1")
+  await session.createTeam("Platform")
+  expect(identifyAnalytics).toHaveBeenCalledWith("user-1", { id: "team-2", role: "owner" }, "ada@example.test")
+  expect(vi.mocked(identifyAnalytics).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(trackEvent).mock.invocationCallOrder.at(-1)!)
+  expect(trackEvent).toHaveBeenCalledWith("team_created", {})
+  expect(session.team.value?.id).toBe("team-2")
+})
+
 test("creating and joining Teams select them; signing out clears every selection", async () => {
   const fake = fakeCentral({ teams: [] })
   session = createAccountSession(fake.central)
@@ -337,6 +352,8 @@ test("creating and joining Teams select them; signing out clears every selection
   expect(session.team.value?.name).toBe("Platform")
   await session.joinTeam("code")
   expect(fake.central.acceptInvite).toHaveBeenCalledExactlyOnceWith("code")
+  expect(identifyAnalytics).toHaveBeenCalledWith("user-1", { id: "team-1", role: "owner" }, "ada@example.test")
+  expect(vi.mocked(identifyAnalytics).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(trackEvent).mock.invocationCallOrder[0]!)
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
     ["team_created", {}],
     ["team_joined", { outcome: "attempt" }],
