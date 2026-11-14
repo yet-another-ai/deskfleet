@@ -21,7 +21,7 @@ export class UpdateController {
   #checking: Promise<void> | undefined
   #downloading: Promise<void> | undefined
   #installing: Promise<void> | undefined
-  #downloaded = false
+  #downloadedVersion: string | undefined
   #closed = false
 
   constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>, currentVersion?: string, autoDownload = true) {
@@ -53,20 +53,31 @@ export class UpdateController {
 
   check(): Promise<void> {
     if (this.#checking) return this.#checking
-    if (this.#closed || !this.#driver || this.#installing || this.#downloading || this.#downloaded) return Promise.resolve()
-    this.#update({ status: "checking", version: this.#state.version })
+    if (this.#closed || !this.#driver || this.#installing || this.#downloading || this.#state.status === "installing") return Promise.resolve()
+    const previous = this.#state
+    this.#update({ status: "checking", version: previous.version })
     this.#checking = this.#driver.check().then(version => {
       if (!version) {
+        this.#downloadedVersion = undefined
         this.#update({ status: "idle" })
         return
       }
+      if (this.#downloadedVersion === version) {
+        this.#update({ status: "downloaded", version, percent: 100 })
+        return
+      }
+      this.#downloadedVersion = undefined
       if (this.#autoDownload && !this.#installing) this.#startAutoDownload(version)
       else this.#update({ status: "available", version })
     }).catch(error => {
       // Background checks must not look like a failed install: the notice treats
       // every error as Retry → install(), which would shut down the hosted daemon.
-      const version = this.#state.version
-      this.#update(version ? { status: "available", version } : { status: "idle" })
+      if (this.#downloadedVersion) {
+        this.#update(previous.status === "error" ? previous : { status: "downloaded", version: this.#downloadedVersion, percent: 100 })
+      } else {
+        const version = previous.version
+        this.#update(version ? { status: "available", version } : { status: "idle" })
+      }
       throw error
     }).finally(() => { this.#checking = undefined })
     return this.#checking
@@ -91,7 +102,7 @@ export class UpdateController {
     if (this.#closed) return
     const version = this.#state.version
     if (!version) throw new Error("No application update is available")
-    if (!this.#downloaded) {
+    if (this.#downloadedVersion !== version) {
       await this.#download(version)
       if (this.#closed) return
     }
@@ -103,7 +114,7 @@ export class UpdateController {
   }
 
   #startAutoDownload(version: string): void {
-    if (this.#closed || !this.#driver || this.#downloading || this.#installing || this.#downloaded) return
+    if (this.#closed || !this.#driver || this.#downloading || this.#installing || this.#state.status === "installing" || this.#downloadedVersion === version) return
     const downloading = this.#download(version).catch(error => {
       if (!this.#installing) this.#update({ status: "available", version })
       throw error
@@ -122,7 +133,7 @@ export class UpdateController {
       if (progress !== this.#state.percent) this.#update({ status: "downloading", version, percent: progress })
     })
     if (this.#closed) return
-    this.#downloaded = true
+    this.#downloadedVersion = version
     this.#update({ status: "downloaded", version, percent: 100 })
   }
 
