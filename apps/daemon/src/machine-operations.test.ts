@@ -55,7 +55,7 @@ test("system status rejects malformed parameters and preserves native sampling f
   assert.equal(reads, 1)
 })
 
-test("workspace discovery requires a verified user and resolves only the registration's provider", async () => {
+for (const method of ["providerDiscoverWorkspaces", "providerDiscoverMcpServers"] as const) test(`${method} requires a verified user and resolves only the registration's provider`, async () => {
   const reads: string[] = []
   const operations = new MachineOperations({
     agents: {}, catalog: {}, terminals: {}, setup: {},
@@ -66,11 +66,11 @@ test("workspace discovery requires a verified user and resolves only the registr
     } },
     capabilities: async () => ({ displays: [], audio: false }),
   } as unknown as ConstructorParameters<typeof MachineOperations>[0])
-  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, undefined), /verified user and login/u)
-  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "../agent" }, actor), /Invalid provider ID/u)
+  await assert.rejects(operations.handle(method, { providerId: "registered-agent" }, undefined), /verified user and login/u)
+  await assert.rejects(operations.handle(method, { providerId: "../agent" }, actor), /Invalid provider ID/u)
   assert.deepEqual(reads, [])
-  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "other-registration" }, actor), /unavailable/u)
-  assert.deepEqual(await operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, actor), { supported: false, candidates: [], warnings: [] })
+  await assert.rejects(operations.handle(method, { providerId: "other-registration" }, actor), /unavailable/u)
+  assert.deepEqual(await operations.handle(method, { providerId: "registered-agent" }, actor), { supported: false, candidates: [], warnings: [] })
   assert.deepEqual(reads, ["other-registration", "registered-agent"])
 })
 

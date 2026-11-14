@@ -155,3 +155,21 @@ test("losing the machine connection disables editing and saving an open form", a
   await wrapper.get("[role=dialog] form").trigger("submit")
   expect(rpc.mock.calls.filter(([, , method]) => method === "mcpServerUpdate")).toHaveLength(0)
 })
+
+
+test("imports from a configured Agent and refreshes this machine's MCP list", async () => {
+  vi.spyOn(platformClient.providers, "discoverMcpServers").mockResolvedValue({ supported: true, warnings: [], candidates: [
+    { id: "import-tools", name: server.name, source: ".claude.json", scope: "user", server: { name: server.name, enabled: server.enabled, transport: "stdio", command: server.command, args: server.args, env: server.env } },
+  ] })
+  const { wrapper, rpc } = await setup()
+  await wrapper.get("[data-mcp-import]").trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[role="combobox"][aria-label="Source Agent"]').text()).toContain("Codex")
+  expect(wrapper.find("[data-mcp-save]").exists()).toBe(false)
+  await wrapper.get('[data-mcp-import-candidate="import-tools"] [role="checkbox"]').trigger("click")
+  await wrapper.get("[data-mcp-import-selected]").trigger("click")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "mcpServerCreate", { server: expect.objectContaining({ name: "Repository tools" }) })
+  expect(wrapper.get('[data-mcp-server="server-new"]').text()).toContain("Repository tools")
+  expect(wrapper.text()).not.toContain("test-token")
+})

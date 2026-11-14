@@ -194,6 +194,46 @@ private configuration, outside synchronized catalogs and conversation history.
 These settings are machine management operations for authenticated Team members;
 the built-in Agent tools cannot edit MCP server credentials.
 
+### Importing an Agent's MCP configuration
+
+Codex and Claude Code entries in Settings → Agents offer an optional MCP import;
+Settings → MCP Servers also offers **Import from Agent** for those configured
+Agents. The owning daemon reads the selected Agent's effective configuration directory,
+including its shell environment and saved environment overrides. Discovery reads
+global settings and known project configuration files; it does not start an MCP
+server, contact its endpoint, or edit the original files. Each candidate includes
+its source file and user/project scope. Entries with unsupported server settings
+remain visible with a reason and cannot be selected.
+
+| Agent | Sources | Compatible settings |
+| --- | --- | --- |
+| Codex | `CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and `.codex/config.toml` in its known, existing trusted projects | Stdio commands/arguments/environment, local `env_vars`, Streamable HTTP, static/environment headers, bearer-token environment references, and disabled state |
+| Claude Code | User and project entries in `.claude.json`, plus `.mcp.json` in known existing projects; `CLAUDE_CONFIG_DIR` selects the configuration directory when set | Stdio, HTTP (including `streamable-http`), SSE, environment expansion, static headers, and per-project disabled entries |
+
+Supported environment and header references resolve using the source Agent's
+effective environment and are saved as a snapshot. Later edits to source files
+or environment variables are not synchronized. Codex project overrides retain
+inherited user-configuration fields; Claude scope entries remain separate
+candidates. Provider-specific tool restrictions, timeouts, explicit working
+directories, remote-executor settings, dynamic authentication helpers, and OAuth
+configuration cannot be preserved and are shown as unsupported. Cached OAuth
+credentials, plugins, managed policy, and project approval rules are not migrated.
+
+Users select compatible entries before saving them through the existing MCP
+server creation operation. Existing names are not overwritten. Importing a
+project entry saves it in the current Team's machine registration, where it
+applies to future Session starts and resumes across Workspaces. Its source
+project is provenance, not a continuing execution scope or synchronization link.
+
+Discovery uses authenticated management scoped to Team and Machine and resolves the saved
+provider inside that registration. It is unavailable through the unaffiliated
+local discovery socket or delegated Agent MCP tools. Compatible command,
+environment, URL, and header settings travel to the authorized client through
+the backend management transport so users can import them. These responses can
+contain credentials; they remain outside synchronized catalogs, conversation
+history, and request diagnostics, within the existing management transport's
+trust boundary.
+
 ## Validation
 
 Scheduler tests exercise calendar/time-zone boundaries, persistence, missed

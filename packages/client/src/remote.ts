@@ -171,6 +171,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       remove: providerId => userRpc("providerRemove", { providerId }), test: provider => userRpc("providerTest", { provider }),
       probe: provider => userRpc("providerProbe", { provider }),
       discoverWorkspaces: providerId => userRpc("providerDiscoverWorkspaces", { providerId }),
+      discoverMcpServers: providerId => userRpc("providerDiscoverMcpServers", { providerId }),
       install: provider => userRpc("providerInstall", { provider }), login: provider => userRpc("providerLogin", { provider }),
       onChanged: listener => { providerEvents.add(listener); return () => { providerEvents.delete(listener) } },
     },

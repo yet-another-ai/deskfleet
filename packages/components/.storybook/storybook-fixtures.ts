@@ -1022,6 +1022,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
         providers: structuredClone(storybookProviders),
       }),
       create: async (input) => ({ ...input, id: `prov-${Date.now()}` }),
+      discoverMcpServers: async () => ({ supported: true, candidates: [], warnings: [] }),
       discoverWorkspaces: async () => ({
         supported: true,
         candidates: [

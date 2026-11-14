@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
-import { Pencil, Plug, Plus, Trash2 } from "@lucide/vue"
+import { Import, Pencil, Plug, Plus, Trash2 } from "@lucide/vue"
 import { useLocalStorage } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -11,6 +11,7 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import MachineTabs from "../account/MachineTabs.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import McpServerDialog from "./McpServerDialog.vue"
+import ProviderMcpImportDialog from "./ProviderMcpImportDialog.vue"
 
 const { t } = useI18n()
 const developerMode = useLocalStorage("deskfleet.developer-mode", false)
@@ -25,6 +26,9 @@ const pending = ref(false)
 const error = ref<string>()
 const editor = ref<{ initial?: McpServerConfig }>()
 const removing = ref<McpServerConfig>()
+const importing = ref(false)
+const importPending = ref(false)
+const busy = computed(() => pending.value || importPending.value)
 let revision = 0
 let disposed = false
 async function refresh(): Promise<void> {
@@ -78,7 +82,8 @@ async function remove(): Promise<void> {
   })
 }
 watch(online, () => { void refresh() }, { immediate: true })
-const focus = () => { if (!pending.value && !editor.value && !removing.value) void refresh() }
+watch([() => account?.teamId.value, () => account?.machineId.value], () => { importing.value = false })
+const focus = () => { if (!busy.value && !editor.value && !removing.value && !importing.value) void refresh() }
 window.addEventListener("focus", focus)
 onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener("focus", focus) })
 </script>
@@ -86,14 +91,17 @@ onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener(
 <template>
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <h1 class="ui-page-title">{{ t('mcpServers.title') }}</h1>
-    <UiButton type="button" data-mcp-add  :disabled="!online || !loaded || pending" @click="editor = {}"><Plus :size="16" aria-hidden="true" />{{ t('mcpServers.add') }}</UiButton>
+    <div class="flex flex-wrap gap-2">
+      <UiButton type="button" data-mcp-import :disabled="!online || !loaded || busy" @click="importing = true"><Import :size="16" aria-hidden="true" />{{ t('mcpServers.import.fromAgent') }}</UiButton>
+      <UiButton type="button" data-mcp-add :disabled="!online || !loaded || busy" @click="editor = {}"><Plus :size="16" aria-hidden="true" />{{ t('mcpServers.add') }}</UiButton>
+    </div>
   </div>
-  <MachineTabs :label="t('mcpServers.machines')" :disabled="pending" class="mb-5" />
+  <MachineTabs :label="t('mcpServers.machines')" :disabled="busy" class="mb-5" />
   <p v-if="!online" role="status" class="m-0 mb-4 text-sm text-ui-text-muted">{{ t(api ? 'mcpServers.offline' : 'schedules.signIn') }}</p>
-  <div v-if="error" class="mb-4 flex items-center justify-between gap-3"><p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p><UiButton type="button" :disabled="!online || loading || pending" @click="refresh">{{ t('folderPicker.retry') }}</UiButton></div>
+  <div v-if="error" class="mb-4 flex items-center justify-between gap-3"><p role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p><UiButton type="button" :disabled="!online || loading || busy" @click="refresh">{{ t('folderPicker.retry') }}</UiButton></div>
   <p v-if="loading && !loaded" role="status" class="m-0 py-5 text-sm text-ui-text-muted">{{ t('mcpServers.loading') }}</p>
   <template v-if="loaded">
-    <div class="ui-section-header"><h2 class="ui-section-title">{{ t('mcpServers.servers') }}</h2><UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover disabled:op-50" :disabled="!online || loading || pending" @click="refresh">{{ t('catalog.refresh') }}</UiButton></div>
+    <div class="ui-section-header"><h2 class="ui-section-title">{{ t('mcpServers.servers') }}</h2><UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover disabled:op-50" :disabled="!online || loading || busy" @click="refresh">{{ t('catalog.refresh') }}</UiButton></div>
     <div v-if="!servers.length" class="ui-empty"><Plug :size="25" class="mb-2 text-ui-text-muted" aria-hidden="true" /><p class="m-0 text-sm text-ui-text-muted">{{ t('mcpServers.empty') }}</p></div>
     <ul v-else class="ui-card">
       <li v-for="server in servers" :key="server.id" :data-mcp-server="server.id" class="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -109,15 +117,16 @@ onBeforeUnmount(() => { disposed = true; revision++; window.removeEventListener(
           data-mcp-toggle
           :model-value="server.enabled"
           :aria-label="t(server.enabled ? 'mcpServers.disableNamed' : 'mcpServers.enableNamed', { name: server.name })"
-          :disabled="!online || pending"
+          :disabled="!online || busy"
           @update:model-value="toggle(server)"
         />
-        <UiButton v-if="!server.builtIn || developerMode" type="button" data-mcp-edit class="px-2" :aria-label="t('mcpServers.editNamed', { name: server.name })" :disabled="!online || pending" @click="editor = { initial: server }"><Pencil :size="14" aria-hidden="true" /></UiButton>
-        <UiButton v-if="!server.builtIn" type="button" data-mcp-remove class="px-2" :aria-label="t('mcpServers.removeNamed', { name: server.name })" :disabled="!online || pending" @click="removing = server"><Trash2 :size="14" aria-hidden="true" /></UiButton>
+        <UiButton v-if="!server.builtIn || developerMode" type="button" data-mcp-edit class="px-2" :aria-label="t('mcpServers.editNamed', { name: server.name })" :disabled="!online || busy" @click="editor = { initial: server }"><Pencil :size="14" aria-hidden="true" /></UiButton>
+        <UiButton v-if="!server.builtIn" type="button" data-mcp-remove class="px-2" :aria-label="t('mcpServers.removeNamed', { name: server.name })" :disabled="!online || busy" @click="removing = server"><Trash2 :size="14" aria-hidden="true" /></UiButton>
       </li>
     </ul>
     <p class="m-0 mt-4 text-xs leading-5 text-ui-text-muted">{{ t('mcpServers.appliesNext') }}</p>
   </template>
+  <ProviderMcpImportDialog v-if="importing" :machine-name="account?.machine.value?.name ?? fleet.localDesktopTarget.name" @busy="importPending = $event" @imported="refresh" @close="importing = false" />
   <McpServerDialog v-if="editor" :initial="editor.initial" :disabled="!online" :save="save" @close="editor = undefined" />
   <ConfirmDialog v-if="removing" :title="t('mcpServers.removeTitle', { name: removing.name })" :description="t('mcpServers.removeHint')" :confirm-label="t('mcpServers.remove')" :confirm="remove" @close="removing = undefined" />
 </template>

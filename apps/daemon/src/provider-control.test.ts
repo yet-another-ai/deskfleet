@@ -43,6 +43,8 @@ test("authenticated provider CRUD broadcasts changes and survives daemon restart
   const notification = new Promise<void>(resolve => { changed = resolve })
   const created = await client.call("providerCreate", { provider: { template: "acp", name: "Custom", env: { API_KEY: "private" } } })
   await notification
+  assert.deepEqual(await client.call("providerDiscoverMcpServers", { providerId: created.id }), { supported: false, candidates: [], warnings: [] })
+  await assert.rejects(client.call("providerDiscoverMcpServers", { providerId: "unregistered-agent" }), /unavailable/u)
   const updated = await client.call("providerUpdate", { providerId: created.id, changes: { name: "Work", binaryPath: "/usr/local/bin/acp", env: { MODE: "work" } } })
   assert.equal(updated.template, "acp")
   assert.deepEqual((await observer.call("providerList", {})).providers.find(provider => provider.id === created.id), updated)

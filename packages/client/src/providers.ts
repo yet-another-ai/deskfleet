@@ -9,10 +9,12 @@ import type {
   ProviderProbeResult,
   ProviderUpdate,
   ProviderWorkspaceDiscovery,
+  ProviderMcpServerDiscovery,
 } from "../../../apps/daemon/src/provider-protocol.ts"
 import type { TerminalSummary } from "../../../apps/daemon/src/terminal-protocol.ts"
 
-export type { ProviderTemplateUpdates, ProviderUpdate }
+export type { ProviderTemplateUpdates, ProviderUpdate, ProviderMcpServerDiscovery }
+export type { ProviderMcpServerCandidate } from "../../../apps/daemon/src/provider-protocol.ts"
 export type ProviderDisplay = Pick<AgentProviderConfig, "id" | "name" | "icon" | "template">
 export interface ProviderDisplaySnapshot {
   revision?: string
@@ -34,6 +36,8 @@ export interface ProvidersApi {
   probe(provider: AgentProviderInput): Promise<ProviderProbeResult>
   /** Read existing projects without creating Workspaces or changing provider settings. */
   discoverWorkspaces(providerId: string): Promise<ProviderWorkspaceDiscovery>
+  /** Read existing MCP settings without starting their servers or importing them. */
+  discoverMcpServers(providerId: string): Promise<ProviderMcpServerDiscovery>
   /** Explicit setup actions run in a machine terminal with live output and input. */
   install(provider: AgentProviderInput): Promise<TerminalSummary>
   login(provider: AgentProviderInput): Promise<TerminalSummary>
