@@ -234,8 +234,8 @@ test("a failed renewal offers billing admins the payment recovery action", async
   await button("Update payment")!.trigger("click"); await flushPromises()
   expect(fake.central.billingPortal).toHaveBeenCalledExactlyOnceWith("team-1")
   expect(trackEvent).toHaveBeenCalledWith("billing_payment_recovery_viewed", { subscription_status: "past_due" })
-  expect(trackEvent).toHaveBeenCalledWith("billing_portal_started", { source: "payment_recovery" })
-  expect(trackEvent).toHaveBeenCalledWith("billing_portal_opened_client", { source: "payment_recovery" })
+  expect(trackEvent).toHaveBeenCalledWith("billing_portal", { outcome: "started", source: "payment_recovery" })
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_portal")).toHaveLength(1)
 })
 
 test("plans are viewed once after loading and do not become a paid conversion on focus", async () => {
@@ -256,15 +256,14 @@ test("checkout funnel captures the selected interval and request identity, never
     fake.central.checkout.mockReturnValueOnce(opened.promise)
   })
   await usage().get("[data-billing-interval-option='year']").trigger("click")
-  expect(trackEvent).toHaveBeenCalledWith("billing_interval_selected", { interval: "year", previous_interval: "month" })
+  expect(vi.mocked(trackEvent).mock.calls.map(([name]) => name)).not.toContain("billing_interval_selected")
   await button("Upgrade to Go")!.trigger("click")
-  const metadata = { target_plan: "go", interval: "year", request_id: fake.central.checkout.mock.calls[0]![2] }
-  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_started", metadata)
-  expect(trackEvent).not.toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  const metadata = { outcome: "started" as const, target_plan: "go" as const, interval: "year" as const, request_id: fake.central.checkout.mock.calls[0]![2] }
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout", metadata)
   await usage().get("[data-billing-interval-option='month']").trigger("click")
   opened.resolve()
   await flushPromises()
-  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_checkout")).toEqual([["billing_checkout", metadata]])
   expect(vi.mocked(trackEvent).mock.calls.map(([name]) => name)).not.toContain("billing_invoice_paid")
 })
 
@@ -274,10 +273,11 @@ test("checkout retries report bounded failure categories without exception text"
     fake.central.checkout.mockRejectedValueOnce(new HttpError(409, "private Stripe URL and customer info", undefined, "checkout_pending"))
   })
   await button("Upgrade to Pro")!.trigger("click"); await flushPromises()
-  const metadata = { target_plan: "pro", interval: "month", request_id: fake.central.checkout.mock.calls[0]![2] }
-  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_failed", { ...metadata, reason: "checkout_pending" })
+  const metadata = { target_plan: "pro" as const, interval: "month" as const, request_id: fake.central.checkout.mock.calls[0]![2] }
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout", { outcome: "failed", ...metadata, reason: "checkout_pending" })
   await button("Upgrade to Pro")!.trigger("click"); await flushPromises()
-  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", metadata)
+  expect(trackEvent).toHaveBeenCalledWith("billing_checkout", { outcome: "started", ...metadata })
+  expect(vi.mocked(trackEvent).mock.calls.filter(([, metadata]) => (metadata as { outcome?: string }).outcome === "started")).toHaveLength(2)
   expect(JSON.stringify(vi.mocked(trackEvent).mock.calls)).not.toContain("private")
 })
 
@@ -294,21 +294,23 @@ test("Portal failure is reported separately from opening a Portal", async () => 
     fake.central.billingPortal.mockRejectedValue(new Error("private opening failure"))
   })
   await button("Update payment")!.trigger("click"); await flushPromises()
-  expect(trackEvent).toHaveBeenCalledWith("billing_portal_failed", { source: "payment_recovery", reason: "network_or_open_failed" })
-  expect(trackEvent).not.toHaveBeenCalledWith("billing_portal_opened_client", expect.anything())
+  expect(trackEvent).toHaveBeenCalledWith("billing_portal", { outcome: "failed", source: "payment_recovery", reason: "network_or_open_failed" })
+  expect(vi.mocked(trackEvent).mock.calls.filter(([, metadata]) => (metadata as { outcome?: string }).outcome === "started")).toEqual([["billing_portal", { outcome: "started", source: "payment_recovery" }]])
 })
 
-test("leaving settings still records a Checkout opening for the same account and Team", async () => {
+test("leaving settings keeps the Checkout start and does not add a completion event", async () => {
   const opened = Promise.withResolvers<void>()
   await setup(fake => {
     fake.central.billing.mockResolvedValue({ ...free(), canManageBilling: true })
     fake.central.checkout.mockReturnValueOnce(opened.promise)
   })
   await button("Upgrade to Go")!.trigger("click")
+  const started = vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_checkout")
   view!.unmount(); view = undefined
   opened.resolve()
   await flushPromises()
-  expect(trackEvent).toHaveBeenCalledWith("billing_checkout_opened", expect.objectContaining({ target_plan: "go", interval: "month" }))
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_checkout")).toEqual(started)
+  expect(started).toEqual([["billing_checkout", expect.objectContaining({ outcome: "started", target_plan: "go", interval: "month" })]])
 })
 
 test("an earlier account's pending Checkout is not attributed to its replacement", async () => {
@@ -321,7 +323,9 @@ test("an earlier account's pending Checkout is not attributed to its replacement
   session!.account.value = { ...session!.account.value, user: { ...session!.account.value.user!, id: "replacement-user" } }
   opened.resolve()
   await flushPromises()
-  expect(trackEvent).not.toHaveBeenCalledWith("billing_checkout_opened", expect.anything())
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "billing_checkout")).toEqual([
+    ["billing_checkout", expect.objectContaining({ outcome: "started", target_plan: "go", interval: "month" })],
+  ])
 })
 
 test("comparison uses server allowances for the current plan and stays visible to subscribers", async () => {

@@ -31,14 +31,14 @@ async function submit(): Promise<void> {
   error.value = undefined
   const invitedRole = role.value
   const track = captureAnalyticsContext()
-  track("member_invite_action", { outcome: "attempt", invited_role: invitedRole })
+  track("member_invited", { outcome: "attempt", invited_role: invitedRole })
   try {
     invite.value = await central.invite(props.team.id, email.value.trim(), invitedRole)
-    track("member_invite_action", { outcome: "success", invited_role: invitedRole })
+    track("member_invited", { outcome: "success", invited_role: invitedRole })
     await nextTick()
     code.value?.focus()
   } catch (reason) {
-    track("member_invite_action", { outcome: "failure", invited_role: invitedRole })
+    track("member_invited", { outcome: "failure", invited_role: invitedRole })
     error.value = reason instanceof Error ? reason.message : String(reason)
   }
   finally { pending.value = false }

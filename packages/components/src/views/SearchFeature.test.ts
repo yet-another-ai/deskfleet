@@ -10,7 +10,7 @@ import SearchView from "./SearchView.vue"
 const cleanup: (() => void)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) dispose(); vi.useRealTimers(); await shutdownAnalytics() })
 
-test.each(["web", "desktop"] as const)("%s can search through a direct link without Statsig", async platform => {
+test.each(["web", "macos"] as const)("%s can search through a direct link without Statsig", async platform => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
   initializeAnalytics({ platform, environment: "test" })
   const fake = fakeCentral()

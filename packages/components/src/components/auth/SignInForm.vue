@@ -7,6 +7,7 @@ import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
+import { trackEvent } from "../../services/analytics.ts"
 // Official sign-in mark: https://developers.google.com/identity/branding-guidelines
 import googleIcon from "../../assets/google.png"
 import UiButton from "../common/UiButton.vue"
@@ -41,6 +42,7 @@ async function run(method: "password" | "passkey", action: () => Promise<void>):
   error.value = undefined
   try {
     await action()
+    trackEvent("account_signed_in", { method })
     password.value = ""
     emit("signedIn")
   } catch (reason) { error.value = failureMessage(reason) }

@@ -252,8 +252,7 @@ test.each(["agent", "terminal", "desktop"] as const)("records %s grants and the 
   const failed = { kind: "stateChanged", state: "failed" } as const
   f.emit({ type: "peerEvent", peerId: "peer1", event: failed })
   expect(sink.mock.calls.map(([event]) => event)).toEqual([
-    { name: "peer_granted", teamId: "team2", metadata: { feature, relay: "allowed" } },
-    { name: "peer_connection", teamId: "team2", metadata: { feature, relay: "allowed", outcome: "connected", transport: "unknown" } },
+    { name: "peer_connection", teamId: "team2", metadata: { feature, relay: "allowed", outcome: "connected" } },
   ])
 })
 
@@ -263,7 +262,7 @@ test("an offer failure records a failed attempt without exporting its error", as
   await f.remote.api.agent.prepare!("local-peer")
   vi.mocked(f.central.offerPeer).mockRejectedValueOnce(new Error("Sensitive server details"))
   await expect(f.remote.api.agent.offer({ sessionId: "local-peer", sdp: "offer" })).rejects.toThrow("Sensitive server details")
-  expect(sink).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team2", metadata: { feature: "agent", relay: "allowed", outcome: "failed", transport: "unknown" } })
+  expect(sink).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team2", metadata: { feature: "agent", relay: "allowed", outcome: "failed" } })
 })
 
 test("retains known terminal tabs during a daemon signaling outage", async () => {

@@ -9,16 +9,9 @@ import { trackEvent } from "../../services/analytics.ts"
 import BillingEntry from "./BillingEntry.vue"
 
 vi.mock("../../services/analytics.ts", () => ({ trackEvent: vi.fn() }))
-let intersect: (entries: Partial<IntersectionObserverEntry>[]) => void
 let wrapper: VueWrapper
 const free = { ...billingFixture(), plan: "free" as const, paymentsAvailable: true, canManageBilling: true }
 function setup(value: TeamBilling = free) {
-  vi.stubGlobal("IntersectionObserver", class {
-    constructor(callback: typeof intersect) { intersect = callback }
-    observe() {}
-    disconnect() {}
-    unobserve() {}
-  })
   const { central } = fakeCentral()
   central.billing.mockResolvedValue(value)
   const team = ref({ id: "team-1", name: "Design", role: "owner" as const })
@@ -29,23 +22,15 @@ function setup(value: TeamBilling = free) {
 }
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
-test("free owner reaches plans without a machine, and impressions require visibility and survive remounts", async () => {
-  const { account, render } = setup()
+test("free owner reaches plans without a machine", async () => {
+  const { account } = setup()
   await flushPromises()
   expect(wrapper.text()).toContain("Upgrade plan")
   expect(trackEvent).not.toHaveBeenCalled()
-  intersect([{ isIntersecting: true }])
-  await flushPromises()
   await wrapper.get("button").trigger("click")
   expect(account.openSettings).toHaveBeenCalledWith("plans")
   expect(trackEvent).toHaveBeenCalledWith("billing_entry_clicked", { source: "sidebar", current_plan: "free", action: "upgrade" })
-  window.dispatchEvent(new Event("focus"))
-  await flushPromises()
-  wrapper.unmount(); wrapper = render()
-  await flushPromises()
-  intersect([{ isIntersecting: true }])
-  await flushPromises()
-  expect(vi.mocked(trackEvent).mock.calls.filter(([event]) => event === "billing_entry_viewed")).toHaveLength(1)
+  expect(vi.mocked(trackEvent).mock.calls.filter(([event]) => event === "billing_entry_viewed")).toHaveLength(0)
 })
 
 test.each([

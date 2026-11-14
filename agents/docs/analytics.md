@@ -48,12 +48,22 @@ defaults usable. Event delivery is best effort.
 
 The Statsig user contains the authenticated account UUID as `userID`, the
 account email as the standard `email` attribute, the selected Team as
-`customIDs.teamID`, and `custom.platform` as `web` or `desktop`. Email is sent to
+`customIDs.teamID`, and `custom.platform` as the client shell: `web`, `pwa`,
+`android`, `ios`, `windows`, `macos`, or `linux`. Email is sent to
 Statsig so gates can target individual addresses or email domains; it does not
 replace the UUID used for identity and percentage rollouts. Account status,
 email, and Team changes replace this identity and refresh gate evaluations;
 logout removes both IDs and the email. Accounts without an available email omit
 that attribute.
+
+The shell is resolved in this order:
+
+1. The Electron host: `darwin` is `macos`, `win32` is `windows`, and `linux` is `linux`.
+2. A Capacitor native app: `ios` or `android`, including when its display mode is standalone.
+3. An installed browser app, when `display-mode: standalone` matches or iOS Safari reports `navigator.standalone`: `pwa`.
+4. Any other browser tab: `web`.
+
+`windows`, `macos`, and `linux` are the Electron app, not the operating system of a browser or installed PWA. The remote Machine's OS is not this field. Server billing events do not gain a viewer shell. Update any Statsig gate or experiment that still targets the previous `web` or `desktop` value. Historical events keep those old values.
 Public authentication pages and startup before
 account status arrives use the SDK's anonymous stable ID. Team and Machine
 switches do not create a new analytics client. Events include `team_id`,
@@ -81,14 +91,24 @@ these SDK diagnostics.
 
 | Event | When | Metadata |
 | --- | --- | --- |
-| `app_opened` | Main UI or authentication root mounts | None |
+| `app_opened` | Main UI or authentication root mounts | `surface`: `app` or `authentication` |
 | `page_viewed` | Successful named route navigation, including initial load; authentication root mounts | `page`: route name or `authentication` |
+| `account_registered` | The first accepted password registration request; a resend is not another registration | `method`: `password` |
+| `account_verified` | Email verification succeeds and creates the session | None |
+| `account_signed_in` | Password or passkey sign-in succeeds | `method`: `password` or `passkey` |
+| `team_created` | Team creation succeeds | None |
+| `team_joined` | Invite acceptance | `outcome`: `attempt`, `success`, or `failure`; no invite token |
+| `member_invited` | Invitation | `outcome`; `invited_role`: `admin` or `member`; no email |
+| `machine_enrolled` | Local or headless enrollment succeeds | `kind`: `local` or `headless` |
 | `workspace_created` | Workspace creation returns successfully | `directory_count` |
-| `session_created` | Session creation returns successfully | `context`: `worktree`/`directory`; `scope`: `workspace`/`machine` |
-| `session_forked` | Session fork returns successfully | `context`: `worktree`/`directory` |
-| `session_archived` | Archive returns successfully | None |
-| `session_restored` | Restore returns successfully | None |
-| `input_submitted` | Input submission returns successfully | `delivery`: `backlog`/`steer` |
+| `session_action` | Session create, fork, archive, or restore | `action`; `outcome` for create, fork, and restore; `context` and `scope` when known; `provider` slug on create success |
+| `input_submitted` | Backlog or steer input | `outcome`; `delivery`: `backlog` or `steer` |
+| `terminal_created` | Terminal creation succeeds | `scope`: `machine` or `worktree` |
+| `schedule_action` | Schedule create, accepted manual run, or delete | `action`: `create`, `run`, or `delete` |
+
+GitHub and Google registration and sign-in finish on the server callback. The client does not observe that completion, so those methods are not emitted. Starting an OAuth redirect is not a success. Verification also creates a session and does not also emit `account_signed_in`. Failed sign-in and failed enrollment are not product events.
+
+`attempt`, `success`, and `failure` are recorded only for allowance or admission: Session create, fork, and restore; input submit; invitation; Team join; checkout; and Portal. Archive is success-only. A provider value is only the agent implementation slug on a successful Session create. A terminal records `worktree` when the dial names a Worktree and `machine` otherwise, including a machine terminal opened in a Workspace directory. Schedule update and enablement changes are not events.
 
 Numeric metadata is converted to strings for Statsig. Aborted/failed navigation
 does not emit a page view. Successful navigation between two Sessions emits a
@@ -105,22 +125,15 @@ URL, or viewing an active subscription never emits a client-side paid event.
 
 | Frontend event | Meaning and dimensions |
 | --- | --- |
-| `billing_entry_viewed` | Sidebar entry intersects the viewport after billing loads; once per account session/user/Team/plan/action, including across route remounts; `source=sidebar`, effective `current_plan`, `action=upgrade`/`view` |
 | `billing_entry_clicked` | Navigation intent; `source=sidebar`/`team_menu`; sidebar also supplies effective plan (when loaded) and action. Join by Team with Plans views, checkout attempts, and verified initial invoice payments; clicks are not purchases. |
 | `billing_plans_viewed` | Once per mounted Plans view after loading; effective plan, billing permission, payment/subscription/contact availability |
-| `billing_interval_selected` | Actual month/year selection change; previous and selected interval |
-| `billing_checkout_started` | Each attempt; `target_plan`, `interval`, `request_id` |
-| `billing_checkout_opened` | Checkout API and external-page opening completed; same attempt dimensions |
-| `billing_checkout_failed` | The attempt failed; same dimensions plus an allowlisted reason, never exception text |
-| `billing_portal_started` / `billing_portal_opened_client` / `billing_portal_failed` | Billing management or payment-recovery action; `source=manage`/`payment_recovery` |
+| `billing_checkout` | Checkout attempt; `outcome`: `started` or `failed`; `target_plan`, `interval`, `request_id`; allowlisted `reason` on failure, never exception text |
+| `billing_portal` | Billing management or payment recovery; `outcome`: `started` or `failed`; `source=manage`/`payment_recovery`; allowlisted `reason` on failure |
 | `billing_payment_recovery_viewed` | Once per payment-problem status per view for the Team owner; `past_due`, `unpaid`, or `incomplete` |
 | `billing_returned` | Allowlisted `checkout_success`, `checkout_cancel`, or `portal` return marker for an accessible Team; navigation only |
 | `billing_enterprise_contact_clicked` | Contact-link intent; no mailbox/address is sent |
 
-Month/year and Go/Pro attempts retain separate request IDs. A retry of an
-uncertain attempt reuses its ID; count distinct `request_id` for unique Checkout
-intents. Completion after leaving settings is still recorded for the same
-account/Team; it is omitted if the account or selected Team has changed.
+`billing_checkout` `started` joins `request_id` to server `billing_checkout_created`. The client does not emit an opened event. Server `billing_checkout_created` and `billing_portal_opened` are the API-success facts. Month/year and Go/Pro attempts retain separate request IDs. A retry of an uncertain attempt reuses its ID; count distinct `request_id` for unique Checkout intents. A failure is omitted when the account or selected Team changed before the attempt returned. Leaving the Plans view does not add a client completion event.
 
 The billing server accepts these optional **runtime** settings:
 
@@ -184,14 +197,12 @@ Plans & Usage. They carry selected Team/plan context described above.
 
 | Event | Functional scope |
 | --- | --- |
-| `session_capacity_action` | `create`, `fork`, `restore` with `attempt`/`success`/`failure`; context and scope when known |
-| `input_submit_action` | Submitted backlog/steer input with attempt/success/failure; submission is not a consumed provider turn |
-| `member_invite_action` | Invitation attempt/success/failure and invited role; no email |
-| `team_join_action` | Invite acceptance attempt/success/failure; no invite token; acceptance is the member-capacity boundary |
+| `session_action` | Create, fork, and restore with `attempt`/`success`/`failure`; archive success only. Context and scope when known. Submission of input is `input_submitted` and is not a consumed provider turn |
+| `member_invited` | Invitation attempt/success/failure and invited role; no email. Creating an invitation does not consume a member seat |
+| `team_joined` | Invite acceptance attempt/success/failure; no invite token; acceptance is the member-capacity boundary |
 | `session_turn_allowance_viewed` | `near_limit`/`reached`/`blocked`, consumed-turn count including inheritance, and finite limit when known |
 | `session_turn_plans_clicked` | Upgrade entry from a near-limit or reached turn allowance |
-| `peer_granted` | Actual agent/terminal/desktop/files/ports peer grant; relay access `allowed`, `unconfigured`, `free_plan`, `turn_quota_exhausted`, or `metering_unavailable` |
-| `peer_connection` | First observed connected/failed outcome per grant, feature, and relay access; `transport=unknown` |
+| `peer_connection` | One agent, terminal, desktop, files, ports, or mux attempt, emitted once when it connects or fails. `relay` is `allowed`, `unconfigured`, `free_plan`, `turn_quota_exhausted`, or `metering_unavailable`. `outcome` is `connected` or `failed` |
 
 Turn-warning impressions are deduplicated for the same account, Team, Machine,
 Session, and warning boundary across route remounts. Functional failure events
@@ -204,13 +215,30 @@ without an upgrade entry, even if the client's last billing snapshot shows no
 remaining turns. Async functional outcomes are omitted when the account or
 selected Team has changed.
 
-Peer grants indicate permitted fallback, not proof that TURN was selected.
-Connection telemetry does not measure transferred bytes. Billing's server-side
-TURN collector remains authoritative for usage. Cancellation, account changes,
-revocation, and expiry are not connection failures. Desktop file/port peers
-forward typed observations from main through the existing narrow bridge; the
-renderer owns Statsig. Internal target-Team correlation drops late events after
-Team navigation instead of assigning them to the new Team.
+`observePeerGrant` emits `peer_connection` once when that attempt connects or fails. A repeated connect or fail does not emit again. Closing, revocation, expiry, and account changes that happen before a result leave no event. Relay access is permitted fallback, not the selected ICE path or transferred bytes. Billing's server-side TURN collector remains authoritative for usage. Cancellation, account changes, revocation, and expiry are not connection failures. Desktop file/port peers forward typed observations from main through the existing narrow bridge; the renderer owns Statsig. Internal target-Team correlation drops late events after Team navigation instead of assigning them to the new Team.
+
+## Retired client names
+
+Historical Statsig data still contains these names. Dashboards use the current catalog; events are not backfilled.
+
+`session_created`, `session_forked`, `session_archived`, `session_restored`, `session_capacity_action`, `input_submit_action`, `team_join_action`, `member_invite_action`, `billing_entry_viewed`, `billing_interval_selected`, `billing_checkout_started`, `billing_checkout_opened`, `billing_checkout_failed`, `billing_portal_started`, `billing_portal_opened_client`, `billing_portal_failed`, `peer_granted`.
+
+The sidebar click is the billing-entry intent. The checkout interval is stored on `billing_checkout`.
+
+## Not collected
+
+Do not add events for settings, appearance, notifications, GitHub connection, MCP server edits, permission prompts, file browsing, search queries, composer keystrokes, model selection, session rename, or the AI-usage page. Search, remote desktop, and machine control remain visible through `page_viewed`. Connectivity remains visible through `peer_connection`. A grant that never reaches connected or failed is not an event.
+
+## Metrics
+
+Define these in Statsig from the current names. Do not add an event to stand in for a metric filter.
+
+- Activation rate from `account_verified` to `machine_enrolled`, `workspace_created`, `session_action` create success, and `input_submitted` success.
+- Weekly active accounts with `app_opened`, `terminal_created`, or `input_submitted` success, split by `custom.platform`.
+- Allowance path from `session_turn_allowance_viewed` through `session_turn_plans_clicked` and `billing_checkout` started to `billing_invoice_paid` where `billing_reason` is `subscription_create`.
+- Invite and join success counts.
+- `peer_connection` failure rate, split by `feature` and `relay`.
+- Subscription lifecycle counts from the server billing events.
 
 ## Feature gates and experiments
 

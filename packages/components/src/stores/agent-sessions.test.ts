@@ -169,17 +169,17 @@ test("marking a session unread rewinds the shared watermark and retries a lost r
 test.each([
   { workspaceId: "20", context: "worktree" as const, scope: "workspace" },
   { workspaceId: undefined, context: "directory" as const, scope: "machine" },
-])("session creation records acknowledged $scope context without title, provider, or resource IDs", async ({ workspaceId, context, scope }) => {
+])("session creation records acknowledged $scope context and the snapshot provider slug", async ({ workspaceId, context, scope }) => {
   const store = useAgentSessionsStore(); await store.open("30")
   const snapshot = agentSnapshot()
   snapshot.session = { ...snapshot.session, workspaceId, context }
   mock.call.mockResolvedValueOnce(snapshot)
   await store.create(workspaceId, "Private session title", context, "private-provider", "private-branch")
-  expect(tracked("session_created")).toEqual([{ context, scope }])
-  expect(tracked("session_capacity_action")).toEqual([
+  expect(tracked("session_action")).toEqual([
     { action: "create", outcome: "attempt", context, scope },
-    { action: "create", outcome: "success", context, scope },
+    { action: "create", outcome: "success", context, scope, provider: "codex" },
   ])
+  expect(JSON.stringify(tracked("session_action"))).not.toContain("private")
 })
 
 test("session creation passes an explicit directory cwd and omits it for worktree or default", async () => {
@@ -202,19 +202,19 @@ test.each(["backlog", "steer"] as const)("acknowledged %s input records only del
   const store = useAgentSessionsStore(); await store.open("30")
   mock.call.mockResolvedValueOnce(agentInput())
   await store.submit("30", "Read /private/project and use the private token", delivery, "70")
-  expect(tracked("input_submitted")).toEqual([{ delivery }])
-  expect(tracked("input_submit_action")).toEqual([{ outcome: "attempt", delivery }, { outcome: "success", delivery }])
+  expect(tracked("input_submitted")).toEqual([{ outcome: "attempt", delivery }, { outcome: "success", delivery }])
 })
 
 test.each(["archive", "restore"] as const)("acknowledged session %s records no session content", async action => {
   const store = useAgentSessionsStore(); await store.open("30")
   mock.call.mockResolvedValueOnce(agentSnapshot())
   await store[action]("30")
-  expect(tracked(action === "archive" ? "session_archived" : "session_restored")).toEqual([{}])
-  expect(tracked("session_capacity_action")).toEqual(action === "restore" ? [
-    { action: "restore", outcome: "attempt", context: "worktree", scope: "workspace" },
-    { action: "restore", outcome: "success", context: "worktree", scope: "workspace" },
-  ] : [])
+  expect(tracked("session_action")).toEqual(action === "archive"
+    ? [{ action: "archive", outcome: "success" }]
+    : [
+      { action: "restore", outcome: "attempt", context: "worktree", scope: "workspace" },
+      { action: "restore", outcome: "success", context: "worktree", scope: "workspace" },
+    ])
 })
 
 test.each(["create", "fork", "submit", "archive", "restore"] as const)("failed session %s does not record success", async action => {
@@ -225,12 +225,11 @@ test.each(["create", "fork", "submit", "archive", "restore"] as const)("failed s
     : action === "submit" ? store.submit("30", "Private prompt", "backlog")
     : store[action]("30")
   await expect(result).rejects.toThrow("Action failed")
-  expect(tracked("session_capacity_action")).toEqual(["create", "fork", "restore"].includes(action) ? [
+  expect(tracked("session_action")).toEqual(["create", "fork", "restore"].includes(action) ? [
     { action, outcome: "attempt", context: action === "restore" ? "worktree" : "directory", scope: "workspace" },
     { action, outcome: "failure", context: action === "restore" ? "worktree" : "directory", scope: "workspace" },
   ] : [])
-  expect(tracked("input_submit_action")).toEqual(action === "submit" ? [{ outcome: "attempt", delivery: "backlog" }, { outcome: "failure", delivery: "backlog" }] : [])
-  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => !name.endsWith("_action"))).toEqual([])
+  expect(tracked("input_submitted")).toEqual(action === "submit" ? [{ outcome: "attempt", delivery: "backlog" }, { outcome: "failure", delivery: "backlog" }] : [])
 })
 
 test.each(["create", "fork", "submit", "archive", "restore"] as const)("session %s uses its captured analytics context through completion", async action => {
@@ -246,8 +245,8 @@ test.each(["create", "fork", "submit", "archive", "restore"] as const)("session 
   response.resolve(action === "submit" ? agentInput() : agentSnapshot())
   await operation
   expect(trackEvent).not.toHaveBeenCalled()
-  const event = action === "submit" ? "input_submitted" : `session_${{ create: "created", fork: "forked", archive: "archived", restore: "restored" }[action]}`
-  expect(captured).toHaveBeenLastCalledWith(event, expect.any(Object))
+  const event = action === "submit" ? "input_submitted" : "session_action"
+  expect(captured).toHaveBeenLastCalledWith(event, expect.objectContaining(action === "submit" ? { outcome: "success" } : { action, outcome: "success" }))
 })
 
 test("a rejected input uses the captured context for its failure event", async () => {
@@ -258,8 +257,8 @@ test("a rejected input uses the captured context for its failure event", async (
   await expect(store.submit("30", "Private prompt", "backlog")).rejects.toThrow("Connection closed")
   expect(trackEvent).not.toHaveBeenCalled()
   expect(captured.mock.calls).toEqual([
-    ["input_submit_action", { outcome: "attempt", delivery: "backlog" }],
-    ["input_submit_action", { outcome: "failure", delivery: "backlog" }],
+    ["input_submitted", { outcome: "attempt", delivery: "backlog" }],
+    ["input_submitted", { outcome: "failure", delivery: "backlog" }],
   ])
 })
 
@@ -446,7 +445,7 @@ test("failed submission retains selected identities and acknowledgment preserves
   store.draftAttachments["30"] = [{ id: "old", kind: "pasted_text", text: "old", lines: 1 }]
   mock.call.mockRejectedValueOnce(new Error("Lost response"))
   await expect(store.submit("30", "Read @previous", "backlog")).rejects.toThrow("Lost response")
-  expect(tracked("input_submitted")).toEqual([])
+  expect(tracked("input_submitted")).toEqual([{ outcome: "attempt", delivery: "backlog" }, { outcome: "failure", delivery: "backlog" }])
   expect(store.draftMentions["30"]).toEqual([mention])
   const operation = Object.values(store.operations)[0]!
   store.drafts["30"] = "Read @previous again"
@@ -455,8 +454,7 @@ test("failed submission retains selected identities and acknowledgment preserves
   expect(store.drafts["30"]).toBe("Read @previous again")
   expect(store.draftMentions["30"]).toEqual([mention])
   expect(store.draftAttachments["30"]?.map(item => item.id)).toEqual(["new"])
-  expect(tracked("input_submitted")).toEqual([])
-  expect(tracked("input_submit_action")).toEqual([{ outcome: "attempt", delivery: "backlog" }, { outcome: "failure", delivery: "backlog" }])
+  expect(tracked("input_submitted")).toEqual([{ outcome: "attempt", delivery: "backlog" }, { outcome: "failure", delivery: "backlog" }])
 })
 
 test("an acknowledgment preserves a new reference with the same visible text", async () => {
@@ -499,7 +497,7 @@ test("fork retries preserve the original context and operation ID while installi
   const forked = agentSnapshot(); forked.session.id = "31"; forked.session.context = "directory"
   mock.call.mockRejectedValueOnce(new Error("Lost fork response"))
   await expect(store.fork("30", "directory")).rejects.toThrow("Lost fork response")
-  expect(tracked("session_forked")).toEqual([])
+  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([])
   const original = mock.call.mock.calls.at(-1)!
   expect(original).toEqual(["_deskfleet/session/fork", { sessionId: "30", context: "directory", operationId: expect.any(String) }])
   mock.call.mockResolvedValueOnce(null).mockResolvedValueOnce(forked)
@@ -509,8 +507,7 @@ test("fork retries preserve the original context and operation ID while installi
   expect(store.views["30"]?.snapshot?.session.id).toBe("30")
   expect(store.drafts["30"]).toBe("Keep the source draft")
   expect(store.operations).toEqual({})
-  expect(tracked("session_forked")).toEqual([{ context: "directory" }])
-  expect(tracked("session_capacity_action")).toEqual([
+  expect(tracked("session_action")).toEqual([
     { action: "fork", outcome: "attempt", context: "directory", scope: "workspace" },
     { action: "fork", outcome: "failure", context: "directory", scope: "workspace" },
     { action: "fork", outcome: "attempt", context: "worktree", scope: "workspace" },
@@ -591,7 +588,7 @@ test.each([false, true])("a completed create event survives a lost response with
   expect(store.views["31"]?.snapshot).toEqual(created)
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/create")).toHaveLength(1)
   expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31").length).toBeGreaterThan(0)
-  expect(tracked("session_created")).toEqual([{ context: "directory", scope: "workspace" }])
+  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
   expect(store.operations).toEqual({})
 })
 
@@ -611,7 +608,7 @@ test("a completed create receipt resolves its session snapshot without creating 
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/command/get")).toHaveLength(1)
   expect(mock.call.mock.calls.filter(([method, params]) => method === "_deskfleet/session/subscribe" && params.sessionId === "31")).toHaveLength(1)
   expect(store.views["31"]?.snapshot).toEqual(created)
-  expect(tracked("session_created")).toEqual([{ context: "directory", scope: "workspace" }])
+  expect(tracked("session_action").filter(event => event.outcome === "success")).toEqual([{ action: "create", outcome: "success", context: "directory", scope: "workspace", provider: "codex" }])
   expect(store.operations).toEqual({})
 })
 

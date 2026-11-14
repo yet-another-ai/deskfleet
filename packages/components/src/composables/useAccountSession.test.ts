@@ -338,8 +338,9 @@ test("creating and joining Teams select them; signing out clears every selection
   await session.joinTeam("code")
   expect(fake.central.acceptInvite).toHaveBeenCalledExactlyOnceWith("code")
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["team_join_action", { outcome: "attempt" }],
-    ["team_join_action", { outcome: "success" }],
+    ["team_created", {}],
+    ["team_joined", { outcome: "attempt" }],
+    ["team_joined", { outcome: "success" }],
   ])
   expect(session.team.value?.name).toBe("Invited team")
   expect(session.teams.value).toHaveLength(2)
@@ -356,8 +357,8 @@ test("a rejected invitation acceptance records failure without the code or serve
   await flushPromises()
   await expect(session.joinTeam("private-token")).rejects.toThrow("Private invitation details")
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["team_join_action", { outcome: "attempt" }],
-    ["team_join_action", { outcome: "failure" }],
+    ["team_joined", { outcome: "attempt" }],
+    ["team_joined", { outcome: "failure" }],
   ])
 })
 
@@ -374,8 +375,8 @@ test("join completion uses the context captured before accepting the invite", as
   await operation
   expect(trackEvent).not.toHaveBeenCalled()
   expect(captured.mock.calls).toEqual([
-    ["team_join_action", { outcome: "attempt" }],
-    ["team_join_action", { outcome: "success" }],
+    ["team_joined", { outcome: "attempt" }],
+    ["team_joined", { outcome: "success" }],
   ])
 })
 
@@ -386,8 +387,8 @@ test("accepted membership remains successful when its subsequent roster refresh 
   fake.central.teams.mockRejectedValueOnce(new Error("Roster unavailable"))
   await expect(session.joinTeam("private-token")).rejects.toThrow("Roster unavailable")
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["team_join_action", { outcome: "attempt" }],
-    ["team_join_action", { outcome: "success" }],
+    ["team_joined", { outcome: "attempt" }],
+    ["team_joined", { outcome: "success" }],
   ])
 })
 
