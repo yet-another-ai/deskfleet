@@ -7,8 +7,8 @@ use deskfleet_input::InputEvent;
 use gpui::{
     AppContext, Bounds, Context, DispatchPhase, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, KeyUpEvent, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Subscription, Window,
-    WindowBounds, WindowOptions, canvas, div, point, px, size,
+    ParentElement, Pixels, Point, Render, ScrollEvent, Styled, Subscription, Window, WindowBounds,
+    WindowOptions, canvas, div, point, px, size,
 };
 use serde_json::json;
 use tokio::sync::watch;
@@ -268,6 +268,8 @@ impl Viewer {
 
     fn sync_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let enabled = self.toolbar_state.controls_enabled();
+        self.controls
+            .set_reverse_scroll(self.toolbar_state.reverse_scroll);
         let release = self.controls.set_enabled(enabled);
         self.send(release, window, cx);
         let pointer = window.is_window_hovered().then(|| window.mouse_position());
@@ -452,6 +454,10 @@ impl Viewer {
             ToolbarAction::SetControl(control) => {
                 Some(json!({"type":"setControl", "control":control}))
             }
+            ToolbarAction::SetReverseScroll(reverse_scroll) => {
+                self.toolbar_state.reverse_scroll = reverse_scroll;
+                None
+            }
             ToolbarAction::SecureAttention
                 if self.toolbar_state.controls_enabled()
                     && self.toolbar_state.ui.secure_attention =>
@@ -614,7 +620,7 @@ impl Viewer {
         self.send(events, window, cx);
     }
 
-    fn scroll(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn scroll(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.keyboard_focus.pointer_moved();
         if self.local_ui(event.position, window)
             || Chrome::for_window(window)
@@ -652,7 +658,7 @@ impl Viewer {
         mouse!(MouseDownEvent, mouse_down);
         mouse!(MouseMoveEvent, mouse_move);
         mouse!(MouseUpEvent, mouse_up);
-        mouse!(ScrollWheelEvent, scroll);
+        mouse!(ScrollEvent, scroll);
         mouse!(MouseExitEvent, mouse_exit);
     }
 }

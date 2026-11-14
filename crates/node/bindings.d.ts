@@ -58,6 +58,12 @@ export declare class NativePeer {
   close(): Promise<void>
 }
 
+export declare class NativeSpeech {
+  nextEvent(): Promise<NativeSpeechEvent | null>
+  stop(): Promise<void>
+  cancel(): Promise<void>
+}
+
 export declare class NativeTerminal {
   write(data: Buffer): Promise<void>
   resize(cols: number, rows: number): Promise<void>
@@ -127,6 +133,8 @@ export declare function closeLinuxDesktopAccess(): Promise<void>
 /** Create a transport without accessing a display or initializing an encoder. */
 export declare function createPeer(config: PeerConfig): Promise<NativePeer>
 
+export declare function createSpeech(sessionId: string, locale: string): Promise<NativeSpeech>
+
 export declare function createTerminal(config: TerminalConfig): Promise<NativeTerminal>
 
 export interface DesktopConfig {
@@ -147,6 +155,8 @@ export declare function desktopSupported(): Promise<boolean>
 
 export interface DisplayInfo {
   id: number
+  name?: string
+  displayNumber?: number
   width: number
   height: number
   refreshRateHz: number
@@ -199,6 +209,20 @@ export interface NativeInfo {
   version: string
   os: string
   arch: string
+}
+
+export interface NativeSpeechEvent {
+  sessionId: string
+  type: string
+  text?: string
+  final?: boolean
+  level?: number
+  code?: string
+  message?: string
+}
+
+export interface NativeSpeechStatus {
+  supported: boolean
 }
 
 export type NatMapping = 'unknown' | 'direct' | 'endpoint-independent' | 'address-dependent' | 'address-and-port-dependent'
@@ -256,8 +280,11 @@ export declare function requestAccessibilityAccess(): Promise<boolean | null>
  */
 export declare function requestFullDiskAccess(): Promise<boolean | null>
 
-/** Request Linux desktop access; only Wayland opens a Portal authorization dialog. */
-export declare function requestLinuxDesktopAccess(directory: string): Promise<LinuxDesktopAccess>
+/**
+ * Request Linux desktop access; only Wayland opens a Portal authorization dialog.
+ * Reselecting sources replaces the saved grant with a fresh monitor selection.
+ */
+export declare function requestLinuxDesktopAccess(directory: string, reselectSources?: boolean | undefined | null): Promise<LinuxDesktopAccess>
 
 /** Try to trigger macOS local-network consent; never reports a permission grant. */
 export declare function requestLocalNetworkAccess(): Promise<LocalNetworkAccessRequest>
@@ -272,6 +299,8 @@ export declare function scanLocalApplications(): Promise<Array<LocalApplication>
 
 /** Check the installed Windows desktop service and policy for Ctrl+Alt+Del. */
 export declare function secureAttentionSupported(): Promise<boolean>
+
+export declare function speechStatus(locale: string): Promise<NativeSpeechStatus>
 
 /** Probe the selected display's encoders on a worker thread. */
 export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>

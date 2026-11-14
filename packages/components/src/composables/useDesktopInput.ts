@@ -33,6 +33,7 @@ export function useDesktopInput(
   video: Ref<HTMLVideoElement | null>,
   enabled: Readonly<Ref<boolean>>,
   send: (message: DesktopInputMessage) => boolean,
+  reverseScroll?: Readonly<Ref<boolean>>,
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
@@ -117,9 +118,11 @@ export function useDesktopInput(
     const point = desktopPoint(video.value, event.clientX, event.clientY)
     if (!point) return
     event.preventDefault()
-    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? video.value.clientHeight : 1
-    const deltaX = Math.max(-10_000, Math.min(10_000, event.deltaX * scale))
-    const deltaY = Math.max(-10_000, Math.min(10_000, event.deltaY * scale))
+    const scale = (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? video.value.clientHeight : 1) * (reverseScroll?.value ? -1 : 1)
+    const rawX = Math.max(-10_000, Math.min(10_000, event.deltaX * scale))
+    const rawY = Math.max(-10_000, Math.min(10_000, event.deltaY * scale))
+    const deltaX = rawX === 0 ? 0 : rawX
+    const deltaY = rawY === 0 ? 0 : rawY
     if (Number.isFinite(deltaX) && Number.isFinite(deltaY) && send({ type: "pointerMove", ...point })) {
       lastPoint = point
       send({ type: "wheel", deltaX, deltaY })

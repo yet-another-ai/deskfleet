@@ -12,6 +12,7 @@ export interface AgentChannelSessions {
   readonly journal: { readonly identity: unknown }
   sessionDirectory?(sessionId: string): Promise<string>
   sessionAttachmentDirectory?(sessionId: string): Promise<string>
+  draftAttachmentDirectory?(draftId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
   onPreview?(listener: (preview: AgentPreview) => void): () => void
@@ -34,13 +35,13 @@ interface GitSubscription { stop?: () => void }
 
 const METHODS = new Set<AgentMethod>([
   "_deskfleet/composer/references", "_deskfleet/composer/resolve",
-  "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
+  "_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
   "_deskfleet/session/list", "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/subscribe", "_deskfleet/session/history",
   "_deskfleet/session/read", "_deskfleet/session/unread",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
   "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
   "_deskfleet/elicitation/respond",
-  "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/delete", "_deskfleet/command/get",
+  "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/yolo", "_deskfleet/session/delete", "_deskfleet/command/get",
   "_deskfleet/git/branches", "_deskfleet/git/prepare", "_deskfleet/git/status", "_deskfleet/git/diff", "_deskfleet/git/subscribe", "_deskfleet/git/unsubscribe",
   "_deskfleet/session/attend", "_deskfleet/session/leave",
 ])
@@ -204,7 +205,7 @@ export class AgentChannel {
         this.#initialized = true
         this.#queue({ jsonrpc: "2.0", id, result: {
           protocolVersion: 1,
-          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.13.1" },
+          agentInfo: { name: "deskfleet", title: "DeskFleet", version: "0.16.0" },
           agentCapabilities: { _meta: { deskfleet: { sessions: true, maxMessageBytes: AGENT_MESSAGE_BYTES } } },
           _meta: { deskfleet: { identity: this.#sessions.journal.identity } },
         } })

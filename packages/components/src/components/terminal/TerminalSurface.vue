@@ -149,7 +149,9 @@ function updateLigatures(): void {
   if (!ligatures.value) terminal.element.style.fontFeatureSettings = '"calt" off, "liga" off'
   terminal.refresh(0, terminal.rows - 1)
 }
-const input = terminal.onData((data) => { if (props.interactive) emit("input", data) })
+const input = terminal.onData((data) => {
+  if (props.interactive) emit("input", toolbar.value?.transformInput ? toolbar.value.transformInput(data) : data)
+})
 const resize = terminal.onResize((size) => emit("resize", size))
 const title = terminal.onTitleChange((value) => emit("title", value))
 function focus(): void {

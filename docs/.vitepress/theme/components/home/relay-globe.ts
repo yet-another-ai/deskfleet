@@ -47,7 +47,9 @@ export function createRelayGlobe(element: HTMLElement, labels: Labels, moving: b
         shading: "lambert",
         environment: "none",
         // ECharts GL derives the sun direction and seasonal tilt from this UTC instant.
-        light: { main: { intensity: 0.9, time: Date.now() }, ambient: { intensity: 0.35 } },
+        // Keep the sunlit surface below full intensity to preserve light-theme
+        // coastlines, and the night-side ambient low enough to reveal the terminator.
+        light: { main: { intensity: 0.85, time: Date.now() }, ambient: { intensity: 0.1 } },
         atmosphere: { show: true, color: palette.accent, offset: 3, glowPower: 9, innerGlowPower: 12 },
         viewControl: {
           distance: 255, minDistance: 255, maxDistance: 255,

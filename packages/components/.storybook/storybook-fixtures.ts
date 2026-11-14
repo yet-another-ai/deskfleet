@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from "vue-router"
 import { configureClient } from "@deskfleet/client/platform"
 import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { WorktreePreferences } from "@deskfleet/client/settings"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteAdministrationApi, SiteSettings, TurnSettings, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate } from "@deskfleet/client/central"
 import type { AdminTeamBilling, TeamBilling } from "@deskfleet/client/billing"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "@deskfleet/client/ai-usage"
@@ -864,6 +865,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
   let autoDownloadUpdates = true
   let launchAtStartup = false
   let worktreeRoot: string | null = "/Users/ada/.deskfleet/worktrees"
+  let worktreePreferences: WorktreePreferences = { branchNaming: "semantic", cleanup: { archived: true, merged: true, inactive: true, inactiveDays: 5, settled: true, settledDays: 6, unchanged: true, keepLocalChanges: "uncommitted" } }
   let notifications = { enabled: true, taskCompleted: true, taskNeedsInput: true }
   let appearance = { ...DEFAULT_APPEARANCE_SETTINGS }
 
@@ -927,6 +929,8 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
       getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, installSource: "desktop_installer" }),
       setAutoDownloadUpdates: async (enabled) => ({ enabled: (autoDownloadUpdates = enabled), installSource: "desktop_installer" }),
       getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
+      getWorktreePreferences: async () => structuredClone(worktreePreferences),
+      setWorktreePreferences: async (settings) => structuredClone(worktreePreferences = settings),
       setWorktreeRoot: async (root) => ({ root: (worktreeRoot = root), defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
       chooseWorktreeRoot: async () => "/Users/ada/CustomWorktrees",
       getNotifications: async () => ({ ...notifications }),
@@ -1018,6 +1022,15 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
         providers: structuredClone(storybookProviders),
       }),
       create: async (input) => ({ ...input, id: `prov-${Date.now()}` }),
+      discoverWorkspaces: async () => ({
+        supported: true,
+        candidates: [
+          { name: "deskfleet", path: "/workspace/deskfleet", source: "/Users/ada/.codex/config.toml" },
+          { name: "team-website", path: "/Users/ada/Projects/team-website", source: "/Users/ada/.codex/config.toml" },
+          { name: "design-system", path: "/Users/ada/Projects/design-system", source: "/Users/ada/.codex/config.toml" },
+        ],
+        warnings: [],
+      }),
       update: async (id, changes) => ({ ...(profiles[0]!), ...changes, id }),
       remove: async () => {},
       test: async (provider) => ({ agentName: provider.name }),
@@ -1086,6 +1099,7 @@ export function createStorybookRouter() {
     routes: [
       { path: "/", name: "new-session", component: { template: "<div />" } },
       { path: "/search", name: "search", component: { template: "<div />" } },
+      { path: "/desktops", name: "remote-desktops", component: { template: "<div />" } },
       { path: "/admin", name: "site-admin", component: { template: "<div />" } },
       { path: "/schedules/:scheduleId?", name: "schedules", component: { template: "<div />" }, props: true },
       { path: "/worktrees/:worktreeId", name: "worktree", component: { template: "<div />" }, props: true },
@@ -1097,6 +1111,7 @@ export function createStorybookRouter() {
       { path: "/terminals/:terminalId", name: "terminal", component: { template: "<div />" }, props: true },
       { path: "/settings", name: "settings", component: { template: "<div />" } },
       { path: "/settings/preferences", name: "settings-preferences", component: { template: "<div />" } },
+      { path: "/settings/worktrees", name: "settings-worktrees", component: { template: "<div />" } },
       { path: "/settings/appearance", name: "settings-appearance", component: { template: "<div />" } },
       { path: "/settings/notifications", name: "settings-notifications", component: { template: "<div />" } },
       { path: "/settings/permissions", name: "settings-permissions", component: { template: "<div />" } },
@@ -1155,6 +1170,10 @@ export function createSeededStorybookState() {
   agents.refresh = async () => {}
   agents.open = async () => {}
   agents.agentConfiguration = async (params) => makeConfiguration(params.provider)
+  agents.agentUsage = async () => [
+    { id: "five_hour", label: "5-hour limit", remaining: 0.78, resetsAt: "2026-11-12T18:00:00Z" },
+    { id: "seven_day", label: "Weekly · all models", remaining: 0.54, resetsAt: "2026-11-18T00:00:00Z" },
+  ]
   agents.sessionConfiguration = async (id) => agents.configurations[id] ?? makeConfiguration("claude-code")
   agents.configureSession = async (id, choices) => {
     const cfg = makeConfiguration(agents.sessions[id]?.provider ?? "claude-code")

@@ -230,7 +230,7 @@ export function openNativeDesktopAttempt(
     const display = capabilities.displays.find(display => display.id === request.displayId)
     update({
       title: machine.name,
-      displays: capabilities.displays.map(({ id, width, height }) => ({ id, width, height })),
+      displays: capabilities.displays.map(({ id, name, displayNumber, width, height }) => ({ id, name, displayNumber, width, height })),
       secureAttention: machine.capabilities?.platform === "win32" && capabilities.secureAttention === true,
     })
     selectedCodec = (["av1", "h265", "h264"] as const).find(codec => !excluded.has(codec) && display?.codecs.includes(codec) && viewerCodecs.includes(codec))

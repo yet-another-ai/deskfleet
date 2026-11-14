@@ -28,6 +28,11 @@
 </p>
 
 <p align="center">
+  <a href="https://discord.gg/YmxPdN4HvD"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
+  <a href="https://x.com/askdeskfleet"><img src="https://img.shields.io/badge/X-@askdeskfleet-000000?logo=x&logoColor=white" alt="X (@askdeskfleet)" /></a>
+</p>
+
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/content/public/demo-desktop-dark.png" />
     <source media="(prefers-color-scheme: light), (prefers-color-scheme: no-preference)" srcset="docs/content/public/demo-desktop-light.png" />

@@ -76,6 +76,14 @@ export class AgentProviders {
           const terminals = client.terminals ? { ...client.terminals, env } : undefined
           return actualProvider.connect({ ...config, env }, { ...client, ...(terminals ? { terminals } : {}) })
         },
+        ...(actualProvider.readUsage ? {
+          async readUsage(config: AgentConfig, signal?: AbortSignal) {
+            const shell = await loadShellEnvironment(undefined, signal)
+            signal?.throwIfAborted()
+            const env = commandEnvironment({ ...shell, ...config.env }, config.commandDirectory)
+            return actualProvider.readUsage!({ ...config, env }, signal)
+          },
+        } : {}),
       }]),
     ) as Record<AgentProviderTemplateId, AgentProvider>
   }

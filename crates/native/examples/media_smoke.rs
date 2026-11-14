@@ -281,7 +281,7 @@ async fn authorize_linux_capture() -> Result<(), MediaError> {
         } else {
             String::new()
         };
-        let access = deskfleet_native::desktop_access::request_linux(directory)
+        let access = deskfleet_native::desktop_access::request_linux(directory, false)
             .await
             .map_err(|error| deskfleet_capture::CaptureError::Platform(error.to_string()))?;
         if !access.screen_capture {

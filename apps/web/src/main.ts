@@ -1,9 +1,11 @@
 import { App as CapApp } from "@capacitor/app"
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
 import {
+  createCapacitorFilesApi,
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
   createCapacitorOutlineAudioApi,
+  createCapacitorSpeechApi,
 } from "@deskfleet/capacitor-bridge"
 import { createAndroidUpdates } from "@deskfleet/capacitor-bridge/app-updates"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
@@ -16,7 +18,13 @@ import "virtual:uno.css"
 
 initializeErrorReporting("web")
 const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
-const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, capacitorClientOptions(configuredServerUrl))
+const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, {
+  ...capacitorClientOptions(configuredServerUrl),
+  ...(Capacitor.isNativePlatform() ? { createFiles: createCapacitorFilesApi } : {}),
+})
+if (Capacitor.isNativePlatform()) {
+  adapter.speech = createCapacitorSpeechApi()
+}
 if (Capacitor.getPlatform() === "ios") {
   adapter.outlineAudio = createCapacitorOutlineAudioApi()
 }

@@ -316,6 +316,7 @@ test.each(["team", "sign-out", "shell"] as const)("leaving the %s scope releases
   const second = f.runtimes.open(f.second)
   const firstView = mountFleet(first)
   const secondView = mountFleet(second)
+  f.runtimes.sidebarScrollTop = 120
   await first.api.agent.prepare!("same-local-peer")
   await second.api.agent.prepare!("same-local-peer")
 
@@ -325,6 +326,7 @@ test.each(["team", "sign-out", "shell"] as const)("leaving the %s scope releases
   await flushPromises()
 
   expect(f.runtimes.opened.size).toBe(0)
+  if (reason !== "shell") expect(f.runtimes.sidebarScrollTop).toBe(0)
   expect(firstView.root.childElementCount).toBe(0)
   expect(secondView.root.childElementCount).toBe(0)
   expect(f.closePeer.mock.calls.map(([id]) => id).sort()).toEqual(["peer-m1", "peer-m2"])

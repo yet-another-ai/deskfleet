@@ -15,6 +15,7 @@ import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
 import { applicationsApi } from "./applications.ts"
 import { networkDiagnosticsApi } from "./network-diagnostics.ts"
+import { speechApi } from "./speech.ts"
 import { updatesApi } from "./updates.ts"
 import { localChannelsApi } from "./local-channels.ts"
 import { muxChannelsApi } from "./mux-channels.ts"
@@ -36,7 +37,7 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   return result.value
 }
 
-async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getNotifications" | "setNotifications" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
+async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getWorktreePreferences" | "setWorktreePreferences" | "getNotifications" | "setNotifications" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, value) as SettingsResult<T>
   if (!result.ok) throw new Error(result.error)
   return result.value
@@ -61,6 +62,7 @@ return {
   appearance: appearanceApi(),
   applications: applicationsApi(),
   networkDiagnostics: networkDiagnosticsApi(),
+  ...(process.platform === "darwin" || process.platform === "win32" ? { speech: speechApi() } : {}),
   updates: updatesApi(),
   ...(process.platform === "win32" ? { windowsDesktopService: windowsDesktopServiceApi() } : {}),
   ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
@@ -78,6 +80,8 @@ return {
     getAutoDownloadUpdates: () => invokeSettings("getAutoDownloadUpdates"),
     setAutoDownloadUpdates: (enabled) => invokeSettings("setAutoDownloadUpdates", enabled),
     getWorktreeRoot: () => invokeSettings("getWorktreeRoot"),
+    getWorktreePreferences: () => invokeSettings("getWorktreePreferences"),
+    setWorktreePreferences: (settings) => invokeSettings("setWorktreePreferences", settings),
     getRemoteAgentSettings: () => invokeSettings("getRemoteAgentSettings"),
     setRemoteAgentSettings: (settings) => invokeSettings("setRemoteAgentSettings", settings),
     setWorktreeRoot: (root) => invokeSettings("setWorktreeRoot", root),
@@ -112,6 +116,7 @@ return {
     remove: (providerId) => invokeDesktop("providerRemove", { providerId }),
     test: (provider) => invokeDesktop("providerTest", { provider }),
     probe: (provider) => invokeDesktop("providerProbe", { provider }),
+    discoverWorkspaces: (providerId) => invokeDesktop("providerDiscoverWorkspaces", { providerId }),
     install: (provider) => invokeDesktop("providerInstall", { provider }),
     login: (provider) => invokeDesktop("providerLogin", { provider }),
     onChanged: (listener) => {

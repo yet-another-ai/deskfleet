@@ -126,6 +126,32 @@ test("does not automatically connect a different display if the overview display
   expect(TestPeer.instances).toHaveLength(0)
 })
 
+test.each([[65537, 65539], [3, 4]])("display labels use list numbers while selection keeps capture IDs %s and %s", async (firstId, secondId) => {
+  mock.api.capabilities.mockResolvedValue({
+    displays: [firstId, secondId].map(id => ({ id, width: 1920, height: 1080, refreshRateHz: 60, codecs: ["h264"] })),
+    audio: false,
+  })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 1 · 1920 × 1080")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 1920 × 1080")
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  TestPeer.instances[0]!.changeState("connected")
+  await flushPromises()
+  expect(mock.api.start).toHaveBeenCalledWith(expect.objectContaining({ displayId: secondId }))
+})
+
+test("display options show the host's number and monitor name", async () => {
+  mock.api.capabilities.mockResolvedValue({ displays: [{
+    id: 65537, displayNumber: 2, name: "Dell U2723QE (DP-1)",
+    width: 3840, height: 2160, refreshRateHz: 60, codecs: ["h264"],
+  }], audio: false })
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 2 · Dell U2723QE (DP-1) · 3840 × 2160")
+})
+
 test("opens the selected display in an independent native window without a browser peer", async () => {
   await enableNativeViewer()
   const openNative = vi.fn(async () => {})
@@ -785,7 +811,8 @@ test("the floating toolbar moves by keyboard and drag, stays inside the stage, a
   vi.spyOn(handle.element, "setPointerCapture").mockImplementation(() => {})
 
   await handle.trigger("keydown", { key: "ArrowLeft" })
-  expect([toolbar.style.left, toolbar.style.top]).toEqual(["572px", "12px"])
+  expect([toolbar.style.left, toolbar.style.top]).toEqual(["588px", "12px"])
+  await expect.poll(() => toolbar.style.left, { timeout: 2000 }).toBe("572px")
 
   await handle.trigger("pointerdown", { button: 0, pointerId: 1, clientX: 600, clientY: 20 })
   await handle.trigger("pointermove", { pointerId: 1, clientX: -400, clientY: 520 })
@@ -907,4 +934,31 @@ test.each([false, undefined])("Windows hides secure attention when the service c
   await flushPromises()
   expect(wrapper.find("[data-desktop-secure-attention]").exists()).toBe(false)
   expect(peer.input.send).not.toHaveBeenCalled()
+})
+
+test("reverse mouse scrolling flips wheel deltas without reconnecting", async () => {
+  const { wrapper, peer } = await connectDesktop()
+  peer.input.ready()
+  await flushPromises()
+  const video = wrapper.get("video").element as HTMLVideoElement
+  Object.defineProperties(video, { videoWidth: { value: 1920 }, videoHeight: { value: 1080 } })
+  vi.spyOn(video, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 960, height: 540 } as DOMRect)
+  const wheel = (deltaX: number, deltaY: number) => {
+    const event = new WheelEvent("wheel", { deltaX, deltaY, cancelable: true })
+    Object.defineProperties(event, { clientX: { value: 480 }, clientY: { value: 270 } })
+    video.dispatchEvent(event)
+  }
+
+  wheel(12, -24)
+  expect(JSON.parse(peer.input.send.mock.calls.at(-1)![0])).toEqual({ type: "wheel", deltaX: 12, deltaY: -24 })
+
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  const checkbox = wrapper.get("[data-desktop-reverse-scroll]")
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+  await checkbox.trigger("click")
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  expect(TestPeer.instances).toHaveLength(1)
+
+  wheel(12, -24)
+  expect(JSON.parse(peer.input.send.mock.calls.at(-1)![0])).toEqual({ type: "wheel", deltaX: -12, deltaY: 24 })
 })

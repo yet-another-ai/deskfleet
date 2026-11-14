@@ -6,6 +6,7 @@ export interface AgentProviderTemplate {
   id: AgentProviderTemplateId
   name: string
   defaultBinaryPath: string
+  supportsUsage?: boolean
 }
 
 export interface AgentProviderSettings {
@@ -26,6 +27,16 @@ export interface AgentProviderConfig extends AgentProviderInput {
   id: string
 }
 
+export interface ProviderUpdate {
+  currentVersion: string
+  latestVersion: string
+  status: "available" | "updating" | "error"
+  error?: string
+}
+
+/** Pending updates keyed by CLI template; a machine has one official installation per template. */
+export type ProviderTemplateUpdates = Partial<Record<AgentProviderTemplateId, ProviderUpdate>>
+
 export interface ProviderSnapshot {
   /** Opaque settings revision; contains no launch settings or credential-derived data. */
   revision: string
@@ -42,6 +53,19 @@ export function shellEnvironmentEnabled(value: boolean | undefined, platform = p
 export interface ProviderTestResult {
   /** The ACP agent's reported title or name; bundled bridges report themselves. */
   agentName: string
+}
+
+export interface ProviderWorkspaceCandidate {
+  name: string
+  path: string
+  source: string
+}
+
+/** Existing project directories discovered on the configured provider's machine. */
+export interface ProviderWorkspaceDiscovery {
+  supported: boolean
+  candidates: ProviderWorkspaceCandidate[]
+  warnings: string[]
 }
 
 /** Executable discovery and read-only credential status, independent of ACP sessions. */
@@ -66,6 +90,7 @@ export interface ProviderMethods {
   providerRemove: { params: { providerId: string }; result: null }
   providerTest: { params: { provider: AgentProviderInput }; result: ProviderTestResult }
   providerProbe: { params: { provider: AgentProviderInput }; result: ProviderProbeResult }
+  providerDiscoverWorkspaces: { params: { providerId: string }; result: ProviderWorkspaceDiscovery }
   providerInstall: { params: { provider: AgentProviderInput }; result: TerminalSummary }
   providerLogin: { params: { provider: AgentProviderInput }; result: TerminalSummary }
 }
@@ -73,17 +98,21 @@ export interface ProviderMethods {
 export type ProviderEvent = { kind: "providersChanged" }
 
 export const AGENT_PROVIDER_TEMPLATES: readonly AgentProviderTemplate[] = [
-  { id: "codex", name: "Codex", defaultBinaryPath: "codex" },
-  { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude" },
+  { id: "codex", name: "Codex", defaultBinaryPath: "codex", supportsUsage: true },
+  { id: "claude-code", name: "Claude Code", defaultBinaryPath: "claude", supportsUsage: true },
   { id: "cursor", name: "Cursor", defaultBinaryPath: "agent" },
   { id: "grok", name: "Grok", defaultBinaryPath: "grok" },
   { id: "pi", name: "Pi Coding Agent", defaultBinaryPath: "pi" },
-  { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp" },
+  { id: "omp", name: "Oh My Pi", defaultBinaryPath: "omp", supportsUsage: true },
   { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
-  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy" },
+  { id: "antigravity", name: "Antigravity", defaultBinaryPath: "agy", supportsUsage: true },
   { id: "codebuddy", name: "CodeBuddy Code", defaultBinaryPath: "codebuddy" },
   { id: "acp", name: "ACP", defaultBinaryPath: "acp-agent" },
 ]
+
+export function supportsProviderUsage(template?: AgentProviderTemplateId): boolean {
+  return AGENT_PROVIDER_TEMPLATES.some(entry => entry.id === template && entry.supportsUsage)
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected provider settings")
@@ -138,7 +167,7 @@ export function providerInput(value: unknown): AgentProviderInput {
 }
 
 export function validateProviderParams(method: keyof ProviderMethods, params: Record<string, unknown>): void {
-  if (method === "providerUpdate" || method === "providerRemove") validateProviderId(params.providerId)
+  if (method === "providerUpdate" || method === "providerRemove" || method === "providerDiscoverWorkspaces") validateProviderId(params.providerId)
   if (["providerCreate", "providerTest", "providerProbe", "providerInstall", "providerLogin"].includes(method)) providerInput(params.provider)
   if (method === "providerUpdate") providerSettings(params.changes)
 }

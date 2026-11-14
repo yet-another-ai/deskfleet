@@ -25,6 +25,10 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
             web::get().to(pull_requests::lookup),
         )
         .route(
+            "/daemon/github/pull-request",
+            web::post().to(pull_requests::daemon_lookup),
+        )
+        .route(
             "/integrations/github/authorization/start",
             web::post().to(start),
         )

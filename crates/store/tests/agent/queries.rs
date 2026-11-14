@@ -52,6 +52,8 @@ async fn noncanonical_or_unrelated_delete_receipts_do_not_release_admission() {
             context: SessionContext::Directory,
             inherited_turn_count: 0,
             admission_generation: Some(operation_id.clone()),
+            yolo: false,
+            yolo_actor: None,
         })
         .await
         .unwrap();

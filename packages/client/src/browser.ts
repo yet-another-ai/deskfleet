@@ -3,7 +3,10 @@ import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import { resolveAppLocale } from "./i18n.ts"
 import { createBrowserFiles } from "./browser-files.ts"
 import { createBrowserNotificationSettings } from "./browser-notification-settings.ts"
+import { createBrowserSpeechApi } from "./browser-speech.ts"
 import { reportingCentral, type CentralErrorReporter } from "./reporting-central.ts"
+import type { CentralApi } from "./central.ts"
+import type { FilesApi } from "./files.ts"
 
 export interface BrowserClientOptions {
   mobile?: boolean
@@ -12,6 +15,7 @@ export interface BrowserClientOptions {
   persist?: (account: SavedAccount) => Promise<void>
   authorize?: (client: HttpCentralClient) => Promise<void>
   openExternal?: (url: string) => Promise<unknown>
+  createFiles?: (central: CentralApi) => FilesApi
 }
 
 /** The browser owns no bearer token; its login session stays in an HttpOnly cookie unless native bearer auth is configured. */
@@ -36,20 +40,22 @@ export async function browserClient(
     platform: "web", ...(options.mobile ? { mobile: true } : {}),
     locale: resolveAppLocale(navigator.languages), central,
     siteAdministration: options.mobile ? undefined : central,
-    files: createBrowserFiles(central),
+    files: (options.createFiles ?? createBrowserFiles)(central),
+    speech: options.mobile ? undefined : createBrowserSpeechApi(),
     settings: {
       get: async () => ({ enabled: false, status: "stopped" }), setLocalAgentEnabled: unavailable,
       getLaunchAtStartup: async () => ({ available: false, enabled: false }), setLaunchAtStartup: unavailable,
       getKeepAwake: async () => ({ enabled: false }), setKeepAwake: unavailable,
       getAutoDownloadUpdates: async () => ({ enabled: false, installSource: "web" }), setAutoDownloadUpdates: unavailable,
       getWorktreeRoot: unavailable, setWorktreeRoot: unavailable, chooseWorktreeRoot: unavailable,
+      getWorktreePreferences: unavailable, setWorktreePreferences: unavailable,
       getRemoteAgentSettings: unavailable, setRemoteAgentSettings: unavailable,
       ...createBrowserNotificationSettings(localStorage),
       onChanged: subscribe,
     },
     catalog: { list: unavailable, createWorkspace: unavailable, updateWorkspace: unavailable, deleteWorkspace: unavailable, onChanged: subscribe },
     filesystem: { listDirectories: unavailable },
-    providers: { list: unavailable, create: unavailable, update: unavailable, remove: unavailable, test: unavailable, probe: unavailable, install: unavailable, login: unavailable, onChanged: subscribe },
+    providers: { list: unavailable, create: unavailable, update: unavailable, remove: unavailable, test: unavailable, probe: unavailable, discoverWorkspaces: unavailable, install: unavailable, login: unavailable, onChanged: subscribe },
     agent: signaling,
     terminal: { ...signaling, list: unavailable, dial: unavailable, hangup: unavailable, onSessionEvent: subscribe },
     desktop: { ...signaling, target: unavailable, capabilities: unavailable, start: unavailable },

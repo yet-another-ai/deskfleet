@@ -50,12 +50,12 @@ const routes = [
 ].map(route => ({ route, pattern: new RegExp(`^${route.replace(/:[A-Za-z]+/gu, "[^/]+")}$`, "u") }))
 
 const rpcMethods = new Set([
-  "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
+  "_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
   "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore",
-  "_deskfleet/session/rename", "_deskfleet/session/delete", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/list",
+  "_deskfleet/session/rename", "_deskfleet/session/yolo", "_deskfleet/session/delete", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/list",
   "_deskfleet/session/subscribe", "_deskfleet/session/history", "_deskfleet/command/get", "_deskfleet/git/branches",
   "catalogList", "workspaceCreate", "workspaceUpdate", "workspaceDelete", "directoryList",
-  "providerList", "providerCreate", "providerUpdate", "providerRemove", "providerTest", "providerProbe", "providerInstall", "providerLogin",
+  "providerList", "providerCreate", "providerUpdate", "providerRemove", "providerTest", "providerProbe", "providerDiscoverWorkspaces", "providerInstall", "providerLogin", "providerUpgrade",
   "capabilities", "systemStatus", "terminalList", "terminalDial", "terminalHangup",
   "scheduleList", "scheduleCreate", "scheduleUpdate", "scheduleDelete", "scheduleRun",
   "mcpServerList", "mcpServerCreate", "mcpServerUpdate", "mcpServerRemove",

@@ -23,9 +23,10 @@ function fixture(platform = "Win32") {
   })
   const scope = effectScope()
   const enabled = ref(true)
+  const reverseScroll = ref(false)
   const send = vi.fn(() => true)
   const surface = shallowRef<HTMLVideoElement | null>(video)
-  scope.run(() => useDesktopInput(surface, enabled, send))
+  scope.run(() => useDesktopInput(surface, enabled, send, reverseScroll))
   disposers.push(() => { scope.stop(); video.remove() })
   let mouseButtons = 0
   function pointer(type: string, init: PointerEventInit = {}) {
@@ -43,7 +44,7 @@ function fixture(platform = "Win32") {
     video.dispatchEvent(event)
     return event
   }
-  return { video, surface, enabled, send, pointer, key, scope }
+  return { video, surface, enabled, reverseScroll, send, pointer, key, scope }
 }
 
 test("maps the visible image rather than letterbox bars, and clamps captured drags", () => {
@@ -146,6 +147,11 @@ test("normalizes line and page wheels into pixels and blocks local scrolling onl
   expect(f.send).toHaveBeenLastCalledWith({ type: "wheel", deltaX: 32, deltaY: -48 })
   f.video.dispatchEvent(wheel({ deltaY: 1, deltaMode: 2 }))
   expect(f.send).toHaveBeenLastCalledWith({ type: "wheel", deltaX: 0, deltaY: 600 })
+  f.reverseScroll.value = true
+  f.video.dispatchEvent(wheel({ deltaX: 2, deltaY: -3, deltaMode: 1 }))
+  expect(f.send).toHaveBeenLastCalledWith({ type: "wheel", deltaX: -32, deltaY: 48 })
+  f.video.dispatchEvent(wheel({ deltaY: 1, deltaMode: 2 }))
+  expect(f.send).toHaveBeenLastCalledWith({ type: "wheel", deltaX: 0, deltaY: -600 })
   const bar = wheel({ deltaY: 100, cancelable: true }, 30)
   f.video.dispatchEvent(bar)
   expect(bar.defaultPrevented).toBe(false)

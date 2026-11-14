@@ -130,10 +130,13 @@ abort bypasses that queue to interrupt publication and reject pending writes.
 
 The endpoint operations are `list`, `stat`, `resolve`, `openRead`, `read`,
 `closeRead`, `begin`, `mkdir`, `write`, `finish`, `commit`, and `abort`.
-`begin` accepts either a destination
-`directory` or a `sessionId` that targets the Session's daemon-managed
-`<machine directory>/session-attachments/<sessionId>/` directory for composer
-file attachments. An upload's paths are relative to its
+`begin` accepts exactly one destination target: a `directory`, a `sessionId`
+targeting `<machine directory>/session-attachments/<sessionId>/`, or a UUID
+`draftId` targeting `<machine directory>/session-attachments/.drafts/<draftId>/`
+for pre-Session composer file attachments (adopted into `session-attachments/<sessionId>/`
+on `_deskfleet/input/submit`). Composer attachment uploads reuse the same
+516-chunk write pipeline with acknowledged-byte progress reporting and
+`AbortSignal` cancellation (`abort`). An upload's paths are relative to its
 selected root: the empty path names a root file or directory, and slash-separated
 paths name descendants. Absolute paths, traversal segments, backslashes, and
 alternate-stream colons are rejected in upload paths. Reads and writes check
@@ -195,6 +198,59 @@ symbolic links and special files are unsupported. Recursive transfer scans use
 strict listings: an unsupported or inaccessible child fails the item instead of
 silently reporting an incomplete folder as transferred. Interactive browsing may
 omit unsupported or inaccessible entries.
+
+## Mobile local folders
+
+The Capacitor Android and iOS clients inject a native local file endpoint into
+the shared page/account transfer queue. They use the same remote WebRTC endpoint
+and file protocol as Web, while local disk access belongs to the Capacitor bridge.
+The local pane initially lists the application's Documents directory, without
+requiring a browser directory handle. **Choose folder** opens Android's Storage
+Access Framework tree picker or iOS's document folder picker. Cancelling the
+picker preserves the current directory.
+
+Android requires the picker result to grant both read and write access, without
+requesting broad storage permissions. A selected directory that cannot be read
+is not retained as a new root or home directory. iOS uses security-scoped access
+for external folders; folders already inside the app's Documents need no extra
+security scope.
+Each Android folder selection becomes pending before its UI-thread launch is
+queued and registers its own activity-result callback. Closing its endpoint clears
+the pending selection and unregisters that callback immediately. Queued launches
+skip cancelled requests; late results cannot resolve or block a replacement picker.
+
+Displayed paths are labels beneath the app's Documents root or explicitly chosen
+native roots. They cannot address arbitrary device paths. Each endpoint has a
+unique native session ID and owns its selected roots, open reads and temporary
+uploads. Account changes and page disposal close that session, cancel its work,
+remove private staging and discard its directory capabilities. iOS balances
+security-scoped access; Android uses temporary, non-persisted URI grants whose
+OS lifetime remains Android-owned. Selecting a folder without starting a transfer
+still establishes ownership that must be released.
+
+The Documents directory and saved files belong to the app installation and remain
+available across account changes; resetting an endpoint does not erase local
+files or provide per-account filesystem isolation. On iOS, Documents is exposed
+through Files and file sharing. Credentials and transfer staging remain outside
+Documents. The iOS bridge bundles a FileTimestamp privacy manifest declaring app-container
+metadata access (`C617.1`) and metadata access for user-selected folders (`3B52.1`).
+
+Native reads and writes pass bounded chunks through the bridge, encoded as base64
+only at that boundary. Incoming files are staged in the application's cache and
+must finish before publication. Android copies through native streams because
+SAF providers do not expose a common atomic publication operation. An interrupted
+copy can leave files already saved in the selected destination, including a
+partially replaced file. Cleanup keeps these public files, removes private staging
+and reports the partial copy. iOS coordinates provider access, copies into a
+private sibling, then moves or replaces the destination. Its cleanup removes the
+temporary sibling and preserves the public destination if publication fails.
+Existing directories cannot be replaced; keep both is available. Mobile local
+transfers do not use the browser's directory picker or OPFS.
+
+Android endpoint coverage runs with the bridge's Gradle unit tests. On macOS,
+`mise exec -- node packages/capacitor-bridge/ios/Tests/run.ts` tests the production
+Foundation endpoint independently of the viewer XCFramework. The native folder
+pickers and external document providers still require device validation.
 
 ## Browser local folders
 

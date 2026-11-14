@@ -28,9 +28,12 @@ resolver = "3"
 # Keep PTY child FD cleanup compatible with Chromium's close() ownership checks.
 # Remove after adopting an upstream release with this fix; see the vendored README.
 portable-pty = { path = "vendor/portable-pty" }
+# Keep aarch64-apple-ios builds working with libc >= 0.2.190 until nix publishes
+# a release containing https://github.com/nix-rust/nix/pull/2821 (issue #2830).
+nix = { git = "https://github.com/nix-rust/nix", rev = "f9ba3ed0698255d93240b07ecbf39ecb05a8a5cd" }
 
 [workspace.package]
-version = "0.13.1"
+version = "0.16.0"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -94,6 +97,7 @@ objc2-io-surface = "0.3"
 objc2-screen-capture-kit = "0.3"
 objc2-video-toolbox = "0.3"
 windows = { version = "0.62", features = [
+    "Win32_Devices_Display",
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",

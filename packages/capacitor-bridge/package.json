@@ -1,10 +1,10 @@
 {
   "name": "@deskfleet/capacitor-bridge",
-  "version": "0.13.1",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "capacitor:sync:before": "node ../../scripts/build-android-viewer.ts"
+    "capacitor:sync:before": "node ../../scripts/build-android-viewer.ts && node ../../scripts/build-ios-viewer.ts"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "@capacitor/core": "8.6.0",
+    "@capacitor/core": "8.6.2",
     "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/client": "workspace:*"
   },

@@ -42,9 +42,13 @@ pub fn linux_desktop_backend() -> Option<String> {
 }
 
 /// Request Linux desktop access; only Wayland opens a Portal authorization dialog.
+/// Reselecting sources replaces the saved grant with a fresh monitor selection.
 #[napi]
-pub async fn request_linux_desktop_access(directory: String) -> Result<LinuxDesktopAccess> {
-    desktop_access::request_linux(directory)
+pub async fn request_linux_desktop_access(
+    directory: String,
+    reselect_sources: Option<bool>,
+) -> Result<LinuxDesktopAccess> {
+    desktop_access::request_linux(directory, reselect_sources.unwrap_or(false))
         .await
         .map(Into::into)
         .map_err(native_error)

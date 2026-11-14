@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { ChevronDown, ExternalLink, LoaderCircle, RefreshCw } from "@lucide/vue"
 import { useAsyncState, useLocalStorage } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuTrigger } from "reka-ui"
@@ -106,7 +107,7 @@ defineExpose({ launchError })
         <template v-if="!compact">{{ t("applications.openWith") }}<ChevronDown :size="13" aria-hidden="true" /></template>
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent :aria-label="label" align="end" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-w-80 min-w-56" loop>
+        <DropdownMenuContent :as="SpringSurface" :aria-label="label" align="end" :side-offset="4" :collision-padding="8" class="ui-menu z-50 max-w-80 min-w-56" loop>
           <p v-if="scanning" role="status" class="m-0 flex items-center gap-2 px-2.5 py-2 text-sm text-ui-text-muted"><LoaderCircle :size="14" class="animate-spin" aria-hidden="true" />{{ t("applications.scanning") }}</p>
           <p v-else-if="scanError" role="alert" class="m-0 break-words px-2.5 py-2 text-sm text-ui-danger">{{ t("applications.scanFailed", { message: message(scanError) }) }}</p>
           <p v-else-if="visibleApplications.length === 0" role="status" class="m-0 px-2.5 py-2 text-sm text-ui-text-muted">{{ t("applications.empty") }}</p>

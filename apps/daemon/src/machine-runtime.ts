@@ -18,7 +18,9 @@ import type { ControlPeers } from "./control-server.ts"
 import { loadMachineRegistrations, newMachineDirectory, registrationKey, saveMachineRegistrations, type MachineRegistration } from "./machine-directory.ts"
 import { MachineOperations } from "./machine-operations.ts"
 import { ProviderSetup } from "./provider-setup.ts"
+import { ProviderUpdates } from "./provider-updates.ts"
 import { TerminalSessions } from "./terminals.ts"
+import { WorktreeCleanup } from "./worktree-cleanup.ts"
 
 interface MachineOptions {
   peers: ControlPeers
@@ -29,6 +31,7 @@ interface MachineOptions {
   terminals?: TerminalSessions
   allowLocalControlForTests?: boolean
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
+  peerUpdates?: (current: ProviderUpdates) => Iterable<ProviderUpdates>
 }
 
 async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
@@ -41,17 +44,20 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
   let schedules: ScheduledTasks | undefined
+  let providerUpdates: ProviderUpdates | undefined
   let mcp: AgentMcp | undefined
   let remoteMcp: RemoteMcp | undefined
+  let cleanup: WorktreeCleanup | undefined
   let stopping: Promise<void> | undefined
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    const cleanupResults = await Promise.allSettled([cleanup?.close()])
     remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
-    const results = await Promise.allSettled([schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
+    const results = await Promise.allSettled([providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
     const terminalResults = await Promise.allSettled([terminals.close()])
-    const failures = [...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    const failures = [...cleanupResults, ...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (failures.length) throw new AggregateError(failures, "Failed to stop machine resources")
   })()
   const close = () => closing ??= (async () => {
@@ -88,12 +94,20 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     void agents.resumeArchiving().catch(error => console.error("Could not resume Session archiving", error))
     schedules = new ScheduledTasks(directory, { agents, catalog, providers, authorize })
     await schedules.init()
-    operations = new MachineOperations({ agents, catalog, providers, terminals, setup, schedules, mcpServers, capabilities: options.capabilities })
+    providerUpdates = new ProviderUpdates(providers, {
+      probe: { directory },
+      stopProviders: providerIds => agents!.stopProviders(providerIds),
+      peers: () => options.peerUpdates?.(providerUpdates!) ?? [],
+    })
+    operations = new MachineOperations({ agents, catalog, providers, terminals, setup, providerUpdates, schedules, mcpServers, capabilities: options.capabilities })
     remoteMcp = new RemoteMcp(hostDirectory, operations)
     central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp)
     await central.init()
+    cleanup = new WorktreeCleanup({ agents, catalog, pullRequest: (actor, query) => central!.githubPullRequest(actor, query) })
+    cleanup.start()
     schedules.start()
-    return { directory, catalog, providers, mcpServers, setup, agents, terminals, central, schedules, mcp, operations, stop, close }
+    providerUpdates.start()
+    return { directory, catalog, providers, mcpServers, setup, providerUpdates, agents, terminals, central, schedules, mcp, operations, stop, close }
   } catch (error) {
     try { await close() }
     catch (cleanup) { throw new AggregateError([error, cleanup], "Machine startup and cleanup failed", { cause: error }) }
@@ -115,7 +129,13 @@ export class MachineRuntime {
   #stopping: Promise<void> | undefined
   #closing: Promise<void> | undefined
 
-  constructor(directory: string, options: MachineOptions) { this.#directory = directory; this.#options = options }
+  constructor(directory: string, options: MachineOptions) {
+    this.#directory = directory
+    this.#options = {
+      ...options,
+      peerUpdates: current => this.#all().map(machine => machine.providerUpdates).filter(updates => updates !== current),
+    }
+  }
 
   /** Direct resource access for in-process fixtures; authenticated routing always names a Team. */
   get current(): Machine {

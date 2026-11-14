@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import { vSpringHover } from "../../directives/spring.ts"
 import UiButton from "../common/UiButton.vue"
-import { ChevronRight, Laptop, Server } from "@lucide/vue"
+import { ChevronRight, ExternalLink, Laptop, Server, Smartphone } from "@lucide/vue"
 import { whenever } from "@vueuse/core"
 import { DialogDescription, DialogTitle } from "reka-ui"
 import { computed, nextTick, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { androidDaemonGuideUrl } from "../../desktop-download.ts"
 import CopyField from "../common/CopyField.vue"
 import UiDialog from "../common/UiDialog.vue"
 import { parseDaemonStatus } from "./daemon-status.ts"
 
 const emit = defineEmits<{ close: [] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const guideUrl = computed(() => androidDaemonGuideUrl(locale.value))
 const id = useId()
 const session = useAccountSession()!
 const statusInput = useTemplateRef<HTMLTextAreaElement>("statusInput")
@@ -96,7 +99,7 @@ function focusInitial(event: Event): void {
     <DialogDescription class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
 
     <div v-if="step === 'choose'" class="flex flex-col gap-2">
-      <button type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
+      <button v-spring-hover="-1" type="button" class="ui-option-card" :disabled="pending || !session.canEnrollLocal.value" data-add-machine="local" @click="chooseLocal">
         <Laptop :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">
           <span class="block text-sm">{{ t("account.thisComputer") }}<span v-if="session.localStatus.value" class="text-ui-text-muted"> · {{ session.localStatus.value.machineName }}</span></span>
@@ -106,7 +109,7 @@ function focusInitial(event: Event): void {
         </span>
         <ChevronRight v-if="session.canEnrollLocal.value" :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
-      <button type="button" class="ui-option-card" :disabled="pending" data-add-machine="headless" @click="chooseHeadless">
+      <button v-spring-hover="-1" type="button" class="ui-option-card" :disabled="pending" data-add-machine="headless" @click="chooseHeadless">
         <Server :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
         <span class="min-w-0 flex-1">
           <span class="block text-sm">{{ t("addMachine.other") }}</span>
@@ -114,6 +117,20 @@ function focusInitial(event: Event): void {
         </span>
         <ChevronRight :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
       </button>
+      <a v-spring-hover="-1"
+        :href="guideUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-android-daemon-guide
+        class="ui-option-card text-ui-text no-underline hover:bg-ui-control-hover hover:shadow-ui-raised active:scale-[0.99]"
+      >
+        <Smartphone :size="20" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm">{{ t("addMachine.android") }}</span>
+          <span class="mt-0.5 block text-[13px] text-ui-text-muted">{{ t("addMachine.androidDescription") }}</span>
+        </span>
+        <ExternalLink :size="16" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
+      </a>
       <p v-if="error" role="alert" class="m-0 mt-2 text-sm text-ui-danger">{{ error }}</p>
       <div class="ui-dialog-actions mt-4"><UiButton type="button" :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton></div>
     </div>
@@ -136,7 +153,20 @@ function focusInitial(event: Event): void {
       <ol class="m-0 flex list-none flex-col gap-5 p-0">
         <li class="flex gap-3">
           <span class="mt-px flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-ui-accent/12 text-xs font-semibold text-ui-accent" aria-hidden="true">1</span>
-          <div class="min-w-0 flex-1"><CopyField :label="t('addMachine.statusStep')" :value="prepareCommand" multiline style="height: 4.5rem" /></div>
+          <div class="min-w-0 flex-1">
+            <CopyField :label="t('addMachine.statusStep')" :value="prepareCommand" multiline style="height: 4.5rem" />
+            <a
+              :href="guideUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-android-daemon-guide
+              class="ui-button mt-2 h-7 w-fit px-2.5 text-xs no-underline hover:bg-ui-control-hover active:bg-ui-active"
+            >
+              <Smartphone :size="13" :stroke-width="1.75" class="shrink-0 text-ui-accent" aria-hidden="true" />
+              <span>{{ t("addMachine.androidGuide") }}</span>
+              <ExternalLink :size="12" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
+            </a>
+          </div>
         </li>
         <li class="flex gap-3">
           <span class="mt-px flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full bg-ui-accent/12 text-xs font-semibold text-ui-accent" aria-hidden="true">2</span>

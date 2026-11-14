@@ -1,6 +1,6 @@
 {
   "name": "@deskfleet/daemon",
-  "version": "0.13.1",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -13,14 +13,15 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.101.0",
+    "@agentclientprotocol/claude-agent-acp": "0.104.1",
     "@agentclientprotocol/codex-acp": "2.3.0",
-    "@agentclientprotocol/sdk": "2.4.0",
+    "@agentclientprotocol/sdk": "2.5.0",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
     "pi-acp": "0.0.34",
+    "smol-toml": "1.9.1",
     "zod": "4.6.7"
   }
 }

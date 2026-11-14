@@ -325,6 +325,9 @@ to check module initialization order as well as file sizes.
 | `mise run desktop:build` | Build the Electron main, preload, and renderer bundles |
 | `mise run web:dev` / `web:build` | Run or build the independent Vue Web app |
 | `mise run web:typecheck` | Check the Web app and shared components |
+| `mise run ios:sync` | Build the Web app, stage the Rust iOS viewer XCFramework, and sync Capacitor iOS |
+| `mise run ios:test` | Sync Capacitor iOS and verify the iOS Simulator build |
+| `mise run ios:build` | Build and archive the release iOS application through Capacitor |
 | `mise run android:sync` | Build the Web app, stage the Rust Android viewer library, and sync Capacitor Android |
 | `mise run android:test` | Sync Capacitor Android and run Gradle unit tests |
 | `mise run android:build` | Build and sign the release Android App Bundle (Google Play) and APK (GitHub Releases) through Capacitor |

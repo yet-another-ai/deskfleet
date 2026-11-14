@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { desktopInstallMethods, fetchLatestRelease, findDownload, findLinuxPackage, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
+import { desktopInstallMethods, fetchLatestRelease, findAndroidDownload, findDownload, findLinuxPackage, findNixDownload, releasesPage, type LatestRelease } from "../docs/.vitepress/theme/components/home/home-downloads.ts"
 
 const assetNames = [
   "deskfleet-0.2.0-mac-arm64.dmg", "deskfleet-0.2.0-mac-arm64.zip", "deskfleet-0.2.0-win-x64.exe",
@@ -33,6 +33,14 @@ test("download selection distinguishes installers, archives, and Linux architect
     assert.equal(findLinuxPackage(release, "deb", arch)?.name, `deskfleet-0.2.0-linux-${debArchitecture}.deb`)
     assert.equal(findLinuxPackage(release, "rpm", arch)?.name, `deskfleet-0.2.0-linux-${rpmArchitecture}.rpm`)
   }
+})
+
+test("Android downloads select the current release APK and leave missing assets unavailable", () => {
+  assert.equal(findAndroidDownload(release)?.url,
+    "https://github.com/yet-another-ai/deskfleet/releases/download/v0.2.0/deskfleet-0.2.0-android-arm64.apk")
+  assert.equal(findAndroidDownload(undefined), undefined)
+  assert.equal(findAndroidDownload({ ...release, files: release.files.filter(file => !file.name.endsWith(".apk")) }), undefined)
+  assert.equal(findAndroidDownload({ ...release, version: "0.3.0" }), undefined)
 })
 
 test("release verification requires installers, packaging archives, and update metadata for stable and prerelease builds", context => {

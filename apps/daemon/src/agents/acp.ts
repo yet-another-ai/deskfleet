@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 import type { AgentAuthStatus } from "@deskfleet/client/agent-live"
+import type { AgentQuotaItem } from "../agent-configuration-protocol.ts"
 import { agentAuthStatus, AUTH_STATUS_UPDATE_METHOD } from "./auth-status.ts"
 import { CursorNotifications, CURSOR_NOTIFICATION_METHODS } from "./cursor-notifications.ts"
 import { answerCursorCreatePlan, VENDOR_PLAN_METHODS } from "./plans.ts"
@@ -27,6 +28,7 @@ export interface AgentConfig {
 export interface AgentProvider {
   readonly id: string
   connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection>
+  readUsage?(config: AgentConfig, signal?: AbortSignal): Promise<AgentQuotaItem[]>
 }
 
 export interface AgentProcess {
@@ -317,7 +319,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
   try {
     const initialization = await connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.13.1" },
+      clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.16.0" },
       clientCapabilities: {
         ...options.clientCapabilities,
         session: {

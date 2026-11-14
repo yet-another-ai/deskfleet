@@ -1,4 +1,41 @@
 {
+  "worktreeSettings": {
+    "title": "工作树",
+    "scope": "设置本机所有团队会话的分支命名和自动清理规则。",
+    "desktopOnly": "请在托管会话的计算机上打开桌面应用的工作树设置。",
+    "branches": "分支",
+    "branchNaming": "工作树分支命名",
+    "branchDescription": "选择如何根据第一条消息为新工作树分支命名。",
+    "semantic": "语义前缀",
+    "semanticDescription": "使用描述工作内容的前缀，例如 feat/add-search、fix/login-timeout 或 refactor/auth。",
+    "sessionBranch": "会话标识符",
+    "sessionDescription": "使用基于会话标识符的固定分支名称。",
+    "resetNaming": "重置分支命名",
+    "cleanup": "清理",
+    "archived": "清理已归档会话的工作树",
+    "archivedDescription": "会话归档时清理其工作树，同时保留会话历史。下方的本地改动设置决定哪些工作树会被保留。",
+    "merged": "清理已合并的工作树",
+    "mergedDescription": "当拉取请求已合并，且提交已包含在默认分支中时，清理工作树。",
+    "inactive": "清理不活跃的工作树",
+    "inactiveDescription": "会话连续不活跃达到指定天数后清理工作树。保留分支和会话历史。",
+    "advanced": "高级",
+    "settled": "清理已完成的工作树",
+    "settledDescription": "最近一轮任务完成且没有待处理任务或输入后，经过指定天数清理工作树。设为 0 天将在下一次清理时移除。保留分支和会话历史。",
+    "unchanged": "清理无新增提交的工作树",
+    "unchangedDescription": "会话首轮任务完成后，清理相对于默认分支没有额外提交的工作树。",
+    "keepLocalChanges": "保留有本地改动的工作树",
+    "uncommitted": "未提交的改动",
+    "allFiles": "所有本地文件",
+    "noProtection": "不保留",
+    "protectionDescription": {
+      "uncommitted": "保留修改和未跟踪的文件。忽略的文件（包括 .env）会被删除。",
+      "all": "保留修改、未跟踪的文件及忽略的文件（包括 .env）。",
+      "none": "删除本地修改、未跟踪的文件及忽略的文件（包括 .env）。只能恢复已提交的内容。"
+    },
+    "days": "天",
+    "cleanupNote": "本地 Agent 运行时执行清理，跳过正在使用的会话。仅移除自动生成的工作树，工作区目录保持原样。再次打开保留的会话时，可以恢复已提交的文件。",
+    "storage": "存储"
+  },
   "mobileViews": {
     "openTerminal": "打开后连接",
     "overview": "视图总览",
@@ -152,6 +189,22 @@
     "downloading": "正在下载 {percent}%",
     "installing": "正在重启…",
     "failed": "更新失败，请重试，或退出并重新打开 DeskFleet。"
+  },
+  "providerUpdates": {
+    "available": "{count} 种 Agent 工具有更新",
+    "completed": "Agent 工具已更新",
+    "review": "查看更新",
+    "dismiss": "关闭这些更新提示",
+    "failed": "{count} 项更新失败",
+    "updating": "正在更新…",
+    "updated": "已更新",
+    "machineFailed": "{name} · {machine}：{error}",
+    "confirmTitle": "更新 Agent 工具",
+    "confirmDescription": "选择需要更新的工具和机器。这些机器上使用所选工具的 Agent 进程将停止，正在进行的任务会被中断。",
+    "confirmAction": "安装 {count} 项更新",
+    "current": "当前 {version}",
+    "offline": "离线",
+    "selectMachine": "在 {machine} 上更新 {name}"
   },
   "aiUsage": {
     "title": "AI 用量",
@@ -441,6 +494,7 @@
   "nav": {
     "label": "导航",
     "conversations": "对话",
+    "remoteDesktop": "远程桌面",
     "newSession": "新会话",
     "settings": "设置",
     "team": "切换团队"
@@ -664,6 +718,9 @@
     "pastedText": "粘贴的文本",
     "pastedTextLines": "{n} 行",
     "removeAttachment": "移除 {name}",
+    "uploadingAttachment": "正在上传 {name}（{percent}%）",
+    "uploadFailed": "上传失败",
+    "retryUpload": "重试上传 {name}",
     "dropFiles": "拖放文件以添加附件",
     "completions": {
       "label": "提示词补全",
@@ -690,6 +747,10 @@
       "worktree": "从每个目录已提交的 HEAD 创建隔离的 Git 检出",
       "directory": "直接在工作区目录中工作，包括未提交的更改"
     },
+    "workingDirectoryHome": "主目录",
+    "workingDirectoryHomeHint": "机器主目录",
+    "workingDirectoryChoice": "工作目录：{path}",
+    "workingDirectoryClear": "使用默认工作目录",
     "machine": "机器",
     "machineChoice": "机器：{machine}",
     "workspace": "工作区",
@@ -727,6 +788,9 @@
     "unavailable": "不可用",
     "loadingConfiguration": "正在从 Agent 读取配置…",
     "reloadConfiguration": "从 Agent 重新加载",
+    "viewUsage": "查看用量",
+    "usageEmpty": "暂无可用额度信息。",
+    "usageResetsAt": "{time} 重置",
     "yolo": "YOLO",
     "yoloHint": "在此会话中自动批准 Agent 的权限请求",
     "yoloConfirmation": {
@@ -794,7 +858,23 @@
     "progressRunning": "运行中 · {value}%",
     "progressError": "失败 · {value}%",
     "progressIndeterminate": "运行中…",
-    "progressPaused": "已暂停 · {value}%"
+    "progressPaused": "已暂停 · {value}%",
+    "keypad": "终端辅助键盘",
+    "keypadToggle": "切换终端辅助键盘",
+    "keypadExpand": "展开更多按键",
+    "keypadCollapse": "收起更多按键",
+    "keyEsc": "Esc",
+    "keyTab": "Tab",
+    "keyCtrl": "Ctrl 修饰键",
+    "keyAlt": "Alt 修饰键",
+    "keyUp": "上方向键",
+    "keyDown": "下方向键",
+    "keyLeft": "左方向键",
+    "keyRight": "右方向键",
+    "keyHome": "行首 (Home)",
+    "keyEnd": "行尾 (End)",
+    "keyPgUp": "上一页 (PgUp)",
+    "keyPgDn": "下一页 (PgDn)"
   },
   "remoteControl": {
     "terminal": "终端",
@@ -848,7 +928,7 @@
     "noDisplays": "未找到显示器。",
     "displayCount": "{count} 个显示器",
     "display": "显示器 {id}",
-    "openDisplay": "打开 {machine} 的显示器 {display}",
+    "openDisplay": "打开 {machine} 的{display}",
     "connecting": "正在连接预览…"
   },
   "desktop": {
@@ -867,10 +947,12 @@
     "settingsFailed": "无法应用桌面设置",
     "moveControls": "移动控制栏",
     "display": "显示器",
-    "displayOption": "显示器 {id} · {width} × {height}",
+    "displayName": "显示器 {number}",
+    "displayOption": "{display} · {width} × {height}",
     "codecStatus": "视频编码：{codec}",
     "audio": "系统音频",
     "control": "鼠标和键盘控制",
+    "reverseScroll": "反转鼠标滚动",
     "pauseControl": "暂停控制",
     "resumeControl": "恢复控制",
     "sendSecureAttention": "发送 Ctrl+Alt+Del",
@@ -1139,6 +1221,7 @@
     "operationPending": "需要确认该操作的结果。",
     "checkResult": "检查结果",
     "empty": "发送消息开始工作。",
+    "scrollToBottom": "滚动到底部",
     "toolStatus": {
       "pending": "等待中",
       "in_progress": "运行中",
@@ -1202,13 +1285,30 @@
     "restore": "恢复会话",
     "retryArchive": "重试归档",
     "archiveQuestion": "归档此会话？正在运行的 Agent 和终端将停止，对话记录、工作目录及其中的文件将保留。",
-    "archiveWorktreeQuestion": "归档此会话？正在运行的 Agent 和终端将停止。生成的 worktree 将被删除，包括未提交的修改和未跟踪的文件。对话记录和已提交的修改将保留。",
+    "archiveWorktreeQuestion": "归档此会话？正在运行的 Agent 和终端将停止。工作树清理遵循本机设置，包括本地改动保护规则。对话记录和已提交的修改将保留。",
     "restoreQuestion": "恢复此会话？发送新消息之前不会重新开始执行。",
-    "restoreWorktreeQuestion": "恢复此会话？将从归档前最后一次提交重建 worktree。已删除的未提交修改和未跟踪文件无法恢复。发送新消息之前不会重新开始执行。",
+    "restoreWorktreeQuestion": "恢复此会话？保留的工作树将继续使用。已清理的工作树将从最后一次提交重建，已删除的本地文件无法恢复。发送新消息之前不会重新开始执行。",
     "archived": "此会话已归档。恢复后可继续工作。",
     "archiving": "正在归档会话。Agent 和终端停止、生成的 worktree 清理完成之前无法继续执行。"
   },
   "providers": {
+    "workspaceImport": {
+      "action": "导入工作区…",
+      "title": "导入工作区",
+      "description": "选择 {provider} 在 {machine} 上记录的项目目录。每个选中的目录将使用现有文件创建一个工作区。",
+      "loading": "正在查找项目目录…",
+      "empty": "未找到现有项目目录。你可以手动添加工作区。",
+      "unsupported": "此提供方暂不支持发现工作区。",
+      "select": "导入 {name}",
+      "source": "来源：{source}",
+      "existing": "已在工作区中",
+      "importing": "正在导入…",
+      "imported": "已导入",
+      "importedCount": "已导入 {n} 个工作区",
+      "done": "完成",
+      "skip": "暂时跳过",
+      "importSelected": "导入 {n} 个工作区"
+    },
     "choose": "选择 Provider",
     "manage": "管理 Providers",
     "noneConfigured": "请先在设置中添加 Provider，再创建会话。",
@@ -1413,6 +1513,9 @@
     "connecting": "正在连接…",
     "other": "其他机器",
     "otherDescription": "运行 deskfleet-daemon 的服务器或其他电脑。",
+    "android": "Android（Termux）",
+    "androidDescription": "查看官方指南在 Android 上运行 deskfleet-daemon，随后通过“其他机器”完成注册。",
+    "androidGuide": "Android daemon 设置指南",
     "statusStep": "在该机器上启动 daemon 并运行",
     "pasteStep": "粘贴命令输出",
     "pasteHint": "粘贴此团队的注册信息。其中包含机器私有凭据，请仅提供给此服务器。",
@@ -1526,10 +1629,15 @@
       "shared": "屏幕共享与鼠标键盘控制使用同一次授权。批准后，依次完成这两个步骤即可。",
       "requesting": "正在等待桌面授权…",
       "retry": "重试访问",
+      "changeScreensLater": "如果稍后发现缺少屏幕，可以前往「设置 → 权限 → 屏幕共享」重新授权。",
       "screenCapture": {
         "title": "屏幕共享",
         "description": "允许 DeskFleet 在远程桌面会话中共享这台电脑的屏幕。",
-        "instructions": "在桌面环境的授权对话框中选择要共享的屏幕，并允许访问。",
+        "instructions": "在系统对话框中允许屏幕共享。如果出现屏幕选择，请选中所有需要远程访问的显示器。",
+        "selection": "远程端只会显示已授权的屏幕。重新连接时，DeskFleet 会继续使用这次授权。",
+        "choose": "授权屏幕共享",
+        "reselect": "重新授权",
+        "reselectHint": "重新授权会停止当前的远程画面和控制，并重新请求桌面授权。如果出现屏幕选择，请同时选中缺少的显示器。",
         "skip": "授权之前，无法使用远程屏幕共享。你可以先跳过此步骤，稍后再开启权限。"
       },
       "accessibility": {
@@ -1848,5 +1956,23 @@
     "loading": "正在搜索…",
     "more": "加载更多",
     "untitled": "未命名对话"
+  },
+  "dictation": {
+    "inputSettings": "输入",
+    "setting": "语音输入",
+    "settingDescription": "设备支持语音识别时显示麦克风按钮，识别语言跟随当前界面语言。",
+    "start": "开始语音输入",
+    "stop": "完成语音输入",
+    "cancel": "取消语音输入",
+    "starting": "正在启动麦克风…",
+    "listening": "正在聆听…",
+    "stopping": "正在完成识别…",
+    "errors": {
+      "permission-denied": "请允许使用麦克风和语音识别，以启用语音输入。",
+      "unavailable": "此设备暂不支持该语言的语音识别。",
+      "no-speech": "未检测到语音，请重试。",
+      "network": "无法连接语音识别服务，请重试。",
+      "failed": "语音输入失败，请重试。"
+    }
   }
 }

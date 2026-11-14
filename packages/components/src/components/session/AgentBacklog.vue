@@ -7,10 +7,10 @@ import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import { commandDraft } from "../../services/composer-mentions.ts"
 import AgentActor from "./AgentActor.vue"
-const props = defineProps<{ inputs: AgentInput[]; canSteer: boolean; disabled: boolean }>()
+const props = defineProps<{ inputs: AgentInput[]; canSteer: boolean; disabled: boolean; excludeInputId?: string; excludeInputIds?: string[] }>()
 const emit = defineEmits<{ steer: [id: string]; withdraw: [id: string]; retry: [id: string] }>()
 const { t } = useI18n()
-const candidates = computed(() => props.inputs.filter(input => ["pending", "failed"].includes(input.state)))
+const candidates = computed(() => props.inputs.filter(input => ["pending", "failed"].includes(input.state) && input.id !== props.excludeInputId && !props.excludeInputIds?.includes(input.id)))
 const preview = (input: AgentInput) => input.content.map(block => block.type === "text" ? block.text : t("agent.contentType", { type: block.type })).join(" ")
 const command = (input: AgentInput) => commandDraft(input.content.find(block => block.type === "text")?.text ?? "")
 </script>

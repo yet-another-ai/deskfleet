@@ -3,7 +3,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import { LoaderCircle, SquareTerminal } from "@lucide/vue"
+import { ArrowDown, LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
 import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
 import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
@@ -40,12 +40,14 @@ import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
 import { useSessionFaces } from "../composables/useSessionFaces.ts"
 import UserAvatarStack from "../components/common/UserAvatarStack.vue"
-import { liveTurnStates } from "../services/agent-conversation.ts"
+import { liveTurnStates, promotedPendingInputs } from "../services/agent-conversation.ts"
 import { useConversationProjection } from "../composables/useConversationProjection.ts"
 import { createAgentUsageSelector } from "../services/agent-usage.ts"
+import { hasIncompleteAttachmentUploads } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
+import { scrollSpring, type SpringScroll } from "../services/spring-scroll.ts"
 
 const client = usePlatformClient()
 
@@ -128,6 +130,8 @@ onScopeDispose(clearReconnect)
 const canResume = computed(() => !snapshot.value?.session.providerSessionId || !!snapshot.value.session.capabilities?.resume)
 const canSteer = computed(() => !!snapshot.value?.session.capabilities?.steering && activeTurn.value?.state === "running")
 const runActive = computed(() => !!run.value && ["starting", "running"].includes(run.value.state))
+const canStop = computed(() => active.value && (runActive.value || snapshot.value?.session.lifecycle === "provisioning"))
+const promotedInputIds = computed(() => promotedPendingInputs(snapshot.value, view.value?.events).map(input => input.id))
 const canFork = computed(() => active.value && snapshot.value?.session.lifecycle === "ready" && !!snapshot.value.session.capabilities?.fork && !activeTurn.value
   && !snapshot.value.permissions.some(permission => permission.state === "pending")
   && !snapshot.value.elicitations.some(elicitation => elicitation.state === "pending"))
@@ -152,7 +156,7 @@ const terminalWorktree = computed(() => (location.value?.machine.online || termi
 const applicationTarget = computed(() => client.platform !== "web" && location.value?.machine.local && client.applications && snapshot.value?.session.lifecycle === "ready" && (active.value || snapshot.value.session.context === "directory") && location.value.worktree && location.value.worktree.directories.length > 0
   ? { api: client.applications, machineId: location.value.machine.id, worktreeId: location.value.worktree.id } : undefined)
 const openWithMenu = ref<InstanceType<typeof OpenWithMenu> | null>(null)
-const empty = computed(() => !view.value?.loading && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input"))
+const empty = computed(() => !view.value?.loading && !agents.optimisticInputs[props.sessionId] && !snapshot.value?.inputs.length && !snapshot.value?.elicitations.length && !view.value?.events.some(event => event.kind === "acp" || event.kind === "input") && snapshot.value?.session.lifecycle !== "provisioning" && run.value?.state !== "starting")
 const busy = ref(false)
 const forkOpen = ref(false)
 const renameOpen = ref(false)
@@ -164,24 +168,51 @@ const overlay = useTemplateRef<HTMLElement>("overlay")
 const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("conversation")
 const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
 const followBottom = ref(true)
+const showScrollToBottom = computed(() => !!snapshot.value && !view.value?.loading && !followBottom.value)
 const activeEntry = ref<string>()
 let locatedEntry: string | undefined
 let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
-onScopeDispose(() => { clearTimeout(entryHighlightTimer) })
-
 let restoringScroll = false
+let followingSpring: SpringScroll | undefined
+onScopeDispose(() => {
+  clearTimeout(entryHighlightTimer)
+  followingSpring?.cancel()
+  followingSpring = undefined
+})
 function saveReading(id: string): void {
-  if (scroller.value && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
+  if (scroller.value?.isConnected && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
 }
 onBeforeUnmount(() => saveReading(props.sessionId))
 const { arrivedState } = useScroll(scroller, {
   offset: { bottom: 100 },
   onScroll() {
-    if (restoringScroll) return
+    if (restoringScroll || followingSpring) return
     followBottom.value = arrivedState.bottom
+    saveReading(props.sessionId)
     updateOutline()
   },
 })
+
+function followSpringToBottom(el: HTMLElement): void {
+  // Retargets keep the latest handle so the prior finished(false) is ignored and cancel stays current.
+  const spring = scrollSpring(el, el.scrollHeight)
+  followingSpring = spring
+  void spring.finished.then(completed => {
+    if (followingSpring !== spring) return
+    followingSpring = undefined
+    if (!completed && el.isConnected) followBottom.value = arrivedState.bottom
+    saveReading(props.sessionId)
+    updateOutline()
+  })
+}
+
+function scrollToBottom(): void {
+  followBottom.value = true
+  saveReading(props.sessionId)
+  const el = scroller.value
+  if (!el) return
+  followSpringToBottom(el)
+}
 
 function updateOutline(): void {
   const el = scroller.value
@@ -207,6 +238,8 @@ function locateEntry(id: string): void {
 const faces = useSessionFaces(() => props.sessionId)
 watchImmediate(() => props.sessionId, (id, previous) => {
   if (previous) saveReading(previous)
+  followingSpring?.cancel()
+  followingSpring = undefined
   restoringScroll = true
   busy.value = false
   forkOpen.value = false
@@ -220,7 +253,9 @@ watchImmediate(() => props.sessionId, (id, previous) => {
   void agents.open(id)
   void nextTick(() => {
     if (props.sessionId !== id) return
-    if (saved && !focusedEntry.value && !pendingLocate.value) scroller.value?.scrollTo({ top: saved.bottom ? scroller.value.scrollHeight : saved.top })
+    if (!focusedEntry.value && !pendingLocate.value && (saved || !view.value?.loading)) {
+      scroller.value?.scrollTo({ top: !saved || saved.bottom ? scroller.value.scrollHeight : saved.top })
+    }
     restoringScroll = false
     updateOutline()
   })
@@ -234,7 +269,10 @@ watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _
 })
 useSessionRead(() => props.sessionId)
 watch(() => [view.value?.events.length, view.value?.loading, view.value?.syncing], () => {
-  if (!view.value?.loading && followBottom.value && !pendingLocate.value) scroller.value?.scrollTo({ top: scroller.value.scrollHeight })
+  if (!view.value?.loading && followBottom.value && !pendingLocate.value && scroller.value) {
+    if (followingSpring) followSpringToBottom(scroller.value)
+    else scroller.value.scrollTo({ top: scroller.value.scrollHeight })
+  }
   if (followBottom.value || !activeEntry.value) updateOutline()
 }, { flush: "post" })
 watch([focusedEntry, () => props.sessionId, () => view.value?.loading, () => view.value?.events.length], async ([entry, id, loading]) => {
@@ -271,7 +309,7 @@ async function action(operation: () => Promise<unknown>): Promise<void> {
   finally { if (props.sessionId === sessionId) busy.value = false }
 }
 function submit(delivery: "backlog" | "steer"): void {
-  if (agents.preparingDrafts[props.sessionId]) return
+  if (agents.preparingDrafts[props.sessionId] || hasIncompleteAttachmentUploads(attachments.value, resourceTarget.value)) return
   void action(async () => {
     const sessionId = props.sessionId
     delete agents.draftErrors[sessionId]
@@ -318,7 +356,7 @@ async function checkOperation(operationId: string): Promise<void> {
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
           <UiButton v-if="newTerminalWindow && !compact" variant="ghost" size="icon" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="compact && !windowedMainWindow && terminalWorktree" variant="ghost" size="icon" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <AgentSessionMenu :can-stop="runActive && active" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+          <AgentSessionMenu :can-stop="canStop" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
         </template>
         <UserAvatarStack v-if="faces.length" :people="faces" :size="22" :limit="5" :class="snapshot && 'ml-1'" />
       </div>
@@ -336,7 +374,7 @@ async function checkOperation(operationId: string): Promise<void> {
       <div class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
         <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
         <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
+          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :optimistic-input="agents.optimisticInputs[sessionId]" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
             <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
           </AgentConversation>
           <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
@@ -353,6 +391,24 @@ async function checkOperation(operationId: string): Promise<void> {
       class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2"
       @select="locateEntry"
     />
+    <div
+      v-if="showScrollToBottom"
+      class="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+      :style="{ bottom: `${overlayHeight + 8}px` }"
+    >
+      <div class="relative mx-auto flex w-full max-w-3xl justify-end px-6">
+        <UiButton
+          type="button"
+          size="icon"
+          class="pointer-events-auto h-8 w-8 rounded-full border border-ui-border bg-ui-surface text-ui-text shadow-ui-popover"
+          :label="t('agent.scrollToBottom')"
+          data-scroll-to-bottom
+          @click="scrollToBottom"
+        >
+          <ArrowDown :size="16" :stroke-width="1.75" aria-hidden="true" />
+        </UiButton>
+      </div>
+    </div>
     <div v-if="location" ref="overlay" class="pointer-events-none absolute inset-x-0 bottom-0 z-10">
       <div class="pointer-events-auto relative mx-auto flex w-full max-w-3xl flex-col bg-ui-canvas">
         <div
@@ -372,14 +428,14 @@ async function checkOperation(operationId: string): Promise<void> {
               <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
             </AgentNotice>
             <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
-            <AgentNotice v-else-if="snapshot.session.lifecycle !== 'ready'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
+            <AgentNotice v-else-if="snapshot.session.lifecycle === 'deleting'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
             <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
             <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
-            <AgentNotice v-if="run && ['starting', 'stopping'].includes(run.state)" tone="progress" :text="t(`agent.runState.${run.state}`)" />
-            <AgentNotice v-else-if="resumeUnavailable" :text="t('agent.resumeUnavailable')" />
+            <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />
+            <AgentNotice v-else-if="resumeUnavailable && !runActive && snapshot.session.lifecycle === 'ready'" :text="t('agent.resumeUnavailable')" />
             <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
             <SessionAllowance :snapshot="snapshot" />
-            <AgentBacklog :inputs="snapshot.inputs" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
+            <AgentBacklog :inputs="snapshot.inputs" :exclude-input-ids="promotedInputIds" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
           </template>
         </div>
         <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />

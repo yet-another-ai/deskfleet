@@ -27,6 +27,22 @@ hot reload and rebuilds the main and preload bundles in watch mode. It restarts
 Electron when either bundle changes. Quitting from the tray menu or pressing
 Ctrl-C stops the watchers.
 
+On macOS, the dev script prepares a cached `DeskFleet Dev.app` with microphone
+and speech-recognition usage descriptions and an ad-hoc signature. It uses the
+separate bundle ID `io.github.yet-another-ai.deskfleet.dev`. The host lives in
+`node_modules/.cache/deskfleet-electron/` within this package and is reused across
+Vite restarts; an Electron or permission-description change rebuilds it. The
+downloaded Electron dependency stays untouched. This requires the macOS command
+line tools but no Apple Developer certificate or release packaging.
+
+Click the composer's microphone button to test dictation, then grant microphone
+and speech-recognition access in the system prompts. Starting the dev app does
+not request either permission. If access was previously denied, enable
+**DeskFleet Dev** in System Settings → Privacy & Security → Microphone and
+Speech Recognition, then restart the dev app. Ordinary JS changes do not require
+rebuilding or re-signing this host. Native Rust changes still require rebuilding
+the addon (`mise run native:debug`) and restarting Electron.
+
 Each dev restart quits Electron, which stops the hosted local Agent and starts it
 again with the rebuilt daemon code. This stops live terminals and agent runs;
 saved catalog, conversation, and terminal history remain.

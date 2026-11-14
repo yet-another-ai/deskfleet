@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring, vSpringHover } from "../../directives/spring.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useScrollFade } from "../../composables/useScrollFade.ts"
 import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
+import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Monitor, Plus, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CircleAlert, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, RotateCw, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
 import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -20,10 +23,15 @@ import { useFileTarget } from "../../composables/useFileTarget.ts"
 import { useSessionGit } from "../../composables/useSessionGit.ts"
 import {
   attachmentsFromFiles,
+  cancelAttachmentUpload,
   createMachineFileAttachment,
   createPastedTextAttachment,
+  getAttachmentUploadState,
+  hasIncompleteAttachmentUploads,
   hasSubmittableText,
+  retryAttachmentUpload,
   shouldFoldPastedText,
+  syncAttachmentUploads,
   type ComposerAttachment,
 } from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
@@ -41,6 +49,8 @@ import ComposerCompletions from "./ComposerCompletions.vue"
 import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 import { recordSentMessageOrigin } from "../../services/message-sent-transition.ts"
+import { useDictationPreference } from "../../composables/useDictationPreference.ts"
+import { useComposerDictation } from "./useComposerDictation.ts"
 
 const client = usePlatformClient()
 const configurationLoading = ref(false)
@@ -61,16 +71,59 @@ const attachments = defineModel<ComposerAttachment[]>("attachments", { default: 
 const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] })
 /** The execution context a new Session will use; only offered with `showTarget`. */
 const context = defineModel<AgentSessionContext>("context", { default: "directory" })
+/** Absolute working directory for a new directory Session; omitted means the machine/workspace default. */
+const cwd = defineModel<string | undefined>("cwd")
 /** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
 const baseBranch = defineModel<string>("baseBranch")
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
 const preparing = ref(false)
+const folderPickerOpen = ref(false)
+const browseDirectories = (path?: string) => client.filesystem.listDirectories(path)
+const defaultWorkingDirectory = computed(() => props.location?.workspace?.directories[0]?.path)
+const showWorkingDirectory = computed(() => !!props.showTarget && (!props.location?.workspace || context.value === "directory"))
+function workingDirectoryBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/u, "")
+  const parts = trimmed.split(/[\\/]/u).filter(Boolean)
+  return parts.at(-1) || trimmed || path
+}
+const workingDirectoryLabel = computed(() => {
+  const path = cwd.value ?? defaultWorkingDirectory.value
+  return path ? workingDirectoryBasename(path) : t("composer.workingDirectoryHome")
+})
+const workingDirectoryTitle = computed(() => cwd.value ?? defaultWorkingDirectory.value ?? t("composer.workingDirectoryHomeHint"))
+function openWorkingDirectoryPicker(): void {
+  if (!props.location || preparing.value || props.submitting || props.disabled) return
+  folderPickerOpen.value = true
+}
+function onWorkingDirectorySelected(path: string): void {
+  folderPickerOpen.value = false
+  const trimmed = path.trim()
+  if (!trimmed) return
+  cwd.value = trimmed === defaultWorkingDirectory.value ? undefined : trimmed
+}
+function clearWorkingDirectory(): void {
+  cwd.value = undefined
+}
+watch([
+  () => props.location?.machine.id,
+  () => props.location?.workspace?.id,
+  context,
+], () => {
+  folderPickerOpen.value = false
+  cwd.value = undefined
+})
+watch(showWorkingDirectory, visible => {
+  if (!visible) {
+    folderPickerOpen.value = false
+    cwd.value = undefined
+  }
+})
 const preparedBranches = ref<string[]>([])
 const preparationButton = useTemplateRef<InstanceType<typeof SessionPreparation>>("preparationButton")
 const branchLabel = computed(() => preparedBranches.value.length
   ? t("composer.prepare.base", { branches: preparedBranches.value.join(", ") }) : baseBranch.value)
 const emit = defineEmits<{ submit: [delivery: "backlog" | "steer"]; cancel: []; selectMachine: [machineId: string]; selectWorkspace: [workspaceId: string | null] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const account = useAccountSession()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
@@ -113,7 +166,16 @@ const textarea = useTemplateRef<HTMLTextAreaElement>("textarea")
 const configurationSelector = useTemplateRef<InstanceType<typeof AgentConfigurationSelector>>("configurationSelector")
 const configuration = ref<AgentConfiguration | null>(null)
 const sessionId = computed(() => props.location?.session?.id)
-const yoloEnabled = computed(() => sessionId.value ? !!agents.yolo[sessionId.value] : agents.draftYolo)
+const dictation = reactive(useComposerDictation({
+  api: client.speech,
+  enabled: useDictationPreference(),
+  locale: () => locale.value === "zh-cmn-Hans-CN" ? "zh-Hans-CN" : locale.value,
+  scope: () => JSON.stringify([account?.teamId?.value, account?.machineId?.value, props.location?.machine.id, props.location?.workspace?.id, sessionId.value]),
+  disabled: () => !!(props.disabled || props.submitting || !props.location),
+  draft, mentions, textarea,
+}))
+const dictationLabel = computed(() => t(dictation.error ? `dictation.errors.${dictation.error}` : dictation.active ? "dictation.stop" : "dictation.start"))
+const yoloEnabled = computed(() => sessionId.value ? !!agents.sessions[sessionId.value]?.yolo : agents.draftYolo)
 const yoloConfirmation = useConfirmDialog()
 const { isRevealed: confirmingYolo } = yoloConfirmation
 watch([
@@ -129,7 +191,7 @@ async function toggleYolo(): Promise<void> {
   const next = !yoloEnabled.value
   if (next && (await yoloConfirmation.reveal()).isCanceled) return
   if (!id) agents.draftYolo = next
-  else agents.setYolo(id, next)
+  else await agents.setYolo(id, next)
 }
 const completionId = useId()
 const completion = reactive(useComposerCompletions({
@@ -143,6 +205,7 @@ useTextareaAutosize({ element: textarea, input: draft })
 const { fadeStyle: textareaFadeStyle } = useScrollFade(textarea, { size: "sm" })
 const fileTarget = useFileTarget(() => props.location?.machine.id)
 const filesApi = computed(() => client.files)
+const uploadingAttachments = computed(() => hasIncompleteAttachmentUploads(attachments.value, fileTarget.value))
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value))
 const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
@@ -217,9 +280,8 @@ const attachmentPreviewUrls = reactive(new Map<string, string>())
 function setAttachmentPreviewUrl(id: string, data: Uint8Array, type = ""): void {
   const previous = attachmentPreviewUrls.get(id)
   if (previous) URL.revokeObjectURL(previous)
-  const bytes = new Uint8Array(data.byteLength)
-  bytes.set(data)
-  attachmentPreviewUrls.set(id, URL.createObjectURL(new Blob([bytes], { type })))
+  const view = new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength)
+  attachmentPreviewUrls.set(id, URL.createObjectURL(new Blob([view], { type })))
 }
 
 function removeAttachmentPreviewUrl(id: string): void {
@@ -284,7 +346,22 @@ function onMachineFilesSelected(entries: FileEntry[]): void {
     }
   }
 }
+watch([attachments, fileTarget, sessionId, filesApi, () => props.location?.machine.online], ([items, target, currentSessionId, api, online]) => {
+  if (online === false) return
+  syncAttachmentUploads({ attachments: items, target, sessionId: currentSessionId, filesApi: api })
+}, { immediate: true })
+
+function attachmentUpload(item: ComposerAttachment) {
+  return getAttachmentUploadState(item, fileTarget.value)
+}
+
+function retryUpload(item: ComposerAttachment): void {
+  if (item.kind !== "local_file") return
+  retryAttachmentUpload({ item, target: fileTarget.value, sessionId: sessionId.value, filesApi: filesApi.value })
+}
+
 function removeAttachment(id: string): void {
+  cancelAttachmentUpload(id)
   removeAttachmentPreviewUrl(id)
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
@@ -310,11 +387,13 @@ function onPaste(event: ClipboardEvent): void {
   }
 }
 function submit(delivery: "backlog" | "steer"): void {
-  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || !props.location || empty.value) return
+  if (props.disabled || props.submitting || preparing.value || configurationLoading.value || uploadingAttachments.value || !props.location || empty.value) return
+  dictation.cancel()
   recordSentMessageOrigin(dropZoneRef.value)
   emit("submit", commandInput.value ? "backlog" : delivery)
 }
 function keydown(event: KeyboardEvent): void {
+  if (event.key === "Escape" && dictation.active) { event.preventDefault(); dictation.cancel(); return }
   if (completion.keydown(event)) return
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit("backlog") }
 }
@@ -333,7 +412,7 @@ onBeforeUnmount(() => {
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+          <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.machine')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
             <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
               <DropdownMenuRadioGroup :model-value="location.machine.id" @update:model-value="selectMachine">
                 <DropdownMenuRadioItem v-for="machine in availableMachines" :key="machine.id" as="button" type="button" :value="machine.id" class="ui-menu-item">
@@ -356,7 +435,7 @@ onBeforeUnmount(() => {
             <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.workspace')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup :model-value="location.workspace?.id ?? noWorkspaceValue" @update:model-value="selectWorkspace">
                   <DropdownMenuRadioItem v-for="workspace in availableWorkspaces" :key="workspace.id" as="button" type="button" :value="workspace.id" class="ui-menu-item">
@@ -389,7 +468,7 @@ onBeforeUnmount(() => {
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.baseBranch')" class="ui-menu z-50 flex max-h-64 w-64 flex-col overflow-hidden p-0" loop>
               <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                 <DropdownMenuRadioGroup v-model="baseBranch">
                   <DropdownMenuRadioItem v-for="branch in availableBranches" :key="branch" as="button" type="button" :value="branch" class="ui-menu-item" @select="preparationButton?.reset()">
@@ -403,6 +482,33 @@ onBeforeUnmount(() => {
             </DropdownMenuPortal>
           </DropdownMenuRoot>
         </template>
+      </template>
+      <template v-if="showWorkingDirectory">
+        <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
+        <button
+          type="button"
+          class="-mx-1 inline-flex h-7 min-w-0 max-w-[12rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover disabled:cursor-default disabled:opacity-50"
+          :disabled="preparing || submitting || disabled"
+          :title="workingDirectoryTitle"
+          :aria-label="t('composer.workingDirectoryChoice', { path: workingDirectoryTitle })"
+          data-composer-context
+          data-composer-cwd
+          @click="openWorkingDirectoryPicker"
+        >
+          <FolderOpen :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+          <span class="truncate">{{ workingDirectoryLabel }}</span>
+        </button>
+        <button
+          v-if="cwd"
+          type="button"
+          class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          :disabled="preparing || submitting || disabled"
+          :aria-label="t('composer.workingDirectoryClear')"
+          data-composer-cwd-clear
+          @click="clearWorkingDirectory"
+        >
+          <X :size="14" :stroke-width="2" aria-hidden="true" />
+        </button>
       </template>
       <template v-else-if="location.worktree">
         <RouterLink :to="{ name: 'worktree', params: { worktreeId: location.worktree.id } }" class="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-ui-text-muted ui-motion hover:bg-ui-hover" :title="checkoutLabel" data-composer-context>
@@ -424,11 +530,45 @@ onBeforeUnmount(() => {
           :key="item.id"
           :data-preview="itemPreview(item) ? item.id : undefined"
           :data-preview-content="itemPreview(item)?.content"
-          class="ui-pop-in inline-flex max-w-full items-center gap-2 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          class="ui-pop-in inline-flex max-w-full items-center gap-2 rounded-lg border bg-ui-canvas px-2.5 py-1.5 text-xs"
+          :class="attachmentUpload(item)?.status === 'error' ? 'border-ui-danger/50' : 'border-ui-border'"
           :data-attachment-kind="item.kind"
         >
+          <span
+            v-if="attachmentUpload(item)?.status === 'uploading'"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="Math.round((attachmentUpload(item)?.progress ?? 0) * 100)"
+            :aria-label="t('composer.uploadingAttachment', { name: attachmentLabel(item), percent: Math.round((attachmentUpload(item)?.progress ?? 0) * 100) })"
+            :title="t('composer.uploadingAttachment', { name: attachmentLabel(item), percent: Math.round((attachmentUpload(item)?.progress ?? 0) * 100) })"
+            data-attachment-progress
+            class="inline-flex h-4 w-4 shrink-0 items-center justify-center"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 -rotate-90" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" class="stroke-ui-border" stroke-width="2" />
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                fill="none"
+                class="stroke-ui-accent"
+                stroke-width="2"
+                stroke-linecap="round"
+                :stroke-dasharray="37.7"
+                v-spring="{ strokeDashoffset: 37.7 * (1 - (attachmentUpload(item)?.progress ?? 0)) }"
+              />
+            </svg>
+          </span>
+          <CircleAlert
+            v-else-if="attachmentUpload(item)?.status === 'error'"
+            :size="14"
+            class="shrink-0 text-ui-danger"
+            :title="attachmentUpload(item)?.error || t('composer.uploadFailed')"
+            aria-hidden="true"
+          />
           <img
-            v-if="itemThumbnailSrc(item)"
+            v-else-if="itemThumbnailSrc(item)"
             :src="itemThumbnailSrc(item)"
             :alt="attachmentLabel(item)"
             class="h-6 w-6 shrink-0 cursor-zoom-in rounded object-cover"
@@ -439,11 +579,23 @@ onBeforeUnmount(() => {
           <span
             class="min-w-0 truncate font-medium text-ui-text"
             :class="itemPreview(item) && 'cursor-zoom-in hover:underline'"
-            :title="item.kind === 'machine_file' ? item.path : attachmentLabel(item)"
+            :title="item.kind === 'machine_file' ? item.path : attachmentUpload(item)?.error || attachmentLabel(item)"
             @click="previewAttachment(item)"
           >{{ attachmentLabel(item) }}</span>
           <span v-if="item.kind === 'pasted_text'" class="shrink-0 rounded bg-ui-badge px-1.5 py-0.5 text-[11px] text-ui-text-muted">{{ t("composer.pastedTextLines", item.lines) }}</span>
           <span v-else-if="item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
+          <button
+            v-if="attachmentUpload(item)?.status === 'error'"
+            type="button"
+            data-attachment-retry
+            class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-danger hover:bg-ui-hover"
+            :title="attachmentUpload(item)?.error || t('composer.uploadFailed')"
+            :aria-label="t('composer.retryUpload', { name: attachmentLabel(item) })"
+            :disabled="disabled || submitting"
+            @click="retryUpload(item)"
+          >
+            <RotateCw :size="12" aria-hidden="true" />
+          </button>
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.removeAttachment', { name: attachmentLabel(item) })" :disabled="disabled || submitting" @click="removeAttachment(item.id)">
             <X :size="12" aria-hidden="true" />
           </button>
@@ -457,13 +609,19 @@ onBeforeUnmount(() => {
         </li>
       </ul>
       <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
+      <div v-if="dictation.active" class="relative mx-3 mb-2 flex items-center justify-center rounded-lg bg-ui-accent/5 px-10 py-2" data-dictation-panel>
+        <div class="flex h-7 shrink-0 items-center gap-0.5" role="img" :aria-label="t(`dictation.${dictation.state}`)" data-dictation-waveform>
+          <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-opacity duration-100 motion-reduce:transition-none" v-spring="{ height: `${3 + level * 23}px` }" :style="{ opacity: 0.3 + level * 0.7 }" />
+        </div>
+        <UiButton variant="ghost" size="icon" type="button" class="absolute right-2 h-7 w-7" :title="t('dictation.cancel')" :aria-label="t('dictation.cancel')" data-dictation-cancel @click="dictation.cancel"><X :size="14" aria-hidden="true" /></UiButton>
+      </div>
       <div class="flex items-center gap-2 px-3 pb-2.5">
         <DropdownMenuRoot v-if="location" :modal="false">
           <DropdownMenuTrigger class="ui-button-ghost h-7 w-7 shrink-0 rounded-lg p-0 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.attach')" :title="t('composer.attach')" :disabled="disabled || submitting" data-composer-attach>
             <Plus :size="16" :stroke-width="2" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuContent side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
+            <DropdownMenuContent :as="SpringSurface" side="top" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('composer.attach')" class="ui-menu z-50 flex min-w-52 flex-col" loop>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item" data-attach-local @select="fileInput?.click()">
                 <Upload :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
                 <span class="truncate text-[13px] text-ui-text">{{ t("composer.uploadLocalFiles") }}</span>
@@ -491,9 +649,13 @@ onBeforeUnmount(() => {
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'bg-ui-accent/10 text-ui-accent' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+            <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
+            <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
+          </UiButton>
+          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || !location || empty" @click="submit('backlog')"><ArrowUp :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit('backlog')"><ArrowUp v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>
@@ -514,6 +676,14 @@ onBeforeUnmount(() => {
       @select="onMachineFilesSelected"
       @cancel="filePickerOpen = false"
     />
+    <FolderPickerDialog
+      v-if="folderPickerOpen && location"
+      :browse="browseDirectories"
+      :initial-path="cwd ?? defaultWorkingDirectory"
+      :machine-name="location.machine.name"
+      @select="onWorkingDirectorySelected"
+      @cancel="folderPickerOpen = false"
+    />
   </div>
 </template>
 
@@ -522,8 +692,6 @@ onBeforeUnmount(() => {
 
 /* Send springs forward when it becomes available; its arrow nudges up on hover. */
 .composer-send:enabled { animation: composer-send-ready var(--ui-duration-slow) var(--ui-ease-spring); }
-.composer-send-arrow { transition: translate var(--ui-duration-fast) var(--ui-ease-out); }
-.composer-send:enabled:hover .composer-send-arrow { translate: 0 -1px; }
 @keyframes composer-send-ready {
   from { scale: 0.8; }
 }

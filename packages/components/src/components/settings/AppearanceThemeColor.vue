@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { symbolicShadeValues } from "@proj-airi/chromatic"
-import { computed } from "vue"
+import { computed, onScopeDispose } from "vue"
 import { useI18n } from "vue-i18n"
+import { useInertialRange } from "../../composables/useInertialRange.ts"
 import { chromaticShadeHex, useAppearanceStore } from "../../stores/appearance.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
@@ -12,22 +13,23 @@ const appearance = useAppearanceStore()
 
 const customized = computed(() => appearance.activeThemeHue !== null || appearance.settings.themeHueDynamic)
 
-function onInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value)
-  if (!Number.isFinite(value)) return
-  appearance.previewThemeHue(value)
-}
-
-async function onChange(event: Event): Promise<void> {
-  const value = Number((event.target as HTMLInputElement).value)
-  if (!Number.isFinite(value)) return
-  appearance.previewThemeHue(value)
-  await appearance.set({ themeHue: value, themeHueDynamic: false })
-  if (!appearance.error) appearance.previewThemeHue(null)
-}
+const { value: hue, startDrag, moveDrag, endDrag, onInput, onChange, onKeydown } = useInertialRange({
+  value: () => appearance.themeHue,
+  min: 0,
+  max: 360,
+  enabled: () => appearance.ready && !appearance.settings.themeHueDynamic,
+  preview: value => appearance.previewThemeHue(value),
+  commit: value => appearance.set({ themeHue: value, themeHueDynamic: false }),
+  afterCommit() {
+    if (!appearance.error) appearance.previewThemeHue(null)
+  },
+})
+// Preview belongs to the mounted editor; late saves cannot clean up a new editor.
+onScopeDispose(() => appearance.previewThemeHue(null))
 
 async function toggleDynamic(enabled: boolean): Promise<void> {
   await appearance.set({ themeHueDynamic: enabled })
+  if (enabled && appearance.settings.themeHueDynamic && !appearance.error) appearance.previewThemeHue(null)
 }
 
 async function reset(): Promise<void> {
@@ -74,13 +76,19 @@ async function reset(): Promise<void> {
         min="0"
         max="360"
         step="0.01"
-        :value="appearance.themeHue"
+        :value="hue"
         :disabled="!appearance.ready || appearance.settings.themeHueDynamic"
         :aria-label="t('appearance.themeColorHue')"
         aria-describedby="appearance-theme-color-description"
         class="chromatic-hue-slider"
         @input="onInput"
         @change="onChange"
+        @keydown="onKeydown"
+        @pointerdown="startDrag"
+        @pointermove="moveDrag"
+        @pointerup="endDrag"
+        @pointercancel="endDrag"
+        @lostpointercapture="endDrag"
       >
       <div
         data-theme-shade-bar
@@ -109,6 +117,7 @@ async function reset(): Promise<void> {
   border-radius: 0.375rem;
   outline: none;
   cursor: pointer;
+  touch-action: none;
   background: linear-gradient(
     to right,
     oklch(85% 0.2 0),

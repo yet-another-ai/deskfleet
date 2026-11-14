@@ -1,10 +1,11 @@
 import { executeGit, GitPolicyError } from "./git-execution.ts"
 import { randomUUID } from "node:crypto"
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspaceSession } from "@deskfleet/native"
 import type { GitPreparedRevision } from "./git-protocol.ts"
+import { inspectWorktreeCleanup, refreshWorktreeCleanupDefaults, worktreeCleanupFingerprint, type WorktreeCleanupInspection, type WorktreeLocalChanges } from "./worktree-cleanup-inspection.ts"
 
 const remove = (() => {
   if (process.versions.electron) {
@@ -185,19 +186,31 @@ export class ManagedSessionWorktrees {
   /**
    * Records the Workspace's current directories as the Session's execution
    * context without generating checkouts; the agent works in those directories.
+   * An optional primary path becomes directories[0]; a path outside the Workspace
+   * is prepended and the Workspace directories remain additionalDirectories.
    */
-  async useDirectories(allocated: CatalogWorkspaceSession): Promise<ManagedWorkspaceSession> {
+  async useDirectories(allocated: CatalogWorkspaceSession, primary?: string): Promise<ManagedWorkspaceSession> {
     if (!allocated.workspaceId) throw new Error("Session has no workspace")
     const workspace = (await this.#catalog.snapshot()).workspaces.find(value => value.id === allocated.workspaceId)
     const main = workspace?.worktrees.find(worktree => !worktree.sessionId)
     if (!main || main.directories.length === 0) throw new Error("Workspace has no main directories")
-    for (const { path } of main.directories) {
+    let directories = main.directories.map(({ path }) => ({ path }))
+    if (primary) {
+      const index = directories.findIndex(directory => directory.path === primary)
+      if (index > 0) {
+        const [chosen] = directories.splice(index, 1)
+        directories.unshift(chosen!)
+      } else if (index === -1) {
+        directories = [{ path: primary }, ...directories]
+      }
+    }
+    for (const { path } of directories) {
       let info
       try { info = await stat(path) }
       catch (error) { throw new Error(`Cannot access directory: ${path}`, { cause: error }) }
       if (!info.isDirectory()) throw new Error(`Not a directory: ${path}`)
     }
-    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, main.directories.map(({ path }) => ({ path })))
+    const worktree = await this.#catalog.attachSessionWorktree(allocated.id, directories)
     return { ...allocated, worktree }
   }
 
@@ -232,6 +245,10 @@ export class ManagedSessionWorktrees {
     // final HEADs after shutdown, while retaining the earlier durable fallback.
     const manifest = await this.#prepareArchive(sessionId)
     if (!manifest) return
+    await this.#archive(manifest)
+  }
+
+  async #archive(manifest: Manifest): Promise<void> {
     manifest.state = "archiving"
     for (const worktree of manifest.worktrees) delete worktree.restored
     await this.#save(manifest)
@@ -241,6 +258,82 @@ export class ManagedSessionWorktrees {
     if (manifest.directory) await remove(manifest.directory, { recursive: true, force: true })
     manifest.state = "archived"
     await this.#save(manifest)
+  }
+
+  /** Read only daemon-owned paths; directory Sessions have no ownership manifest. */
+  async inspectCleanup(sessionId: string, protection: WorktreeLocalChanges): Promise<WorktreeCleanupInspection | undefined> {
+    const manifest = await this.#load(sessionId)
+    if (!manifest) return undefined
+    return inspectWorktreeCleanup(manifest.worktrees.map(worktree => worktree.path), protection)
+  }
+
+  async refreshCleanupDefaults(sessionId: string): Promise<void> {
+    const manifest = await this.#load(sessionId)
+    if (manifest) await refreshWorktreeCleanupDefaults(manifest.worktrees.map(worktree => worktree.path))
+  }
+
+  /** The caller stops Session resources and serializes this with Session commands. */
+  async cleanup(sessionId: string, protection: WorktreeLocalChanges, expectedGit?: string): Promise<boolean> {
+    const manifest = await this.#load(sessionId)
+    if (!manifest || manifest.state === "archived" || manifest.state === "restoring") return false
+    const inspection = await inspectWorktreeCleanup(manifest.worktrees.map(worktree => worktree.path), protection)
+    if (inspection.protected || expectedGit !== undefined && worktreeCleanupFingerprint(inspection) !== expectedGit) return false
+    const prepared = await this.#prepareArchive(sessionId)
+    if (!prepared) return false
+    // Capture commits first, then check every repository again before deleting
+    // any files. An external editor can change a checkout during preparation.
+    const checked = await inspectWorktreeCleanup(prepared.worktrees.map(worktree => worktree.path), protection)
+    if (checked.protected || expectedGit !== undefined && worktreeCleanupFingerprint(checked) !== expectedGit) return false
+    await this.#archive(prepared)
+    return true
+  }
+
+  /** Keep an archived Session usable when cleanup is disabled or protects edits. */
+  async retainArchive(sessionId: string): Promise<void> {
+    const manifest = await this.#load(sessionId)
+    if (!manifest || !manifest.state || manifest.state === "archived") return
+    if (manifest.state === "restoring") { await this.restore(sessionId); return }
+    const retained = new Set<OwnedWorktree>()
+    const stale: OwnedWorktree[] = []
+    // Validate all surviving directories before changing any recovery state.
+    for (const worktree of manifest.worktrees) {
+      const registered = await this.#registered(worktree)
+      const info = await stat(worktree.path).catch(error => {
+        if (error.code === "ENOENT") return undefined
+        throw error
+      })
+      if (!info || info.isDirectory() && (await readdir(worktree.path)).length === 0) {
+        if (registered) stale.push(worktree)
+        continue
+      }
+      if (!info.isDirectory() || !registered) {
+        throw new Error(`Cannot retain archived checkout ${worktree.path}: move the unregistered files out of this owned path, then retry archive`)
+      }
+      try {
+        const [top, repository] = (await git(["-C", worktree.path, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"])).split(/\r?\n/u)
+        if (!top || !repository || !pathsMatch(await realpath(top), await realpath(worktree.path))
+          || !pathsMatch(await realpath(repository), await realpath(worktree.repository))) throw new Error("Git ownership differs")
+      } catch (error) {
+        throw new Error(`Cannot retain archived checkout ${worktree.path}: repair its Git registration or move its remaining files before retrying archive`, { cause: error })
+      }
+      retained.add(worktree)
+    }
+    for (const worktree of stale) {
+      // Target this ownership entry only. Without --force, files arriving after
+      // preflight cannot be discarded to make the recovery fit.
+      try { await git(["--git-dir", worktree.repository, "worktree", "remove", worktree.path]) }
+      catch (error) {
+        throw new Error(`Cannot retain archived checkout ${worktree.path}: unlock or repair its missing Git worktree before retrying archive`, { cause: error })
+      }
+      if (await this.#registered(worktree)) throw new Error(`Cannot retain archived checkout ${worktree.path}: unlock or repair its missing Git worktree before retrying archive`)
+    }
+    for (const worktree of manifest.worktrees) {
+      if (retained.has(worktree)) worktree.restored = true
+      else delete worktree.restored
+    }
+    manifest.state = "restoring"
+    await this.#save(manifest)
+    await this.restore(sessionId)
   }
 
   /** Restore captured paths and committed HEADs without consulting the Workspace. */

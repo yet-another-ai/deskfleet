@@ -1,4 +1,41 @@
 {
+  "worktreeSettings": {
+    "title": "Worktrees",
+    "scope": "Branch naming and automatic cleanup for Sessions on this computer, across all Teams.",
+    "desktopOnly": "Open Worktrees settings in the desktop app on the computer that hosts your Sessions.",
+    "branches": "Branches",
+    "branchNaming": "Worktree branch naming",
+    "branchDescription": "Choose how new worktree branches are named from your first message.",
+    "semantic": "Semantic prefix",
+    "semanticDescription": "Use a prefix that describes the work, such as feat/add-search, fix/login-timeout, or refactor/auth.",
+    "sessionBranch": "Session identifier",
+    "sessionDescription": "Use a stable branch name based on the Session identifier.",
+    "resetNaming": "Reset branch naming",
+    "cleanup": "Cleanup",
+    "archived": "Delete worktrees with archived Sessions",
+    "archivedDescription": "Remove worktrees when their Sessions are archived. Session history is kept. The local changes setting below determines which worktrees are kept.",
+    "merged": "Delete merged worktrees",
+    "mergedDescription": "Remove worktrees whose pull request is merged and whose commits are included in the default branch.",
+    "inactive": "Delete inactive worktrees",
+    "inactiveDescription": "Remove worktrees after their Sessions have been inactive for this many days. Branches and Session history are kept.",
+    "advanced": "Advanced",
+    "settled": "Delete settled worktrees",
+    "settledDescription": "Remove worktrees this many days after the latest turn completes with no pending work or input. Set 0 days to remove them at the next cleanup. Branches and Session history are kept.",
+    "unchanged": "Delete unchanged worktrees",
+    "unchangedDescription": "After a Session's first turn completes, remove worktrees with no commits beyond the default branch.",
+    "keepLocalChanges": "Keep worktrees with local changes",
+    "uncommitted": "Uncommitted changes",
+    "allFiles": "All local files",
+    "noProtection": "Do not keep",
+    "protectionDescription": {
+      "uncommitted": "Keeps edits and untracked files. Deletes ignored files, including .env.",
+      "all": "Keeps edits, untracked files, and ignored files, including .env.",
+      "none": "Deletes local edits, untracked files, and ignored files, including .env. Only committed changes can be restored."
+    },
+    "days": "days",
+    "cleanupNote": "Cleanup runs while the local Agent is running and skips Sessions in use. Only generated worktrees are removed; Workspace directories stay in place. Retained Sessions can restore their committed files when reopened.",
+    "storage": "Storage"
+  },
   "mobileViews": {
     "openTerminal": "Open to connect",
     "overview": "Views",
@@ -152,6 +189,22 @@
     "downloading": "Downloading {percent}%",
     "installing": "Restarting…",
     "failed": "Update failed. Retry, or quit and reopen DeskFleet."
+  },
+  "providerUpdates": {
+    "available": "{count} agent update available | {count} agent updates available",
+    "completed": "Agents updated",
+    "review": "Review updates",
+    "dismiss": "Dismiss these updates",
+    "failed": "{count} update failed | {count} updates failed",
+    "updating": "Updating…",
+    "updated": "Updated",
+    "machineFailed": "{name} · {machine}: {error}",
+    "confirmTitle": "Update agents",
+    "confirmDescription": "Choose the tools and machines to update. Running agent processes using the selected tools on these machines will stop, interrupting their active tasks.",
+    "confirmAction": "Install {count} update | Install {count} updates",
+    "current": "Current {version}",
+    "offline": "Offline",
+    "selectMachine": "Update {name} on {machine}"
   },
   "aiUsage": {
     "title": "AI usage",
@@ -441,6 +494,7 @@
   "nav": {
     "label": "Navigation",
     "conversations": "Conversations",
+    "remoteDesktop": "Remote desktop",
     "newSession": "New session",
     "settings": "Settings",
     "team": "Switch team"
@@ -664,6 +718,9 @@
     "pastedText": "Pasted text",
     "pastedTextLines": "{n} line | {n} lines",
     "removeAttachment": "Remove {name}",
+    "uploadingAttachment": "Uploading {name} ({percent}%)",
+    "uploadFailed": "Upload failed",
+    "retryUpload": "Retry uploading {name}",
     "dropFiles": "Drop files to attach",
     "completions": {
       "label": "Prompt suggestions",
@@ -690,6 +747,10 @@
       "worktree": "Isolated Git checkouts from each directory's committed HEAD",
       "directory": "Work in the Workspace's directories, including uncommitted changes"
     },
+    "workingDirectoryHome": "Home",
+    "workingDirectoryHomeHint": "Machine home directory",
+    "workingDirectoryChoice": "Working directory: {path}",
+    "workingDirectoryClear": "Use the default working directory",
     "machine": "Machine",
     "machineChoice": "Machine: {machine}",
     "workspace": "Workspace",
@@ -727,6 +788,9 @@
     "unavailable": "Unavailable",
     "loadingConfiguration": "Reading configuration from the agent…",
     "reloadConfiguration": "Reload from agent",
+    "viewUsage": "View usage",
+    "usageEmpty": "No quota information available.",
+    "usageResetsAt": "Resets {time}",
     "yolo": "YOLO",
     "yoloHint": "Auto-approve agent permission requests in this session",
     "yoloConfirmation": {
@@ -794,7 +858,23 @@
     "progressRunning": "Running · {value}%",
     "progressError": "Failed · {value}%",
     "progressIndeterminate": "Running…",
-    "progressPaused": "Paused · {value}%"
+    "progressPaused": "Paused · {value}%",
+    "keypad": "Terminal keypad",
+    "keypadToggle": "Toggle terminal keypad",
+    "keypadExpand": "More keys",
+    "keypadCollapse": "Fewer keys",
+    "keyEsc": "Escape",
+    "keyTab": "Tab",
+    "keyCtrl": "Control modifier",
+    "keyAlt": "Alt modifier",
+    "keyUp": "Up arrow",
+    "keyDown": "Down arrow",
+    "keyLeft": "Left arrow",
+    "keyRight": "Right arrow",
+    "keyHome": "Home",
+    "keyEnd": "End",
+    "keyPgUp": "Page Up",
+    "keyPgDn": "Page Down"
   },
   "remoteControl": {
     "terminal": "Terminal",
@@ -848,7 +928,7 @@
     "noDisplays": "No displays found.",
     "displayCount": "{count} displays",
     "display": "Display {id}",
-    "openDisplay": "Open {machine}, display {display}",
+    "openDisplay": "Open {machine}, {display}",
     "connecting": "Connecting preview…"
   },
   "desktop": {
@@ -867,10 +947,12 @@
     "settingsFailed": "Could not apply desktop settings",
     "moveControls": "Move controls",
     "display": "Display",
-    "displayOption": "Display {id} · {width} × {height}",
+    "displayName": "Display {number}",
+    "displayOption": "{display} · {width} × {height}",
     "codecStatus": "Video codec: {codec}",
     "audio": "System audio",
     "control": "Mouse and keyboard control",
+    "reverseScroll": "Reverse mouse scrolling",
     "pauseControl": "Pause control",
     "resumeControl": "Resume control",
     "sendSecureAttention": "Send Ctrl+Alt+Del",
@@ -1139,6 +1221,7 @@
     "operationPending": "The operation result needs to be checked.",
     "checkResult": "Check result",
     "empty": "Send a message to start working.",
+    "scrollToBottom": "Scroll to bottom",
     "toolStatus": {
       "pending": "Pending",
       "in_progress": "Running",
@@ -1202,13 +1285,30 @@
     "restore": "Restore session",
     "retryArchive": "Retry archive",
     "archiveQuestion": "Archive this session? Running agents and terminals will stop. The conversation, working directory, and files will be retained.",
-    "archiveWorktreeQuestion": "Archive this session? Running agents and terminals will stop. The generated worktree will be deleted, including uncommitted changes and untracked files. The conversation and committed changes will be retained.",
+    "archiveWorktreeQuestion": "Archive this session? Running agents and terminals will stop. Worktree cleanup follows this computer's settings, including its local changes protection. The conversation and committed changes will be retained.",
     "restoreQuestion": "Restore this session? Execution stays stopped until you send a new message.",
-    "restoreWorktreeQuestion": "Restore this session? The worktree will be recreated from its last committed state. Deleted uncommitted changes and untracked files cannot be recovered. Execution stays stopped until you send a new message.",
+    "restoreWorktreeQuestion": "Restore this session? A retained worktree will be reused. A cleaned worktree will be recreated from its last committed state; deleted local files cannot be recovered. Execution stays stopped until you send a new message.",
     "archived": "This session is archived. Restore it to continue working.",
     "archiving": "Archiving this session. Execution is blocked until running agents and terminals stop and any generated worktree is removed."
   },
   "providers": {
+    "workspaceImport": {
+      "action": "Import workspaces…",
+      "title": "Import workspaces",
+      "description": "Choose project directories recorded by {provider} on {machine}. Each selection becomes a Workspace using its existing files.",
+      "loading": "Looking for project directories…",
+      "empty": "No existing project directories found. You can add Workspaces manually.",
+      "unsupported": "Workspace discovery is not available for this provider.",
+      "select": "Import {name}",
+      "source": "Source: {source}",
+      "existing": "Already in Workspaces",
+      "importing": "Importing…",
+      "imported": "Imported",
+      "importedCount": "{n} Workspace imported | {n} Workspaces imported",
+      "done": "Done",
+      "skip": "Skip for now",
+      "importSelected": "Import {n} Workspace | Import {n} Workspaces"
+    },
     "choose": "Choose provider",
     "manage": "Manage providers",
     "noneConfigured": "Add a provider in Settings to start a session.",
@@ -1413,6 +1513,9 @@
     "connecting": "Connecting…",
     "other": "Another machine",
     "otherDescription": "A server or another computer running deskfleet-daemon.",
+    "android": "Android (Termux)",
+    "androidDescription": "Open the setup guide to run deskfleet-daemon on Android, then register it as another machine.",
+    "androidGuide": "Android daemon setup guide",
     "statusStep": "On that machine, start the daemon and run",
     "pasteStep": "Paste the command’s output",
     "pasteHint": "Paste the enrollment bundle for this Team. It contains a private machine credential; share it only with this server.",
@@ -1526,10 +1629,15 @@
       "shared": "Screen sharing and mouse and keyboard control share one authorization. Once approved, continue through both steps.",
       "requesting": "Waiting for desktop authorization…",
       "retry": "Retry access",
+      "changeScreensLater": "To add a missing screen later, open Settings → Permissions → Screen sharing.",
       "screenCapture": {
         "title": "Screen sharing",
         "description": "Allow DeskFleet to share this computer’s screen during remote desktop sessions.",
-        "instructions": "Select the screens to share and approve access in your desktop’s authorization dialog.",
+        "instructions": "Allow screen sharing in the system dialog. If a screen picker appears, select every monitor you want to access remotely.",
+        "selection": "Only authorized screens appear remotely. DeskFleet reuses your authorization when you reconnect.",
+        "choose": "Authorize screen sharing",
+        "reselect": "Authorize again",
+        "reselectHint": "Authorizing again stops current remote viewing and control and requests fresh desktop authorization. If a screen picker appears, include any missing monitors.",
         "skip": "Remote screen sharing will be unavailable until you authorize it. You can skip this step and enable access later."
       },
       "accessibility": {
@@ -1848,5 +1956,23 @@
     "loading": "Searching…",
     "more": "Load more",
     "untitled": "Untitled chat"
+  },
+  "dictation": {
+    "inputSettings": "Input",
+    "setting": "Voice input",
+    "settingDescription": "Show the microphone button when speech recognition is available on this device. Uses the current interface language.",
+    "start": "Start voice input",
+    "stop": "Finish voice input",
+    "cancel": "Cancel voice input",
+    "starting": "Starting microphone…",
+    "listening": "Listening…",
+    "stopping": "Finishing recognition…",
+    "errors": {
+      "permission-denied": "Allow microphone and speech recognition access to use voice input.",
+      "unavailable": "Speech recognition is unavailable for this language on this device.",
+      "no-speech": "No speech detected. Try again.",
+      "network": "The speech recognition service could not connect. Try again.",
+      "failed": "Voice input failed. Try again."
+    }
   }
 }

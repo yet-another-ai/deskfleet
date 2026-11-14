@@ -21,13 +21,13 @@ const DAY_MS = 86_400_000
 const AGENT_READ = new Set<AgentMethod>([
   "_deskfleet/session/list", "_deskfleet/session/subscribe", "_deskfleet/session/history", "_deskfleet/command/get",
   "_deskfleet/session/read", "_deskfleet/session/unread",
-  "_deskfleet/session/configuration", "_deskfleet/agent/configuration",
+  "_deskfleet/session/configuration", "_deskfleet/agent/configuration", "_deskfleet/agent/usage",
 ])
 const AGENT_EXECUTE = new Set<AgentMethod>([
   "_deskfleet/git/prepare",
   "_deskfleet/composer/references", "_deskfleet/composer/resolve",
   "_deskfleet/input/submit", "_deskfleet/input/steer", "_deskfleet/input/withdraw", "_deskfleet/input/retry",
-  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop",
+  "_deskfleet/turn/cancel", "_deskfleet/permission/respond", "_deskfleet/session/resume", "_deskfleet/session/stop", "_deskfleet/session/yolo",
   "_deskfleet/elicitation/respond",
 ])
 
@@ -283,6 +283,7 @@ export class AuthorizedPeers {
       new FilesService(
         this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
         this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
+        this.#agents.draftAttachmentDirectory ? draftId => this.#agents.draftAttachmentDirectory!(draftId) : undefined,
       ),
       bytes => send(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), false),
       method => { this.#live(id, fileAction(method)) },

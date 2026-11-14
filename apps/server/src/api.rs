@@ -291,8 +291,10 @@ const MANAGEMENT: &[&str] = &[
     "providerRemove",
     "providerTest",
     "providerProbe",
+    "providerDiscoverWorkspaces",
     "providerInstall",
     "providerLogin",
+    "providerUpgrade",
     "capabilities",
     "systemStatus",
     "terminalList",
@@ -303,6 +305,7 @@ const MANAGEMENT: &[&str] = &[
     "_deskfleet/session/archive",
     "_deskfleet/session/restore",
     "_deskfleet/session/rename",
+    "_deskfleet/session/yolo",
     "_deskfleet/session/read",
     "_deskfleet/session/unread",
     "_deskfleet/session/delete",
@@ -310,6 +313,7 @@ const MANAGEMENT: &[&str] = &[
     "_deskfleet/session/configure",
     "_deskfleet/session/switch-agent",
     "_deskfleet/agent/configuration",
+    "_deskfleet/agent/usage",
     "_deskfleet/command/get",
     "_deskfleet/git/branches",
     "scheduleList",
@@ -603,5 +607,49 @@ fn safe_providers(value: &Value) -> Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    json!({"templates":templates,"providers":providers})
+    let mut safe = json!({"templates":templates,"providers":providers});
+    if let Some(updates) = value.get("updates").and_then(Value::as_object) {
+        let safe_updates = updates
+            .iter()
+            .filter_map(|(id, item)| {
+                let current = item.get("currentVersion")?.as_str()?;
+                let latest = item.get("latestVersion")?.as_str()?;
+                let status = item.get("status")?.as_str()?;
+                if !matches!(status, "available" | "updating" | "error") {
+                    return None;
+                }
+                let mut entry =
+                    json!({"currentVersion": current, "latestVersion": latest, "status": status});
+                if let Some(error) = item.get("error").and_then(Value::as_str) {
+                    entry["error"] = error.into();
+                }
+                Some((id.clone(), entry))
+            })
+            .collect::<serde_json::Map<_, _>>();
+        safe["updates"] = Value::Object(safe_updates);
+    }
+    safe
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_providers;
+    use serde_json::json;
+
+    #[test]
+    fn safe_providers_whitelists_updates_and_drops_secrets_or_invalid_statuses() {
+        let cleaned = safe_providers(&json!({
+            "templates": [{"id": "codex", "name": "Codex", "binaryPath": "/secret/path"}],
+            "providers": [{"id": "p1", "template": "codex", "name": "Codex", "env": {"API_KEY": "secret"}}],
+            "updates": {
+                "codex": {"currentVersion": "0.160.0", "latestVersion": "0.167.2", "status": "error", "error": "exit 1", "binaryPath": "/leak"},
+                "grok": {"currentVersion": "0.9.0", "latestVersion": "1.0.0", "status": "bogus"}
+            }
+        }));
+        assert!(cleaned["providers"][0].get("env").is_none());
+        assert_eq!(
+            cleaned["updates"],
+            json!({"codex": {"currentVersion": "0.160.0", "latestVersion": "0.167.2", "status": "error", "error": "exit 1"}})
+        );
+    }
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { Check, ChevronDown, Search } from "@lucide/vue"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { computed, ref, shallowRef } from "vue"
@@ -58,7 +59,7 @@ function select(value?: string): void {
       <ChevronDown :size="13" :stroke-width="1.75" class="text-ui-text-muted" :class="open && 'rotate-180'" aria-hidden="true" />
     </PopoverTrigger>
     <PopoverPortal>
-    <PopoverContent align="start" :side-offset="6" :collision-padding="12" :aria-label="t('providers.iconChoices')" class="ui-menu z-60 w-[22rem] max-w-[calc(100vw-4rem)] p-2">
+    <PopoverContent :as="SpringSurface" align="start" :side-offset="6" :collision-padding="12" :aria-label="t('providers.iconChoices')" class="ui-menu z-60 w-[22rem] max-w-[calc(100vw-4rem)] p-2">
       <div class="relative mb-2">
         <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-2.5 text-ui-text-muted" aria-hidden="true" />
         <input v-model="query" type="search" name="provider-icon-search" class="ui-input pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />

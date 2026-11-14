@@ -33,6 +33,21 @@ test("desktop capabilities keep codecs attached to each display's GPU", async ()
   ])
 })
 
+test("display names and user numbers do not replace capture IDs during codec discovery", async () => {
+  const displays = [
+    { id: 65537, name: "Dell U2723QE (DISPLAY1)", displayNumber: 1, width: 3840, height: 2160, refreshRateHz: 60 },
+    { id: 4, name: "DP-2", displayNumber: 2, width: 1920, height: 1080, refreshRateHz: 60 },
+  ]
+  const probed: number[] = []
+  const result = await desktopCapabilities({
+    captureDisplays: async () => displays,
+    supportedVideoCodecs: async id => { probed.push(id); return ["h264"] },
+    secureAttentionSupported: async () => false,
+  })
+  assert.deepEqual(probed, [65537, 4])
+  assert.deepEqual(result.displays, displays.map(display => ({ ...display, codecs: ["h264"] })))
+})
+
 test("a failed display codec probe preserves usable neighboring displays", async t => {
   const failure = new Error("open display adapter failed")
   const diagnostics = t.mock.method(console, "error", () => {})

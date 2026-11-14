@@ -104,6 +104,71 @@ export type TranscriptEntry = Extract<ConversationEntry, { kind: "input" }> | Co
 /** Turn states that mean the agent is still producing work for a Session. */
 export const liveTurnStates: AgentTurn["state"][] = ["starting", "running", "cancelling"]
 
+/** Tracks which pending inputs entered the conversation directly instead of queuing behind active work. */
+export function createPromotedInputTracker() {
+  const promotedIds = new Set<string>()
+  const seenPending = new Set<string>()
+  let busy = false
+  return {
+    promotedIds,
+    seenPending,
+    step(event: AgentEvent): void {
+      if (event.kind === "input") {
+        const input = event.payload as AgentInput
+        if (input.state === "pending" && !seenPending.has(input.id)) {
+          seenPending.add(input.id)
+          if (!busy) { promotedIds.add(input.id); busy = true }
+        } else if (input.state === "dispatching" || input.state === "delivered") {
+          busy = true
+        } else if ((input.state === "withdrawn" || input.state === "failed") && promotedIds.delete(input.id)) {
+          busy = false
+        }
+      } else if (event.kind === "turn") {
+        busy = liveTurnStates.includes((event.payload as AgentTurn).state)
+      } else if (event.kind === "run") {
+        const { state } = event.payload as AgentSnapshot["runs"][number]
+        if (state === "stopped" || state === "interrupted") busy = false
+        else if (state === "starting" && promotedIds.size > 0) busy = true
+      } else if (event.kind === "command" && (event.payload as { method?: string } | null)?.method === "_deskfleet/session/stop") {
+        busy = false
+      }
+    },
+  }
+}
+
+export function promotedInputIdsFromEvents(
+  events: readonly AgentEvent[],
+  snapshot?: Pick<AgentSnapshot, "inputs" | "turns"> | null,
+): Set<string> {
+  const tracker = createPromotedInputTracker()
+  for (const event of events) tracker.step(event)
+  if (!tracker.seenPending.size && snapshot && !snapshot.turns.some(turn => liveTurnStates.includes(turn.state))) {
+    const first = snapshot.inputs.find(input => input.state === "pending" && !input.error)
+    if (first) tracker.promotedIds.add(first.id)
+  }
+  return tracker.promotedIds
+}
+
+/** Unconsumed pending inputs shown in the conversation instead of the backlog queue. */
+export function promotedPendingInputs(
+  snapshot: Pick<AgentSnapshot, "inputs" | "turns"> | null | undefined,
+  events: readonly AgentEvent[] = [],
+): AgentInput[] {
+  if (!snapshot) return []
+  const pending = snapshot.inputs.filter(input => input.state === "pending" && !input.error)
+  if (!pending.length) return []
+  const promotedIds = promotedInputIdsFromEvents(events, snapshot)
+  return pending.filter(input => promotedIds.has(input.id))
+}
+
+/** The earliest unconsumed pending input shown in the conversation while no turn is active. */
+export function promotedPendingInput(
+  snapshot: Pick<AgentSnapshot, "inputs" | "turns"> | null | undefined,
+  events: readonly AgentEvent[] = [],
+): AgentInput | undefined {
+  return promotedPendingInputs(snapshot, events)[0]
+}
+
 export type SessionActivity = "working" | "permission" | "question"
 
 /** Projects the highest-priority live activity for a Session snapshot. */

@@ -8,6 +8,7 @@ import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { agentResourceContextKey, type AgentResourceContext } from "../../services/agent-resources.ts"
 import * as mermaidService from "../../services/mermaid.ts"
+import * as springScroll from "../../services/spring-scroll.ts"
 import { APPEARANCE_STORAGE_KEY, useAppearanceStore } from "../../stores/appearance.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { performPreviewLocateDom } from "../../stores/previews.ts"
@@ -239,12 +240,13 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
 
   const stage = view.get('[data-mermaid="0"] [data-mermaid-stage]')
   await view.get('[data-mermaid-action="zoom-in"]').trigger("click")
-  expect(stage.attributes("style")).toContain("scale(1.25)")
+  expect(stage.attributes("style")).toContain("scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(1.25)")
   await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
   await view.get('[data-mermaid-action="zoom-out"]').trigger("click")
-  expect(stage.attributes("style")).toContain("scale(0.75)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("scale(0.75)")
   await view.get('[data-mermaid-action="reset"]').trigger("click")
-  expect(stage.attributes("style")).toContain("translate(0px, 0px) scale(1)")
+  await expect.poll(() => stage.attributes("style"), { timeout: 2000 }).toContain("translate(0px, 0px) scale(1)")
 
   await view.get('[data-mermaid-action="focus"]').trigger("click")
   await flushPromises()
@@ -273,8 +275,7 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   expect(openSpy.mock.calls[0]![0]).toContain("#/mermaid?code=graph+TD%0A++A+--%3E+B&sessionId=12&diagramId=0")
 
   const inlineDiagram = view.get('[data-mermaid="0"]').element as HTMLElement
-  const scrollIntoView = vi.fn()
-  inlineDiagram.scrollIntoView = scrollIntoView
+  const scrollIntoView = vi.spyOn(springScroll, "springScrollIntoView")
   const windowViewer = mount(MermaidViewer, {
     attachTo: document.body,
     props: { code: "graph TD\n  A --> B", mode: "window", source: { sessionId: "12", diagramId: "0" } },
@@ -283,7 +284,7 @@ test("renders mermaid diagrams, toolbar controls, and LaTeX copy button", async 
   await flushPromises()
   await windowViewer.get('[data-mermaid-action="locate-message"]').trigger("click")
   await flushPromises()
-  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
+  expect(scrollIntoView).toHaveBeenCalledWith(inlineDiagram)
   expect(inlineDiagram.dataset.mermaidLocated).toBe("true")
   windowViewer.unmount()
 
@@ -443,15 +444,14 @@ test("opens all resource links in a right-side preview tab first and locates the
   })
 
   const linkElement = links[0]!.element as HTMLElement
-  const scrollIntoView = vi.fn()
-  linkElement.scrollIntoView = scrollIntoView
+  const scrollIntoView = vi.spyOn(springScroll, "springScrollIntoView")
   expect(performPreviewLocateDom({
     id: 1,
     content: "blob:fox",
     sessionId: "12",
     itemId: "file:///work/fox.3mf",
   })).toBe(true)
-  expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" })
+  expect(scrollIntoView).toHaveBeenCalledWith(linkElement)
   expect(linkElement.dataset.previewLocated).toBe("true")
 })
 

@@ -1,7 +1,9 @@
 import { homedir } from "node:os"
+import { isAbsolute } from "node:path"
 import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
+import { AgentUsageCache } from "./agent-usage.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { validateProviderId } from "./provider-protocol.ts"
 import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
@@ -22,10 +24,14 @@ import { GitInspection } from "./git-inspection.ts"
 import { prepareGitWorkspace } from "./git-preparation.ts"
 import type { GitPreparedRevision } from "./git-protocol.ts"
 import { ComposerReferences } from "./composer-references.ts"
-import type {
-  AgentActor, AgentCommand, AgentEvent, AgentInput, AgentMethod, AgentPermission, AgentPreview, AgentReceipt, AgentSnapshot,
+import {
+  autoApprovePermission,
+  type AgentActor, type AgentCommand, type AgentEvent, type AgentInput, type AgentMethod, type AgentPermission, type AgentPreview, type AgentReceipt, type AgentSnapshot,
 } from "./agent-protocol.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
+import { cleanupSessionIdle } from "./worktree-cleanup-policy.ts"
+import type { WorktreePreferences } from "./worktree-preferences.ts"
+import { worktreeCleanupFingerprint } from "./worktree-cleanup-inspection.ts"
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected request parameters")
@@ -105,12 +111,15 @@ export class AgentSessions {
   readonly #git = new GitInspection()
   readonly #references: ComposerReferences
   readonly #runtimes = new Map<string, AgentRuntime>()
+  readonly #provisioning = new Map<string, Promise<void>>()
+  readonly #stoppedBeforeStart = new Set<string>()
   readonly #operations = new Map<string, Promise<unknown>>()
   readonly #transitions = new Map<string, Promise<unknown>>()
   readonly #archiveListeners = new Set<(worktreeId: string) => Promise<void>>()
   readonly #discovery = new Set<Promise<unknown>>()
   readonly #presence = new SessionPresence()
   readonly #configurationProbes = new AgentConfigurationProbes()
+  readonly #usage = new AgentUsageCache()
   readonly #unsubscribeProviders?: () => void
   readonly #closing = new AbortController()
   #closed = false
@@ -128,6 +137,7 @@ export class AgentSessions {
       return { provider, config: { name: "Codex" } }
     }
     this.#unsubscribeProviders = providers?.onChanged(() => {
+      this.#usage.clear()
       void this.#configurationProbes.invalidate().catch(error => console.error("Could not close Agent configuration probes", error))
     })
   }
@@ -181,10 +191,16 @@ export class AgentSessions {
   }
 
   leave(sessionId: string, connectionId: string): void {
+    for (const visit of this.#presence.visits(connectionId).filter(visit => visit.sessionId === sessionId)) {
+      void this.#rememberViewer(sessionId, visit.userId).catch(error => console.error("Could not record Session activity", error))
+    }
     this.#presence.unwatch(id(sessionId, "Session ID"), connectionId)
   }
 
   leaveAll(connectionId: string): void {
+    for (const visit of this.#presence.visits(connectionId)) {
+      void this.#rememberViewer(visit.sessionId, visit.userId).catch(error => console.error("Could not record Session activity", error))
+    }
     this.#presence.disconnect(connectionId)
   }
 
@@ -192,11 +208,14 @@ export class AgentSessions {
     await this.journal.serial(sessionId, async () => {
       if (this.#closed) return
       const snapshot = await this.journal.read(sessionId)
-      if (snapshot.session.viewers?.some(viewer => viewer.userId === userId)) return
+      const seenAt = timestamp()
+      const viewers = snapshot.session.viewers ?? []
       const session = {
         ...snapshot.session,
-        viewers: [...snapshot.session.viewers ?? [], { userId, seenAt: timestamp() }],
-        updatedAt: timestamp(),
+        viewers: viewers.some(viewer => viewer.userId === userId)
+          ? viewers.map(viewer => viewer.userId === userId ? { userId, seenAt } : viewer)
+          : [...viewers, { userId, seenAt }],
+        updatedAt: seenAt,
         lastEventSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n),
       }
       await this.journal.commit(snapshot, {
@@ -207,6 +226,15 @@ export class AgentSessions {
   }
   preview(sessionId: string): AgentPreview | undefined { return this.journal.preview(sessionId) }
   reconcileAdmissions(): Promise<void> { return this.#admissions.reconcile() }
+  /** Stops these providers' runtimes so their executable can be replaced; a failed stop aborts the replacement. */
+  async stopProviders(providerIds: string[]): Promise<void> {
+    const ids = new Set(providerIds)
+    const sessions = (await this.journal.list()).filter(session => ids.has(session.provider))
+    await Promise.all([
+      this.#configurationProbes.invalidate(),
+      ...sessions.map(session => this.#runtimes.get(session.id)?.stop()),
+    ])
+  }
   async resumeArchiving(): Promise<void> {
     // Register before awaiting journal I/O so close() drains this startup work
     // while the catalog pool is still open (fire-and-forget from openMachine).
@@ -222,9 +250,11 @@ export class AgentSessions {
   }
 
   async #gitDirectories(sessionId: string): Promise<string[]> {
-    const session = await this.journal.session(id(sessionId, "Session ID"))
+    const checkedId = id(sessionId, "Session ID")
+    await this.#provisioning.get(checkedId)
+    const session = await this.journal.session(checkedId)
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
-    const worktree = await this.#catalog.sessionWorktree(sessionId)
+    const worktree = await this.#catalog.sessionWorktree(checkedId)
     if (!worktree?.directories.length) throw new Error("Session worktree is unavailable")
     return worktree.directories.map(directory => directory.path)
   }
@@ -260,18 +290,25 @@ export class AgentSessions {
   }
 
   async sessionDirectory(sessionId: string): Promise<string> {
-    const session = await this.journal.session(id(sessionId, "Session ID"))
+    const checkedId = id(sessionId, "Session ID")
+    await this.#provisioning.get(checkedId)
+    const session = await this.journal.session(checkedId)
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
-    const worktree = await this.#catalog.sessionWorktree(sessionId)
+    const worktree = await this.#catalog.sessionWorktree(checkedId)
     const directory = worktree?.directories[0]?.path
     if (!directory) throw new Error("Session worktree is unavailable")
     return directory
   }
   async sessionAttachmentDirectory(sessionId: string): Promise<string> {
-    const session = await this.journal.session(id(sessionId, "Session ID"))
+    const checkedId = id(sessionId, "Session ID")
+    await this.#provisioning.get(checkedId)
+    const session = await this.journal.session(checkedId)
     requireActiveSession(session)
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
-    return this.#catalog.attachments.directory(sessionId)
+    return this.#catalog.attachments.directory(checkedId)
+  }
+  draftAttachmentDirectory(draftId: string): Promise<string> {
+    return this.#catalog.attachments.draftDirectory(draftId)
   }
   onSessionArchive(listener: (worktreeId: string) => Promise<void>): () => void {
     this.#archiveListeners.add(listener)
@@ -326,9 +363,16 @@ export class AgentSessions {
       this.#discovery.add(pending)
       try { return await pending } finally { this.#discovery.delete(pending) }
     }
+    if (method === "_deskfleet/agent/usage") {
+      validateProviderId(params.provider)
+      const pending = this.#usage.read(params.provider, this.#resolveProvider(params.provider), this.#closing.signal)
+      this.#discovery.add(pending)
+      try { return await pending } finally { this.#discovery.delete(pending) }
+    }
     if (method === "_deskfleet/session/configuration") {
       const sessionId = id(params.sessionId, "Session ID")
       if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid composer discovery flag")
+      await this.#provisioning.get(sessionId)
       await this.journal.session(sessionId)
       const pending = this.#runtime(sessionId).configuration(this.#closing.signal, params.composer === true)
       this.#discovery.add(pending)
@@ -345,6 +389,7 @@ export class AgentSessions {
         // even when a different authenticated viewer later opens the Session.
         allowSessionReferences = creation?.actor.kind === "user" && !!creation.actor.userId && !!creation.actor.deviceId
       }
+      if (params.sessionId !== undefined) await this.#provisioning.get(id(params.sessionId, "Session ID"))
       if (method === "_deskfleet/composer/references") return this.#references.search(params, allowSessionReferences)
       if (!allowSessionReferences && sessionReference) {
         throw new Error("Session references require the built-in MCP server and an authenticated user")
@@ -453,6 +498,11 @@ export class AgentSessions {
       if (method === "_deskfleet/session/unread") return await this.#markUnread(command)
       await this.journal.saveCommand(command)
       const sessionId = command.sessionId!
+      if (method === "_deskfleet/session/configure" || method === "_deskfleet/session/switch-agent"
+        || method === "_deskfleet/session/resume" || method === "_deskfleet/session/archive"
+        || method === "_deskfleet/session/restore" || method === "_deskfleet/session/delete") {
+        await this.#provisioning.get(sessionId)
+      }
       const session = await this.journal.session(sessionId)
       if (this.#closed) throw new Error("Agent service is stopping")
       if (session.lifecycle === "deleting" && method !== "_deskfleet/session/delete") throw new Error("Session deletion is in progress")
@@ -479,15 +529,18 @@ export class AgentSessions {
       if (method === "_deskfleet/input/submit") return await this.#submit(command)
       if (method === "_deskfleet/input/steer" || method === "_deskfleet/input/withdraw" || method === "_deskfleet/input/retry") return await this.#inputAction(command)
       if (method === "_deskfleet/permission/respond") return await this.#decide(command)
+      if (method === "_deskfleet/session/yolo") return await this.#setYolo(command)
       if (method === "_deskfleet/elicitation/respond") {
         id(params.elicitationId, "Question ID")
         return await this.#runtime(sessionId).elicitations.respond(command, params.response)
       }
       if (method === "_deskfleet/turn/cancel") return await this.#cancel(command)
       if (method === "_deskfleet/session/resume") {
+        this.#stoppedBeforeStart.delete(sessionId)
         if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
         await this.#runtime(sessionId).start()
       } else if (method === "_deskfleet/session/stop") {
+        if (this.#provisioning.has(sessionId)) this.#stoppedBeforeStart.add(sessionId)
         await this.#runtime(sessionId).stop()
       } else if (method === "_deskfleet/session/delete") {
         return await this.#delete(command)
@@ -581,9 +634,20 @@ export class AgentSessions {
     const provider = string(command.params.provider, "Agent provider")
     this.#resolveProvider(provider)
     validateAgentConfigurationSelection(command.params)
+    if (command.params.deferStartup !== undefined && typeof command.params.deferStartup !== "boolean") {
+      throw new Error("Invalid deferred startup flag")
+    }
+    if (command.params.yolo !== undefined && typeof command.params.yolo !== "boolean") {
+      throw new Error("Invalid YOLO flag")
+    }
+    const yoloFields = command.params.yolo ? { yolo: true, yoloActor: command.actor } : {}
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
+    const cwd = command.params.cwd === undefined ? undefined : string(command.params.cwd, "working directory").trim()
+    if (cwd !== undefined && (context !== "directory" || !cwd || !isAbsolute(cwd) || cwd.includes("\0") || cwd.length > 4096)) {
+      throw new Error("Invalid Session working directory")
+    }
     const baseBranch = command.params.baseBranch === undefined ? undefined : string(command.params.baseBranch, "base branch").trim()
     if (baseBranch !== undefined && (!baseBranch || context !== "worktree")) throw new Error("Invalid base branch")
     const baseRevisions = command.params.baseRevisions as GitPreparedRevision[] | undefined
@@ -594,24 +658,55 @@ export class AgentSessions {
     }
     const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : ""
     const session = await this.#admissions.allocate(command, "create", admissionGeneration =>
-      this.journal.create(command, command.workspaceId, title, context, provider, { admissionGeneration }))
+      this.journal.create(command, command.workspaceId, title, context, provider, {
+        admissionGeneration,
+        ...yoloFields,
+      }))
     command.sessionId = session.id
-    try {
-      await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch, baseRevisions)
-      await this.journal.serial(session.id, async () => {
-        const snapshot = await this.journal.read(session.id)
-        const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }
-        await this.journal.commit(snapshot, { session: ready, events: [this.journal.event(session.id, "session", ready), this.journal.event(session.id, "command", command)] })
-      })
-      // Provider failures are persisted by the runtime and can be resumed.
-      if (!this.#closed) await this.#runtime(session.id).start().catch(() => {})
-    } catch (error) {
-      await this.journal.serial(session.id, async () => {
-        const snapshot = await this.journal.read(session.id)
-        const failed = { ...snapshot.session, lifecycle: "provision_failed" as const, error: errorMessage(error), updatedAt: timestamp() }
-        await this.journal.commit(snapshot, { session: failed, events: [this.journal.event(session.id, "session", failed)] })
-      })
+    const provision = async (includeCommandEvent: boolean): Promise<void> => {
+      try {
+        await this.#catalog.provisionSession(session.id, session.workspaceId, context, baseBranch, baseRevisions, cwd)
+        await this.journal.serial(session.id, async () => {
+          const snapshot = await this.journal.read(session.id)
+          const ready = { ...snapshot.session, lifecycle: "ready" as const, updatedAt: timestamp() }
+          const events = [this.journal.event(session.id, "session", ready)]
+          if (includeCommandEvent) events.push(this.journal.event(session.id, "command", command))
+          await this.journal.commit(snapshot, { session: ready, events })
+        })
+        // Provider failures are persisted by the runtime and can be resumed.
+        if (!this.#closed && !this.#stoppedBeforeStart.delete(session.id)) {
+          await this.#runtime(session.id).start().catch(() => {})
+        }
+      } catch (error) {
+        this.#stoppedBeforeStart.delete(session.id)
+        await this.journal.serial(session.id, async () => {
+          const snapshot = await this.journal.read(session.id)
+          const failed = { ...snapshot.session, lifecycle: "provision_failed" as const, error: errorMessage(error), updatedAt: timestamp() }
+          await this.journal.commit(snapshot, { session: failed, events: [this.journal.event(session.id, "session", failed)] })
+        })
+      }
     }
+    if (command.params.deferStartup === true) {
+      const initial = await this.journal.serial(session.id, async () => {
+        const snapshot = await this.journal.read(session.id)
+        const completed = { ...command, status: "completed" as const, result: snapshot, completedAt: timestamp() }
+        await this.journal.commit(snapshot, {
+          command: completed,
+          events: [
+            this.journal.event(session.id, "command", command, { commandId: command.id }),
+            this.journal.event(session.id, "command", completed, { commandId: command.id }),
+          ],
+        })
+        return this.journal.read(session.id)
+      })
+      const pending = provision(false)
+        .finally(() => { this.#provisioning.delete(session.id); this.#catalog.changed() })
+        .catch(error => console.error(`Could not provision Session ${session.id}`, error))
+      this.#provisioning.set(session.id, pending)
+      this.#catalog.changed()
+      return initial
+    }
+    await provision(true)
     const snapshot = await this.journal.read(session.id)
     await this.#complete(command, snapshot)
     this.#catalog.changed()
@@ -628,13 +723,22 @@ export class AgentSessions {
       this.#resolveProvider(source.session.provider)
       const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
+      const yoloFields = source.session.yolo ? { yolo: true, yoloActor: command.actor } : {}
       const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
-        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider,
-          { admissionGeneration, inheritedTurnCount: consumedTurns(source) }))
+        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider, {
+          admissionGeneration,
+          inheritedTurnCount: consumedTurns(source),
+          ...yoloFields,
+        }))
       command.sessionId = child.id
       command.workspaceId = child.workspaceId
       try {
-        await this.#catalog.provisionSession(child.id, child.workspaceId, context)
+        // Only directory→directory forks keep the source primary path. Forking
+        // from a worktree Session must not attach the owned checkout as cwd.
+        const cwd = context === "directory" && source.session.context === "directory"
+          ? (await this.#catalog.sessionWorktree(sourceId))?.directories[0]?.path
+          : undefined
+        await this.#catalog.provisionSession(child.id, child.workspaceId, context, undefined, undefined, cwd)
         await copyForkHistory(this.journal, source, child.id)
         await this.journal.serial(child.id, async () => {
           const snapshot = await this.journal.read(child.id)
@@ -670,15 +774,20 @@ export class AgentSessions {
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
       requireActiveSession(snapshot.session)
-      if (snapshot.session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
+      const provisioning = snapshot.session.lifecycle === "provisioning" && this.#provisioning.has(sessionId)
+      if (snapshot.session.lifecycle !== "ready" && !(delivery === "backlog" && provisioning)) {
+        throw new Error("This Session has no usable execution context")
+      }
       if (!runtime.running && !resumable(snapshot)) throw new Error("This agent cannot resume the saved conversation")
+      const adopted = await this.#catalog.attachments.adoptDrafts(sessionId, blocks)
+      if (provisioning && snapshot.inputs.length > 0) this.#stoppedBeforeStart.delete(sessionId)
       const input: AgentInput = {
-        id: inputId, sessionId, submissionCommandId: command.id, author: command.actor, content: blocks,
+        id: inputId, sessionId, submissionCommandId: command.id, author: command.actor, content: adopted,
         acceptedSeq: String(BigInt(snapshot.session.lastEventSeq) + 1n), state: delivery === "steer" ? "dispatching" : "pending", requestedDelivery: delivery,
         requestedTurnId: command.params.turnId === undefined ? undefined : id(command.params.turnId, "Turn ID"), createdAt: timestamp(),
         ...(delivery === "steer" ? { dispatchCommandId: command.id, dispatcher: command.actor } : {}),
       }
-      const titleSource = blocks.map(block => block.type === "text" ? block.text : block.type === "resource" && "text" in block.resource ? block.resource.text : "").filter(Boolean).join(" ").trim()
+      const titleSource = adopted.map(block => block.type === "text" ? block.text : block.type === "resource" && "text" in block.resource ? block.resource.text : "").filter(Boolean).join(" ").trim()
       const title = snapshot.session.title || truncateGeneratedTitle(titleSource.split(/\r?\n/u)[0] ?? "")
       const session = { ...snapshot.session, title, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, inputs: [input], command: { ...command, status: delivery === "steer" ? "accepted" : "completed", result: receipt, completedAt: delivery === "steer" ? undefined : timestamp() }, events: [
@@ -686,7 +795,7 @@ export class AgentSessions {
       ] })
     })
     if (delivery === "steer") this.#steerLater(command, inputId, command.params.turnId as string | undefined)
-    else this.#deliver(sessionId)
+    else if (!this.#provisioning.has(sessionId)) this.#deliver(sessionId)
     return receipt
   }
 
@@ -771,6 +880,55 @@ export class AgentSessions {
     return result
   }
 
+  async #setYolo(command: AgentCommand): Promise<AgentSnapshot> {
+    const sessionId = command.sessionId!
+    const enabled = command.params.enabled
+    if (typeof enabled !== "boolean") throw new Error("Invalid YOLO flag")
+
+    const pendingResolutions: { id: string; optionId: string }[] = []
+    const snapshot = await this.journal.serial(sessionId, async () => {
+      const current = await this.journal.read(sessionId)
+      requireActiveSession(current.session)
+
+      const now = timestamp()
+      const session = enabled
+        ? { ...current.session, yolo: true, yoloActor: command.actor, updatedAt: now }
+        : { ...current.session, yolo: false, yoloActor: undefined, updatedAt: now }
+
+      const resolvedPermissions = enabled
+        ? current.permissions
+            .map(previous => autoApprovePermission(previous, now, { actor: command.actor, decisionCommandId: command.id }))
+            .filter((permission): permission is AgentPermission => permission !== undefined)
+        : []
+
+      for (const permission of resolvedPermissions) {
+        if (permission.optionId) {
+          pendingResolutions.push({ id: permission.id, optionId: permission.optionId })
+        }
+      }
+
+      const events = [
+        this.journal.event(sessionId, "session", session, { commandId: command.id }),
+        ...resolvedPermissions.map(permission =>
+          this.journal.event(sessionId, "permission", permission, { commandId: command.id }),
+        ),
+      ]
+
+      await this.journal.commit(current, {
+        session,
+        ...(resolvedPermissions.length > 0 ? { permissions: resolvedPermissions } : {}),
+        events,
+      })
+      return await this.journal.read(sessionId)
+    })
+
+    await this.#complete(command, snapshot)
+    for (const resolution of pendingResolutions) {
+      this.#runtime(sessionId).resolvePermission(resolution.id, resolution.optionId)
+    }
+    return snapshot
+  }
+
   async #cancel(command: AgentCommand): Promise<AgentReceipt> {
     const sessionId = command.sessionId!
     const turnId = id(command.params.turnId, "Turn ID")
@@ -825,9 +983,38 @@ export class AgentSessions {
     return next
   }
 
-  async #archive(sessionId: string): Promise<void> {
+  /** Recheck the candidate under the same gate used by input and terminal admission. */
+  cleanupWorktree(sessionId: string, sequence: string, settings: WorktreePreferences["cleanup"], git?: string): Promise<void> {
+    if (this.#closed || this.#transitions.has(sessionId)) return Promise.resolve()
+    const pending = this.#archive(sessionId, { sequence, settings, git }).then(async () => {
+      await this.#admissions.synchronize((await this.journal.session(sessionId)))
+    })
+    this.#transitions.set(sessionId, pending)
+    void pending.finally(() => { if (this.#transitions.get(sessionId) === pending) this.#transitions.delete(sessionId) }).catch(() => {})
+    return pending
+  }
+
+  async #archive(sessionId: string, automatic?: { sequence: string; settings: WorktreePreferences["cleanup"]; git?: string }): Promise<void> {
     const alreadyArchived = await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
+      if (automatic) {
+        if (JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) !== JSON.stringify(automatic.settings)) return "skip"
+        if (this.#closed || snapshot.session.lastEventSeq !== automatic.sequence || !cleanupSessionIdle(snapshot)
+          || this.#presence.userIds(sessionId).length) return "skip"
+        const worktree = await this.#catalog.sessionWorktree(sessionId)
+        if (worktree && this.#terminals?.list().some(terminal => terminal.worktreeId === worktree.id && terminal.status === "running" && terminal.kind !== "acp")) return "skip"
+        const inspection = await this.#catalog.inspectSessionWorktreeCleanup(sessionId, automatic.settings.keepLocalChanges)
+        if (!inspection?.hasCheckouts || inspection.protected || this.#presence.userIds(sessionId).length) return "skip"
+        if (automatic.git !== undefined && worktreeCleanupFingerprint(inspection) !== automatic.git) return "skip"
+        if (snapshot.session.archiveState === "archived") {
+          if (automatic.settings.archived
+            && JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) === JSON.stringify(automatic.settings)) {
+            await this.#catalog.cleanupSessionWorktree(sessionId, automatic.settings.keepLocalChanges)
+          }
+          return "skip"
+        }
+        if (snapshot.session.archiveState !== "active") return "skip"
+      }
       if (!["ready", "provision_failed"].includes(snapshot.session.lifecycle)) throw new Error("Wait for Session provisioning or deletion before archiving")
       if (snapshot.session.archiveState === "archived") return true
       await this.#catalog.prepareSessionWorktreeArchive(sessionId)
@@ -835,6 +1022,7 @@ export class AgentSessions {
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
       return false
     })
+    if (alreadyArchived === "skip") return
     if (alreadyArchived) {
       await this.#catalog.archiveSessionWorktree(sessionId)
       return
@@ -845,15 +1033,28 @@ export class AgentSessions {
     const results = await Promise.allSettled(closures)
     const errors = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
     if (errors.length) throw new AggregateError(errors, "Session resources could not all be closed; retry archive")
-    await this.#catalog.archiveSessionWorktree(sessionId)
+    if (!automatic) await this.#catalog.archiveSessionWorktree(sessionId)
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
-      const session = { ...snapshot.session, archiveState: "archived" as const, updatedAt: timestamp() }
+      if (snapshot.session.lifecycle === "deleting") return
+      const removed = !automatic || (!this.#closed && !this.#presence.userIds(sessionId).length
+        && JSON.stringify((await this.#catalog.getWorktreePreferences()).cleanup) === JSON.stringify(automatic.settings)
+        && await this.#catalog.cleanupSessionWorktree(sessionId, automatic.settings.keepLocalChanges, automatic.git))
+      const session = { ...snapshot.session, archiveState: removed ? "archived" as const : "active" as const, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, events: [this.journal.event(sessionId, "session", session)] })
     })
   }
 
-  async #delete(command: AgentCommand): Promise<null> {
+  #delete(command: AgentCommand): Promise<null> {
+    const sessionId = command.sessionId!
+    const previous = this.#transitions.get(sessionId) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(() => this.#deleteSession(command))
+    this.#transitions.set(sessionId, next)
+    void next.finally(() => { if (this.#transitions.get(sessionId) === next) this.#transitions.delete(sessionId) }).catch(() => {})
+    return next
+  }
+
+  async #deleteSession(command: AgentCommand): Promise<null> {
     const sessionId = command.sessionId!
     await this.journal.serial(sessionId, async () => {
       const snapshot = await this.journal.read(sessionId)
@@ -873,11 +1074,13 @@ export class AgentSessions {
   async close(): Promise<void> {
     this.#closed = true
     this.#unsubscribeProviders?.()
+    this.#usage.clear()
     this.#closing.abort(new Error("Agent service is stopping"))
     this.#git.close()
     const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
     await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())
+    await Promise.allSettled(this.#provisioning.values())
     await Promise.allSettled(this.#transitions.values())
     // A Resume accepted before shutdown may have been waiting for an earlier
     // Stop. Once accepted commands settle, close any generation they restarted.

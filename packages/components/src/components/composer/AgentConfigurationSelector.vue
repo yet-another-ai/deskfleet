@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { Check, ChevronDown, ChevronRight, LoaderCircle } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "reka-ui"
 import { computed, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentChoice, AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
+import { supportsProviderUsage } from "../../../../client/src/providers.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import AgentConfigOptionMenu from "./AgentConfigOptionMenu.vue"
+import AgentProviderUsageMenu from "./AgentProviderUsageMenu.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
@@ -26,6 +29,7 @@ const draftSelection = computed({
 })
 const providerId = computed(() => props.sessionId ? agents.sessions[props.sessionId]?.provider ?? agents.configurations[props.sessionId]?.provider.id : props.providerId ?? providers.selectedId)
 const selectedProvider = computed(() => providers.providers.find(provider => provider.id === providerId.value))
+const showUsage = computed(() => !!providerId.value && supportsProviderUsage(selectedProvider.value?.template))
 const session = computed(() => props.sessionId ? agents.sessions[props.sessionId] : undefined)
 const sessionReady = computed(() => session.value?.lifecycle === undefined || session.value.lifecycle === "ready")
 const pendingProvider = ref<string>()
@@ -115,7 +119,7 @@ async function confirmSwitch(): Promise<void> {
         <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
+        <DropdownMenuContent :as="SpringSurface" ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
           <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
             <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
               <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
@@ -125,7 +129,7 @@ async function confirmSwitch(): Promise<void> {
                 <ChevronRight :size="14" class="shrink-0 text-ui-text-faint" aria-hidden="true" />
               </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
-                <DropdownMenuSubContent data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
+                <DropdownMenuSubContent :as="SpringSurface" data-agent-configuration-options :aria-label="control.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-48 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
                   <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
                     <DropdownMenuRadioGroup :model-value="control.value">
                       <template v-for="group in optionGroups(control)" :key="group.id">
@@ -146,6 +150,10 @@ async function confirmSwitch(): Promise<void> {
             </DropdownMenuSub>
             <DropdownMenuSeparator v-if="extraOptions.length" class="-mx-1 my-1 h-px bg-ui-border" />
             <AgentConfigOptionMenu v-for="option in extraOptions" :key="option.id" :option="option" :open="active === `config:${option.id}`" :disabled="disabled || loading || !sessionReady" @update:open="active = $event ? `config:${option.id}` : active === `config:${option.id}` ? null : active" @change="changeConfigOption(option.id, $event)" />
+            <template v-if="showUsage">
+              <DropdownMenuSeparator class="-mx-1 my-1 h-px bg-ui-border" />
+              <AgentProviderUsageMenu :provider-id="providerId!" :open="active === 'usage'" @update:open="active = $event ? 'usage' : active === 'usage' ? null : active" />
+            </template>
             <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
             <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
               <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>

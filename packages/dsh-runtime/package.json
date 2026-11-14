@@ -1,6 +1,6 @@
 {
   "name": "@deskfleet/dsh-runtime",
-  "version": "0.13.1",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
@@ -14,7 +14,7 @@
     "@deepseek-ai/dsh": "0.2.2-rc.1"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "2.4.0"
+    "@agentclientprotocol/sdk": "2.5.0"
   },
   "files": [
     "package.json",

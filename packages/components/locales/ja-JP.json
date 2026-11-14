@@ -1,4 +1,41 @@
 {
+  "worktreeSettings": {
+    "title": "ワークツリー",
+    "scope": "このコンピューターのすべてのチームのセッションに適用する、ブランチ命名と自動クリーンアップの設定です。",
+    "desktopOnly": "セッションを実行するコンピューターのデスクトップアプリでワークツリー設定を開いてください。",
+    "branches": "ブランチ",
+    "branchNaming": "ワークツリーのブランチ命名",
+    "branchDescription": "最初のメッセージから新しいワークツリーのブランチを命名する方法を選択します。",
+    "semantic": "意味に基づく接頭辞",
+    "semanticDescription": "feat/add-search、fix/login-timeout、refactor/auth など、作業内容を表す接頭辞を使用します。",
+    "sessionBranch": "セッション識別子",
+    "sessionDescription": "セッション識別子に基づく固定のブランチ名を使用します。",
+    "resetNaming": "ブランチ命名をリセット",
+    "cleanup": "クリーンアップ",
+    "archived": "アーカイブ済みセッションのワークツリーを削除",
+    "archivedDescription": "セッションをアーカイブした際にワークツリーを削除し、セッション履歴は保持します。保持するワークツリーは下のローカル変更設定で決まります。",
+    "merged": "マージ済みワークツリーを削除",
+    "mergedDescription": "プルリクエストがマージされ、コミットがデフォルトブランチに含まれるワークツリーを削除します。",
+    "inactive": "非アクティブなワークツリーを削除",
+    "inactiveDescription": "セッションが指定の日数使用されていない場合に削除します。ブランチとセッション履歴は保持します。",
+    "advanced": "詳細設定",
+    "settled": "完了したワークツリーを削除",
+    "settledDescription": "最新のターンが完了し、保留中の作業や入力がなくなってから指定の日数後に削除します。0 日にすると次回のクリーンアップで削除します。ブランチとセッション履歴は保持します。",
+    "unchanged": "追加コミットのないワークツリーを削除",
+    "unchangedDescription": "セッションの最初のターンが完了した後、デフォルトブランチにないコミットを持たないワークツリーを削除します。",
+    "keepLocalChanges": "ローカル変更があるワークツリーを保持",
+    "uncommitted": "未コミットの変更",
+    "allFiles": "すべてのローカルファイル",
+    "noProtection": "保持しない",
+    "protectionDescription": {
+      "uncommitted": "編集と未追跡ファイルを保持します。.env を含む無視されたファイルは削除します。",
+      "all": "編集、未追跡ファイル、.env を含む無視されたファイルを保持します。",
+      "none": "編集、未追跡ファイル、.env を含む無視されたファイルを削除します。コミット済みの変更のみ復元できます。"
+    },
+    "days": "日",
+    "cleanupNote": "ローカル Agent の実行中にクリーンアップを行い、使用中のセッションはスキップします。生成されたワークツリーのみを削除し、ワークスペースのディレクトリは保持します。保持されたセッションを再度開くと、コミット済みのファイルを復元できます。",
+    "storage": "ストレージ"
+  },
   "mobileViews": {
     "openTerminal": "開いて接続",
     "overview": "ビュー一覧",
@@ -149,6 +186,22 @@
     "retry": "更新を再試行", "checking": "更新を確認中…",
     "downloading": "ダウンロード中 {percent}%", "installing": "再起動中…",
     "failed": "更新に失敗しました。再試行するか、DeskFleet を終了して再度開いてください。"
+  },
+  "providerUpdates": {
+    "available": "{count} 種類のエージェントに更新があります",
+    "completed": "エージェントを更新しました",
+    "review": "更新を確認",
+    "dismiss": "これらの更新通知を閉じる",
+    "failed": "{count} 件の更新に失敗しました",
+    "updating": "更新中…",
+    "updated": "更新完了",
+    "machineFailed": "{name} · {machine}: {error}",
+    "confirmTitle": "エージェントを更新",
+    "confirmDescription": "更新するツールとマシンを選択してください。選択したマシンで対象ツールを使用しているエージェントプロセスが停止し、実行中のタスクが中断されます。",
+    "confirmAction": "{count} 件の更新をインストール",
+    "current": "現在 {version}",
+    "offline": "オフライン",
+    "selectMachine": "{machine} の {name} を更新"
   },
   "aiUsage": {
     "title": "AI 使用量", "period": "集計期間",
@@ -342,6 +395,7 @@
   },
   "nav": {
     "label": "ナビゲーション", "conversations": "会話",
+    "remoteDesktop": "リモートデスクトップ",
     "newSession": "新規セッション", "settings": "設定",
     "team": "チームを切り替え"
   },
@@ -506,7 +560,9 @@
     "attach": "添付ファイルを追加", "attachments": "添付ファイル",
     "uploadLocalFiles": "ローカルファイルをアップロード", "chooseMachineFiles": "マシンからファイルを選択",
     "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
-    "removeAttachment": "{name} を削除", "dropFiles": "ファイルをドロップして添付",
+    "removeAttachment": "{name} を削除", "uploadingAttachment": "{name} をアップロード中 ({percent}%)",
+    "uploadFailed": "アップロードに失敗しました", "retryUpload": "{name} のアップロードを再試行",
+    "dropFiles": "ファイルをドロップして添付",
     "completions": {
       "label": "プロンプトの候補", "references": "選択した参照",
       "file": "ファイル", "session": "セッション",
@@ -523,6 +579,10 @@
     "contextHint": {
       "worktree": "各ディレクトリのコミット済み HEAD から独立した Git チェックアウトを作成", "directory": "未コミットの変更を含むワークスペースのディレクトリで作業"
     },
+    "workingDirectoryHome": "ホーム",
+    "workingDirectoryHomeHint": "マシンのホームディレクトリ",
+    "workingDirectoryChoice": "作業ディレクトリ: {path}",
+    "workingDirectoryClear": "デフォルトの作業ディレクトリを使う",
     "machine": "マシン", "machineChoice": "マシン: {machine}",
     "workspace": "ワークスペース", "workspaceChoice": "ワークスペース: {workspace}", "noWorkspace": "ワークスペースなし",
     "baseBranch": "ベースブランチ", "baseBranchChoice": "ベースブランチ: {branch}",
@@ -551,6 +611,7 @@
     },
     "loading": "読み込み中…", "unavailable": "利用できません",
     "loadingConfiguration": "エージェントから設定を読み込み中…", "reloadConfiguration": "エージェントから再読み込み",
+    "viewUsage": "使用状況を表示", "usageEmpty": "利用可能なクォータ情報はありません。", "usageResetsAt": "{time} にリセット",
     "yolo": "YOLO", "yoloHint": "このセッションでのエージェントの権限要求を自動承認",
     "yoloConfirmation": {
       "title": "YOLO モードを有効にしますか？",
@@ -589,7 +650,15 @@
     "exportBuffer": "ターミナルのバッファをエクスポート", "exportAnsi": "ANSI 形式の出力をダウンロード",
     "exportHtml": "書式付き HTML をダウンロード", "progressRunning": "実行中 · {value}%",
     "progressError": "失敗 · {value}%", "progressIndeterminate": "実行中…",
-    "progressPaused": "一時停止中 · {value}%"
+    "progressPaused": "一時停止中 · {value}%",
+    "keypad": "ターミナルキーパッド", "keypadToggle": "ターミナルキーパッドを切り替え",
+    "keypadExpand": "その他のキーを表示", "keypadCollapse": "その他のキーを隠す",
+    "keyEsc": "エスケープ", "keyTab": "タブ",
+    "keyCtrl": "Ctrl 修飾キー", "keyAlt": "Alt 修飾キー",
+    "keyUp": "上矢印", "keyDown": "下矢印",
+    "keyLeft": "左矢印", "keyRight": "右矢印",
+    "keyHome": "Home", "keyEnd": "End",
+    "keyPgUp": "Page Up", "keyPgDn": "Page Down"
   },
   "remoteControl": {
     "terminal": "ターミナル", "desktop": "デスクトップ",
@@ -629,7 +698,7 @@
     "noDisplays": "ディスプレイが見つかりません。",
     "displayCount": "{count} 台のディスプレイ",
     "display": "ディスプレイ {id}",
-    "openDisplay": "{machine} のディスプレイ {display} を開く",
+    "openDisplay": "{machine} の{display}を開く",
     "connecting": "プレビューに接続中…"
   },
   "desktop": {
@@ -643,9 +712,9 @@
     "retry": "ディスプレイを更新", "settings": "ストリーム設定",
     "settingsFailed": "デスクトップ設定を適用できませんでした",
     "moveControls": "操作パネルを移動",
-    "display": "ディスプレイ", "displayOption": "ディスプレイ {id} · {width} × {height}",
+    "display": "ディスプレイ", "displayName": "ディスプレイ {number}", "displayOption": "{display} · {width} × {height}",
     "codecStatus": "映像コーデック: {codec}", "audio": "システム音声",
-    "control": "マウスとキーボードの操作", "pauseControl": "操作を一時停止",
+    "control": "マウスとキーボードの操作", "reverseScroll": "マウススクロールを反転", "pauseControl": "操作を一時停止",
     "resumeControl": "操作を再開", "controlHint": "デスクトップをクリックすると、マウスとキーボードの入力を送信できます。",
     "sendSecureAttention": "Ctrl+Alt+Del を送信",
     "video": "リモートデスクトップ映像", "checking": "ローカルデスクトップを確認中…",
@@ -819,6 +888,7 @@
     "disconnected": "接続が切れました。エージェントはマシン上で引き続き実行されています。", "reconnect": "再接続",
     "operationPending": "操作結果の確認が必要です。", "checkResult": "結果を確認",
     "empty": "メッセージを送信して作業を開始してください。",
+    "scrollToBottom": "一番下へスクロール",
     "toolStatus": {
       "pending": "待機中", "in_progress": "実行中",
       "completed": "完了", "failed": "失敗"
@@ -858,12 +928,29 @@
     "forking": "セッションを分岐中…", "deleteDirectoryQuestion": "このセッションと会話を削除しますか？作業ディレクトリとファイルはそのまま残ります。",
     "archive": "セッションをアーカイブ", "restore": "セッションを復元",
     "retryArchive": "アーカイブを再試行", "archiveQuestion": "このセッションをアーカイブしますか？実行中のエージェントとターミナルは停止します。会話、作業ディレクトリ、ファイルは保持されます。",
-    "archiveWorktreeQuestion": "このセッションをアーカイブしますか？実行中のエージェントとターミナルは停止します。生成された worktree は、未コミットの変更や未追跡ファイルを含めて削除されます。会話とコミット済みの変更は保持されます。",
+    "archiveWorktreeQuestion": "このセッションをアーカイブしますか？実行中のエージェントとターミナルは停止します。ワークツリーのクリーンアップは、ローカル変更の保護を含むこのコンピューターの設定に従います。会話とコミット済みの変更は保持されます。",
     "restoreQuestion": "このセッションを復元しますか？新しいメッセージを送信するまで実行は停止したままです。",
-    "restoreWorktreeQuestion": "このセッションを復元しますか？worktree はアーカイブ前の最後のコミットから再作成されます。削除された未コミットの変更や未追跡ファイルは復元できません。新しいメッセージを送信するまで実行は停止したままです。", "archived": "このセッションはアーカイブされています。作業を続けるには復元してください。",
+    "restoreWorktreeQuestion": "このセッションを復元しますか？保持されたワークツリーは再利用します。削除済みのワークツリーは最後のコミットから再作成されますが、削除されたローカルファイルは復元できません。新しいメッセージを送信するまで実行は停止したままです。", "archived": "このセッションはアーカイブされています。作業を続けるには復元してください。",
     "archiving": "このセッションをアーカイブ中です。エージェントとターミナルが停止し、生成された worktree の削除が完了するまで実行できません。"
   },
   "providers": {
+    "workspaceImport": {
+      "action": "ワークスペースをインポート…",
+      "title": "ワークスペースをインポート",
+      "description": "{machine} の {provider} に記録されたプロジェクトディレクトリを選択します。選択した各ディレクトリの既存ファイルを使ってワークスペースを作成します。",
+      "loading": "プロジェクトディレクトリを検索中…",
+      "empty": "既存のプロジェクトディレクトリが見つかりませんでした。ワークスペースを手動で追加できます。",
+      "unsupported": "このプロバイダーではワークスペースの検出を利用できません。",
+      "select": "{name} をインポート",
+      "source": "検出元: {source}",
+      "existing": "ワークスペースに追加済み",
+      "importing": "インポート中…",
+      "imported": "インポート済み",
+      "importedCount": "{n} 件のワークスペースをインポートしました",
+      "done": "完了",
+      "skip": "今はスキップ",
+      "importSelected": "{n} 件のワークスペースをインポート"
+    },
     "choose": "プロバイダーを選択", "manage": "プロバイダーを管理",
     "noneConfigured": "セッションを開始するには、設定でプロバイダーを追加してください。", "unavailable": "プロバイダーを利用できません",
     "add": "プロバイダーを追加", "edit": "プロバイダーを編集",
@@ -985,6 +1072,8 @@
     "localDescription": "現在使用中のコンピューターでエージェントを実行します。", "localRevoked": "以前のセッションを保持して、このチームに再接続します。",
     "localConnected": "すでに {team} に接続しています。", "connecting": "接続中…",
     "other": "別のマシン", "otherDescription": "deskfleet-daemon を実行しているサーバーまたは別のコンピューター。",
+    "android": "Android（Termux）", "androidDescription": "公式ガイドを開いて Android 上で deskfleet-daemon を起動し、「別のマシン」から登録します。",
+    "androidGuide": "Android デーモン設定ガイド",
     "statusStep": "そのマシンでデーモンを起動し、次を実行します", "pasteStep": "コマンドの出力を貼り付けます",
     "pasteHint": "このチームの登録情報を貼り付けます。マシンの秘密認証情報が含まれるため、このサーバー以外と共有しないでください。", "identityFound": "マシン ID が見つかりました。",
     "status": {
@@ -1060,9 +1149,15 @@
     "wayland": {
       "dialog": "デスクトップのアクセス許可", "shared": "画面共有とマウス・キーボードの操作は、1 回の許可で有効になります。許可したら、両方のステップを進めてください。",
       "requesting": "デスクトップのアクセス許可を待っています…", "retry": "アクセス許可を再試行",
+      "changeScreensLater": "後から不足している画面を追加するには、「設定 → 権限 → 画面共有」でもう一度許可してください。",
       "screenCapture": {
         "title": "画面共有", "description": "リモートデスクトップセッションで、DeskFleet がこのコンピューターの画面を共有することを許可します。",
-        "instructions": "デスクトップの許可ダイアログで、共有する画面を選択してアクセスを許可してください。", "skip": "許可するまでリモート画面共有は利用できません。このステップをスキップして、後で許可することもできます。"
+        "instructions": "システムのダイアログで画面共有を許可してください。画面選択が表示された場合は、リモートから使用するモニターをすべて選択してください。",
+        "selection": "リモートには許可された画面だけが表示されます。再接続時も、この許可が使用されます。",
+        "choose": "画面共有を許可",
+        "reselect": "もう一度許可",
+        "reselectHint": "もう一度許可すると現在のリモート表示と操作が停止し、デスクトップの許可を再度要求します。画面選択が表示された場合は、不足しているモニターも選択してください。",
+        "skip": "許可するまでリモート画面共有は利用できません。このステップをスキップして、後で許可することもできます。"
       },
       "accessibility": {
         "title": "マウスとキーボードの操作", "description": "リモートデスクトップセッションから、このコンピューターのマウスとキーボードを操作することを許可します。",
@@ -1277,5 +1372,23 @@
     "loading": "検索中…",
     "more": "さらに読み込む",
     "untitled": "無題の会話"
+  },
+  "dictation": {
+    "inputSettings": "入力",
+    "setting": "音声入力",
+    "settingDescription": "このデバイスで音声認識が利用できる場合、マイクボタンを表示します。現在の表示言語で認識します。",
+    "start": "音声入力を開始",
+    "stop": "音声入力を完了",
+    "cancel": "音声入力をキャンセル",
+    "starting": "マイクを起動中…",
+    "listening": "聞き取り中…",
+    "stopping": "音声認識を完了中…",
+    "errors": {
+      "permission-denied": "音声入力にはマイクと音声認識へのアクセスを許可してください。",
+      "unavailable": "このデバイスではこの言語の音声認識を利用できません。",
+      "no-speech": "音声を検出できませんでした。もう一度お試しください。",
+      "network": "音声認識サービスに接続できませんでした。もう一度お試しください。",
+      "failed": "音声入力に失敗しました。もう一度お試しください。"
+    }
   }
 }

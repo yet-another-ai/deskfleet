@@ -5,6 +5,10 @@ use crate::PixelFormat;
 pub struct Display {
     /// Platform-specific display identifier.
     pub id: u32,
+    /// Human-readable platform name, separate from the capture identifier.
+    pub name: Option<String>,
+    /// User-facing number when the platform can preserve a monitor association.
+    pub display_number: Option<u32>,
     /// Display width in pixels.
     pub width: u32,
     /// Display height in pixels.
@@ -81,6 +85,8 @@ mod tests {
     fn rejects_invalid_config_without_initializing_capture() {
         let display = Display {
             id: 1,
+            name: None,
+            display_number: None,
             width: 1920,
             height: 1080,
             refresh_rate_hz: 60.0,

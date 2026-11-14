@@ -19,6 +19,7 @@ use crate::surface::windows::TexturePool;
 use crate::types::{CaptureConfig, Display};
 
 mod device;
+mod display_metadata;
 mod frames;
 pub use device::{create_d3d11_device, displays};
 use device::{create_duplication, pre_allocate_pool, try_recreate_duplication};

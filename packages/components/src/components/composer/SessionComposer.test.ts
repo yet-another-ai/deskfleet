@@ -100,6 +100,103 @@ const yoloLocation: SessionTarget = {
   session: { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory" },
 }
 
+test("new-session composer picks, cancels, clears, and defaults the working directory", async () => {
+  const home = {
+    path: "/home/agent",
+    parentPath: "/home",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [
+      { name: "code", path: "/home/agent/code", hidden: false },
+      { name: "hidden", path: "/home/agent/hidden", hidden: true },
+    ],
+  }
+  const code = {
+    path: "/home/agent/code",
+    parentPath: "/home/agent",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [],
+  }
+  const browse = vi.spyOn(platformClient.filesystem, "listDirectories")
+    .mockResolvedValueOnce(home)
+    .mockResolvedValueOnce(code)
+    .mockResolvedValueOnce(home)
+  pinia = createPinia()
+  const cwd = ref<string | undefined>()
+  const location: WorkspaceLocation = {
+    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+    workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo" }, { path: "/repo/apps" }], sessions: [], terminals: [] },
+  }
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: {
+      location,
+      showTarget: true,
+      context: "directory",
+      cwd: cwd.value,
+      "onUpdate:cwd": (value: string | undefined) => {
+        cwd.value = value
+        void wrapper.setProps({ cwd: value })
+      },
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true, SessionPreparation: true } },
+  })
+  const page = new DOMWrapper(document.body)
+  try {
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("repo")
+    expect(wrapper.find("[data-composer-cwd-clear]").exists()).toBe(false)
+
+    await wrapper.get("[data-composer-cwd]").trigger("click")
+    await flushPromises()
+    expect(browse).toHaveBeenCalled()
+    await page.get('button[data-path="/home/agent/code"]').trigger("click")
+    await flushPromises()
+    await page.findAll("button").find(button => button.text() === i18n.global.t("folderPicker.select"))!.trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBe("/home/agent/code")
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("code")
+    expect(wrapper.find("[data-composer-cwd-clear]").exists()).toBe(true)
+
+    await wrapper.get("[data-composer-cwd]").trigger("click")
+    await flushPromises()
+    await page.findAll("button").find(button => button.text() === i18n.global.t("catalog.cancel"))!.trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBe("/home/agent/code")
+    expect(page.find('[role="dialog"]').exists()).toBe(false)
+
+    await wrapper.get("[data-composer-cwd-clear]").trigger("click")
+    await flushPromises()
+    expect(cwd.value).toBeUndefined()
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain("repo")
+
+    await wrapper.setProps({ context: "worktree" })
+    await flushPromises()
+    expect(wrapper.find("[data-composer-cwd]").exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test("machine-scoped new chats offer Home as the default working directory", async () => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: {
+      location: { machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] } },
+      showTarget: true,
+      context: "directory",
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+  try {
+    expect(wrapper.get("[data-composer-cwd]").text()).toContain(i18n.global.t("composer.workingDirectoryHome"))
+    expect(wrapper.get("[data-composer-cwd]").attributes("title")).toBe(i18n.global.t("composer.workingDirectoryHomeHint"))
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 test.each(["draft", "session"] as const)("YOLO in a %s requires confirmation to enable and disables immediately", async (scope) => {
   pinia = createPinia()
   const wrapper = mount(SessionComposer, {
@@ -108,9 +205,11 @@ test.each(["draft", "session"] as const)("YOLO in a %s requires confirmation to 
     global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
   })
   const agents = useAgentSessionsStore(pinia)
-  agents.yolo = {}
-  const setYolo = vi.spyOn(agents, "setYolo")
-  const enabled = () => scope === "session" ? !!agents.yolo["yolo-session"] : agents.draftYolo
+  if (scope === "session") agents.sessions["yolo-session"] = { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory", lifecycle: "ready", lastEventSeq: "0", createdAt: "", updatedAt: "" }
+  const setYolo = vi.spyOn(agents, "setYolo").mockImplementation(async (id, value) => {
+    if (agents.sessions[id]) agents.sessions[id] = { ...agents.sessions[id], yolo: value }
+  })
+  const enabled = () => scope === "session" ? !!agents.sessions["yolo-session"]?.yolo : agents.draftYolo
   const page = new DOMWrapper(document.body)
   const toggle = wrapper.get("[data-composer-yolo]")
   try {
@@ -161,7 +260,7 @@ test.each(["escape", "session change"])("YOLO confirmation is cancelled by %s", 
     global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
   })
   const agents = useAgentSessionsStore(pinia)
-  agents.yolo = {}
+  agents.sessions["yolo-session"] = { id: "yolo-session", title: "YOLO confirmation", provider: "codex", archiveState: "active", context: "directory", lifecycle: "ready", lastEventSeq: "0", createdAt: "", updatedAt: "" }
   const setYolo = vi.spyOn(agents, "setYolo")
   const page = new DOMWrapper(document.body)
   try {
@@ -173,7 +272,7 @@ test.each(["escape", "session change"])("YOLO confirmation is cancelled by %s", 
     await flushPromises()
     expect(page.find('[role="dialog"]').exists()).toBe(false)
     expect(setYolo).not.toHaveBeenCalled()
-    expect(agents.yolo).toEqual({})
+    expect(agents.sessions["yolo-session"]?.yolo).toBeFalsy()
     expect(agents.draftYolo).toBe(false)
   } finally {
     wrapper.unmount()
@@ -292,4 +391,184 @@ test("composer folds long pasted text into an attachment chip, enforces text req
   expect(card.get("button").attributes("aria-expanded")).toBe("true")
   expect(card.get("button").text()).toContain("Collapse")
   expect(card.get("pre").text()).toContain("line 30: diagnostic output")
+})
+
+test("dropping a local file starts uploading immediately, renders a circular progress bar, blocks submission until complete, and reuses the staged URI", async () => {
+  let reportProgress!: (transferredBytes: number, totalBytes: number) => void
+  let finishUpload!: (result: { path: string; uri: string; name: string; size: number }) => void
+  const uploadAttachment = vi.spyOn(platformClient.files!, "uploadAttachment").mockImplementation((_request, options) => {
+    reportProgress = (transferredBytes, totalBytes) => options?.onProgress?.({ transferredBytes, totalBytes })
+    return new Promise(resolve => { finishUpload = resolve })
+  })
+
+  pinia = createPinia()
+  const location: WorkspaceLocation = {
+    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+    workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo", git: undefined }], sessions: [], terminals: [] },
+  }
+  const modelValue = ref("Trim this clip")
+  const attachments = ref<ComposerAttachment[]>([])
+  const submitted = vi.fn()
+
+  const wrapper = mount(SessionComposer, {
+    attachTo: document.body,
+    props: {
+      location,
+      modelValue: modelValue.value,
+      "onUpdate:modelValue": (value: string) => {
+        modelValue.value = value
+        void wrapper.setProps({ modelValue: value })
+      },
+      attachments: attachments.value,
+      "onUpdate:attachments": (value: ComposerAttachment[]) => {
+        attachments.value = value
+        void wrapper.setProps({ attachments: value })
+      },
+      onSubmit: () => submitted(),
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+
+  try {
+    await flushPromises()
+    const transfer = new DataTransfer()
+    const payload = new Uint8Array(100).fill(7)
+    transfer.items.add(new File([payload], "clip.mp4", { type: "video/mp4" }))
+    Object.defineProperty(transfer, "types", { value: ["Files"] })
+    wrapper.get("textarea").element.dispatchEvent(dragEvent("drop", transfer))
+    await flushPromises()
+    await vi.waitFor(() => expect(uploadAttachment).toHaveBeenCalledOnce())
+
+    const request = uploadAttachment.mock.calls[0]![0]
+    expect(request).toMatchObject({
+      target: { kind: "local" },
+      draftId: attachments.value[0]?.id,
+      name: "clip.mp4",
+    })
+    expect(request.sessionId).toBeUndefined()
+
+    const progress = wrapper.get("[data-attachment-progress]")
+    expect(progress.attributes("role")).toBe("progressbar")
+    expect(progress.attributes("aria-valuenow")).toBe("0")
+    expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+
+    // Submission via click or Enter is blocked while upload is still in progress
+    await wrapper.get('[aria-label="Send"]').trigger("click")
+    await wrapper.get("textarea").trigger("keydown", { key: "Enter" })
+    await flushPromises()
+    expect(submitted).not.toHaveBeenCalled()
+
+    reportProgress(45, 100)
+    await flushPromises()
+    expect(wrapper.get("[data-attachment-progress]").attributes("aria-valuenow")).toBe("45")
+
+    finishUpload({
+      path: `/tmp/.drafts/${request.draftId}/clip.mp4`,
+      uri: `file:///tmp/.drafts/${request.draftId}/clip.mp4`,
+      name: "clip.mp4",
+      size: 100,
+    })
+    await flushPromises()
+
+    expect(wrapper.find("[data-attachment-progress]").exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeUndefined()
+
+    await wrapper.get('[aria-label="Send"]').trigger("click")
+    expect(submitted).toHaveBeenCalledOnce()
+
+    const blocks = await buildPromptContent({
+      draft: modelValue.value,
+      attachments: attachments.value,
+      sessionId: "30",
+      target: { kind: "local" },
+      filesApi: platformClient.files,
+    })
+    expect(uploadAttachment).toHaveBeenCalledOnce()
+    expect(blocks).toEqual([
+      { type: "resource_link", uri: `file:///tmp/.drafts/${request.draftId}/clip.mp4`, name: "clip.mp4", mimeType: "video/mp4", size: 100 },
+      { type: "text", text: "Trim this clip" },
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test("removing an uploading attachment aborts the upload and retrying a failed upload unblocks submission", async () => {
+  let activeSignal: AbortSignal | undefined
+  let rejectFirst!: (error: Error) => void
+  let attempt = 0
+  vi.spyOn(platformClient.files!, "uploadAttachment").mockImplementation((request, options) => {
+    attempt += 1
+    activeSignal = options?.signal
+    if (attempt === 1) {
+      return new Promise((_, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new DOMException("Upload cancelled", "AbortError")), { once: true })
+      })
+    }
+    if (attempt === 2) {
+      return new Promise((_, reject) => { rejectFirst = reject })
+    }
+    return Promise.resolve({
+      path: `/tmp/.drafts/${request.draftId}/${request.name}`,
+      uri: `file:///tmp/.drafts/${request.draftId}/${request.name}`,
+      name: request.name,
+      size: request.data.byteLength,
+    })
+  })
+
+  pinia = createPinia()
+  const location: WorkspaceLocation = {
+    machine: { id: "local-daemon", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+    workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo", git: undefined }], sessions: [], terminals: [] },
+  }
+  const attachments = ref<ComposerAttachment[]>([])
+  const wrapper = mount(SessionComposer, {
+    props: {
+      location,
+      modelValue: "Edit video",
+      attachments: attachments.value,
+      "onUpdate:attachments": (value: ComposerAttachment[]) => {
+        attachments.value = value
+        void wrapper.setProps({ attachments: value })
+      },
+    },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+
+  try {
+    await flushPromises()
+    const dropFile = async (name: string) => {
+      const transfer = new DataTransfer()
+      transfer.items.add(new File(["video-bytes"], name, { type: "video/mp4" }))
+      Object.defineProperty(transfer, "types", { value: ["Files"] })
+      wrapper.get("textarea").element.dispatchEvent(dragEvent("drop", transfer))
+      await flushPromises()
+    }
+
+    await dropFile("first.mp4")
+    await vi.waitFor(() => expect(activeSignal).toBeDefined())
+    const firstSignal = activeSignal!
+    expect(firstSignal.aborted).toBe(false)
+    await wrapper.get(`[aria-label="${i18n.global.t("composer.removeAttachment", { name: "first.mp4" })}"]`).trigger("click")
+    await flushPromises()
+    expect(firstSignal.aborted).toBe(true)
+    expect(attachments.value).toHaveLength(0)
+
+    await dropFile("second.mp4")
+    await vi.waitFor(() => expect(attempt).toBe(2))
+    rejectFirst(new Error("Mux send interrupted"))
+    await flushPromises()
+
+    expect(wrapper.find("[data-attachment-retry]").exists()).toBe(true)
+    expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeDefined()
+
+    await wrapper.get("[data-attachment-retry]").trigger("click")
+    await flushPromises()
+
+    expect(attempt).toBe(3)
+    expect(wrapper.find("[data-attachment-retry]").exists()).toBe(false)
+    expect(wrapper.get('[aria-label="Send"]').attributes("disabled")).toBeUndefined()
+  } finally {
+    wrapper.unmount()
+  }
 })

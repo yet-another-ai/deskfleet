@@ -5,6 +5,7 @@ import { installLocalChannels } from "./local-channels.ts"
 import { installMuxChannels } from "./mux-channels.ts"
 import { installLocalApplications } from "./applications.ts"
 import { installNetworkDiagnostics } from "./network-diagnostics.ts"
+import { installSpeech } from "./speech.ts"
 import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
@@ -30,6 +31,7 @@ import { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 import { configureApplicationDisplay } from "./application-display.ts"
 import {
+  installRendererDownloadGuard,
   installRendererPermissions,
   installRendererProtocol,
   registerRendererScheme,
@@ -58,12 +60,14 @@ function start(): void {
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
+    installRendererDownloadGuard()
     installDesktopMediaIpc()
     const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
     installLocalApplications(central)
     installNetworkDiagnostics(central)
+    const speech = installSpeech()
     const files = installFiles(central)
     const ports = installPorts(central)
     const localChannels = installLocalChannels(central)
@@ -106,7 +110,7 @@ function start(): void {
     const closeServices = (): Promise<void> => {
       notificationMonitor.close()
       notifications.close()
-      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close()]).then(results => {
+      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close(), speech.close()]).then(results => {
         const failure = results.find(result => result.status === "rejected")
         if (failure?.status === "rejected") throw failure.reason
         servicesClosed = true

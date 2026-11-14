@@ -195,13 +195,16 @@ Rows keep Rename and Restore in the Session context menu, without Pin/Unpin. Off
 history remains readable, while restoration and other daemon mutations require the machine
 online. The page shows loading, empty, and retry states for list reads.
 
-Archive is the normal user action for ending active use of a Session. It removes
-generated checkouts, including uncommitted changes and untracked files, to reclaim
-disk space. It preserves Session and Worktree identity, directory metadata,
+Archive is the normal user action for ending active use of a Session. It closes
+execution and applies this computer's archived-worktree cleanup setting. When
+that setting is disabled or local changes are protected, the generated checkouts
+remain on disk and the Session still becomes archived. Archive preserves Session
+and Worktree identity, directory metadata,
 queued inputs, configuration, conversation/tool history, terminal records, and
 full audit. Compact Git refs and the ownership manifest retain each checkout's
-last committed HEAD for restoration. Directory Sessions leave their Workspace
-source directories untouched. The archived Sessions page and authenticated
+last committed HEAD for restoration, and cleanup preserves named branches.
+Directory Sessions leave their Workspace source directories untouched. The
+archived Sessions page and authenticated
 management/Agent APIs also expose the separate deletion path documented below.
 
 Archive requires the owning machine online. Before changing archive state, the
@@ -211,21 +214,25 @@ resources. The daemon then blocks new execution and backlog dispatch, closes the
 provider and its pending permission callbacks without granting them, and stops
 Session-owned terminals while retaining their final output and metadata. It
 records the resulting execution/permission transitions
-without deleting their history, captures committed HEADs again after shutdown,
-then removes generated checkouts. The prepared refs remain a fallback if a checkout
-disappears during shutdown. Archive completes only after live resources have closed
-and checkout cleanup succeeds.
-Cleanup failures remain retryable. There is no queued offline archive or
-background cleanup of previously archived checkouts in this release; an explicit
-archive request can reclaim a previously archived Session's retained checkouts.
+without deleting their history, captures committed HEADs again when cleanup is
+enabled, then removes eligible generated checkouts. The prepared refs remain a
+fallback if a checkout disappears during shutdown. Archive completes only after live resources have closed
+and the configured cleanup has completed or retained protected checkouts.
+Cleanup failures remain retryable. There is no queued offline archive. Automatic
+cleanup can reclaim retained archived checkouts according to current preferences;
+an explicit archive request also reapplies those preferences to an archived Session.
 That request keeps the Session archived throughout cleanup and retains its quota
 slot; it does not reopen execution admission or restart resource closure.
+If cleanup was interrupted after removing only some repositories, disabling
+cleanup or protecting remaining changes restores missing checkouts from their
+saved commits while preserving surviving files, so later restore can complete.
 
-Restore recreates generated checkouts at the same paths and saved committed HEADs,
-then returns the same Session to active use without starting the provider,
-dispatching queued inputs, or creating terminals. Uncommitted changes and
-untracked files removed by archive are not restored. The next explicit message can
-resume the provider using its existing capabilities. A later terminal start
+Restore reuses retained checkouts without resetting their local files. Removed
+checkouts are recreated detached at the same paths and saved committed HEADs.
+Restore returns the same Session to active use without starting the provider,
+dispatching queued inputs, or creating terminals. Local files removed by cleanup
+are not restored. The next explicit message can resume the provider using its
+existing capabilities. A later terminal start
 creates a new PTY while preserving the ended terminal's record and transcript.
 Reading an archived Session cannot trigger implicit resume or terminal creation.
 Archive state must be durable and synchronized, distinct from provider process
@@ -239,6 +246,66 @@ inherited usage.
 Archive cannot reuse Session destruction or terminal hangup, both of which delete
 retained records and history. See [terminal archive behavior](terminals.md#ownership-and-lifecycle)
 and the [backend scope](backend.md#session-archive-and-restore).
+
+### Worktree cleanup preferences
+
+Desktop Settings → Worktrees owns host-wide branch naming and cleanup preferences
+in `<daemon directory>/worktree-preferences.json`, alongside the existing worktree
+root setting. They apply to every Team registration on this computer. Each Team
+runtime scans only its own journal and ownership manifests, beginning 60 seconds
+after startup and repeating 15 minutes after each pass. Passes do not overlap;
+shutdown stops scheduling and waits for an in-progress pass. A failed Session
+inspection is reported without preventing later Sessions from being checked.
+
+| Rule | Default | Eligibility |
+| --- | --- | --- |
+| Archived Sessions | Enabled | The Session is already archived; retained backlog is history rather than pending execution. |
+| Merged worktrees | Enabled | The latest turn completed, every repository's HEAD is included in its default branch, and every branch has a merged GitHub PR. |
+| Inactive worktrees | Enabled, 5 days | The latest durable Session, input, turn, or viewer activity is at least this old. |
+| Settled worktrees | Enabled, 6 days | The latest turn completed at least this long ago, with no pending work or input. Zero days selects the next pass. |
+| Unchanged worktrees | Enabled | The latest turn completed and no checkout has commits beyond its default branch. New checkouts are not removed before their first completed turn. |
+
+Active Sessions must be idle: no starting, running, or cancelling turn; pending,
+dispatching, or uncertain input; or pending permission or elicitation. A connected
+viewer or running user terminal also prevents automatic cleanup. ACP-owned
+terminals close with the provider. The inactive and settled clocks use durable
+timestamps, so daemon restarts do not reset them. Archived Sessions are governed
+by the archived rule rather than the active-Session time or Git rules.
+
+The default **Uncommitted changes** protection retains a Session's checkouts if
+any repository has staged or unstaged edits or untracked files. Ignored files,
+including `.env`, do not prevent removal. **All local files** also protects
+ignored files, including those inside initialized submodules. **Do not keep**
+allows removal of all local edits, untracked files, and ignored files; restore
+can recover only committed content. Directory Sessions and Workspace source
+directories never participate in worktree cleanup. Explicit Session deletion
+remains destructive and is not governed by these retention preferences.
+
+Git-based checks refresh the advertised default branch from `origin`, or the
+only remote when no `origin` exists, without switching or resetting a checkout.
+Repositories without remotes use a local `main` or `master`; ambiguous or
+unavailable defaults do not establish eligibility. All repositories must pass
+the ancestry check. The merged rule queries GitHub through the backend using the
+Session's saved user author, current machine-management authorization, and current
+GitHub App opt-in. The machine credential fixes the Team registration; user
+tokens stay on the backend. A missing grant or failed lookup cannot establish a
+merged PR. The unchanged rule does not require GitHub authorization.
+
+Before removal, the Session transition gate rechecks the saved event sequence,
+current preferences, activity, presence, terminals, local changes, and, for
+Git-based candidates, checkout/default-ref identities. Changes during inspection
+skip that candidate. Eligible active Sessions follow the archive lifecycle;
+cleanup preserves history, catalog identity, named branches, and committed-HEAD
+refs. Local changes that appear during shutdown retain the checkout and return
+the Session to active state. Reopening an archived Session still requires restore.
+
+Branch naming is applied before the first generated-worktree turn. **Semantic
+prefix**, the default, adds a first-prompt instruction asking the Agent to create
+a task-derived branch such as `feat/add-search` before editing, using a unique
+suffix if necessary. **Session identifier** creates
+`deskfleet/session-<origin-prefix>-<session ID>` directly, with a repository suffix
+for additional checkouts. Neither overwrites an already selected branch or
+renames later turns or inherited fork conversations.
 
 ## Provider configuration
 
@@ -258,6 +325,26 @@ New machines start with no configured providers. Add a provider through
 Settings → Agents, where executable discovery, installation, login, and
 connection testing are available. Startup preserves existing provider settings,
 including an empty list after all providers are removed.
+
+Adding Codex or Claude Code offers an optional Workspace import step. The same
+action is available from an existing provider's menu. The target registration's
+authenticated `providerDiscoverWorkspaces` management operation reads the
+provider's project directory records using its effective environment, including
+shell inheritance and explicit overrides. Codex reads the `projects` table in
+`$CODEX_HOME/config.toml` (default `~/.codex/config.toml`); Claude Code reads the
+`projects` object in `$CLAUDE_CONFIG_DIR/.claude.json` (default `~/.claude.json`).
+Discovery returns existing absolute directories and source paths, with warnings
+for unreadable or malformed configuration. It does not launch an Agent.
+
+Users choose which directories to import; each selected directory creates one
+Workspace through the existing `workspaceCreate` operation in that Team and
+Machine. The UI reads the daemon's live catalog when discovering and before
+importing, so recent Workspace changes do not depend on catalog replication.
+It marks directories already present in Workspace configuration and retains
+completed imports if another directory fails. Import creates catalog
+records only: it does not copy files, credentials, MCP settings, trust decisions,
+rules, or conversation history. Skipping or failing import retains the saved
+provider. Other provider templates do not currently offer project discovery.
 
 Background ACP and MCP subprocesses started by DeskFleet must hide their Windows
 console windows. Each nested launch needs its own `windowsHide` option; hiding
@@ -411,6 +498,23 @@ imply authentication: completion triggers a new probe, and successful installati
 fills the executable's absolute path. Custom ACP providers have discovery but no
 built-in installation or login action. Setup uses authenticated machine management
 RPC; terminal interaction uses the shared terminal message transport.
+
+The sidebar collects available CLI upgrades across all tools and machines into
+one notice. Its confirmation lists each tool's target version and lets the user
+select individual tool/machine pairs; offline machines cannot be selected.
+Progress remains reviewable, and dismissing the notice does not cancel an
+installer. Dismissals apply to the current target version within the account's
+client session, scoped by Team and Machine, and survive sidebar remounts. A new
+target version is shown again.
+
+Background upgrades use non-interactive installers, including
+`CODEX_NON_INTERACTIVE=1` for Codex and `-NonInteractive` for PowerShell installers.
+Before stopping agent sessions or installing, the daemon probes the installed
+version again. If a manual update already satisfies the target, it clears the
+stale notice and refreshes other registrations on the same host without stopping
+sessions or reinstalling. Interactive Settings installation retains its terminal
+and prompts.
+
 Pi installation uses the official `pi.dev` installer. Its **Log in** action opens
 Pi; enter `/login`, complete provider setup, then `/quit`. Discovery leaves Pi's
 credential status unknown because its credential check requires a specific model
@@ -594,11 +698,11 @@ conversation can acknowledge it.
 Session lifecycle is `provisioning`, `ready`, `provision_failed`, or `deleting`.
 Independent `archiveState` is `active`, `archiving`, or `archived`. After preparing
 retained commits, archive persists `archiving` to close admission, then stops
-provider processes and owned terminals, removes generated checkouts, and only
+provider processes and owned terminals, applies worktree cleanup preferences, and only
 then commits `archived`. A failed
 close or checkout cleanup retains `archiving` and can be retried with a new
 operation ID after restart. Restore permits only
-`archived` to `active` after checkout recreation; it does not start processes or
+`archived` to `active` after retained-checkout reuse or checkout recreation; it does not start processes or
 dispatch backlog.
 Runs are `starting`, `running`, `stopping`, `stopped`, `interrupted`, or `failed`.
 Each new provider process gets a new generation, including when resuming a saved
@@ -660,7 +764,20 @@ turns without replaying events or interpreting context-window updates as spend.
 
 Creation atomically allocates the catalog Session, provisioning metadata, and
 command binding before filesystem work. Interrupted create retries return a full
-Session snapshot rather than allocating another Session. Deletion marks the
+Session snapshot rather than allocating another Session. Interactive new-Session
+creation sets `deferStartup: true` so `_deskfleet/session/create` returns the
+initial `provisioning` snapshot immediately while Git checkout setup and initial
+provider startup proceed asynchronously. Clients open the Session view right away
+with the user's sent-message transition and submit the first prompt into the
+shared backlog while `provisioning` is still active; once setup and startup
+complete, the daemon drains the backlog with the create command's selected model,
+reasoning effort, and mode. Stopping the Session during `provisioning` prevents
+automatic provider startup when setup finishes while retaining queued inputs.
+Inputs submitted while the Session is idle or stopped project directly into the
+conversation transcript and remain there when a turn starts; additional inputs
+submitted while startup or a turn is already active stay in the `Queued`
+backlog panel until dispatched.
+Deletion marks the
 Session `deleting`, stops admission, closes the provider and pending permissions,
 removes any owned checkouts, retained Git refs, ownership manifests, and Session
 attachments, and removes Session records. Incomplete cleanup retains
@@ -672,8 +789,17 @@ Other repository access failures remain retryable errors.
 The composer accepts text alongside image (`image`), folded pasted-text (`resource`
 with inline `text`), and file (`resource_link`) attachments. Each submission must
 contain at least one non-empty `text` or text `resource` block. Local non-image
-files upload to `<machine directory>/session-attachments/<sessionId>/` through
-the file service before submission; target-machine files selected in the file
+files start uploading immediately when dropped, picked, or pasted into the
+composer, displaying a circular byte-progress indicator and blocking Session
+creation or prompt submission until every attachment finishes uploading; removing
+an attachment aborts an in-flight upload and failed uploads can be retried inline.
+An existing Session uploads directly into
+`<machine directory>/session-attachments/<sessionId>/`; a pre-Session draft stages
+files under `<machine directory>/session-attachments/.drafts/<draftId>/`, and the
+first `_deskfleet/input/submit` atomically adopts those staged files into the
+Session's attachment directory and rewrites their `resource_link` URIs. Stale
+unclaimed `.drafts` entries older than 24 hours are swept automatically.
+Target-machine files selected in the file
 picker reference their existing path directly as a `resource_link`. Pasted text
 of at least 25 lines or 1,500 characters folds into a `resource` attachment chip
 in the composer and renders as a collapsible card in conversation history. When
@@ -765,12 +891,17 @@ input available for explicit retry.
 ### Strict steering boundary
 
 The pinned `@agentclientprotocol/codex-acp` 2.3.0 package has a repository patch
-for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.100.0
+for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.104.1
 already implements the same idle behavior; its patch advertises that support.
 Both advertise `_meta.steering.supported` and
 `_meta.steering.supportsPromptRequired`. The request is `_session/steering` with
 `_meta.steering.idleBehavior: "promptRequired"`; DeskFleet also includes its
 delivery command ID under `_meta.deskfleet`.
+
+The Antigravity wrapper advertises this steering capability for `agy acp`.
+When a turn is active, the wrapper sends another `session/prompt` and merges
+token usage across the turn. When no turn is active, the wrapper returns
+`inactive` without calling `agy acp`.
 
 The adapter returns `injected` if it accepted the input into the active turn.
 If the turn ended before injection, it returns `promptRequired` without starting
@@ -820,10 +951,15 @@ supported and yield `_deskfleet/permission/receipt` notifications.
 
 The composer's YOLO toggle requires confirmation before activation, warning that
 all Agent permission requests in the Session will be approved automatically,
-including requests already pending. The client selects the offered `allow_once`
-option, falling back to `allow_always`, through the same audited response path.
-Cancelling the confirmation leaves YOLO disabled; turning it off takes effect
-without another confirmation and leaves future requests for manual approval.
+including requests already pending. Enabling YOLO persists the flag and
+authorizing actor on the Session via `_deskfleet/session/create` or
+`_deskfleet/session/yolo` so it remains active across connected and
+disconnected clients. The daemon immediately approves any pending requests and
+subsequent `session/request_permission` calls by selecting the offered
+`allow_once` option, falling back to `allow_always`, attributed to the
+authorizing actor. Cancelling the confirmation leaves YOLO disabled; turning it
+off takes effect without another confirmation and leaves future requests for
+manual approval.
 
 The service broadcasts resolution and the deciding actor. `$/cancel_request`
 closes obsolete fan-outs. Disconnects and RPC errors leave the shared request
@@ -952,7 +1088,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/agent/configuration` | Discover provider configuration and advertised commands/skills for a draft in the Workspace's default directory, or home without a Workspace |
 | `_deskfleet/composer/references` | Search file or same-Workspace Session metadata for the current compose context; requires `agent:execute` |
 | `_deskfleet/composer/resolve` | Resolve selected references into prompt blocks against the receiving Session's captured context; requires `agent:execute` |
-| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it; return snapshot |
+| `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it (or return the initial `provisioning` snapshot immediately when `deferStartup: true` while setup and startup proceed asynchronously); return snapshot |
 | `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed configuration and advertised commands/skills |
 | `_deskfleet/session/configure` | Audit and apply model/reasoning/mode changes to a Session without changing its provider |
@@ -1239,7 +1375,14 @@ and response identities. History replacement and snapshot overrides rebuild the
 projection. Committed previews are promoted in place, so a persistence batch
 split across several transport frames does not repeatedly replay history.
 
-The renderer groups the output after each user message into a response. A
+The renderer groups the output after each user message into a response. When no
+turn is currently live, the earliest pending backlog input without an error is
+promoted into the conversation timeline instead of remaining only in the queued
+drawer, and worktree provisioning (`Preparing worktree…`), provider startup
+(`Starting agent…`), or pre-step active turn state renders inline in the
+conversation reply area rather than as a bottom status banner; stopping the Agent
+during startup clears that inline status cleanly without unmounting the user
+message bubble. A
 finished turn ending with an assistant message folds its tool calls, thoughts,
 and interim messages behind its duration and leaves that final message visible.
 Without a final assistant message, the response stays expanded by default. If it

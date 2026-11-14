@@ -2,7 +2,7 @@ import type { ContentBlock, CreateElicitationRequest, CreateElicitationResponse,
 import type { GitBranchesSnapshot, GitDiffRequest, GitFileDiff, GitPreparationSnapshot, GitPreparedRevision, GitStatusSnapshot } from "./git-protocol.ts"
 import type { ComposerReferenceResolve, ComposerReferenceResult, ComposerReferenceSearch } from "./composer-reference-protocol.ts"
 
-import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities } from "./agent-configuration-protocol.ts"
+import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSelection, AgentPromptCapabilities, AgentQuotaItem } from "./agent-configuration-protocol.ts"
 
 export const AGENT_CHANNEL = "deskfleet-acp"
 export const AGENT_CHUNK_BYTES = 16 * 1024
@@ -48,6 +48,10 @@ export interface AgentSessionRecord {
   configurationSinceSeq?: string
   /** People who have opened this Session. */
   viewers?: { userId: string; seenAt: string }[]
+  /** Whether this Session automatically approves permission requests on the daemon. */
+  yolo?: boolean
+  /** Actor that enabled YOLO mode for this Session, used for permission audit attribution. */
+  yoloActor?: AgentActor
   createdAt: string
   updatedAt: string
   capabilities?: { steering: boolean; resume: boolean; fork?: boolean; additionalDirectories?: boolean; promptCapabilities?: AgentPromptCapabilities }
@@ -199,13 +203,14 @@ export interface AgentReceipt { operationId: string; commandId: string; inputId?
 export interface AgentMutation { sessionId: string; operationId: string }
 export interface AgentMethods {
   "_deskfleet/agent/configuration": { params: AgentConfigurationParams; result: AgentConfiguration | null }
+  "_deskfleet/agent/usage": { params: { provider: string }; result: AgentQuotaItem[] }
   "_deskfleet/session/configuration": { params: { sessionId: string; composer?: boolean }; result: AgentConfiguration }
   "_deskfleet/composer/references": { params: ComposerReferenceSearch; result: ComposerReferenceResult }
   "_deskfleet/composer/resolve": { params: ComposerReferenceResolve; result: ContentBlock[] }
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/switch-agent": { params: AgentMutation & { provider: string }; result: AgentSnapshot }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; baseBranch?: string; baseRevisions?: GitPreparedRevision[] } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; /** Absolute directory used as the Session's primary cwd; only with `directory` context. */ cwd?: string; baseBranch?: string; baseRevisions?: GitPreparedRevision[]; deferStartup?: boolean; yolo?: boolean } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
@@ -233,9 +238,32 @@ export interface AgentMethods {
   "_deskfleet/session/archive": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/restore": { params: AgentMutation; result: AgentSnapshot }
   "_deskfleet/session/rename": { params: AgentMutation & { title: string }; result: AgentSnapshot }
+  "_deskfleet/session/yolo": { params: AgentMutation & { enabled: boolean }; result: AgentSnapshot }
   /** Internal maintenance only; not exposed by the client DataChannel facade. */
   "_deskfleet/session/delete": { params: AgentMutation; result: null }
   "_deskfleet/command/get": { params: { operationId: string }; result: AgentCommand | null }
 }
 
 export type AgentMethod = keyof AgentMethods
+
+export function autoApproveOption(options: readonly RequestPermissionRequest["options"][number][]) {
+  return options.find(option => option.kind === "allow_once") ?? options.find(option => option.kind === "allow_always")
+}
+
+export function autoApprovePermission(
+  permission: AgentPermission,
+  resolvedAt: string,
+  attribution: { actor?: AgentActor; decisionCommandId?: string } = {},
+): AgentPermission | undefined {
+  if (permission.state !== "pending") return undefined
+  const option = autoApproveOption(permission.request.options)
+  if (!option) return undefined
+  return {
+    ...permission,
+    state: "resolved",
+    optionId: option.optionId,
+    ...(attribution.decisionCommandId ? { decisionCommandId: attribution.decisionCommandId } : {}),
+    ...(attribution.actor ? { actor: attribution.actor } : {}),
+    resolvedAt,
+  }
+}

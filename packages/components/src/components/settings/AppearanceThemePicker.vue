@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSpringHover } from "../../directives/spring.ts"
 import { Check, Moon, Sun, SunMoon } from "@lucide/vue"
 import { RadioGroupItem, RadioGroupRoot } from "reka-ui"
 import { useI18n } from "vue-i18n"
@@ -17,7 +18,7 @@ const options = [
 <template>
   <RadioGroupRoot :model-value="modelValue" :disabled="disabled" :aria-label="t('appearance.theme')" class="grid grid-cols-3 gap-3" @update:model-value="emit('update:modelValue', $event as AppearanceSettings['theme'])">
     <RadioGroupItem v-for="option in options" :key="option.value" :value="option.value" :data-appearance-theme="option.value" :aria-label="t(option.label)" class="theme-option group min-w-0 cursor-pointer rounded-xl border-2 border-transparent p-1 text-left ui-motion duration-[var(--ui-duration-base)] hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/5 disabled:cursor-default disabled:op-50">
-      <div class="theme-picture" :data-mode="option.value" aria-hidden="true">
+      <div v-spring-hover="-2" class="theme-picture" :data-mode="option.value" aria-hidden="true">
         <div v-for="palette in option.value === 'system' ? ['light', 'dark'] : [option.value]" :key="palette" class="mini-app" :data-palette="palette">
           <div class="mini-titlebar"><i /><i /><i /><span /></div>
           <div class="mini-sidebar">
@@ -49,10 +50,10 @@ const options = [
 .theme-option[data-state="checked"] .theme-check { border-color: var(--ui-color-accent); background: var(--ui-color-accent); color: var(--ui-color-canvas); }
 .theme-picture {
   position: relative; height: 112px; overflow: hidden; border: 1px solid var(--ui-color-border); border-radius: 8px;
-  transition: translate var(--ui-duration-base) var(--ui-ease-out), box-shadow var(--ui-duration-base) var(--ui-ease-out);
+  transition: box-shadow var(--ui-duration-base) var(--ui-ease-out);
 }
 /* The preview lifts toward the pointer, and the chosen theme stays raised. */
-.theme-option:not([data-disabled]):hover .theme-picture { translate: 0 -2px; box-shadow: var(--ui-shadow-raised); }
+.theme-option:not([data-disabled]):hover .theme-picture { box-shadow: var(--ui-shadow-raised); }
 .theme-option[data-state="checked"] .theme-picture { box-shadow: var(--ui-shadow-raised); }
 .mini-app {
   --mini-canvas: #fbfbfd; --mini-sidebar: #f0f1f6; --mini-surface: #ffffff;

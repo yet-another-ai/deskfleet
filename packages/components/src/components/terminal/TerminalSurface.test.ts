@@ -367,10 +367,11 @@ test("opens local search without sending its shortcut to the shell and keeps sea
   const searchOpen = ref(false)
   const openSearch = vi.fn(() => { searchOpen.value = true })
   const reset = vi.fn()
+  const transformInput = vi.fn((data: string) => data === "c" ? "\x03" : data)
   const wrapper = mount(TerminalSurface, {
     props: { tools: true },
     global: { stubs: { TerminalToolbar: defineComponent({
-      setup(_props, { expose }) { expose({ openSearch, reset, searchOpen }); return () => null },
+      setup(_props, { expose }) { expose({ openSearch, reset, searchOpen, transformInput }); return () => null },
     }) } },
   })
   const terminal = terminals.at(-1)!
@@ -386,6 +387,9 @@ test("opens local search without sending its shortcut to the shell and keeps sea
   expect(handle(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true)
   expect(handle(new KeyboardEvent("keydown", { key: "f" }))).toBe(true)
   await wrapper.setProps({ interactive: true })
+  terminal.input("c")
+  expect(transformInput).toHaveBeenCalledWith("c")
+  expect(wrapper.emitted("input")).toEqual([["\x03"]])
   wrapper.vm.focus()
   expect(terminal.focus).not.toHaveBeenCalled()
   searchOpen.value = false

@@ -7,24 +7,24 @@ import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.t
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
-import { consumeSentMessageTransition } from "../../services/message-sent-transition.ts"
+import { consumeSentMessageTransition, type SentMessageTransition } from "../../services/message-sent-transition.ts"
 import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ input: AgentInput }>()
+const props = defineProps<{ input: AgentInput; animateSend?: boolean }>()
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
 const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.input.createdAt, intlLocale(locale.value as AppLocale)))
 // An initial prompt is already running once it is claimed; only steering waits for confirmation.
-const state = computed(() => props.input.state === "delivered" ? undefined : props.input.state === "dispatching" && props.input.actualDelivery === "turn_start" ? t("agent.inputInProgress") : t(`agent.inputState.${props.input.state}`))
+const state = computed(() => props.input.state === "delivered" || props.input.state === "pending" ? undefined : props.input.state === "dispatching" && props.input.actualDelivery === "turn_start" ? t("agent.inputInProgress") : t(`agent.inputState.${props.input.state}`))
 const steered = computed(() => props.input.state === "delivered" && props.input.actualDelivery === "steer")
 const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
 const root = useTemplateRef<HTMLElement>("root")
 const reducedMotion = usePreferredReducedMotion()
-let animations: Animation[] = []
+let animations: SentMessageTransition[] = []
 onMounted(() => queueMicrotask(() => {
-  if (!root.value?.parentElement?.nextElementSibling) {
+  if (props.animateSend ?? !root.value?.parentElement?.nextElementSibling) {
     animations = consumeSentMessageTransition(root.value, reducedMotion.value === "reduce")
   }
 }))

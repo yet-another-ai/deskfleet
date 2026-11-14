@@ -1,6 +1,7 @@
 import type { AgentSessions } from "./agent-sessions.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import type { AgentProviders } from "./agent-providers.ts"
+import type { ProviderUpdates } from "./provider-updates.ts"
 import type { ScheduledTasks } from "./scheduled-tasks.ts"
 import { supportsDesktop } from "./desktop-capabilities.ts"
 import { MUX_PROFILE } from "../../../packages/client/src/mux/protocol.ts"
@@ -13,6 +14,7 @@ export class CentralSync {
   readonly #catalog: DaemonCatalog
   readonly #post: Post
   readonly #providers: AgentProviders
+  readonly #providerUpdates: Pick<ProviderUpdates, "snapshot" | "onChanged"> | undefined
   readonly #schedules: Pick<ScheduledTasks, "snapshot" | "onChanged"> | undefined
   readonly #desktopSupported: () => Promise<boolean>
   readonly #cursors = new Map<string, string>()
@@ -28,15 +30,17 @@ export class CentralSync {
   #closing = false
   #timer: ReturnType<typeof setTimeout> | undefined
 
-  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop, schedules?: Pick<ScheduledTasks, "snapshot" | "onChanged">) {
+  constructor(agents: AgentSessions, catalog: DaemonCatalog, providers: AgentProviders, post: Post, desktopSupported: () => Promise<boolean> = supportsDesktop, schedules?: Pick<ScheduledTasks, "snapshot" | "onChanged">, providerUpdates?: Pick<ProviderUpdates, "snapshot" | "onChanged">) {
     this.#agents = agents; this.#catalog = catalog; this.#post = post
     this.#providers = providers
+    this.#providerUpdates = providerUpdates
     this.#schedules = schedules
     this.#desktopSupported = desktopSupported
     this.#unsubscribe = [agents.onEvent(event => {
       if (event.kind === "session") this.#catalogDirty = true
       this.changed(event.sessionId)
     }), catalog.onChange(() => this.changed()), providers.onChanged(() => this.changed())]
+    if (providerUpdates) this.#unsubscribe.push(providerUpdates.onChanged(() => this.changed()))
     if (schedules) this.#unsubscribe.push(schedules.onChanged(() => {
       this.#schedulesDirty = true
       this.#dirty = true
@@ -76,7 +80,8 @@ export class CentralSync {
           // Allocate before capture so a delayed older upload cannot remove newer Sessions.
           const revision = await this.#agents.journal.id()
           await this.#post("/api/daemon/catalog", {
-            revision, snapshot: await this.#catalog.snapshot(), providers: this.#providers.metadata(),
+            revision, snapshot: await this.#catalog.snapshot(),
+            providers: { ...this.#providers.metadata(), ...(this.#providerUpdates ? { updates: this.#providerUpdates.snapshot() } : {}) },
             capabilities: { platform: process.platform, desktop: await this.#desktopSupported(), agent: true, terminal: true, git: true, mux: MUX_PROFILE },
           })
         }

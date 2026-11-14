@@ -3,7 +3,9 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as delay } from "node:timers/promises"
-import type { Usage } from "@agentclientprotocol/sdk/unstable"
+import type { PromptResponse, Usage } from "@agentclientprotocol/sdk/unstable"
+import type { AgentQuotaItem } from "../agent-configuration-protocol.ts"
+import { clampQuota, runUsageJsonCommand } from "../agent-usage.ts"
 import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
 
@@ -19,7 +21,7 @@ interface TranscriptStep {
 }
 
 export type AntigravityTranscriptStatus = {
-  state: "idle" | "running" | "waiting_interaction" | "settled_response"
+  state: "idle" | "running" | "settled_response"
   lastStepIndex: number
 }
 
@@ -41,59 +43,14 @@ function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
   }
 }
 
-function readVarint(buf: Uint8Array, pos: number): [value: number, next: number] | null {
-  let val = 0n
-  let shift = 0n
-  while (pos < buf.length) {
-    const b = buf[pos++]!
-    val |= BigInt(b & 0x7f) << shift
-    if (!(b & 0x80)) return [Number(val), pos]
-    shift += 7n
-  }
-  return null
-}
-
-function findProtoField(buf: Uint8Array | undefined, target: number, wireType: 0 | 2): [value: number, pos: number] | null {
-  if (!buf) return null
-  let pos = 0
-  while (pos < buf.length) {
-    const tag = readVarint(buf, pos)
-    if (!tag) return null
-    const [t, next] = tag
-    const wire = t & 7
-    if (wire === 0 || wire === 2) {
-      const v = readVarint(buf, next)
-      if (!v) return null
-      if (t >>> 3 === target && wire === wireType) return v
-      pos = wire === 2 ? v[1] + v[0] : v[1]
-    } else if (wire === 1) pos = next + 8
-    else if (wire === 5) pos = next + 4
-    else return null
-  }
-  return null
-}
-
-const protoSub = (buf: Uint8Array | undefined, field: number): Uint8Array | undefined => {
-  const m = findProtoField(buf, field, 2)
-  return m && m[1] + m[0] <= buf!.length ? buf!.subarray(m[1], m[1] + m[0]) : undefined
-}
-const protoInt = (buf: Uint8Array | undefined, field: number): number => findProtoField(buf, field, 0)?.[0] ?? 0
-
-/** Reads `used` (input + output + cached) and `size` (`max_context_tokens`) from the session SQLite DB (`CortexStepGeneratorMetadata` protobuf). */
-function readContextUsage(dbPath: string): { used: number; size: number } | null {
+/** Checks whether the session SQLite DB has an active `WAITING` step (`status = 9`, which `transcript.jsonl` omits). */
+function hasWaitingStep(dbPath: string): boolean {
   let db: DatabaseSync | undefined
   try {
     db = new DatabaseSync(dbPath, { readOnly: true, timeout: 2000 })
-    const row = db.prepare("SELECT data FROM gen_metadata ORDER BY idx DESC LIMIT 1").get() as { data?: Uint8Array } | undefined
-    if (!row?.data) return null
-    const chatModel = protoSub(row.data, 1)
-    const stats = protoSub(chatModel, 4)
-    const ctxMeta = protoSub(protoSub(chatModel, 9), 10)
-    const used = protoInt(stats, 2) + protoInt(stats, 3) + protoInt(stats, 5)
-    const size = protoInt(ctxMeta, 4)
-    return used > 0 && size > 0 ? { used, size } : null
+    return Boolean(db.prepare("SELECT 1 FROM steps WHERE status = 9 LIMIT 1").get())
   } catch {
-    return null
+    return false
   } finally {
     db?.close()
   }
@@ -136,7 +93,6 @@ export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: nu
 
   const lastStepIndex = typeof lastStep?.step_index === "number" ? lastStep.step_index : -1
   if (!lastStep || lastStepIndex <= turnStartStepIndex) return { state: "idle", lastStepIndex }
-  if (lastStep.status === "WAITING") return { state: "waiting_interaction", lastStepIndex }
   if (
     running.size === 0
     && lastWakeup > lastRunning
@@ -150,7 +106,7 @@ export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: nu
   return { state: "running", lastStepIndex }
 }
 
-/** Wraps an Antigravity ACP client + connection to await backgrounded commands before ending the turn. */
+/** Wraps an Antigravity ACP client + connection to await backgrounded commands and bridge turn steering. */
 export function createAntigravityClientWrapper(
   client: AgentClient,
   options: { dataDir?: string; pollIntervalMs?: number } = {},
@@ -160,6 +116,7 @@ export function createAntigravityClientWrapper(
   const pollMs = options.pollIntervalMs ?? 250
   const trackers = new Map<string, { pending: Set<string>; suppress: boolean; onFlush?: () => void }>()
   const aborts = new Map<string, AbortController>()
+  const turns = new Map<string, { steered: Promise<PromptResponse>[]; wake?: () => void }>()
 
   const getTracker = (id: string) => {
     let t = trackers.get(id)
@@ -187,9 +144,13 @@ export function createAntigravityClientWrapper(
   }
 
   function wrapConnection(connection: AgentConnection): AgentConnection {
+    const initialization = {
+      ...connection.initialization,
+      _meta: { ...connection.initialization._meta, steering: { supported: true, supportsPromptRequired: true } },
+    }
     return {
       ...connection,
-      get initialization() { return connection.initialization },
+      initialization,
       async prompt(params) {
         const { sessionId } = params
         const t = getTracker(sessionId)
@@ -197,27 +158,56 @@ export function createAntigravityClientWrapper(
         t.suppress = false
         const abort = new AbortController()
         aborts.set(sessionId, abort)
-        const onAbort = () => abort.abort()
+        const onAbort = () => {
+          turns.delete(sessionId)
+          abort.abort()
+        }
         client.signal?.addEventListener("abort", onAbort, { once: true })
+        const turn: { steered: Promise<PromptResponse>[]; wake?: () => void } = { steered: [] }
+        let stopReason: PromptResponse["stopReason"] = "end_turn"
+        let usage: Usage | undefined
+        const runLeg = async (leg: Promise<PromptResponse>) => {
+          for (let next: Promise<PromptResponse> | undefined = leg; next; next = turn.steered.shift()) {
+            const res = await next
+            usage = mergeUsage(usage, res.usage)
+            stopReason = res.stopReason
+          }
+        }
 
         try {
           const initRaw = await readTranscript(sessionId)
-          let startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
-          let { stopReason, usage } = await connection.prompt(params)
+          const startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
+          if (!abort.signal.aborted) turns.set(sessionId, turn)
+          await runLeg(connection.prompt(params))
 
+          const dbPath = join(dataDir, "conversations", `${sessionId}.db`)
           while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
             const startedAt = Date.now()
-            let settled: AntigravityTranscriptStatus | undefined
-            while (!abort.signal.aborted && Date.now() - startedAt < 30 * 60_000) {
+            const wake = new AbortController()
+            turn.wake = () => wake.abort()
+            let state: "waiting" | "settled" | undefined
+            while (!abort.signal.aborted && !turn.steered.length && Date.now() - startedAt < 30 * 60_000) {
+              if (hasWaitingStep(dbPath)) {
+                state = "waiting"
+                break
+              }
               const raw = await readTranscript(sessionId)
               const s = raw ? inspectAntigravityTranscript(raw, startStep) : { state: "idle" as const, lastStepIndex: -1 }
               if (s.state === "idle" && Date.now() - startedAt >= pollMs * 8) break
-              if (s.state === "waiting_interaction" || s.state === "settled_response") { settled = s; break }
-              await delay(pollMs, undefined, { signal: abort.signal }).catch(() => {})
+              if (s.state === "settled_response") {
+                state = "settled"
+                break
+              }
+              await delay(pollMs, undefined, { signal: AbortSignal.any([abort.signal, wake.signal]) }).catch(() => {})
             }
-            if (!settled || abort.signal.aborted) break
+            if (turn.steered.length > 0) {
+              await runLeg(turn.steered.shift()!)
+              continue
+            }
+            if (!state || abort.signal.aborted) break
 
-            const isSettled = settled.state === "settled_response"
+            const isSettled = state === "settled"
+            if (isSettled) turns.delete(sessionId)
             let timer: ReturnType<typeof setTimeout> | undefined
             if (isSettled) {
               t.onFlush = () => {
@@ -231,10 +221,8 @@ export function createAntigravityClientWrapper(
               t.onFlush()
             }
             try {
-              startStep = settled.lastStepIndex
-              const next = await connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] })
-              usage = mergeUsage(usage, next.usage)
-              stopReason = isSettled ? "end_turn" : next.stopReason
+              await runLeg(connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] }))
+              if (isSettled) stopReason = "end_turn"
             } finally {
               clearTimeout(timer)
               t.onFlush = undefined
@@ -242,17 +230,24 @@ export function createAntigravityClientWrapper(
             }
             if (isSettled) break
           }
-          const ctx = readContextUsage(join(dataDir, "conversations", `${sessionId}.db`))
-          if (ctx) {
-            await client.onUpdate({ sessionId, update: { sessionUpdate: "usage_update", used: ctx.used, size: ctx.size } })
-          }
-          return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
         } finally {
           client.signal?.removeEventListener("abort", onAbort)
+          turns.delete(sessionId)
           if (aborts.get(sessionId) === abort) aborts.delete(sessionId)
         }
+        return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
+      },
+      async steer(params) {
+        const turn = turns.get(params.sessionId)
+        if (!turn) return { outcome: "inactive" }
+        const next = connection.prompt(params)
+        next.catch(() => {})
+        turn.steered.push(next)
+        turn.wake?.()
+        return { outcome: "injected" }
       },
       async cancel(sessionId) {
+        turns.delete(sessionId)
         aborts.get(sessionId)?.abort()
         await connection.cancel(sessionId)
       },
@@ -260,6 +255,32 @@ export function createAntigravityClientWrapper(
   }
 
   return { wrappedClient, wrapConnection }
+}
+
+/** Parses `agy -p "/usage" --output-format json` output into quota buckets. */
+export function parseAntigravityUsage(stdout: string): AgentQuotaItem[] {
+  const payload = JSON.parse(stdout.trim()) as {
+    status?: string
+    error?: string
+    command?: { data?: { groups?: { name?: string; buckets?: { id?: string; name?: string; remaining_fraction?: number; reset_time?: string }[] }[] } }
+  }
+  if (payload.status !== "SUCCESS") throw new Error(payload.error?.trim() || "Could not read Antigravity usage")
+  const items: AgentQuotaItem[] = []
+  for (const group of payload.command?.data?.groups ?? []) {
+    const groupName = group.name?.trim() || undefined
+    for (const bucket of group.buckets ?? []) {
+      const label = bucket.name?.trim() || bucket.id?.trim()
+      if (typeof bucket.remaining_fraction !== "number" || !label) continue
+      items.push({
+        id: bucket.id?.trim() || label,
+        label,
+        ...(groupName ? { group: groupName } : {}),
+        remaining: clampQuota(bucket.remaining_fraction),
+        ...(bucket.reset_time ? { resetsAt: bucket.reset_time } : {}),
+      })
+    }
+  }
+  return items
 }
 
 /** Antigravity CLI serves ACP directly and uses its existing local credentials. */
@@ -271,5 +292,8 @@ export const antigravityProvider: AgentProvider = {
     const args = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
     const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir })
     return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", args, config.env), wrappedClient))
+  },
+  async readUsage(config, signal) {
+    return parseAntigravityUsage(await runUsageJsonCommand(config.binaryPath || "agy", ["-p", "/usage", "--output-format", "json"], config.env, signal))
   },
 }

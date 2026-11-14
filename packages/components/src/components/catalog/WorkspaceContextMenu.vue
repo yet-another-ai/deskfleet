@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
 import { Pencil, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
@@ -104,7 +105,7 @@ defineExpose({ cursor, pointerReference })
       </div>
     </ContextMenuTrigger>
     <ContextMenuPortal>
-      <ContextMenuContent :reference="pointerReference" :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
+      <ContextMenuContent :as="SpringSurface" :reference="pointerReference" :aria-label="name" :collision-padding="8" class="ui-menu z-50 flex w-48 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled" @select="choose('edit')"><Pencil :size="14" aria-hidden="true" />{{ t('workspace.edit') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item text-ui-danger" :disabled="disabled" @select="choose('delete')"><Trash2 :size="14" aria-hidden="true" />{{ t('workspace.delete') }}</ContextMenuItem>
       </ContextMenuContent>

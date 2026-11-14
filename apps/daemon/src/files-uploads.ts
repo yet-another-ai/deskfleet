@@ -37,10 +37,15 @@ async function publish(upload: Upload, path: string): Promise<void> {
 /** Staging belongs to one endpoint; close and abort remove only its unfinished work. */
 export class FileUploads {
   readonly #sessionAttachmentDirectory?: (sessionId: string) => Promise<string>
+  readonly #draftAttachmentDirectory?: (draftId: string) => Promise<string>
   readonly #uploads = new Map<string, Upload>()
 
-  constructor(sessionAttachmentDirectory?: (sessionId: string) => Promise<string>) {
+  constructor(
+    sessionAttachmentDirectory?: (sessionId: string) => Promise<string>,
+    draftAttachmentDirectory?: (draftId: string) => Promise<string>,
+  ) {
     this.#sessionAttachmentDirectory = sessionAttachmentDirectory
+    this.#draftAttachmentDirectory = draftAttachmentDirectory
   }
 
   async #attachmentDirectory(sessionId: unknown): Promise<string> {
@@ -51,10 +56,22 @@ export class FileUploads {
     return directoryPath(dir)
   }
 
+  async #draftDirectory(draftId: unknown): Promise<string> {
+    const id = text(draftId, "draft attachment ID")
+    if (!this.#draftAttachmentDirectory) throw fileError("Draft attachments are unavailable", "unsupported")
+    const dir = await this.#draftAttachmentDirectory(id)
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    return directoryPath(dir)
+  }
+
   async begin(params: FileMethods["begin"]["params"]): Promise<FileMethods["begin"]["result"]> {
+    const targets = [params.directory, params.sessionId, params.draftId].filter(value => value !== undefined)
+    if (targets.length !== 1) throw fileError("Specify exactly one destination directory or attachment target", "invalid")
     const directory = params.sessionId !== undefined
       ? await this.#attachmentDirectory(params.sessionId)
-      : await directoryPath(params.directory)
+      : params.draftId !== undefined
+        ? await this.#draftDirectory(params.draftId)
+        : await directoryPath(params.directory)
     const parts = uploadPath(params.name)
     if (parts.length !== 1) throw fileError("Select one file or folder name", "invalid")
     if (params.kind !== "file" && params.kind !== "directory") throw fileError("Invalid file kind", "invalid")

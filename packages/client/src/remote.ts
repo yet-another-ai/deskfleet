@@ -3,6 +3,7 @@ import { relayFailureMessage, type RelayDeniedReason } from "./relay.ts"
 import { observePeerGrant, type PeerConnectionTelemetry } from "./peer-telemetry.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
 import type { CentralApi, CentralEvent, Machine } from "./central.ts"
+import type { CatalogSnapshot } from "./catalog.ts"
 import type { DesktopEvent, DesktopOffer, DesktopStart, IceCandidate } from "./desktop-media.ts"
 import type { TerminalOffer } from "../../../apps/daemon/src/control-protocol.ts"
 import type { AgentMethod, AgentMethods } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -15,12 +16,12 @@ import { legacyDataChannel } from "./legacy-data-channel.ts"
 
 interface Peer { id: string; relayDeniedReason?: RelayDeniedReason | null; timer: ReturnType<typeof setTimeout>; telemetry: PeerConnectionTelemetry }
 const management = new Set<string>([
-  "_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
-  "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/delete", "_deskfleet/command/get",
+  "_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/session/configure", "_deskfleet/session/switch-agent",
+  "_deskfleet/session/create", "_deskfleet/session/fork", "_deskfleet/session/archive", "_deskfleet/session/restore", "_deskfleet/session/rename", "_deskfleet/session/yolo", "_deskfleet/session/read", "_deskfleet/session/unread", "_deskfleet/session/delete", "_deskfleet/command/get",
   "_deskfleet/git/branches",
 ])
 
-const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
+const managementReads = new Set<string>(["_deskfleet/agent/configuration", "_deskfleet/agent/usage", "_deskfleet/session/configuration", "_deskfleet/command/get", "_deskfleet/git/branches"])
 
 /** One opened machine owns this adapter until its account/Team scope is released. */
 export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralApi, machine: Machine, options: { local?: boolean; rosterReady?: boolean } = {}): { api: DeskfleetDesktopApi; refreshCatalog(): void; updateMachine(value: Machine, rosterRefreshed?: boolean): void; setLocal(local: boolean): void; dispose(): void } {
@@ -150,7 +151,8 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     ...host,
     target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
-      list: async () => {
+      list: async options => {
+        if (options?.live) return { ...await userRpc<CatalogSnapshot>("catalogList"), machineName: name }
         const { snapshot } = await central.catalog(machine.teamId, machine.id)
         name = snapshot.machineName
         return snapshot
@@ -168,6 +170,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       update: (providerId, changes) => userRpc("providerUpdate", { providerId, changes }),
       remove: providerId => userRpc("providerRemove", { providerId }), test: provider => userRpc("providerTest", { provider }),
       probe: provider => userRpc("providerProbe", { provider }),
+      discoverWorkspaces: providerId => userRpc("providerDiscoverWorkspaces", { providerId }),
       install: provider => userRpc("providerInstall", { provider }), login: provider => userRpc("providerLogin", { provider }),
       onChanged: listener => { providerEvents.add(listener); return () => { providerEvents.delete(listener) } },
     },

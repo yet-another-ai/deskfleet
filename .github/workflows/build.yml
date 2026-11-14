@@ -2,6 +2,12 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      signed_ios:
+        description: Build only a signed iOS IPA using production credentials, without uploading to TestFlight.
+        type: boolean
+        required: false
+        default: false
   workflow_call:
     inputs:
       smoke_build:
@@ -11,6 +17,11 @@ on:
         default: false
       production_release:
         description: Use the production environment and sign macOS installers for a validated tag release.
+        type: boolean
+        required: false
+        default: false
+      signed_ios:
+        description: Build only a signed iOS IPA without publishing.
         type: boolean
         required: false
         default: false
@@ -27,6 +38,12 @@ on:
         required: false
       APPLE_API_ISSUER:
         required: false
+      APPLE_TEAM_ID:
+        required: false
+      IOS_DIST_CERT_P12:
+        required: false
+      IOS_DIST_CERT_PASSWORD:
+        required: false
       ANDROID_KEYSTORE_BASE64:
         required: false
       ANDROID_KEYSTORE_PASSWORD:
@@ -41,6 +58,7 @@ permissions:
 
 jobs:
   package:
+    if: ${{ !inputs.signed_ios }}
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     environment: ${{ inputs.production_release && 'production' || '' }}
@@ -249,6 +267,7 @@ jobs:
           retention-days: 14
 
   android:
+    if: ${{ !inputs.signed_ios }}
     name: Build (android-arm64)
     runs-on: ubuntu-26.04
     environment: ${{ inputs.production_release && 'production' || '' }}
@@ -361,5 +380,127 @@ jobs:
         with:
           name: deskfleet-android-apk
           path: apps/web/android/app/build/outputs/apk/release/app-release-signed.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: Build (ios-arm64)
+    runs-on: macos-26
+    environment: ${{ (inputs.production_release || inputs.signed_ios) && 'production' || '' }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Verify the pinned iOS toolchain
+        run: xcodebuild -version
+
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
+        with:
+          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+
+      - name: Build iOS archive (smoke)
+        if: ${{ !inputs.production_release && !inputs.signed_ios }}
+        run: mise run ios:build
+
+      - name: Prepare iOS release signing credentials
+        id: ios_credentials
+        if: ${{ inputs.production_release || inputs.signed_ios }}
+        shell: bash
+        env:
+          DESKTOP_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [[ -z "$DESKTOP_SERVER_URL" ]]; then
+            echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
+            exit 1
+          fi
+          for name in APPLE_TEAM_ID IOS_DIST_CERT_P12 IOS_DIST_CERT_PASSWORD APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required release secret: $name"
+              exit 1
+            fi
+          done
+          cert_path="$RUNNER_TEMP/deskfleet-ios-dist.p12"
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          keychain_path="$RUNNER_TEMP/deskfleet-ios-signing.keychain-db"
+          echo "key_path=$key_path" >> "$GITHUB_OUTPUT"
+          echo "keychain_path=$keychain_path" >> "$GITHUB_OUTPUT"
+          keychain_pass=$(LC_ALL=C head -c 32 /dev/urandom | base64)
+          (umask 077 && printf '%s' "$IOS_DIST_CERT_P12" | base64 -d > "$cert_path")
+          (umask 077 && printf '%s' "$APPLE_API_KEY_P8" | base64 -d > "$key_path")
+          security create-keychain -p "$keychain_pass" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_pass" "$keychain_path"
+          security import "$cert_path" -P "$IOS_DIST_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_pass" "$keychain_path" >/dev/null
+          security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
+
+      - name: Download and validate iOS distribution profiles
+        if: ${{ inputs.production_release || inputs.signed_ios }}
+        env:
+          IOS_SIGNING_KEYCHAIN: ${{ steps.ios_credentials.outputs.keychain_path }}
+          IOS_APP_PROFILE_NAME: ${{ vars.IOS_APP_PROFILE_NAME }}
+          IOS_BROADCAST_PROFILE_NAME: ${{ vars.IOS_BROADCAST_PROFILE_NAME }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_PATH: ${{ steps.ios_credentials.outputs.key_path }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: mise exec node -- node scripts/prepare-ios-signing.ts
+
+      - name: Build production iOS Web assets and signed IPA
+        if: ${{ inputs.production_release || inputs.signed_ios }}
+        env:
+          VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
+          VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
+          VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
+          VITE_SENTRY_DIST: ios
+          VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
+          DESKFLEET_IOS_SIGNED: "1"
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: mise run ios:build
+
+      - name: Remove iOS signing credentials
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${{ steps.ios_credentials.outputs.keychain_path }}" ]]; then
+            security delete-keychain "${{ steps.ios_credentials.outputs.keychain_path }}" || true
+          fi
+          rm -f "$RUNNER_TEMP/deskfleet-ios-dist.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+          for profile_uuid in "$DESKFLEET_IOS_APP_PROFILE_UUID" "$DESKFLEET_IOS_BROADCAST_PROFILE_UUID"; do
+            if [[ -n "$profile_uuid" ]]; then
+              rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$profile_uuid.mobileprovision"
+            fi
+          done
+
+      - name: Upload iOS build diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-ios-diagnostics
+          path: apps/web/ios/App/diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload iOS IPA
+        if: ${{ inputs.production_release || inputs.signed_ios }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-ios
+          path: |
+            apps/web/ios/App/output/*.ipa
+            apps/web/ios/App/output/release.json
           if-no-files-found: error
           retention-days: 14

@@ -205,6 +205,12 @@ pub struct AgentSessionRecord {
     /// People who have opened this Session. Absent until the first authenticated visit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub viewers: Vec<SessionViewer>,
+    /// Whether this Session automatically approves permission requests on the daemon.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub yolo: bool,
+    /// Actor that enabled YOLO mode for this Session, used for permission audit attribution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yolo_actor: Option<AgentActor>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -443,6 +449,10 @@ pub struct AgentCreateSession {
     pub inherited_turn_count: u32,
     #[serde(default)]
     pub admission_generation: Option<String>,
+    #[serde(default)]
+    pub yolo: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yolo_actor: Option<AgentActor>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

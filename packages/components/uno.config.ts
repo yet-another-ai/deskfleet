@@ -85,7 +85,7 @@ export default defineConfig({
     "ui-card": "overflow-hidden squircle-xl border border-ui-border-strong bg-ui-surface",
     "ui-card-row": "flex min-h-11 items-center gap-3 px-4 py-2",
     "ui-option-card":
-      "flex w-full cursor-pointer items-center gap-3 squircle-xl border border-ui-border-strong bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:-translate-y-px enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:translate-y-0 enabled:active:scale-[0.99] disabled:cursor-default",
+      "flex w-full cursor-pointer items-center gap-3 squircle-xl border border-ui-border-strong bg-ui-surface px-4 py-3.5 text-left ui-motion duration-[var(--ui-duration-base)] enabled:hover:border-ui-border-strong enabled:hover:bg-ui-control-hover enabled:hover:shadow-ui-raised enabled:active:scale-[0.99] disabled:cursor-default",
     "ui-empty":
       "flex flex-col items-center gap-1 rounded-xl border border-dashed border-ui-border-strong bg-ui-surface/40 px-6 py-10 text-center",
     "ui-dialog":
@@ -137,7 +137,7 @@ export default defineConfig({
     // The shared interaction transition: state colors, elevation, and press scale.
     // `duration-*` and `ease-*` utilities set these variables, so they adjust it regardless of CSS order.
     ["ui-motion", {
-      "transition-property": "color, background-color, border-color, outline-color, box-shadow, opacity, transform, translate, scale, rotate",
+      "transition-property": "color, background-color, border-color, outline-color, box-shadow, opacity, scale, rotate",
       "transition-duration": "var(--un-duration, var(--ui-duration-fast))",
       "transition-timing-function": "var(--un-ease, var(--ui-ease-out))",
     }],

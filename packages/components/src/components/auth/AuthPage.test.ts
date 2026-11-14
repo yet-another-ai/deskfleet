@@ -155,6 +155,7 @@ test("desktop approval confirms recent authentication in a dialog and keeps its 
 })
 
 test.each(oauthProviders.flatMap(value => [true, false].map(registrationEnabled => ({ ...value, registrationEnabled }))))("$provider sign-in requires terms even when registrationEnabled=$registrationEnabled", async ({ provider, label, authorizationUrl, registrationEnabled }) => {
+  vi.useFakeTimers({ toFake: ["performance", "requestAnimationFrame", "cancelAnimationFrame"] })
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   const request = mountAt("/auth/desktop?attempt=native-attempt", async (_method, path) => {
     if (path === "/api/auth/config") return { registrationEnabled, [`${provider}Enabled`]: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "" }
@@ -169,10 +170,17 @@ test.each(oauthProviders.flatMap(value => [true, false].map(registrationEnabled 
   const checkbox = view!.get('[role="checkbox"]')
   expect(checkbox.attributes("aria-invalid")).toBe("true")
   expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t(`auth.${provider}TermsRequired`))
-  expect(view!.find(".terms-shake").exists()).toBe(true)
-  await view!.get(".terms-shake").trigger("animationend")
+  const termsRow = checkbox.element.parentElement!
+  expect(termsRow.style.translate).toBe("0px 0px")
+  await vi.advanceTimersByTimeAsync(64)
+  expect(parseFloat(termsRow.style.translate)).toBeLessThan(0)
+  const interruptedPosition = termsRow.style.translate
   await signIn.trigger("click"); await flushPromises()
-  expect(view!.find(".terms-shake").exists()).toBe(true)
+  expect(termsRow.style.translate).toBe(interruptedPosition)
+  await vi.advanceTimersByTimeAsync(16)
+  expect(parseFloat(termsRow.style.translate)).toBeLessThan(parseFloat(interruptedPosition))
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(termsRow.style.translate).toBe("0px 0px")
   await checkbox.trigger("click")
   expect(checkbox.attributes("aria-invalid")).toBeUndefined()
   expect(view!.find('[role="alert"]').exists()).toBe(false)

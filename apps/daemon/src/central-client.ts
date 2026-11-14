@@ -6,6 +6,7 @@ import { apiRequest, type ApiRequestOptions } from "@deskfleet/client/api-reques
 import { HttpError } from "@deskfleet/client/request-diagnostics"
 import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
+import type { GithubPullRequest, GithubPullRequestQuery } from "../../../packages/client/src/central.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
 import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
@@ -29,6 +30,13 @@ const RETRY_MAX_MS = 30_000
 function machineCredentialRejected(error: unknown): boolean {
   return error instanceof HttpError && error.status === 401 && error.code === "machine_credential_rejected"
     && error.response?.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
+}
+
+function reportPeerCleanupFailure(error: unknown): void {
+  // AuthorizedPeers aggregates resource shutdown failures. Malformed messages
+  // must still reject the control handler and close the control socket.
+  if (!(error instanceof AggregateError)) throw error
+  console.error("Central peer cleanup failed", error)
 }
 
 /** Outbound machine identity/control link. A lost socket never owns peer cleanup. */
@@ -68,7 +76,7 @@ export class CentralClient {
       identity: operations.agents.journal.identity,
       signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
     })
-    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules)
+    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates)
     this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
   }
 
@@ -117,6 +125,17 @@ export class CentralClient {
     })
     if (result.authorized !== true) throw new Error("Backend did not authorize this user delegation")
     return structuredClone(actor)
+  }
+
+  /** Read PR state using the Session author's current opt-in; no user token reaches the daemon. */
+  async githubPullRequest(actor: AgentActor, query: GithubPullRequestQuery): Promise<{ pullRequest: GithubPullRequest | null }> {
+    const credentials = this.#credentials
+    if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user delegation is required")
+    if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("GitHub pull request status is unavailable")
+    return this.#api(credentials, "/api/daemon/github/pull-request", {
+      method: "POST", json: { userId: actor.userId, query }, timeoutMs: 45_000, totalTimeoutMs: 45_000,
+      errorPrefix: "GitHub pull request status is unavailable",
+    })
   }
 
   /** The credential fixes the source registration; the backend authorizes the target in that Team. */
@@ -285,8 +304,8 @@ export class CentralClient {
     if (message.type === "ping") { this.#send({ type: "pong" }); return }
     if (message.type === "pong") return
     if (!this.#connected) throw new Error("Authenticate the control channel first")
-    if (message.type === "peerRevoked") { await this.#peers.close(message.peerId); return }
-    if (message.type === "reconcilePeers") { await this.#peers.reconcile(message.peers); return }
+    if (message.type === "peerRevoked") { await this.#peers.close(message.peerId).catch(reportPeerCleanupFailure); return }
+    if (message.type === "reconcilePeers") { await this.#peers.reconcile(message.peers).catch(reportPeerCleanupFailure); return }
     if (message.type !== "request") throw new Error("Unknown control message")
     // Each RPC is independent: a slow Provider operation must not block revocation.
     try {

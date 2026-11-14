@@ -365,7 +365,7 @@ test("Linux welcome shows the shared startup authorization and continues through
   expect(view!.text()).toContain("Step 1 of 3")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
   expect(view!.text()).not.toMatch(/macOS|System Settings|Full Disk Access|system audio|quit and reopen/u)
-  for (const text of ["Retry access", "Skip for now"]) {
+  for (const text of ["Authorize screen sharing", "Skip for now"]) {
     const button = view!.findAll("button").find(button => button.text() === text)!
     expect(button.attributes("disabled")).toBeDefined()
     await button.trigger("click")
@@ -391,15 +391,15 @@ test("Linux denied screen sharing can retry the combined authorization without d
   app.mount()
   await flushPromises()
   expect(view!.get('[role="status"]').text()).toBe("Access is not enabled yet")
-  await click("Retry access")
-  await click("Retry access")
+  await click("Authorize screen sharing")
+  await click("Authorize screen sharing")
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
   app.permissions.screenCapturePermission = { status: "denied" }
   app.permissions.accessibilityPermission = { status: "denied" }
   app.changed()
   await flushPromises()
-  await click("Retry access")
+  await click("Authorize screen sharing")
   expect(app.onboarding.requestPermission).toHaveBeenCalledTimes(2)
   app.permissions.screenCapturePermission = { status: "granted" }
   app.permissions.accessibilityPermission = { status: "granted" }
@@ -427,7 +427,7 @@ test("Linux can retry access when the initial permission check fails", async () 
   app.mount()
   await flushPromises()
   expect(view!.get('[role="alert"]').text()).toBe("Could not read desktop access")
-  await click("Retry access")
+  await click("Authorize screen sharing")
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
   expect(view!.get('[role="status"]').text()).toBe("Waiting for desktop authorization…")
 })
@@ -511,7 +511,7 @@ for (const platform of ["darwin", "linux"] as const) test(`${platform} permissio
   app.onboarding.requestPermission.mockImplementationOnce(() => new Promise(resolvePromise => { resolve = resolvePromise }))
   app.mount()
   await flushPromises()
-  await click(platform === "linux" ? "Retry access" : "Enable access")
+  await click(platform === "linux" ? "Authorize screen sharing" : "Enable access")
   app.permissions[`${kind}Permission`] = { status: "requesting" }
   app.changed()
   await flushPromises()
@@ -641,7 +641,7 @@ test("Linux welcome defers late backend reconciliation until an active permissio
   app.onboarding.requestPermission.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail }))
   app.mount()
   await flushPromises()
-  await click("Retry access")
+  await click("Authorize screen sharing")
   const reads = app.onboarding.get.mock.calls.length
 
   app.state.linuxDesktopBackend = "x11"

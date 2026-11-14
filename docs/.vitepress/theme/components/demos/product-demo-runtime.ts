@@ -49,6 +49,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
     { path: "/settings", component: () => import("@deskfleet/components/views/SettingsView.vue"), meta: { fullWindow: true }, children: [
       { path: "", name: "settings", redirect: { name: "settings-preferences" } },
       { path: "preferences", name: "settings-preferences", component: () => import("@deskfleet/components/components/settings/PreferencesSettings.vue") },
+      { path: "worktrees", name: "settings-worktrees", component: () => import("@deskfleet/components/components/settings/WorktreeSettings.vue") },
       { path: "appearance", name: "settings-appearance", component: () => import("@deskfleet/components/components/settings/AppearanceSettings.vue") },
       { path: "notifications", name: "settings-notifications", component: () => import("@deskfleet/components/components/settings/NotificationsSettings.vue") },
       // SettingsView links these unconditionally; a missing name throws while its sidebar renders.

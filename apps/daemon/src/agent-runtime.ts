@@ -4,7 +4,7 @@ import { commandPath } from "./agent-command-path.ts"
 import { canContinueSession, supportsSteering, type AgentConfig, type AgentConnection, type AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp } from "./agent-store.ts"
-import type { AgentCommand, AgentInput, AgentPermission, AgentRun, AgentSessionRecord, AgentSnapshot, AgentTurn } from "./agent-protocol.ts"
+import { autoApprovePermission, type AgentCommand, type AgentInput, type AgentPermission, type AgentRun, type AgentSessionRecord, type AgentSnapshot, type AgentTurn } from "./agent-protocol.ts"
 
 import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configuration.ts"
 import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
@@ -17,6 +17,7 @@ import type { TerminalSessions } from "./terminals.ts"
 import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
 import { subagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
+import { prepareWorktreeBranchPrompt } from "./worktree-branch-naming.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -483,12 +484,24 @@ export class AgentRuntime {
     try {
       await this.journal.serial(this.sessionId, async () => {
         const session = await this.journal.session(this.sessionId)
+        const now = timestamp()
+
+        let committed = permission
         if (session.archiveState !== "active") {
-          permission.state = "cancelled"
-          permission.resolvedAt = timestamp()
+          committed = { ...permission, state: "cancelled", resolvedAt: now }
           resolve({ outcome: { outcome: "cancelled" } })
+        } else if (session.yolo) {
+          const approved = autoApprovePermission(permission, now, { actor: session.yoloActor })
+          if (approved?.optionId) {
+            committed = approved
+            resolve({ outcome: { outcome: "selected", optionId: approved.optionId } })
+          }
         }
-        await this.journal.commit(session, { permissions: [permission], events: [this.journal.event(this.sessionId, "permission", permission)] })
+
+        await this.journal.commit(session, {
+          permissions: [committed],
+          events: [this.journal.event(this.sessionId, "permission", committed)],
+        })
       })
       const abort = () => { void this.cancelPermissions(permission.id).catch(error => console.error("Permission cancellation failed", error)) }
       signal.addEventListener("abort", abort, { once: true })
@@ -662,11 +675,18 @@ export class AgentRuntime {
     this.#active = { turn, completion }
     let sent = false
     void (async () => {
-      const prompt = await this.#catalog.attachments.preparePrompt(
+      let prompt = await this.#catalog.attachments.preparePrompt(
         this.sessionId,
         input.content,
         connection.initialization.agentCapabilities?.promptCapabilities ?? undefined,
       )
+      if (session.context === "worktree") {
+        const snapshot = await this.journal.read(this.sessionId)
+        const worktree = await this.#catalog.sessionWorktree(this.sessionId)
+        const preferences = await this.#catalog.getWorktreePreferences()
+        prompt = await prepareWorktreeBranchPrompt(snapshot, turn.id, worktree?.directories ?? [],
+          preferences.branchNaming, this.journal.identity.originId, prompt)
+      }
       if (!this.running || this.#connection !== connection) throw new Error("Agent stopped before delivery")
       await consumeTurn(this.journal, this.#quotas, turn)
       sent = true

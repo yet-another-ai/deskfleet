@@ -69,6 +69,11 @@ export const router = createRouter({
       component: () => import("../views/SearchView.vue"),
     },
     {
+      path: "/desktops",
+      name: "remote-desktops",
+      component: () => import("../views/RemoteDesktopsView.vue"),
+    },
+    {
       path: "/schedules/:scheduleId?",
       name: "schedules",
       component: () => import("../views/ScheduledTasksView.vue"),
@@ -123,6 +128,11 @@ export const router = createRouter({
           path: "preferences",
           name: "settings-preferences",
           component: () => import("../components/settings/PreferencesSettings.vue"),
+        },
+        {
+          path: "worktrees",
+          name: "settings-worktrees",
+          component: () => import("../components/settings/WorktreeSettings.vue"),
         },
         {
           path: "appearance",

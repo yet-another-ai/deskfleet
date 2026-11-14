@@ -3,7 +3,7 @@ import { DEFAULT_APPEARANCE_SETTINGS } from "@deskfleet/client/appearance"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { AppLocale } from "@deskfleet/client/i18n"
 import type { CatalogWorkspace } from "@deskfleet/client/catalog"
-import type { NotificationSettings } from "@deskfleet/client/settings"
+import type { NotificationSettings, WorktreePreferences } from "@deskfleet/client/settings"
 import { AGENT_PROVIDER_TEMPLATES } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { desktopPreview } from "./product-demo-media.ts"
 
@@ -18,6 +18,7 @@ const workspaces: CatalogWorkspace[] = []
 let keepAwake = false
 let autoDownloadUpdates = true
 let worktreeRoot: string | null = null
+let worktreePreferences: WorktreePreferences = { branchNaming: "semantic", cleanup: { archived: true, merged: true, inactive: true, inactiveDays: 5, settled: true, settledDays: 6, unchanged: true, keepLocalChanges: "uncommitted" } }
 let notifications: NotificationSettings = { enabled: true, taskCompleted: true, taskNeedsInput: true }
 
 /** Only sample data lives here. The website mounts the unmodified application UI. */
@@ -43,6 +44,8 @@ const host: DeskfleetDesktopApi = {
     getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, installSource: "desktop_installer" }),
     setAutoDownloadUpdates: async enabled => ({ enabled: autoDownloadUpdates = enabled, installSource: "desktop_installer" }),
     getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/workspace/.worktrees" }),
+    getWorktreePreferences: async () => structuredClone(worktreePreferences),
+    setWorktreePreferences: async settings => structuredClone(worktreePreferences = settings),
     setWorktreeRoot: async root => ({ root: worktreeRoot = root, defaultRoot: "/workspace/.worktrees" }),
     chooseWorktreeRoot: async () => null,
     getNotifications: async () => ({ ...notifications }),
@@ -81,6 +84,7 @@ const host: DeskfleetDesktopApi = {
     update: async (id, changes) => { const provider = providers.find(provider => provider.id === id); if (!provider) return unavailable(); Object.assign(provider, changes); return provider },
     remove: async id => { const index = providers.findIndex(provider => provider.id === id); if (index >= 0) providers.splice(index, 1) },
     test: async provider => ({ agentName: provider.name }),
+    discoverWorkspaces: async () => ({ supported: true, candidates: [], warnings: [] }),
     probe: async provider => ({ status: "found", binaryPath: provider.binaryPath || `/usr/local/bin/${AGENT_PROVIDER_TEMPLATES.find(template => template.id === provider.template)!.defaultBinaryPath}`,
       auth: "unknown", installable: false, loginAvailable: false }),
     install: unavailable,

@@ -13,7 +13,7 @@ export interface FileTransfer {
 export interface FileResourceRequest { target: FileTarget; sessionId: string; uri: string }
 /** Native hosts may open a resolved resource on this physical machine. */
 export interface FileResource extends FileEntry { canOpen?: boolean }
-export interface FileAttachmentUploadRequest { target: FileTarget; sessionId: string; name: string; data: Uint8Array }
+export interface FileAttachmentUploadRequest { target: FileTarget; sessionId?: string; draftId?: string; name: string; data: Uint8Array }
 export interface FileAttachmentUploadResult { path: string; uri: string; name: string; size: number }
 
 export function filePathToUri(path: string): string {
@@ -33,10 +33,11 @@ export function filePathToUri(path: string): string {
 
 export interface FileReadResourceProgress { transferredBytes: number; totalBytes: number }
 export interface FileReadResourceOptions { onProgress?: (progress: FileReadResourceProgress) => void }
+export interface FileAttachmentUploadOptions { onProgress?: (progress: FileReadResourceProgress) => void; signal?: AbortSignal }
 
 export interface FilesApi {
   list(target: FileTarget, path?: string): Promise<FileListing>
-  /** A browser grants access to a local directory; desktop opens a native directory chooser. */
+  /** Grants a browser directory handle or opens the host's native directory chooser. */
   chooseLocalDirectory(): Promise<FileListing | null>
   enqueue(request: FileTransferRequest): Promise<string>
   transfers(): Promise<FileTransfer[]>
@@ -49,7 +50,7 @@ export interface FilesApi {
   openResource?(request: FileResourceRequest): Promise<void>
   revealResource?(request: FileResourceRequest): Promise<void>
   saveResource(request: FileResourceRequest): Promise<string | null>
-  uploadAttachment?(request: FileAttachmentUploadRequest): Promise<FileAttachmentUploadResult>
+  uploadAttachment?(request: FileAttachmentUploadRequest, options?: FileAttachmentUploadOptions): Promise<FileAttachmentUploadResult>
 }
 export const FILES_IPC_CHANNEL = "deskfleet:files"
 export const FILES_CHANGED_EVENT = "deskfleet:files-changed"

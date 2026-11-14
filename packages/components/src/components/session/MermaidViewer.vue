@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { usePanZoom } from "../../composables/usePanZoom.ts"
 import { Check, Copy, Ellipsis, ExternalLink, LocateFixed, Maximize2, PanelRight, RotateCcw, ZoomIn, ZoomOut } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { getActivePinia, storeToRefs } from "pinia"
@@ -25,14 +26,11 @@ const { isDark } = storeToRefs(useAppearanceStore())
 const root = useTemplateRef<HTMLDivElement>("root")
 const resourceContext = inject(agentResourceContextKey, computed(() => undefined))
 const svg = ref<string>()
-const scale = ref(1)
-const panX = ref(0)
-const panY = ref(0)
-const dragging = ref(false)
+const { scale, panX, panY, dragging, zoomIn, zoomOut, resetView, startDrag, moveDrag, endDrag } = usePanZoom()
 const menuOpen = ref(false)
 const copied = ref(false)
 const rightTabLabel = computed(() => t(layout?.compact && layout.sessionWindowsAvailable ? "mobileViews.open" : "mermaid.showInRightTab"))
-let dragStartX = 0, dragStartY = 0, generation = 0, disposed = false
+let generation = 0, disposed = false
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -74,22 +72,6 @@ function resolvedSource(): MermaidSource {
   return { ...(sessionId ? { sessionId } : {}), ...(entryId ? { entryId } : {}), ...(diagramId ? { diagramId } : {}) }
 }
 
-const zoomIn = () => { scale.value = Math.min(4, Math.round((scale.value + 0.25) * 100) / 100) }
-const zoomOut = () => { scale.value = Math.max(0.25, Math.round((scale.value - 0.25) * 100) / 100) }
-const resetView = () => { scale.value = 1; panX.value = 0; panY.value = 0 }
-function startDrag(event: PointerEvent): void {
-  if (event.button !== 0) return
-  dragging.value = true; dragStartX = event.clientX - panX.value; dragStartY = event.clientY - panY.value
-  ;(event.currentTarget as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
-}
-function moveDrag(event: PointerEvent): void {
-  if (dragging.value) { panX.value = event.clientX - dragStartX; panY.value = event.clientY - dragStartY }
-}
-function endDrag(event: PointerEvent): void {
-  if (!dragging.value) return
-  dragging.value = false
-  ;(event.currentTarget as HTMLElement | null)?.releasePointerCapture?.(event.pointerId)
-}
 function onWheel(event: WheelEvent): void {
   if (!event.ctrlKey && !event.metaKey && props.mode === "inline") return
   event.preventDefault()
@@ -171,15 +153,16 @@ onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(copiedTimer)
       </div>
       <div
         data-mermaid-canvas
-        class="flex min-h-44 flex-1 items-center justify-center overflow-hidden p-4 pt-11 select-none"
+        class="flex min-h-44 flex-1 touch-none items-center justify-center overflow-hidden p-4 pt-11 select-none"
         :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
         @pointerdown="startDrag"
         @pointermove="moveDrag"
         @pointerup="endDrag"
         @pointercancel="endDrag"
+        @lostpointercapture="endDrag"
         @wheel="onWheel"
       >
-        <div data-mermaid-stage class="flex w-full items-center justify-center transition-transform duration-75 ease-out" :class="dragging && 'transition-none!'" :style="{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }" v-html="svg" />
+        <div data-mermaid-stage class="flex w-full items-center justify-center" :style="{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }" v-html="svg" />
       </div>
     </div>
     <UiScrollArea v-else orientation="horizontal" fade-size="sm">

@@ -27,7 +27,21 @@ export function filesApi(): FilesApi {
     saveResource: request => invoke("saveResource", request),
     openResource: request => invoke("openResource", request),
     revealResource: request => invoke("revealResource", request),
-    uploadAttachment: request => invoke("uploadAttachment", request),
+    uploadAttachment: (request, options) => {
+      if (!options?.onProgress && !options?.signal) return invoke("uploadAttachment", request)
+      options.signal?.throwIfAborted()
+      const requestId = String(++nextReadId)
+      const handler = (_event: Electron.IpcRendererEvent, payload: { requestId: string } & FileReadResourceProgress) => {
+        if (payload?.requestId === requestId) options.onProgress?.({ transferredBytes: payload.transferredBytes, totalBytes: payload.totalBytes })
+      }
+      const onAbort = () => { void invoke("abortAttachmentUpload", requestId).catch(() => {}) }
+      if (options.onProgress) ipcRenderer.on(FILES_RESOURCE_PROGRESS_EVENT, handler)
+      options.signal?.addEventListener("abort", onAbort, { once: true })
+      return invoke<Awaited<ReturnType<NonNullable<FilesApi["uploadAttachment"]>>>>("uploadAttachment", request, requestId).finally(() => {
+        if (options.onProgress) ipcRenderer.removeListener(FILES_RESOURCE_PROGRESS_EVENT, handler)
+        options.signal?.removeEventListener("abort", onAbort)
+      })
+    },
     onChanged: listener => {
       const handler = (_event: Electron.IpcRendererEvent, transfers: FileTransfer[]) => listener(transfers)
       ipcRenderer.on(FILES_CHANGED_EVENT, handler)

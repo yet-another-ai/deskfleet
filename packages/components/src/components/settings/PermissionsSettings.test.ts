@@ -292,6 +292,37 @@ test("Wayland uses shared consent and blocks duplicate requests while the deskto
   expect(app.onboarding.requestPermission).toHaveBeenLastCalledWith("accessibility")
 })
 
+test("Wayland can reselect granted screens while permission checks remain silent", async () => {
+  const app = setup("linux")
+  app.permissions.screenCapturePermission = { status: "granted" }
+  app.mount()
+  await flushPromises()
+  expect(card("screenCapture").text()).toContain("If a screen picker appears, select every monitor you want to access remotely")
+  expect(card("screenCapture").text()).toContain("Only authorized screens appear remotely")
+  expect(card("screenCapture").text()).toContain("stops current remote viewing and control")
+  expect(card("screenCapture").get("button").text()).toBe("Authorize again")
+  expect(card("accessibility").find("button").exists()).toBe(false)
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  await click(i18n.global.t("permissionsSettings.refresh"))
+  expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+
+  let resolve!: (permissions: OnboardingPermissionsState) => void
+  app.onboarding.requestPermission.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  await card("screenCapture").get("button").trigger("click")
+  expect(card("screenCapture").get("button").attributes("disabled")).toBeDefined()
+  await card("screenCapture").get("button").trigger("click")
+  expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
+  resolve({ screenCapturePermission: { status: "requesting" }, accessibilityPermission: { status: "requesting" } })
+  await flushPromises()
+  expect(card("screenCapture").get("button").attributes("disabled")).toBeDefined()
+  app.changed()
+  await flushPromises()
+  expect(card("screenCapture").get("button").text()).toBe("Authorize again")
+  expect(card("screenCapture").get("button").attributes("disabled")).toBeUndefined()
+  expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
+})
+
 test("Linux follows late backend events and does not restore Wayland cards from a stale refresh", async () => {
   const app = setup("linux")
   let resolve!: (permissions: OnboardingPermissionsState) => void

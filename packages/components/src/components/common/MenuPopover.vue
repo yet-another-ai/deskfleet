@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "./SpringSurface.ts"
 import { DropdownMenuContent, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { ref, useTemplateRef } from "vue"
 import UiScrollArea from "./UiScrollArea.vue"
@@ -28,7 +29,7 @@ function openDialog(show: () => void): void {
         <slot name="trigger" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuContent :aria-label="label" :side="placement ?? 'bottom'" align="start" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[var(--reka-dropdown-menu-content-available-height)] min-w-56 w-[var(--reka-dropdown-menu-trigger-width)] flex-col overflow-hidden p-0" loop @close-auto-focus="openingDialog && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()">
+        <DropdownMenuContent :as="SpringSurface" :aria-label="label" :side="placement ?? 'bottom'" align="start" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[var(--reka-dropdown-menu-content-available-height)] min-w-56 w-[var(--reka-dropdown-menu-trigger-width)] flex-col overflow-hidden p-0" loop @close-auto-focus="openingDialog && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()">
           <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
             <slot :close="() => { open = false }" :open-dialog="openDialog" />
           </UiScrollArea>

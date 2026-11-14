@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import SpringCollapse from "../common/SpringCollapse.vue"
 import { ArrowRightLeft, Bot, Brain, ChevronRight, CircleX, FilePen, FileText, Globe, LoaderCircle, Repeat, Search, SquareTerminal, Trash2, Wrench } from "@lucide/vue"
 import { computed, type Component } from "vue"
-import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
+import { CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { AgentPermission } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { ConversationTool } from "../../services/agent-conversation.ts"
@@ -38,8 +39,8 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
       <span v-else-if="tool.status === 'failed'" class="inline-flex shrink-0 items-center gap-1 text-xs text-ui-danger"><CircleX :size="14" :stroke-width="2" aria-hidden="true" />{{ t('agent.toolStatus.failed') }}</span>
       <ChevronRight v-if="hasDetails" :size="14" :stroke-width="2" class="shrink-0 opacity-0 ui-motion group-hover/tool:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
     </CollapsibleTrigger>
-    <CollapsibleContent class="ui-collapsible">
+    <SpringCollapse class="ui-collapsible">
       <AgentToolDetails :tool="tool" :live="live" class="mt-1 mb-2 ml-6 rounded-lg border border-ui-border bg-ui-surface p-3" />
-    </CollapsibleContent>
+    </SpringCollapse>
   </CollapsibleRoot>
 </template>

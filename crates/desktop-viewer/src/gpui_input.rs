@@ -4,12 +4,13 @@
 use deskfleet_input::InputEvent;
 use gpui::{
     Bounds, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels,
-    Point, ScrollWheelEvent, px,
+    Point, ScrollEvent, px,
 };
 
 #[derive(Default)]
 pub(crate) struct Input {
     enabled: bool,
+    reverse_scroll: bool,
     buttons: u8,
     release_pending: bool,
 }
@@ -33,6 +34,10 @@ impl Input {
         let was_enabled = self.enabled;
         self.enabled = enabled;
         (was_enabled && !enabled).then(|| self.release())
+    }
+
+    pub(crate) fn set_reverse_scroll(&mut self, reverse_scroll: bool) {
+        self.reverse_scroll = reverse_scroll;
     }
 
     /// Clear remote state before local UI takes input, even while keys are held.
@@ -98,19 +103,20 @@ impl Input {
         }]
     }
 
-    pub(crate) fn scroll(
-        &mut self,
-        event: &ScrollWheelEvent,
-        video: Bounds<Pixels>,
-    ) -> Vec<InputEvent> {
+    pub(crate) fn scroll(&mut self, event: &ScrollEvent, video: Bounds<Pixels>) -> Vec<InputEvent> {
         if !self.enabled || normalized_point(event.position, video, false).is_none() {
             return Vec::new();
         }
         let delta = event.delta.pixel_delta(px(40.));
         let (x, y) = (f64::from(delta.x), f64::from(delta.y));
+        let (dx, dy) = if self.reverse_scroll {
+            (x, y)
+        } else {
+            (-x, -y)
+        };
         vec![InputEvent::Wheel {
-            delta_x: (-x).clamp(-10_000., 10_000.),
-            delta_y: (-y).clamp(-10_000., 10_000.),
+            delta_x: dx.clamp(-10_000., 10_000.),
+            delta_y: dy.clamp(-10_000., 10_000.),
         }]
     }
 }
@@ -286,7 +292,7 @@ mod tests {
         let mut input = active();
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Pixels(point(px(2.), px(-12.))),
                     ..Default::default()
@@ -300,7 +306,7 @@ mod tests {
         );
         assert_eq!(
             input.scroll(
-                &ScrollWheelEvent {
+                &ScrollEvent {
                     position: point(px(400.), px(300.)),
                     delta: ScrollDelta::Lines(point(1., -2.)),
                     ..Default::default()
@@ -310,6 +316,35 @@ mod tests {
             vec![InputEvent::Wheel {
                 delta_x: -40.,
                 delta_y: 80.
+            }]
+        );
+        input.set_reverse_scroll(true);
+        assert_eq!(
+            input.scroll(
+                &ScrollEvent {
+                    position: point(px(400.), px(300.)),
+                    delta: ScrollDelta::Pixels(point(px(2.), px(-12.))),
+                    ..Default::default()
+                },
+                video()
+            ),
+            vec![InputEvent::Wheel {
+                delta_x: 2.,
+                delta_y: -12.
+            }]
+        );
+        assert_eq!(
+            input.scroll(
+                &ScrollEvent {
+                    position: point(px(400.), px(300.)),
+                    delta: ScrollDelta::Lines(point(1., -2.)),
+                    ..Default::default()
+                },
+                video()
+            ),
+            vec![InputEvent::Wheel {
+                delta_x: 40.,
+                delta_y: -80.
             }]
         );
     }

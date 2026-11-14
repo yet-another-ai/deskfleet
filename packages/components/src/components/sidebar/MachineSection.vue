@@ -30,12 +30,15 @@ import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import WorkspaceContextMenu from "../catalog/WorkspaceContextMenu.vue"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
-import { sessionIsUnread } from "../../services/agent-conversation.ts"
+import { sessionIsUnread, type SessionActivity } from "../../services/agent-conversation.ts"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import TreeLink from "./TreeLink.vue"
+
+type SessionIndicatorState = SessionActivity | "archiving"
+const indicatorRank: Record<SessionIndicatorState, number> = { archiving: 4, permission: 3, question: 2, working: 1 }
 
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
@@ -102,8 +105,32 @@ const lastSeen = computed(() => {
   return t("machine.lastSeen", { time })
 })
 const terminalLink = (terminalId: string) => ({ name: "terminal", params: { terminalId } })
-const sessionIndicator = (session: { id: string; archiveState?: string }) =>
+const sessionIndicator = (session: { id: string; archiveState?: string }): SessionIndicatorState | false =>
   session.archiveState === "archiving" ? "archiving" : agents.isWorking(session.id)
+
+/** Highest-priority working indicator across sessions, matching session-row precedence. */
+function sessionsIndicator(items: readonly { id: string; archiveState?: string }[]): SessionIndicatorState | false {
+  let best: SessionIndicatorState | false = false
+  let bestRank = 0
+  for (const session of items) {
+    const state = sessionIndicator(session)
+    if (!state) continue
+    const rank = indicatorRank[state]
+    if (rank <= bestRank) continue
+    best = state
+    bestRank = rank
+    if (rank === indicatorRank.archiving) break
+  }
+  return best
+}
+
+const machineIndicator = computed(() => {
+  if (!collapsed.value) return false
+  return sessionsIndicator([
+    ...sessions.value,
+    ...workspaces.value.flatMap(workspace => workspace.sessions),
+  ])
+})
 </script>
 
 <template>
@@ -126,6 +153,7 @@ const sessionIndicator = (session: { id: string; archiveState?: string }) =>
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
           <span class="sr-only">{{ t("machine.offline") }}</span>
         </span>
+        <SessionWorkingIndicator v-if="machineIndicator" :state="machineIndicator" />
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>
       <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
@@ -188,6 +216,7 @@ const sessionIndicator = (session: { id: string; archiveState?: string }) =>
               <component :is="open ? FolderOpen : Folder" :size="15" :stroke-width="1.75" class="workspace-folder-icon shrink-0" aria-hidden="true" />
               <ChevronRight :size="15" :stroke-width="1.75" class="workspace-collapse-icon absolute left-2.5 shrink-0" :class="open && 'rotate-90'" aria-hidden="true" />
               <span class="truncate">{{ workspace.name }}</span>
+              <SessionWorkingIndicator v-if="!open && sessionsIndicator(workspace.sessions)" :state="sessionsIndicator(workspace.sessions)" />
             </CollapsibleTrigger>
             <div class="workspace-actions flex shrink-0 items-center pr-1">
               <UiButton variant="ghost" size="icon" :label="t('workspace.openDefaultTerminal')" class="text-inherit enabled:hover:bg-transparent enabled:hover:text-inherit" :disabled="!machine.online || openingTerminal || workspace.directories.length === 0" @click="openTerminal(workspace)"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>

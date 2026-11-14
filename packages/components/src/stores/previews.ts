@@ -3,6 +3,7 @@ import { nextTick, ref } from "vue"
 import type { RouteLocationNormalizedLoadedGeneric } from "vue-router"
 import { router } from "../router/index.ts"
 import { previewResourceRequestFromQuery, previewResourceRequestToQuery, resolvePreviewKind, type PreviewDescriptor, type PreviewSource } from "../services/preview.ts"
+import { springScrollIntoView } from "../services/spring-scroll.ts"
 import { useLayoutStore, type ResourceWindowItem } from "./layout.ts"
 
 export interface PreviewLocateRequest extends PreviewSource {
@@ -109,7 +110,7 @@ export function performPreviewLocateDom(request: PreviewLocateRequest | null = p
   clearTimeout(locatedTimer)
   for (const previous of document.querySelectorAll<HTMLElement>("[data-preview-located]")) delete previous.dataset.previewLocated
   target.dataset.previewLocated = "true"
-  target.scrollIntoView?.({ behavior: "smooth", block: "center" })
+  springScrollIntoView(target)
   locatedTimer = setTimeout(() => { delete target.dataset.previewLocated }, 1600)
   return true
 }

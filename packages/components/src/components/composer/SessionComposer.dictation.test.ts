@@ -1,0 +1,175 @@
+import { getClient } from "@deskfleet/client/platform"
+import type { SpeechApi, SpeechEvent } from "@deskfleet/client/speech"
+import { flushPromises, mount } from "@vue/test-utils"
+import { createPinia, disposePinia } from "pinia"
+import { afterEach, expect, test, vi } from "vitest"
+import { ref } from "vue"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
+import { DICTATION_STORAGE_KEY } from "../../composables/useDictationPreference.ts"
+import { i18n } from "../../i18n/index.ts"
+import { router } from "../../router/index.ts"
+import type { SessionTarget } from "../../stores/fleet.ts"
+import PreferencesSettings from "../settings/PreferencesSettings.vue"
+import SessionComposer from "./SessionComposer.vue"
+
+const cleanups: (() => void)[] = []
+afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); localStorage.removeItem(DICTATION_STORAGE_KEY) })
+const location: SessionTarget = {
+  machine: { id: "local", name: "Host", local: true, online: true, desktop: true, workspaces: [], sessions: [], terminals: [] },
+  session: { id: "session", title: "Voice", provider: "codex", archiveState: "active", context: "directory" },
+}
+
+async function fixture(supported = true) {
+  let listener!: (event: SpeechEvent) => void
+  const speech: SpeechApi = {
+    status: vi.fn(async () => ({ supported })),
+    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), cancel: vi.fn(async () => {}),
+    onEvent: callback => { listener = callback; return () => {} },
+  }
+  const pinia = createPinia()
+  const global = {
+    plugins: [pinia, router, i18n],
+    provide: { [platformClientKey as symbol]: { ...getClient(), platform: "web", speech } },
+    stubs: { AgentConfigurationSelector: true },
+  }
+  const draft = ref("")
+  const container = document.createElement("div")
+  document.body.append(container)
+  const host = mount({
+    components: { SessionComposer },
+    setup: () => ({ draft, location }),
+    template: '<SessionComposer v-model="draft" :location="location" />',
+  }, { global, attachTo: container })
+  const composer = host.getComponent(SessionComposer)
+  cleanups.push(() => { host.unmount(); container.remove(); disposePinia(pinia) })
+  await flushPromises()
+  return { composer, speech, global, draft, emit: (event: SpeechEvent) => listener(event) }
+}
+
+test("voice input defaults on, shows genuine levels, and the web preference cancels and hides it immediately", async () => {
+  const f = await fixture()
+  const settings = mount(PreferencesSettings, { global: f.global })
+  cleanups.push(() => settings.unmount())
+  const toggle = settings.get("[data-dictation-setting]")
+  expect(toggle.attributes("aria-checked")).toBe("true")
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "level", level: 1, sessionId })
+  f.emit({ type: "result", text: "Please review the changes.", final: false, sessionId })
+  await flushPromises()
+  expect(f.composer.find("[data-dictation-transcript]").exists()).toBe(false)
+  expect(f.composer.get("[data-dictation-panel]").text()).toBe("")
+  expect(f.composer.get("textarea").element.value).toBe("Please review the changes.")
+  await expect.poll(() => f.composer.get("[data-dictation-waveform]").findAll("span").at(-1)!.attributes("style"), { timeout: 2000 }).toContain("26px")
+  expect(f.draft.value).toBe("Please review the changes.")
+  expect(f.composer.emitted("submit")).toBeUndefined()
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(localStorage.getItem(DICTATION_STORAGE_KEY)).toBe("false")
+  expect(f.composer.find("[data-composer-dictation]").exists()).toBe(false)
+  expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
+  expect(f.speech.cancel).toHaveBeenCalledWith(sessionId)
+  expect(f.draft.value).toBe("Please review the changes.")
+})
+
+test("cumulative results update the input in place before parent model rendering and finish without duplication", async () => {
+  const f = await fixture()
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "Please", final: true, sessionId })
+  f.emit({ type: "result", text: "Please review", final: false, sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Please review")
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  expect(f.composer.get("[data-dictation-panel]").text()).toBe("")
+  f.emit({ type: "result", text: "Please review the changes.", final: true, sessionId })
+  f.emit({ type: "ended", sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Please review the changes.")
+  expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
+  expect(f.composer.emitted("submit")).toBeUndefined()
+})
+
+test("errors leave dictated input intact and use the microphone tooltip without adding visible text", async () => {
+  const f = await fixture()
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "result", text: "Keep this draft.", final: false, sessionId })
+  f.emit({ type: "error", code: "permission-denied", sessionId })
+  await flushPromises()
+  expect(f.composer.get("textarea").element.value).toBe("Keep this draft.")
+  expect(f.composer.find("[data-dictation-panel]").exists()).toBe(false)
+  expect(f.composer.find("[data-dictation-error]").exists()).toBe(false)
+  expect(f.composer.get("[data-composer-dictation]").attributes("title")).toBe(i18n.global.t("dictation.errors.permission-denied"))
+  expect(f.composer.get("[data-composer-dictation]").classes()).toContain("text-ui-danger")
+})
+
+test("live results preserve a caret outside dictation and leave keyboard focus on cancel", async () => {
+  const f = await fixture()
+  f.draft.value = "before end"
+  await flushPromises()
+  const input = f.composer.get("textarea").element
+  input.focus()
+  input.setSelectionRange(7, 7)
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "voice", final: false, sessionId })
+  await flushPromises()
+  input.setSelectionRange(2, 2)
+  f.emit({ type: "result", text: "voice again", final: false, sessionId })
+  await flushPromises()
+  expect(input.selectionStart).toBe(2)
+  expect(input.selectionEnd).toBe(2)
+  const cancel = f.composer.get("[data-dictation-cancel]")
+  ;(cancel.element as HTMLButtonElement).focus()
+  f.emit({ type: "result", text: "voice again", final: true, sessionId })
+  f.emit({ type: "result", text: "voice again today", final: false, sessionId })
+  await flushPromises()
+  expect(document.activeElement).toBe(cancel.element)
+  expect(input.value).toBe("before voice again today end")
+  await cancel.trigger("click")
+  expect(f.speech.cancel).toHaveBeenCalledWith(sessionId)
+  expect(f.draft.value).toBe("before voice again today end")
+})
+
+test.each([0, 5])("dictation appends to an unfocused draft instead of using its stale selection (end: %s)", async selectionEnd => {
+  const f = await fixture()
+  f.draft.value = "Existing draft"
+  await flushPromises()
+  const input = f.composer.get("textarea").element
+  input.setSelectionRange(0, selectionEnd)
+  const microphone = f.composer.get("[data-composer-dictation]")
+  ;(microphone.element as HTMLButtonElement).focus()
+  await microphone.trigger("mousedown")
+  await microphone.trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "started", sessionId })
+  f.emit({ type: "result", text: "spoken", final: false, sessionId })
+  await flushPromises()
+  expect(input.value).toBe("Existing draft spoken")
+  expect(document.activeElement).toBe(microphone.element)
+  f.emit({ type: "result", text: "spoken words", final: true, sessionId })
+  f.emit({ type: "ended", sessionId })
+  await flushPromises()
+  expect(f.draft.value).toBe("Existing draft spoken words")
+  expect(document.activeElement).toBe(microphone.element)
+  expect(f.composer.emitted("submit")).toBeUndefined()
+})
+
+test("unsupported devices hide the microphone while preserving the stored preference", async () => {
+  const f = await fixture(false)
+  expect(f.composer.find("[data-composer-dictation]").exists()).toBe(false)
+  expect(f.speech.start).not.toHaveBeenCalled()
+  expect(localStorage.getItem(DICTATION_STORAGE_KEY)).toBeNull()
+})
+
+test("a saved disabled preference survives remount and does not probe or start recognition", async () => {
+  localStorage.setItem(DICTATION_STORAGE_KEY, "false")
+  const f = await fixture()
+  expect(f.composer.find("[data-composer-dictation]").exists()).toBe(false)
+  expect(f.speech.status).not.toHaveBeenCalled()
+  expect(f.speech.start).not.toHaveBeenCalled()
+})

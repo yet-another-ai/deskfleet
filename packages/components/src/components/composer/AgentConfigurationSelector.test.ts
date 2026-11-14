@@ -782,3 +782,42 @@ test("reload after a rejected edit omits the previous confirmed restoration choi
   await content(view).findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
   expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String) })
 })
+
+test("shows View usage submenu at the bottom for providers that support quota usage", async () => {
+  const providers = useProvidersStore()
+  providers.providers = [
+    { id: "cursor", name: "Cursor", template: "cursor" },
+    { id: "codex", name: "Codex", template: "codex" },
+    { id: "agy", name: "Antigravity", template: "antigravity" },
+  ]
+  providers.selectedId = "cursor"
+  const usageApi = vi.spyOn(agents, "agentUsage").mockResolvedValue([
+    { id: "gemini-weekly", label: "Weekly Limit Remaining", group: "Gemini Models", remaining: 0.32, resetsAt: "2026-11-14T05:07:24Z" },
+    { id: "gemini-5h", label: "Five Hour Limit Remaining", group: "Gemini Models", remaining: 0.95 },
+  ])
+
+  const view = render()
+  await trigger(view).trigger("click"); await flushPromises()
+  expect(content(view).find("[data-agent-view-usage]").exists()).toBe(false)
+
+  providers.selectedId = "codex"
+  await flushPromises()
+  expect(content(view).find("[data-agent-view-usage]").exists()).toBe(true)
+  expect(usageApi).not.toHaveBeenCalled()
+
+  providers.selectedId = "agy"
+  await flushPromises()
+  const usageRow = content(view).get("[data-agent-view-usage]")
+  expect(usageRow.text()).toContain("View usage")
+  expect(usageApi).not.toHaveBeenCalled()
+
+  await usageRow.trigger("click"); await flushPromises()
+  expect(usageApi).toHaveBeenCalledExactlyOnceWith("agy")
+  const menu = content(view).get("[data-agent-usage-menu]")
+  expect(menu.text()).toContain("Gemini Models")
+  expect(menu.text()).toContain("Weekly Limit Remaining")
+  expect(menu.text()).toContain("32%")
+  expect(menu.text()).toContain("Five Hour Limit Remaining")
+  expect(menu.text()).toContain("95%")
+  expect(menu.findAll("[data-agent-quota-item]")).toHaveLength(2)
+})

@@ -231,6 +231,30 @@ Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
 The Vue Web client and the Electron client share a common UI component package.
+Targeted UI movement uses the shared `createSpring` physics controller,
+`useSpring` Vue composable, and `SpringMotion` renderless component in
+`packages/components`. Each controller retains position and velocity when a
+target changes or motion is paused. The default parameters are `duration: 0.5`
+seconds and `bounce: 0.16`, with `omega = 2 * PI / duration` and
+`zeta = 1 - bounce`. Duration sets the spring's natural frequency; it is not a
+fixed completion deadline. The controller integrates velocity before position
+with semi-implicit Euler steps, subdividing frames according to elapsed time
+and natural frequency, and stops only when both displacement and velocity are
+small. Vue adapters own frame scheduling and stop it on scope disposal.
+Motion directives support both VDOM and Vapor lifecycles. Reka popovers and
+dialogs render through the thin VDOM `SpringSurface` so their attributes,
+event handlers, and positioning refs reach the animated native element.
+
+Pointer dragging directly controls position and estimates velocity in units per
+second. Releasing a snapping surface continues toward its target with that
+velocity; canvas panning and sliders instead use damping-only inertia and absorb
+momentum at bounds without bouncing. Explicit initialization uses `jump`, while
+ordinary input changes use `setTarget`, so the first input from rest also
+animates. Programmatic conversation scrolling uses the same controller and
+yields to user input. Native wheel/touch scrolling and scrollbar dragging keep
+the browser's scrolling behavior. Reduced-motion preferences settle targeted
+movement immediately and stop inertial movement at its current position.
+
 Below 1024 CSS pixels, a Session shows one full-width view at a time.
 Chat, Changes, each terminal, and each preview form one ordered list without
 nested tabs or a two-dimensional window layout. The title bar zooms the content
@@ -412,7 +436,7 @@ Team
       Ordered directory paths [one or more; first is default]
       AgentSessions
         Managed Worktree record [owned for the Session's lifetime]
-          Generated checkouts [removed on archive; recreated on restore]
+          Generated checkouts [cleanup follows host preferences; restorable from saved commits]
       TerminalSessions [machine, workspace, or worktree scope]
 ```
 
@@ -454,7 +478,8 @@ Worktrees are not independently maintained resources. Each Session record owns
 one Worktree record, created and destroyed with it. Creating a Session chooses
 its context. New-session composition defaults to directory mode and remembers
 the user's last choice on that device. A **worktree** Session allocates generated
-checkouts; archiving or destroying it removes them. A **directory** Session records the Workspace's
+checkouts; archiving applies the host's cleanup preferences, and destroying it
+removes them. A **directory** Session records the Workspace's
 current paths and works in them directly, including their uncommitted changes
 and non-Git directories; archiving it leaves those files intact, and destroying
 it removes only its records. The choice is immutable. Sessions sharing directories
@@ -463,6 +488,13 @@ contexts, the daemon creates detached Git worktrees
 from the selected base branch or the configured checkouts' HEAD commits, grouping
 paths in the same checkout and preserving subdirectory positions. Uncommitted
 source changes are not copied.
+Desktop Settings → Worktrees controls first-turn branch naming for all Team
+registrations on that host. Semantic naming, the default, adds an instruction to
+the first Agent prompt to create a task-derived branch such as `feat/add-search`
+before editing. Session-identifier naming creates a deterministic
+`deskfleet/session-<origin-prefix>-<session ID>` branch before dispatch, with a
+repository suffix when needed. Both preserve a branch already selected by the
+user, and neither renames existing Sessions or inherited fork conversations.
 The first path is the Session's default working directory. Workspace paths may
 be non-Git for main-context terminals and directory Sessions; creating a worktree
 Session requires Git-backed paths with a commit.
@@ -495,23 +527,40 @@ This integration is unavailable for remote Machines and Web clients; it does not
 start an editor on a remote daemon or create a forwarding connection.
 
 Archiving is the normal way to finish using a Session. It closes the provider
-and Session-owned terminals, then removes generated checkouts to reclaim disk
-space, including uncommitted changes and untracked files. It retains the Session,
+and Session-owned terminals, then applies the host's archived-worktree cleanup
+setting. By default, cleanup removes generated checkouts only when they have no
+uncommitted edits or untracked files; ignored files, including `.env`, do not
+protect a checkout. Disabling archived cleanup or finding protected local changes
+keeps the checkout while completing the archive. Archive retains the Session,
 Worktree identity and directory metadata, queued inputs, conversation/tool
 history, terminal transcripts, and audit. Compact Git refs and the ownership
-manifest preserve each checkout's last committed HEAD for restoration; discarded
-local changes are not recoverable through restore. Workspace source directories
-are never removed. The machine must be online, and archive completes only after
-the daemon confirms that live resources have closed and generated checkouts have
-been removed. Cleanup failures remain retryable. Restoration recreates generated
-checkouts at the same paths and saved commits, keeps the same Session identity,
-and returns it to the active list without starting processes. A later message
+manifest preserve each checkout's last committed HEAD for restoration; named
+branches are retained, and discarded local files are not recoverable through
+restore. Workspace source directories are never removed. The machine must be
+online, and archive completes after live resources have closed and the configured
+cleanup has completed or retained the checkout. Cleanup failures remain retryable.
+Restoration reuses retained checkouts with their local changes intact, or recreates
+removed checkouts detached at the same paths and saved commits. It keeps the same
+Session identity and returns it to the active list without starting processes. A later message
 resumes the provider where supported; opening a terminal can create a new shell
 while retaining old terminal history.
 Archived Sessions remain owned by their Workspace and continue to prevent its
 deletion until the Session is deleted. Deletion removes its Session and Worktree
 records, ownership manifest, commit refs, and any remaining generated checkouts.
 Archive does not invoke Session or Worktree record destruction.
+
+Each Team runtime also checks for eligible generated checkouts 60 seconds after
+startup, then every 15 minutes. Host preferences enable archived, merged,
+five-day inactive, six-day settled, and unchanged cleanup by default. Settled
+cleanup requires the latest turn to have completed; zero days means the next
+pass. Git-based cleanup waits for a completed turn, refreshes the remote default
+branch, and requires all checkout commits to be included in that branch. Merged
+cleanup additionally verifies merged GitHub PRs using the Session author's current
+authorization. Automatic cleanup skips live turns, pending input or approvals,
+viewed Sessions, and running user terminals. It archives eligible active Sessions
+while retaining their history and restoration refs. The
+[Session guide](agent-sessions.md#worktree-cleanup-preferences) defines the criteria,
+local-file protection choices, and race checks.
 
 For example:
 
@@ -661,7 +710,7 @@ Clients treat paths as opaque so browsing follows the target machine's rules.
 Worktree Session creation allocates a durable ID and creates Git worktrees beneath
 `<machine directory>/session-worktrees/<session ID>/` by default. The host's
 `<daemon directory>/worktree-settings.json` can select an absolute root directory,
-configured through Desktop Settings → Preferences → This computer. Each new
+configured through Desktop Settings → Worktrees → Storage. Each new
 worktree Session reads the current preference and creates custom checkouts under
 `<root>/<catalog origin>/<session ID>/`; the catalog origin keeps repeated local
 IDs in different machine registrations separate. A changed root affects new
@@ -676,9 +725,11 @@ in compact Git refs and the manifest before changing archive state; a missing
 recoverable commit fails the request without stopping resources or changing that
 state. It refreshes the retained HEADs after shutdown before removing checkouts;
 restoration uses those saved locations regardless of the current root preference.
-Disconnect never destroys checkouts. Previously archived Sessions are not cleaned
-up in the background; explicitly archiving them again can reclaim retained
-checkouts. Deletion removes retained manifests and commit refs as well as any
+The adjacent host-level `worktree-preferences.json` stores branch naming and
+cleanup rules. Each Team runtime reads the current rules on its cleanup pass;
+archived checkouts retained by local-change protection can be reclaimed after
+those changes are committed or the protection rule changes. Disconnect itself
+never destroys checkouts. Deletion removes retained manifests and commit refs as well as any
 remaining checkouts; the same destruction path supports provisioning rollback.
 
 Electron reaches the backend through its main-process transport and narrow
@@ -832,6 +883,13 @@ Only a permission action opens authorization or requests access. These controls
 belong to this computer even when a remote Machine is selected. Local Network
 retains its request-attempt status and links to System Settings for confirmation;
 Wayland screen and input permissions share the same authorization session.
+The welcome screen-sharing step and Settings → Permissions explain multi-monitor
+selection when the desktop offers a picker and retain an explicit action to
+authorize screen sharing again after authorization. That local screen-sharing
+request replaces the shared Wayland
+session and its saved selection; it stops active capture/control while fresh
+consent is pending. Refreshes, startup restoration, and input retries keep their
+existing authorization behavior.
 
 Startup reuses an authenticated standalone daemon only when it was explicitly
 configured to own the same `<userData>/daemon` discovery directory. Explicitly
@@ -1050,6 +1108,32 @@ authority. Machine-scoped composition has no `@` candidates. The
 [Agent Session guide](agent-sessions.md#composer-references-and-commands) owns
 completion, serialization, and command queue semantics.
 
+Composer dictation is a capability of the device displaying the UI. Its
+device-local preference defaults on; the microphone button appears only when
+the host reports a supported recognizer for the UI language. Chrome uses its
+Web Speech service, macOS and iOS use Apple's Speech framework, Android uses
+the installed system recognition service, and Windows uses an installed SAPI
+dictation engine. Other hosts have no dictation entry point. System recognition
+may use the platform provider's online service; no bundled model or application
+ASR service is involved.
+
+The shared composer shows only a microphone-level waveform during recognition.
+Partial and final transcripts update the dictated range directly in the input;
+cumulative results replace that range instead of appending duplicate text.
+Editing within the dictated range stops recognition and preserves the user's
+edit. Stopping or canceling retains text already entered, and no operation sends
+the draft automatically. Changing Team, Machine, Session, language,
+or the preference, submitting the draft, hiding the page, or closing the composer
+cancels recognition. Desktop IPC restricts control and events to the owning
+trusted renderer and cancels capture when its window hides or closes. Native
+speech operations live behind the Rust/napi-rs boundary on desktop and the
+Capacitor bridge on mobile; they do not belong to the selected remote daemon.
+macOS distribution includes microphone and speech usage descriptions. The
+desktop dev launcher prepares a cached, ad-hoc-signed `DeskFleet Dev.app` with
+the same descriptions and a separate development bundle ID, allowing dictation
+testing with Vite hot reload. A plain Electron host without those descriptions
+does not advertise speech support; use the repository's dev launcher.
+
 All authorized users and devices can operate on a Session concurrently, without
 control ownership or transfer. Commands record the initiating user and source
 machine separately from the executing machine. Pending inputs appear in a shared
@@ -1216,6 +1300,12 @@ input, and GPU presentation. Display changes, control settings, and reconnects
 replace the peer inside the same native window; disconnect releases the peer
 and leaves the window ready to reconnect. Its lifetime is independent of the
 hosted daemon.
+Desktop discovery carries optional human-readable names and display numbers
+separately from opaque capture IDs. The native platform adapter owns metadata
+lookup; Wayland's authorization owner also retains its local monitor-number
+mapping. Clients use those labels for presentation and keep the capture ID for
+stream selection and input. Metadata never expands the set of authorized
+screens. See [display names and numbers](media.md#display-names-and-numbers).
 Within each Machine registration, a native desktop stream pool shares capture
 and encoding for matching display, codec, audio, and quality parameters across
 viewing peers. Peer authorization and transport remain independent; releasing
@@ -1311,6 +1401,14 @@ samples only in the mounted panel for CPU and memory trends. Failed reads leave
 the last sample visibly stale; these measurements are not persisted in the central
 catalog or Agent history. Native sampling runs off Node's event loop and is shared
 by concurrent reads without a background polling service.
+
+The sidebar's Remote desktop capsule opens an independent, Team-wide overview.
+It defaults to a single responsive grid of every remote machine's displays, with
+the machine name on each thumbnail. Like the Session previews, it excludes the
+viewing Electron client's own machine and uses silent, read-only preview peers.
+The overview owns its adapters without opening the other machines' catalogs;
+pausing or hiding the page stops streams, and leaving it releases the adapters.
+Opening a display on another machine keeps the overview in navigation history.
 
 Machine file access shares one service between the two-pane transfer panel and
 Agent Markdown resources. File endpoints and the transfer queue have independent

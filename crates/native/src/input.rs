@@ -16,6 +16,8 @@ type Command = (InputEvent, oneshot::Sender<Result<()>>);
 
 enum Session {
     Local(InputSession),
+    #[cfg(target_os = "linux")]
+    Android(InputSession<crate::android_scrcpy::ScrcpyInput>),
     #[cfg(windows)]
     Service {
         client: crate::windows_desktop::Client,
@@ -25,6 +27,12 @@ enum Session {
 
 impl Session {
     fn open(display_id: u32) -> Result<Self> {
+        #[cfg(target_os = "linux")]
+        if crate::android_scrcpy::is_configured() {
+            return Ok(Self::Android(InputSession::with_backend(|| {
+                crate::android_scrcpy::ScrcpyInput::open(display_id)
+            })?));
+        }
         #[cfg(windows)]
         if let Some(mut client) =
             crate::windows_desktop::Client::connect().map_err(service_error)?
@@ -42,6 +50,8 @@ impl Session {
     fn handle(&mut self, event: InputEvent) -> Result<()> {
         match self {
             Self::Local(session) => session.handle(event),
+            #[cfg(target_os = "linux")]
+            Self::Android(session) => session.handle(event),
             #[cfg(windows)]
             Self::Service { client, .. } => {
                 if matches!(event, InputEvent::SecureAttention) {
@@ -60,6 +70,8 @@ impl Session {
     fn refresh(&mut self) -> Result<()> {
         match self {
             Self::Local(session) => session.refresh_desktop(),
+            #[cfg(target_os = "linux")]
+            Self::Android(session) => session.refresh_desktop(),
             #[cfg(windows)]
             Self::Service { client, .. } => client.refresh_input().map_err(service_error),
         }
@@ -68,6 +80,8 @@ impl Session {
     fn release_all(&mut self) -> Result<()> {
         match self {
             Self::Local(session) => session.release_all(),
+            #[cfg(target_os = "linux")]
+            Self::Android(session) => session.release_all(),
             #[cfg(windows)]
             Self::Service { client, .. } => client.stop().map_err(service_error),
         }

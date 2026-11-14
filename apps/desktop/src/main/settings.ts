@@ -10,6 +10,7 @@ import type { UpdateSettingsController } from "./update-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 import { remoteAgentSettings } from "../../../daemon/src/remote-agent-settings.ts"
+import { validateWorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
 import { t } from "./i18n.ts"
 
 const renderers = new Set<WebContents>()
@@ -66,6 +67,9 @@ export function installSettings(
           if (!updates) throw new Error("Automatic update settings are unavailable")
           return { ok: true, value: updates.setEnabled(enabled) }
         case "getWorktreeRoot": return { ok: true, value: await worktrees.get() }
+        case "getWorktreePreferences": return { ok: true, value: await worktrees.getPreferences() }
+        case "setWorktreePreferences":
+          return { ok: true, value: await worktrees.setPreferences(validateWorktreePreferences(enabled)) }
         case "setWorktreeRoot":
           if (enabled !== null && typeof enabled !== "string") throw new Error("Worktree root must be an absolute path or null")
           return { ok: true, value: await worktrees.set(enabled) }

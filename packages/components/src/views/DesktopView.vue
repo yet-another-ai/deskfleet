@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SpringSurface from "../components/common/SpringSurface.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
@@ -19,6 +20,7 @@ import { useFleetStore } from "../stores/fleet.ts"
 import { useAppearanceStore } from "../stores/appearance.ts"
 import { errorPresentation } from "../services/error-presentation.ts"
 import { useFeatureGate } from "../services/analytics.ts"
+import { displayOptionLabel } from "../components/desktop/display-label.ts"
 
 const platformClient = usePlatformClient()
 const nativePresenterEnabled = useFeatureGate("native_presentor")
@@ -41,12 +43,13 @@ const nativeOpening = ref(false)
 const displayId = ref<number | null>(null)
 const audio = ref(true)
 const control = ref(true)
+const reverseScroll = ref(false)
 const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
 const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
 const windowsTarget = computed(() => fleet.localDesktopTarget.platform === "win32")
 const secureAttentionAvailable = computed(() => windowsTarget.value && capabilities.value?.secureAttention === true)
-useDesktopInput(video, inputEnabled, connection.sendInput)
+useDesktopInput(video, inputEnabled, connection.sendInput, reverseScroll)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
 const isFullscreen = ref(false)
@@ -184,8 +187,7 @@ async function openNative(): Promise<void> {
   if (!canOpenNative.value || displayId.value === null || !platformClient.desktop.openNative) return
   nativeOpening.value = true
   nativeError.value = null
-  try { await platformClient.desktop.openNative({ displayId: displayId.value, control: control.value,
-    locale: locale.value, theme: appearance.isDark ? "dark" : "light" }) }
+  try { await platformClient.desktop.openNative({ displayId: displayId.value, control: control.value, locale: locale.value, theme: appearance.isDark ? "dark" : "light" }) }
   catch (error) { nativeError.value = error }
   finally { nativeOpening.value = false }
 }
@@ -333,13 +335,13 @@ const errorDescription = computed(() => {
 
         <!-- Stay inside the fullscreen stage, including nested select portals. -->
         <PopoverPortal :to="stage ?? undefined">
-        <PopoverContent :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
+        <PopoverContent :as="SpringSurface" :side="settingsSide.above ? 'top' : 'bottom'" :align="settingsSide.alignStart ? 'start' : 'end'" :side-offset="8" :collision-boundary="stage" :collision-padding="12" :aria-label="t('desktop.settings')" class="ui-menu z-50 flex w-72 flex-col gap-3 p-3">
           <ErrorNotice v-if="settingsFailure" :title="t('desktop.settingsFailed')" :error="settingsFailure.error ?? settingsFailure.detail">
             <UiButton size="sm" @click="applySettings">{{ t("errors.retry") }}</UiButton>
           </ErrorNotice>
           <label v-if="capabilities?.displays.length" class="flex flex-col gap-1.5 text-[13px] text-ui-text-muted">
             {{ t("desktop.display") }}
-            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map(display => ({ value: String(display.id), label: t('desktop.displayOption', { id: display.id, width: display.width, height: display.height }) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
+            <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map((display, index) => ({ value: String(display.id), label: displayOptionLabel(display, index, t) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
           </label>
           <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
           <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
@@ -349,6 +351,10 @@ const errorDescription = computed(() => {
           <label class="flex items-center gap-2 text-[13px]">
             <UiCheckbox v-model="control" data-desktop-control />
             {{ t("desktop.control") }}
+          </label>
+          <label class="flex items-center gap-2 text-[13px]">
+            <UiCheckbox v-model="reverseScroll" data-desktop-reverse-scroll />
+            {{ t("desktop.reverseScroll") }}
           </label>
         </PopoverContent>
         </PopoverPortal>

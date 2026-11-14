@@ -34,6 +34,13 @@ export class SessionPresence {
     return [...new Set(this.#watchers.get(sessionId)?.values() ?? [])].sort()
   }
 
+  visits(connectionId: string): { sessionId: string; userId: string }[] {
+    return [...this.#watchers].flatMap(([sessionId, watchers]) => {
+      const userId = watchers.get(connectionId)
+      return userId ? [{ sessionId, userId }] : []
+    })
+  }
+
   snapshot(): SessionPresenceUpdate[] {
     return [...this.#watchers.keys()].map(sessionId => ({ sessionId, userIds: this.userIds(sessionId) }))
   }

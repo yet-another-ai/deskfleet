@@ -62,6 +62,7 @@ export function validateControlParams<M extends ControlMethod>(method: M, value:
     case "providerRemove":
     case "providerTest":
     case "providerProbe":
+    case "providerDiscoverWorkspaces":
     case "providerInstall":
     case "providerLogin":
       validateProviderParams(method, params)

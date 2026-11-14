@@ -11,7 +11,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0")
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.6.2")
     ],
     targets: [
         .binaryTarget(
@@ -26,7 +26,9 @@ let package = Package(
                 "DeskfleetDesktopViewerFFI"
             ],
             path: "ios/Sources/DeskFleetBridge",
+            resources: [.process("PrivacyInfo.xcprivacy")],
             linkerSettings: [
+                .linkedFramework("AVFoundation"),
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("AuthenticationServices"),
                 .linkedFramework("CoreAudio"),
@@ -40,6 +42,7 @@ let package = Package(
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("ReplayKit"),
                 .linkedFramework("Security"),
+                .linkedFramework("Speech"),
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("UIKit"),
                 .linkedFramework("VideoToolbox"),

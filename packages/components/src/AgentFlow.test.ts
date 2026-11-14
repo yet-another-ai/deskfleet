@@ -15,6 +15,8 @@ import { useProvidersStore } from "./stores/providers.ts"
 import { deferred } from "./test/desktop-media.ts"
 import SessionView from "./views/SessionView.vue"
 import type { ComposerMention } from "./services/composer-mentions.ts"
+import * as messageTransitions from "./services/message-sent-transition.ts"
+import * as springScroll from "./services/spring-scroll.ts"
 const transport = vi.hoisted(() => ({ call: vi.fn(), receive: (_value: { method: string; params: unknown }) => {}, state: (_state: string) => {} }))
 vi.mock("./services/agent-client.ts", () => ({ AgentClient: class {
   constructor(_api: unknown, state: typeof transport.state, receive: typeof transport.receive) { transport.state = state; transport.receive = receive }
@@ -203,8 +205,9 @@ test("a workspace prompt creates a Session, keeps shared candidates, streams too
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   await vi.waitFor(() => expect(router.currentRoute.value.params.sessionId).toBe("30"))
-  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "directory", operationId: expect.any(String) })
-  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Implement the feature")
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, title: "Implement the feature", provider: "codex", context: "directory", deferStartup: true, operationId: expect.any(String) })
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("Implement the feature")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
   expect(wrapper.find('a[href="#/worktrees/31"]').exists()).toBe(true)
   const delivered = agentInput({ content: [{ type: "text", text: "Implement the feature" }], state: "delivered", turnId: "70", actualDelivery: "turn_start" })
   const permission = agentPermission()
@@ -285,8 +288,10 @@ test("new Session references resolve against the created Session before its firs
 
   const agents = useAgentSessionsStore(pinia)
   expect(router.currentRoute.value.params.sessionId).toBe("30")
-  expect(agents.drafts["30"]).toBe(text)
-  expect(agents.draftMentions["30"]).toEqual(mentions)
+  expect(agents.drafts["30"]).toBeUndefined()
+  expect(agents.draftMentions["30"]).toBeUndefined()
+  expect(agents.optimisticInputs["30"]?.content).toEqual([{ type: "text", text }])
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain(text)
   expect(agents.drafts[`workspace:${workspaceId}`]).toBe("")
   expect(agents.draftMentions[`workspace:${workspaceId}`]).toEqual([])
   expect(transport.call).toHaveBeenCalledWith("_deskfleet/composer/resolve", { sessionId: "30", references: mentions.map(mention => mention.reference) })
@@ -307,11 +312,13 @@ test("new Session references resolve against the created Session before its firs
   const submission = transport.call.mock.calls.find(([method]) => method === "_deskfleet/input/submit")?.[1]
   expect(submission).toEqual({ sessionId: "30", operationId: expect.any(String), delivery: "backlog", content: [{ type: "text", text }, ...resolved] })
   expect(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/session/create")).toBeLessThan(transport.call.mock.calls.findIndex(([method]) => method === "_deskfleet/composer/resolve"))
-  expect(agents.drafts["30"]).toBe("")
-  expect(agents.draftMentions["30"]).toEqual([])
+  expect(agents.drafts["30"]).toBeUndefined()
+  expect(agents.draftMentions["30"]).toBeUndefined()
+  expect(agents.optimisticInputs["30"]).toBeUndefined()
   expect(agents.preparingDrafts["30"]).toBeUndefined()
   expect(transport.call.mock.calls.filter(([method]) => method === "_deskfleet/input/submit")).toHaveLength(1)
-  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("README.md")
+  expect(wrapper.get('[aria-label="Conversation"]').text()).toContain("README.md")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
 })
 
 test("a new Session keeps its moved draft and references when resolution fails and shows the error without submitting", async () => {
@@ -437,6 +444,39 @@ test("the new-session composer defaults to the working directory and remembers a
   await flushPromises()
   expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ workspaceId, context: "directory" })
   window.localStorage.removeItem("deskfleet.session-context")
+})
+
+test("choosing a working directory on the new-session composer passes cwd through session create", async () => {
+  const home = {
+    path: "/home/agent",
+    parentPath: "/home",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [{ name: "project", path: "/home/agent/project", hidden: false }],
+  }
+  const project = {
+    path: "/home/agent/project",
+    parentPath: "/home/agent",
+    homePath: "/home/agent",
+    roots: [{ name: "/", path: "/" }],
+    directories: [],
+  }
+  vi.spyOn(platformClient.filesystem, "listDirectories")
+    .mockResolvedValueOnce(home)
+    .mockResolvedValueOnce(project)
+  expect(wrapper.find("[data-composer-cwd]").exists()).toBe(true)
+  await wrapper.get("[data-composer-cwd]").trigger("click")
+  await flushPromises()
+  await page().get('button[data-path="/home/agent/project"]').trigger("click")
+  await flushPromises()
+  await page().findAll("button").find(button => button.text() === "Select folder")!.trigger("click")
+  await flushPromises()
+  await wrapper.get("textarea").setValue("Work in the chosen folder")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({
+    workspaceId, context: "directory", cwd: "/home/agent/project", deferStartup: true,
+  })
 })
 
 test("the new-session composer lists local and remote branches, defaults to currentBranch, hides when New worktree is unchecked, and passes the chosen baseBranch for worktree sessions", async () => {
@@ -917,7 +957,13 @@ test("switching away and back restores a manual reading position before synchron
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()
   const scroller = wrapper.findComponent(SessionView).get<HTMLElement>("[data-session-scroll-viewport]")
-  Object.defineProperties(scroller.element, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 }, scrollTop: { value: 350, writable: true } })
+  let top = 350
+  // Match CSSOM View behavior where detached elements return 0 for scrollTop during DockviewVue disposal.
+  Object.defineProperties(scroller.element, {
+    scrollHeight: { value: 1600 },
+    clientHeight: { value: 400 },
+    scrollTop: { get: () => scroller.element.isConnected ? top : 0, set: value => { top = value } },
+  })
   await scroller.trigger("scroll")
   await router.push({ name: "new-session" })
   await flushPromises()
@@ -933,4 +979,200 @@ test("switching away and back restores a manual reading position before synchron
   restored.resolve(structuredClone(snapshot))
   await flushPromises()
   expect(scroll).not.toHaveBeenCalled()
+})
+
+test("scroll-to-bottom appears when reading history and restores follow on click", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  const session = wrapper.findComponent(SessionView)
+  const scroller = session.get<HTMLElement>("[data-session-scroll-viewport]")
+  let top = 1200
+  Object.defineProperties(scroller.element, {
+    scrollHeight: { value: 1600 },
+    clientHeight: { value: 400 },
+    scrollTop: { get: () => scroller.element.isConnected ? top : 0, set: value => { top = value } },
+  })
+  await scroller.trigger("scroll")
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  scroller.element.scrollTop = 200
+  await scroller.trigger("scroll")
+  const button = session.get("[data-scroll-to-bottom]")
+  expect(button.attributes("aria-label")).toBe("Scroll to bottom")
+  expect(button.classes()).toContain("pointer-events-auto")
+  expect(button.element.parentElement?.classList.contains("pointer-events-auto")).toBe(false)
+
+  const springs: Array<{ resolve: (completed: boolean) => void; cancel: ReturnType<typeof vi.fn> }> = []
+  const spring = vi.spyOn(springScroll, "scrollSpring").mockImplementation(() => {
+    let resolveFinished!: (completed: boolean) => void
+    const finished = new Promise<boolean>(resolve => { resolveFinished = resolve })
+    const cancel = vi.fn()
+    springs.push({ resolve: resolveFinished, cancel })
+    return { finished, cancel }
+  })
+  const scrollTo = vi.spyOn(scroller.element, "scrollTo").mockImplementation(() => {})
+  await button.trigger("click")
+  expect(spring).toHaveBeenCalledExactlyOnceWith(scroller.element, 1600)
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  scroller.element.scrollTop = 400
+  await scroller.trigger("scroll")
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  spring.mockClear()
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Followed update" } } })
+  await flushPromises()
+  await vi.waitFor(() => expect(spring).toHaveBeenCalledWith(scroller.element, 1600))
+  expect(scrollTo).not.toHaveBeenCalled()
+  expect(springs).toHaveLength(2)
+
+  // Retarget resolves the first handle as incomplete; follow must stay armed on the latest spring.
+  springs[0]!.resolve(false)
+  await flushPromises()
+  expect(session.find("[data-scroll-to-bottom]").exists()).toBe(false)
+
+  springs[1]!.resolve(true)
+  await flushPromises()
+  emit("acp", { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "After spring" } } })
+  await flushPromises()
+  await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 1600 }))
+
+  await router.push({ name: "new-session" })
+  await flushPromises()
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(1600)
+  const returnScroll = vi.spyOn(HTMLElement.prototype, "scrollTo")
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(returnScroll).toHaveBeenCalledWith({ top: 1600 })
+})
+
+test("returning to an already-loaded session without a saved scroll offset still scrolls to the bottom", async () => {
+  await wrapper.get("textarea").setValue("Implement the feature")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  await router.push({ name: "new-session" })
+  await flushPromises()
+  const restored = deferred<AgentSnapshot>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation((method, params) => method === "_deskfleet/session/subscribe" ? restored.promise : normal(method, params))
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(1600)
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollTo")
+  await router.push({ name: "session", params: { sessionId: "30" } })
+  await flushPromises()
+  expect(scroll).toHaveBeenCalledWith({ top: 1600 })
+  restored.resolve(structuredClone(snapshot))
+  await flushPromises()
+})
+
+test("deferred Session startup opens immediately with bubble animation, renders startup status in the reply area, and clears cleanly if stopped", async () => {
+  snapshot.session.lifecycle = "provisioning"
+  snapshot.runs = []
+  const transitions = vi.spyOn(messageTransitions, "consumeSentMessageTransition")
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(40, 200, 320, 48))
+  const submission = deferred<{ operationId: string; commandId: string; sessionId: string; inputId: string }>()
+  const normal = transport.call.getMockImplementation()!
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") return submission.promise
+    if (method === "_deskfleet/session/stop") {
+      const stopped = { generation: 1, sessionId: "30", state: "stopped" as const, startedAt: "now", endedAt: "now" }
+      snapshot.runs = [stopped]
+      emit("run", stopped)
+      return structuredClone(snapshot)
+    }
+    return normal(method, params)
+  })
+
+  await wrapper.get("textarea").setValue("Cut the video clip")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+
+  expect(router.currentRoute.value.params.sessionId).toBe("30")
+  const conversation = wrapper.get('[aria-label="Conversation"]')
+  const initialBubble = conversation.get("[data-user-message-bubble]").element
+  expect(conversation.text()).toContain("Cut the video clip")
+  expect(initialBubble.getAttribute("data-message-sending")).toBe("true")
+  const animation = transitions.mock.results.flatMap(result => result.type === "return" ? result.value : [])[0]!
+  const cancelledAnimations = vi.spyOn(animation, "cancel")
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.lifecycle.provisioning"))
+  expect(wrapper.findAll('[role="status"]').filter(node => node.text().includes(i18n.global.t("agent.lifecycle.provisioning")))).toHaveLength(1)
+
+  // Resolving durable input keeps the same mounted bubble without cancelling its send animation.
+  const input = agentInput({ content: [{ type: "text", text: "Cut the video clip" }] })
+  snapshot.inputs = [input]
+  emit("input", input)
+  submission.resolve({ operationId: "op-1", commandId: "50", sessionId: "30", inputId: input.id })
+  await flushPromises()
+  expect(conversation.get("[data-user-message-bubble]").element).toBe(initialBubble)
+  expect(cancelledAnimations).not.toHaveBeenCalled()
+
+  // Transition from worktree provisioning to provider startup updates the in-reply status.
+  snapshot.session.lifecycle = "ready"
+  emit("session", { ...snapshot.session })
+  const starting = { generation: 1, sessionId: "30", state: "starting" as const, startedAt: "now" }
+  snapshot.runs = [starting]
+  emit("run", starting)
+  await flushPromises()
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.runState.starting"))
+  expect(wrapper.findAll('[role="status"]').filter(node => node.text().includes(i18n.global.t("agent.runState.starting")))).toHaveLength(1)
+
+  // Stopping the Agent during startup removes the startup status without unmounting the bubble.
+  await wrapper.get('[aria-label="Session actions"]').trigger("click")
+  await flushPromises()
+  await page().findAll('[role="menuitem"]').find(item => item.text() === i18n.global.t("agent.stop"))!.trigger("click")
+  await flushPromises()
+  await page().get('[role="dialog"]').findAll("button").find(item => item.text() === i18n.global.t("agent.stop"))!.trigger("click")
+  await flushPromises()
+  expect(conversation.find("[data-agent-startup-status]").exists()).toBe(false)
+  expect(conversation.get("[data-user-message-bubble]").element).toBe(initialBubble)
+  expect(cancelledAnimations).not.toHaveBeenCalled()
+
+  // Sending another message after stopping animates the new bubble in and restarts the in-reply status.
+  const secondInput = agentInput({ id: "41", content: [{ type: "text", text: "Export 1080p MP4 instead" }] })
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") {
+      snapshot.inputs = [...snapshot.inputs, secondInput]
+      emit("input", secondInput)
+      const restarted = { generation: 2, sessionId: "30", state: "starting" as const, startedAt: "now" }
+      snapshot.runs = [...snapshot.runs, restarted]
+      emit("run", restarted)
+      return { operationId: "op-2", commandId: "51", sessionId: "30", inputId: secondInput.id }
+    }
+    return normal(method, params)
+  })
+  await wrapper.get("textarea").setValue("Export 1080p MP4 instead")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(conversation.text()).toContain("Export 1080p MP4 instead")
+  expect(wrapper.find('[aria-label="Queued"]').exists()).toBe(false)
+  expect(conversation.findAll("[data-user-message-bubble]")[1]!.attributes("data-message-sending")).toBe("true")
+  expect(conversation.get("[data-agent-startup-status]").text()).toBe(i18n.global.t("agent.runState.starting"))
+
+  // Sending a third message while startup is already active queues it in AgentBacklog instead of adding a third bubble.
+  const queuedInput = agentInput({ id: "42", content: [{ type: "text", text: "Also normalize audio" }] })
+  transport.call.mockImplementation(async (method, params) => {
+    if (method === "_deskfleet/input/submit") {
+      snapshot.inputs = [...snapshot.inputs, queuedInput]
+      emit("input", queuedInput)
+      return { operationId: "op-3", commandId: "52", sessionId: "30", inputId: queuedInput.id }
+    }
+    return normal(method, params)
+  })
+  await wrapper.get("textarea").setValue("Also normalize audio")
+  await wrapper.get('[aria-label="Send"]').trigger("click")
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Also normalize audio")
+
+  // Once a turn starts, promoted bubbles stay in the conversation while the queued input remains in the backlog.
+  const turn = { id: "70", sessionId: "30", initialInputId: input.id, dispatchCommandId: "50", runGeneration: 2, state: "running" as const, startedAt: "now" }
+  snapshot.inputs[0] = { ...input, state: "dispatching", turnId: turn.id, actualDelivery: "turn_start" }
+  snapshot.turns = [turn]
+  emit("input", snapshot.inputs[0]!)
+  emit("turn", turn)
+  await flushPromises()
+  expect(conversation.findAll("[data-user-message-bubble]")).toHaveLength(2)
+  expect(wrapper.get('[aria-label="Queued"]').text()).toContain("Also normalize audio")
+  expect(wrapper.get('[aria-label="Queued"]').text()).not.toContain("Export 1080p MP4 instead")
 })

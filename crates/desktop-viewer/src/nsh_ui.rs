@@ -92,6 +92,25 @@ pub(crate) fn codec_label(codec: Option<Codec>) -> &'static str {
     }
 }
 
+pub(crate) fn display_label(
+    locale: Option<&str>,
+    display: &crate::protocol::Display,
+    index: usize,
+) -> String {
+    let number = display
+        .display_number
+        .map_or_else(|| (index + 1).to_string(), |number| number.to_string());
+    let mut title = label(locale, "displayName").replace("{number}", &number);
+    if let Some(name) = &display.name {
+        title.push_str(" · ");
+        title.push_str(name);
+    }
+    label(locale, "displayOption")
+        .replace("{width}", &display.width.to_string())
+        .replace("{height}", &display.height.to_string())
+        .replace("{display}", &title)
+}
+
 pub(crate) fn status(ui: &UiState) -> String {
     let key = match ui.status {
         Status::Connecting => "connecting",
@@ -147,7 +166,9 @@ mod tests {
                 "resumeControl",
                 "settings",
                 "displayOption",
+                "displayName",
                 "control",
+                "reverseScroll",
                 "disconnect",
                 "connect",
                 "moveControls",
@@ -161,5 +182,25 @@ mod tests {
             ..UiState::default()
         };
         assert_eq!(status(&ui), "Connected · HEVC");
+    }
+
+    #[test]
+    fn display_labels_keep_session_handles_out_of_user_facing_numbers() {
+        let windows: crate::protocol::Display = serde_json::from_str(
+            r#"{"id":65537,"displayNumber":2,"name":"Dell U2723QE (DP-1)","width":3840,"height":2160}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            display_label(Some("en-US"), &windows, 0),
+            "Display 2 · Dell U2723QE (DP-1) · 3840 × 2160"
+        );
+        let wayland: crate::protocol::Display =
+            serde_json::from_str(r#"{"id":4,"width":1920,"height":1080}"#).unwrap();
+        assert_eq!(
+            display_label(Some("zh-cmn-Hans-CN"), &wayland, 1),
+            "显示器 2 · 1920 × 1080"
+        );
+        assert_eq!(windows.id, 65537);
+        assert_eq!(wayland.id, 4);
     }
 }

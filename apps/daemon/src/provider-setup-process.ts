@@ -61,13 +61,13 @@ export function launchProviderCommand(
 }
 
 export interface ProbeCommandResult { stdout: string; stderr: string; code: number | null }
-export type ProbeCommand = (command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, signal?: AbortSignal, timeoutMs?: number) => Promise<ProbeCommandResult>
+export type ProbeCommand = (command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, signal?: AbortSignal, timeoutMs?: number, maxBuffer?: number) => Promise<ProbeCommandResult>
 
 /** Bounded, noninteractive metadata commands; their raw output never enters provider settings. */
-export const runProbeCommand: ProbeCommand = (command, args, env, cwd, signal, timeoutMs = 3_000) => new Promise((resolve, reject) => {
+export const runProbeCommand: ProbeCommand = (command, args, env, cwd, signal, timeoutMs = 3_000, maxBuffer = 1024 * 1024) => new Promise((resolve, reject) => {
   const launch = launchProviderCommand(command, args, env)
   const child = execFile(launch.command, launch.args ?? [], {
-    env: launch.env, cwd, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024, windowsHide: true,
+    env: launch.env, cwd, signal, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer, windowsHide: true,
   }, (error, stdout, stderr) => {
     if (error && (typeof error.code !== "number" || error.killed)) reject(error)
     else resolve({ stdout, stderr, code: typeof error?.code === "number" ? error.code : 0 })

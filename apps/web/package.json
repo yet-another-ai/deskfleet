@@ -1,6 +1,6 @@
 {
   "name": "@deskfleet/web",
-  "version": "0.13.1",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,25 +11,25 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@capacitor/android": "8.6.0",
+    "@capacitor/android": "8.6.2",
     "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "8.6.0",
-    "@capacitor/ios": "8.6.0",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2",
     "@capawesome/capacitor-app-update": "8.1.1",
     "@deskfleet/capacitor-bridge": "workspace:*"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.0",
+    "@capacitor/cli": "8.6.2",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/components": "workspace:*",
     "@intlify/unplugin-vue-i18n": "11.2.8",
-    "@proj-airi/cap-vite": "0.15.1",
+    "@proj-airi/cap-vite": "0.15.2",
     "@types/node": "24.19.2",
     "@vitejs/plugin-vue": "6.0.10",
     "@vue/compiler-sfc": "3.6.0-rc.14",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "unocss": "66.12.0",
-    "vite": "8.3.6",
+    "vite": "8.3.7",
     "vue": "3.6.0-rc.14",
     "vue-tsc": "3.3.14"
   }

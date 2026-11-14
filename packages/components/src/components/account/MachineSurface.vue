@@ -23,11 +23,11 @@ onMounted(async () => {
   const destination = props.session.takeMachineDestination(props.machine.id)
   // Settings and management lists survive initialization; selected resources belong to the new scope.
   if (destination) {
-    // A cross-machine search result keeps the query in history for Back.
-    if (route.name === "search") await router.push(destination)
+    // Cross-machine results and desktop previews keep their overview in history for Back.
+    if (route.name === "search" || route.name === "remote-desktops") await router.push(destination)
     else await router.replace(destination)
   } else if (!route.meta.fullWindow) {
-    const path = route.name === "search" ? props.session.searchPath.value : route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
+    const path = route.name === "search" ? props.session.searchPath.value : route.name === "remote-desktops" ? "/desktops" : route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
     await router.replace(path)
   }
   if (disposed || !root.value || props.session.machineId.value !== props.machine.id || runtimes.opened.get(props.machine.id) !== runtime) return

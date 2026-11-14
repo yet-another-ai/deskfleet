@@ -54,7 +54,8 @@ test("unknown capacity has no percentage, while over-capacity values retain thei
   expect(page().get("[data-agent-usage-used]").text()).toBe("150,000 tokens")
   const meter = page().get('[role="progressbar"]')
   expect(meter.attributes("aria-valuenow")).toBe("128000")
-  expect(meter.get("div").attributes("style")).toContain("width: 100%")
+  expect(meter.get("div").attributes("style")).toContain("width: 0%")
+  await expect.poll(() => meter.get("div").attributes("style"), { timeout: 2000 }).toContain("width: 100%")
 })
 
 test("uses the application locale for labels, token counts and currency", async () => {

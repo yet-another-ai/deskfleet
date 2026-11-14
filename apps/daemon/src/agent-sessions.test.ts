@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { setTimeout as delay } from "node:timers/promises"
 import { test } from "node:test"
@@ -21,6 +21,8 @@ import type { AgentActor, AgentCommand, AgentElicitation, AgentEvent, AgentRecei
 import type { ComposerReferenceResult } from "./composer-reference-protocol.ts"
 import type { GitFileDiff, GitStatusSnapshot } from "./git-protocol.ts"
 import { MAX_GENERATED_TITLE_LENGTH } from "./titles.ts"
+import { defaultWorktreePreferences, writeWorktreePreferences } from "./worktree-preferences.ts"
+import { worktreeCleanupFingerprint } from "./worktree-cleanup-inspection.ts"
 
 const execute = promisify(execFile)
 const questionRequest: acp.CreateElicitationRequest = {
@@ -135,6 +137,7 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   await execute("git", ["-C", repository, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"])
   const daemon = join(directory, "daemon")
   await mkdir(daemon)
+  await writeWorktreePreferences(daemon, { ...defaultWorktreePreferences(), branchNaming: "session" })
   const catalog = new DaemonCatalog(daemon)
   await catalog.init((_path, name) => openInMemoryCatalog(name))
   const workspace = await catalog.native.createWorkspace("Fixture", [{ path: repository }])
@@ -620,8 +623,68 @@ test("rename validates titles and persists customization for archived and machin
   } finally { await restarted.close() }
 })
 
+test("archive retains protected local changes and disabled cleanup retains clean checkouts", async t => {
+  for (const disabled of [false, true]) await t.test(disabled ? "disabled" : "protected", async t => {
+    const f = await setup(t)
+    const preferences = await f.catalog.getWorktreePreferences()
+    preferences.cleanup.archived = !disabled
+    await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
+    const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+    if (!disabled) await writeFile(join(cwd, "local.txt"), "keep my work\n")
+    await f.service.handle("_deskfleet/session/archive", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    assert.equal((await f.read()).session.archiveState, "archived")
+    assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+    await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+    if (!disabled) assert.equal(await readFile(join(cwd, "local.txt"), "utf8"), "keep my work\n")
+    assert.equal((await f.read()).session.archiveState, "active")
+  })
+})
+
+test("automatic cleanup fences changed history, running turns, visitors and late local edits", async t => {
+  const f = await setup(t)
+  const settings = (await f.catalog.getWorktreePreferences()).cleanup
+  const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
+  const first = (await f.read()).session.lastEventSeq
+  await f.submit("task").result
+  await until(f.read, state => state.turns.some(turn => turn.state === "running") && f.provider.prompts.length === 1)
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  f.provider.finish()
+  await until(f.read, state => state.turns.some(turn => turn.state === "completed"))
+  await f.service.cleanupWorktree(f.sessionId, first, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  await f.service.attend(f.sessionId, "viewer", f.actor)
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  f.service.leave(f.sessionId, "viewer")
+  await f.service.journal.serial(f.sessionId, async () => {})
+  const preferences = await f.catalog.getWorktreePreferences()
+  await writeWorktreePreferences(join(f.directory, "daemon"), { ...preferences, cleanup: { ...settings, unchanged: false } })
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
+  const candidate = worktreeCleanupFingerprint((await f.catalog.inspectSessionWorktreeCleanup(f.sessionId, settings.keepLocalChanges))!)
+  await execute("git", ["-C", cwd, "switch", "-c", "feat/changed-since-scan"])
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings, candidate)
+  assert.equal((await f.read()).session.archiveState, "active")
+  const stop = f.service.onSessionArchive(async () => { await writeFile(join(cwd, "late.txt"), "keep\n") })
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "active")
+  assert.equal(await readFile(join(cwd, "late.txt"), "utf8"), "keep\n")
+  stop()
+  await rm(join(cwd, "late.txt"))
+  await f.service.cleanupWorktree(f.sessionId, (await f.read()).session.lastEventSeq, settings)
+  assert.equal((await f.read()).session.archiveState, "archived")
+  await assert.rejects(readdir(cwd), { code: "ENOENT" })
+  await f.service.handle("_deskfleet/session/restore", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
+  assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "fixture\n")
+})
+
 test("archive removes generated files but retains history, and restore recreates the checkout without starting work", async t => {
   const f = await setup(t)
+  const preferences = await f.catalog.getWorktreePreferences()
+  preferences.cleanup.keepLocalChanges = "none"
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
   const browser: AgentActor = { kind: "user", userId: "browser-user", deviceId: "browser-device" }
   const worktree = (await f.catalog.sessionWorktree(f.sessionId))!
   const cwd = worktree.directories[0]!.path
@@ -691,6 +754,9 @@ test("archive removes generated files but retains history, and restore recreates
 
 test("reclaiming legacy archived checkouts preserves archived state and does not close resources again", async t => {
   const f = await setup(t)
+  const preferences = await f.catalog.getWorktreePreferences()
+  preferences.cleanup.keepLocalChanges = "none"
+  await writeWorktreePreferences(join(f.directory, "daemon"), preferences)
   const cwd = (await f.catalog.sessionWorktree(f.sessionId))!.directories[0]!.path
   await writeFile(join(cwd, "untracked.txt"), "old archived checkout\n")
   await f.service.handle("_deskfleet/session/stop", { sessionId: f.sessionId, operationId: randomUUID() }, f.actor)
@@ -1344,6 +1410,47 @@ test("a cancel waiting on persistence cannot cancel the next turn or its permiss
   assert.equal((await permission).outcome.outcome, "selected")
 })
 
+test("session YOLO mode persists in the daemon and auto-approves pending and subsequent permissions", async t => {
+  const f = await setup(t)
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: f.sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Run" }], delivery: "backlog",
+  }, f.actor)
+  await until(f.read, state => state.turns.length === 1 && f.provider.prompts.length === 1)
+
+  const pending = f.provider.askPermission()
+  await until(f.read, state => state.permissions.length === 1 && state.permissions[0]!.state === "pending")
+
+  const enabled = await f.service.handle("_deskfleet/session/yolo", {
+    sessionId: f.sessionId, operationId: randomUUID(), enabled: true,
+  }, f.actor) as AgentSnapshot
+  assert.equal(enabled.session.yolo, true)
+  assert.deepEqual(enabled.session.yoloActor, f.actor)
+  assert.deepEqual(await pending, { outcome: { outcome: "selected", optionId: "allow" } })
+  assert.equal(enabled.permissions[0]?.state, "resolved")
+  assert.equal(enabled.permissions[0]?.optionId, "allow")
+
+  const subsequent = f.provider.askPermission()
+  assert.deepEqual(await subsequent, { outcome: { outcome: "selected", optionId: "allow" } })
+  const afterSubsequent = await f.read()
+  assert.equal(afterSubsequent.permissions.length, 2)
+  assert.equal(afterSubsequent.permissions[1]?.state, "resolved")
+  assert.deepEqual(afterSubsequent.permissions[1]?.actor, f.actor)
+
+  const disabled = await f.service.handle("_deskfleet/session/yolo", {
+    sessionId: f.sessionId, operationId: randomUUID(), enabled: false,
+  }, f.actor) as AgentSnapshot
+  assert.ok(!disabled.session.yolo)
+  assert.equal(disabled.session.yoloActor, undefined)
+
+  const manual = f.provider.askPermission()
+  const waiting = await until(f.read, state => state.permissions.length === 3)
+  assert.equal(waiting.permissions[2]?.state, "pending")
+  await f.service.handle("_deskfleet/permission/respond", {
+    sessionId: f.sessionId, operationId: randomUUID(), permissionId: waiting.permissions[2]!.id, optionId: "allow",
+  }, f.actor)
+  assert.deepEqual(await manual, { outcome: { outcome: "selected", optionId: "allow" } })
+})
+
 test("shutdown also stops a resume already queued behind another stop", async t => {
   const f = await setup(t)
   let release!: () => void
@@ -1743,8 +1850,77 @@ test("a person opening a Session is remembered, and live attendance ends when th
   f.service.leave(f.sessionId, "desktop")
   assert.deepEqual(f.service.presence(), [{ sessionId: f.sessionId, userIds: ["bob"] }])
   f.service.leaveAll("browser")
+  await f.service.journal.serial(f.sessionId, async () => {})
   assert.deepEqual(f.service.presence(), [])
   assert.deepEqual((await f.read()).session.viewers?.map(viewer => viewer.userId), ["bob", "alice"])
+  const leftAt = (await f.read()).session.viewers!.find(viewer => viewer.userId === "bob")!.seenAt
+  assert.ok(Date.parse(leftAt) >= Date.parse(visited.session.viewers![0]!.seenAt))
   await f.service.attend(f.sessionId, "local", f.service.actor())
   assert.deepEqual(f.service.presence(), [])
+})
+
+test("deferStartup creates a provisioning Session immediately, adopts staged draft attachments on submit, and respects stop during provisioning", async t => {
+  const f = await setup(t)
+  f.provider.finishImmediately = true
+  const draftId = randomUUID()
+  const draftDir = await f.service.draftAttachmentDirectory(draftId)
+  const stagedFile = join(draftDir, "clip.mp4")
+  const stagedBytes = Buffer.from("staged-video-payload")
+  await writeFile(stagedFile, stagedBytes)
+
+  const created = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: f.create.workspaceId,
+    operationId: randomUUID(),
+    provider: f.create.provider,
+    context: "worktree",
+    deferStartup: true,
+    model: "second",
+    reasoningEffort: "low",
+  }, f.actor) as AgentSnapshot
+  assert.equal(created.session.lifecycle, "provisioning")
+  const deferredSessionId = created.session.id
+
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: deferredSessionId,
+    operationId: randomUUID(),
+    delivery: "backlog",
+    content: [
+      { type: "resource_link", uri: pathToFileURL(stagedFile).href, name: "clip.mp4", mimeType: "video/mp4", size: stagedBytes.byteLength },
+      { type: "text", text: "Trim this clip" },
+    ],
+  }, f.actor)
+
+  const finished = await until(() => f.service.journal.read(deferredSessionId), current => current.turns.some(turn => turn.state === "completed"))
+  assert.equal(finished.session.lifecycle, "ready")
+  const adoptedLink = finished.inputs[0]!.content[0] as acp.ContentBlock & { type: "resource_link" }
+  const adoptedPath = fileURLToPath(adoptedLink.uri)
+  assert.notEqual(adoptedPath, stagedFile)
+  assert.deepEqual(await readFile(adoptedPath), stagedBytes)
+  await assert.rejects(readdir(draftDir), { code: "ENOENT" })
+  assert.deepEqual(f.provider.promptConfigurations.at(-1), { model: "second", effort: "low" })
+
+  // Stopping a deferred Session before provisioning finishes prevents starting the provider run.
+  const runsBeforeStopCase = f.provider.cwds.length
+  const stoppedCreate = await f.service.handle("_deskfleet/session/create", {
+    workspaceId: f.create.workspaceId,
+    operationId: randomUUID(),
+    provider: f.create.provider,
+    context: "worktree",
+    deferStartup: true,
+  }, f.actor) as AgentSnapshot
+  assert.equal(stoppedCreate.session.lifecycle, "provisioning")
+  await f.service.handle("_deskfleet/input/submit", {
+    sessionId: stoppedCreate.session.id,
+    operationId: randomUUID(),
+    delivery: "backlog",
+    content: [{ type: "text", text: "Do not auto-start after stop" }],
+  }, f.actor)
+  await f.service.handle("_deskfleet/session/stop", {
+    sessionId: stoppedCreate.session.id,
+    operationId: randomUUID(),
+  }, f.actor)
+  const readyWithoutRun = await until(() => f.service.journal.read(stoppedCreate.session.id), current => current.session.lifecycle === "ready")
+  assert.equal(readyWithoutRun.runs.length, 0)
+  assert.equal(readyWithoutRun.inputs[0]?.state, "pending")
+  assert.equal(f.provider.cwds.length, runsBeforeStopCase)
 })

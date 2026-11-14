@@ -76,7 +76,7 @@ brew install --cask yet-another-ai/tap/deskfleet
    ```sh
    ./deskfleet-daemon enroll --server-url https://your-backend.example < machine-credentials.json
    ```
-5. 随时可运行 `./deskfleet-daemon status` 查看已注册的团队状态（不会输出敏感密钥）。完整命令行选项与存储布局请参阅仓库中的 [daemon 指南](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)。
+5. 随时可运行 `./deskfleet-daemon status` 查看已注册的团队状态（不会输出敏感密钥）。完整命令行选项与存储布局请参阅仓库中的 [daemon 指南](https://github.com/yet-another-ai/deskfleet/blob/main/apps/daemon/README.md)；如需在 Android 手机或平板上运行，请参阅 [在 Android 上运行（Termux）](./android)。
 
 ## 从源码运行（本地开发栈）
 

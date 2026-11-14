@@ -55,6 +55,25 @@ test("system status rejects malformed parameters and preserves native sampling f
   assert.equal(reads, 1)
 })
 
+test("workspace discovery requires a verified user and resolves only the registration's provider", async () => {
+  const reads: string[] = []
+  const operations = new MachineOperations({
+    agents: {}, catalog: {}, terminals: {}, setup: {},
+    providers: { get(id: string) {
+      reads.push(id)
+      if (id !== "registered-agent") throw new Error("Agent provider is unavailable")
+      return { id, name: "Custom", template: "acp", inheritShellEnvironment: false, env: {} }
+    } },
+    capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, undefined), /verified user and login/u)
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "../agent" }, actor), /Invalid provider ID/u)
+  assert.deepEqual(reads, [])
+  await assert.rejects(operations.handle("providerDiscoverWorkspaces", { providerId: "other-registration" }, actor), /unavailable/u)
+  assert.deepEqual(await operations.handle("providerDiscoverWorkspaces", { providerId: "registered-agent" }, actor), { supported: false, candidates: [], warnings: [] })
+  assert.deepEqual(reads, ["other-registration", "registered-agent"])
+})
+
 test("Session rename passes only the server-verified actor to the Agent service", async () => {
   const calls: unknown[][] = []
   const operations = new MachineOperations({
@@ -92,4 +111,17 @@ test("marking a Session unread passes only the server-verified actor to the Agen
   assert.deepEqual(calls, [])
   assert.deepEqual(await operations.handle("_deskfleet/session/unread", params, actor), { unread: true })
   assert.deepEqual(calls, [["_deskfleet/session/unread", params, actor]])
+})
+
+test("switching a Session's Agent passes only the server-verified actor to the Agent service", async () => {
+  const calls: unknown[][] = []
+  const operations = new MachineOperations({
+    agents: { handle: async (...args: unknown[]) => { calls.push(args); return { switched: true } } },
+    catalog: {}, terminals: {}, providers: {}, setup: {}, capabilities: async () => ({ displays: [], audio: false }),
+  } as unknown as ConstructorParameters<typeof MachineOperations>[0])
+  const params = { sessionId: "1", operationId: "switch", provider: "claude", actor: { userId: "spoof" } }
+  await assert.rejects(operations.handle("_deskfleet/session/switch-agent", params, undefined), /verified user and login/u)
+  assert.deepEqual(calls, [])
+  assert.deepEqual(await operations.handle("_deskfleet/session/switch-agent", params, actor), { switched: true })
+  assert.deepEqual(calls, [["_deskfleet/session/switch-agent", params, actor]])
 })

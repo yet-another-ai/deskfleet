@@ -28,6 +28,8 @@ const PREVIEW_ITEMS: OutlineItem[] = [
 </script>
 
 <script setup lang="ts">
+import SpringSurface from "../common/SpringSurface.ts"
+import { vSpring } from "../../directives/spring.ts"
 import { watchImmediate } from "@vueuse/core"
 import { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger } from "reka-ui"
 import { computed, ref, useTemplateRef, watch } from "vue"
@@ -58,7 +60,6 @@ const rows = useTemplateRef<HTMLLIElement[]>("rows")
 const hovered = ref<string>()
 const selectedPreview = ref(PREVIEW_ITEMS[7]!.id)
 const audioEnabled = computed(() => props.preview || appearance.settings.outlineAudio)
-const audioActive = computed(() => audioEnabled.value && audio.active)
 const maxWidth = computed(() => props.maxWidth ?? appearance.settings.outlineAudioMaxWidth)
 const rgb = computed(() => props.rgb ?? (audioEnabled.value && appearance.settings.outlineAudioRgb))
 
@@ -153,16 +154,17 @@ watch(currentActive, id => {
             >
               <span
                 aria-hidden="true"
-                :style="{ width: `${tickWidth(index, item.label)}px`, backgroundColor: rgb ? audio.color(index, highlighted === item.id) : undefined }"
+                v-spring="{ width: `${tickWidth(index, item.label)}px` }"
+                :style="{ backgroundColor: rgb ? audio.color(index, highlighted === item.id) : undefined }"
                 class="pointer-events-none h-0.5 shrink-0 rounded-full duration-150 ease-out"
                 :class="[
-                  audioActive && hoveredIndex < 0 ? 'transition-colors' : 'transition-[width,background-color]',
+                  'transition-colors',
                   highlighted === item.id ? 'bg-ui-accent' : 'bg-ui-text-muted/45 group-focus-visible:bg-ui-text-muted',
                 ]"
               />
             </TooltipTrigger>
             <TooltipPortal>
-              <TooltipContent
+              <TooltipContent :as="SpringSurface"
                 side="right"
                 :side-offset="8"
                 :collision-padding="8"
