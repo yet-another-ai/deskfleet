@@ -193,7 +193,8 @@ textarea {
   transform-origin: var(--reka-popper-transform-origin, center);
 }
 .ui-menu[data-state="open"],
-.ui-tooltip:is([data-state="delayed-open"], [data-state="instant-open"]) {
+.ui-tooltip:is([data-state="delayed-open"], [data-state="instant-open"]),
+.deskfleet-windows .dv-tabs-overflow-container {
   animation: ui-overlay-in var(--ui-duration-base) var(--ui-ease-out);
 }
 /* Reka keeps closing overlays mounted until their exit animation ends. */
@@ -301,7 +302,7 @@ textarea {
 /* Bound every tab in pixels, including Dockview's wrapper around custom tabs. */
 .ui-tab,
 .ui-tab-size,
-.deskfleet-windows .dv-tab {
+.deskfleet-windows .dv-tabs-container .dv-tab {
   min-width: 0;
   max-width: 240px;
 }
@@ -328,6 +329,55 @@ textarea {
   background: var(--ui-color-border-strong);
 }
 .ui-tab-active::after { opacity: 1; scale: 1; }
+
+/* Resize sashes: a 2px focus line grows from the 1px divider on hover and turns solid while dragged. */
+.ui-sash::after,
+.deskfleet-windows .dv-sash:not(.dv-disabled)::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: var(--ui-color-focus);
+  opacity: 0;
+  transition:
+    scale var(--ui-duration-base) var(--ui-ease-out),
+    opacity var(--ui-duration-base) var(--ui-ease-out);
+}
+.ui-sash::after,
+.deskfleet-windows :where(.dv-horizontal > .dv-sash-container) > .dv-sash:not(.dv-disabled)::after {
+  inset-block: 0;
+  width: 2px;
+  scale: 0 1;
+}
+.ui-sash::after { left: 3.5px; }
+.deskfleet-windows :where(.dv-horizontal > .dv-sash-container) > .dv-sash:not(.dv-disabled)::after { left: 1.5px; }
+.deskfleet-windows :where(.dv-vertical > .dv-sash-container) > .dv-sash:not(.dv-disabled)::after {
+  inset-inline: 0;
+  top: 1.5px;
+  height: 2px;
+  scale: 1 0;
+}
+.ui-sash:hover::after,
+.deskfleet-windows .dv-sash:not(.dv-disabled):hover::after {
+  opacity: 0.5;
+  scale: 1;
+}
+.ui-sash:focus-visible::after,
+.ui-sash:active::after,
+.ui-sash-active::after,
+.deskfleet-windows .dv-sash:not(.dv-disabled):active::after {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Dockview mounts dragged tab and group ghosts on document.body outside .deskfleet-windows. */
+.dv-tab-ghost-drag::after {
+  @apply squircle-lg;
+  border: 1px solid var(--ui-color-border-strong);
+  outline: none !important;
+}
+@supports (corner-shape: superellipse(1.4)) {
+  .dv-dragged { corner-shape: superellipse(1.4); }
+}
 
 /* A selected navigation item or segment settles into place. */
 .ui-nav-active,

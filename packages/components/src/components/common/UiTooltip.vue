@@ -7,16 +7,16 @@ import { defineComponent, type PropType } from "vue"
 // Preserve VNodes while forwarding the trigger slot to Reka's as-child primitive.
 export default defineComponent({
   components: { TooltipContent, TooltipPortal, TooltipProvider, TooltipRoot, TooltipTrigger },
-  props: { text: { type: String, required: true }, portalTo: [String, Object] as PropType<string | HTMLElement> },
+  props: { text: { type: String, required: true }, disabled: Boolean, portalTo: [String, Object] as PropType<string | HTMLElement> },
   setup() {
-    const disabled = useMediaQuery("(max-width: 1023.9px), (hover: none)")
-    return { disabled, SpringSurface }
+    const touch = useMediaQuery("(max-width: 1023.9px), (hover: none)")
+    return { touch, SpringSurface }
   },
 })
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="400" :disabled="disabled">
+  <TooltipProvider :delay-duration="400" :disabled="disabled || touch">
     <TooltipRoot>
       <TooltipTrigger as-child><slot /></TooltipTrigger>
       <TooltipPortal :to="portalTo">
