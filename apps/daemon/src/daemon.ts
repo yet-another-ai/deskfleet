@@ -1,4 +1,5 @@
 import type { AgentQuotaAuthority } from "./agent-quotas.ts"
+import type { CentralTransport } from "@deskfleet/client/central-transport"
 import { once } from "node:events"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -29,6 +30,8 @@ export async function startDaemon(port = 0, options: {
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
+  /** The embedding desktop host supplies its system-proxy-aware backend transport. */
+  centralTransport?: CentralTransport
   /** In-process fixtures only. Never enabled by configuration, IPC, or the CLI. */
   allowLocalControlForTests?: boolean
 } = {}) {
@@ -86,6 +89,7 @@ export async function startDaemon(port = 0, options: {
   try {
     control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, {
       allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas,
+      centralTransport: options.centralTransport,
       ...(options.auvPath ? { auvPath: options.auvPath } : {}),
     })
   } catch (error) {

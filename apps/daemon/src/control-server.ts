@@ -27,6 +27,7 @@ import type { ProviderSetup } from "./provider-setup.ts"
 import { discoverProviderWorkspaces } from "./provider-workspaces.ts"
 import type { CentralClient } from "./central-client.ts"
 import { MachineRuntime } from "./machine-runtime.ts"
+import type { CentralTransport } from "@deskfleet/client/central-transport"
 import { DesktopInputChannel, DESKTOP_INPUT_CHANNEL } from "./desktop-input.ts"
 
 /** The daemon's ownership surface, injectable without screen capture in tests. */
@@ -518,7 +519,7 @@ async function publishDiscovery(directory: string, discovery: DaemonDiscovery): 
   }
 }
 
-export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new DesktopPermissions(), agentProvider?: AgentProvider, options: { agentQuotas?: AgentQuotaAuthority; allowLocalControlForTests?: boolean; auvPath?: string; openCatalog?: Parameters<DaemonCatalog["init"]>[0] } = {}) {
+export async function startControlServer(peers: ControlPeers, directory: string, capabilities: Capabilities = desktopCapabilities, terminals?: TerminalSessions, onShutdownRequested?: () => void, permissions = new DesktopPermissions(), agentProvider?: AgentProvider, options: { agentQuotas?: AgentQuotaAuthority; allowLocalControlForTests?: boolean; auvPath?: string; openCatalog?: Parameters<DaemonCatalog["init"]>[0]; centralTransport?: CentralTransport } = {}) {
   const machine = new MachineRuntime(directory, { peers, capabilities, agentProvider, terminals, ...options })
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (process.platform !== "win32") await chmod(directory, 0o700)

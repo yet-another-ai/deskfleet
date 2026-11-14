@@ -2,10 +2,12 @@ import { afterEach, expect, test, vi } from "vitest"
 import type { DaemonEvent } from "../../../daemon/src/control-protocol.ts"
 import type { DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
+import { desktopCentralTransport } from "./central-transport.ts"
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), startDaemon: vi.fn() }))
 vi.mock("@deskfleet/daemon/control-client", () => ({ DaemonClient: { connect: mocks.connect } }))
 vi.mock("@deskfleet/daemon", () => ({ startDaemon: mocks.startDaemon }))
+vi.mock("electron", () => ({ net: { fetch: vi.fn(), WebSocket: vi.fn() } }))
 afterEach(() => vi.clearAllMocks())
 
 test("connection retains permission outcomes received alongside its initial handshake", async () => {
@@ -83,12 +85,12 @@ function hosted() {
   return { closed, close: vi.fn(async () => { resolve(); await closed }), resolve }
 }
 
-test("desktop startup delegates the macOS guided permission policy to the daemon", async () => {
+test("desktop startup supplies proxy-aware backend networking and guided permissions to the daemon", async () => {
   const daemon = hosted()
   mocks.startDaemon.mockResolvedValueOnce(daemon)
   const runtime = createLocalAgentRuntime({ directory: "/daemon" })
   await runtime.start()
-  expect(mocks.startDaemon).toHaveBeenCalledExactlyOnceWith(0, { controlDirectory: "/daemon", permissionMode: "guided" })
+  expect(mocks.startDaemon).toHaveBeenCalledExactlyOnceWith(0, { controlDirectory: "/daemon", permissionMode: "guided", centralTransport: desktopCentralTransport })
   await runtime.close()
 })
 

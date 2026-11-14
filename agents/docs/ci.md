@@ -45,7 +45,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
   script, and desktop main/shared/client checks, without repeating the happy-dom renderer
   project. Each platform also runs `mise run desktop:smoke-dsh` against Electron's Node
-  host. Local `mise run test` still runs both Vitest projects on every OS. It supports
+  host, plus `mise run desktop:smoke-proxy` to verify backend sign-in, bearer HTTP,
+  and WebSocket events through an isolated session proxy with direct access refused
+  (under Xvfb on Linux). Local `mise run test` still runs both Vitest projects on every OS. It supports
   reusable calls and manual runs. When backend paths change, a separate Linux job runs
   real PostgreSQL integration tests, Valkey-backed Team TURN collection tests, and the
   owned-account/two-daemon remote workflow against the same pinned PostgreSQL 18.6 and

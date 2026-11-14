@@ -90,7 +90,7 @@ to `app:///` basenames. Hostnames, resource IDs, query strings, headers, request
 bodies, and raw nested-cause messages are not included in this diagnostic context.
 Unknown routes or cause codes do not expand the collection automatically.
 Diagnostics distinguish `network`, `timeout`, `cancelled`, `http`, and `decode`,
-identify `node_fetch` or `browser_fetch`, record whether the failure occurred
+identify `node_fetch`, `browser_fetch`, or `electron_net`, record whether the failure occurred
 during `fetch` or `response_body`, and include HTTP status when a response exists.
 HTTP errors also retain allowlisted API error codes in `central.api_error_code`
 and `central_request.api_error_code`, including `machine_offline`, `daemon_timeout`,

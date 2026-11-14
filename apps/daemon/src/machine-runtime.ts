@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { hostname } from "node:os"
+import type { CentralTransport } from "@deskfleet/client/central-transport"
 import { AgentProviders } from "./agent-providers.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
@@ -32,6 +33,7 @@ interface MachineOptions {
   allowLocalControlForTests?: boolean
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   peerUpdates?: (current: ProviderUpdates) => Iterable<ProviderUpdates>
+  centralTransport?: CentralTransport
 }
 
 async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
@@ -101,7 +103,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     })
     operations = new MachineOperations({ agents, catalog, providers, terminals, setup, providerUpdates, schedules, mcpServers, capabilities: options.capabilities })
     remoteMcp = new RemoteMcp(hostDirectory, operations)
-    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp)
+    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp, options.centralTransport)
     await central.init()
     cleanup = new WorktreeCleanup({ agents, catalog, pullRequest: (actor, query) => central!.githubPullRequest(actor, query) })
     cleanup.start()

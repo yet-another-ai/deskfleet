@@ -20,6 +20,13 @@ and stays in the tray after its windows close. The local discovery socket serves
 host setup, enrollment, and shutdown; it does not authorize team resource access.
 Session-scoped MCP tools and Scheduled Tasks run alongside those daemon services.
 
+On Windows, macOS, and Linux, Electron supplies Chromium's HTTP and WebSocket
+transports to the account client and hosted daemon's backend connections. Both
+follow the system proxy configuration, including PAC, without proxy environment
+variables. Account and machine authentication remain bearer-based in the main
+process; these connections do not use the renderer's session cookies. Web clients
+use browser networking, and the standalone daemon uses Node's networking stack.
+
 The Linux, Windows, and macOS desktop clients can also open a remote desktop in a separate native
 viewer process. Electron retains authentication, peer grants, and signaling;
 the viewer owns only its window, receiving media peer, decoder, input forwarding,

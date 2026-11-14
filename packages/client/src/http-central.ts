@@ -10,7 +10,8 @@ import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { apiRequest, API_RETRY_STATUS_CODES, type ApiRequestOptions } from "./api-request.ts"
-import { HttpError, type RequestTransport } from "./request-diagnostics.ts"
+import { HttpError } from "./request-diagnostics.ts"
+import type { CentralSocket, CentralTransport } from "./central-transport.ts"
 import type { Machine as WireMachine, NetworkConfiguration } from "../../../crates/protocol/control.ts"
 
 export { HttpError } from "./request-diagnostics.ts"
@@ -34,13 +35,10 @@ function machineFromWire(machine: WireMachine): Machine {
 }
 
 export interface SavedAccount { serverUrl: string; token?: string; user?: AccountUser }
-export interface HttpCentralOptions {
+export interface HttpCentralOptions extends CentralTransport {
   account: SavedAccount
   persist(account: SavedAccount): Promise<void>
   authorize(client: HttpCentralClient): Promise<void>
-  fetch?: typeof fetch
-  transport?: RequestTransport
-  socket?: (url: string) => WebSocket
   cookieAuth?: boolean
   openExternal?: (url: string) => Promise<unknown>
 }
@@ -59,7 +57,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #account: SavedAccount
   readonly #options: HttpCentralOptions
   readonly #listeners = new Set<(event: CentralEvent) => void>()
-  #socket: WebSocket | undefined
+  #socket: CentralSocket | undefined
   #retry: ReturnType<typeof setTimeout> | undefined
   #retryDelay = RETRY_MIN_MS
   #heartbeat: ReturnType<typeof setInterval> | undefined
@@ -93,7 +91,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
    * dead. Probe before replacing it so the server never holds two viewer
    * connections that both deliver the same event.
    */
-  #probeLink(socket: WebSocket): void {
+  #probeLink(socket: CentralSocket): void {
     if (this.#probeTimer || this.#socket !== socket) return
     const received = this.#lastReceived
     try { socket.send(JSON.stringify({ type: "ping" })) }
@@ -353,7 +351,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
    * A silent socket never reports close, and the WebSocket close handshake has no
    * deadline. Declare the link dead, then replace it if the orderly close stalls.
    */
-  #stale(socket: WebSocket, graceMs = CLOSE_GRACE_MS): void {
+  #stale(socket: CentralSocket, graceMs = CLOSE_GRACE_MS): void {
     if (this.#socket !== socket || this.#closeDeadline) return
     clearTimeout(this.#probeTimer); this.#probeTimer = undefined
     this.#setConnected(false)

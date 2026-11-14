@@ -312,6 +312,10 @@ run = "node apps/desktop/scripts/smoke-terminal.ts"
 description = "Verify real Electron WebGL terminal glyph fonts at high display scale"
 run = "node apps/desktop/scripts/smoke-terminal-font.ts"
 
+[tasks."desktop:smoke-proxy"]
+description = "Verify Electron sign-in and signaling through a proxy without proxy environment variables"
+run = "node apps/desktop/scripts/smoke-proxy.ts"
+
 [tasks."desktop:smoke-native-terminal"]
 description = "Verify native PTY spawning inside the Linux Electron main process"
 depends = ["native:debug"]
