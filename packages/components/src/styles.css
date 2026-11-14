@@ -396,6 +396,16 @@ textarea {
   scale: 1;
 }
 
+/* Dockview mounts dragged tab and group ghosts on document.body outside .deskfleet-windows. */
+.dv-tab-ghost-drag::after {
+  @apply squircle-lg;
+  border: 1px solid var(--ui-color-border-strong);
+  outline: none !important;
+}
+@supports (corner-shape: superellipse(1.4)) {
+  .dv-dragged { corner-shape: superellipse(1.4); }
+}
+
 /* A selected navigation item or segment settles into place. */
 .ui-nav-active,
 .ui-segment-active { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }

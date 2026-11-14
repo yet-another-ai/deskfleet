@@ -533,12 +533,10 @@ onScopeDispose(() => {
   border-bottom: 1px solid var(--ui-color-border);
 }
 .deskfleet-windows :deep(.dv-tabs-container .dv-tab) {
-  app-region: no-drag;
-  -webkit-app-region: no-drag;
+  @apply app-no-drag squircle-lg;
   height: 36px;
   cursor: pointer;
   padding: 0;
-  border-radius: 0.5rem;
   transition: background-color var(--ui-duration-fast) var(--ui-ease-out), color var(--ui-duration-fast) var(--ui-ease-out);
 }
 /* The window that comes forward settles into its highlight, like a selected nav item. */
@@ -586,5 +584,48 @@ onScopeDispose(() => {
   padding: 0;
   border-bottom: 0;
   background: transparent;
+}
+.deskfleet-windows :deep(.dv-drop-target),
+.deskfleet-windows :deep(.dv-drop-target-container) {
+  --dv-transition-duration: 300ms;
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor),
+.deskfleet-windows :deep(.dv-drop-target > .dv-drop-target-dropzone > .dv-drop-target-selection) {
+  transition-timing-function: var(--ui-ease-out);
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor:not(.dv-drop-target-anchor-line)),
+.deskfleet-windows :deep(.dv-drop-target-selection:not(.dv-drop-target-selection-line)),
+.deskfleet-windows :deep(.dv-dnd-compass-edge-preview) {
+  border: 0;
+  background: transparent;
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor:not(.dv-drop-target-anchor-line)::before),
+.deskfleet-windows :deep(.dv-drop-target-selection:not(.dv-drop-target-selection-line)::before),
+.deskfleet-windows :deep(.dv-dnd-compass-edge-preview::before) {
+  @apply squircle-lg;
+  --ui-enter-x: 0px;
+  --ui-enter-y: 0px;
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: var(--dv-drag-over-border);
+  background-color: var(--dv-drag-over-background-color);
+  animation: ui-overlay-in var(--ui-duration-base) var(--ui-ease-out);
+  transition: inset var(--dv-transition-duration) var(--ui-ease-out), border-radius var(--dv-transition-duration) var(--ui-ease-out);
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor.dv-drop-target-center:not(.dv-drop-target-content):not(.dv-drop-target-edge)::before),
+.deskfleet-windows :deep(.dv-void-container > .dv-drop-target-dropzone > .dv-drop-target-selection:not(.dv-drop-target-selection-line)::before) {
+  inset: 6px 8px;
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor.dv-drop-target-content:not(.dv-drop-target-anchor-line)::before),
+.deskfleet-windows :deep(.dv-drop-target-anchor.dv-drop-target-edge:not(.dv-drop-target-anchor-line)::before),
+.deskfleet-windows :deep(:not(.dv-tab, .dv-void-container, .dv-tab-group-chip) > .dv-drop-target-dropzone > .dv-drop-target-selection:not(.dv-drop-target-selection-line)::before),
+.deskfleet-windows :deep(.dv-dnd-compass-edge-preview::before) {
+  @apply squircle-xl;
+  inset: 8px;
+}
+.deskfleet-windows :deep(.dv-drop-target-anchor.dv-drop-target-anchor-line),
+.deskfleet-windows :deep(.dv-drop-target-selection.dv-drop-target-selection-line) {
+  @apply rounded-full;
 }
 </style>
