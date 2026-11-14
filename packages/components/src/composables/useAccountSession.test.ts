@@ -331,6 +331,23 @@ test("user actions reject for their caller while background refreshes report a n
   expect(session.notice.value).toBe("Server unavailable")
 })
 
+test.each(["replacement", "signed-out"] as const)("creating a Team does not record it for a %s account", async change => {
+  const fake = fakeCentral()
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const created = Promise.withResolvers<{ id: string; name: string; role: "owner" }>()
+  fake.central.createTeam.mockReturnValueOnce(created.promise)
+  const operation = session.createTeam("Platform")
+  session.account.value = change === "signed-out"
+    ? { serverUrl: session.account.value.serverUrl, siteAdmin: false }
+    : { ...session.account.value, user: { id: "user-2", name: "Bea", email: "bea@example.test" } }
+  created.resolve({ id: "team-9", name: "Platform", role: "owner" })
+  await operation
+  expect(identifyAnalytics).not.toHaveBeenCalled()
+  expect(trackEvent).not.toHaveBeenCalled()
+  expect(session.team.value?.id).toBe("team-1")
+})
+
 test("creating a Team identifies that Team before the event is recorded", async () => {
   const fake = fakeCentral()
   session = createAccountSession(fake.central)

@@ -74,7 +74,9 @@ Joining a Team omits these event metadata fields because an invite token does
 not reveal the target Team before acceptance; use account-based join metrics.
 Creating a Team records `team_created` after that Team replaces the analytics
 identity, so the event carries the created Team rather than the Team selected
-when the request started. Its plan stays `unknown` until billing loads.
+when the request started. Its plan stays `unknown` until billing loads. The
+event is omitted when the account that started creation has signed out or been
+replaced before the request returns.
 
 DeskFleet custom-event metadata carries only the fields listed below. It does
 not include account names/email, prompts, Session titles, file paths, provider

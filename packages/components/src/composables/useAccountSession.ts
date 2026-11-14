@@ -267,11 +267,12 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
     openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,
     async createTeam(name) {
+      const actor = account.value.user
       const created = await user.createTeam(name)
+      const current = account.value.user
+      if (!actor || current?.id !== actor.id) return
       teams.value = [...teams.value, created]
-      // The request started under the previously selected Team. Identify the created Team before recording it.
-      const accountUser = account.value.user
-      if (accountUser) identifyAnalytics(accountUser.id, { id: created.id, role: created.role }, accountUser.email ?? undefined)
+      identifyAnalytics(actor.id, { id: created.id, role: created.role }, current.email ?? undefined)
       trackEvent("team_created", {})
       await selectTeam(created.id)
     },
