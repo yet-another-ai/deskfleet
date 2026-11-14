@@ -136,6 +136,19 @@ jobs:
       - name: Verify DeepSeek Harness on Electron
         run: mise run desktop:smoke-dsh
 
+      - name: Verify Electron backend proxy transport (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mise exec -- pnpm --filter @deskfleet/desktop exec install-electron
+          electron_sandbox=$(mise exec -- pnpm --filter @deskfleet/desktop exec node -p 'require.resolve("electron/dist/chrome-sandbox")')
+          sudo chown root:root "$electron_sandbox"
+          sudo chmod 4755 "$electron_sandbox"
+          xvfb-run -a mise run desktop:smoke-proxy
+
+      - name: Verify Electron backend proxy transport (Windows and macOS)
+        if: runner.os != 'Linux'
+        run: mise run desktop:smoke-proxy
+
       # Tests close their last X client between cases; keep Xvfb from resetting
       # while the next case opens its connection.
       - name: Verify X11 capture and input

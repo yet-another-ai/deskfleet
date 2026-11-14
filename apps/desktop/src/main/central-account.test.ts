@@ -13,11 +13,12 @@ vi.mock("electron", () => ({
   ipcMain: { handle: vi.fn() },
   safeStorage: { isAsyncEncryptionAvailable: vi.fn(), decryptStringAsync: vi.fn(), encryptStringAsync: vi.fn() },
   shell: { openExternal: vi.fn() },
+  net: { fetch: vi.fn(), WebSocket: vi.fn(function () { return { close: vi.fn() } }) },
 }))
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron"
+import { app, BrowserWindow, ipcMain, net, safeStorage } from "electron"
 import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
@@ -68,8 +69,8 @@ async function setup(stored: Record<string, unknown> = {}) {
   vi.mocked(safeStorage.decryptStringAsync).mockResolvedValue({ result: "restored-token", shouldReEncrypt: false })
   vi.mocked(safeStorage.encryptStringAsync).mockResolvedValue(Buffer.from("encrypted-new-token"))
   const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({ token: "new-token", user })))
-  vi.stubGlobal("fetch", fetch)
-  vi.stubGlobal("WebSocket", class { close() {} })
+  vi.mocked(net.fetch).mockImplementation(fetch)
+  vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Backend HTTP must use Electron networking") }))
   return { path, fetch, install: async () => {
     const client = await installCentralAccount()
     clients.push(client)
@@ -227,6 +228,9 @@ test("the browser login callback submits its code as a same-origin form", async 
   clients.push(client)
   await client.login()
   expect(f.fetch).toHaveBeenCalledTimes(2)
+  expect(globalThis.fetch).not.toHaveBeenCalled()
+  expect(net.WebSocket).toHaveBeenCalledExactlyOnceWith("wss://fleet.example/api/client/ws", { useSessionCookies: false })
+  expect(sentRequest(f.fetch).credentials).toBe("omit")
   expect(JSON.parse(await readFile(f.path, "utf8")).encryptedToken).toBe(Buffer.from("encrypted-new-token").toString("base64"))
 })
 
@@ -246,7 +250,7 @@ test("central IPC preserves network diagnostics for caught renderer failures wit
   const failure = await api.rpc("team", "private-machine", "_deskfleet/agent/configuration", { provider: "private-provider" }).catch(error => error)
   if (!(failure instanceof CentralRequestError)) throw new Error("Expected a central transport failure")
   expect(failure.message).toBe("Error invoking remote method 'deskfleet:central': TypeError: fetch failed")
-  expect(failure.diagnostics).toMatchObject({ method: "POST", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNRESET" }] })
+  expect(failure.diagnostics).toMatchObject({ method: "POST", transport: "electron_net", route: "/api/teams/:teamId/machines/:machineId/rpc", rpcMethod: "_deskfleet/agent/configuration", causes: [{ name: "TypeError" }, { name: "Error", code: "ECONNRESET" }] })
   expect(failure.stack).toContain("HttpCentralClient.request")
   expect(report).toHaveBeenCalledExactlyOnceWith(failure)
   expect(f.fetch).toHaveBeenCalledTimes(1)

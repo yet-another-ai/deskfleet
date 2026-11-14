@@ -1,7 +1,7 @@
 import type { DesktopErrorReason } from "./desktop-media.ts"
 
 export type RequestFailureKind = "network" | "timeout" | "cancelled" | "http" | "decode"
-export type RequestTransport = "node_fetch" | "browser_fetch"
+export type RequestTransport = "node_fetch" | "browser_fetch" | "electron_net"
 export type RequestTrigger = "user" | "background" | "unknown"
 export interface CentralRequestDiagnostics {
   method: string

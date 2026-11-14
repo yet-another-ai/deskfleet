@@ -12,6 +12,7 @@ import { isDesktopMediaSender } from "./desktop-media.ts"
 import { enrollLocalMachine } from "./local-enrollment.ts"
 import { backendUrl } from "./backend.ts"
 import { desktopErrorReportingContext } from "./error-reporting-context.ts"
+import { desktopCentralTransport } from "./central-transport.ts"
 
 export const CENTRAL_CHANNEL = "deskfleet:central"
 export const CENTRAL_EVENT = "deskfleet:central-event"
@@ -88,7 +89,7 @@ async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment"
 
 export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<HttpCentralClient> {
   const path = join(app.getPath("userData"), "account.json")
-  const client = new HttpCentralClient({ account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
+  const client = new HttpCentralClient({ ...desktopCentralTransport, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
   const localEnrollment = () => daemonCall("centralStatus", {})
   const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,

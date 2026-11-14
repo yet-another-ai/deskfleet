@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { RemoteMcpRequest } from "../../../crates/protocol/control.ts"
 import { apiRequest, type ApiRequestOptions } from "@deskfleet/client/api-request"
 import { HttpError } from "@deskfleet/client/request-diagnostics"
+import type { CentralSocket, CentralTransport } from "@deskfleet/client/central-transport"
 import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { GithubPullRequest, GithubPullRequestQuery } from "../../../packages/client/src/central.ts"
@@ -47,7 +48,7 @@ export class CentralClient {
   readonly #sync: CentralSync
   readonly #unsubscribeTerminals: () => void
   #credentials: MachineCredentials | undefined
-  #socket: WebSocket | undefined
+  #socket: CentralSocket | undefined
   #connected = false
   #closed = false
   #stopping = false
@@ -65,9 +66,11 @@ export class CentralClient {
   #revocation: Promise<void> | undefined
 
   readonly #remoteMcp?: RemoteMcp
+  readonly #transport?: CentralTransport
 
-  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp) {
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport) {
     this.#remoteMcp = remoteMcp
+    this.#transport = centralTransport
     this.#shutdownTimeoutMs = shutdownTimeoutMs
     this.#path = join(directory, "central.json")
     this.#operations = operations
@@ -178,6 +181,7 @@ export class CentralClient {
       }>(`${serverUrl}/api/daemon/me`, {
         headers: { authorization: `Bearer ${value.token}` }, totalTimeoutMs: 15_000,
         signal: this.#httpClosing.signal, errorPrefix: "Machine enrollment verification failed",
+        fetch: this.#transport?.fetch, transport: this.#transport?.transport,
       })
       const identity = this.#operations.agents.journal.identity
       if (!verified.serverId || verified.machine.id !== value.machineId || verified.machine.teamId !== value.teamId ||
@@ -215,6 +219,7 @@ export class CentralClient {
     try {
       return await apiRequest<T>(`${credentials.serverUrl}${path}`, {
         ...options, headers: { authorization: `Bearer ${credentials.token}` }, signal: this.#httpClosing.signal,
+        fetch: this.#transport?.fetch, transport: this.#transport?.transport,
       })
     } catch (error) {
       // Only the captured registration's explicit credential rejection can revoke it.
@@ -227,7 +232,7 @@ export class CentralClient {
     if (this.#stopping || this.#closed || !this.#credentials || this.#credentials.revoked || this.#socket) return
     const url = new URL("/api/daemon/ws", this.#credentials.serverUrl)
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
-    const socket = new WebSocket(url)
+    const socket = this.#transport?.socket?.(url.toString()) ?? new WebSocket(url)
     this.#socket = socket
     this.#lastReceived = Date.now()
     socket.addEventListener("open", () => this.#send({ type: "authenticate", token: this.#credentials!.token }))
@@ -265,7 +270,7 @@ export class CentralClient {
    * closing handshake, so waiting for the close event alone leaves the daemon
    * permanently offline with the socket still owning `#socket`.
    */
-  #stale(socket: WebSocket): void {
+  #stale(socket: CentralSocket): void {
     if (this.#socket !== socket || this.#closeDeadline) return
     this.#connected = false; this.#sync.disable()
     socket.close(4000, "Control link heartbeat timed out")

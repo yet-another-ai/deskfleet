@@ -5,6 +5,7 @@ import { DaemonClient } from "@deskfleet/daemon/control-client"
 import { daemonDiscoveryPath } from "@deskfleet/daemon/control-discovery"
 import type { LocalAgentRuntime } from "./local-agent-controller.ts"
 import type { DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
+import { desktopCentralTransport } from "./central-transport.ts"
 
 export interface HostedDaemon {
   /** Settles after discovery and all native/server resources have closed. */
@@ -26,6 +27,7 @@ export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): Loca
   const start = options.start ?? (directory => startDaemon(0, {
     controlDirectory: directory,
     permissionMode: "guided",
+    centralTransport: desktopCentralTransport,
     ...(options.auvPath ? { auvPath: options.auvPath } : {}),
   }))
   let hosted: HostedDaemon | undefined
