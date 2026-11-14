@@ -309,6 +309,19 @@ mod tests {
     use sea_orm::{Database, DbBackend, Statement};
     use serde_json::json;
 
+    fn uses_bounded_turn_index(node: &serde_json::Value) -> bool {
+        let indexed_range = matches!(
+            node["Index Name"].as_str(),
+            Some("cp_ai_turns_machine_time" | "cp_ai_turns_time")
+        ) && node["Index Cond"].as_str().is_some_and(|condition| {
+            condition.contains("ended_at >= ") && condition.contains("ended_at < ")
+        });
+        indexed_range
+            || node["Plans"]
+                .as_array()
+                .is_some_and(|children| children.iter().any(uses_bounded_turn_index))
+    }
+
     #[tokio::test]
     #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
     async fn usage_date_query_uses_time_index_without_expanding_history() {
@@ -386,7 +399,8 @@ mod tests {
             .unwrap();
         let plan: serde_json::Value = row.try_get("", "QUERY PLAN").unwrap();
         let text = plan.to_string();
-        assert!(text.as_str().contains("cp_ai_turns_machine_time"), "{plan}");
+        // Either time index can serve the date range; the planner chooses by cost.
+        assert!(uses_bounded_turn_index(&plan[0]["Plan"]), "{plan}");
         assert!(!text.as_str().contains("Function Scan"), "{plan}");
         println!("AI usage date plan: {plan}");
         store.close().await.unwrap();
