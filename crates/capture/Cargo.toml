@@ -53,5 +53,5 @@ windows = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 deskfleet-linux-desktop.workspace = true
 deskfleet-x11.workspace = true
-deskfleet-linux-media.workspace = true
+deskfleet-gstreamer-media.workspace = true
 deskfleet-wayland.workspace = true

@@ -13,6 +13,8 @@ use libloading::Library;
 
 use crate::{Error, Result};
 
+mod loader;
+
 pub(crate) type Object = c_void;
 pub(crate) const CLOCK_TIME_NONE: u64 = u64::MAX;
 pub(crate) const STATE_NULL: c_int = 1;
@@ -86,20 +88,7 @@ macro_rules! api {
 
         impl Api {
             fn load() -> std::result::Result<Self, String> {
-                // SAFETY: These are system GStreamer 1.x / GLib libraries. Native
-                // initialization is their documented public loading contract.
-                let ($core, $app, $video, $glib) = unsafe {
-                    (
-                        Library::new("libgstreamer-1.0.so.0"),
-                        Library::new("libgstapp-1.0.so.0"),
-                        Library::new("libgstvideo-1.0.so.0"),
-                        Library::new("libglib-2.0.so.0"),
-                    )
-                };
-                let $core = $core.map_err(|e| e.to_string())?;
-                let $app = $app.map_err(|e| e.to_string())?;
-                let $video = $video.map_err(|e| e.to_string())?;
-                let $glib = $glib.map_err(|e| e.to_string())?;
+                let [$core, $app, $video, $glib] = loader::load()?;
                 let api = Self {
                     $(
                         // SAFETY: Symbol names and function signatures match the
@@ -138,6 +127,8 @@ api! {
     factory_find: unsafe extern "C" fn(*const c_char) -> *mut Object = core::"gst_element_factory_find",
     sample_get_buffer: unsafe extern "C" fn(*mut Object) -> *mut Buffer = core::"gst_sample_get_buffer",
     sample_get_caps: unsafe extern "C" fn(*mut Object) -> *mut Object = core::"gst_sample_get_caps",
+    sample_get_segment: unsafe extern "C" fn(*mut Object) -> *const Object = core::"gst_sample_get_segment",
+    segment_to_running_time: unsafe extern "C" fn(*const Object, c_int, u64) -> u64 = core::"gst_segment_to_running_time",
     caps_get_structure: unsafe extern "C" fn(*const Object, c_uint) -> *const Object = core::"gst_caps_get_structure",
     structure_get_int: unsafe extern "C" fn(*const Object, *const c_char, *mut c_int) -> c_int = core::"gst_structure_get_int",
     buffer_get_size: unsafe extern "C" fn(*mut Buffer) -> usize = core::"gst_buffer_get_size",

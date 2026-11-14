@@ -23,7 +23,7 @@ pub(super) fn displays() -> Result<Vec<Display>, CaptureError> {
 }
 
 pub(crate) struct WaylandStream {
-    capture: deskfleet_linux_media::Capture,
+    capture: deskfleet_gstreamer_media::Capture,
     source_id: u32,
     frame_period: Duration,
 }
@@ -43,7 +43,7 @@ impl WaylandStream {
         }
         let (remote, source) = deskfleet_wayland::open_pipewire(display.id)
             .map_err(|error| CaptureError::Platform(error.to_string()))?;
-        let capture = deskfleet_linux_media::Capture::new(
+        let capture = deskfleet_gstreamer_media::Capture::new(
             remote,
             source.node_id,
             source.pipewire_serial,
@@ -131,9 +131,9 @@ impl WaylandStream {
     }
 }
 
-fn map_error(error: deskfleet_linux_media::Error) -> CaptureError {
+fn map_error(error: deskfleet_gstreamer_media::Error) -> CaptureError {
     match error {
-        deskfleet_linux_media::Error::Ended => CaptureError::StreamEnded,
+        deskfleet_gstreamer_media::Error::Ended => CaptureError::StreamEnded,
         error => CaptureError::Platform(error.to_string()),
     }
 }

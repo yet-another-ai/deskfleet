@@ -24,6 +24,7 @@ use objc2_video_toolbox::{
     kVTProfileLevel_H264_Main_AutoLevel, kVTProfileLevel_HEVC_Main_AutoLevel,
     kVTProfileLevel_HEVC_Main10_AutoLevel,
     kVTVideoEncoderSpecification_EnableLowLatencyRateControl,
+    kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder,
 };
 
 #[path = "macos/output.rs"]
@@ -84,12 +85,7 @@ impl MacOSEncoder {
 
         let mut session: *mut VTCompressionSession = ptr::null_mut();
 
-        let encoder_specification = CFDictionary::<CFString, CFBoolean>::from_slices(
-            // SAFETY: the framework exports immutable constants with process lifetime.
-            &[unsafe { kVTVideoEncoderSpecification_EnableLowLatencyRateControl }],
-            // SAFETY: the framework exports immutable constants with process lifetime.
-            &[unsafe { objc2_core_foundation::kCFBooleanTrue }.expect("kCFBooleanTrue is null")],
-        );
+        let encoder_specification = hardware_encoder_specification();
 
         // SAFETY: the dictionary has the expected CF types, output storage is valid, and callback state outlives the session.
         let status = unsafe {
@@ -481,6 +477,7 @@ fn probe_single_codec(codec: Codec) -> bool {
     };
 
     let mut session: *mut VTCompressionSession = ptr::null_mut();
+    let encoder_specification = hardware_encoder_specification();
 
     // SAFETY: the dictionary has the expected CF types, output storage is valid, and callback state outlives the session.
     let status = unsafe {
@@ -489,7 +486,7 @@ fn probe_single_codec(codec: Codec) -> bool {
             320,
             240,
             codec_type,
-            None,
+            Some(encoder_specification.as_ref()),
             None,
             None,
             Some(probe_output_callback),
@@ -510,6 +507,21 @@ fn probe_single_codec(codec: Codec) -> bool {
     } else {
         false
     }
+}
+
+fn hardware_encoder_specification() -> CFRetained<CFDictionary<CFString, CFBoolean>> {
+    // SAFETY: the framework exports immutable constants with process lifetime.
+    let keys = unsafe {
+        [
+            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder,
+            kVTVideoEncoderSpecification_EnableLowLatencyRateControl,
+        ]
+    };
+    // SAFETY: the framework exports immutable constants with process lifetime.
+    let enabled = unsafe { objc2_core_foundation::kCFBooleanTrue }.expect("kCFBooleanTrue is null");
+    // Software H.264 fallback belongs to x264, so VideoToolbox must report when
+    // hardware cannot satisfy this configuration rather than choosing software.
+    CFDictionary::from_slices(&keys, &[enabled, enabled])
 }
 
 /// No-op callback used only for codec capability probing.

@@ -1,12 +1,12 @@
 use deskfleet_capture::Frame;
-use deskfleet_linux_media::{Codec as MediaCodec, EncodedFrame, EncoderSettings};
+use deskfleet_gstreamer_media::{Codec as MediaCodec, EncodedFrame, EncoderSettings};
 
 use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, H264Profile, H265Profile};
 
 pub(crate) fn supported_codecs() -> Vec<Codec> {
     Codec::ALL
         .into_iter()
-        .filter(|codec| deskfleet_linux_media::has_encoder(media_codec(*codec)))
+        .filter(|codec| deskfleet_gstreamer_media::has_encoder(media_codec(*codec)))
         .collect()
 }
 
@@ -20,7 +20,7 @@ fn media_codec(codec: Codec) -> MediaCodec {
 
 pub(crate) struct PlatformEncoder {
     settings: EncoderSettings,
-    active: Option<deskfleet_linux_media::Encoder>,
+    active: Option<deskfleet_gstreamer_media::Encoder>,
     keyframe: bool,
 }
 
@@ -63,9 +63,12 @@ impl PlatformEncoder {
                 .encode(pixels, frame.timestamp_ns)
                 .map_err(map_error)?
         } else {
-            let (active, packets) =
-                deskfleet_linux_media::Encoder::start(&self.settings, pixels, frame.timestamp_ns)
-                    .map_err(map_error)?;
+            let (active, packets) = deskfleet_gstreamer_media::Encoder::start(
+                &self.settings,
+                pixels,
+                frame.timestamp_ns,
+            )
+            .map_err(map_error)?;
             self.active = Some(active);
             self.keyframe = false; // The initial output is already a keyframe.
             packets
@@ -124,6 +127,6 @@ fn convert(packets: Vec<EncodedFrame>) -> Vec<EncodedPacket> {
         .collect()
 }
 
-fn map_error(error: deskfleet_linux_media::Error) -> EncoderError {
+fn map_error(error: deskfleet_gstreamer_media::Error) -> EncoderError {
     EncoderError::Platform(error.to_string())
 }

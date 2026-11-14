@@ -263,7 +263,7 @@ async fn receive(
             return Ok(());
         };
         #[cfg(target_os = "linux")]
-        let decoder = deskfleet_linux_media::RtpVideoDecoder::with_codec(
+        let decoder = deskfleet_gstreamer_media::RtpVideoDecoder::with_codec(
             first.payload_type,
             linux_codec(codec),
         )?;
@@ -404,12 +404,12 @@ pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
     }
     #[cfg(target_os = "linux")]
     {
-        Ok(deskfleet_linux_media::supported_decoder_codecs()?
+        Ok(deskfleet_gstreamer_media::supported_decoder_codecs()?
             .into_iter()
             .map(|codec| match codec {
-                deskfleet_linux_media::Codec::H264 => VideoCodec::H264,
-                deskfleet_linux_media::Codec::H265 => VideoCodec::H265,
-                deskfleet_linux_media::Codec::Av1 => VideoCodec::Av1,
+                deskfleet_gstreamer_media::Codec::H264 => VideoCodec::H264,
+                deskfleet_gstreamer_media::Codec::H265 => VideoCodec::H265,
+                deskfleet_gstreamer_media::Codec::Av1 => VideoCodec::Av1,
             })
             .collect())
     }
@@ -426,10 +426,10 @@ pub(crate) fn supported_codecs() -> Result<Vec<VideoCodec>, Error> {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_codec(codec: VideoCodec) -> deskfleet_linux_media::Codec {
+fn linux_codec(codec: VideoCodec) -> deskfleet_gstreamer_media::Codec {
     match codec {
-        VideoCodec::H264 => deskfleet_linux_media::Codec::H264,
-        VideoCodec::H265 => deskfleet_linux_media::Codec::H265,
-        VideoCodec::Av1 => deskfleet_linux_media::Codec::Av1,
+        VideoCodec::H264 => deskfleet_gstreamer_media::Codec::H264,
+        VideoCodec::H265 => deskfleet_gstreamer_media::Codec::H265,
+        VideoCodec::Av1 => deskfleet_gstreamer_media::Codec::Av1,
     }
 }

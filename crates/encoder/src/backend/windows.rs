@@ -1,12 +1,15 @@
 use deskfleet_capture::Frame;
+use std::time::Duration;
 
-use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, windows, windows_mf};
+use super::fallback::{first_packets, require_h264, with_software_fallback};
+use crate::{Codec, EncodedPacket, EncoderConfig, EncoderError, software, windows, windows_mf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Preference {
     Auto,
     Nvenc,
     MediaFoundation,
+    X264,
 }
 
 impl Preference {
@@ -15,8 +18,9 @@ impl Preference {
             None | Some("auto") => Ok(Self::Auto),
             Some("nvenc") => Ok(Self::Nvenc),
             Some("media-foundation") => Ok(Self::MediaFoundation),
+            Some("x264") => Ok(Self::X264),
             Some(_) => Err(EncoderError::InvalidConfig(
-                "DESKFLEET_WINDOWS_ENCODER must be auto, nvenc, or media-foundation".into(),
+                "DESKFLEET_WINDOWS_ENCODER must be auto, nvenc, media-foundation, or x264".into(),
             )),
         }
     }
@@ -33,6 +37,7 @@ impl Preference {
 enum ActiveEncoder {
     Nvenc(Box<windows::WindowsEncoder>),
     MediaFoundation(Box<windows_mf::MfEncoder>),
+    X264(Box<software::SoftwareEncoder>),
 }
 
 pub struct PlatformEncoder {
@@ -42,32 +47,41 @@ pub struct PlatformEncoder {
     pending_keyframe: bool,
 }
 
-/// Try the next hardware backend only during startup, preserving the negotiated codec.
+/// Try backends only during startup, preserving the negotiated codec.
 fn select<T>(
     preference: Preference,
     codec: Codec,
     nvenc: impl FnOnce() -> Result<T, EncoderError>,
     mf: impl FnOnce() -> Result<T, EncoderError>,
+    x264: impl FnOnce() -> Result<T, EncoderError>,
 ) -> Result<T, EncoderError> {
-    if preference == Preference::MediaFoundation {
-        return mf();
-    }
-    match nvenc() {
-        Ok(value) => Ok(value),
-        Err(error) if preference == Preference::Auto => {
-            tracing::info!(
-                %error,
-                %codec,
-                "NVENC startup failed; trying Media Foundation hardware encoder"
-            );
-            mf().map_err(|mf_error| {
-                EncoderError::Platform(format!(
-                    "no {codec} hardware encoder could start (NVENC: {error}; Media Foundation: {mf_error})"
-                ))
-            })
+    match preference {
+        Preference::Nvenc => return nvenc(),
+        Preference::MediaFoundation => return mf(),
+        Preference::X264 => {
+            require_h264(codec)?;
+            return x264();
         }
-        Err(error) => Err(error),
+        Preference::Auto => {}
     }
+    with_software_fallback(
+        codec,
+        || {
+            nvenc().or_else(|error| {
+                tracing::info!(
+                    %error,
+                    %codec,
+                    "NVENC startup failed; trying Media Foundation hardware encoder"
+                );
+                mf().map_err(|mf_error| {
+                    EncoderError::Platform(format!(
+                        "no {codec} hardware encoder could start (NVENC: {error}; Media Foundation: {mf_error})"
+                    ))
+                })
+            })
+        },
+        x264,
+    )
 }
 
 pub(crate) fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderError> {
@@ -79,6 +93,7 @@ pub(crate) fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderErr
         &device,
         windows::WindowsEncoder::probe_supported_codecs,
         windows_mf::supported_codecs,
+        software::available,
     ))
 }
 
@@ -88,18 +103,25 @@ fn probe_device_codecs<D>(
     device: &D,
     nvenc: impl FnOnce(&D) -> Vec<Codec>,
     mf: impl FnOnce(&D) -> Vec<Codec>,
+    software_available: impl FnOnce() -> bool,
 ) -> Vec<Codec> {
-    let mut codecs = if preference == Preference::MediaFoundation {
-        Vec::new()
-    } else {
+    let mut codecs = if matches!(preference, Preference::Auto | Preference::Nvenc) {
         nvenc(device)
+    } else {
+        Vec::new()
     };
-    if preference != Preference::Nvenc {
+    if matches!(preference, Preference::Auto | Preference::MediaFoundation) {
         for codec in mf(device) {
             if !codecs.contains(&codec) {
                 codecs.push(codec);
             }
         }
+    }
+    if matches!(preference, Preference::Auto | Preference::X264)
+        && !codecs.contains(&Codec::H264)
+        && software_available()
+    {
+        codecs.push(Codec::H264);
     }
     codecs
 }
@@ -120,6 +142,7 @@ impl PlatformEncoder {
             return match active {
                 ActiveEncoder::Nvenc(encoder) => encoder.encode(frame),
                 ActiveEncoder::MediaFoundation(encoder) => encoder.encode(frame),
+                ActiveEncoder::X264(encoder) => encoder.encode(frame),
             };
         }
         // NVENC opens its session on encode(), so testing new() alone misses
@@ -141,7 +164,17 @@ impl PlatformEncoder {
                     encoder.request_keyframe();
                 }
                 let packets = encoder.encode(frame)?;
+                let packets =
+                    first_packets(packets, || encoder.poll_output(), Duration::from_secs(1))?;
                 Ok((ActiveEncoder::MediaFoundation(encoder), packets))
+            },
+            || {
+                let mut encoder = Box::new(software::SoftwareEncoder::new(&self.config)?);
+                if self.pending_keyframe {
+                    encoder.request_keyframe();
+                }
+                let packets = encoder.encode(frame)?;
+                Ok((ActiveEncoder::X264(encoder), packets))
             },
         )?;
         self.active = Some(active);
@@ -152,6 +185,7 @@ impl PlatformEncoder {
     pub(crate) fn poll_output(&mut self) -> Result<Vec<EncodedPacket>, EncoderError> {
         match &mut self.active {
             Some(ActiveEncoder::MediaFoundation(encoder)) => encoder.poll_output(),
+            Some(ActiveEncoder::X264(encoder)) => encoder.poll_output(),
             _ => Ok(Vec::new()),
         }
     }
@@ -160,6 +194,7 @@ impl PlatformEncoder {
         match &mut self.active {
             Some(ActiveEncoder::Nvenc(encoder)) => encoder.flush(),
             Some(ActiveEncoder::MediaFoundation(encoder)) => encoder.flush(),
+            Some(ActiveEncoder::X264(encoder)) => encoder.flush(),
             None => Ok(Vec::new()),
         }
     }
@@ -168,6 +203,7 @@ impl PlatformEncoder {
         match &mut self.active {
             Some(ActiveEncoder::Nvenc(encoder)) => encoder.request_keyframe(),
             Some(ActiveEncoder::MediaFoundation(encoder)) => encoder.request_keyframe(),
+            Some(ActiveEncoder::X264(encoder)) => encoder.request_keyframe(),
             None => self.pending_keyframe = true,
         }
     }
@@ -184,6 +220,9 @@ impl PlatformEncoder {
             Some(ActiveEncoder::MediaFoundation(encoder)) => {
                 encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)?;
             }
+            Some(ActiveEncoder::X264(encoder)) => {
+                encoder.set_bitrate(avg_bitrate_bps, max_bitrate_bps)?;
+            }
             None => {}
         }
         self.config.bitrate_bps = avg_bitrate_bps;
@@ -192,10 +231,14 @@ impl PlatformEncoder {
     }
 
     pub(crate) fn set_fps(&mut self, fps: f64) -> Result<(), EncoderError> {
-        if self.active.is_some() {
-            return Err(EncoderError::Unsupported(
-                "live Windows frame-rate reconfiguration",
-            ));
+        match &mut self.active {
+            Some(ActiveEncoder::X264(encoder)) => encoder.set_fps(fps)?,
+            Some(_) => {
+                return Err(EncoderError::Unsupported(
+                    "live Windows frame-rate reconfiguration",
+                ));
+            }
+            None => {}
         }
         self.config.fps = fps;
         Ok(())
@@ -233,18 +276,68 @@ mod tests {
             (Adapter::Nvidia, vec![Codec::H264, Codec::H265, Codec::AV1]),
         ] {
             assert_eq!(
-                probe_device_codecs(Preference::Auto, &adapter, nvenc, mf),
+                probe_device_codecs(Preference::Auto, &adapter, nvenc, mf, || false),
                 expected,
             );
         }
-        assert!(probe_device_codecs(Preference::Nvenc, &Adapter::Integrated, nvenc, mf).is_empty());
+        assert!(
+            probe_device_codecs(Preference::Nvenc, &Adapter::Integrated, nvenc, mf, || true)
+                .is_empty()
+        );
         assert_eq!(
-            probe_device_codecs(Preference::MediaFoundation, &Adapter::Integrated, nvenc, mf),
+            probe_device_codecs(
+                Preference::MediaFoundation,
+                &Adapter::Integrated,
+                nvenc,
+                mf,
+                || true
+            ),
             vec![Codec::H264, Codec::H265],
         );
         assert!(
-            probe_device_codecs(Preference::MediaFoundation, &Adapter::Nvidia, nvenc, mf)
-                .is_empty()
+            probe_device_codecs(
+                Preference::MediaFoundation,
+                &Adapter::Nvidia,
+                nvenc,
+                mf,
+                || true
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            probe_device_codecs(
+                Preference::Auto,
+                &Adapter::WithoutHardwareEncoder,
+                nvenc,
+                mf,
+                || true
+            ),
+            vec![Codec::H264],
+        );
+        assert_eq!(
+            probe_device_codecs(Preference::Auto, &Adapter::Nvidia, nvenc, mf, || true),
+            vec![Codec::H264, Codec::H265, Codec::AV1],
+        );
+        let unexpected = |_: &Adapter| -> Vec<Codec> { panic!("unexpected hardware probe") };
+        assert_eq!(
+            probe_device_codecs(
+                Preference::X264,
+                &Adapter::Nvidia,
+                unexpected,
+                unexpected,
+                || true
+            ),
+            vec![Codec::H264],
+        );
+        assert!(
+            probe_device_codecs(
+                Preference::X264,
+                &Adapter::Nvidia,
+                unexpected,
+                unexpected,
+                || false
+            )
+            .is_empty()
         );
     }
 
@@ -255,16 +348,34 @@ mod tests {
             mf_called.set(true);
             Ok("mf")
         };
+        let unexpected = || -> Result<&str, EncoderError> { panic!("unexpected software encoder") };
         assert_eq!(
-            select(Preference::Auto, Codec::H264, || Ok("nvenc"), mf).unwrap(),
+            select(
+                Preference::Auto,
+                Codec::H264,
+                || Ok("nvenc"),
+                mf,
+                unexpected
+            )
+            .unwrap(),
             "nvenc"
         );
         assert!(!mf_called.get());
         let failed = || Err(EncoderError::Unsupported("NVENC device"));
         for codec in Codec::ALL {
             mf_called.set(false);
-            assert_eq!(select(Preference::Auto, codec, failed, mf).unwrap(), "mf");
+            assert_eq!(
+                select(Preference::Auto, codec, failed, mf, unexpected).unwrap(),
+                "mf"
+            );
             assert!(mf_called.get());
+        }
+        assert_eq!(
+            select(Preference::Auto, Codec::H264, failed, failed, || Ok("x264")).unwrap(),
+            "x264"
+        );
+        for codec in [Codec::H265, Codec::AV1] {
+            assert!(select(Preference::Auto, codec, failed, failed, unexpected).is_err());
         }
     }
 
@@ -273,23 +384,48 @@ mod tests {
         let failed = || Err(EncoderError::Unsupported("unavailable"));
         let unexpected = || -> Result<(), EncoderError> { panic!("unexpected backend") };
         for codec in Codec::ALL {
-            assert!(select(Preference::Nvenc, codec, failed, unexpected).is_err());
-            assert!(select(Preference::MediaFoundation, codec, unexpected, failed).is_err());
+            assert!(select(Preference::Nvenc, codec, failed, unexpected, unexpected).is_err());
+            assert!(
+                select(
+                    Preference::MediaFoundation,
+                    codec,
+                    unexpected,
+                    failed,
+                    unexpected
+                )
+                .is_err()
+            );
         }
+        assert!(
+            select(
+                Preference::X264,
+                Codec::H264,
+                unexpected,
+                unexpected,
+                failed
+            )
+            .is_err()
+        );
+        for codec in [Codec::H265, Codec::AV1] {
+            assert!(select(Preference::X264, codec, unexpected, unexpected, unexpected).is_err());
+        }
+        assert_eq!(Preference::parse(Some("x264")).unwrap(), Preference::X264);
         assert!(Preference::parse(Some("software")).is_err());
     }
 
     #[test]
-    fn preserves_both_hardware_failures() {
+    fn preserves_hardware_and_software_failures() {
         let error = select::<()>(
             Preference::Auto,
             Codec::H264,
             || Err(EncoderError::Platform("NVENC failed".into())),
             || Err(EncoderError::Platform("MF failed".into())),
+            || Err(EncoderError::Platform("x264 failed".into())),
         )
         .unwrap_err()
         .to_string();
         assert!(error.contains("NVENC failed"));
         assert!(error.contains("MF failed"));
+        assert!(error.contains("x264 failed"));
     }
 }

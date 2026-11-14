@@ -189,7 +189,7 @@ flowchart LR
 | `deskfleet-node` | [`crates/node`](crates/node) | Thin `napi-rs` bindings exposing `deskfleet-native` and local catalog persistence as `@deskfleet/native` |
 | `deskfleet-desktop-viewer` | [`crates/desktop-viewer`](crates/desktop-viewer) | Independent native remote desktop viewer window (`winit` / `wgpu`) |
 | `deskfleet-capture` / `encoder` / `input` | [`crates/capture`](crates/capture), [`crates/encoder`](crates/encoder), [`crates/input`](crates/input) | Cross-platform screen capture, video encoding (`nvenc`, platform codecs), and input injection |
-| `deskfleet-linux-desktop` / `linux-media` / `wayland` / `x11` | [`crates/linux-desktop`](crates/linux-desktop) | Linux Wayland Portal/PipeWire and X11 desktop capture, media, and input backends |
+| `deskfleet-linux-desktop` / `gstreamer-media` / `wayland` / `x11` | [`crates/linux-desktop`](crates/linux-desktop) | Linux Wayland Portal/PipeWire and X11 desktop capture, media, and input backends |
 | `deskfleet-windows-desktop` | [`crates/windows-desktop`](crates/windows-desktop) | Windows desktop capture and input backend |
 | `deskfleet-server` | [`apps/server`](apps/server) | Actix Web control-plane server binary |
 

@@ -157,7 +157,7 @@ impl Pipeline {
 impl Drop for Pipeline {
     fn drop(&mut self) {
         if let Err(error) = self.stop() {
-            tracing::warn!(%error, "Linux media pipeline cleanup failed");
+            tracing::warn!(%error, "GStreamer media pipeline cleanup failed");
         }
     }
 }
@@ -199,6 +199,27 @@ impl Sample {
             buffer.duration,
             buffer.mini_object.flags & ffi::BUFFER_DELTA_UNIT == 0,
         ))
+    }
+
+    /// Undo encoder segment offsets, including x264's large DTS safety offset.
+    pub fn running_time(&self, timestamp_ns: u64) -> Result<u64> {
+        // GstVideoEncoder shifts both PTS and segment.start when applying min_pts:
+        // https://gstreamer.freedesktop.org/documentation/gstreamer/gstsegment.html#gst_segment_to_running_time
+        // SAFETY: The segment is borrowed from this retained sample and stays
+        // valid through conversion. GST_FORMAT_TIME is 3 in the stable 1.x ABI.
+        let timestamp = unsafe {
+            let segment = (self.api.sample_get_segment)(self.ptr.as_ptr());
+            if segment.is_null() {
+                return Err(Error::Pipeline("encoded sample has no time segment".into()));
+            }
+            (self.api.segment_to_running_time)(segment, 3, timestamp_ns)
+        };
+        if timestamp == ffi::CLOCK_TIME_NONE {
+            return Err(Error::Pipeline(
+                "encoded timestamp is outside its time segment".into(),
+            ));
+        }
+        Ok(timestamp)
     }
 
     pub fn dimensions(&self) -> Result<(u32, u32)> {
