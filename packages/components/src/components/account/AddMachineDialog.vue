@@ -13,6 +13,7 @@ import UiDialog from "../common/UiDialog.vue"
 import { parseDaemonStatus } from "./daemon-status.ts"
 
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t, locale } = useI18n()
 const guideUrl = computed(() => androidDaemonGuideUrl(locale.value))
 const id = useId()
@@ -50,7 +51,7 @@ const localTeam = computed(() => {
 
 whenever(identity, value => { if (!nameEdited.value) name.value = value.name })
 
-function close(): void { if (!pending.value) emit("close") }
+function close(): void { if (!pending.value) dialog.value?.close() }
 async function run(work: () => Promise<void>): Promise<void> {
   if (pending.value) return
   pending.value = true
@@ -69,7 +70,7 @@ async function chooseLocal(): Promise<void> {
 }
 const connectThisComputer = () => run(async () => {
   await session.enrollLocal(name.value.trim())
-  emit("close")
+  dialog.value?.close()
 })
 async function chooseHeadless(): Promise<void> {
   step.value = "headless"
@@ -94,7 +95,7 @@ function focusInitial(event: Event): void {
 </script>
 
 <template>
-  <UiDialog class="w-[34rem]" described :prevent-close="pending" @close="close" @open-auto-focus="focusInitial">
+  <UiDialog ref="dialog" class="w-[34rem]" described :prevent-close="pending" @close="emit('close')" @open-auto-focus="focusInitial">
     <DialogTitle class="ui-dialog-title">{{ t(step === "credentials" ? "addMachine.finishTitle" : "addMachine.title", { team: team?.name ?? "" }) }}</DialogTitle>
     <DialogDescription class="ui-dialog-description mb-5">{{ t(step === "credentials" ? "addMachine.finishDescription" : "addMachine.description") }}</DialogDescription>
 

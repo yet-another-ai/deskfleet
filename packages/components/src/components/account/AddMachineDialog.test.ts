@@ -1,5 +1,5 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import type { LocalEnrollment } from "@deskfleet/client/central"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
@@ -74,7 +74,7 @@ test.each([false, true])("the desktop connects this computer under its hostname 
   await view!.get("form").trigger("submit")
   await flushPromises()
   expect(fake.central.enrollLocal).toHaveBeenCalledExactlyOnceWith("team-1", "This Mac")
-  expect(view!.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(view!.emitted("close")).toEqual([[]]))
   expect(session!.machine.value?.name).toBe("This Mac")
 })
 

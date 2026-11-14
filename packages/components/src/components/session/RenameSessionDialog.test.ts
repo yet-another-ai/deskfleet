@@ -34,7 +34,7 @@ test("rename selects the current title, rejects blank names, and submits a trimm
   await input.setValue("  Investigate payment errors  ")
   await dialog.get("form").trigger("submit"); await flushPromises()
   expect(confirm).toHaveBeenCalledExactlyOnceWith("Investigate payment errors")
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })
 
 test("rename retains the edited title after a failure and allows correcting and retrying it", async () => {
@@ -55,7 +55,7 @@ test("rename retains the edited title after a failure and allows correcting and 
   await dialog.get("input").setValue("Corrected title")
   await dialog.get("form").trigger("submit"); await flushPromises()
   expect(confirm.mock.calls).toEqual([["First edit"], ["Corrected title"]])
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })
 
 test("offline and pending rename cannot submit twice or dismiss an in-flight operation", async () => {
@@ -79,7 +79,7 @@ test("offline and pending rename cannot submit twice or dismiss an in-flight ope
   expect(dialog.get('[type="submit"]').text()).toBe("Saving…")
   expect(wrapper.emitted("close")).toBeUndefined()
   result.resolve(); await flushPromises()
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })
 
 test("Escape cancels renaming without changing the session", async () => {
@@ -94,5 +94,5 @@ test("Escape cancels renaming without changing the session", async () => {
   await dialog.get("input").setValue("Discarded title")
   await dialog.trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(confirm).not.toHaveBeenCalled()
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })

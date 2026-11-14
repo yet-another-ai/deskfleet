@@ -54,7 +54,7 @@ test("offers unselected directories, marks existing workspace directories, and a
   expect(row(view, "/code/first").get('[role="checkbox"]').attributes("disabled")).toBeUndefined()
   expect(view.get("[data-import-selected]").attributes("disabled")).toBeDefined()
   await button(view, "Skip for now").trigger("click")
-  expect(view.emitted("close")).toHaveLength(1)
+  await vi.waitFor(() => expect(view.emitted("close")).toHaveLength(1))
   expect(client.catalog.createWorkspace).not.toHaveBeenCalled()
 })
 
@@ -78,7 +78,7 @@ test("imports only selected directories and retains successes when a later impor
   expect(view.find('[role="alert"]').exists()).toBe(false)
   expect(view.text()).toContain("2 Workspaces imported")
   await button(view, "Done").trigger("click")
-  expect(view.emitted("close")).toHaveLength(1)
+  await vi.waitFor(() => expect(view.emitted("close")).toHaveLength(1))
 })
 
 test("rechecks the catalog before importing and skips a directory added while reviewing", async () => {

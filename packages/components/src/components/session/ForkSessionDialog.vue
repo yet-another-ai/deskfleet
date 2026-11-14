@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { FolderOpen, GitBranch, LoaderCircle } from "@lucide/vue"
 import { DialogDescription, DialogTitle, RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from "reka-ui"
-import { computed, ref, useId } from "vue"
+import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import UiButton from "../common/UiButton.vue"
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   confirm(context: AgentSessionContext): Promise<void>
 }>(), { allowWorktree: true })
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const id = useId()
 const context = ref(props.allowWorktree ? props.context : "directory" as const)
@@ -26,21 +27,21 @@ const contexts = computed(() => {
   return props.allowWorktree ? options : options.filter(option => option.id === "directory")
 })
 
-function cancel(): void { if (!pending.value) emit("close") }
+function cancel(): void { if (!pending.value) dialog.value?.close() }
 async function submit(): Promise<void> {
   if (pending.value || props.disabled) return
   pending.value = true
   error.value = undefined
   try {
     await props.confirm(context.value)
-    emit("close")
+    dialog.value?.close()
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[28rem]" described :prevent-close="pending" @close="cancel">
+  <UiDialog ref="dialog" class="w-[28rem]" described :prevent-close="pending" @close="emit('close')">
     <DialogTitle class="ui-dialog-title">{{ t('agent.fork') }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t('agent.forkDescription') }}</DialogDescription>
     <fieldset class="m-0 mt-5 border-0 p-0">

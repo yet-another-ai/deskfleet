@@ -18,6 +18,7 @@ const props = defineProps<{
   machineName: string
 }>()
 const emit = defineEmits<{ select: [entries: FileEntry[]]; cancel: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const pathInputRef = useTemplateRef<HTMLInputElement>("pathInputRef")
 const listing = ref<FileListing | null>(null)
@@ -36,6 +37,7 @@ const selectedEntries = computed(() => visibleEntries.value.filter(entry => entr
 let requestedPath = props.initialPath
 let requestId = 0
 let finished = false
+let selection: FileEntry[] | undefined
 
 function toggleFile(entry: FileEntry): void {
   if (entry.kind !== "file") return
@@ -98,13 +100,19 @@ function submitPathInput(): void {
 function cancel(): void {
   if (finished) return
   finished = true
-  emit("cancel")
+  dialog.value?.close()
+}
+function closed(): void {
+  finished = true
+  if (selection) emit("select", selection)
+  else emit("cancel")
 }
 
 function select(): void {
   if (loading.value || finished || !selectedEntries.value.length) return
   finished = true
-  emit("select", selectedEntries.value)
+  selection = selectedEntries.value
+  dialog.value?.close()
 }
 
 onMounted(() => { void navigate(props.initialPath) })
@@ -112,7 +120,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
 </script>
 
 <template>
-  <UiDialog class="w-[36rem]" @close="cancel">
+  <UiDialog ref="dialog" class="w-[36rem]" @close="closed">
     <div class="mb-4 flex items-baseline justify-between gap-3">
       <DialogTitle class="ui-dialog-title">{{ t("filePicker.title") }}</DialogTitle>
       <span class="min-w-0 truncate text-sm text-ui-text-muted" :title="machineName">{{ machineName }}</span>

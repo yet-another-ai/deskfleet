@@ -43,7 +43,7 @@ test("chooses a template, leaves the binary default implicit, and preserves envi
   await view.get("form").trigger("submit")
   await flushPromises()
   expect(save).toHaveBeenCalledExactlyOnceWith({ template: "acp", name: "My agent", binaryPath: undefined, icon: "deepseek", inheritShellEnvironment: true, env: { API_TOKEN: "  value=one  " } })
-  expect(view.emitted("saved")).toEqual([[]])
+  await vi.waitFor(() => expect(view.emitted("saved")).toEqual([[]]))
   expect(view.emitted("cancel")).toBeUndefined()
 })
 
@@ -280,7 +280,7 @@ test("prevents duplicate saves and dismissal while saving, and retains an unsucc
   expect((view.get('[name="provider-name"]').element as HTMLInputElement).value).toBe("Work")
   await view.get("form").trigger("submit")
   await flushPromises()
-  expect(view.emitted("saved")).toEqual([[]])
+  await vi.waitFor(() => expect(view.emitted("saved")).toEqual([[]]))
 })
 
 test("localizes the form and cancels without changing settings", async () => {
@@ -290,7 +290,7 @@ test("localizes the form and cancels without changing settings", async () => {
   await pick(view, "codex")
   expect(view.text()).toContain("环境变量")
   await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
-  expect(view.emitted("cancel")).toEqual([[]])
+  await vi.waitFor(() => expect(view.emitted("cancel")).toEqual([[]]))
   expect(save).not.toHaveBeenCalled()
 })
 

@@ -455,7 +455,7 @@ test("email confirmation retries desktop approval in place and keeps failures op
   await dialog().get('input[autocomplete="one-time-code"]').setValue("123456")
   await dialog().get("form").trigger("submit"); await flushPromises()
   expect(request).toHaveBeenCalledWith("POST", "/api/auth/reauthenticate/email/verify", { challengeId: "email-challenge", code: "123456" })
-  expect(approvals).toBe(2)
+  await vi.waitFor(() => expect(approvals).toBe(2))
   expect(dialog().exists()).toBe(false)
   expect(assign).toHaveBeenCalledExactlyOnceWith("http://127.0.0.1:19091/callback#loginCode=approved")
 })

@@ -57,13 +57,13 @@ async function submit(): Promise<void> {
       </SettingsRow>
     </div>
   </section>
-  <UiDialog v-if="editing" class="w-[26rem]" described :prevent-close="pending" @close="editing = undefined">
+  <UiDialog v-if="editing" v-slot="{ close }" class="w-[26rem]" described :prevent-close="pending" @close="editing = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(editing === "email" ? "auth.changeEmailTitle" : "auth.changePasswordTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">
       {{ emailSentTo ? t("auth.changeEmailSent", { email: emailSentTo }) : t(editing === "email" ? "auth.changeEmailDescription" : "auth.changePasswordDescription") }}
     </DialogDescription>
     <div v-if="emailSentTo" class="ui-dialog-actions">
-      <UiButton variant="primary" @click="editing = undefined">{{ t("account.done") }}</UiButton>
+      <UiButton variant="primary" @click="close">{{ t("account.done") }}</UiButton>
     </div>
     <form v-else class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
       <label v-if="editing === 'email'" class="flex flex-col gap-1.5 text-sm">
@@ -73,7 +73,7 @@ async function submit(): Promise<void> {
       <UiField v-else v-model="password" :label="t('auth.newPassword')" type="password" name="password" autocomplete="new-password" required minlength="15" maxlength="128" :disabled="pending" autofocus :hint="t('auth.passwordHint')" />
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="ui-dialog-actions mt-2">
-        <UiButton :disabled="pending" @click="editing = undefined">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
         <UiButton type="submit" variant="primary" :loading="pending">{{ t(editing === "email" ? "auth.sendVerification" : "auth.changePassword") }}</UiButton>
       </div>
     </form>

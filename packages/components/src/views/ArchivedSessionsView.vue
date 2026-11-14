@@ -116,12 +116,12 @@ async function confirmAction(): Promise<void> {
       </ul>
     </div>
   </UiScrollArea>
-  <UiDialog v-if="confirming" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
+  <UiDialog v-if="confirming" v-slot="{ close }" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(confirmingAction === 'delete' ? 'agent.delete' : 'agent.restore') }}</DialogTitle>
     <p class="m-0 text-sm leading-relaxed">{{ t(confirmingAction === 'delete' ? (confirming.session.context === 'directory' ? 'agent.deleteDirectoryQuestion' : 'agent.deleteQuestion') : (confirming.session.context === 'worktree' ? 'agent.restoreWorktreeQuestion' : 'agent.restoreQuestion')) }}</p>
     <ErrorNotice v-if="restoreError" :error="restoreError" class="mt-3" />
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="busy" @click="confirmingId = undefined">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton type="button" :disabled="busy" @click="close">{{ t('catalog.cancel') }}</UiButton>
       <HoldButton v-if="confirmingAction === 'delete'" variant="danger" :text="t('agent.delete')" :hold-label="t('agent.holdToConfirm')" :disabled="busy || !confirming.online" data-confirm-delete @confirm="confirmAction" />
       <UiButton v-else variant="primary" type="button" :disabled="busy || !confirming.online" data-confirm-restore @click="confirmAction">{{ t('agent.restore') }}</UiButton>
     </div>

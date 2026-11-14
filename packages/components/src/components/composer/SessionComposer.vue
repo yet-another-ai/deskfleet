@@ -767,4 +767,8 @@ onBeforeUnmount(() => {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-creation-beam, .composer-send:enabled { animation: none; }
+}
 </style>

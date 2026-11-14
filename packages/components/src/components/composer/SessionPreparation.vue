@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Check, LoaderCircle, WandSparkles } from "@lucide/vue"
 import { useConfirmDialog } from "@vueuse/core"
-import { computed, onScopeDispose, ref, watch } from "vue"
+import { computed, onScopeDispose, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentSessionContext } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { GitPreparationSnapshot } from "../../../../../apps/daemon/src/git-protocol.ts"
@@ -22,6 +22,10 @@ const result = ref<GitPreparationSnapshot>()
 const error = ref<string>()
 const dialog = useConfirmDialog()
 const { isRevealed, confirm, cancel } = dialog
+const confirmationPanel = useTemplateRef<InstanceType<typeof UiDialog>>("confirmationPanel")
+let accepted = false
+function accept(): void { accepted = true; confirmationPanel.value?.close() }
+function closed(): void { if (accepted) void confirm(); else void cancel() }
 const changedRepositories = computed(() => result.value?.repositories.filter(repository => repository.changes.length) ?? [])
 const ready = computed(() => result.value?.status === "ready")
 const label = computed(() => t(busy.value ? "composer.prepare.loading" : ready.value ? "composer.prepare.ready" : "composer.prepare.action"))
@@ -61,6 +65,7 @@ async function prepare(): Promise<void> {
     if (token !== generation) return
     while (snapshot.status === "confirmation_required") {
       result.value = snapshot
+      accepted = false
       const decision = await dialog.reveal()
       if (decision.isCanceled || token !== generation) return
       snapshot = await agents.prepareGit(workspaceId, context, snapshot.confirmationToken)
@@ -86,12 +91,12 @@ async function prepare(): Promise<void> {
     <WandSparkles v-else :size="15" :stroke-width="1.75" aria-hidden="true" />
     <span class="hidden sm:inline">{{ label }}</span>
   </button>
-  <UiDialog v-if="error" :title="t('composer.prepare.failed')" class="w-[min(30rem,calc(100vw-2rem))] p-5" @close="error = undefined">
+  <UiDialog v-if="error" v-slot="{ close }" :title="t('composer.prepare.failed')" class="w-[min(30rem,calc(100vw-2rem))] p-5" @close="error = undefined">
     <h2 class="m-0 text-base font-semibold">{{ t('composer.prepare.failed') }}</h2>
     <p role="alert" class="my-4 whitespace-pre-wrap break-words text-sm text-ui-danger">{{ error }}</p>
-    <div class="flex justify-end"><UiButton @click="error = undefined">{{ t('files.close') }}</UiButton></div>
+    <div class="flex justify-end"><UiButton @click="close">{{ t('files.close') }}</UiButton></div>
   </UiDialog>
-  <UiDialog v-if="isRevealed" :title="t('composer.prepare.confirmTitle')" class="w-[min(34rem,calc(100vw-2rem))] p-5" @close="cancel()">
+  <UiDialog v-if="isRevealed" ref="confirmationPanel" v-slot="{ close }" :title="t('composer.prepare.confirmTitle')" class="w-[min(34rem,calc(100vw-2rem))] p-5" @close="closed">
     <h2 class="m-0 text-base font-semibold">{{ t('composer.prepare.confirmTitle') }}</h2>
     <p class="mb-3 text-sm text-ui-text-muted">{{ t('composer.prepare.confirmDescription') }}</p>
     <UiScrollArea fade-size="sm" class="max-h-64 rounded-lg border border-ui-border bg-ui-canvas" content-class="space-y-3 p-3">
@@ -104,8 +109,8 @@ async function prepare(): Promise<void> {
     </UiScrollArea>
     <p class="my-3 text-xs text-ui-text-muted">{{ t('composer.prepare.sharedDirectory') }}</p>
     <div class="flex justify-end gap-2">
-      <UiButton data-prepare-cancel @click="cancel()">{{ t('catalog.cancel') }}</UiButton>
-      <UiButton variant="danger" data-prepare-confirm @click="confirm()">{{ t('composer.prepare.discard') }}</UiButton>
+      <UiButton data-prepare-cancel @click="close">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton variant="danger" data-prepare-confirm @click="accept">{{ t('composer.prepare.discard') }}</UiButton>
     </div>
   </UiDialog>
 </template>

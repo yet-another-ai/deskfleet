@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DialogTitle } from "reka-ui"
-import { computed, ref } from "vue"
+import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CatalogDirectory } from "../../../../client/src/catalog.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
@@ -11,6 +11,7 @@ import WorkspaceForm from "./WorkspaceForm.vue"
 
 const props = defineProps<{ workspaceId: string; machineId: string; name: string; directories: CatalogDirectory[]; disabled?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const fleet = useFleetStore()
 const platformClient = usePlatformClient()
@@ -24,17 +25,17 @@ async function save(name: string, directories: CatalogDirectory[]): Promise<void
   saving.value = true
   try {
     await fleet.updateWorkspace(props.workspaceId, name, directories)
-    emit("close")
+    dialog.value?.close()
   } finally { saving.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[28rem]" :prevent-close="saving" @close="emit('close')">
+  <UiDialog ref="dialog" class="w-[28rem]" :prevent-close="saving" @close="emit('close')">
     <div class="mb-5 flex items-center justify-between gap-3">
       <DialogTitle class="ui-dialog-title">{{ t('workspace.edit') }}</DialogTitle>
       <OpenWithMenu v-if="applicationTarget" v-bind="applicationTarget" :disabled="disabled || saving || directories.length === 0" />
     </div>
-    <WorkspaceForm :initial="{ name, directories }" :submit-label="t('catalog.save')" :disabled="disabled" :browse="browse" :machine-name="machine?.name ?? ''" :save="save" @cancel="emit('close')" />
+    <WorkspaceForm :initial="{ name, directories }" :submit-label="t('catalog.save')" :disabled="disabled" :browse="browse" :machine-name="machine?.name ?? ''" :save="save" @cancel="dialog?.close()" />
   </UiDialog>
 </template>

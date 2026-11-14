@@ -261,6 +261,18 @@ loading results and same-page updates do not replay it. Mobile Session view
 movement stays with the existing swipe/overview surfaces. No route animation
 retains a departing live Session, terminal, or media view to wait for an exit.
 
+Anchored overlays spring along their resolved popper side, with no movement on
+the other axis. Centered dialogs use scale and opacity, sharing their spring
+progress with the scrim. `UiDialog.close()` (also exposed to its default slot)
+requests closure; its `close` event fires after the exit settles. Callers retain
+their dialog data until that event, including picker selections and confirmation
+results. Reopening reverses the current spring while preserving the original
+focus destination. Reka still owns modal semantics and focus restoration.
+Focus previews keep their last content descriptor through their fade-out and
+report removal after their DOM is gone, including when a route unmounts them.
+Directive-driven springs also observe reduced-motion changes during an active
+animation and settle immediately; gesture surfaces retain their existing policy.
+
 Pointer dragging directly controls position and estimates velocity in units per
 second. Releasing a snapping surface continues toward its target with that
 velocity; canvas panning and sliders instead use damping-only inertia and absorb

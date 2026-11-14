@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DialogDescription, DialogTitle } from "reka-ui"
-import { ref, useId } from "vue"
+import { ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { TeamMember } from "@deskfleet/client/central"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
@@ -10,6 +10,7 @@ import UiSelect from "../common/UiSelect.vue"
 
 const props = defineProps<{ members: TeamMember[]; transfer(userId: string): Promise<void> }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const client = usePlatformClient()
 const id = useId()
@@ -17,19 +18,19 @@ const userId = ref(props.members[0]?.userId ?? "")
 const pending = ref(false)
 const error = ref<string>()
 
-function close(): void { if (!pending.value) emit("close") }
+function close(): void { if (!pending.value) dialog.value?.close() }
 async function submit(): Promise<void> {
   if (pending.value || !userId.value) return
   pending.value = true
   error.value = undefined
-  try { await props.transfer(userId.value); emit("close") }
+  try { await props.transfer(userId.value); dialog.value?.close() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[28rem] break-words" described :prevent-close="pending" @close="close">
+  <UiDialog ref="dialog" class="w-[28rem] break-words" described :prevent-close="pending" @close="emit('close')">
     <DialogTitle class="ui-dialog-title">{{ t("team.transferOwnership") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t(client.mobile ? "team.transferOwnershipMobileDescription" : "team.transferOwnershipDescription") }}</DialogDescription>
     <form class="mt-4" @submit.prevent="submit">

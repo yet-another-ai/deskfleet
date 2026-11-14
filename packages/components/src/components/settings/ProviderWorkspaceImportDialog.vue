@@ -2,7 +2,7 @@
 import { FolderInput, LoaderCircle } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { DialogDescription, DialogTitle } from "reka-ui"
-import { computed, onBeforeUnmount, ref } from "vue"
+import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, ProviderWorkspaceDiscovery } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import type { CatalogSnapshot } from "../../../../client/src/catalog.ts"
@@ -14,6 +14,7 @@ import UiScrollArea from "../common/UiScrollArea.vue"
 
 const props = defineProps<{ provider: AgentProviderConfig; machineName: string }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const client = usePlatformClient()
 type Candidate = ProviderWorkspaceDiscovery["candidates"][number]
@@ -74,12 +75,12 @@ async function importSelected(): Promise<void> {
 }
 
 function close(): void {
-  if (!importing.value) emit("close")
+  if (!importing.value) dialog.value?.close()
 }
 </script>
 
 <template>
-  <UiDialog class="flex w-[min(38rem,calc(100vw-2rem))] flex-col" described :prevent-close="importing" data-provider-workspace-import @close="close">
+  <UiDialog ref="dialog" class="flex w-[min(38rem,calc(100vw-2rem))] flex-col" described :prevent-close="importing" data-provider-workspace-import @close="emit('close')">
     <div class="mb-5 flex items-start gap-3">
       <FolderInput :size="22" :stroke-width="1.5" class="mt-0.5 shrink-0 text-ui-text-muted" aria-hidden="true" />
       <div class="min-w-0">

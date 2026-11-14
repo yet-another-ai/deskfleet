@@ -57,8 +57,8 @@
   --ui-shadow-glow: 0 0 0 3px color-mix(in srgb, var(--ui-color-accent) 16%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--ui-color-accent) 45%, transparent);
 
   /*
-   * Motion. Entrances decelerate, exits accelerate and run shorter, and only
-   * toggles overshoot. Reduced motion collapses every duration below.
+   * CSS motion for fades, colors and decorative effects. Targeted movement
+   * uses the shared spring controller. Reduced motion collapses these durations.
    */
   --ui-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ui-ease-in: cubic-bezier(0.5, 0, 0.75, 0);

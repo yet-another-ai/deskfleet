@@ -2,7 +2,7 @@
 import UiButton from "../common/UiButton.vue"
 import { Plus, Trash2 } from "@lucide/vue"
 import { DialogTitle } from "reka-ui"
-import { computed, onBeforeUnmount, ref } from "vue"
+import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { McpServerConfig, McpServerInput } from "@deskfleet/client/mcp-servers"
 import UiDialog from "../common/UiDialog.vue"
@@ -11,6 +11,7 @@ import UiCheckbox from "../common/UiCheckbox.vue"
 
 const props = defineProps<{ initial?: McpServerConfig; disabled?: boolean; save(server: McpServerInput): Promise<void> }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const name = ref(props.initial?.name ?? "")
 const enabled = ref(props.initial?.enabled ?? true)
@@ -32,7 +33,7 @@ const valid = computed(() => !readOnly.value && name.value.trim() && !["deskflee
   && entries.value.every(entry => entry.key.trim()))
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
-function close(): void { if (!saving.value) emit("close") }
+function close(): void { if (!saving.value) dialog.value?.close() }
 function settings(): Record<string, string> {
   const keys = entries.value.map(entry => transport.value === "stdio" ? entry.key.trim() : entry.key.trim().toLowerCase())
   if (new Set(keys).size !== keys.length) throw new Error(t("mcpServers.duplicateKey"))
@@ -48,14 +49,14 @@ async function submit(): Promise<void> {
       : { ...common, transport: transport.value, url: url.value.trim(), headers: settings() }
     saving.value = true
     await props.save(input)
-    if (!disposed) emit("close")
+    if (!disposed) dialog.value?.close()
   } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if (!disposed) saving.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[36rem]" :prevent-close="saving" @close="close">
+  <UiDialog ref="dialog" class="w-[36rem]" :prevent-close="saving" @close="emit('close')">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <DialogTitle class="ui-dialog-title">{{ t(initial ? 'mcpServers.edit' : 'mcpServers.add') }}</DialogTitle>
       <label class="flex flex-col gap-1.5 text-sm">{{ t('mcpServers.name') }}<input v-model="name" name="mcp-name" class="ui-input" maxlength="128" required autofocus :disabled="blocked" autocomplete="off" /></label>

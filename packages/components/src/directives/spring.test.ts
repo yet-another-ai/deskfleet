@@ -7,6 +7,7 @@ let wrapper: VueWrapper | undefined
 let frames: Map<number, FrameRequestCallback>
 let frameId = 0
 let reduced = false
+let media: MediaQueryList
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["performance"] })
@@ -17,7 +18,10 @@ beforeEach(() => {
     return frameId
   })
   vi.spyOn(window, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id) })
-  vi.spyOn(window, "matchMedia").mockImplementation(query => ({ matches: reduced, media: query }) as MediaQueryList)
+  media = Object.defineProperties(new EventTarget(), {
+    matches: { get: () => reduced }, media: { value: "(prefers-reduced-motion: reduce)" },
+  }) as MediaQueryList
+  vi.spyOn(window, "matchMedia").mockReturnValue(media)
 })
 afterEach(() => {
   wrapper?.unmount()
@@ -108,6 +112,46 @@ test("anchored entrances use their side and release the temporary translate afte
   expect(offset).toBeLessThan(0)
   await tick(2000)
   expect(element.style.translate).toBe("")
+  expect(frames.size).toBe(0)
+})
+
+test.each([
+  ["left", "4px 0px"], ["right", "-4px 0px"], ["top", "0px 4px"], ["bottom", "0px -4px"],
+])("an overlay opening on the %s stays on its anchor axis", async (side, expected) => {
+  wrapper = mount(defineComponent({
+    setup: () => () => withDirectives(h("div", { "data-side": side }), [[vSpringEnter, "anchor"]]),
+  }))
+  const element = wrapper.element as HTMLElement
+  expect(element.style.translate).toBe(expected)
+  expect(element.style.scale).toBe("0.98")
+  await tick(2000)
+  expect(element.style.translate).toBe("")
+  expect(element.style.scale).toBe("")
+})
+
+test("changing the motion preference settles active styles, entrances and hover without another render", async () => {
+  const width = ref(100)
+  wrapper = mount(defineComponent({
+    setup: () => () => h("main", [
+      withDirectives(h("div", { id: "meter" }), [[vSpring, { width: `${width.value}px` }]]),
+      withDirectives(h("div", { id: "menu", "data-side": "right" }), [[vSpringEnter, "anchor"]]),
+      withDirectives(h("button"), [[vSpringHover, -2]]),
+    ]),
+  }))
+  width.value = 200
+  await nextTick()
+  const meter = wrapper.get<HTMLElement>("#meter").element
+  const menu = wrapper.get<HTMLElement>("#menu").element
+  const button = wrapper.get<HTMLElement>("button").element
+  button.dispatchEvent(new PointerEvent("pointerenter"))
+  await tick(80)
+  expect(parseFloat(meter.style.width)).toBeLessThan(200)
+  reduced = true
+  media.dispatchEvent(new Event("change"))
+  expect(meter.style.width).toBe("200px")
+  expect(menu.style.translate).toBe("")
+  expect(menu.style.scale).toBe("")
+  expect(button.style.translate).toBe("0px 0px")
   expect(frames.size).toBe(0)
 })
 

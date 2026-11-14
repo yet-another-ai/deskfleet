@@ -58,12 +58,12 @@ test("offline sessions can be pinned while session mutations remain disabled", a
     expect(action.attributes("data-disabled")).toBeDefined()
     await action.trigger("click")
   }
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   expect(rename).not.toHaveBeenCalled()
   expect(archive).not.toHaveBeenCalled()
   await item("Pin session").trigger("click"); await flushPromises()
   expect(usePinnedSessionsStore().isPinned("local-daemon", "30")).toBe(true)
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
 })
 
 test("archive waits for context metadata before offering its confirmation", async () => {
@@ -73,7 +73,7 @@ test("archive waits for context metadata before offering its confirmation", asyn
   const action = item("Archive session")
   expect(action.attributes("data-disabled")).toBeDefined()
   await action.trigger("click"); await flushPromises()
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   expect(archive).not.toHaveBeenCalled()
 })
 
@@ -87,7 +87,7 @@ test("pinning and unpinning target the clicked session without navigation or con
   expect(pin).toHaveBeenCalledExactlyOnceWith("local-daemon", "30", "Investigate failing checks")
   expect(pins.isPinned("local-daemon", "30")).toBe(true)
   expect(page().find('[role="menu"]').exists()).toBe(false)
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   expect(router.currentRoute.value.params.sessionId).toBe("31")
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
   expect(page().findAll('[role="menuitem"]').map(item => item.text())).toContain("Unpin session")
@@ -107,7 +107,7 @@ test("marking a read session unread sends the shared rewind without navigating",
   await item("Mark as unread").trigger("click"); await flushPromises()
   expect(markUnread).toHaveBeenCalledExactlyOnceWith("30")
   expect(page().find('[role="menu"]').exists()).toBe(false)
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   expect(router.currentRoute.value.params.sessionId).toBe("31")
 })
 
@@ -134,7 +134,7 @@ test("archived read sessions can be marked unread and offline sessions keep the 
   expect(action.attributes("data-disabled")).toBeDefined()
   await action.trigger("click"); await flushPromises()
   expect(markUnread).not.toHaveBeenCalled()
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
 })
 
 test("a failed unread mark stays in a dialog and retries the same session", async () => {
@@ -151,7 +151,7 @@ test("a failed unread mark stays in a dialog and retries the same session", asyn
   expect(markUnread).toHaveBeenCalledTimes(2)
   expect(markUnread).toHaveBeenNthCalledWith(1, "30")
   expect(markUnread).toHaveBeenNthCalledWith(2, "30")
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
@@ -192,7 +192,7 @@ test("rename operates on the clicked session, retains failures, and restores row
   expect(router.currentRoute.value.params.sessionId).toBe("31")
   await dialog.get("form").trigger("submit"); await flushPromises()
   expect(rename).toHaveBeenCalledTimes(2)
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
 
@@ -215,7 +215,7 @@ test.each([
   expect(dialog.text()).toContain(message)
   await dialog.get(button).trigger("click"); await flushPromises()
   expect(archiveState === "archived" ? restore : archive).toHaveBeenCalledExactlyOnceWith("30")
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   expect(router.currentRoute.value.params.sessionId).toBe("31")
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })

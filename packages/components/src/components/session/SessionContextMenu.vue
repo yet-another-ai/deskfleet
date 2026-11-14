@@ -24,6 +24,7 @@ const canMarkUnread = computed(() => sessionCanMarkUnread(agents.sessions[props.
 const trigger = useTemplateRef<InstanceType<typeof ContextMenuTrigger>>("trigger")
 const open = ref(false)
 const dialog = ref<"rename" | "archive" | "restore" | "unread">()
+const unreadDialog = useTemplateRef<InstanceType<typeof UiDialog>>("unreadDialog")
 const pending = ref(false)
 const error = ref<string>()
 
@@ -56,7 +57,7 @@ async function markUnread(): Promise<void> {
   error.value = undefined
   try {
     await agents.markUnread(props.sessionId)
-    dialog.value = undefined
+    unreadDialog.value?.close()
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason)
     dialog.value = "unread"
@@ -90,11 +91,11 @@ function confirm(): void {
     </ContextMenuPortal>
   </ContextMenuRoot>
   <RenameSessionDialog v-if="dialog === 'rename'" :title="title" :disabled="disabled" :confirm="value => agents.rename(sessionId, value)" @close="dialog = undefined" />
-  <UiDialog v-else-if="dialog === 'unread'" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
+  <UiDialog v-else-if="dialog === 'unread'" ref="unreadDialog" v-slot="{ close }" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
     <DialogTitle class="ui-dialog-title">{{ t('agent.markUnread') }}</DialogTitle>
     <p v-if="error" role="alert" class="mb-0 mt-3 text-sm text-ui-danger">{{ error }}</p>
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="pending" @click="dialog = undefined">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton type="button" :disabled="pending" @click="close">{{ t('catalog.cancel') }}</UiButton>
       <UiButton variant="primary" type="button" :disabled="pending || disabled || !canMarkUnread" @click="markUnread">{{ t('agent.markUnread') }}</UiButton>
     </div>
   </UiDialog>
