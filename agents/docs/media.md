@@ -956,8 +956,9 @@ That removed presenter reported `fifo-hint`; these runs did not measure actual
 display completion or comparative end-to-end latency.
 
 `DESKFLEET_SMOKE_HARDWARE=1` selects generated 320×240 pixels encoded by the host's
-GStreamer encoder. In that mode, `DESKFLEET_SMOKE_FPS` accepts a finite rate from 1
-through 240, defaulting to 10. Capture deadlines follow an elapsed monotonic clock so encoder
+video encoder, including the optional x264 fallback on Linux. In that mode,
+`DESKFLEET_SMOKE_FPS` accepts a finite rate from 1 through 240, defaulting to 10.
+Capture deadlines follow an elapsed monotonic clock so encoder
 work does not add to every frame interval; missed slots are skipped after a
 stall. The pre-encoded 64×64 fixture keeps its fixed 10 fps rate.
 
@@ -1158,7 +1159,7 @@ without GPU encoding, run them alone:
 mise exec -- cargo test -p deskfleet-linux-media --locked x264_ -- --ignored --nocapture
 ```
 
-To send generated hardware-encoded video through WebRTC to Chromium, run each
+To send generated video through WebRTC to Chromium, run each
 codec explicitly:
 
 ```sh
