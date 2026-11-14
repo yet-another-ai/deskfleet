@@ -245,6 +245,16 @@ Motion directives support both VDOM and Vapor lifecycles. Reka popovers and
 dialogs render through the thin VDOM `SpringSurface` so their attributes,
 event handlers, and positioning refs reach the animated native element.
 
+Navigation motion follows page relationships independently of component identity.
+Peer destinations fade in; Developer/NAT and Scheduled Task list/detail navigation
+use opposite horizontal entrances for entering and returning. A navigation key
+contains the route name and resource parameters, never filters, message anchors,
+or other query state, and is not used as a Vue component key. Each mounted App
+owns this state; replacing a Machine runtime starts with a nondirectional entrance.
+Standalone settings shells own the same state when no Machine App is mounted.
+Successful route changes update it, so redirects classify their final destination
+and canceled navigation cannot animate the current page.
+
 Pointer dragging directly controls position and estimates velocity in units per
 second. Releasing a snapping surface continues toward its target with that
 velocity; canvas panning and sliders instead use damping-only inertia and absorb
