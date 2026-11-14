@@ -74,7 +74,7 @@ const errorCodes = new Set([
 ])
 // Only fixed API failure codes belong in telemetry; response bodies may contain private values.
 const apiErrorCodes = new Set([
-  "invalid_request", "unauthorized", "forbidden", "internal", "not_found", "conflict", "rate_limited",
+  "invalid_request", "unauthorized", "invalid_credentials", "forbidden", "internal", "not_found", "conflict", "rate_limited",
   "machine_offline", "daemon_timeout", "daemon_error", "turn_service_unavailable",
 ])
 const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])

@@ -33,6 +33,14 @@ impl ApiError {
             "authentication required",
         )
     }
+    /// Password login rejects unknown addresses and wrong passwords identically.
+    pub fn invalid_credentials() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "Wrong username or password.",
+        )
+    }
     pub fn forbidden() -> Self {
         Self::new(StatusCode::FORBIDDEN, "forbidden", "access denied")
     }

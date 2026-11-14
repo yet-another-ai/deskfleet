@@ -1248,7 +1248,10 @@
     "showInNewWindow": "新しいウィンドウに表示", "closeTab": "{title} を閉じる"
   },
   "auth": {
-    "signIn": "ログイン", "signInTitle": "DeskFleet にログイン",
+    "signIn": "ログイン",
+    "invalidCredentials": "ユーザー名またはパスワードが正しくありません。",
+    "signInFailed": "ログインに失敗しました。もう一度お試しください。",
+    "signInTitle": "DeskFleet にログイン",
     "accountSignInDescription": "ログインしてパスワード、パスキー、ログイン中のデバイスを管理します。", "emailSignInDescription": "新しいメールアドレスを確認するため、現在のメールアドレスでログインしてください。",
     "desktopSignInTitle": "DeskFleet Desktop にログイン", "desktopSignInDescription": "ログイン後、このページからデスクトップアプリへセッションが引き継がれます。",
     "email": "メールアドレス", "name": "表示名",

@@ -5,6 +5,7 @@ import githubIcon from "@lobehub/icons-static-svg/icons/github.svg?url"
 import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
+import { HttpError } from "@deskfleet/client/http-central"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import { trackEvent } from "../../services/analytics.ts"
@@ -36,6 +37,14 @@ const id = useId()
 const emailInput = useTemplateRef("email")
 const target = props.newTab ? "_blank" : undefined
 
+/** Prefer localized credential failures; keep other API text unless it is an unexpected server fault. */
+function signInFailure(reason: unknown): string | undefined {
+  if (reason instanceof HttpError) {
+    if (reason.code === "invalid_credentials") return t("auth.invalidCredentials")
+    if (reason.status >= 500) return t("auth.signInFailed")
+  }
+  return failureMessage(reason)
+}
 async function run(method: "password" | "passkey", action: () => Promise<void>): Promise<void> {
   if (pending.value) return
   pending.value = method
@@ -45,7 +54,7 @@ async function run(method: "password" | "passkey", action: () => Promise<void>):
     trackEvent("account_signed_in", { method })
     password.value = ""
     emit("signedIn")
-  } catch (reason) { error.value = failureMessage(reason) }
+  } catch (reason) { error.value = signInFailure(reason) }
   finally { pending.value = undefined }
 }
 function submit(): void { void run("password", () => props.account.login(email.value, password.value)) }
@@ -68,7 +77,7 @@ async function oauth(provider: OAuthProvider): Promise<void> {
     const start = provider === "github" ? props.account.startGithub : props.account.startGoogle
     const { authorizationUrl } = await start(props.returnTo, acceptedTerms.value)
     location.assign(authorizationUrl)
-  } catch (reason) { sessionStorage.removeItem("deskfleet-email-verify-token"); error.value = failureMessage(reason); pending.value = undefined }
+  } catch (reason) { sessionStorage.removeItem("deskfleet-email-verify-token"); error.value = signInFailure(reason); pending.value = undefined }
 }
 </script>
 
