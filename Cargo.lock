@@ -2581,8 +2581,8 @@ name = "deskfleet-capture"
 version = "0.16.0"
 dependencies = [
  "block2 0.6.2",
+ "deskfleet-gstreamer-media",
  "deskfleet-linux-desktop",
- "deskfleet-linux-media",
  "deskfleet-wayland",
  "deskfleet-windows-desktop",
  "deskfleet-x11",
@@ -2631,8 +2631,8 @@ dependencies = [
  "async-channel",
  "block2 0.6.2",
  "bytes",
+ "deskfleet-gstreamer-media",
  "deskfleet-input",
- "deskfleet-linux-media",
  "deskfleet-native",
  "gpui-fast",
  "gpui-fast-platform",
@@ -2670,7 +2670,7 @@ name = "deskfleet-encoder"
 version = "0.16.0"
 dependencies = [
  "deskfleet-capture",
- "deskfleet-linux-media",
+ "deskfleet-gstreamer-media",
  "deskfleet-nvenc",
  "deskfleet-nvenc-sys",
  "objc2-core-foundation",
@@ -2681,6 +2681,15 @@ dependencies = [
  "opus",
  "tracing",
  "windows 0.62.2",
+]
+
+[[package]]
+name = "deskfleet-gstreamer-media"
+version = "0.16.0"
+dependencies = [
+ "libloading 0.9.1",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -2703,15 +2712,6 @@ dependencies = [
 [[package]]
 name = "deskfleet-linux-desktop"
 version = "0.16.0"
-
-[[package]]
-name = "deskfleet-linux-media"
-version = "0.16.0"
-dependencies = [
- "libloading 0.9.1",
- "thiserror 2.0.21",
- "tracing",
-]
 
 [[package]]
 name = "deskfleet-migration"
@@ -2739,9 +2739,9 @@ dependencies = [
  "cc",
  "deskfleet-capture",
  "deskfleet-encoder",
+ "deskfleet-gstreamer-media",
  "deskfleet-input",
  "deskfleet-linux-desktop",
- "deskfleet-linux-media",
  "deskfleet-wayland",
  "deskfleet-windows-desktop",
  "deskfleet-x11",

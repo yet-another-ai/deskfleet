@@ -109,6 +109,7 @@ fn encodes_one_frame_and_idle_keyframe(codec: Codec, factories: &[&'static str])
     let (mut encoder, first) = Encoder::start_with(factories, &settings(codec), &pixels, 0)
         .unwrap_or_else(|error| panic!("{codec:?}: {error}"));
     assert!(first[0].is_keyframe);
+    assert_eq!(first[0].timestamp_ns, 0);
     if codec != Codec::Av1 {
         assert!(first[0].data.starts_with(&[0, 0, 0, 1]));
     }
@@ -124,7 +125,7 @@ fn encodes_one_frame_and_idle_keyframe(codec: Codec, factories: &[&'static str])
         "static desktop keyframe was never encoded"
     );
     assert!(packets[0].is_keyframe);
-    assert!(packets[0].timestamp_ns > first[0].timestamp_ns);
+    assert_eq!(packets[0].timestamp_ns, 1_000_000_000);
     // A fresh decoder verifies that requested keyframes include the headers
     // needed for a viewer to recover after packet loss or join an idle stream.
     assert_gray_pixel(&decode_frame(codec, &packets[0]), (0, 0), 100);

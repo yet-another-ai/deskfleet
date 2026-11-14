@@ -8,9 +8,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::capture::packed_bgra;
 use crate::ffi::{self, Api};
 use crate::pipeline::{Object, Pipeline};
+use crate::pixels::packed_bgra;
 use crate::{Codec, Error, Result};
 
 #[path = "decoder/description.rs"]

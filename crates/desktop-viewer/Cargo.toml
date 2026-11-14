@@ -81,7 +81,7 @@ windows = { workspace = true, features = [
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-deskfleet-linux-media.workspace = true
+deskfleet-gstreamer-media.workspace = true
 nix = { workspace = true, features = ["poll"] }
 wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
 wayland-client = "0.31"

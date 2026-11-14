@@ -1,6 +1,6 @@
 //! Ported from dsh0416/desk-fleet, commit e4b963274b4afae8a7b8065d9efe5c6770bf9339.
 //!
-//! Hardware video encoding abstraction for Desk Fleet.
+//! Video encoding with native hardware backends and software H.264 fallback.
 
 mod backend;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
@@ -10,6 +10,8 @@ mod error;
 mod macos;
 mod opus_enc;
 mod packet;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod software;
 mod types;
 #[cfg(target_os = "windows")]
 mod windows;
@@ -23,7 +25,7 @@ pub use types::{AV1Profile, Codec, EncoderConfig, H264Profile, H265Profile};
 
 use deskfleet_capture::Frame;
 
-/// Return the hardware video codecs available for the selected display.
+/// Return the video codecs available for the selected display.
 ///
 /// Windows probes both hardware backends on the adapter that owns this display.
 /// Results are queried afresh so changing displays or GPUs cannot reuse another
@@ -32,7 +34,7 @@ pub fn supported_codecs(display_id: u32) -> Result<Vec<Codec>, EncoderError> {
     backend::platform_supported_codecs(display_id)
 }
 
-/// A hardware-accelerated video encoder (H.264, H.265, or AV1).
+/// A video encoder with hardware priority and an optional software H.264 fallback.
 pub struct Encoder {
     inner: backend::PlatformEncoder,
     width: u32,

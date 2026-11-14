@@ -7,28 +7,32 @@
 //! The native viewer's RTP decoder likewise returns owned RGBA pixels, leaving
 //! display timing and the shallow presentation queue to the viewer.
 
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 
+#[cfg(target_os = "linux")]
 mod capture;
 mod codec;
 mod decoder;
 mod encoder;
 mod ffi;
 mod pipeline;
+mod pixels;
 
+#[cfg(target_os = "linux")]
 pub use capture::{Capture, VideoFrame};
 pub use codec::Codec;
 pub use decoder::{DecodedFrame, RtpVideoDecoder, supported_decoder_codecs};
 pub use encoder::{EncodedFrame, Encoder, EncoderSettings};
+pub use pixels::packed_bgra;
 
 /// Failure to load the optional runtime or operate a media pipeline.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Linux desktop media runtime is unavailable: {0}")]
+    #[error("GStreamer desktop media runtime is unavailable: {0}")]
     Unavailable(String),
-    #[error("Linux desktop media failed: {0}")]
+    #[error("GStreamer desktop media failed: {0}")]
     Pipeline(String),
-    #[error("Linux desktop media stream ended")]
+    #[error("GStreamer desktop media stream ended")]
     Ended,
 }
 
@@ -36,6 +40,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Probe the PipeWire capture runtime without opening a portal.
 #[must_use]
+#[cfg(target_os = "linux")]
 pub fn capture_available() -> bool {
     ffi::api().is_ok_and(|api| {
         ["pipewiresrc", "videoconvert", "appsink"]
@@ -62,4 +67,14 @@ pub fn encoding_available() -> bool {
 #[must_use]
 pub fn has_encoder(codec: Codec) -> bool {
     ffi::api().is_ok_and(|api| codec::has_encoder(codec, |name| api.has_factory(name)))
+}
+
+/// Probe only the software H.264 pipeline used after native hardware startup fails.
+#[must_use]
+pub fn x264_available() -> bool {
+    ffi::api().is_ok_and(|api| {
+        ["appsrc", "appsink", "videoconvert", "h264parse", "x264enc"]
+            .into_iter()
+            .all(|name| api.has_factory(name))
+    })
 }

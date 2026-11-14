@@ -62,11 +62,11 @@ pub async fn supported() -> Result<bool, String> {
         }
         tokio::task::spawn_blocking(move || {
             let capture = match selected {
-                Backend::Wayland => deskfleet_linux_media::capture_available(),
+                Backend::Wayland => deskfleet_gstreamer_media::capture_available(),
                 Backend::X11 => deskfleet_x11::probe().is_ok_and(|access| access.screen_capture),
                 Backend::Unavailable => false,
             };
-            capture && deskfleet_linux_media::encoding_available()
+            capture && deskfleet_gstreamer_media::encoding_available()
         })
         .await
         .map_err(|error| error.to_string())

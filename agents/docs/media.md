@@ -88,8 +88,8 @@ the output name. Changing ports or docks may therefore assign a new number.
 
 | Platform | Capture | Video encoder | System audio |
 | --- | --- | --- | --- |
-| macOS | ScreenCaptureKit / IOSurface | VideoToolbox H.264/H.265/AV1, subject to runtime support | ScreenCaptureKit → Opus |
-| Windows | DXGI Desktop Duplication / D3D11 | NVENC H.264/H.265/AV1; Media Foundation hardware H.264/H.265/AV1 fallback, subject to GPU/driver support | Unsupported |
+| macOS | ScreenCaptureKit / IOSurface | VideoToolbox hardware H.264/H.265/AV1, subject to runtime support; optional x264 H.264 fallback | ScreenCaptureKit → Opus |
+| Windows | DXGI Desktop Duplication / D3D11 | NVENC, then Media Foundation hardware H.264/H.265/AV1, subject to GPU/driver support; optional x264 H.264 fallback | Unsupported |
 | Linux Wayland | RemoteDesktop + ScreenCast portal / PipeWire | GStreamer VA-API or NVENC H.264/H.265/AV1, subject to GPU/driver support; optional x264 H.264 software fallback | Unsupported |
 | Linux X11 | RandR / GetImage with XFixes cursor | Same GStreamer encoders as Wayland | Unsupported |
 
@@ -109,7 +109,26 @@ changes. The viewer picks the first codec in AV1, HEVC, H.264 order that both
 that display and the browser can use. It does not offer a codec menu.
 Encoding first tries NVENC on that device. If NVENC startup
 fails, it tries hardware Media Foundation transforms for the same codec on the
-same adapter. There is no software encoder fallback.
+same adapter. For H.264, exhausting those hardware backends tries the optional
+GStreamer `x264enc` pipeline. macOS requires hardware acceleration for its
+VideoToolbox session and tries the same x264 pipeline if H.264 hardware startup
+fails. Neither platform converts a negotiated H.265 or AV1 session to H.264.
+
+Media Foundation, VideoToolbox, and x264 candidates must produce a packet from
+the first real captured frame before selection. Startup polling allows one
+second for asynchronous output; a failed candidate is released before the next
+attempt. Once a backend has produced output, it remains selected for that
+session. Mid-session failures follow the existing viewer reconnect behavior.
+Codec discovery adds software H.264 only when the GStreamer runtime and its
+required pipeline elements are present.
+
+The shared x264 pipeline uses `ultrafast`, `zerolatency`, two slice threads, and
+no B-frames. It preserves the negotiated H.264 profile, keyframe requests, and
+live bitrate changes. Software encoding reads the native surface back to CPU
+memory; macOS row padding is removed before encoding. An odd trailing column
+or row is cropped to satisfy x264's 4:2:0 input requirements. Working native
+hardware paths keep their GPU surfaces and do not require GStreamer.
+
 Changing the negotiated codec requires a new peer. If the video encoder fails
 while starting, while waiting for its first packet, or mid-session, the viewer
 closes that peer and negotiates the next common codec. Permission, missing
@@ -117,9 +136,9 @@ display, ICE, and transport failures stop without another codec. The desktop
 error event includes `reason: "encoder"` for the failures that may continue.
 Older callers omit `reason`; those failures are not retried.
 
-The shared source waits up to 30 seconds for its first nonempty video packet
-after capture has opened, allowing asynchronous hardware encoders time to warm
-up. Viewers await this source-wide startup result before starting their own
+The shared source has an overall 30-second deadline for its first nonempty
+video packet after capture opens, including waiting for a captured frame and
+trying encoder candidates. Viewers await this source-wide startup result before starting their own
 30-second first-keyframe delivery deadline. Joining an already producing source
 starts that viewer deadline immediately. A viewer deadline is a transport failure
 and does not trigger codec fallback; actual source startup and encoder failures
@@ -157,20 +176,26 @@ submission. The capture worker retains the latest owned frame so PLI/FIR can
 request a new keyframe even when the desktop stops changing. Repeated submissions
 receive increasing timestamps. At most four MF inputs are in flight and one
 latest sample waits for input capacity.
-Polling keeps these bounded samples through gaps in hardware output, without an
-output inactivity deadline. Explicit flush/drain operations remain time-bounded.
+After startup, polling keeps these bounded samples through gaps in hardware
+output, without an output inactivity deadline. Explicit flush/drain operations
+remain time-bounded.
 Codec discovery opens a probe session on the display adapter. Starting the
 stream for the selected display makes sure that its dimensions and bitstream
 headers match the configuration.
 
 For diagnostics, set `DESKFLEET_WINDOWS_ENCODER` in the daemon's environment to
-`auto` (default), `nvenc`, or `media-foundation` before starting the process.
+`auto` (default), `nvenc`, `media-foundation`, or `x264` before starting the process.
 An explicit backend never falls back to another encoder. `media-foundation`
 advertises the codecs that have a working hardware MFT on the display adapter.
-This also allows testing MF on a machine with NVENC.
+`x264` advertises only H.264 when its optional runtime is available. These
+overrides allow testing MF or x264 on a machine with NVENC.
 With the Windows desktop service installed, this diagnostic setting belongs to
 the service's environment; changing only the user daemon's environment does not
 change the service workers' encoder selection.
+
+macOS has the corresponding `DESKFLEET_MACOS_ENCODER` values `auto` (default),
+`videotoolbox`, and `x264`. Explicit selections remain strict; `videotoolbox`
+requires hardware acceleration and `x264` requires the optional runtime.
 
 ### Windows locked-desktop access
 
@@ -330,7 +355,7 @@ input connection does not cancel the portal grant. An explicit access request
 retries that input connection while screen capture remains granted and remote
 input is disconnected. Display listing reuses the session without retrying it.
 
-`deskfleet-linux-media` loads GStreamer inside the native process on demand.
+`deskfleet-gstreamer-media` loads GStreamer inside the native process on demand.
 PipeWire samples are copied into Rust-owned BGRA frames before returning buffers
 to the pool. Capture pacing leaves the newest sample in the bounded appsink queue
 until the next frame is due, so the final update is delivered even when the
@@ -575,7 +600,7 @@ from the codecs that display and the browser share, and shows the choice as
 status text. On macOS, the daemon process
 needs Screen Recording permission; supported system audio is enabled by default
 and can be switched off or on while connected.
-Windows supports NVENC video and the hardware Media Foundation fallback described above.
+Windows uses NVENC, Media Foundation, or the optional x264 fallback described above.
 Linux Wayland and X11 support the negotiated AV1, HEVC, or H.264 video and optional
 mouse/keyboard control. Wayland uses the local Portal grant; X11 uses access to
 the existing X server.
@@ -742,7 +767,7 @@ Any event already being sent precedes the reset on the ordered DataChannel;
 fresh input follows it. Actual transport send failures still close the peer.
 
 The receive task and blocking decode worker run independently of the window.
-`deskfleet-linux-media::RtpVideoDecoder` loads GStreamer on demand and feeds full
+`deskfleet-gstreamer-media::RtpVideoDecoder` loads GStreamer on demand and feeds full
 RTP packets through `rtpjitterbuffer`, the matching H.264/HEVC/AV1 depayloader
 and parser, and a hardware decoder. AV1 requires the `rsrtp` plugin's
 `rtpav1depay`; parsed output is constrained to complete temporal units.
@@ -859,7 +884,7 @@ mise run desktop:smoke-native-viewer
 DESKFLEET_SMOKE_CODEC=h265 mise run desktop:smoke-native-viewer
 DESKFLEET_SMOKE_CODEC=av1 mise run desktop:smoke-native-viewer
 DESKFLEET_SMOKE_HARDWARE=1 DESKFLEET_SMOKE_FPS=60 mise run desktop:smoke-native-viewer
-mise exec -- cargo test -p deskfleet-linux-media --locked decoder::tests -- --ignored --nocapture
+mise exec -- cargo test -p deskfleet-gstreamer-media --locked decoder::tests -- --ignored --nocapture
 ```
 
 The smoke command opens a real native window and negotiates fixture video
@@ -1059,6 +1084,34 @@ building its bundled header bindings requires LLVM/libclang and the Windows SDK.
 CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.
 
+Windows and macOS do not bundle GStreamer or x264. Their software fallback
+requires an optional host installation containing the GStreamer 1.x core, app,
+and video libraries, GLib, `appsrc`, `appsink`, `videoconvert`, `h264parse`, and
+`x264enc`. Missing software components do not disable native hardware encoding
+or data-only services.
+
+On Windows, install the MSVC GStreamer runtime and put its `bin` directory on
+the encoding process's `PATH`, so both the core libraries and plugin dependencies
+can load. With the desktop service installed, configure the service's environment
+as well; the user daemon's `PATH` does not configure service workers.
+The macOS loader first checks
+`/Library/Frameworks/GStreamer.framework/Versions/Current/lib`, then the system
+dynamic loader's search paths. Runtime discovery does not modify process search
+paths. Install the runtime for the daemon process's architecture, then restart
+the application or standalone daemon, and the desktop service if used, because
+runtime discovery is cached for the process lifetime.
+
+The signed macOS Desktop app permits third-party native libraries through
+`com.apple.security.cs.disable-library-validation`, allowing the host-installed
+GStreamer framework and plugins to load under the hardened runtime. This relaxes
+the app's same-Team-ID library restriction; runtime libraries are not bundled or
+re-signed by DeskFleet. Validate plugin loading in a signed macOS build when
+changing this integration.
+
+Encoded GStreamer timestamps are converted through each sample's time segment
+before entering the native media transport. This removes x264's internal DTS
+safety offset while preserving the capture timestamp.
+
 Linux media libraries are optional at runtime: GStreamer 1.x core, app and video
 libraries, GLib, `videoconvert`, `appsrc`, and `appsink`, plus at least one
 available encoder and its codec parser. Wayland capture additionally requires
@@ -1113,7 +1166,7 @@ decode a real desktop stream in Chromium (PowerShell):
 
 ```powershell
 $env:DESKFLEET_WINDOWS_ENCODER = "media-foundation"
-mise exec -- cargo test -p deskfleet-encoder --locked windows_hardware_encodes -- --ignored --nocapture
+mise exec -- cargo test -p deskfleet-encoder --locked windows_platform_encodes -- --ignored --nocapture
 $env:DESKFLEET_SMOKE_CAPTURE = "1"
 mise run desktop:smoke-media
 Remove-Item Env:DESKFLEET_SMOKE_CAPTURE
@@ -1142,7 +1195,7 @@ behavior, not decoded quality or end-to-end WebRTC latency.
 On a Linux graphical host with the runtime and GPU drivers installed, run:
 
 ```sh
-mise exec -- cargo test -p deskfleet-linux-media --locked -- --ignored --nocapture
+mise exec -- cargo test -p deskfleet-gstreamer-media --locked -- --ignored --nocapture
 ```
 
 These tests copy a generated GStreamer frame, retain the last update of a burst
@@ -1152,12 +1205,26 @@ advertised codec, and with `x264enc`. Both keyframes must decode in fresh decode
 pipelines, with increasing timestamps and correct dimensions/pixels.
 No desktop authorization is requested.
 
-The x264 tests need `x264enc` and never select a hardware encoder. On a host
-without GPU encoding, run them alone:
+The shared x264 tests run on Linux, Windows, and macOS, need `x264enc`,
+`h264parse`, and an H.264 decoder plugin, and never select a hardware encoder.
+On a host without GPU encoding, run them alone:
 
 ```sh
-mise exec -- cargo test -p deskfleet-linux-media --locked x264_ -- --ignored --nocapture
+mise exec -- cargo test -p deskfleet-gstreamer-media --locked x264_ -- --ignored --nocapture
 ```
+
+On Windows or macOS with the optional runtime installed, also exercise the
+platform software wrapper's profiles, idle keyframes, timestamps, and live
+bitrate updates:
+
+```sh
+mise exec -- cargo test -p deskfleet-encoder --locked software_profiles_emit_idle_keyframes_and_accept_bitrate_updates -- --ignored --nocapture
+```
+
+These generated-frame tests do not validate native surface readback or a real
+hardware failure followed by recovery. For capture acceptance, force `x264`
+with the platform diagnostic override and run `desktop:smoke-media` with
+`DESKFLEET_SMOKE_CAPTURE=1` on the target graphical host.
 
 To send generated video through WebRTC to Chromium, run each
 codec explicitly:

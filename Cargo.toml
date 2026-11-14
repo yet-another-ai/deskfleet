@@ -8,7 +8,7 @@ members = [
     "crates/encoder",
     "crates/input",
     "crates/linux-desktop",
-    "crates/linux-media",
+    "crates/gstreamer-media",
     "crates/model",
     "crates/migration",
     "crates/native",
@@ -45,7 +45,7 @@ deskfleet-capture = { path = "crates/capture" }
 deskfleet-encoder = { path = "crates/encoder" }
 deskfleet-input = { path = "crates/input" }
 deskfleet-linux-desktop = { path = "crates/linux-desktop" }
-deskfleet-linux-media = { path = "crates/linux-media" }
+deskfleet-gstreamer-media = { path = "crates/gstreamer-media" }
 deskfleet-wayland = { path = "crates/wayland" }
 deskfleet-windows-desktop = { path = "crates/windows-desktop" }
 deskfleet-x11 = { path = "crates/x11" }

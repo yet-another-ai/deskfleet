@@ -49,6 +49,18 @@ impl Encoder {
         Self::start_with(settings.codec.factories(), settings, pixels, timestamp_ns)
     }
 
+    /// Start only x264 after the caller has exhausted its native hardware backends.
+    pub fn start_x264(
+        settings: &EncoderSettings,
+        pixels: &[u8],
+        timestamp_ns: u64,
+    ) -> Result<(Self, Vec<EncodedFrame>)> {
+        if settings.codec != Codec::H264 {
+            return Err(Error::Pipeline("x264 only supports H.264".into()));
+        }
+        Self::start_with(&["x264enc"], settings, pixels, timestamp_ns)
+    }
+
     fn start_with(
         factories: &[&'static str],
         settings: &EncoderSettings,
@@ -87,7 +99,7 @@ impl Encoder {
             })();
             match attempt {
                 Ok(value) => {
-                    tracing::info!(factory, codec = ?settings.codec, "Linux video encoder started");
+                    tracing::info!(factory, codec = ?settings.codec, "GStreamer video encoder started");
                     return Ok(value);
                 }
                 Err(error) => errors.push(format!("{factory}: {error}")),
@@ -186,6 +198,7 @@ impl Encoder {
         if timestamp_ns == ffi::CLOCK_TIME_NONE {
             return Err(Error::Pipeline("encoded frame has no timestamp".into()));
         }
+        let timestamp_ns = sample.running_time(timestamp_ns)?;
         let data = sample.bytes()?;
         if data.is_empty() {
             return Ok(None);

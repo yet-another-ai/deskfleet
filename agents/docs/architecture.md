@@ -1612,8 +1612,8 @@ The Rust workspace contains:
 | `deskfleet-linux-desktop` | Shared Linux session backend selection for permissions, capture, and input |
 | `deskfleet-wayland` | Daemon-owned Portal authorization, PipeWire source IDs, and EIS input |
 | `deskfleet-x11` | X server access, shared RandR source geometry, GetImage capture, and XTEST/XKB input |
-| `deskfleet-linux-media` | Optional GStreamer PipeWire capture and video encoding |
-| `deskfleet-encoder` | VideoToolbox/NVENC/Media Foundation/GStreamer video encoding and Opus audio encoding |
+| `deskfleet-gstreamer-media` | Optional GStreamer video pipelines, shared x264 encoding, and Linux PipeWire capture |
+| `deskfleet-encoder` | Native video backend selection, hardware-first H.264 fallback to x264, and Opus audio encoding |
 | `deskfleet-nvenc` | Windows NVENC session and D3D11 resource ownership |
 | `deskfleet-nvenc-sys` | Windows NVENC FFI and runtime driver loading |
 | `deskfleet-node` | napi-rs wrapper over native capabilities |
@@ -1625,7 +1625,10 @@ Dependencies flow `server -> protocol -> model`, `server -> control-store -> pro
 `node -> store -> model/migration` for local catalog persistence,
 `node -> native -> capture/encoder/input`, and
 `@deskfleet/daemon -> @deskfleet/native`. Linux capture/input delegate to
-`linux-desktop`, `wayland`, and `x11`; capture and encoding share `linux-media`.
+`linux-desktop`, `wayland`, and `x11`. Linux capture and video pipelines use
+`gstreamer-media`; Windows and macOS encoding also use its optional x264 pipeline
+after native H.264 hardware startup fails. Capture ownership stays with the
+native worker, which reads back surfaces only for software encoding.
 The pnpm workspace contains the daemon,
 Electron and Web applications, the native package, `packages/client` for shared
 contracts/transports, `packages/components` for Vue UI, stores, and routes, and

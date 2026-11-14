@@ -1,5 +1,8 @@
 use crate::{EncoderError, types::Codec};
 
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
+mod fallback;
+
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -39,7 +42,7 @@ pub(crate) fn platform_supported_codecs(display_id: u32) -> Result<Vec<Codec>, E
 
 #[cfg(target_os = "macos")]
 pub fn platform_supported_codecs(_display_id: u32) -> Result<Vec<Codec>, EncoderError> {
-    Ok(crate::macos::probe_supported_codecs())
+    macos::supported_codecs()
 }
 
 #[cfg(target_os = "windows")]

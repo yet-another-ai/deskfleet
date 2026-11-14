@@ -92,17 +92,21 @@ fn generate(
     sender: &mpsc::Sender<Result<Packet, String>>,
     stop: &AtomicBool,
     keyframe: &AtomicBool,
-) -> deskfleet_linux_media::Result<()> {
-    use deskfleet_linux_media::{Codec, Encoder, EncoderSettings};
+) -> deskfleet_gstreamer_media::Result<()> {
+    use deskfleet_gstreamer_media::{Codec, Encoder, EncoderSettings};
     use std::time::Instant;
 
     let configured_fps = match std::env::var("DESKFLEET_SMOKE_FPS") {
         Ok(value) => Some(value),
         Err(std::env::VarError::NotPresent) => None,
-        Err(error) => return Err(deskfleet_linux_media::Error::Pipeline(error.to_string())),
+        Err(error) => {
+            return Err(deskfleet_gstreamer_media::Error::Pipeline(
+                error.to_string(),
+            ));
+        }
     };
     let fps = parse_fps(configured_fps.as_deref())
-        .map_err(|error| deskfleet_linux_media::Error::Pipeline(error.into()))?;
+        .map_err(|error| deskfleet_gstreamer_media::Error::Pipeline(error.into()))?;
 
     let settings = EncoderSettings {
         codec: match codec {

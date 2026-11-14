@@ -2,8 +2,8 @@ use super::*;
 
 #[cfg(target_os = "windows")]
 #[test]
-#[ignore = "requires an interactive Windows desktop and a hardware video encoder"]
-fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
+#[ignore = "requires an interactive Windows desktop and an available video encoder"]
+fn windows_platform_encodes_static_frame_and_requested_keyframe() {
     use std::time::{Duration, Instant};
 
     let display = deskfleet_capture::displays()
@@ -12,7 +12,7 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
         .next()
         .expect("a display");
     let codecs = supported_codecs(display.id).unwrap();
-    assert!(!codecs.is_empty(), "display advertised no hardware codecs");
+    assert!(!codecs.is_empty(), "display advertised no codecs");
     let capture = deskfleet_capture::create_capture_stream(
         &display,
         &deskfleet_capture::CaptureConfig {
@@ -49,7 +49,7 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
             while packets.is_empty() {
                 assert!(
                     Instant::now() < deadline,
-                    "hardware {codec} encoder produced no output"
+                    "platform {codec} encoder produced no output"
                 );
                 std::thread::sleep(Duration::from_millis(5));
                 packets.extend(encoder.poll_output().unwrap());
@@ -70,7 +70,7 @@ fn windows_hardware_encodes_static_frame_and_requested_keyframe() {
             }
             assert!(packet.duration_ns > 0);
             eprintln!(
-                "hardware {codec} {}x{}: {} bytes, keyframe={}, timestamp={}",
+                "platform {codec} {}x{}: {} bytes, keyframe={}, timestamp={}",
                 frame.width,
                 frame.height,
                 packet.data.len(),
