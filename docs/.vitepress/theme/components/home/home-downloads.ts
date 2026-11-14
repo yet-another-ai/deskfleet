@@ -81,6 +81,10 @@ export function findNixDownload(release: LatestRelease | undefined): ReleaseFile
   return release?.files.find(file => file.name === "deskfleet-nix.tar.gz")
 }
 
+export function findAndroidDownload(release: LatestRelease | undefined): ReleaseFile | undefined {
+  return release?.files.find(file => file.name === `deskfleet-${release.version}-android-arm64.apk`)
+}
+
 export function desktopInstallMethods(release: LatestRelease | undefined, platform: InstallPlatform): DesktopInstallMethod[] {
   if (platform === "macos") return ["homebrew", "installer"]
   if (platform === "windows") return ["installer"]
