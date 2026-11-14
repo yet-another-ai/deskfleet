@@ -271,7 +271,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       teams.value = [...teams.value, created]
       // The request started under the previously selected Team. Identify the created Team before recording it.
       const accountUser = account.value.user
-      if (accountUser) identifyAnalytics(accountUser.id, { id: created.id, role: created.role }, accountUser.email)
+      if (accountUser) identifyAnalytics(accountUser.id, { id: created.id, role: created.role }, accountUser.email ?? undefined)
       trackEvent("team_created", {})
       await selectTeam(created.id)
     },
