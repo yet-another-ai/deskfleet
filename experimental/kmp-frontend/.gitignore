@@ -1,0 +1,19 @@
+# Gradle & Kotlin
+.gradle/
+.kotlin/
+build/
+**/build/
+local.properties
+
+# Native Rust Bridge artifacts
+rust-bridge/target/
+composeApp/src/desktopMain/resources/native/
+composeApp/src/androidMain/jniLibs/
+
+# IDE & OS
+.idea/
+.DS_Store
+*.iml
+iosApp/*.xcworkspace/xcuserdata/
+iosApp/*.xcodeproj/xcuserdata/
+iosApp/DerivedData/
