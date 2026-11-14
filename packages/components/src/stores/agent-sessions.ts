@@ -742,13 +742,16 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
   async function capacityAction(action: "create" | "fork" | "restore", details: SessionCapacityDetails, run: () => Promise<AgentSnapshot>, track: ReturnType<typeof captureAnalyticsContext>): Promise<AgentSnapshot> {
-    track("session_capacity_action", { action, outcome: "attempt", ...details })
+    track("session_action", { action, outcome: "attempt", ...details })
     try {
       const snapshot = await run()
-      track("session_capacity_action", { action, outcome: "success", context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
+      track("session_action", {
+        action, outcome: "success", context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine",
+        ...(action === "create" ? { provider: snapshot.session.provider } : {}),
+      })
       return snapshot
     } catch (reason) {
-      track("session_capacity_action", { action, outcome: "failure", ...details })
+      track("session_action", { action, outcome: "failure", ...details })
       throw reason
     }
   }
@@ -787,7 +790,6 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }, track)
     draftYolo.value = false
     snapshotReceived(snapshot)
-    track("session_created", { context: snapshot.session.context, scope: snapshot.session.workspaceId ? "workspace" : "machine" })
     return snapshot
   }
   async function fork(sessionId: string, context: AgentSessionContext): Promise<AgentSnapshot> {
@@ -796,23 +798,21 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     const source = sessions.value[sessionId]
     const snapshot = await capacityAction("fork", { context, ...(source ? { scope: source.workspaceId ? "workspace" : "machine" } as const : {}) }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/fork", { sessionId, context }), track)
     snapshotReceived(snapshot)
-    track("session_forked", { context: snapshot.session.context })
     return snapshot
   }
   const submit = async (sessionId: string, content: string | AgentInput["content"], delivery: "backlog" | "steer", turnId?: string, draftText?: string, submittedDraft?: SubmittedAgentDraft) => {
     const track = captureAnalyticsContext()
     const blocks = typeof content === "string" ? [{ type: "text" as const, text: content }] : content
     const trackedText = draftText ?? (typeof content === "string" ? content : (drafts.value[sessionId] ?? ""))
-    track("input_submit_action", { outcome: "attempt", delivery })
+    track("input_submitted", { outcome: "attempt", delivery })
     try {
       const result = await mutation("_deskfleet/input/submit", {
         sessionId, content: blocks, delivery, ...(turnId ? { turnId } : {}),
       }, trackedText, submittedDraft)
-      track("input_submit_action", { outcome: "success", delivery })
-      track("input_submitted", { delivery })
+      track("input_submitted", { outcome: "success", delivery })
       return result
     } catch (reason) {
-      track("input_submit_action", { outcome: "failure", delivery })
+      track("input_submitted", { outcome: "failure", delivery })
       throw reason
     }
   }
@@ -891,13 +891,12 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function archive(sessionId: string): Promise<void> {
     const track = captureAnalyticsContext()
     snapshotReceived(await mutation("_deskfleet/session/archive", { sessionId }))
-    track("session_archived", {})
+    track("session_action", { action: "archive", outcome: "success" })
   }
   async function restore(sessionId: string): Promise<void> {
     const track = captureAnalyticsContext()
     const session = sessions.value[sessionId]
     snapshotReceived(await capacityAction("restore", session ? { context: session.context, scope: session.workspaceId ? "workspace" : "machine" } : {}, () => mutation("_deskfleet/session/restore", { sessionId }), track))
-    track("session_restored", {})
   }
   async function remove(sessionId: string): Promise<void> {
     await mutation("_deskfleet/session/delete", { sessionId })

@@ -29,7 +29,7 @@ function valuesUpdated(status = "Ready"): void {
 }
 async function enableNativeViewer(): Promise<void> {
   statsig.sdk.checkGate.mockImplementation((name?: string) => name === "native_presentor")
-  initializeAnalytics({ platform: "desktop", environment: "test", clientKey: "client-test" })
+  initializeAnalytics({ platform: "macos", environment: "test", clientKey: "client-test" })
   await flushPromises()
 }
 
@@ -195,7 +195,7 @@ test.each(["missing", "loading", "failed", "off"])("native viewer stays hidden w
   platformClient.desktop.openNative = openNative
   if (state === "loading") statsig.sdk.initializeAsync.mockReturnValue(new Promise(() => {}))
   if (state === "failed") statsig.sdk.initializeAsync.mockRejectedValue(new Error("Offline"))
-  initializeAnalytics({ platform: "desktop", environment: "test", clientKey: state === "missing" ? undefined : "client-test" })
+  initializeAnalytics({ platform: "macos", environment: "test", clientKey: state === "missing" ? undefined : "client-test" })
   const wrapper = await mountDesktop()
   expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
   await button(wrapper, "Connect").trigger("click")

@@ -84,8 +84,8 @@ test("invitations show a copyable one-time code", async () => {
   await flushPromises()
   expect(fake.central.invite).toHaveBeenCalledExactlyOnceWith("team-1", "new@example.test", "admin")
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["member_invite_action", { outcome: "attempt", invited_role: "admin" }],
-    ["member_invite_action", { outcome: "success", invited_role: "admin" }],
+    ["member_invited", { outcome: "attempt", invited_role: "admin" }],
+    ["member_invited", { outcome: "success", invited_role: "admin" }],
   ])
   expect(view!.get("[role=dialog][data-state=open] h2").text()).toBe("Invitation ready")
   expect(view!.get("[role=dialog][data-state=open]").text()).toContain("new@example.test")
@@ -105,8 +105,8 @@ test("a failed invitation records its role and outcome without the email or erro
   await view!.get("[role=dialog][data-state=open] form").trigger("submit")
   await flushPromises()
   expect(vi.mocked(trackEvent).mock.calls).toEqual([
-    ["member_invite_action", { outcome: "attempt", invited_role: "member" }],
-    ["member_invite_action", { outcome: "failure", invited_role: "member" }],
+    ["member_invited", { outcome: "attempt", invited_role: "member" }],
+    ["member_invited", { outcome: "failure", invited_role: "member" }],
   ])
   expect(view!.get('[role=dialog] [role="alert"]').text()).toBe("Private mailbox details")
 })
@@ -125,8 +125,8 @@ test("invitation completion uses the context captured before its request", async
   await flushPromises()
   expect(trackEvent).not.toHaveBeenCalled()
   expect(captured.mock.calls).toEqual([
-    ["member_invite_action", { outcome: "attempt", invited_role: "member" }],
-    ["member_invite_action", { outcome: "success", invited_role: "member" }],
+    ["member_invited", { outcome: "attempt", invited_role: "member" }],
+    ["member_invited", { outcome: "success", invited_role: "member" }],
   ])
 })
 

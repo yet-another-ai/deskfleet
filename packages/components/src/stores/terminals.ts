@@ -1,4 +1,5 @@
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { captureAnalyticsContext } from "../services/analytics.ts"
 import { defineStore } from "pinia"
 import { computed, onScopeDispose, reactive, ref } from "vue"
 import type { RelayDeniedReason } from "../../../client/src/relay.ts"
@@ -115,12 +116,14 @@ export const useTerminalsStore = defineStore("terminals", () => {
   async function create(options: { cwd?: string; worktreeId?: string; cols?: number; rows?: number } = {}): Promise<TerminalSummary> {
     error.value = null
     relayDeniedReason.value = undefined
+    const track = captureAnalyticsContext()
     const { cols = 80, rows = 24, cwd, worktreeId } = options
     const summary = remember(await platformClient.terminal.dial({
       mode: "create", terminalId: crypto.randomUUID(), cols, rows,
       ...(cwd === undefined ? {} : { cwd }), ...(worktreeId === undefined ? {} : { worktreeId }),
     }))
     if (worktreeId !== undefined) selected.value[worktreeId] = summary.id
+    track("terminal_created", { scope: worktreeId !== undefined ? "worktree" : "machine" })
     return summary
   }
 

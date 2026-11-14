@@ -5,7 +5,10 @@ import { initializeAnalytics, shutdownAnalytics, trackEvent } from "../services/
 import { installAnalytics } from "./analytics.ts"
 import { observePeerGrant } from "@deskfleet/client/peer-telemetry"
 
-vi.mock("../services/analytics.ts", () => ({ analyticsTeamId: vi.fn(() => "team-1"), initializeAnalytics: vi.fn(), shutdownAnalytics: vi.fn(), trackEvent: vi.fn() }))
+vi.mock("../services/analytics.ts", async importOriginal => {
+  const actual = await importOriginal<typeof import("../services/analytics.ts")>()
+  return { ...actual, analyticsTeamId: vi.fn(() => "team-1"), initializeAnalytics: vi.fn(), shutdownAnalytics: vi.fn(), trackEvent: vi.fn() }
+})
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs() })
 
 test("tracks confirmed named routes without IDs, queries, or user text and stops on unmount", async () => {
@@ -23,7 +26,7 @@ test("tracks confirmed named routes without IDs, queries, or user text and stops
   await router.isReady()
   await router.push("/sessions/private-id?text=private-text#private-hash")
   await router.push("/blocked")
-  expect(initializeAnalytics).toHaveBeenCalledExactlyOnceWith({ clientKey: "client-test", environment: "staging", platform: "desktop" })
+  expect(initializeAnalytics).toHaveBeenCalledExactlyOnceWith({ clientKey: "client-test", environment: "staging", platform: "linux" })
   expect(trackEvent).toHaveBeenCalledWith("page_viewed", { page: "new-session" })
   expect(trackEvent).toHaveBeenCalledWith("page_viewed", { page: "session" })
   expect(trackEvent).not.toHaveBeenCalledWith("page_viewed", { page: "blocked" })
@@ -48,8 +51,7 @@ test("peer events retain only metadata for the selected Team and stop at root te
   installAnalytics(app)
   app.mount(document.createElement("div"))
   observePeerGrant("files", { iceServers: [], relayDeniedReason: "free_plan" }, "team-1").failed()
-  expect(trackEvent).toHaveBeenCalledWith("peer_granted", { feature: "files", relay: "free_plan" })
-  expect(trackEvent).toHaveBeenCalledWith("peer_connection", { feature: "files", relay: "free_plan", outcome: "failed", transport: "unknown" })
+  expect(trackEvent).toHaveBeenCalledWith("peer_connection", { feature: "files", relay: "free_plan", outcome: "failed" })
   const count = vi.mocked(trackEvent).mock.calls.length
   observePeerGrant("ports", { iceServers: [] }, "another-team").connected()
   expect(trackEvent).toHaveBeenCalledTimes(count)

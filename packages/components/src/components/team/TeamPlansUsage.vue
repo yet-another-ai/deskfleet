@@ -90,7 +90,6 @@ watch(state, value => {
 
 function selectInterval(value: BillingInterval): void {
   if (interval.value === value) return
-  trackEvent("billing_interval_selected", { interval: value, previous_interval: interval.value })
   interval.value = value
 }
 
@@ -103,12 +102,11 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
   const sameActor = () => account.account.value.user?.id === actor && account.teamId.value === teamId
   try {
     if (target === "portal") {
-      trackEvent("billing_portal_started", { source })
+      trackEvent("billing_portal", { outcome: "started", source })
       try {
         await central.billingPortal(props.team.id)
-        if (sameActor()) trackEvent("billing_portal_opened_client", { source })
       } catch (reason) {
-        if (sameActor()) trackEvent("billing_portal_failed", { source, reason: billingFailure(reason) })
+        if (sameActor()) trackEvent("billing_portal", { outcome: "failed", source, reason: billingFailure(reason) })
         throw reason
       }
     }
@@ -117,13 +115,12 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
       const requestId = checkoutIds.get(key) ?? crypto.randomUUID()
       checkoutIds.set(key, requestId)
       const metadata = { target_plan: target, interval: interval.value, request_id: requestId }
-      trackEvent("billing_checkout_started", metadata)
+      trackEvent("billing_checkout", { outcome: "started", ...metadata })
       try {
         await central.checkout(props.team.id, target, requestId, metadata.interval)
-        if (sameActor()) trackEvent("billing_checkout_opened", metadata)
       }
       catch (reason) {
-        if (sameActor()) trackEvent("billing_checkout_failed", { ...metadata, reason: billingFailure(reason) })
+        if (sameActor()) trackEvent("billing_checkout", { outcome: "failed", ...metadata, reason: billingFailure(reason) })
         if (reason instanceof HttpError && reason.code === "checkout_finished") checkoutIds.delete(key)
         throw reason
       }

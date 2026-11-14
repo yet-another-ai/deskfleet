@@ -9,8 +9,7 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
   const telemetry = observePeerGrant("files", { iceServers: [{ urls: "stun:private.example" }], relayDeniedReason }, "team")
   telemetry.connected()
   expect(sink.mock.calls.map(([event]) => event)).toEqual([
-    { name: "peer_granted", teamId: "team", metadata: { feature: "files", relay: relayDeniedReason } },
-    { name: "peer_connection", teamId: "team", metadata: { feature: "files", relay: relayDeniedReason, outcome: "connected", transport: "unknown" } },
+    { name: "peer_connection", teamId: "team", metadata: { feature: "files", relay: relayDeniedReason, outcome: "connected" } },
   ])
 })
 
@@ -22,8 +21,7 @@ test("TURN credentials grant fallback access without claiming a selected relay p
   telemetry.connected()
   telemetry.failed()
   expect(sink.mock.calls.map(([event]) => event)).toEqual([
-    { name: "peer_granted", teamId: "team", metadata: { feature: "desktop", relay: "allowed" } },
-    { name: "peer_connection", teamId: "team", metadata: { feature: "desktop", relay: "allowed", outcome: "connected", transport: "unknown" } },
+    { name: "peer_connection", teamId: "team", metadata: { feature: "desktop", relay: "allowed", outcome: "connected" } },
   ])
 })
 
@@ -34,8 +32,8 @@ test("a failed attempt is recorded once and STUN alone does not grant relay", ()
   telemetry.failed()
   telemetry.failed()
   telemetry.connected()
-  expect(sink).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "terminal", relay: "unconfigured", outcome: "failed", transport: "unknown" } })
-  expect(sink).toHaveBeenCalledTimes(2)
+  expect(sink).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "terminal", relay: "unconfigured", outcome: "failed" } })
+  expect(sink).toHaveBeenCalledTimes(1)
 })
 
 test("telemetry is optional and a failed observer cannot affect peers", () => {
@@ -49,10 +47,10 @@ test("cleanup cannot remove a newer host's telemetry sink", () => {
   const stopFirst = setPeerTelemetrySink(first)
   const stopSecond = setPeerTelemetrySink(second)
   stopFirst()
-  observePeerGrant("ports", { iceServers: [] }, "team")
+  observePeerGrant("ports", { iceServers: [] }, "team").connected()
   expect(first).not.toHaveBeenCalled()
   expect(second).toHaveBeenCalledOnce()
   stopSecond()
-  observePeerGrant("ports", { iceServers: [] }, "team")
+  observePeerGrant("ports", { iceServers: [] }, "team").connected()
   expect(second).toHaveBeenCalledOnce()
 })

@@ -48,14 +48,13 @@ test("main-process peer telemetry reaches the renderer without peer credentials"
   const telemetry = observePeerGrant("ports", { iceServers: [{ urls: "turn:private.example", username: "private-user", credential: "secret" }] }, "team")
   telemetry.connected()
   expect(send.mock.calls).toEqual([
-    [CENTRAL_EVENT, { type: "peerTelemetry", event: { name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "allowed" } } }],
-    [CENTRAL_EVENT, { type: "peerTelemetry", event: { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "allowed", outcome: "connected", transport: "unknown" } } }],
+    [CENTRAL_EVENT, { type: "peerTelemetry", event: { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "allowed", outcome: "connected" } } }],
   ])
   expect(destroyedSend).not.toHaveBeenCalled()
   const quitting = vi.mocked(app.once).mock.calls.find(([name]) => String(name) === "will-quit")![1]
   quitting()
-  observePeerGrant("files", { iceServers: [] }, "team")
-  expect(send).toHaveBeenCalledTimes(2)
+  observePeerGrant("files", { iceServers: [] }, "team").connected()
+  expect(send).toHaveBeenCalledTimes(1)
 })
 
 async function setup(stored: Record<string, unknown> = {}) {

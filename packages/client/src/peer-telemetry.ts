@@ -4,8 +4,7 @@ import type { RelayDeniedReason } from "./relay.ts"
 export type PeerFeature = "agent" | "terminal" | "desktop" | "files" | "ports" | "mux"
 export type PeerRelayAccess = "allowed" | "unconfigured" | RelayDeniedReason
 export interface PeerTelemetryEvents {
-  peer_granted: { feature: PeerFeature; relay: PeerRelayAccess }
-  peer_connection: { feature: PeerFeature; relay: PeerRelayAccess; outcome: "connected" | "failed"; transport: "unknown" }
+  peer_connection: { feature: PeerFeature; relay: PeerRelayAccess; outcome: "connected" | "failed" }
 }
 export type PeerTelemetryEvent = {
   /** Internal correlation only; analytics receives metadata after matching the active Team. */
@@ -35,12 +34,11 @@ export function observePeerGrant(feature: PeerFeature, grant: Pick<PeerGrant, "i
   const relay: PeerRelayAccess = denied ?? (grant.iceServers.some(server =>
     (typeof server.urls === "string" ? [server.urls] : server.urls).some(url => /^turns?:/iu.test(url)),
   ) ? "allowed" : "unconfigured")
-  emit({ name: "peer_granted", teamId, metadata: { feature, relay } })
   let settled = false
   function outcome(value: "connected" | "failed"): void {
     if (settled) return
     settled = true
-    emit({ name: "peer_connection", teamId, metadata: { feature, relay, outcome: value, transport: "unknown" } })
+    emit({ name: "peer_connection", teamId, metadata: { feature, relay, outcome: value } })
   }
   return { connected: () => outcome("connected"), failed: () => outcome("failed") }
 }

@@ -4,25 +4,51 @@ import { STATSIG_INITIALIZE_URL, STATSIG_LOG_EVENT_URL } from "@deskfleet/client
 import type { BillingPlan } from "@deskfleet/client/billing"
 import type { Team } from "@deskfleet/client/central"
 import type { PeerTelemetryEvents } from "@deskfleet/client/peer-telemetry"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { BillingAnalyticsEvents } from "./billing-events.ts"
 import type { EntitlementAnalyticsEvents } from "./entitlement-events.ts"
 
+/** The client shell that emitted the event. Electron is the desktop OS; a browser PWA is not. */
+export type AnalyticsPlatform = "web" | "pwa" | "android" | "ios" | "windows" | "macos" | "linux"
+
+interface CapacitorGlobal {
+  isNativePlatform?: () => boolean
+  getPlatform?: () => string
+}
+
+/** Resolve the viewer shell. A Capacitor webview is native even when its display mode is standalone. */
+export function clientAnalyticsPlatform(hostPlatform: DeskfleetDesktopApi["platform"]): AnalyticsPlatform {
+  if (hostPlatform === "darwin") return "macos"
+  if (hostPlatform === "win32") return "windows"
+  if (hostPlatform === "linux") return "linux"
+  const capacitor = (globalThis as { Capacitor?: CapacitorGlobal }).Capacitor
+  if (capacitor?.isNativePlatform?.()) {
+    const native = capacitor.getPlatform?.()
+    if (native === "ios" || native === "android") return native
+  }
+  const standalone = typeof navigator !== "undefined" && (navigator as Navigator & { standalone?: boolean }).standalone === true
+  const installed = typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches
+  return standalone || installed ? "pwa" : "web"
+}
+
 /** Explicit product events: never pass RPC payloads, user text, or resource paths. */
 interface AnalyticsEvents extends BillingAnalyticsEvents, EntitlementAnalyticsEvents, PeerTelemetryEvents {
-  app_opened: Record<string, never>
+  app_opened: { surface: "app" | "authentication" }
   page_viewed: { page: string }
+  account_registered: { method: "password" }
+  account_verified: Record<string, never>
+  account_signed_in: { method: "password" | "passkey" }
+  team_created: Record<string, never>
+  machine_enrolled: { kind: "local" | "headless" }
   workspace_created: { directory_count: number }
-  session_created: { context: "worktree" | "directory"; scope: "workspace" | "machine" }
-  session_forked: { context: "worktree" | "directory" }
-  session_archived: Record<string, never>
-  session_restored: Record<string, never>
-  input_submitted: { delivery: "backlog" | "steer" }
+  terminal_created: { scope: "machine" | "worktree" }
+  schedule_action: { action: "create" | "run" | "delete" }
 }
 
 interface AnalyticsConfiguration {
   clientKey?: string
   environment: string
-  platform: "web" | "desktop"
+  platform: AnalyticsPlatform
 }
 
 // One instance per renderer document, shared across the isolated MachineSurface apps.
@@ -98,7 +124,7 @@ export function beginAnalyticsPlanRefresh(teamId: string): (value: BillingPlan) 
 }
 
 export function trackEvent<Name extends keyof AnalyticsEvents>(name: Name, metadata: AnalyticsEvents[Name]): void {
-  const context = team && name !== "team_join_action" ? { team_id: team.id, team_role: team.role, current_plan: plan ?? "unknown" } : {}
+  const context = team && name !== "team_joined" ? { team_id: team.id, team_role: team.role, current_plan: plan ?? "unknown" } : {}
   sdk?.logEvent(name, undefined, Object.fromEntries(Object.entries({ ...context, ...metadata })
     .filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])))
 }

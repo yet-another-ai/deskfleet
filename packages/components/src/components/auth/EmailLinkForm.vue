@@ -5,6 +5,7 @@ import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
+import { trackEvent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -33,6 +34,7 @@ async function send(again = false): Promise<void> {
   try {
     const address = again ? sentTo.value! : email.value
     await (props.purpose === "register" ? props.account.register(address, acceptedTerms.value) : props.account.requestRecovery(address))
+    if (props.purpose === "register" && !again) trackEvent("account_registered", { method: "password" })
     sentTo.value = address
     resent.value = again
     cool()

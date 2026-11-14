@@ -4,6 +4,7 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
+import { trackEvent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import UiField from "../common/UiField.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -25,6 +26,7 @@ async function submit(): Promise<void> {
   try {
     if (props.purpose === "verify") {
       await props.account.verify(props.token, name.value.trim(), password.value)
+      trackEvent("account_verified", {})
       location.assign("/")
     } else {
       await props.account.completeRecovery(props.token, password.value)

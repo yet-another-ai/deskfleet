@@ -57,8 +57,7 @@ test("ports signaling binds early ICE candidates and preserves an authorized tun
   expect(f.api.closePeer).toHaveBeenCalledOnce()
   expect(f.listeners.size).toBe(0)
   expect(telemetry.mock.calls.map(([event]) => event)).toEqual([
-    { name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "unconfigured" } },
-    { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "unconfigured", outcome: "connected", transport: "unknown" } },
+    { name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: "unconfigured", outcome: "connected" } },
   ])
 })
 
@@ -126,7 +125,7 @@ test("cancelling pending native setup closes a late listener", async () => {
   await vi.waitFor(() => expect(f.close).toHaveBeenCalledOnce())
   expect(f.api.offerPeer).not.toHaveBeenCalled()
   expect(f.api.closePeer).toHaveBeenCalledOnce()
-  expect(telemetry).toHaveBeenCalledExactlyOnceWith({ name: "peer_granted", teamId: "team", metadata: { feature: "ports", relay: "unconfigured" } })
+  expect(telemetry).not.toHaveBeenCalled()
 })
 
 test("account changes cancel a pending grant before native resources can be created", async () => {
@@ -166,6 +165,6 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
   f.native.answer = async () => { f.events().fail(new Error("ICE failed")) }
   await expect(f.connect()).rejects.toThrow("Direct connection failed.")
   expect(f.failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay"), code: relayDeniedReason, relayDeniedReason }))
-  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
-  expect(telemetry).toHaveBeenCalledTimes(2)
+  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "team", metadata: { feature: "ports", relay: relayDeniedReason, outcome: "failed" } })
+  expect(telemetry).toHaveBeenCalledTimes(1)
 })

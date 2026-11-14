@@ -1,6 +1,6 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { analyticsReady, beginAnalyticsPlanRefresh, captureAnalyticsContext, identifyAnalytics, initializeAnalytics, shutdownAnalytics, trackEvent, useExperimentParameter, useFeatureGate } from "./analytics.ts"
+import { analyticsReady, beginAnalyticsPlanRefresh, captureAnalyticsContext, clientAnalyticsPlatform, identifyAnalytics, initializeAnalytics, shutdownAnalytics, trackEvent, useExperimentParameter, useFeatureGate } from "./analytics.ts"
 
 const mock = vi.hoisted(() => {
   const sdk = {
@@ -40,9 +40,9 @@ test("an absent key creates no SDK and leaves feature defaults usable", () => {
 })
 
 test("one document owns one client with explicit privacy and network options", async () => {
-  initializeAnalytics({ platform: "desktop", environment: "staging", clientKey: " client-test " })
-  initializeAnalytics({ platform: "desktop", environment: "staging", clientKey: "client-test" })
-  expect(mock.create).toHaveBeenCalledExactlyOnceWith("client-test", { custom: { platform: "desktop" } }, {
+  initializeAnalytics({ platform: "macos", environment: "staging", clientKey: " client-test " })
+  initializeAnalytics({ platform: "macos", environment: "staging", clientKey: "client-test" })
+  expect(mock.create).toHaveBeenCalledExactlyOnceWith("client-test", { custom: { platform: "macos" } }, {
     environment: { tier: "staging" }, includeCurrentPageUrlWithEvents: false,
     networkConfig: {
       initializeUrl: "https://featureassets.org/v1/initialize", logEventUrl: "https://prodregistryv2.org/v1/rgstr",
@@ -81,7 +81,7 @@ test("feature reads react to initialization and identity changes without eager e
   expect(gate.value).toBe(false)
 })
 
-test.each(["web", "desktop"] as const)("%s identity includes email and refreshes gates when only the email changes", async platform => {
+test.each(["web", "macos"] as const)("%s identity includes email and refreshes gates when only the email changes", async platform => {
   const team = { id: "team-a", role: "admin" as const }
   identifyAnalytics("user-a", team, "ada@example.test")
   initializeAnalytics({ platform, environment: "test", clientKey: "client-test" })
@@ -112,11 +112,11 @@ test.each(["user-a", "user-b"])("missing email for %s clears the previous email"
 test("initialization rejection does not block product events or feature defaults", async () => {
   mock.sdk.initializeAsync.mockRejectedValueOnce(new Error("Network unavailable"))
   initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
-  trackEvent("app_opened", {})
+  trackEvent("app_opened", { surface: "app" })
   await flushPromises()
   expect(analyticsReady.value).toBe(false)
   expect(useFeatureGate("new_ui").value).toBe(false)
-  expect(mock.sdk.logEvent).toHaveBeenCalledWith("app_opened", undefined, {})
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("app_opened", undefined, { surface: "app" })
 })
 
 test("root teardown shuts down the client and clears identity and evaluations", async () => {
@@ -138,19 +138,19 @@ test("functional events carry selected Team/plan context without retaining it ac
   beginAnalyticsPlanRefresh("team-a")("go")
   await flushPromises()
   expect(mock.sdk.updateUserAsync).toHaveBeenLastCalledWith({ userID: "user-a", customIDs: { teamID: "team-a" }, custom: { platform: "web" } }, { timeoutMs: 1000 })
-  trackEvent("input_submit_action", { outcome: "success", delivery: "backlog" })
-  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("input_submit_action", undefined, {
+  trackEvent("input_submitted", { outcome: "success", delivery: "backlog" })
+  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("input_submitted", undefined, {
     team_id: "team-a", team_role: "admin", current_plan: "go", outcome: "success", delivery: "backlog",
   })
   identifyAnalytics("user-a", { id: "team-b", role: "member" })
   beginAnalyticsPlanRefresh("team-a")("pro")
-  trackEvent("session_archived", {})
-  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("session_archived", undefined, { team_id: "team-b", team_role: "member", current_plan: "unknown" })
-  trackEvent("team_join_action", { outcome: "attempt" })
-  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("team_join_action", undefined, { outcome: "attempt" })
+  trackEvent("session_action", { action: "archive", outcome: "success" })
+  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("session_action", undefined, { action: "archive", outcome: "success", team_id: "team-b", team_role: "member", current_plan: "unknown" })
+  trackEvent("team_joined", { outcome: "attempt" })
+  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("team_joined", undefined, { outcome: "attempt" })
   identifyAnalytics()
-  trackEvent("app_opened", {})
-  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("app_opened", undefined, {})
+  trackEvent("app_opened", { surface: "app" })
+  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("app_opened", undefined, { surface: "app" })
 })
 
 test("a late same-Team billing response cannot replace newer plan context", () => {
@@ -159,22 +159,39 @@ test("a late same-Team billing response cannot replace newer plan context", () =
   const older = beginAnalyticsPlanRefresh("team-a")
   beginAnalyticsPlanRefresh("team-a")("pro")
   older("free")
-  trackEvent("session_restored", {})
-  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("session_restored", undefined, { team_id: "team-a", team_role: "admin", current_plan: "pro" })
+  trackEvent("session_action", { action: "restore", outcome: "success" })
+  expect(mock.sdk.logEvent).toHaveBeenLastCalledWith("session_action", undefined, { action: "restore", outcome: "success", team_id: "team-a", team_role: "admin", current_plan: "pro" })
 })
 
 test("pending action results are omitted after the account or selected Team changes", () => {
   initializeAnalytics({ platform: "web", environment: "test", clientKey: "client-test" })
   identifyAnalytics("user-a", { id: "team-a", role: "admin" })
   const first = captureAnalyticsContext()
-  first("input_submit_action", { outcome: "attempt", delivery: "backlog" })
-  first("input_submit_action", { outcome: "success", delivery: "backlog" })
+  first("input_submitted", { outcome: "attempt", delivery: "backlog" })
+  first("input_submitted", { outcome: "success", delivery: "backlog" })
   expect(mock.sdk.logEvent).toHaveBeenCalledTimes(2)
   identifyAnalytics("user-a", { id: "team-b", role: "admin" })
-  first("input_submit_action", { outcome: "failure", delivery: "backlog" })
+  first("input_submitted", { outcome: "failure", delivery: "backlog" })
   expect(mock.sdk.logEvent).toHaveBeenCalledTimes(2)
   const second = captureAnalyticsContext()
   identifyAnalytics("user-b", { id: "team-b", role: "admin" })
-  second("member_invite_action", { outcome: "success", invited_role: "member" })
+  second("member_invited", { outcome: "success", invited_role: "member" })
   expect(mock.sdk.logEvent).toHaveBeenCalledTimes(2)
+})
+
+test("the client shell distinguishes native apps from an installed browser", () => {
+  expect(clientAnalyticsPlatform("darwin")).toBe("macos")
+  expect(clientAnalyticsPlatform("win32")).toBe("windows")
+  expect(clientAnalyticsPlatform("linux")).toBe("linux")
+  const capacitor = { isNativePlatform: () => true, getPlatform: () => "ios" }
+  vi.stubGlobal("Capacitor", capacitor)
+  expect(clientAnalyticsPlatform("web")).toBe("ios")
+  capacitor.getPlatform = () => "android"
+  expect(clientAnalyticsPlatform("web")).toBe("android")
+  capacitor.isNativePlatform = () => false
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(display-mode: standalone)" }))
+  expect(clientAnalyticsPlatform("web")).toBe("pwa")
+  vi.stubGlobal("matchMedia", () => ({ matches: false }))
+  expect(clientAnalyticsPlatform("web")).toBe("web")
+  vi.unstubAllGlobals()
 })

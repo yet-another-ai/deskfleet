@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { schedulesClient, type ScheduleInput, type ScheduleRun, type ScheduledTask } from "@deskfleet/client/schedules"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
+import { captureAnalyticsContext } from "../services/analytics.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAccountSession } from "./useAccountSession.ts"
 
@@ -66,8 +67,10 @@ export function useScheduledTasks() {
   }
 
   async function save(id: string | undefined, input: ScheduleInput): Promise<ScheduledTask> {
+    const track = captureAnalyticsContext()
     return mutate(async () => {
       const task = id ? await api!.update(id, input) : await api!.create(input)
+      if (!id) track("schedule_action", { action: "create" })
       if (!disposed) replace(task)
       return task
     })
@@ -79,15 +82,19 @@ export function useScheduledTasks() {
     })
   }
   async function run(task: ScheduledTask): Promise<void> {
+    const track = captureAnalyticsContext()
     const accepted = await action(async () => {
       const result: ScheduleRun = await api!.run(task.id)
       if (!disposed) replace({ ...task, lastRun: result, runs: [result, ...task.runs.filter(run => run.id !== result.id)].slice(0, 50) })
     })
+    if (accepted) track("schedule_action", { action: "run" })
     if (accepted && !disposed) await refresh()
   }
   async function remove(task: ScheduledTask): Promise<void> {
+    const track = captureAnalyticsContext()
     await mutate(async () => {
       await api!.remove(task.id)
+      track("schedule_action", { action: "delete" })
       if (!disposed) tasks.value = tasks.value.filter(value => value.id !== task.id)
     })
   }

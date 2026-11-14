@@ -37,8 +37,7 @@ test("file peers retain transport through signaling loss and close on revocation
   expect(close).toHaveBeenCalledOnce()
   events.data(new Uint8Array())
   expect(telemetry.mock.calls.map(([event]) => event)).toEqual([
-    { name: "peer_granted", teamId: "1", metadata: { feature: "files", relay: "unconfigured" } },
-    { name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: "unconfigured", outcome: "connected", transport: "unknown" } },
+    { name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: "unconfigured", outcome: "connected" } },
   ])
 })
 
@@ -86,6 +85,6 @@ test.each(["free_plan", "turn_quota_exhausted", "metering_unavailable"] as const
   }), () => {}, failed)
   await expect(connecting).rejects.toThrow("Direct connection failed.")
   expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("TURN relay"), code: relayDeniedReason, relayDeniedReason }))
-  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: relayDeniedReason, outcome: "failed", transport: "unknown" } })
-  expect(telemetry).toHaveBeenCalledTimes(2)
+  expect(telemetry).toHaveBeenLastCalledWith({ name: "peer_connection", teamId: "1", metadata: { feature: "files", relay: relayDeniedReason, outcome: "failed" } })
+  expect(telemetry).toHaveBeenCalledTimes(1)
 })

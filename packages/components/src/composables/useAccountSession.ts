@@ -3,7 +3,7 @@ import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, LocalMachineStatus, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { router } from "../router/index.ts"
-import { captureAnalyticsContext } from "../services/analytics.ts"
+import { captureAnalyticsContext, identifyAnalytics, trackEvent } from "../services/analytics.ts"
 
 export { accountSessionKey, useAccountSession } from "./account-session-context.ts"
 
@@ -199,8 +199,10 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   }
   async function enrollLocal(name?: string): Promise<void> {
     if (!user.enrollLocal || !teamId.value) throw new Error("This computer cannot be connected from this client")
+    const track = captureAnalyticsContext()
     const selected = teamId.value, scope = resourceScope()
     const enrolled = await user.enrollLocal(selected, name)
+    track("machine_enrolled", { kind: "local" })
     if (resourceScope() !== scope) return
     await loadEnrollment(user)
     if (resourceScope() !== scope) return
@@ -208,8 +210,10 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   }
   async function enrollHeadless(value: HeadlessMachine): Promise<{ machine: Machine; token: string }> {
     if (!teamId.value) throw new Error("Select a team first")
+    const track = captureAnalyticsContext()
     const selected = teamId.value, scope = resourceScope()
     const result = await user.enrollHeadless(selected, value)
+    track("machine_enrolled", { kind: "headless" })
     if (resourceScope() === scope) await background(() => loadMachines(undefined, user))
     return result
   }
@@ -263,19 +267,24 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     selectMachine(id) { machineDestination = undefined; if (machines.value.some(value => value.id === id)) machineId.value = id },
     openMachineRoute, takeMachineDestination, openSession, takeSessionDestination,
     async createTeam(name) {
+      const actor = account.value.user
       const created = await user.createTeam(name)
+      const current = account.value.user
+      if (!actor || current?.id !== actor.id) return
       teams.value = [...teams.value, created]
+      identifyAnalytics(actor.id, { id: created.id, role: created.role }, current.email ?? undefined)
+      trackEvent("team_created", {})
       await selectTeam(created.id)
     },
     async joinTeam(code) {
       const track = captureAnalyticsContext()
-      track("team_join_action", { outcome: "attempt" })
+      track("team_joined", { outcome: "attempt" })
       let joined: Team
       try {
         joined = await user.acceptInvite(code)
-        track("team_join_action", { outcome: "success" })
+        track("team_joined", { outcome: "success" })
       } catch (reason) {
-        track("team_join_action", { outcome: "failure" })
+        track("team_joined", { outcome: "failure" })
         throw reason
       }
       teams.value = await user.teams()
