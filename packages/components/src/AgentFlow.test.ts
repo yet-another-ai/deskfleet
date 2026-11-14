@@ -471,6 +471,7 @@ test("choosing a working directory on the new-session composer passes cwd throug
   await flushPromises()
   await page().findAll("button").find(button => button.text() === "Select folder")!.trigger("click")
   await flushPromises()
+  await vi.waitFor(() => expect(wrapper.get("[data-composer-cwd]").text()).toContain("project"))
   await wrapper.get("textarea").setValue("Work in the chosen folder")
   await wrapper.get('[aria-label="Send"]').trigger("click")
   await flushPromises()

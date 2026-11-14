@@ -227,7 +227,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       </div>
     </template>
   </div>
-  <UiDialog v-else class="w-[48rem] max-w-[calc(100vw-2rem)]" @close="emit('close')">
+  <UiDialog v-else v-slot="{ close }" class="w-[48rem] max-w-[calc(100vw-2rem)]" @close="emit('close')">
     <DialogTitle class="ui-dialog-title mb-3 break-all">{{ entry?.name ?? request.uri }}</DialogTitle>
     <div v-if="loading" class="flex flex-col gap-2 text-sm text-ui-text-muted" role="status">
       <div class="flex items-center justify-between gap-2">
@@ -268,7 +268,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       <UiButton v-if="isHtmlContent" type="button" variant="ghost" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
       <UiButton v-if="hasFileActions && canRevealResource" type="button" data-preview-action="reveal" @click="revealResource">{{ revealLabel }}</UiButton>
       <UiButton v-if="hasPrimaryAction" type="button" :data-preview-action="canOpenResource ? 'open' : 'download'" @click="fileAction">{{ primaryActionLabel }}</UiButton>
-      <UiButton type="button" @click="emit('close')">{{ t('files.close') }}</UiButton>
+      <UiButton type="button" @click="close">{{ t('files.close') }}</UiButton>
     </div>
   </UiDialog>
 </template>

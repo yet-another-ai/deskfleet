@@ -371,7 +371,7 @@ test("a user without a Team creates one from onboarding and is asked to add a ma
   expect(page().findAll('[role="alert"]')).toHaveLength(1)
   await page().get("[role=dialog] form").trigger("submit")
   await flushPromises()
-  expect(page().find("[role=dialog]").exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find("[role=dialog]").exists()).toBe(false))
   expect(page().get('button[aria-label="Team"]').text()).toContain("Platform")
   expect(page().get("main h1").text()).toBe("Add a machine to Platform")
 })

@@ -149,7 +149,7 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   await page().get('[data-provider-advanced] > button').trigger("click")
   await page().get('[data-provider-shell-environment]').trigger("click")
   await page().get("form").trigger("submit")
-  await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
+  await vi.waitFor(() => expect(page().find("[role=dialog]").exists()).toBe(false))
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerUpdate", { providerId: "shared-provider", changes: expect.objectContaining({ name: "Renamed second provider", inheritShellEnvironment: false }) })
   expect(f.snapshots.get("m1")!.providers[0]!.name).toBe("Codex m1")
 
@@ -158,7 +158,7 @@ test("Agents tabs switch the owning runtime for provider operations and setup te
   await flushPromises()
   await page().get('[name="provider-name"]').setValue("Second custom agent")
   await page().get("form").trigger("submit")
-  await settled(() => expect(page().find("[role=dialog]").exists()).toBe(false))
+  await vi.waitFor(() => expect(page().find("[role=dialog]").exists()).toBe(false))
   expect(f.rpc).toHaveBeenCalledWith("team-1", "m2", "providerCreate", { provider: expect.objectContaining({ name: "Second custom agent" }) })
   await page().get('[aria-label="Actions for Renamed second provider"]').trigger("click")
   await settled(() => expect(page().findAll('[role="menuitem"]')).toHaveLength(3))

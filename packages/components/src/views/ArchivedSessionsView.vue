@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { Archive, ArchiveRestore, RefreshCw, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { DialogTitle } from "reka-ui"
@@ -18,6 +20,7 @@ import UiScrollArea from "../components/common/UiScrollArea.vue"
 import SessionContextMenu from "../components/session/SessionContextMenu.vue"
 
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const router = useRouter()
 const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
@@ -78,7 +81,7 @@ async function confirmAction(): Promise<void> {
 <template>
   <PaneHeader>{{ t('archivedSessions.title') }}</PaneHeader>
   <UiScrollArea class="min-h-0 flex-1" viewport-class="px-5 pb-10 pt-6 lg:px-8">
-    <div class="mx-auto flex max-w-4xl flex-col gap-5">
+    <div v-navigation-motion="motion" class="mx-auto flex max-w-4xl flex-col gap-5">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
           <h1 class="ui-page-title">{{ t('archivedSessions.title') }}</h1>
@@ -113,12 +116,12 @@ async function confirmAction(): Promise<void> {
       </ul>
     </div>
   </UiScrollArea>
-  <UiDialog v-if="confirming" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
+  <UiDialog v-if="confirming" v-slot="{ close }" class="w-[24rem]" :prevent-close="busy" @close="confirmingId = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(confirmingAction === 'delete' ? 'agent.delete' : 'agent.restore') }}</DialogTitle>
     <p class="m-0 text-sm leading-relaxed">{{ t(confirmingAction === 'delete' ? (confirming.session.context === 'directory' ? 'agent.deleteDirectoryQuestion' : 'agent.deleteQuestion') : (confirming.session.context === 'worktree' ? 'agent.restoreWorktreeQuestion' : 'agent.restoreQuestion')) }}</p>
     <ErrorNotice v-if="restoreError" :error="restoreError" class="mt-3" />
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="busy" @click="confirmingId = undefined">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton type="button" :disabled="busy" @click="close">{{ t('catalog.cancel') }}</UiButton>
       <HoldButton v-if="confirmingAction === 'delete'" variant="danger" :text="t('agent.delete')" :hold-label="t('agent.holdToConfirm')" :disabled="busy || !confirming.online" data-confirm-delete @confirm="confirmAction" />
       <UiButton v-else variant="primary" type="button" :disabled="busy || !confirming.online" data-confirm-restore @click="confirmAction">{{ t('agent.restore') }}</UiButton>
     </div>

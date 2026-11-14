@@ -197,4 +197,9 @@ async function reset(): Promise<void> {
   height: 2.125rem;
   background: var(--thumb-hover-bg);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .chromatic-hue-slider::-webkit-slider-thumb { transition: none; }
+  .chromatic-hue-slider::-moz-range-thumb { transition: none; }
+}
 </style>

@@ -49,7 +49,7 @@ test("browses folders on the supplied machine and only selects the loaded direct
   await flushPromises()
   expect(browse).toHaveBeenLastCalledWith("/home/agent")
   await button(view, "Select folder").trigger("click")
-  expect(view.emitted("select")).toEqual([["/home/agent"]])
+  await vi.waitFor(() => expect(view.emitted("select")).toEqual([["/home/agent"]]))
   expect(view.emitted("cancel")).toBeUndefined()
 })
 
@@ -110,7 +110,7 @@ test("Escape leaves inline path editing before dismissing the picker", async () 
   expect(view.emitted("cancel")).toBeUndefined()
   await flushPromises()
   await view.get('[role="dialog"]').trigger("keydown", { key: "Escape" })
-  expect(view.emitted("cancel")).toEqual([[]])
+  await vi.waitFor(() => expect(view.emitted("cancel")).toEqual([[]]))
 })
 
 test("selecting an edited path validates it and never selects the previous folder on failure", async () => {
@@ -130,7 +130,7 @@ test("selecting an edited path validates it and never selects the previous folde
   await button(view, "Select folder").trigger("click")
   await flushPromises()
   expect(browse).toHaveBeenLastCalledWith(code.path)
-  expect(view.emitted("select")).toEqual([[code.path]])
+  await vi.waitFor(() => expect(view.emitted("select")).toEqual([[code.path]]))
 })
 
 test("failed navigation cannot select the previous folder and retries the failed path", async () => {
@@ -147,7 +147,7 @@ test("failed navigation cannot select the previous folder and retries the failed
   expect(browse).toHaveBeenLastCalledWith(code.path)
   expect(view.find('[role="alert"]').exists()).toBe(false)
   await button(view, "Select folder").trigger("click")
-  expect(view.emitted("select")).toEqual([[code.path]])
+  await vi.waitFor(() => expect(view.emitted("select")).toEqual([[code.path]]))
 })
 
 test("ignores outdated directory responses when a newer navigation finishes first", async () => {
@@ -164,13 +164,13 @@ test("ignores outdated directory responses when a newer navigation finishes firs
   await flushPromises()
   expect(view.get("[data-current-path]").attributes("data-current-path")).toBe(home.path)
   await button(view, "Select folder").trigger("click")
-  expect(view.emitted("select")).toEqual([[home.path]])
+  await vi.waitFor(() => expect(view.emitted("select")).toEqual([[home.path]]))
 })
 
 test("Escape cancels only the picker without choosing a folder", async () => {
   const view = await render(vi.fn().mockResolvedValue(home))
   await flushPromises()
   await view.get("[role=dialog]").trigger("keydown", { key: "Escape" })
-  expect(view.emitted("cancel")).toEqual([[]])
+  await vi.waitFor(() => expect(view.emitted("cancel")).toEqual([[]]))
   expect(view.emitted("select")).toBeUndefined()
 })

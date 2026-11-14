@@ -8,8 +8,16 @@ const channels = new WeakMap<HTMLElement, Channels>()
 const numberPattern = /-?(?:\d*\.)?\d+(?:e[+-]?\d+)?/gi
 const cssName = (name: string) => name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)
 
+/** Directives own DOM listeners explicitly across VDOM and Vapor lifecycles. */
+function onReducedMotion(settle: () => void): () => void {
+  const media = window.matchMedia("(prefers-reduced-motion: reduce)")
+  const changed = () => { if (media.matches) settle() }
+  media.addEventListener("change", changed)
+  return () => media.removeEventListener("change", changed)
+}
+
 /** Vapor supplies reactive getters; VDOM supplies a binding on each render. */
-function motionDirective<Value>(
+export function motionDirective<Value>(
   render: (element: HTMLElement, value: Value, modifiers: DirectiveModifiers, first: boolean) => void,
   dispose: (element: HTMLElement) => void,
 ): FunctionDirective<HTMLElement, Value> & VaporDirective<HTMLElement, Value> {
@@ -80,55 +88,58 @@ function update(element: HTMLElement, binding: SpringStyle | Values, entering = 
   }
 }
 
+const stylePreferences = new WeakMap<HTMLElement, () => void>()
 export const vSpring = motionDirective<SpringStyle | Values>(
-  (element, value, modifiers) => update(element, value, modifiers.enter),
+  (element, value, modifiers, first) => {
+    update(element, value, modifiers.enter)
+    if (first) stylePreferences.set(element, onReducedMotion(() => {
+      channels.get(element)?.forEach((channel, property) => {
+        channel.animations.forEach((animation, index) => {
+          const target = animation.spring.target
+          animation.cancel()
+          animation.spring.jump(target)
+          channel.values[index] = target
+        })
+        element.style.setProperty(property, channel.parts.reduce((text, part, index) => text + part + (channel.values[index] ?? ""), ""))
+      })
+    }))
+  },
   element => {
+    stylePreferences.get(element)?.()
+    stylePreferences.delete(element)
     channels.get(element)?.forEach(channel => channel.animations.forEach(animation => animation.cancel()))
     channels.delete(element)
   },
 )
 
-const entrances = new WeakMap<HTMLElement, SpringAnimation>()
-function enter(element: HTMLElement): void {
-  entrances.get(element)?.cancel()
+const entrances = new WeakMap<HTMLElement, () => void>()
+function enter(element: HTMLElement, anchored: boolean): void {
+  entrances.get(element)?.()
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
   const side = element.dataset.side
   const x = side === "left" ? 4 : side === "right" ? -4 : 0
-  const y = side === "top" ? 4 : side === "bottom" ? -4 : 8
+  const y = side === "top" ? 4 : side === "bottom" ? -4 : side === "left" || side === "right" || anchored ? 0 : 8
+  const original = { translate: element.style.translate, scale: element.style.scale }
+  const restore = () => {
+    element.style.translate = original.translate
+    element.style.scale = original.scale
+  }
   const animation = animateSpring(1, 0, position => {
     element.style.translate = `${x * position}px ${y * position}px`
+    if (anchored) element.style.scale = String(1 - 0.02 * position)
   }, { positionThreshold: 0.001, velocityThreshold: 0.005 })
-  entrances.set(element, animation)
+  const stopPreference = onReducedMotion(() => { animation.cancel(); restore() })
+  const dispose = () => { animation.cancel(); stopPreference(); restore() }
+  entrances.set(element, dispose)
   void animation.finished.then(() => {
-    if (entrances.get(element) === animation) element.style.translate = ""
+    stopPreference()
+    if (entrances.get(element) === dispose) restore()
   })
 }
-/** Shared entrance for anchored surfaces and newly mounted content. */
-export const vSpringEnter = motionDirective<undefined>(
-  (element, _value, _modifiers, first) => { if (first) enter(element) },
-  element => { entrances.get(element)?.cancel(); entrances.delete(element) },
-)
-
-const childrenObservers = new WeakMap<HTMLElement, MutationObserver>()
-/** Route stages own their immediate content entrances; title-bar drag regions stay fixed. */
-export const vSpringChildren = motionDirective<undefined>(
-  (element, _value, _modifiers, first) => {
-    if (!first) return
-    const start = (child: Node) => { if (child instanceof HTMLElement && child.tagName !== "HEADER") enter(child) }
-    element.childNodes.forEach(start)
-    const observer = new MutationObserver(records => {
-      for (const record of records) {
-        record.removedNodes.forEach(child => { if (child instanceof HTMLElement) entrances.get(child)?.cancel() })
-        record.addedNodes.forEach(start)
-      }
-    })
-    observer.observe(element, { childList: true })
-    childrenObservers.set(element, observer)
-  },
-  element => {
-    childrenObservers.get(element)?.disconnect()
-    element.childNodes.forEach(child => { if (child instanceof HTMLElement) entrances.get(child)?.cancel() })
-  },
+/** Anchored overlays grow from their origin; local notices keep their small rise. */
+export const vSpringEnter = motionDirective<"anchor" | undefined>(
+  (element, value, _modifiers, first) => { if (first) enter(element, value === "anchor") },
+  element => { entrances.get(element)?.(); entrances.delete(element) },
 )
 
 const hoverCleanup = new WeakMap<HTMLElement, () => void>()
@@ -136,6 +147,11 @@ export const vSpringHover = motionDirective<number>(
   (element, value, _modifiers, first) => {
     if (!first) return
     const motion = animateSpring(0, 0, y => { element.style.translate = `0px ${y}px` })
+    const stopPreference = onReducedMotion(() => {
+      motion.cancel()
+      motion.spring.jump(0)
+      element.style.translate = "0px 0px"
+    })
     const over = () => {
       if (!element.closest(":disabled, [data-disabled], [aria-disabled=true]") && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) motion.setTarget(value)
     }
@@ -144,6 +160,7 @@ export const vSpringHover = motionDirective<number>(
     element.addEventListener("pointerleave", out)
     hoverCleanup.set(element, () => {
       motion.cancel()
+      stopPreference()
       element.removeEventListener("pointerenter", over)
       element.removeEventListener("pointerleave", out)
     })

@@ -627,4 +627,9 @@ onScopeDispose(() => {
 .deskfleet-windows :deep(.dv-drop-target-selection.dv-drop-target-selection-line) {
   @apply rounded-full;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .deskfleet-windows :deep(.dv-drop-target),
+  .deskfleet-windows :deep(.dv-drop-target-container) { --dv-transition-duration: 0ms; }
+}
 </style>

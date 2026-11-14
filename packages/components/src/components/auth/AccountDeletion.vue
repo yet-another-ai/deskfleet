@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DialogDescription, DialogTitle } from "reka-ui"
 import { useAsyncState } from "@vueuse/core"
-import { computed, ref, useId } from "vue"
+import { computed, ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
@@ -14,6 +14,7 @@ import SettingsRow from "../settings/SettingsRow.vue"
 const props = defineProps<{ account: AccountAuthentication; confirmed: RecentAuthentication["confirmed"] }>()
 const { t, locale } = useI18n()
 const id = useId()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const formatDate = (value: string) => new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
 const { state, isLoading, error, executeImmediate: load } = useAsyncState(() => props.account.deletionRequest(), { request: null })
 const request = computed(() => state.value?.request)
@@ -35,7 +36,7 @@ async function submit(): Promise<void> {
   actionError.value = undefined
   try {
     await props.confirmed(() => props.account.requestDeletion(reason.value.trim()))
-    requesting.value = false
+    dialog.value?.close()
     await load()
   } catch (cause) { actionError.value = failureMessage(cause) }
   finally { submitting.value = false }
@@ -70,7 +71,7 @@ async function cancel(): Promise<void> {
       </SettingsRow>
     </div>
   </section>
-  <UiDialog v-if="requesting" class="w-[26rem]" described :prevent-close="submitting" @close="requesting = false">
+  <UiDialog ref="dialog" v-if="requesting" v-slot="{ close }" class="w-[26rem]" described :prevent-close="submitting" @close="requesting = false">
     <DialogTitle class="ui-dialog-title">{{ t("auth.deleteAccountTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("auth.deleteAccountDescription") }}</DialogDescription>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
@@ -81,7 +82,7 @@ async function cancel(): Promise<void> {
       <p class="m-0 text-[13px] text-ui-text-muted">{{ t("auth.deleteAccountOwnership") }}</p>
       <p v-if="actionError" role="alert" class="m-0 text-sm text-ui-danger">{{ actionError }}</p>
       <div class="ui-dialog-actions mt-2">
-        <UiButton :disabled="submitting" @click="requesting = false">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton :disabled="submitting" @click="close">{{ t("catalog.cancel") }}</UiButton>
         <UiButton type="submit" variant="danger" :loading="submitting" :disabled="!reason.trim()">{{ t("auth.submitDeletionRequest") }}</UiButton>
       </div>
     </form>

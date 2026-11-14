@@ -2,7 +2,7 @@
 import { KeyRound, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { DialogTitle } from "reka-ui"
-import { ref, useId } from "vue"
+import { ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, Passkey } from "@deskfleet/client/account-security"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
@@ -14,6 +14,7 @@ import UiDialog from "../common/UiDialog.vue"
 const props = defineProps<{ account: AccountAuthentication; confirmed: RecentAuthentication["confirmed"]; formatDate(value: string | number): string }>()
 const { t } = useI18n()
 const id = useId()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const supported = passkeysAvailable()
 const { state: passkeys, isLoading, error: loadError, executeImmediate: load } = useAsyncState(() => props.account.passkeys(), [])
 /** The Passkey being named: a new one has no id yet. */
@@ -30,7 +31,7 @@ async function save(): Promise<void> {
   error.value = undefined
   try {
     await props.confirmed(() => key ? props.account.renamePasskey(key.id, name.trim()) : props.account.addPasskey(name.trim()))
-    naming.value = undefined
+    dialog.value?.close()
     await load()
   } catch (reason) { error.value = failureMessage(reason) }
   finally { pending.value = false }
@@ -70,7 +71,7 @@ async function remove(key: Passkey): Promise<void> {
       </li>
     </ul>
   </section>
-  <UiDialog v-if="naming" class="w-[24rem]" :prevent-close="pending" @close="naming = undefined">
+  <UiDialog ref="dialog" v-if="naming" v-slot="{ close }" class="w-[24rem]" :prevent-close="pending" @close="naming = undefined">
     <DialogTitle class="ui-dialog-title">{{ t(naming.key ? "auth.renamePasskey" : "auth.addPasskey") }}</DialogTitle>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="save">
       <label class="flex flex-col gap-1.5 text-sm">
@@ -80,7 +81,7 @@ async function remove(key: Passkey): Promise<void> {
       <p v-if="!naming.key" class="m-0 text-[13px] text-ui-text-muted">{{ t("auth.addPasskeyDescription") }}</p>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="ui-dialog-actions mt-2">
-        <UiButton :disabled="pending" @click="naming = undefined">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
         <UiButton type="submit" variant="primary" :loading="pending">{{ t(naming.key ? "catalog.save" : "auth.continue") }}</UiButton>
       </div>
     </form>

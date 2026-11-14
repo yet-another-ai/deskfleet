@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vNavigationMotion } from "../directives/navigation-motion.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
 import UiScrollArea from "../components/common/UiScrollArea.vue"
@@ -29,6 +31,7 @@ import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
 import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
 import MermaidViewer from "../components/session/MermaidViewer.vue"
 import PreviewViewer from "../components/session/PreviewViewer.vue"
+import FocusOverlay from "../components/common/FocusOverlay.vue"
 import { useFleetStore } from "../stores/fleet.ts"
 import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../stores/layout.ts"
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
@@ -57,6 +60,7 @@ const props = defineProps<{ sessionId: string }>()
 const reading = useConversationReadingStore()
 provide(conversationReadingKey, () => reading.session(props.sessionId))
 const { t } = useI18n()
+const motion = useNavigationMotion()
 const route = useRoute()
 const router = useRouter()
 const newTerminalWindow = inject(newTerminalWindowKey, undefined)
@@ -74,6 +78,7 @@ const focusedMermaidSource = computed<MermaidSource>(() => ({
   ...(typeof route.query.mermaidEntry === "string" && route.query.mermaidEntry ? { entryId: route.query.mermaidEntry } : {}),
   ...(typeof route.query.mermaidDiagram === "string" && route.query.mermaidDiagram ? { diagramId: route.query.mermaidDiagram } : {}),
 }))
+const focusedMermaidContent = computed(() => focusedMermaid.value ? { code: focusedMermaid.value, source: focusedMermaidSource.value } : undefined)
 const focusedPreview = computed(() => {
   const preview = focusedPreviewFromRoute(route)
   if (!preview) return undefined
@@ -362,7 +367,7 @@ async function checkOperation(operationId: string): Promise<void> {
       </div>
     </template>
   </SessionHeader>
-  <div class="relative flex min-h-0 flex-1">
+  <div v-navigation-motion="compact ? undefined : motion" class="relative flex min-h-0 flex-1">
     <UiScrollArea
       ref="scrollArea"
       fade="top"
@@ -445,16 +450,16 @@ async function checkOperation(operationId: string): Promise<void> {
   <SessionTerminalPanel v-if="compact && !windowedMainWindow && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
-  <div v-if="focusedMermaid" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
+  <FocusOverlay :content="focusedMermaidContent" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performMermaidLocateDom()" v-slot="{ content }">
     <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
       <WindowToolbar />
     </div>
-    <MermaidViewer :key="focusedMermaid" :code="focusedMermaid" :source="focusedMermaidSource" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
-  </div>
-  <div v-if="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas">
+    <MermaidViewer :key="content.code" :code="content.code" :source="content.source" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
+  </FocusOverlay>
+  <FocusOverlay :content="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performPreviewLocateDom()" v-slot="{ content }">
     <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
       <WindowToolbar />
     </div>
-    <PreviewViewer :key="focusedPreview.content" v-bind="focusedPreview" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
-  </div>
+    <PreviewViewer :key="content.content" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
+  </FocusOverlay>
 </template>

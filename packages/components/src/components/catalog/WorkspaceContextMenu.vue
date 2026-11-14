@@ -112,12 +112,12 @@ defineExpose({ cursor, pointerReference })
     </ContextMenuPortal>
   </ContextMenuRoot>
   <WorkspaceEditDialog v-if="dialog === 'edit'" v-bind="props" @close="dialog = undefined" />
-  <UiDialog v-else-if="dialog === 'delete'" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
+  <UiDialog v-else-if="dialog === 'delete'" v-slot="{ close }" class="w-[24rem]" :prevent-close="pending" @close="dialog = undefined">
     <DialogTitle class="ui-dialog-title">{{ t('workspace.delete') }}</DialogTitle>
     <p class="m-0 mt-3 text-sm leading-relaxed">{{ workspaceSessions.length ? t('workspace.deleteSessionsQuestion', { name, count: workspaceSessions.length }, workspaceSessions.length) : t('workspace.deleteQuestion', { name }) }}</p>
     <p v-if="error" role="alert" class="mb-0 mt-3 text-sm text-ui-danger">{{ error instanceof Error ? error.message : String(error) }}</p>
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="pending" @click="dialog = undefined">{{ t('catalog.cancel') }}</UiButton>
+      <UiButton type="button" :disabled="pending" @click="close">{{ t('catalog.cancel') }}</UiButton>
       <UiButton variant="danger" type="button" :disabled="pending || disabled" @click="confirm">{{ t(workspaceSessions.length ? 'workspace.confirmDeleteSessions' : 'catalog.confirmDelete') }}</UiButton>
     </div>
   </UiDialog>

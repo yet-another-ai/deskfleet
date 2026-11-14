@@ -543,9 +543,10 @@ catalogs share keys and parameters and that literal `t("…")` keys exist.
 Design tokens are CSS custom properties in `packages/components/src/theme-tokens.css`:
 colors with light and dark values, depth (shadows and a top-edge highlight that reads
 as elevation in dark mode), and motion (easings and
-`--ui-duration-*`). Entrances decelerate, exits accelerate and run shorter, and
-only toggles overshoot. Under `prefers-reduced-motion`, every duration collapses to
-1ms and decorative loops stop.
+`--ui-duration-*`). CSS fades and colors use those durations; position, size,
+navigation entrances, and dialogs use the shared spring controller. Under
+`prefers-reduced-motion`, CSS durations collapse to 1ms, decorative loops stop,
+and active springs settle immediately.
 
 UnoCSS uses `presetWind4` from `packages/components/uno.config.ts`. It exposes colors
 as `*-ui-<name>` utilities and owns the component shortcuts (`ui-button`, `ui-card`,
@@ -560,9 +561,8 @@ and production builds emit them as a static stylesheet.
 
 `packages/components/src/styles.css` holds the base reset and the effects that
 utilities can't express:
-- Overlay and dialog enter and exit keyframes. Reka keeps closing content mounted
-  until its exit animation ends.
-- The `ui-route-stage` page entrance.
+- Anchored overlay fade and exit keyframes. Reka keeps closing popovers mounted
+  until their exit animation ends. Dialogs own their spring presence instead.
 - `ui-rise-in` and `ui-pop-in`.
 - `ui-collapsible` height animation. Keep that element bare and put spacing,
   borders, and backgrounds on a child; padding or a border would stop it
@@ -575,10 +575,21 @@ utilities can't express:
 - `ui-attention` for pending decisions.
 - `ui-aurora` and `ui-gradient-text` for hero content.
 
-The renderer runs in Vue Vapor mode, so these are CSS animations that run on
-insertion or on a `data-state` change, not `<Transition>` wrappers. Animations use
-the individual `translate` and `scale` properties so they compose with an element's
-own `transform`.
+The renderer runs in Vue Vapor mode. Explicit navigation content boundaries use
+the shared spring: peer destinations fade, while Developer/NAT and Scheduled Task
+list/detail navigation enter from opposite horizontal directions. The navigation
+identity excludes query/hash state and never becomes a Vue component key. Headers,
+settings navigation, and focus overlays are outside this page entrance; async DOM
+insertion does not replay it. Local CSS effects run on insertion or `data-state`
+changes. Motion uses individual `translate` and `scale` properties so it composes
+with an element's own `transform`, without `<Transition>` wrappers.
+
+`UiDialog` shares one spring across panel scale/opacity and scrim opacity. Request
+closure through its exposed `close()` or default slot's `close`; its `close`
+event signals that the exit has settled and caller-owned data can be cleared.
+This also keeps quick reopenings continuous and restores focus after removal.
+Focus previews use `FocusOverlay` to retain their descriptor through fade-out,
+then perform pending source-location work after the preview DOM is removed.
 
 ## Renderer security
 

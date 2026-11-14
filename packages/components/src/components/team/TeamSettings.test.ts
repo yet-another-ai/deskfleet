@@ -70,7 +70,7 @@ test("member removal confirms first and stays open with its error for retry", as
   await flushPromises()
   expect(fake.central.removeMember).toHaveBeenLastCalledWith("team-1", "user-2")
   expect(view!.find('[data-member-id="user-2"]').exists()).toBe(false)
-  expect(view!.find("[role=dialog]").exists()).toBe(false)
+  await vi.waitFor(() => expect(view!.find("[role=dialog]").exists()).toBe(false))
 })
 
 test("invitations show a copyable one-time code", async () => {
@@ -93,7 +93,7 @@ test("invitations show a copyable one-time code", async () => {
   expect(code.element.value).toBe("invitation-token")
   expect(document.activeElement).toBe(code.element)
   await button("Done")!.trigger("click")
-  expect(view!.find("[role=dialog]").exists()).toBe(false)
+  await vi.waitFor(() => expect(view!.find("[role=dialog]").exists()).toBe(false))
 })
 
 test("a failed invitation records its role and outcome without the email or error", async () => {
@@ -213,7 +213,7 @@ test("Owners retain administration controls and transfer ownership to the select
   expect(view!.get('[data-member-id="user-3"]').text()).toContain("Owner")
   expect(view!.find('[role="combobox"][aria-label="Role for Grace"]').exists()).toBe(false)
   expect(view!.find('[aria-label="Remove Grace"]').exists()).toBe(false)
-  expect(button("Transfer ownership")).toBeUndefined()
+  await vi.waitFor(() => expect(button("Transfer ownership")).toBeUndefined())
   expect(view!.find('[role="dialog"]').exists()).toBe(false)
 })
 
@@ -224,7 +224,7 @@ test("administrators cannot change the Owner or transfer ownership", async () =>
   expect(view!.get('[data-member-id="user-3"]').text()).toContain("Owner")
   expect(view!.find('[role="combobox"][aria-label="Role for Grace"]').exists()).toBe(false)
   expect(view!.find('[aria-label="Remove Grace"]').exists()).toBe(false)
-  expect(button("Transfer ownership")).toBeUndefined()
+  await vi.waitFor(() => expect(button("Transfer ownership")).toBeUndefined())
   expect(button("Invite")).toBeDefined()
 })
 
@@ -239,5 +239,5 @@ test("a refresh failure after transfer closes the dialog without offering to rep
   expect(session!.notice.value).toBe("Could not refresh teams")
   expect(view!.get('[data-member-id="user-2"]').text()).toContain("Owner")
   expect(view!.find('[role="dialog"]').exists()).toBe(false)
-  expect(button("Transfer ownership")).toBeUndefined()
+  await vi.waitFor(() => expect(button("Transfer ownership")).toBeUndefined())
 })

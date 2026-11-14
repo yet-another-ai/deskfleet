@@ -154,7 +154,7 @@ test("new-session composer picks, cancels, clears, and defaults the working dire
     await flushPromises()
     await page.findAll("button").find(button => button.text() === i18n.global.t("folderPicker.select"))!.trigger("click")
     await flushPromises()
-    expect(cwd.value).toBe("/home/agent/code")
+    await vi.waitFor(() => expect(cwd.value).toBe("/home/agent/code"))
     expect(wrapper.get("[data-composer-cwd]").text()).toContain("code")
     expect(wrapper.find("[data-composer-cwd-clear]").exists()).toBe(true)
 
@@ -163,7 +163,7 @@ test("new-session composer picks, cancels, clears, and defaults the working dire
     await page.findAll("button").find(button => button.text() === i18n.global.t("catalog.cancel"))!.trigger("click")
     await flushPromises()
     expect(cwd.value).toBe("/home/agent/code")
-    expect(page.find('[role="dialog"]').exists()).toBe(false)
+    await vi.waitFor(() => expect(page.find('[role="dialog"]').exists()).toBe(false))
 
     await wrapper.get("[data-composer-cwd-clear]").trigger("click")
     await flushPromises()

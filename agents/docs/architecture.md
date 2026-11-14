@@ -245,6 +245,35 @@ Motion directives support both VDOM and Vapor lifecycles. Reka popovers and
 dialogs render through the thin VDOM `SpringSurface` so their attributes,
 event handlers, and positioning refs reach the animated native element.
 
+Navigation motion follows page relationships independently of component identity.
+Peer destinations fade in; Developer/NAT and Scheduled Task list/detail navigation
+use opposite horizontal entrances for entering and returning. A navigation key
+contains the route name and resource parameters, never filters, message anchors,
+or other query state, and is not used as a Vue component key. Each mounted App
+owns this state; replacing a Machine runtime starts with a nondirectional entrance.
+Standalone settings shells own the same state when no Machine App is mounted.
+Successful route changes update it, so redirects classify their final destination
+and canceled navigation cannot animate the current page.
+Views opt their main content into the navigation directive. Settings animates
+only its inner content, leaving its navigation and title-bar drag regions fixed.
+The directive runs for a changed navigation key, not for arbitrary DOM insertion;
+loading results and same-page updates do not replay it. Mobile Session view
+movement stays with the existing swipe/overview surfaces. No route animation
+retains a departing live Session, terminal, or media view to wait for an exit.
+
+Anchored overlays spring along their resolved popper side, with no movement on
+the other axis. Centered dialogs use scale and opacity, sharing their spring
+progress with the scrim. `UiDialog.close()` (also exposed to its default slot)
+requests closure; its `close` event fires after the exit settles. Callers retain
+their dialog data until that event, including picker selections and confirmation
+results. Reopening reverses the current spring while preserving the original
+focus destination. Reka keeps the dialog in its modal and focus stacks throughout
+the visible exit, so repeated Escape cannot dismiss an underlying dialog.
+Focus previews keep their last content descriptor through their fade-out and
+report removal after their DOM is gone, including when a route unmounts them.
+Directive-driven springs also observe reduced-motion changes during an active
+animation and settle immediately; gesture surfaces retain their existing policy.
+
 Pointer dragging directly controls position and estimates velocity in units per
 second. Releasing a snapping surface continues toward its target with that
 velocity; canvas panning and sliders instead use damping-only inertia and absorb

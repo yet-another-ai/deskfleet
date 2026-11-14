@@ -12,6 +12,7 @@ import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{ team: Team }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t, locale } = useI18n()
 const central = useAccountSession()!.central
 const code = useTemplateRef<InstanceType<typeof CopyField>>("code")
@@ -24,7 +25,7 @@ const expires = computed(() => invite.value
   ? new Intl.DateTimeFormat(intlLocale(locale.value as AppLocale), { dateStyle: "medium", timeStyle: "short" }).format(new Date(invite.value.expiresAt))
   : "")
 
-function close(): void { if (!pending.value) emit("close") }
+function close(): void { if (!pending.value) dialog.value?.close() }
 async function submit(): Promise<void> {
   if (pending.value) return
   pending.value = true
@@ -46,7 +47,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <UiDialog class="w-[28rem]" :prevent-close="pending" @close="close">
+  <UiDialog ref="dialog" class="w-[28rem]" :prevent-close="pending" @close="emit('close')">
     <DialogTitle class="ui-dialog-title">{{ t(invite ? "team.inviteReady" : "team.inviteTitle", { team: team.name }) }}</DialogTitle>
     <template v-if="invite">
       <p class="ui-dialog-description mb-5">{{ t("team.inviteInstructions", { email: email.trim(), expires }) }}</p>

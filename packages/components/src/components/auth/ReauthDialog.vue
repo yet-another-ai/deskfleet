@@ -2,7 +2,7 @@
 import { useIntervalFn } from "@vueuse/core"
 import { KeyRound } from "@lucide/vue"
 import { DialogDescription, DialogTitle } from "reka-ui"
-import { onMounted, ref } from "vue"
+import { onMounted, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import type { AccountAuthentication, AuthenticationMethods } from "@deskfleet/client/account-security"
@@ -19,6 +19,8 @@ const props = defineProps<{
   authenticationMethods: AccountAuthentication["authenticationMethods"]
 }>()
 const emit = defineEmits<{ settle: [confirmed: boolean] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
+let confirmed = false
 const { t } = useI18n()
 const password = ref("")
 const pending = ref(false)
@@ -52,7 +54,8 @@ async function confirmEmail(): Promise<void> {
   error.value = undefined
   try {
     await props.verifyEmailCode(emailChallenge.value, emailCode.value.trim())
-    emit("settle", true)
+    confirmed = true
+    dialog.value?.close()
   } catch (reason) { error.value = failureMessage(reason) }
   finally { pending.value = false }
 }
@@ -68,14 +71,15 @@ async function confirm(usePasskey: boolean): Promise<void> {
   try {
     await props.reauthenticate(usePasskey ? undefined : password.value)
     password.value = ""
-    emit("settle", true)
+    confirmed = true
+    dialog.value?.close()
   } catch (reason) { error.value = failureMessage(reason) }
   finally { pending.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[24rem]" described :prevent-close="pending" @close="emit('settle', false)">
+  <UiDialog ref="dialog" v-slot="{ close }" class="w-[24rem]" described :prevent-close="pending" @close="emit('settle', confirmed)">
     <DialogTitle class="ui-dialog-title">{{ t("auth.reauthTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("auth.reauthDescription") }}</DialogDescription>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="emailChallenge ? confirmEmail() : confirm(false)">
@@ -89,7 +93,7 @@ async function confirm(usePasskey: boolean): Promise<void> {
       <div class="flex flex-wrap items-center gap-2">
         <UiButton v-if="methods?.passkey && passkeysAvailable()" variant="ghost" :disabled="pending" @click="confirm(true)"><KeyRound :size="15" :stroke-width="1.75" aria-hidden="true" />{{ t("auth.usePasskeyInstead") }}</UiButton>
         <span class="flex-1" />
-        <UiButton :disabled="pending" @click="emit('settle', false)">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton :disabled="pending" @click="close">{{ t("catalog.cancel") }}</UiButton>
         <UiButton v-if="emailChallenge || methods?.password" type="submit" variant="primary" :loading="pending">{{ t("auth.confirm") }}</UiButton>
       </div>
     </form>

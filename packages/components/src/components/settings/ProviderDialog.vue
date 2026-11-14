@@ -26,6 +26,7 @@ const props = withDefaults(defineProps<{
   test(provider: AgentProviderInput): Promise<ProviderTestResult>
 }>(), { shellEnvironmentDefault: true })
 const emit = defineEmits<{ saved: []; cancel: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const pathInput = useTemplateRef<HTMLInputElement>("pathInput")
 // A new provider starts by choosing its agent; the template is fixed once created.
@@ -79,6 +80,7 @@ const testHasDetails = computed(() => !!testResult.value && !testResult.value.ok
 const testDetails = ref(false)
 let testRevision = 0
 let finished = false
+let saved = false
 
 watch(template, (value, previous) => {
   if (!name.value.trim() || name.value === props.templates.find(item => item.id === previous)?.name) {
@@ -167,7 +169,12 @@ async function runTest(): Promise<void> {
 function cancel(): void {
   if (saving.value || setupBusy.value || finished) return
   finished = true
-  emit("cancel")
+  dialog.value?.close()
+}
+function closed(): void {
+  finished = true
+  if (saved) emit("saved")
+  else emit("cancel")
 }
 async function submit(): Promise<void> {
   if (formDisabled.value) return
@@ -178,7 +185,8 @@ async function submit(): Promise<void> {
   try {
     await props.save(provider)
     finished = true
-    emit("saved")
+    saved = true
+    dialog.value?.close()
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { saving.value = false }
 }
@@ -187,12 +195,13 @@ onBeforeUnmount(() => { finished = true })
 
 <template>
   <UiDialog
+    ref="dialog"
     class="flex w-[min(72rem,calc(100vw-2rem))] flex-col"
     :class="setupExpanded ? 'h-[min(48rem,calc(100dvh-2rem))] overflow-hidden!' : 'h-[min(44rem,calc(100dvh-2rem))]'"
     :data-provider-expanded="setupExpanded ? 'true' : undefined"
     described
     :prevent-close="saving || setupBusy"
-    @close="cancel"
+    @close="closed"
   >
     <div class="mb-5 flex shrink-0 items-start gap-2">
       <UiButton v-if="step === 'details' && !initial" variant="ghost" size="icon" :label="t('providers.back')" :disabled="formDisabled" class="-ml-1.5 mt-[-2px]" data-provider-back @click="back"><ChevronLeft :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>

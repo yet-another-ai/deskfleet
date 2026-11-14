@@ -207,38 +207,14 @@ textarea {
   from { opacity: 0; }
 }
 @keyframes ui-overlay-out {
-  to { opacity: 0; scale: 0.97; }
+  to { opacity: 0; scale: 0.98; }
 }
 
-/* Dialogs: the scrim dims and blurs the app; the panel settles forward. */
+/* Dialogs share a spring for panel scale, opacity, and scrim opacity. */
 .ui-dialog-overlay {
   background: var(--ui-color-scrim);
   backdrop-filter: blur(3px) saturate(120%);
 }
-.ui-dialog-overlay[data-state="open"] { animation: ui-fade-in var(--ui-duration-base) var(--ui-ease-out); }
-.ui-dialog-overlay[data-state="closed"] { animation: ui-fade-out var(--ui-duration-fast) var(--ui-ease-in) forwards; }
-.ui-dialog-content[data-state="open"] { animation: ui-dialog-in var(--ui-duration-slow) var(--ui-ease-out); }
-.ui-dialog-content[data-state="closed"] { animation: ui-dialog-out var(--ui-duration-fast) var(--ui-ease-in) forwards; }
-
-@keyframes ui-fade-in { from { opacity: 0; } }
-@keyframes ui-fade-out { to { opacity: 0; } }
-@keyframes ui-dialog-in {
-  from { opacity: 0; }
-}
-@keyframes ui-dialog-out {
-  to { opacity: 0; scale: 0.98; }
-}
-
-/* Routed content fades up as it replaces the previous page. */
-.ui-route-stage > * {
-  animation: ui-route-in var(--ui-duration-slow) var(--ui-ease-out);
-}
-/* Title bars stay put so their drag regions never move under the pointer. */
-.ui-route-stage > header { animation-name: ui-fade-in; }
-@keyframes ui-route-in {
-  from { opacity: 0; }
-}
-
 /* Generic entrances for content that appears while the user watches. */
 .ui-rise-in { animation: ui-rise-in var(--ui-duration-slow) var(--ui-ease-out); }
 .ui-pop-in { animation: ui-pop-in var(--ui-duration-base) var(--ui-ease-spring); }

@@ -2,7 +2,7 @@
 import { Search } from "@lucide/vue"
 import { DialogDescription, DialogTitle } from "reka-ui"
 import { useAsyncState } from "@vueuse/core"
-import { ref, useId } from "vue"
+import { ref, useId, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { SiteAdministrationApi } from "@deskfleet/client/central"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
@@ -18,6 +18,7 @@ type User = Awaited<ReturnType<SiteAdministrationApi["users"]>>[number]
 const props = defineProps<{ api: SiteAdministrationApi; confirmed: RecentAuthentication["confirmed"] }>()
 const { t } = useI18n()
 const id = useId()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const query = ref("")
 const results = ref<{ query: string; users: User[] }>()
 const searching = ref(false)
@@ -75,7 +76,7 @@ async function createAccount(): Promise<void> {
     }))
     created.value = user
     results.value = { query: user.email, users: [user] }
-    creating.value = false
+    dialog.value?.close()
   } catch (reason) { createError.value = failureMessage(reason) }
   finally { createPending.value = false }
 }
@@ -121,7 +122,7 @@ async function createAccount(): Promise<void> {
       <p v-if="results.users.length >= resultLimit" class="m-0 mt-2 text-xs text-ui-text-muted">{{ t("siteAdmin.resultLimit", { count: resultLimit }) }}</p>
     </template>
   </section>
-  <UiDialog v-if="creating" class="w-[28rem]" described :prevent-close="createPending" @close="creating = false">
+  <UiDialog ref="dialog" v-if="creating" v-slot="{ close }" class="w-[28rem]" described :prevent-close="createPending" @close="creating = false">
     <DialogTitle class="ui-dialog-title">{{ t("siteAdmin.createAccountTitle") }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("siteAdmin.createAccountDescription") }}</DialogDescription>
     <form class="mt-5 flex flex-col gap-4" @submit.prevent="createAccount">
@@ -130,7 +131,7 @@ async function createAccount(): Promise<void> {
       <UiField v-model="draft.password" :label="t('siteAdmin.createAccountPassword')" name="new-account-password" type="password" autocomplete="new-password" minlength="15" maxlength="128" required :disabled="createPending" :hint="t('siteAdmin.createAccountPasswordHint')" />
       <p v-if="createError" role="alert" class="m-0 text-sm text-ui-danger">{{ createError }}</p>
       <div class="ui-dialog-actions mt-2">
-        <UiButton :disabled="createPending" @click="creating = false">{{ t("catalog.cancel") }}</UiButton>
+        <UiButton :disabled="createPending" @click="close">{{ t("catalog.cancel") }}</UiButton>
         <UiButton type="submit" variant="primary" :loading="createPending">{{ t("siteAdmin.createAccount") }}</UiButton>
       </div>
     </form>

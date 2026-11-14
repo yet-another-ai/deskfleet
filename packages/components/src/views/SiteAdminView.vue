@@ -5,6 +5,7 @@ import { RouterView, useRoute } from "vue-router"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useRecentAuthentication } from "../composables/useRecentAuthentication.ts"
+import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { router } from "../router/index.ts"
 import ReauthDialog from "../components/auth/ReauthDialog.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
@@ -13,6 +14,7 @@ import SettingsLayout from "../components/settings/SettingsLayout.vue"
 const client = usePlatformClient()
 const { t } = useI18n()
 const route = useRoute()
+const motion = useNavigationMotion()
 const session = useAccountSession()
 const api = client.platform === "web" ? client.siteAdministration : undefined
 // Account policy and Enterprise changes need a fresh identity proof.
@@ -21,7 +23,7 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
 </script>
 
 <template>
-  <SettingsLayout @back="router.replace('/')">
+  <SettingsLayout :motion="motion" @back="router.replace('/')">
     <template #nav>
       <template v-if="session?.account.value.siteAdmin && api">
         <SidebarLink :to="{ name: 'site-admin-settings' }" :icon="Settings2" :label="t('siteAdmin.generalTitle')" replace />

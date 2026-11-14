@@ -186,7 +186,7 @@ test("restore failure remains in the confirmation for retry and cancellation lea
   expect(router.currentRoute.value.name).toBe("archived-sessions")
   expect(agents.sessions[sessionId]!.archiveState).toBe("archived")
   await page().get('[role="dialog"]').trigger("keydown", { key: "Escape" }); await flushPromises()
-  expect(page().find('[role="dialog"]').exists()).toBe(false)
+  await vi.waitFor(() => expect(page().find('[role="dialog"]').exists()).toBe(false))
   await wrapper!.get(`[data-restore-session="${sessionId}"]`).trigger("click"); await flushPromises()
   expect(page().find('[role="alert"]').exists()).toBe(false)
   await page().get("[data-confirm-restore]").trigger("click"); await flushPromises()

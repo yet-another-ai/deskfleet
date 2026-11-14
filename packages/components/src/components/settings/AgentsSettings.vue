@@ -6,7 +6,7 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { Bot, Ellipsis, FolderInput, Pencil, Plus, Trash2 } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { DialogTitle, DialogDescription, DropdownMenuItem } from "reka-ui"
-import { computed, onBeforeUnmount, ref } from "vue"
+import { computed, onBeforeUnmount, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentProviderConfig, AgentProviderInput, ProviderSnapshot, ProviderTestResult } from "../../../../../apps/daemon/src/provider-protocol.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -18,6 +18,7 @@ import MenuPopover from "../common/MenuPopover.vue"
 import UiDialog from "../common/UiDialog.vue"
 
 const platformClient = usePlatformClient()
+const removeDialog = useTemplateRef<InstanceType<typeof UiDialog>>("removeDialog")
 
 const { t } = useI18n()
 const fleet = useFleetStore()
@@ -89,17 +90,13 @@ function askRemove(provider: AgentProviderConfig): void {
   removing.value = provider
   removeError.value = null
 }
-function cancelRemove(): void {
-  if (removePending.value) return
-  removing.value = null
-}
 async function remove(): Promise<void> {
   if (!removing.value || removePending.value) return
   removePending.value = true
   removeError.value = null
   try {
     await platformClient.providers.remove(removing.value.id)
-    removing.value = null
+    removeDialog.value?.close()
     await refresh()
   } catch (reason) { removeError.value = reason instanceof Error ? reason.message : String(reason) }
   finally { removePending.value = false }
@@ -148,12 +145,12 @@ async function remove(): Promise<void> {
   </div>
   <ProviderDialog v-if="editor && snapshot" :initial="editor.initial" :templates="snapshot.templates" :shell-environment-default="snapshot.shellEnvironmentDefault" :disabled="!available" :machine-name="machine?.name ?? ''" :save="save" :test="test" :probe="platformClient.providers.probe" :install="platformClient.providers.install" :login="platformClient.providers.login" @saved="saved" @cancel="editor = null" />
   <ProviderWorkspaceImportDialog v-if="importing" :provider="importing" :machine-name="machine?.name ?? ''" @close="importing = null" />
-  <UiDialog v-if="removing" class="w-[26rem]" described :prevent-close="removePending" @close="cancelRemove">
+  <UiDialog v-if="removing" ref="removeDialog" v-slot="{ close }" class="w-[26rem]" described :prevent-close="removePending" @close="removing = null">
     <DialogTitle class="ui-dialog-title">{{ t("providers.removeQuestion", { name: removing.name }) }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ t("providers.removeDescription") }}</DialogDescription>
     <p v-if="removeError" role="alert" class="m-0 mt-4 text-sm text-ui-danger">{{ removeError }}</p>
     <div class="ui-dialog-actions">
-      <UiButton type="button" :disabled="removePending" @click="cancelRemove">{{ t("catalog.cancel") }}</UiButton>
+      <UiButton type="button" :disabled="removePending" @click="close">{{ t("catalog.cancel") }}</UiButton>
       <UiButton variant="danger" type="button" :disabled="removePending || !available" @click="remove">{{ t("providers.remove") }}</UiButton>
     </div>
   </UiDialog>

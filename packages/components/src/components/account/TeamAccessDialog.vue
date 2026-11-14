@@ -1,34 +1,35 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import { DialogTitle } from "reka-ui"
-import { ref } from "vue"
+import { ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import UiDialog from "../common/UiDialog.vue"
 
 const props = defineProps<{ mode: "create" | "join" }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const session = useAccountSession()!
 const value = ref("")
 const pending = ref(false)
 const error = ref<string>()
 
-function close(): void { if (!pending.value) emit("close") }
+function close(): void { if (!pending.value) dialog.value?.close() }
 async function submit(): Promise<void> {
   if (pending.value || !value.value.trim()) return
   pending.value = true
   error.value = undefined
   try {
     await (props.mode === "create" ? session.createTeam(value.value.trim()) : session.joinTeam(value.value.trim()))
-    emit("close")
+    dialog.value?.close()
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[26rem]" :prevent-close="pending" @close="close">
+  <UiDialog ref="dialog" class="w-[26rem]" :prevent-close="pending" @close="emit('close')">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
       <div>
         <DialogTitle class="ui-dialog-title">{{ t(mode === "create" ? "team.create" : "team.join") }}</DialogTitle>

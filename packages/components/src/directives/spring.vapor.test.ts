@@ -1,6 +1,8 @@
 import { createVaporApp, defineVaporComponent, nextTick, ref, withVaporDirectives, type App } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { vSpring, vSpringChildren, vSpringEnter, vSpringHover } from "./spring.ts"
+import { vSpring, vSpringEnter, vSpringHover } from "./spring.ts"
+import { vNavigationMotion } from "./navigation-motion.ts"
+import type { NavigationTransition } from "../services/navigation-motion.ts"
 
 // Node's default Vue entry omits Vapor. Exercise the same complete runtime
 // exposed by Vue's browser build, including its directive scopes and scheduling.
@@ -40,6 +42,7 @@ async function tick(duration: number) {
 test("Vapor directives track target getters, animate entrances and hover, and release their scopes", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
   const width = ref(96)
+  const navigation = ref<NavigationTransition>({ key: "list", motion: "peer" })
   const root = document.createElement("section")
   const label = document.createElement("span")
   const overlay = document.createElement("div")
@@ -55,7 +58,7 @@ test("Vapor directives track target getters, animate entrances and hover, and re
   vaporApp = createVaporApp(defineVaporComponent(() => {
     withVaporDirectives(label, [[vSpring, () => ({ width: `${width.value}px` })]])
     withVaporDirectives(overlay, [[vSpringEnter]])
-    withVaporDirectives(route, [[vSpringChildren]])
+    withVaporDirectives(content, [[vNavigationMotion, () => navigation.value]])
     withVaporDirectives(button, [[vSpringHover, () => -2]])
     return root
   }))
@@ -63,8 +66,12 @@ test("Vapor directives track target getters, animate entrances and hover, and re
   await nextTick()
   expect(label.style.width).toBe("96px")
   expect(overlay.style.translate).toBe("0px -4px")
-  expect(content.style.translate).toBe("0px 8px")
+  expect(content.style.translate).toBe("")
+  expect(content.style.opacity).toBe("0")
   expect(header.style.translate).toBe("")
+  navigation.value = { key: "detail", motion: "enter" }
+  await nextTick()
+  expect(content.style.translate).toBe("16px 0px")
   width.value = 160
   await nextTick()
   expect(label.style.width).toBe("96px")

@@ -30,7 +30,7 @@ test("fork context defaults to its source and stays fixed while resolving a pend
   await dialog.get(".ui-button-primary").trigger("click")
   await flushPromises()
   expect(confirm).toHaveBeenLastCalledWith("worktree")
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })
 
 test("fork submission prevents duplicate clicks and dismissal until the result arrives", async () => {
@@ -54,7 +54,7 @@ test("fork submission prevents duplicate clicks and dismissal until the result a
   expect(dialog.get('[role="status"]').text()).toBe("Forking session…")
   result.resolve()
   await flushPromises()
-  expect(wrapper.emitted("close")).toEqual([[]])
+  await vi.waitFor(() => expect(wrapper!.emitted("close")).toEqual([[]]))
 })
 
 test("machine-scoped Sessions only offer directory fork context", async () => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { usePlatformClient } from "./composables/usePlatformClient.ts"
+import { provideNavigationMotion } from "./composables/useNavigationMotion.ts"
 
 import { storeToRefs } from "pinia"
 import { useEventListener, whenever } from "@vueuse/core"
@@ -24,6 +25,7 @@ const layout = useLayoutStore()
 const { compact, sidebarOpen } = storeToRefs(layout)
 const { t } = useI18n()
 const route = useRoute()
+provideNavigationMotion()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const agents = useAgentSessionsStore()

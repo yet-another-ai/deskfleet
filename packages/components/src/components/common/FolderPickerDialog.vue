@@ -16,6 +16,7 @@ const props = defineProps<{
   machineName: string
 }>()
 const emit = defineEmits<{ select: [path: string]; cancel: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const pathInputRef = useTemplateRef<HTMLInputElement>("pathInputRef")
 const listing = ref<DirectoryListing | null>(null)
@@ -29,6 +30,7 @@ const visibleDirectories = computed(() => listing.value?.directories.filter(dire
 let requestedPath = props.initialPath
 let requestId = 0
 let finished = false
+let selectedPath: string | undefined
 
 async function navigate(path?: string, name?: string): Promise<boolean> {
   const request = ++requestId
@@ -83,7 +85,12 @@ function submitPathInput(): void {
 function cancel(): void {
   if (finished) return
   finished = true
-  emit("cancel")
+  dialog.value?.close()
+}
+function closed(): void {
+  finished = true
+  if (selectedPath !== undefined) emit("select", selectedPath)
+  else emit("cancel")
 }
 async function select(): Promise<void> {
   if (loading.value || finished) return
@@ -98,7 +105,8 @@ async function select(): Promise<void> {
   }
   if (!listing.value || loading.value || error.value || finished) return
   finished = true
-  emit("select", listing.value.path)
+  selectedPath = listing.value.path
+  dialog.value?.close()
 }
 
 onMounted(() => { void navigate(props.initialPath) })
@@ -106,7 +114,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
 </script>
 
 <template>
-    <UiDialog class="w-[36rem]" @close="cancel">
+    <UiDialog ref="dialog" class="w-[36rem]" @close="closed">
       <div class="mb-4 flex items-baseline justify-between gap-3">
         <DialogTitle class="ui-dialog-title">{{ t("folderPicker.title") }}</DialogTitle>
         <span class="min-w-0 truncate text-sm text-ui-text-muted" :title="machineName">{{ machineName }}</span>

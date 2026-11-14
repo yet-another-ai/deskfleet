@@ -2,7 +2,7 @@
 import UiButton from "./UiButton.vue"
 import ErrorNotice from "./ErrorNotice.vue"
 import { DialogDescription, DialogTitle } from "reka-ui"
-import { ref, shallowRef } from "vue"
+import { ref, shallowRef, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import UiDialog from "./UiDialog.vue"
 
@@ -18,25 +18,26 @@ const props = defineProps<{
   confirm(): Promise<void>
 }>()
 const emit = defineEmits<{ close: [] }>()
+const dialog = useTemplateRef<InstanceType<typeof UiDialog>>("dialog")
 const { t } = useI18n()
 const pending = ref(false)
 const error = shallowRef<unknown>()
 
-function cancel(): void { if (!pending.value) emit("close") }
+function cancel(): void { if (!pending.value) dialog.value?.close() }
 async function submit(): Promise<void> {
   if (pending.value) return
   pending.value = true
   error.value = undefined
   try {
     await props.confirm()
-    emit("close")
+    dialog.value?.close()
   } catch (reason) { error.value = reason }
   finally { pending.value = false }
 }
 </script>
 
 <template>
-  <UiDialog class="w-[26rem]" described :prevent-close="pending" @close="cancel">
+  <UiDialog ref="dialog" class="w-[26rem]" described :prevent-close="pending" @close="emit('close')">
     <DialogTitle class="ui-dialog-title">{{ title }}</DialogTitle>
     <DialogDescription class="ui-dialog-description">{{ description }}</DialogDescription>
     <slot />
