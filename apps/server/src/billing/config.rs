@@ -16,6 +16,9 @@ pub struct BillingConfig {
     /// Optional server-only Statsig key; payment processing never waits on Statsig.
     pub statsig_server_key: Option<String>,
     pub statsig_environment: Option<String>,
+    /// Optional GA4 Measurement Protocol credentials for paid conversion delivery.
+    pub ga_measurement_id: Option<String>,
+    pub ga_api_secret: Option<String>,
 }
 impl BillingConfig {
     pub fn from_env() -> io::Result<Self> {
@@ -41,6 +44,8 @@ impl BillingConfig {
             enterprise_contact_email: contact_email("DESKFLEET_ENTERPRISE_CONTACT_EMAIL")?,
             statsig_server_key: optional("DESKFLEET_STATSIG_SERVER_KEY"),
             statsig_environment: optional("DESKFLEET_STATSIG_ENVIRONMENT"),
+            ga_measurement_id: optional("DESKFLEET_GA_MEASUREMENT_ID"),
+            ga_api_secret: optional("DESKFLEET_GA_API_SECRET"),
         };
         config.validate()?;
         Ok(config)
@@ -86,6 +91,12 @@ impl BillingConfig {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Go and Pro monthly and yearly Stripe Prices must all be distinct",
+            ));
+        }
+        if self.ga_measurement_id.is_some() != self.ga_api_secret.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "GA4 Measurement Protocol requires both DESKFLEET_GA_MEASUREMENT_ID and DESKFLEET_GA_API_SECRET",
             ));
         }
         Ok(())
@@ -154,6 +165,8 @@ mod tests {
             enterprise_contact_email: None,
             statsig_server_key: None,
             statsig_environment: None,
+            ga_measurement_id: None,
+            ga_api_secret: None,
         }
     }
     #[test]

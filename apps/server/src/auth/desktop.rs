@@ -12,6 +12,8 @@ pub(super) struct Start {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Complete {
     attempt: String,
+    #[serde(default)]
+    telemetry_consent: Option<deskfleet_protocol::control::TelemetryConsentUpdate>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -69,6 +71,12 @@ pub(super) async fn complete(
 ) -> Result<web::Json<Value>> {
     let auth = recent(&req, &state).await?;
     let attempt = state.store.consume_login_attempt(&body.attempt).await?;
+    if let Some(consent) = &body.telemetry_consent {
+        state
+            .store
+            .update_user_telemetry_consent(&auth.user.id, consent)
+            .await?;
+    }
     let code = state
         .store
         .new_login_code_for_session(

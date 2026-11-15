@@ -66,6 +66,7 @@ async fn legal_url_migration_preserves_existing_site_settings() {
             allow_team_creation: false,
             terms_of_service_url: String::new(),
             privacy_terms_url: String::new(),
+            telemetry_enabled: false,
         }
     );
     // The central teardown must understand the added migration as well.
@@ -114,6 +115,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         allow_team_creation: true,
         terms_of_service_url: String::new(),
         privacy_terms_url: String::new(),
+        telemetry_enabled: false,
     };
     assert_eq!(store.site_settings().await.unwrap(), defaults);
     assert!(!store.is_site_admin(&admin.id).await.unwrap());
@@ -167,6 +169,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         allow_team_creation: false,
         terms_of_service_url: "  https://example.test/terms  ".into(),
         privacy_terms_url: " https://example.test/privacy ".into(),
+        telemetry_enabled: true,
     };
     let saved = store
         .update_site_settings(&admin.id, &changed)
