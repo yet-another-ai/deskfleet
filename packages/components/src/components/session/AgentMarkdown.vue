@@ -30,7 +30,7 @@ import { useI18n } from "vue-i18n"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 import { agentMarkdownParseOptions, createAgentMarkdownParser } from "../../services/agent-markdown.ts"
 import { previewKindFromMime } from "../../services/preview.ts"
-import { openResourceFromAction } from "../../stores/previews.ts"
+import { usePreviewActions } from "../../stores/previews.ts"
 import { markdownHostKey, type LoadedImage } from "./markdown/context.ts"
 import AgentResourceViewer from "./AgentResourceViewer.vue"
 import type { FileResourceRequest } from "../../../../client/src/files.ts"
@@ -41,6 +41,7 @@ const props = defineProps<{ text: string; final?: boolean }>()
 const parseMarkdown = createAgentMarkdownParser(useId())
 const nodes = computed(() => parseMarkdown(props.text, props.final ?? true))
 const { t } = useI18n()
+const { openResourceFromAction } = usePreviewActions()
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const error = ref<string>()
 const resource = ref<FileResourceRequest>()

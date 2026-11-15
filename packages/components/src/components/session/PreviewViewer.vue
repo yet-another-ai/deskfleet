@@ -26,7 +26,7 @@ import {
   broadcastPreviewTab,
   focusPreview,
   locatePreviewInMainView,
-  openPreviewFromAction,
+  usePreviewActions,
 } from "../../stores/previews.ts"
 import ColorPickerLoupe from "./ColorPickerLoupe.vue"
 import ImagePreview from "./ImagePreview.vue"
@@ -58,6 +58,7 @@ const { t } = useI18n()
 const client = usePlatformClient()
 const filesApi = computed(() => props.api ?? client.files)
 const layout = getActivePinia() ? useLayoutStore() : undefined
+const { openPreviewFromAction } = usePreviewActions()
 const root = useTemplateRef<HTMLElement>("root")
 const video = useTemplateRef<HTMLVideoElement>("video")
 const injectedContext = inject(agentResourceContextKey, computed(() => undefined))
