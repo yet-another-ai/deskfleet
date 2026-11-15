@@ -180,12 +180,21 @@ test("machine shutdown releases ACP terminal handles before closing their regist
   const native = new FakeTerminal()
   const terminals = new TerminalSessions({ directory: history, factory: async () => native as NativeTerminal })
   let connection!: AgentConnection
+  const connections: AgentConnection[] = []
   let providerClosed = false
   const provider: AgentProvider = {
     id: "codex",
-    async connect(_config, callbacks) {
-      connection = await connectAcpProcess({ command: process.execPath, args: [agentFixture] }, callbacks)
-      return { ...connection, close: async () => { await connection.close(); providerClosed = true } }
+    async connect(config, callbacks) {
+      const connected = await connectAcpProcess({ command: process.execPath, args: [agentFixture] }, callbacks)
+      connections.push(connected)
+      const managed = config.authentication !== "existing"
+      if (managed) connection = connected
+      return {
+        ...connected,
+        // The fixture writes files while opening sessions, including home-context probes.
+        newSession: params => connected.newSession(managed ? params : { ...params, cwd: repository }),
+        close: async () => { await connected.close(); if (managed) providerClosed = true },
+      }
     },
   }
   const runtime = new MachineRuntime(directory, {
@@ -196,7 +205,10 @@ test("machine shutdown releases ACP terminal handles before closing their regist
   })
   context.after(async () => {
     try { await runtime.close() }
-    finally { await rm(directory, { recursive: true, force: true }) }
+    finally {
+      await Promise.all(connections.map(connection => connection.close()))
+      await rm(directory, { recursive: true, force: true })
+    }
   })
   await runtime.init()
   const machine = runtime.current
@@ -206,6 +218,9 @@ test("machine shutdown releases ACP terminal handles before closing their regist
     workspaceId: workspace.id, operationId: randomUUID(), provider: configured.id, context: "directory",
   }, machine.agents.actor()) as AgentSnapshot
   assert.equal(created.session.error, undefined)
+  await machine.agents.handle("_deskfleet/agent/configuration", {
+    provider: configured.id, workspaceId: workspace.id, cache: true, refresh: true,
+  }, machine.agents.actor())
   const result = await connection.prompt({
     sessionId: created.session.providerSessionId!, prompt: [{ type: "text", text: "Run a command" }],
     _meta: { operation: { method: "terminal/create", params: { command: "fixture-command" } } },
