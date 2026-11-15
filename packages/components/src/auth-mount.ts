@@ -4,6 +4,7 @@ import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { i18n } from "./i18n/index.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
 import { nativeDragPolicy } from "./plugins/native-drag.ts"
+import { visualViewportSizing } from "./plugins/visual-viewport.ts"
 import { installAnalytics } from "./plugins/analytics.ts"
 import { installErrorReporting, shutdownErrorReporting } from "./services/error-reporting.ts"
 import AuthPage from "./components/auth/AuthPage.vue"
@@ -15,7 +16,7 @@ export async function mountAuthentication(api: HttpCentralClient) {
   const app = createApp(AuthPage, { api })
   installAnalytics(app)
   installErrorReporting(app)
-  app.use(nativeDragPolicy).use(vaporInteropPlugin).use(state).use(i18n)
+  app.use(nativeDragPolicy).use(visualViewportSizing).use(vaporInteropPlugin).use(state).use(i18n)
   app.onUnmount(() => { disposePinia(state); void shutdownErrorReporting() })
   app.mount("#root")
   return app

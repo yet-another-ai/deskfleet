@@ -412,15 +412,26 @@ use Electron's executable instead of an installed DeskFleet app.
 
 ## Keep Awake
 
-**Settings → Preferences → Keep Awake** prevents automatic system sleep while
-the desktop app runs, including while its windows are closed to the tray. It is
-disabled by default and applies independently of **Allow this machine to be controlled**. Displays
-can still turn off normally.
+**Settings → Preferences → Keep Awake** prevents idle system and display sleep
+on the computer running the desktop app, including while its windows are closed
+to the tray. It is disabled by default and applies independently of **Allow this
+machine to be controlled**. Selecting a remote machine does not change which
+computer it affects.
 
 The main process saves the preference in `keep-awake.json` under Electron's
 `userData` directory and restores it on startup. It owns an Electron
-`powerSaveBlocker` with `prevent-app-suspension`, released when the setting is
-disabled or the app quits.
+`powerSaveBlocker` with `prevent-display-sleep`, released when the setting is
+disabled or the app quits. This higher-priority blocker also keeps the system
+awake; a second `prevent-app-suspension` blocker is unnecessary. Existing enabled
+preferences restore the stronger blocker on startup without a settings migration.
+
+Electron uses a display sleep assertion on macOS and display/system power
+requests on Windows, so neither platform needs a separate native mechanism.
+On GNOME, the display blocker inhibits session idle, including its automatic
+screen blanking and idle lock. Other desktop environments apply their own
+inhibitor policies. Keep Awake does not unlock a locked session or override
+manual locking, explicit sleep, or security policies that independently lock the
+session.
 
 ## Worktree root directory
 

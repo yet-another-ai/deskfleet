@@ -146,11 +146,14 @@ async function gui(): Promise<void> {
   await until(async () => await evaluate<boolean>(
     "document.readyState === 'complete' && !!document.querySelector('#root h1') && !!window.deskfleet?.onboarding",
   ) ? true : undefined)
+  assert.equal((await evaluate<{ step: string }>("window.deskfleet.onboarding.get()")).step, "account")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
   await assert.rejects(stat(join(profile, "daemon", "daemon.json")), { code: "ENOENT" })
-  // Fresh profiles start hosting only after the machine-control choice. Account
-  // authentication is covered by the backend smoke; advance through its host API.
+  // Backend smoke tests cover authentication. Advance the local welcome flow
+  // and opt into machine control before checking the packaged daemon.
   assert.equal((await evaluate<{ step: string }>("window.deskfleet.onboarding.advanceAccount()")).step, "machineControl")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(profile, "daemon", "daemon.json")), { code: "ENOENT" })
   const onboarding = await evaluate<{ step: string; permissionSteps: string[] }>("window.deskfleet.onboarding.setMachineControlEnabled(true)")
   assert.equal(onboarding.step, "complete", "The X11 package smoke must complete machine-control setup")
   assert.deepEqual(onboarding.permissionSteps, [])

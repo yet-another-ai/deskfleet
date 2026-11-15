@@ -16,14 +16,14 @@ async function fixture() {
   return { path, blocker, controller: new KeepAwakeController(path, blocker) }
 }
 
-test("defaults off and keeps a single sleep blocker until disabled", async () => {
+test("defaults off and keeps a single display sleep blocker until disabled", async () => {
   const { path, blocker, controller } = await fixture()
   expect(controller.get()).toEqual({ enabled: false })
   expect(blocker.start).not.toHaveBeenCalled()
   expect(controller.setEnabled(true)).toEqual({ enabled: true })
   expect(controller.get()).toEqual({ enabled: true })
   expect(controller.setEnabled(true)).toEqual({ enabled: true })
-  expect(blocker.start).toHaveBeenCalledExactlyOnceWith("prevent-app-suspension")
+  expect(blocker.start).toHaveBeenCalledExactlyOnceWith("prevent-display-sleep")
   expect(controller.setEnabled(false)).toEqual({ enabled: false })
   expect(blocker.stop).toHaveBeenCalledExactlyOnceWith(0)
   controller.close()
@@ -42,6 +42,7 @@ test("restores the saved preference at startup and preserves it when quitting", 
   const next = new KeepAwakeController(path, blocker)
   expect(next.get()).toEqual({ enabled: true })
   expect(blocker.start).toHaveBeenCalledTimes(2)
+  expect(blocker.start).toHaveBeenLastCalledWith("prevent-display-sleep")
   next.close()
   expect(blocker.stop).toHaveBeenLastCalledWith(1)
 })

@@ -408,6 +408,15 @@ the AppImage. Windows updates use the published blockmap for differential
 downloads; electron-updater falls back to a full installer when a differential
 download cannot be applied. Development runs do not check for updates.
 
+AppImage updates retain electron-updater's download and file replacement logic.
+DeskFleet starts a detached shell supervisor before quitting, waits for the old
+client process to exit (releasing its single-instance lock), then launches the
+updated AppImage with the original arguments. The supervisor waits for the new
+application to exit instead of replacing itself or exiting after spawn. This
+keeps NixOS's `appimage-run`/Bubblewrap `--die-with-parent` launcher alive even
+when AppImages are invoked directly through the system's binfmt handler. Failure
+to spawn the supervisor is reported before the old client quits.
+
 Installed upgrades still need platform release testing: metadata generation and
 unit tests do not demonstrate a successful installation on Windows, signed macOS
 or either Linux architecture.

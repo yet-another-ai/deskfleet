@@ -668,7 +668,7 @@
     "launchAtStartupDescription": "Open DeskFleet automatically when you log in.",
     "launchAtStartupUnavailable": "Available in the installed app on Linux, macOS, and Windows.",
     "keepAwake": "Keep Awake",
-    "keepAwakeDescription": "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off.",
+    "keepAwakeDescription": "Keep this computer and its display awake while DeskFleet is running, including in the tray.",
     "autoDownloadUpdates": "Automatically download updates",
     "autoDownloadUpdatesDescription": "Download new versions in the background and wait for your confirmation before installing and restarting.",
     "pauseUpdatesOnMetered": "Pause on metered networks",

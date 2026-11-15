@@ -6,12 +6,12 @@ import type { BackgroundLifecycle } from "./lifecycle.ts"
 import type { UpdateController } from "./update-controller.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
-const { handle, app, loadUpdater, createDriver, driver, isNetworkMetered } = vi.hoisted(() => ({
+const { handle, app, loadUpdater, createDriver, createAppImageUpdater, appImageUpdater, driver, isNetworkMetered } = vi.hoisted(() => ({
   handle: vi.fn(), app: {
     isPackaged: false,
     getVersion: () => "0.1.0",
     getPath: vi.fn(() => "/Applications/DeskFleet.app/Contents/MacOS/deskfleet"),
-  }, loadUpdater: vi.fn(), createDriver: vi.fn(),
+  }, loadUpdater: vi.fn(), createDriver: vi.fn(), createAppImageUpdater: vi.fn(), appImageUpdater: {},
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
   isNetworkMetered: vi.fn(),
 }))
@@ -19,6 +19,9 @@ vi.mock("electron", () => ({ ipcMain: { handle }, app }))
 vi.mock("electron-updater", () => { loadUpdater(); return { default: { autoUpdater: {} } } })
 vi.mock("./electron-update-driver.ts", () => ({ electronUpdateDriver: createDriver }))
 vi.mock("@deskfleet/native", () => ({ isNetworkMetered }))
+vi.mock("./appimage-updater.ts", () => ({ RestartingAppImageUpdater: class {
+  constructor() { createAppImageUpdater(); return appImageUpdater }
+} }))
 import { attachUpdates, installUpdateIpc, installUpdates, publishUpdateState, resolveDesktopInstallSource } from "./updates.ts"
 
 const renderers: EventEmitter[] = []
@@ -93,6 +96,8 @@ test("extracted Linux bundles are disabled while AppImage installs can update", 
   controllers.push(appImage)
   expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   expect(createDriver).toHaveBeenCalledOnce()
+  expect(createAppImageUpdater).toHaveBeenCalledOnce()
+  expect(createDriver).toHaveBeenCalledWith(appImageUpdater)
 })
 
 test("Nix-managed macOS installs are disabled while ordinary app installs update", async () => {
@@ -115,6 +120,7 @@ test("Nix-managed macOS installs are disabled while ordinary app installs update
   controllers.push(controller)
   expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   expect(createDriver).toHaveBeenCalledOnce()
+  expect(createAppImageUpdater).not.toHaveBeenCalled()
 })
 
 test.each([false, true])("installed updater respects native metered cost (%s)", async metered => {
