@@ -17,7 +17,7 @@ function deferred<T = void>() {
 function fakeProvider(hooks: {
   connect?(client: AgentClient): Promise<void>
   set?(request: acp.SetSessionConfigOptionRequest, client: AgentClient): Promise<void>
-  options?(options: acp.SessionConfigOption[]): acp.SessionConfigOption[]
+  options?(options: acp.SessionConfigOption[], client: AgentClient): acp.SessionConfigOption[]
   commands?(): acp.AvailableCommand[] | undefined
 } = {}) {
   const configs: AgentConfig[] = []
@@ -34,7 +34,7 @@ function fakeProvider(hooks: {
       await hooks.connect?.(client)
       let model = "first", effort = "high", mode = "manual", fast = false
       const efforts = () => model === "first" ? ["low", "high"] : fast ? ["low"] : ["low", "medium"]
-      const options = (): acp.SessionConfigOption[] => hooks.options?.(catalog()) ?? catalog()
+      const options = (): acp.SessionConfigOption[] => hooks.options?.(catalog(), client) ?? catalog()
       const catalog = (): acp.SessionConfigOption[] => [
         { id: "model", name: "Model", category: "model", type: "select", currentValue: model,
           options: ["first", "second"].map(value => ({ value, name: value })) },
@@ -216,6 +216,44 @@ test("a newly observed dynamic catalog is not labeled a fully explored matrix", 
   const current = await cache.read({ ...params, composer: true }, "/workspace", fake)
   assert.equal(current.models?.currentValue, "first")
   assert.equal(current.matrix?.complete, false)
+  assert.equal(current.matrix?.configurations[0]?.models?.currentValue, "first", "Fresh defaults replace the empty warm catalog")
+  assert.equal(cachedAgentConfiguration(current.matrix!, undefined, {})?.models?.currentValue, "first")
+  const returning = await cache.read(params, "/workspace", fake)
+  assert.equal(returning.models?.currentValue, "first", "Switching back to this Agent uses its latest confirmed default")
+})
+
+test("fresh defaults discard old edges and an older warm traversal cannot restore its catalog", async t => {
+  const restoring = deferred(), finishRestore = deferred()
+  let advertise = false
+  const fake = fakeProvider({
+    commands: () => advertise ? [] : undefined,
+    options: (options, client) => fake.clients.indexOf(client) === 0 ? options
+      : [...options, { id: "new-option", name: "New option", type: "boolean", currentValue: false }],
+    async set(_request, client) {
+      if (fake.clients.indexOf(client) === 0 && fake.changes.length === 2) {
+        restoring.resolve()
+        await finishRestore.promise
+      }
+    },
+  })
+  const cache = new AgentConfigurationCache({ maxTransitions: 2 })
+  t.after(() => cache.close())
+  cache.warm(params, "/workspace", fake)
+  await restoring.promise
+  const old = await cache.read(params, "/workspace", fake)
+  assert.equal(old.matrix?.transitions.length, 1)
+  advertise = true
+  const fresh = await cache.read({ ...params, composer: true }, "/workspace", fake)
+  assert.equal(fresh.matrix?.configurations.length, 1)
+  assert.deepEqual(fresh.matrix?.transitions, [], "Transitions confirmed against the old default catalog are discarded")
+  assert.ok(fresh.matrix?.configurations[0]?.configOptions?.some(option => option.id === "new-option"))
+  finishRestore.resolve()
+  for (let turn = 0; turn < 10; turn++) await nextTurn()
+  const returning = await cache.read(params, "/workspace", fake)
+  assert.ok(returning.configOptions?.some(option => option.id === "new-option"))
+  assert.ok(returning.matrix?.configurations.every(configuration => configuration.configOptions?.some(option => option.id === "new-option")),
+    "Late old-process responses never append obsolete states to the replacement matrix")
+  assert.equal(fake.configs.length, 3, "Bounded warming restarts against the newly confirmed defaults")
 })
 
 test("invalidation cancels pending work and prevents stale results replacing refreshed catalogs", async t => {

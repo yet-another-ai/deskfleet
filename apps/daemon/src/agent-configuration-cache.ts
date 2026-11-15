@@ -17,6 +17,7 @@ interface Entry {
   launch: Launch
   controller: AbortController
   matrix: AgentConfigurationMatrix
+  matrixGeneration: number
   identities: Map<string, number>
   initial?: Promise<AgentConfigurationSnapshot>
   probeId: string
@@ -87,7 +88,7 @@ export class AgentConfigurationCache {
       entry = {
         params: { provider: params.provider, ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}) }, cwd,
         launch: { provider: launch.provider, config: { ...launch.config, authentication: "existing" } },
-        controller: new AbortController(), matrix: { configurations: [], transitions: [], complete: false },
+        controller: new AbortController(), matrix: { configurations: [], transitions: [], complete: false }, matrixGeneration: 0,
         identities: new Map(), probeId, probes: new Set([probeId]), queued: false, exploring: false, explored: false,
       }
       this.#entries.set(key, entry)
@@ -139,6 +140,24 @@ export class AgentConfigurationCache {
     else entry.matrix.complete = false
   }
 
+  #observeDefault(entry: Entry, configuration: AgentConfigurationSnapshot, generation: number): number | undefined {
+    this.#check(entry)
+    if (generation !== entry.matrixGeneration) return undefined
+    const previous = entry.matrix.configurations[0]
+    if (previous && agentConfigurationIdentity(previous) !== agentConfigurationIdentity(configuration)) {
+      // A fresh ACP session has supplied new defaults, not another selection of
+      // the old catalog. Old edges and in-flight traversal belong to that catalog.
+      entry.matrixGeneration++
+      entry.matrix = { configurations: [], transitions: [], complete: false }
+      entry.identities.clear()
+      entry.initial = Promise.resolve(structuredClone(configuration))
+      entry.explored = false
+    }
+    this.#remember(entry, configuration)
+    this.#queueWarm(entry)
+    return entry.matrixGeneration
+  }
+
   #result(entry: Entry, configuration: AgentConfigurationSnapshot): AgentConfiguration {
     this.#check(entry)
     return structuredClone({ ...configuration, matrix: entry.matrix })
@@ -185,12 +204,14 @@ export class AgentConfigurationCache {
       this.#track(this.#explore(entry).catch(() => {}).finally(() => {
         entry.exploring = false
         this.#active--
+        this.#queueWarm(entry)
         this.#drain()
       }))
     }
   }
 
   async #explore(entry: Entry): Promise<void> {
+    const generation = entry.matrixGeneration
     let expired = false
     const timer = setTimeout(() => {
       expired = true
@@ -204,12 +225,14 @@ export class AgentConfigurationCache {
       // Retry those failures only for an explicit read/refresh or a new revision.
       entry.explored = true
       await this.#initialize(entry)
+      if (generation !== entry.matrixGeneration) return
       // Each new state is appended. Breadth-first traversal visits default model
       // alternatives first without assuming other controls are independent.
       outer: for (let from = 0; from < entry.matrix.configurations.length; from++) {
         const source = entry.matrix.configurations[from]!
         for (const selection of choices(source)) {
           this.#check(entry)
+          if (generation !== entry.matrixGeneration) return
           if (expired || attempts >= this.#maxTransitions || entry.matrix.configurations.length >= this.#maxStates) {
             complete = false
             break outer
@@ -218,6 +241,7 @@ export class AgentConfigurationCache {
           attempts++
           try {
             const restored = await this.#readProbe(entry, entry.probeId, agentConfigurationSelection(source))
+            if (generation !== entry.matrixGeneration) return
             if (expired) { complete = false; break outer }
             // A provider may decline a restore or change its catalog. Such a
             // result is not evidence for an edge from the original state.
@@ -226,17 +250,19 @@ export class AgentConfigurationCache {
               continue
             }
             const changed = await this.#readProbe(entry, entry.probeId, selection)
+            if (generation !== entry.matrixGeneration) return
             if (expired) { complete = false; break outer }
             this.#transition(entry, source, selection, changed)
           } catch {
             this.#check(entry)
+            if (generation !== entry.matrixGeneration) return
             complete = false
             if (expired) break outer
           }
         }
       }
       this.#check(entry)
-      entry.matrix.complete = complete && !expired
+      if (generation === entry.matrixGeneration) entry.matrix.complete = complete && !expired
     } finally {
       clearTimeout(timer)
       await this.#probes.release(this.#scope, entry.probeId).catch(() => {})
@@ -297,15 +323,16 @@ export class AgentConfigurationCache {
       },
     }
     try {
+      let generation: number | undefined = entry.matrixGeneration
       let current = await this.#readProbe(entry, probeId, {}, params.composer === true, privateLaunch)
       request.signal.throwIfAborted()
-      this.#remember(entry, current)
+      generation = this.#observeDefault(entry, current, generation)
       for (const selection of [params.restore ?? {}, params]) {
         for (const step of selectionSteps(selection, current)) {
           request.signal.throwIfAborted()
           const next = await this.#readProbe(entry, probeId, step, false, privateLaunch)
           request.signal.throwIfAborted()
-          this.#transition(entry, current, step, next)
+          if (generation === entry.matrixGeneration) this.#transition(entry, current, step, next)
           current = next
         }
       }
