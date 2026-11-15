@@ -64,7 +64,9 @@ export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInsta
   let driver: UpdateDriver | null = null
   if (enabled) {
     const { default: module } = await import("electron-updater")
-    const updater = electronUpdateDriver(module.autoUpdater)
+    const updater = electronUpdateDriver(process.platform === "linux"
+      ? new (await import("./appimage-updater.ts")).RestartingAppImageUpdater()
+      : module.autoUpdater)
     driver = {
       ...updater,
       install(failed) {
