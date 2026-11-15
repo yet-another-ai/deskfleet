@@ -3,7 +3,7 @@ import { dirname } from "node:path"
 import type { PowerSaveBlocker } from "electron"
 import type { KeepAwakeState } from "../../../../packages/client/src/settings.ts"
 
-/** Owns the app's sleep blocker, independently of its windows and local Agent. */
+/** Keeps the system and display awake, independently of windows and the local Agent. */
 export class KeepAwakeController {
   readonly #path: string
   readonly #powerSaveBlocker: Pick<PowerSaveBlocker, "start" | "stop">
@@ -55,7 +55,8 @@ export class KeepAwakeController {
 
   #apply(enabled: boolean): void {
     if (enabled && this.#blockerId === undefined) {
-      this.#blockerId = this.#powerSaveBlocker.start("prevent-app-suspension")
+      // Display sleep prevention also keeps the system awake on every desktop platform.
+      this.#blockerId = this.#powerSaveBlocker.start("prevent-display-sleep")
     } else if (!enabled && this.#blockerId !== undefined) {
       this.#powerSaveBlocker.stop(this.#blockerId)
       this.#blockerId = undefined
