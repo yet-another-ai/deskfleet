@@ -758,6 +758,10 @@
     "placeholder": "Describe a task for the agent",
     "provider": "Agent",
     "send": "Send",
+    "runningSend": {
+      "label": "Send while running",
+      "description": "Choose how to send messages while the agent works."
+    },
     "attach": "Add attachment",
     "attachments": "Attachments",
     "uploadLocalFiles": "Upload local files",
@@ -1255,6 +1259,7 @@
       "cancelled": "Plan approval cancelled"
     },
     "backlogHint": "Messages you send now are queued.",
+    "steerHint": "Messages you send now steer the active turn.",
     "addToBacklog": "Add to backlog",
     "cancelTurn": "Cancel turn",
     "stop": "Stop agent",

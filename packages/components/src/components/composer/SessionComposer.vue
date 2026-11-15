@@ -50,6 +50,7 @@ import { useComposerCompletions } from "./useComposerCompletions.ts"
 import type { AgentUsage as AgentUsageUpdate } from "../../services/agent-usage.ts"
 import { recordSentMessageOrigin } from "../../services/message-sent-transition.ts"
 import { useDictationPreference } from "../../composables/useDictationPreference.ts"
+import { useRunningSendBehavior } from "../../composables/useRunningSendBehavior.ts"
 import { useComposerDictation } from "./useComposerDictation.ts"
 
 const client = usePlatformClient()
@@ -209,7 +210,10 @@ const uploadingAttachments = computed(() => hasIncompleteAttachmentUploads(attac
 const initialPickerPath = computed(() => props.location?.worktree?.directories[0]?.path ?? props.location?.workspace?.directories[0]?.path)
 const empty = computed(() => !hasSubmittableText(draft.value, attachments.value))
 const commandInput = computed(() => commandDraft(draft.value) || mentions.value.some(mention => mention.reference.kind === "skill" && mention.reference.invocation.startsWith("/")))
-const placeholder = computed(() => t(props.activeTurn ? "agent.backlogHint" : "composer.placeholder"))
+const runningSendBehavior = useRunningSendBehavior()
+const steerOnSend = computed(() => !!(props.activeTurn && props.canSteer && !commandInput.value && runningSendBehavior.value === "steer"))
+const sendLabel = computed(() => t(steerOnSend.value ? "agent.steer" : props.activeTurn ? "agent.addToBacklog" : "composer.send"))
+const placeholder = computed(() => t(!props.activeTurn ? "composer.placeholder" : steerOnSend.value ? "agent.steerHint" : "agent.backlogHint"))
 const { snapshot: gitSnapshot } = useSessionGit(
   () => props.location?.session?.id ?? "",
   () => !props.showTarget && !!props.location?.worktree && !!props.location.machine.online
@@ -386,16 +390,16 @@ function onPaste(event: ClipboardEvent): void {
     attachments.value = [...attachments.value, createPastedTextAttachment(text)]
   }
 }
-function submit(delivery: "backlog" | "steer"): void {
+function submit(): void {
   if (props.disabled || props.submitting || preparing.value || configurationLoading.value || uploadingAttachments.value || !props.location || empty.value) return
   dictation.cancel()
   recordSentMessageOrigin(dropZoneRef.value)
-  emit("submit", commandInput.value ? "backlog" : delivery)
+  emit("submit", steerOnSend.value ? "steer" : "backlog")
 }
 function keydown(event: KeyboardEvent): void {
   if (event.key === "Escape" && dictation.active) { event.preventDefault(); dictation.cancel(); return }
   if (completion.keydown(event)) return
-  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit("backlog") }
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit() }
 }
 
 onBeforeUnmount(() => {
@@ -653,9 +657,8 @@ onBeforeUnmount(() => {
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
-          <UiButton variant="ghost" size="sm" v-if="canSteer && !empty && !commandInput" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments" @click="submit('steer')"><CornerDownRight :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.steer') }}</UiButton>
           <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
-          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :aria-label="t(activeTurn ? 'agent.addToBacklog' : 'composer.send')" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit('backlog')"><ArrowUp v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
+          <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !location || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="2" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
     </div>

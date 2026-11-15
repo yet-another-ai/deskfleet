@@ -604,6 +604,10 @@
   "composer": {
     "label": "プロンプト", "placeholder": "エージェントに依頼するタスクを入力",
     "provider": "エージェント", "send": "送信",
+    "runningSend": {
+      "label": "実行中の送信",
+      "description": "エージェントの実行中にメッセージを送信する方法を選びます。"
+    },
     "attach": "添付ファイルを追加", "attachments": "添付ファイル",
     "uploadLocalFiles": "ローカルファイルをアップロード", "chooseMachineFiles": "マシンからファイルを選択",
     "pastedText": "貼り付けたテキスト", "pastedTextLines": "{n} 行 | {n} 行",
@@ -927,7 +931,7 @@
       "sending": "承認結果を送信中…", "accepted": "計画は承認されました",
       "rejected": "計画は却下されました", "cancelled": "計画の承認はキャンセルされました"
     },
-    "backlogHint": "今送信するメッセージはキューに追加されます。", "addToBacklog": "キューに追加",
+    "backlogHint": "今送信するメッセージはキューに追加されます。", "steerHint": "今送信するメッセージは実行中のターンに反映されます。", "addToBacklog": "キューに追加",
     "cancelTurn": "ターンをキャンセル", "stop": "エージェントを停止",
     "delete": "セッションを削除",
     "holdToConfirm": "長押しして確定", "stopQuestion": "このエージェントを停止しますか？会話とワークツリーは残ります。",

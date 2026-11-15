@@ -50,7 +50,7 @@ moving files or copying credentials, MCP settings, rules, or conversation histor
 Authorized teammates can open and operate the same session concurrently from the desktop app or Web client:
 
 - **Shared backlog & author attribution**: Every message records the teammate who sent it. Prompts submitted while the agent is busy are added to a shared queue and executed in order.
-- **Steer now**: When supported by the provider, **Steer now** sends an immediate course correction into the currently running turn instead of waiting for the turn to finish.
+- **Steer now**: When the provider supports steering, click **Steer now** on a queued message to redirect the active turn immediately. To steer on send by default, set **Send while running** to **Steer now** in **Settings → Preferences → Input**.
 - **Shared permissions**: Tool approval requests and agent questions appear for everyone viewing the session. Once any teammate answers a request, the resolution updates across all connected clients.
 
 ## Choose where work happens

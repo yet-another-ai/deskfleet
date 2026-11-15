@@ -872,10 +872,14 @@ journal. Provider prompts retain the existing submission and delivery audit.
 ## Backlog, steering, and cancellation
 
 Ordinary messages enter a shared backlog ordered by acceptance sequence. An idle,
-running Session takes its oldest pending input. During work, the composer offers
-**Add to backlog** and **Steer now**. Each pending candidate can be steered or
-withdrawn by any authorized client. A confirmed failed candidate offers an
-explicit retry. Failed and uncertain inputs never auto-retry.
+running Session takes its oldest pending input. During an active turn, the
+composer follows the running-turn send setting in `Settings -> Preferences -> Input`.
+The default is `Add to backlog`. When a client selects `Steer now` and the
+provider supports steering, the composer steers the active turn directly. Slash
+commands and unsupported providers always enter the backlog. Any authorized
+client can steer or withdraw a pending candidate in the backlog. A confirmed
+failed candidate offers an explicit retry. Failed and uncertain inputs never
+auto-retry.
 
 Submission returns a durable receipt with `operationId`, command ID, input ID,
 and Session ID. This receipt is distinct from the provider's `session/prompt`
