@@ -176,6 +176,8 @@ mod tests {
                 enterprise_contact_email: None,
                 statsig_server_key: None,
                 statsig_environment: None,
+                ga_measurement_id: None,
+                ga_api_secret: None,
             },
             "https://web.test".into(),
         )

@@ -1,12 +1,13 @@
 //! Installation-wide settings and explicit operator-managed administrator grants.
 use crate::entities::{
-    cp_site_admins as admins, cp_site_audit as audit, cp_site_settings as site, cp_users as users,
+    cp_site_admins as admins, cp_site_audit as audit, cp_site_settings as site,
+    cp_user_marketing_attribution as attribution, cp_users as users,
 };
 use crate::{
     ControlStore, Error, Result, name, now_ms,
     policies::{SiteAction, SitePolicy, authorize},
 };
-use deskfleet_protocol::control::SiteSettings;
+use deskfleet_protocol::control::{MarketingAttribution, SiteSettings, TelemetryConsentUpdate};
 use sea_orm::sea_query::{Expr, ExprTrait, JoinType, LockType, OnConflict, Order, Query};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Set, TransactionTrait,
@@ -20,7 +21,23 @@ fn settings(row: site::Model) -> SiteSettings {
         allow_team_creation: row.allow_team_creation,
         terms_of_service_url: row.terms_of_service_url,
         privacy_terms_url: row.privacy_terms_url,
+        telemetry_enabled: row.telemetry_enabled,
     }
+}
+
+fn attribution_field(value: Option<&String>) -> Result<Option<String>> {
+    let Some(trimmed) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(None);
+    };
+    if trimmed.len() > 256 {
+        return Err(Error::Invalid(
+            "marketing attribution parameter must contain at most 256 bytes",
+        ));
+    }
+    Ok(Some(trimmed.to_owned()))
 }
 
 fn terms_url(value: &str) -> Result<&str> {
@@ -104,6 +121,7 @@ impl ControlStore {
             allow_team_creation: input.allow_team_creation,
             terms_of_service_url: terms_of_service_url.into(),
             privacy_terms_url: privacy_terms_url.into(),
+            telemetry_enabled: input.telemetry_enabled,
         };
         site::Entity::update_many()
             .col_expr(site::Column::SiteName, Expr::val(site_name))
@@ -120,6 +138,10 @@ impl ControlStore {
                 Expr::val(terms_of_service_url),
             )
             .col_expr(site::Column::PrivacyTermsUrl, Expr::val(privacy_terms_url))
+            .col_expr(
+                site::Column::TelemetryEnabled,
+                Expr::val(input.telemetry_enabled),
+            )
             .filter(site::Column::Singleton.eq(true))
             .exec(&tx)
             .await?;
@@ -136,6 +158,128 @@ impl ControlStore {
         .await?;
         tx.commit().await?;
         Ok(after)
+    }
+    /// Persist or revoke a user's opt-in telemetry consent and first-touch marketing attribution.
+    pub async fn update_user_telemetry_consent(
+        &self,
+        user_id: &str,
+        input: &TelemetryConsentUpdate,
+    ) -> Result<()> {
+        if !input.consented {
+            attribution::Entity::delete_by_id(user_id)
+                .exec(&self.db)
+                .await?;
+            return Ok(());
+        }
+        let incoming = input.attribution.as_ref();
+        let gclid = attribution_field(incoming.and_then(|a| a.gclid.as_ref()))?;
+        let gbraid = attribution_field(incoming.and_then(|a| a.gbraid.as_ref()))?;
+        let wbraid = attribution_field(incoming.and_then(|a| a.wbraid.as_ref()))?;
+        let utm_source = attribution_field(incoming.and_then(|a| a.utm_source.as_ref()))?;
+        let utm_medium = attribution_field(incoming.and_then(|a| a.utm_medium.as_ref()))?;
+        let utm_campaign = attribution_field(incoming.and_then(|a| a.utm_campaign.as_ref()))?;
+        let utm_term = attribution_field(incoming.and_then(|a| a.utm_term.as_ref()))?;
+        let utm_content = attribution_field(incoming.and_then(|a| a.utm_content.as_ref()))?;
+        let ga_client_id = attribution_field(incoming.and_then(|a| a.ga_client_id.as_ref()))?;
+
+        let tx = self.db.begin().await?;
+        let site = site::Entity::find_by_id(true)
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        if !site.telemetry_enabled {
+            attribution::Entity::delete_by_id(user_id).exec(&tx).await?;
+            tx.commit().await?;
+            return Ok(());
+        }
+        let existing = attribution::Entity::find_by_id(user_id)
+            .lock_exclusive()
+            .one(&tx)
+            .await?;
+        let active = attribution::ActiveModel {
+            user_id: Set(user_id.into()),
+            gclid: Set(existing
+                .as_ref()
+                .and_then(|row| row.gclid.clone())
+                .or(gclid)),
+            gbraid: Set(existing
+                .as_ref()
+                .and_then(|row| row.gbraid.clone())
+                .or(gbraid)),
+            wbraid: Set(existing
+                .as_ref()
+                .and_then(|row| row.wbraid.clone())
+                .or(wbraid)),
+            utm_source: Set(existing
+                .as_ref()
+                .and_then(|row| row.utm_source.clone())
+                .or(utm_source)),
+            utm_medium: Set(existing
+                .as_ref()
+                .and_then(|row| row.utm_medium.clone())
+                .or(utm_medium)),
+            utm_campaign: Set(existing
+                .as_ref()
+                .and_then(|row| row.utm_campaign.clone())
+                .or(utm_campaign)),
+            utm_term: Set(existing
+                .as_ref()
+                .and_then(|row| row.utm_term.clone())
+                .or(utm_term)),
+            utm_content: Set(existing
+                .as_ref()
+                .and_then(|row| row.utm_content.clone())
+                .or(utm_content)),
+            ga_client_id: Set(existing
+                .as_ref()
+                .and_then(|row| row.ga_client_id.clone())
+                .or(ga_client_id)),
+            consented_at: Set(existing.map_or_else(now_ms, |row| row.consented_at)),
+        };
+        attribution::Entity::insert(active)
+            .on_conflict(
+                OnConflict::column(attribution::Column::UserId)
+                    .update_columns([
+                        attribution::Column::Gclid,
+                        attribution::Column::Gbraid,
+                        attribution::Column::Wbraid,
+                        attribution::Column::UtmSource,
+                        attribution::Column::UtmMedium,
+                        attribution::Column::UtmCampaign,
+                        attribution::Column::UtmTerm,
+                        attribution::Column::UtmContent,
+                        attribution::Column::GaClientId,
+                        attribution::Column::ConsentedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec_without_returning(&tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    /// Read consented marketing attribution for server-side conversion delivery.
+    pub async fn user_marketing_attribution(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<MarketingAttribution>> {
+        let Some(row) = attribution::Entity::find_by_id(user_id)
+            .one(&self.db)
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(MarketingAttribution {
+            gclid: row.gclid,
+            gbraid: row.gbraid,
+            wbraid: row.wbraid,
+            utm_source: row.utm_source,
+            utm_medium: row.utm_medium,
+            utm_campaign: row.utm_campaign,
+            utm_term: row.utm_term,
+            utm_content: row.utm_content,
+            ga_client_id: row.ga_client_id,
+        }))
     }
     /// Operator-only listing for the server CLI, not an authenticated API.
     pub async fn site_admins(&self) -> Result<Vec<Value>> {
@@ -209,7 +353,19 @@ impl ControlStore {
 
 #[cfg(test)]
 mod tests {
-    use super::terms_url;
+    use super::{attribution_field, terms_url};
+
+    #[test]
+    fn attribution_fields_trim_empty_values_and_reject_oversized_strings() {
+        assert_eq!(attribution_field(None).unwrap(), None);
+        assert_eq!(attribution_field(Some(&"   ".into())).unwrap(), None);
+        assert_eq!(
+            attribution_field(Some(&"  gclid-123  ".into())).unwrap(),
+            Some("gclid-123".into())
+        );
+        assert!(attribution_field(Some(&"x".repeat(256))).is_ok());
+        assert!(attribution_field(Some(&"x".repeat(257))).is_err());
+    }
 
     #[test]
     fn terms_urls_allow_empty_or_absolute_web_links_without_credentials() {

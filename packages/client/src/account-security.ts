@@ -1,10 +1,11 @@
 import type { AccountDeletionRequest } from "./account-deletion.ts"
+import type { TelemetryConsentUpdate } from "./central.ts"
 import { HttpError, type HttpCentralClient } from "./http-central.ts"
 import { authenticatePasskey, registerPasskey } from "./passkeys.ts"
 
 type Transport = Pick<HttpCentralClient, "request">
 export interface AuthenticationMethods { password: boolean; passkey: boolean }
-export interface AuthConfig { webUrl: string; registrationEnabled: boolean; githubEnabled: boolean; googleEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string }
+export interface AuthConfig { webUrl: string; registrationEnabled: boolean; githubEnabled: boolean; googleEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string; telemetryEnabled?: boolean }
 export interface LoginSession { id: string; deviceId: string; createdAt: string; expiresAt: string; current: boolean }
 export interface Passkey { id: string; name: string; createdAt: number }
 
@@ -31,7 +32,8 @@ export function accountAuthentication(api: Transport) {
     completeRecovery: (token: string, password: string) => post("recovery/complete", { token, password }),
     /** Omitting the password uses a Passkey assertion instead. */
     reauthenticate: (password?: string) => password === undefined ? authenticatePasskey(api, "reauthenticate") : post("reauthenticate", { password }),
-    completeDesktop: (attempt: string) => post<{ returnTo: string }>("desktop/complete", { attempt }),
+    completeDesktop: (attempt: string, telemetryConsent?: TelemetryConsentUpdate) => post<{ returnTo: string }>("desktop/complete", { attempt, ...(telemetryConsent ? { telemetryConsent } : {}) }),
+    updateTelemetryConsent: (update: TelemetryConsentUpdate) => api.request<void>("PUT", "/api/me/telemetry-consent", update),
     changePassword: (password: string) => post("password", { password }),
     changeEmail: (email: string) => post("email", { email }),
     confirmEmail: (token: string) => post("email/verify", { token }),

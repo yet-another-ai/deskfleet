@@ -392,14 +392,16 @@ test("site administrator capabilities are refreshed from the server without pers
 
 test("loads public settings and saves site settings through the admin endpoint", async () => {
   const f = setup()
-  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }
-  f.responses.push(settings, settings, settings)
+  const settings = { siteName: "Studio fleet", announcement: "News", allowTeamCreation: false, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy", telemetryEnabled: false }
+  f.responses.push(settings, settings, settings, {})
   expect(await f.client.site()).toEqual(settings)
   expect(await f.client.siteSettings()).toEqual(settings)
   expect(await f.client.updateSiteSettings(settings)).toEqual(settings)
+  await f.client.updateTelemetryConsent({ consented: true, attribution: { gclid: "gclid-1", gaClientId: "cid-1" } })
   await expectRequest(f.fetch, 1, "https://fleet.example/api/site", { method: "GET" })
   await expectRequest(f.fetch, 2, "https://fleet.example/api/admin/site-settings", { method: "GET" })
   await expectRequest(f.fetch, 3, "https://fleet.example/api/admin/site-settings", { method: "PATCH", body: JSON.stringify(settings) })
+  await expectRequest(f.fetch, 4, "https://fleet.example/api/me/telemetry-consent", { method: "PUT", body: JSON.stringify({ consented: true, attribution: { gclid: "gclid-1", gaClientId: "cid-1" } }) })
 })
 
 

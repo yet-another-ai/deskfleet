@@ -7,8 +7,10 @@ import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
+import { readMarketingAttribution, readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import { DESKTOP_ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/analytics.ts"
 import BrandLogo from "../common/BrandLogo.vue"
 import WindowsDesktopServiceOnboarding from "./WindowsDesktopServiceOnboarding.vue"
 
@@ -101,6 +103,18 @@ async function submit(): Promise<void> {
   await act(async () => {
     session.notice.value = undefined
     if (!session.account.value.user) await session.signIn()
+    if (session.account.value.user && session.site.value?.telemetryEnabled) {
+      if (userTelemetryConsent.value) {
+        void session.central.updateTelemetryConsent?.({
+          consented: true,
+          attribution: readMarketingAttribution(true),
+        })?.catch(() => {})
+      } else if (readStoredTelemetryConsent() === "declined") {
+        void session.central.updateTelemetryConsent?.({
+          consented: false,
+        })?.catch(() => {})
+      }
+    }
     if (firstRun && onboarding) {
       // A restarted guide may need sign-in again without resetting saved progress.
       const current = await onboarding.get()
@@ -265,6 +279,19 @@ onBeforeUnmount(() => { unsubscribe?.() })
             <h1 class="m-0 text-xl font-semibold">{{ t("account.signIn") }}</h1>
             <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t("account.signInDescription") }}</p>
           </div>
+          <label v-if="session.site.value?.telemetryEnabled" class="flex cursor-pointer items-start gap-3 rounded-lg border border-ui-border bg-ui-sidebar p-3.5 text-sm">
+            <input
+              type="checkbox"
+              name="telemetry-consent"
+              class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-ui-accent"
+              :checked="userTelemetryConsent"
+              @change="setUserTelemetryConsent(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="min-w-0">
+              <span class="block font-medium text-ui-text">{{ t("welcome.telemetryConsent") }}</span>
+              <span class="mt-1 block text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.telemetryConsentDescription") }}</span>
+            </span>
+          </label>
           <p v-if="error" role="alert" class="m-0 break-words text-sm text-ui-danger">{{ error }}</p>
           <UiButton variant="primary" class="min-h-9 text-sm" type="submit" :disabled="pending || refreshing">
             {{ session.account.value.user ? t("welcome.continueAs", { name: session.account.value.user.name }) : t(pending ? "account.signingIn" : "account.continueSignIn") }}

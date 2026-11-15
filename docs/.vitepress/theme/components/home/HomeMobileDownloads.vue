@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
+import { trackAcquisitionConversion } from "@deskfleet/components/services/analytics.ts"
 import { ArrowUpRight, Download, Smartphone } from "@lucide/vue"
 import { useQRCode } from "@vueuse/integrations/useQRCode"
 import { computed } from "vue"
@@ -45,17 +46,31 @@ const downloads = computed(() => [
             </div>
           </div>
           <p class="mobile-download__status" aria-live="polite">{{ item.status }}</p>
-          <a class="mobile-download__action" :href="item.href">
+          <a
+            class="mobile-download__action"
+            :href="item.href"
+            @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: item.platform, channel: item.platform === 'ios' ? 'app_store' : 'apk' })"
+          >
             {{ item.action }}
             <Download v-if="item.platform === 'android' && androidFile" :size="16" aria-hidden="true" />
             <ArrowUpRight v-else :size="16" aria-hidden="true" />
           </a>
-          <a v-if="item.platform === 'ios'" class="mobile-download__action mobile-download__action--secondary" href="https://testflight.apple.com/join/p35j7ubC">
+          <a
+            v-if="item.platform === 'ios'"
+            class="mobile-download__action mobile-download__action--secondary"
+            href="https://testflight.apple.com/join/p35j7ubC"
+            @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: 'ios', channel: 'testflight' })"
+          >
             {{ t.testFlight }}
             <ArrowUpRight :size="16" aria-hidden="true" />
           </a>
         </div>
-        <a class="mobile-download__qr" :href="item.href" :aria-label="item.scan">
+        <a
+          class="mobile-download__qr"
+          :href="item.href"
+          :aria-label="item.scan"
+          @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: item.platform, channel: 'qr' })"
+        >
           <img v-if="item.qr" :src="item.qr" :alt="item.scan" width="132" height="132" />
         </a>
       </article>

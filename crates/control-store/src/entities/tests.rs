@@ -265,6 +265,11 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_turn_usage_archive mapping");
+    cp_user_marketing_attribution::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_user_marketing_attribution mapping");
     cp_users::Entity::find()
         .limit(0)
         .all(db)

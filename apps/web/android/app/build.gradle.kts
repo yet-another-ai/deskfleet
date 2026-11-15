@@ -111,9 +111,14 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.webkit)
+    implementation(libs.firebase.analytics)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
 
 apply(from = "capacitor.build.gradle")
+
+if (file("google-services.json").isFile) {
+    apply(plugin = "com.google.gms.google-services")
+}

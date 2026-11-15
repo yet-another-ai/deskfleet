@@ -52,6 +52,10 @@ on:
         required: false
       ANDROID_KEY_PASSWORD:
         required: false
+      ANDROID_GOOGLE_SERVICES_JSON:
+        required: false
+      IOS_GOOGLE_SERVICE_INFO_PLIST:
+        required: false
 
 permissions:
   contents: read
@@ -117,6 +121,14 @@ jobs:
           VITE_SENTRY_DIST: web
           VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
+          VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID }}
+          VITE_APP_GTM_ID: ${{ vars.VITE_APP_GTM_ID }}
+          VITE_APP_GA_MEASUREMENT_ID: ${{ vars.VITE_APP_GA_MEASUREMENT_ID }}
+          VITE_WEB_GTM_ID: ${{ vars.VITE_WEB_GTM_ID }}
+          VITE_WEB_GA_MEASUREMENT_ID: ${{ vars.VITE_WEB_GA_MEASUREMENT_ID }}
+          VITE_GOOGLE_ADS_ID: ${{ vars.VITE_GOOGLE_ADS_ID }}
+          VITE_GOOGLE_ADS_INSTALL_LABEL: ${{ vars.VITE_GOOGLE_ADS_INSTALL_LABEL }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
           VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
@@ -130,6 +142,14 @@ jobs:
           VITE_DESKFLEET_SERVER_URL: ${{ vars.VITE_DESKFLEET_SERVER_URL }}
           VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
+          VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID }}
+          VITE_APP_GTM_ID: ${{ vars.VITE_APP_GTM_ID }}
+          VITE_APP_GA_MEASUREMENT_ID: ${{ vars.VITE_APP_GA_MEASUREMENT_ID }}
+          VITE_DESKTOP_GTM_ID: ${{ vars.VITE_DESKTOP_GTM_ID }}
+          VITE_DESKTOP_GA_MEASUREMENT_ID: ${{ vars.VITE_DESKTOP_GA_MEASUREMENT_ID }}
+          VITE_GOOGLE_ADS_ID: ${{ vars.VITE_GOOGLE_ADS_ID }}
+          VITE_GOOGLE_ADS_INSTALL_LABEL: ${{ vars.VITE_GOOGLE_ADS_INSTALL_LABEL }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
           VITE_SENTRY_RELEASE: deskfleet@${{ github.ref_name }}
@@ -330,6 +350,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_GOOGLE_SERVICES_JSON: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON }}
         run: |
           if [[ -z "$DESKTOP_SERVER_URL" ]]; then
             echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
@@ -343,6 +364,13 @@ jobs:
           done
           keystore_path="$RUNNER_TEMP/deskfleet-android-upload.jks"
           (umask 077 && printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore_path")
+          if [[ -n "$ANDROID_GOOGLE_SERVICES_JSON" ]]; then
+            if [[ "$ANDROID_GOOGLE_SERVICES_JSON" == \{* ]]; then
+              (umask 077 && printf '%s\n' "$ANDROID_GOOGLE_SERVICES_JSON" > apps/web/android/app/google-services.json)
+            else
+              (umask 077 && printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON" | base64 -d > apps/web/android/app/google-services.json)
+            fi
+          fi
           echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
 
       - name: Build production Android Web assets, App Bundle, and APK
@@ -364,7 +392,7 @@ jobs:
       - name: Remove Android keystore
         if: ${{ always() }}
         shell: bash
-        run: rm -f "$RUNNER_TEMP/deskfleet-android-smoke.jks" "$RUNNER_TEMP/deskfleet-android-upload.jks"
+        run: rm -f "$RUNNER_TEMP/deskfleet-android-smoke.jks" "$RUNNER_TEMP/deskfleet-android-upload.jks" apps/web/android/app/google-services.json
 
       - name: Upload Android App Bundle
         uses: actions/upload-artifact@v7
@@ -419,6 +447,7 @@ jobs:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          IOS_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
         run: |
           if [[ -z "$DESKTOP_SERVER_URL" ]]; then
             echo "::error::Set VITE_DESKFLEET_SERVER_URL in the production environment before publishing."
@@ -438,6 +467,13 @@ jobs:
           keychain_pass=$(LC_ALL=C head -c 32 /dev/urandom | base64)
           (umask 077 && printf '%s' "$IOS_DIST_CERT_P12" | base64 -d > "$cert_path")
           (umask 077 && printf '%s' "$APPLE_API_KEY_P8" | base64 -d > "$key_path")
+          if [[ -n "$IOS_GOOGLE_SERVICE_INFO_PLIST" ]]; then
+            if [[ "$IOS_GOOGLE_SERVICE_INFO_PLIST" == \<* ]]; then
+              (umask 077 && printf '%s\n' "$IOS_GOOGLE_SERVICE_INFO_PLIST" > apps/web/ios/App/App/GoogleService-Info.plist)
+            else
+              (umask 077 && printf '%s' "$IOS_GOOGLE_SERVICE_INFO_PLIST" | base64 -d > apps/web/ios/App/App/GoogleService-Info.plist)
+            fi
+          fi
           security create-keychain -p "$keychain_pass" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$keychain_pass" "$keychain_path"
@@ -478,7 +514,7 @@ jobs:
           if [[ -n "${{ steps.ios_credentials.outputs.keychain_path }}" ]]; then
             security delete-keychain "${{ steps.ios_credentials.outputs.keychain_path }}" || true
           fi
-          rm -f "$RUNNER_TEMP/deskfleet-ios-dist.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+          rm -f "$RUNNER_TEMP/deskfleet-ios-dist.p12" "$RUNNER_TEMP"/AuthKey_*.p8 apps/web/ios/App/App/GoogleService-Info.plist
           for profile_uuid in "$DESKFLEET_IOS_APP_PROFILE_UUID" "$DESKFLEET_IOS_BROADCAST_PROFILE_UUID"; do
             if [[ -n "$profile_uuid" ]]; then
               rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$profile_uuid.mobileprovision"

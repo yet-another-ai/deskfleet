@@ -444,12 +444,12 @@ test("account refresh updates site privileges and creation policy even without a
   const refreshing = session.reload()
   await flushPromises()
   expect(session.site.value).toEqual(previous)
-  finishSite({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
+  finishSite({ siteName: "Still here", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "" })
   await refreshing
-  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "" })
   fake.central.site.mockRejectedValueOnce(new Error("Site unavailable"))
   await expect(session.reload()).rejects.toThrow("Site unavailable")
-  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "" })
+  expect(session.site.value).toEqual({ siteName: "Still here", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "" })
 })
 
 test("the same local Machine selects the current Team's registration and revocation state", async () => {

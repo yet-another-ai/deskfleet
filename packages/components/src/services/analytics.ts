@@ -1,15 +1,27 @@
 import { StatsigClient, type StatsigUser } from "@statsig/js-client"
-import { computed, ref } from "vue"
+import { computed, readonly, ref } from "vue"
 import { STATSIG_INITIALIZE_URL, STATSIG_LOG_EVENT_URL } from "@deskfleet/client/analytics-config"
 import type { BillingPlan } from "@deskfleet/client/billing"
 import type { Team } from "@deskfleet/client/central"
+import {
+  configureGoogleTag,
+  identifyGoogleTagUser,
+  resetGoogleTagForTests,
+  trackGoogleEvent,
+  type GoogleTagConfiguration,
+} from "@deskfleet/client/google-tag"
+import {
+  captureMarketingSearchParams,
+  readStoredTelemetryConsent,
+  writeStoredTelemetryConsent,
+} from "@deskfleet/client/marketing-attribution"
 import type { PeerTelemetryEvents } from "@deskfleet/client/peer-telemetry"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { BillingAnalyticsEvents } from "./billing-events.ts"
 import type { EntitlementAnalyticsEvents } from "./entitlement-events.ts"
 
 /** The client shell that emitted the event. Electron is the desktop OS; a browser PWA is not. */
-export type AnalyticsPlatform = "web" | "pwa" | "android" | "ios" | "windows" | "macos" | "linux"
+export type AnalyticsPlatform = "web" | "pwa" | "android" | "ios" | "windows" | "macos" | "linux" | "docs"
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean
@@ -32,7 +44,7 @@ export function clientAnalyticsPlatform(hostPlatform: DeskfleetDesktopApi["platf
 }
 
 /** Explicit product events: never pass RPC payloads, user text, or resource paths. */
-interface AnalyticsEvents extends BillingAnalyticsEvents, EntitlementAnalyticsEvents, PeerTelemetryEvents {
+export interface AnalyticsEvents extends BillingAnalyticsEvents, EntitlementAnalyticsEvents, PeerTelemetryEvents {
   app_opened: { surface: "app" | "authentication" }
   page_viewed: { page: string }
   account_registered: { method: "password" }
@@ -45,21 +57,47 @@ interface AnalyticsEvents extends BillingAnalyticsEvents, EntitlementAnalyticsEv
   schedule_action: { action: "create" | "run" | "delete" }
 }
 
-interface AnalyticsConfiguration {
+export interface AnalyticsConfiguration extends GoogleTagConfiguration {
   clientKey?: string
   environment: string
   platform: AnalyticsPlatform
+  requireConsent?: boolean
 }
+
+const GOOGLE_FORWARDED_PRODUCT_EVENTS = new Set<keyof AnalyticsEvents>([
+  "app_opened",
+  "page_viewed",
+  "account_registered",
+  "account_verified",
+  "account_signed_in",
+  "team_created",
+  "machine_enrolled",
+  "billing_checkout",
+])
 
 // One instance per renderer document, shared across the isolated MachineSurface apps.
 let sdk: StatsigClient | undefined
+let savedConfig: AnalyticsConfiguration | undefined
+let consentRequired = false
 let platform: AnalyticsConfiguration["platform"] = "web"
 let userId: string | undefined
 let email: string | undefined
 let team: Pick<Team, "id" | "role"> | undefined
 let plan: BillingPlan | undefined
 let planRevision = 0
+let pendingAppOpened: AnalyticsEvents["app_opened"] | undefined
+let pendingPageViewed: AnalyticsEvents["page_viewed"] | undefined
 const revision = ref(0)
+const siteTelemetryEnabledRef = ref(false)
+const userTelemetryConsentRef = ref(false)
+
+export const siteTelemetryEnabled = readonly(siteTelemetryEnabledRef)
+export const userTelemetryConsent = readonly(userTelemetryConsentRef)
+
+function canRunTelemetry(): boolean {
+  if (!consentRequired) return true
+  return siteTelemetryEnabledRef.value && userTelemetryConsentRef.value
+}
 
 function user(): StatsigUser {
   return {
@@ -70,13 +108,11 @@ function user(): StatsigUser {
   }
 }
 
-/** Starts in the background; product startup never waits for analytics. */
-export function initializeAnalytics(configuration: AnalyticsConfiguration): void {
-  const key = configuration.clientKey?.trim()
-  if (sdk || !key) return
-  platform = configuration.platform
+function startStatsigIfNeeded(): void {
+  const key = savedConfig?.clientKey?.trim()
+  if (sdk || !key || !savedConfig) return
   const instance = new StatsigClient(key, user(), {
-    environment: { tier: configuration.environment },
+    environment: { tier: savedConfig.environment },
     includeCurrentPageUrlWithEvents: false,
     networkConfig: {
       initializeUrl: STATSIG_INITIALIZE_URL,
@@ -95,6 +131,77 @@ export function initializeAnalytics(configuration: AnalyticsConfiguration): void
   revision.value++
 }
 
+function stopStatsigIfRunning(): void {
+  const instance = sdk
+  if (!instance) return
+  sdk = undefined
+  revision.value++
+  void instance.shutdown().catch(() => {})
+}
+
+function syncAnalyticsRuntime(): void {
+  if (!savedConfig) return
+  const active = canRunTelemetry()
+  if (active) {
+    startStatsigIfNeeded()
+    configureGoogleTag({ ...savedConfig, platform }, true)
+    identifyGoogleTagUser(userId)
+    if (pendingAppOpened) {
+      const opened = pendingAppOpened
+      pendingAppOpened = undefined
+      trackEvent("app_opened", opened)
+    }
+    if (pendingPageViewed) {
+      const viewed = pendingPageViewed
+      pendingPageViewed = undefined
+      trackEvent("page_viewed", viewed)
+    }
+  } else {
+    stopStatsigIfRunning()
+    configureGoogleTag({ ...savedConfig, platform }, false)
+  }
+}
+
+/** Starts in the background; product startup never waits for analytics. */
+export function initializeAnalytics(configuration: AnalyticsConfiguration): void {
+  platform = configuration.platform
+  if (configuration.requireConsent !== undefined) {
+    consentRequired = configuration.requireConsent
+  }
+  if (consentRequired) {
+    userTelemetryConsentRef.value = readStoredTelemetryConsent() === "granted"
+  }
+  captureMarketingSearchParams(undefined, canRunTelemetry())
+  savedConfig = configuration
+  syncAnalyticsRuntime()
+}
+
+/** Updates the backend master switch (`SiteSettings.telemetryEnabled`). */
+export function setSiteTelemetryEnabled(enabled: boolean): void {
+  consentRequired = true
+  if (!enabled) {
+    pendingAppOpened = undefined
+    pendingPageViewed = undefined
+  }
+  if (siteTelemetryEnabledRef.value === enabled) return
+  siteTelemetryEnabledRef.value = enabled
+  syncAnalyticsRuntime()
+}
+
+/** Updates the user's opt-in telemetry & marketing attribution consent. */
+export function setUserTelemetryConsent(consented: boolean, options: { persist?: boolean } = {}): void {
+  consentRequired = true
+  if (!consented) {
+    pendingAppOpened = undefined
+    pendingPageViewed = undefined
+  }
+  userTelemetryConsentRef.value = consented
+  if (options.persist !== false) {
+    writeStoredTelemetryConsent(consented ? "granted" : "declined")
+  }
+  syncAnalyticsRuntime()
+}
+
 /** Keep the account UUID stable and use its email for feature targeting. */
 export function identifyAnalytics(nextUserId?: string, nextTeam?: Pick<Team, "id" | "role">, nextEmail?: string): void {
   if (!nextUserId) { nextTeam = undefined; nextEmail = undefined }
@@ -104,6 +211,7 @@ export function identifyAnalytics(nextUserId?: string, nextTeam?: Pick<Team, "id
   userId = nextUserId
   email = nextEmail
   team = nextTeam
+  identifyGoogleTagUser(userId)
   const instance = sdk
   if (!instance) return
   // updateUserAsync changes the SDK user synchronously before fetching its values.
@@ -124,9 +232,46 @@ export function beginAnalyticsPlanRefresh(teamId: string): (value: BillingPlan) 
 }
 
 export function trackEvent<Name extends keyof AnalyticsEvents>(name: Name, metadata: AnalyticsEvents[Name]): void {
+  if (!canRunTelemetry()) {
+    if (consentRequired && readStoredTelemetryConsent() !== "declined") {
+      if (name === "app_opened") pendingAppOpened = metadata as AnalyticsEvents["app_opened"]
+      else if (name === "page_viewed") pendingPageViewed = metadata as AnalyticsEvents["page_viewed"]
+    }
+    return
+  }
   const context = team && name !== "team_joined" ? { team_id: team.id, team_role: team.role, current_plan: plan ?? "unknown" } : {}
-  sdk?.logEvent(name, undefined, Object.fromEntries(Object.entries({ ...context, ...metadata })
-    .filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)])))
+  const merged = Object.fromEntries(Object.entries({ ...context, ...metadata })
+    .filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))
+  sdk?.logEvent(name, undefined, merged)
+  if (canRunTelemetry() && GOOGLE_FORWARDED_PRODUCT_EVENTS.has(name)) {
+    trackGoogleEvent(name, merged, {
+      isAcquisitionConversion: name === "account_registered" || name === "machine_enrolled",
+    })
+  }
+}
+
+/** Marketing-only events (website page views, tab switches, social clicks) go only to Google Tag, never to Statsig. */
+export function trackMarketingEvent(
+  name: string,
+  metadata: Record<string, string | number | boolean | undefined> = {},
+): void {
+  if (!canRunTelemetry()) return
+  trackGoogleEvent(name, metadata)
+}
+
+/** Acquisition conversion events (installer downloads, CLI install command copies) go to both Google Tag and Statsig. */
+export function trackAcquisitionConversion(
+  name: string,
+  metadata: Record<string, string | number | boolean | undefined> = {},
+): void {
+  if (!canRunTelemetry()) return
+  const clean = Object.fromEntries(
+    Object.entries(metadata)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  )
+  sdk?.logEvent(name, undefined, clean)
+  trackGoogleEvent(name, metadata, { isAcquisitionConversion: true })
 }
 
 /** Async action results belong to the account and Team that started the action. */
@@ -161,12 +306,19 @@ export function useExperimentParameter<T extends string | number | boolean>(name
 export async function shutdownAnalytics(): Promise<void> {
   const instance = sdk
   sdk = undefined
+  savedConfig = undefined
+  consentRequired = false
+  pendingAppOpened = undefined
+  pendingPageViewed = undefined
+  siteTelemetryEnabledRef.value = false
+  userTelemetryConsentRef.value = false
   userId = undefined
   email = undefined
   team = undefined
   plan = undefined
   planRevision++
   revision.value++
+  resetGoogleTagForTests()
   await instance?.shutdown().catch(() => {})
 }
 

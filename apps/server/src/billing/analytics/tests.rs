@@ -192,3 +192,70 @@ async fn failed_http_delivery_retries_identical_event_payload_without_exposing_r
     handle.stop(true).await;
     task.await.unwrap().unwrap();
 }
+
+#[test]
+fn ga_conversion_body_formats_first_subscription_paid_invoice_with_attribution() {
+    let mut delivery = BillingAnalyticsDelivery {
+        event: invoice_fact(
+            &invoice(),
+            "in_123",
+            Some("account-uuid".into()),
+            "go",
+            "year",
+            None,
+        )
+        .unwrap(),
+        team_id: "7".into(),
+        claim_token: "claim".into(),
+    };
+    let attribution = MarketingAttribution {
+        gclid: Some("gclid-xyz".into()),
+        gbraid: None,
+        wbraid: None,
+        utm_source: Some("google".into()),
+        utm_medium: Some("cpc".into()),
+        utm_campaign: Some("spring_launch".into()),
+        utm_term: None,
+        utm_content: None,
+        ga_client_id: Some("111.222".into()),
+    };
+    let body = ga_conversion_body(&delivery, &attribution).unwrap();
+    assert_eq!(body["client_id"], "111.222");
+    assert_eq!(body["user_id"], "account-uuid");
+    assert_eq!(body["timestamp_micros"], 1_700_000_000_000_000_i64);
+    let event = &body["events"][0];
+    assert_eq!(event["name"], "purchase");
+    assert_eq!(event["params"]["transaction_id"], "in_123");
+    assert_eq!(event["params"]["value"], 45.0);
+    assert_eq!(event["params"]["currency"], "USD");
+    assert_eq!(event["params"]["plan"], "go");
+    assert_eq!(event["params"]["interval"], "year");
+    assert_eq!(event["params"]["gclid"], "gclid-xyz");
+    assert_eq!(event["params"]["campaign_source"], "google");
+    assert_eq!(event["params"]["campaign_medium"], "cpc");
+    assert_eq!(event["params"]["campaign_name"], "spring_launch");
+
+    delivery.event.id = format!("ga:{}", delivery.event.id);
+    let retry_body = ga_conversion_body(&delivery, &attribution).unwrap();
+    assert_eq!(
+        retry_body["events"][0]["params"]["transaction_id"],
+        "in_123"
+    );
+
+    let mut renewal = invoice();
+    renewal["billing_reason"] = json!("subscription_cycle");
+    let renewal_delivery = BillingAnalyticsDelivery {
+        event: invoice_fact(
+            &renewal,
+            "in_456",
+            Some("account-uuid".into()),
+            "go",
+            "year",
+            None,
+        )
+        .unwrap(),
+        team_id: "7".into(),
+        claim_token: "claim".into(),
+    };
+    assert!(ga_conversion_body(&renewal_delivery, &attribution).is_none());
+}

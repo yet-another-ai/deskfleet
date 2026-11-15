@@ -1,6 +1,6 @@
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
-import { analyticsReady, beginAnalyticsPlanRefresh, captureAnalyticsContext, clientAnalyticsPlatform, identifyAnalytics, initializeAnalytics, shutdownAnalytics, trackEvent, useExperimentParameter, useFeatureGate } from "./analytics.ts"
+import { analyticsReady, beginAnalyticsPlanRefresh, captureAnalyticsContext, clientAnalyticsPlatform, identifyAnalytics, initializeAnalytics, setSiteTelemetryEnabled, setUserTelemetryConsent, shutdownAnalytics, trackAcquisitionConversion, trackEvent, trackMarketingEvent, useExperimentParameter, useFeatureGate } from "./analytics.ts"
 
 const mock = vi.hoisted(() => {
   const sdk = {
@@ -194,4 +194,45 @@ test("the client shell distinguishes native apps from an installed browser", () 
   vi.stubGlobal("matchMedia", () => ({ matches: false }))
   expect(clientAnalyticsPlatform("web")).toBe("web")
   vi.unstubAllGlobals()
+})
+
+test("requireConsent gates Statsig and Google Tag until both site telemetry and user consent are enabled", async () => {
+  localStorage.removeItem("deskfleet-telemetry-consent")
+  const win = window as Window & { dataLayer?: unknown[] }
+  win.dataLayer = []
+  initializeAnalytics({
+    platform: "web",
+    environment: "test",
+    clientKey: "client-test",
+    gaMeasurementId: "G-TEST123",
+    requireConsent: true,
+  })
+  trackEvent("app_opened", { surface: "app" })
+  trackEvent("page_viewed", { page: "new-session" })
+  trackMarketingEvent("marketing_cta_clicked", { section: "hero" })
+  expect(mock.create).not.toHaveBeenCalled()
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+
+  setSiteTelemetryEnabled(true)
+  expect(mock.create).not.toHaveBeenCalled()
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+
+  setUserTelemetryConsent(true)
+  expect(mock.create).toHaveBeenCalledTimes(1)
+  await flushPromises()
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("app_opened", undefined, { surface: "app" })
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("page_viewed", undefined, { page: "new-session" })
+
+  mock.sdk.logEvent.mockClear()
+  trackMarketingEvent("marketing_cta_clicked", { section: "hero" })
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+  expect(win.dataLayer?.some((entry: unknown) => Array.isArray(entry) && entry[0] === "event" && entry[1] === "marketing_cta_clicked")).toBe(true)
+
+  trackAcquisitionConversion("marketing_download_clicked", { os: "macOS", primary: true })
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("marketing_download_clicked", undefined, { os: "macOS", primary: "true" })
+  expect(win.dataLayer?.some((entry: unknown) => Array.isArray(entry) && entry[0] === "event" && entry[1] === "marketing_download_clicked")).toBe(true)
+
+  setUserTelemetryConsent(false)
+  await flushPromises()
+  expect(mock.sdk.shutdown).toHaveBeenCalledTimes(1)
 })

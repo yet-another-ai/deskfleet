@@ -26,7 +26,16 @@ test("tracks confirmed named routes without IDs, queries, or user text and stops
   await router.isReady()
   await router.push("/sessions/private-id?text=private-text#private-hash")
   await router.push("/blocked")
-  expect(initializeAnalytics).toHaveBeenCalledExactlyOnceWith({ clientKey: "client-test", environment: "staging", platform: "linux" })
+  expect(initializeAnalytics).toHaveBeenCalledExactlyOnceWith({
+    clientKey: "client-test",
+    environment: "staging",
+    gtmId: undefined,
+    gaMeasurementId: undefined,
+    googleAdsId: undefined,
+    googleAdsInstallLabel: undefined,
+    platform: "linux",
+    requireConsent: true,
+  })
   expect(trackEvent).toHaveBeenCalledWith("page_viewed", { page: "new-session" })
   expect(trackEvent).toHaveBeenCalledWith("page_viewed", { page: "session" })
   expect(trackEvent).not.toHaveBeenCalledWith("page_viewed", { page: "blocked" })

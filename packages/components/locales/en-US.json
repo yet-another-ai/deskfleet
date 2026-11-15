@@ -291,6 +291,8 @@
     "announcementDescription": "Shown to everyone using this site. Leave empty to hide it.",
     "allowTeamCreation": "Allow team creation",
     "allowTeamCreationDescription": "Signed-in users can create teams.",
+    "telemetryEnabled": "Enable telemetry and marketing attribution",
+    "telemetryEnabledDescription": "Allow users to opt in to product analytics and marketing attribution. Keep this off for private or self-hosted deployments.",
     "teamCreationDisabled": "Join a team using an invitation from its administrator.",
     "saved": "Site settings saved.",
     "turnTitle": "TURN servers",
@@ -637,6 +639,9 @@
   },
   "settings": {
     "preferences": "Preferences",
+    "privacyAndAnalytics": "Privacy & analytics",
+    "telemetryConsent": "Share usage analytics and marketing attribution",
+    "telemetryConsentDescription": "Help improve DeskFleet by sharing anonymous product usage and campaign attribution. Prompts, code, and files are never included.",
     "appearance": "Appearance",
     "notifications": "Notifications",
     "notificationsEnabled": "Desktop notifications",
@@ -1667,6 +1672,8 @@
   "welcome": {
     "title": "Welcome to DeskFleet",
     "description": "Sign in, then choose how you want to use this computer.",
+    "telemetryConsent": "Help improve DeskFleet with usage and attribution analytics",
+    "telemetryConsentDescription": "Optional. Shares anonymous product events and campaign attribution when enabled. Prompts, code, and files are never collected.",
     "notificationsTitle": "Stay up to date with your tasks",
     "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
     "notificationsDetails": "Allow browser notifications to receive updates while DeskFleet is open, even when you are using another tab. You can change this later in Settings.",

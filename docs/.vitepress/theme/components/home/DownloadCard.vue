@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Download } from "@lucide/vue"
+import { trackAcquisitionConversion } from "@deskfleet/components/services/analytics.ts"
 import PlatformIcon from "./PlatformIcon.vue"
 import type { InstallPlatform } from "./home-downloads.ts"
 
-defineProps<{
+const props = defineProps<{
   href: string
   title: string
   detail: string
@@ -12,10 +13,18 @@ defineProps<{
   action: string
   primary?: boolean
 }>()
+
+function onDownloadClick(): void {
+  trackAcquisitionConversion("marketing_download_clicked", {
+    os: props.platform,
+    detail: props.detail,
+    primary: Boolean(props.primary),
+  })
+}
 </script>
 
 <template>
-  <a class="download" :class="{ 'download--primary': primary }" :href="href">
+  <a class="download" :class="{ 'download--primary': primary }" :href="href" @click="onDownloadClick">
     <span class="download__icon"><PlatformIcon :platform="platform" /></span>
     <span class="download__text">
       <span class="download__title">{{ title }}</span>

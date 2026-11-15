@@ -3,8 +3,10 @@ import { useAsyncState, useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import { accountAuthentication } from "@deskfleet/client/account-security"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
+import { captureMarketingSearchParams, readMarketingAttribution, readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import { useErrorReportingUser } from "../../composables/useErrorReportingUser.ts"
+import { setSiteTelemetryEnabled, userTelemetryConsent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import AccountSecurity from "./AccountSecurity.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -30,11 +32,25 @@ const googleError = new URLSearchParams(location.search).get("googleError") ?? u
 const returnUrl = new URL(location.href)
 returnUrl.searchParams.delete("githubError")
 returnUrl.searchParams.delete("googleError")
-const returnTo = route === "/auth/login" ? "/" : returnUrl.pathname + returnUrl.search
+captureMarketingSearchParams(returnUrl.search, userTelemetryConsent.value)
+const returnTo = route === "/auth/login" ? `/${returnUrl.search}` : returnUrl.pathname + returnUrl.search
 if (token) history.replaceState(null, "", location.pathname + location.search)
 if (githubError || googleError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
+function syncAuthTelemetryConsent(telemetryEnabled: boolean | undefined): void {
+  if (!telemetryEnabled) return
+  if (userTelemetryConsent.value) {
+    void account.updateTelemetryConsent({
+      consented: true,
+      attribution: readMarketingAttribution(true),
+    }).catch(() => {})
+  } else if (readStoredTelemetryConsent() === "declined") {
+    void account.updateTelemetryConsent({ consented: false }).catch(() => {})
+  }
+}
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
+  setSiteTelemetryEnabled(Boolean(config.telemetryEnabled))
+  if (status.user) syncAuthTelemetryConsent(config.telemetryEnabled)
   return { config, user: status.user }
 }, undefined, { resetOnExecute: false })
 useErrorReportingUser(() => state.value?.user)
@@ -49,6 +65,7 @@ const signedInPages: Record<string, { title: string; description?: string; newTa
 }
 const signIn = signedInPages[route] ?? { title: "auth.signInTitle" }
 function signedIn(): void {
+  syncAuthTelemetryConsent(state.value?.config.telemetryEnabled)
   if (route in signedInPages) { state.value = undefined; void reload() }
   else location.assign("/")
 }

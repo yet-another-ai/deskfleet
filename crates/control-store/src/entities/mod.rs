@@ -55,6 +55,7 @@ pub(crate) mod cp_turn_usage_archive;
 // Written by database triggers; the mapping is validated with the rest of the schema.
 #[allow(dead_code)]
 pub(crate) mod cp_turn_usage_minutes;
+pub(crate) mod cp_user_marketing_attribution;
 pub(crate) mod cp_users;
 
 #[cfg(test)]

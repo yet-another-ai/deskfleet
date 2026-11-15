@@ -23,6 +23,51 @@ pub struct SiteSettings {
     pub allow_team_creation: bool,
     pub terms_of_service_url: String,
     pub privacy_terms_url: String,
+    #[serde(default)]
+    pub telemetry_enabled: bool,
+}
+
+/// Optional first-touch marketing attribution parameters consented to by the user.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarketingAttribution {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub gclid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub gbraid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wbraid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub utm_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub utm_medium: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub utm_campaign: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub utm_term: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub utm_content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ga_client_id: Option<String>,
+}
+
+/// User consent update for product telemetry and marketing attribution.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TelemetryConsentUpdate {
+    pub consented: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub attribution: Option<MarketingAttribution>,
 }
 
 /// Deployment-owned STUN endpoints, in the same order advertised on peer grants.
@@ -274,6 +319,8 @@ pub fn typescript() -> String {
     let declarations = [
         User::decl(&config),
         SiteSettings::decl(&config),
+        MarketingAttribution::decl(&config),
+        TelemetryConsentUpdate::decl(&config),
         NetworkConfiguration::decl(&config),
         TurnSettings::decl(&config),
         CloudflareTurnSettings::decl(&config),

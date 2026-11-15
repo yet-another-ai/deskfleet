@@ -140,6 +140,8 @@ fn fixture_config() -> BillingConfig {
         enterprise_contact_email: None,
         statsig_server_key: Some("secret-fixture".into()),
         statsig_environment: None,
+        ga_measurement_id: None,
+        ga_api_secret: None,
     }
 }
 

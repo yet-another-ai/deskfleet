@@ -8,7 +8,7 @@ import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/accoun
 import { HttpError } from "@deskfleet/client/http-central"
 import { passkeysAvailable } from "@deskfleet/client/passkeys"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
-import { trackEvent } from "../../services/analytics.ts"
+import { setUserTelemetryConsent, trackEvent, userTelemetryConsent } from "../../services/analytics.ts"
 // Official sign-in mark: https://developers.google.com/identity/branding-guidelines
 import googleIcon from "../../assets/google.png"
 import UiButton from "../common/UiButton.vue"
@@ -91,6 +91,20 @@ async function oauth(provider: OAuthProvider): Promise<void> {
       <UiField v-model="password" :label="t('auth.password')" type="password" name="password" autocomplete="current-password" required maxlength="128" :disabled="!!pending">
         <template #aside><a href="/auth/recovery" :target="target" rel="noopener" class="text-[13px] text-ui-text-muted hover:text-ui-text">{{ t("auth.forgot") }}</a></template>
       </UiField>
+      <label v-if="config.telemetryEnabled" class="flex cursor-pointer items-start gap-3 rounded-lg border border-ui-border bg-ui-sidebar p-3 text-sm">
+        <input
+          type="checkbox"
+          name="telemetry-consent"
+          class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-ui-accent"
+          :checked="userTelemetryConsent"
+          :disabled="!!pending"
+          @change="setUserTelemetryConsent(($event.target as HTMLInputElement).checked)"
+        />
+        <span class="min-w-0">
+          <span class="block font-medium text-ui-text">{{ t("welcome.telemetryConsent") }}</span>
+          <span class="mt-1 block text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.telemetryConsentDescription") }}</span>
+        </span>
+      </label>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending === 'password'" :disabled="!!pending">{{ t("auth.signIn") }}</UiButton>
       <template v-if="passkeysAvailable() || config.githubEnabled || config.googleEnabled">

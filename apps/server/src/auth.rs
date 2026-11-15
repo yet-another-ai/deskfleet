@@ -148,7 +148,11 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .route("/auth/desktop/complete", web::post().to(desktop::complete))
         .route("/auth/exchange", web::post().to(desktop::exchange))
         .route("/auth/logout", web::post().to(logout))
-        .route("/me", web::get().to(me));
+        .route("/me", web::get().to(me))
+        .route(
+            "/me/telemetry-consent",
+            web::put().to(update_telemetry_consent),
+        );
 }
 async fn authentication_methods(
     req: HttpRequest,
@@ -340,6 +344,7 @@ async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<H
             "registrationEnabled": state.store.registration_enabled().await?,
             "termsOfServiceUrl": settings.terms_of_service_url,
             "privacyTermsUrl": settings.privacy_terms_url,
+            "telemetryEnabled": settings.telemetry_enabled,
             "csrfToken": csrf,
         })))
 }
@@ -350,6 +355,20 @@ pub async fn me(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResp
         .map(|c| c.value().to_owned())
         .unwrap_or_else(secret);
     Ok(HttpResponse::Ok().insert_header(("Cache-Control","no-store")).cookie(cookie(CSRF_COOKIE,csrf.clone(),&state,false)).json(json!({"user":auth.user,"sessionId":auth.id,"siteAdmin":state.store.is_site_admin(&auth.user.id).await?,"csrfToken":csrf})))
+}
+async fn update_telemetry_consent(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<deskfleet_protocol::control::TelemetryConsentUpdate>,
+) -> Result<HttpResponse> {
+    let auth = user(&req, &state).await?;
+    state
+        .store
+        .update_user_telemetry_consent(&auth.user.id, &body)
+        .await?;
+    Ok(HttpResponse::NoContent()
+        .insert_header(("Cache-Control", "no-store"))
+        .finish())
 }
 pub async fn logout(req: HttpRequest, state: web::Data<AppState>) -> Result<HttpResponse> {
     let auth = user(&req, &state).await?;

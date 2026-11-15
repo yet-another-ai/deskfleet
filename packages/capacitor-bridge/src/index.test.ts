@@ -6,8 +6,10 @@ import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
   createCapacitorOutlineAudioApi,
+  createCapacitorTelemetrySink,
   spawnCapacitorDesktopViewer,
   type OutlineAudioBridgePlugin,
+  type TelemetryBridgePlugin,
   type ViewerBridgePlugin,
 } from "./index.ts"
 
@@ -197,4 +199,23 @@ test("createCapacitorOutlineAudioApi decodes spectrum frames and stops forwardin
   await new Promise(resolve => setTimeout(resolve, 0))
   expect(removeBands).toHaveBeenCalledOnce()
   expect(removeStopped).toHaveBeenCalledOnce()
+})
+
+test("createCapacitorTelemetrySink forwards consent, user ID, and events to DeskFleetBridge", () => {
+  const plugin: TelemetryBridgePlugin = {
+    setTelemetryConsent: vi.fn(async () => ({ configured: true })),
+    setTelemetryUserId: vi.fn(async () => ({ configured: true })),
+    logTelemetryEvent: vi.fn(async () => ({ configured: true })),
+  }
+  const sink = createCapacitorTelemetrySink(plugin)
+  sink.setConsent(true)
+  sink.setUserId("user-99")
+  sink.logEvent("machine_enrolled", { kind: "local" })
+
+  expect(plugin.setTelemetryConsent).toHaveBeenCalledExactlyOnceWith({ enabled: true })
+  expect(plugin.setTelemetryUserId).toHaveBeenCalledExactlyOnceWith({ userId: "user-99" })
+  expect(plugin.logTelemetryEvent).toHaveBeenCalledExactlyOnceWith({
+    name: "machine_enrolled",
+    params: { kind: "local" },
+  })
 })

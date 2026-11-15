@@ -4,7 +4,9 @@ import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication } from "@deskfleet/client/account-security"
 import type { AccountUser } from "@deskfleet/client/central"
+import { readMarketingAttribution } from "@deskfleet/client/marketing-attribution"
 import { failureMessage, useRecentAuthentication } from "../../composables/useRecentAuthentication.ts"
+import { userTelemetryConsent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import UserAvatar from "../common/UserAvatar.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -31,7 +33,10 @@ function approve(): void {
     return
   }
   void run(async () => {
-    const { returnTo } = await recent.confirmed(() => props.account.completeDesktop(props.attempt!))
+    const telemetryConsent = userTelemetryConsent.value
+      ? { consented: true, attribution: readMarketingAttribution(true) }
+      : undefined
+    const { returnTo } = await recent.confirmed(() => props.account.completeDesktop(props.attempt!, telemetryConsent))
     completedReturnTo.value = returnTo
     location.assign(returnTo)
   })

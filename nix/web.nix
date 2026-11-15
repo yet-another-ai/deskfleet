@@ -52,6 +52,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       # The browser shares wire contracts and pure helpers with the daemon.
       (lib.fileset.fileFilter (file: lib.hasSuffix "-protocol.ts" file.name) (source + /apps/daemon/src))
       (source + /apps/daemon/src/agent-command-results.ts)
+      (source + /apps/daemon/src/agent-configuration-matrix.ts)
       (source + /apps/daemon/src/agents/plans.ts)
       (source + /apps/daemon/src/agents/questions.ts)
       (source + /apps/daemon/src/files-wire.ts)

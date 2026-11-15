@@ -291,6 +291,8 @@
     "announcementDescription": "向使用此站点的所有人显示。留空则隐藏公告。",
     "allowTeamCreation": "允许创建团队",
     "allowTeamCreationDescription": "已登录用户可以创建团队。",
+    "telemetryEnabled": "启用遥测与营销归因统计",
+    "telemetryEnabledDescription": "允许用户自愿选择参与产品体验统计与营销转化归因。自托管或私有化部署建议保持关闭。",
     "teamCreationDisabled": "使用团队管理员提供的邀请码加入团队。",
     "saved": "站点配置已保存。",
     "turnTitle": "TURN 服务器",
@@ -637,6 +639,9 @@
   },
   "settings": {
     "preferences": "偏好设置",
+    "privacyAndAnalytics": "隐私与统计",
+    "telemetryConsent": "分享使用统计与营销归因数据",
+    "telemetryConsentDescription": "通过分享匿名的产品功能使用情况和推广归因数据帮助改进 DeskFleet。绝不包含提示词、代码或文件内容。",
     "appearance": "外观",
     "notifications": "通知",
     "notificationsEnabled": "桌面通知",
@@ -1667,6 +1672,8 @@
   "welcome": {
     "title": "欢迎使用 DeskFleet",
     "description": "登录后，选择如何使用这台电脑。",
+    "telemetryConsent": "帮助改进 DeskFleet（分享使用统计与营销归因）",
+    "telemetryConsentDescription": "可选。开启后将分享匿名产品事件与推广归因统计，绝不收集提示词、代码或文件内容。",
     "notificationsTitle": "及时了解任务动态",
     "notificationsDescription": "智能体完成任务或需要你回应时，接收通知提醒。",
     "notificationsDetails": "允许浏览器通知后，只要 DeskFleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",

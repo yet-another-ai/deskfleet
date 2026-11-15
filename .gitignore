@@ -24,3 +24,7 @@ apm_modules/
 
 # Development authentication emails contain one-use secrets.
 .local/mail/
+
+# Optional native Firebase configurations are injected in release CI or local dev.
+/apps/web/android/app/google-services.json
+/apps/web/ios/App/App/GoogleService-Info.plist

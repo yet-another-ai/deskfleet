@@ -3,11 +3,13 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
+import { resolveSurfaceGoogleTagIds } from "../../packages/client/src/analytics-config.ts"
 import { clientCodeSplitting, tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
 import { injectRendererContentSecurityPolicy } from "./src/shared/renderer-csp.ts"
 
 export default defineConfig(({ command }) => {
   let statsigEnabled = false
+  let googleTagEnabled = false
   let sentryDsn: string | undefined
   return {
     base: "./",
@@ -18,6 +20,10 @@ export default defineConfig(({ command }) => {
         configResolved(config) {
           // Use the same mode, envDir, and process overrides as import.meta.env.
           statsigEnabled = Boolean(config.env.VITE_STATSIG_CLIENT_KEY?.trim())
+          const googleIds = resolveSurfaceGoogleTagIds("desktop", config.env)
+          googleTagEnabled = Boolean(
+            googleIds.gtmId || googleIds.gaMeasurementId || googleIds.googleAdsId,
+          )
           sentryDsn = config.env.VITE_SENTRY_DSN
         },
         transformIndexHtml: {
@@ -25,7 +31,7 @@ export default defineConfig(({ command }) => {
           handler: (html, ctx) =>
             ctx.path === "/html-preview.html"
               ? html
-              : injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
+              : injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn, googleTagEnabled),
         },
       },
       UnoCSS({ configFile: resolve(import.meta.dirname, "../../packages/components/uno.config.ts") }),

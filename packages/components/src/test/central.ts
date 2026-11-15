@@ -42,7 +42,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
   const state = {
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
-    site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
+    site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
     turn: { urls: [...(options.turn?.urls ?? [])], allowTeamServers: options.turn?.allowTeamServers ?? true },
     cloudflareTurn: { enabled: false, accountId: "", keyId: "", apiTokenConfigured: false, analyticsTokenConfigured: false, ...options.cloudflareTurn },
     teamTurn: { availability: options.teamTurn?.availability ?? "available" as TeamTurnAvailability, urls: [...(options.teamTurn?.urls ?? [])], secret: options.teamTurn?.secret },
@@ -61,6 +61,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     login: vi.fn(async () => { state.signedIn = true }),
     logout: vi.fn(async () => { state.signedIn = false }),
     site: vi.fn(async () => ({ ...state.site })),
+    updateTelemetryConsent: vi.fn(async () => {}),
     siteSettings: vi.fn(async () => ({ ...state.site })),
     usageTrends: vi.fn(async (period: SiteUsagePeriod): Promise<SiteUsageTrends> => ({
       period, timeZone: "UTC", from: "2026-10-16T00:00:00Z", to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z",

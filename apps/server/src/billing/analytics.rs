@@ -9,11 +9,13 @@ use deskfleet_control_store::{
     },
     now_ms,
 };
+use deskfleet_protocol::control::MarketingAttribution;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, time::Duration};
 use tokio::time::{MissedTickBehavior, interval};
 
 const STATSIG_EVENTS_URL: &str = "https://api.statsig.com/v1/log_event";
+const GA_MP_EVENTS_URL: &str = "https://www.google-analytics.com/mp/collect";
 
 fn event(id: String, name: &str, actor: Option<String>, time: i64) -> BillingAnalyticsEvent {
     BillingAnalyticsEvent {
@@ -31,8 +33,12 @@ fn seconds(value: &Value) -> Option<i64> {
 }
 
 impl BillingService {
-    fn analytics_enabled(&self) -> bool {
-        self.config.statsig_server_key.is_some()
+    pub(super) fn analytics_enabled(&self) -> bool {
+        self.config.statsig_server_key.is_some() || self.ga_analytics_enabled()
+    }
+
+    fn ga_analytics_enabled(&self) -> bool {
+        self.config.ga_measurement_id.is_some() && self.config.ga_api_secret.is_some()
     }
 
     pub(super) fn checkout_analytics(
@@ -243,6 +249,10 @@ impl BillingService {
         tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
+            let Ok(settings) = store.site_settings().await else {
+                tracing::warn!("site settings unavailable for billing analytics");
+                continue;
+            };
             for _ in 0..25 {
                 let delivery = match store.claim_billing_analytics().await {
                     Ok(Some(delivery)) => delivery,
@@ -252,9 +262,72 @@ impl BillingService {
                         break;
                     }
                 };
-                let success = self.deliver_analytics(&delivery, STATSIG_EVENTS_URL).await;
-                if !success {
+                if !settings.telemetry_enabled {
+                    // Drain queued items while site telemetry is off so they do not
+                    // accumulate and flush in a burst if telemetry is later enabled.
+                    if store
+                        .finish_billing_analytics(&delivery, true)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("billing analytics drain result could not be persisted");
+                    }
+                    continue;
+                }
+                let is_ga_only = delivery.event.id.starts_with("ga:");
+                let statsig_ok = if !is_ga_only && self.config.statsig_server_key.is_some() {
+                    self.deliver_analytics(&delivery, STATSIG_EVENTS_URL).await
+                } else {
+                    true
+                };
+                if !statsig_ok {
                     tracing::warn!("billing analytics delivery failed; scheduled retry");
+                    if store
+                        .finish_billing_analytics(&delivery, false)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("billing analytics delivery result could not be persisted");
+                    }
+                    continue;
+                }
+                let ga_ok = if self.ga_analytics_enabled()
+                    && is_ga_conversion_candidate(&delivery.event)
+                {
+                    match delivery.event.user_id.as_deref() {
+                        Some(actor_id) => match store.user_marketing_attribution(actor_id).await {
+                            Ok(Some(attribution)) => {
+                                self.deliver_ga_conversion(
+                                    &delivery,
+                                    &attribution,
+                                    GA_MP_EVENTS_URL,
+                                )
+                                .await
+                            }
+                            Ok(None) => true,
+                            Err(_) => false,
+                        },
+                        None => true,
+                    }
+                } else {
+                    true
+                };
+                let success = if ga_ok {
+                    true
+                } else if !is_ga_only && self.config.statsig_server_key.is_some() {
+                    // Statsig already accepted this event; split GA conversion into its
+                    // own outbox item so retries do not duplicate the Statsig event.
+                    let mut ga_retry = delivery.event.clone();
+                    ga_retry.id = format!("ga:{}", delivery.event.id);
+                    store
+                        .record_billing_analytics(&delivery.team_id, &[ga_retry])
+                        .await
+                        .is_ok()
+                } else {
+                    false
+                };
+                if !ga_ok {
+                    tracing::warn!("billing GA conversion delivery failed; scheduled retry");
                 }
                 if store
                     .finish_billing_analytics(&delivery, success)
@@ -292,6 +365,37 @@ impl BillingService {
                 .json::<Value>()
                 .await
                 .is_ok_and(|body| body["success"] == true)
+    }
+
+    async fn deliver_ga_conversion(
+        &self,
+        delivery: &BillingAnalyticsDelivery,
+        attribution: &MarketingAttribution,
+        endpoint: &str,
+    ) -> bool {
+        let (Some(measurement_id), Some(api_secret)) = (
+            self.config.ga_measurement_id.as_deref(),
+            self.config.ga_api_secret.as_deref(),
+        ) else {
+            return false;
+        };
+        let Some(body) = ga_conversion_body(delivery, attribution) else {
+            return true;
+        };
+        let Ok(mut url) = url::Url::parse(endpoint) else {
+            return false;
+        };
+        url.query_pairs_mut()
+            .append_pair("measurement_id", measurement_id)
+            .append_pair("api_secret", api_secret);
+        let response = self
+            .client
+            .post(url)
+            .timeout(Duration::from_secs(5))
+            .json(&body)
+            .send()
+            .await;
+        response.is_ok_and(|res| res.status().is_success())
     }
 }
 
@@ -373,6 +477,81 @@ fn request_body(delivery: &BillingAnalyticsDelivery, environment: &str) -> Value
         event["value"] = json!(value);
     }
     json!({"events":[event]})
+}
+
+fn major_currency_value(amount_minor: i64, currency: &str) -> f64 {
+    match currency.to_ascii_uppercase().as_str() {
+        "BIF" | "CLP" | "DJF" | "GNF" | "JPY" | "KMF" | "KRW" | "MGA" | "PYG" | "RWF" | "UGX"
+        | "VND" | "VUV" | "XAF" | "XOF" | "XPF" => amount_minor as f64,
+        "BHD" | "JOD" | "KWD" | "OMR" | "TND" => (amount_minor as f64) / 1000.0,
+        _ => (amount_minor as f64) / 100.0,
+    }
+}
+
+fn is_ga_conversion_candidate(fact: &BillingAnalyticsEvent) -> bool {
+    fact.name == "billing_invoice_paid"
+        && fact.metadata.get("billing_reason").map(String::as_str) == Some("subscription_create")
+}
+
+fn ga_conversion_body(
+    delivery: &BillingAnalyticsDelivery,
+    attribution: &MarketingAttribution,
+) -> Option<Value> {
+    let fact = &delivery.event;
+    if !is_ga_conversion_candidate(fact) {
+        return None;
+    }
+    let amount_minor = fact.value.filter(|value| *value >= 0)?;
+    let currency = fact.metadata.get("currency")?.to_ascii_uppercase();
+    let transaction_id = fact
+        .id
+        .strip_prefix("ga:")
+        .unwrap_or(&fact.id)
+        .strip_prefix("invoice:")?
+        .strip_suffix(":paid")?;
+    let client_id = attribution
+        .ga_client_id
+        .clone()
+        .unwrap_or_else(|| format!("server.{}", delivery.team_id));
+    let mut params = json!({
+        "transaction_id": transaction_id,
+        "value": major_currency_value(amount_minor, &currency),
+        "currency": currency,
+    });
+    if let Some(obj) = params.as_object_mut() {
+        if let Some(plan) = fact.metadata.get("plan") {
+            obj.insert("plan".into(), json!(plan));
+        }
+        if let Some(interval) = fact.metadata.get("interval") {
+            obj.insert("interval".into(), json!(interval));
+        }
+        for (key, value) in [
+            ("gclid", attribution.gclid.as_ref()),
+            ("gbraid", attribution.gbraid.as_ref()),
+            ("wbraid", attribution.wbraid.as_ref()),
+            ("campaign_source", attribution.utm_source.as_ref()),
+            ("campaign_medium", attribution.utm_medium.as_ref()),
+            ("campaign_name", attribution.utm_campaign.as_ref()),
+            ("campaign_term", attribution.utm_term.as_ref()),
+            ("campaign_content", attribution.utm_content.as_ref()),
+        ] {
+            if let Some(value) = value {
+                obj.insert(key.into(), json!(value));
+            }
+        }
+    }
+    let mut body = json!({
+        "client_id": client_id,
+        "timestamp_micros": fact.time.saturating_mul(1000),
+        "events": [{
+            "name": "purchase",
+            "params": params,
+        }],
+    });
+    if let Some(user_id) = fact.user_id.as_ref() {
+        body["user_id"] = json!(user_id);
+    }
+    Some(body)
 }
 
 #[cfg(test)]

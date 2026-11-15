@@ -11,6 +11,7 @@ pub struct Model {
     pub allow_team_creation: bool,
     pub terms_of_service_url: String,
     pub privacy_terms_url: String,
+    pub telemetry_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
