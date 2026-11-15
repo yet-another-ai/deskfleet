@@ -7,7 +7,7 @@ import { computed, onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { DesktopPermissionsState } from "@deskfleet/client/local-agent"
-import { readMarketingAttribution } from "@deskfleet/client/marketing-attribution"
+import { readMarketingAttribution, readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import { DESKTOP_ONBOARDING_PERMISSIONS, type OnboardingPermission, type OnboardingPermissionsState, type OnboardingState, type OnboardingStep } from "@deskfleet/client/onboarding"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/analytics.ts"
@@ -102,15 +102,18 @@ async function act(work: () => Promise<void>): Promise<void> {
 async function submit(): Promise<void> {
   await act(async () => {
     session.notice.value = undefined
-    if (session.site.value?.telemetryEnabled && !userTelemetryConsent.value) {
-      setUserTelemetryConsent(false)
-    }
     if (!session.account.value.user) await session.signIn()
     if (session.account.value.user && session.site.value?.telemetryEnabled) {
-      void session.central.updateTelemetryConsent?.({
-        consented: userTelemetryConsent.value,
-        ...(userTelemetryConsent.value ? { attribution: readMarketingAttribution(true) } : {}),
-      })?.catch(() => {})
+      if (userTelemetryConsent.value) {
+        void session.central.updateTelemetryConsent?.({
+          consented: true,
+          attribution: readMarketingAttribution(true),
+        })?.catch(() => {})
+      } else if (readStoredTelemetryConsent() === "declined") {
+        void session.central.updateTelemetryConsent?.({
+          consented: false,
+        })?.catch(() => {})
+      }
     }
     if (firstRun && onboarding) {
       // A restarted guide may need sign-in again without resetting saved progress.

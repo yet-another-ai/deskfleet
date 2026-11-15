@@ -22,7 +22,15 @@ vi.mock("../../composables/useAccountSession.ts", () => ({
 }))
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); view = undefined; mockSite.value = undefined; setUserTelemetryConsent(false); vi.restoreAllMocks() })
+afterEach(() => {
+  view?.unmount()
+  view = undefined
+  mockSite.value = undefined
+  mockUpdateTelemetryConsent.mockClear()
+  setUserTelemetryConsent(false)
+  localStorage.removeItem("deskfleet-telemetry-consent")
+  vi.restoreAllMocks()
+})
 
 function setup(step: "screenCapture" | "accessibility" = "screenCapture") {
   const state: OnboardingState = { step, permissionSteps: ["screenCapture", "accessibility"], linuxDesktopBackend: "wayland" }
@@ -134,6 +142,10 @@ test("welcome account card only shows the default-unchecked telemetry consent ch
   const checkbox = view.get<HTMLInputElement>('input[name="telemetry-consent"]')
   expect(checkbox.element.checked).toBe(false)
   expect(userTelemetryConsent.value).toBe(false)
+
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(mockUpdateTelemetryConsent).not.toHaveBeenCalled()
 
   await checkbox.setValue(true)
   expect(userTelemetryConsent.value).toBe(true)
