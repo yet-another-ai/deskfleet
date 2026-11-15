@@ -34,7 +34,7 @@ async fn responder(
     machine: &MachineRegistration,
     allowed: Arc<AtomicBool>,
 ) -> tokio::task::JoinHandle<()> {
-    let (send, mut receive) = tokio::sync::mpsc::channel(32);
+    let (send, mut receive) = crate::hub::outbox::testing::channel(32);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub
@@ -121,7 +121,7 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
     let (denied, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (offline, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (stalled, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
-    let (send, mut stalled_requests) = tokio::sync::mpsc::channel(8);
+    let (send, mut stalled_requests) = crate::hub::outbox::testing::channel(8);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub

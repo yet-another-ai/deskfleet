@@ -5,7 +5,7 @@ import { remoteMachineClient } from "./remote.ts"
 import { HttpCentralClient } from "./http-central.ts"
 import { centralRequestFailure } from "./request-diagnostics.ts"
 import { setPeerTelemetrySink } from "./peer-telemetry.ts"
-import type { LocalChannelsApi } from "./local-channels.ts"
+import type { LocalChannelEvent, LocalChannelsApi } from "./local-channels.ts"
 const disposers: (() => void)[] = []
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); setPeerTelemetrySink(undefined); vi.useRealTimers() })
 function fixture(host: Partial<DeskfleetDesktopApi> = {}, local = false) {
@@ -170,6 +170,79 @@ test("refreshing a retained local machine preserves its direct channels and loca
   expect(terminal.readyState).toBe("open")
   expect(bridge.close).not.toHaveBeenCalled()
   expect(f.central.createPeer).not.toHaveBeenCalled()
+})
+
+test("local Agent and terminal traffic survives control outages and reconnection without replay", async () => {
+  const listeners = new Set<(event: LocalChannelEvent) => void>()
+  const bridge: LocalChannelsApi = {
+    open: vi.fn(async () => {}), send: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    onEvent: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  }
+  const f = fixture({ platform: "darwin", localChannels: bridge }, true)
+  const machine = { ...f.machine, online: true }
+  f.remote.updateMachine(machine)
+  f.central.machines = vi.fn(async () => [machine])
+  const terminals = [{ id: "shell1", status: "running" }]
+  vi.mocked(f.central.rpc).mockResolvedValue(terminals)
+  const agent = f.remote.api.agent.connectChannel!("agent")
+  const terminal = f.remote.api.terminal.connectChannel!("terminal")
+  const incoming: unknown[] = []
+  agent.onmessage = event => { incoming.push(["agent", event.data]) }
+  terminal.onmessage = event => { incoming.push(["terminal", event.data]) }
+  await vi.waitFor(() => { expect(agent.readyState).toBe("open"); expect(terminal.readyState).toBe("open") })
+  expect(await f.remote.api.terminal.list()).toEqual(terminals)
+  const expected: unknown[] = []
+  async function exchange(stage: string): Promise<void> {
+    for (const [id, channel] of [["agent", agent], ["terminal", terminal]] as const) {
+      channel.send(`${stage}:request`)
+      for (const listener of listeners) listener({ kind: "message", connectionId: id, data: `${stage}:response` })
+      expected.push([id, `${stage}:response`])
+    }
+    await vi.waitFor(() => { expect(agent.bufferedAmount).toBe(0); expect(terminal.bufferedAmount).toBe(0) })
+  }
+  await exchange("before")
+  f.emit({ type: "presence", teamId: machine.teamId, machineId: machine.id, online: false })
+  f.emit({ type: "connection", connected: false })
+  expect((await f.remote.api.desktop.target()).online).toBe(false)
+  await exchange("offline")
+  f.emit({ type: "connection", connected: true })
+  expect(await f.remote.api.terminal.list()).toEqual(terminals)
+  expect(f.central.rpc).toHaveBeenCalledTimes(1)
+  f.remote.updateMachine(machine, true)
+  expect((await f.remote.api.desktop.target()).online).toBe(true)
+  await exchange("reconciled")
+  expect(incoming).toEqual(expected)
+  expect(bridge.send).toHaveBeenCalledTimes(6)
+  expect(bridge.open).toHaveBeenCalledTimes(2)
+  expect(bridge.close).not.toHaveBeenCalled()
+  expect(f.central.createPeer).not.toHaveBeenCalled()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
+  expect(f.remote.api.target?.local).toBe(true)
+})
+
+test("viewer reconnection waits for the authoritative roster before refreshing retained projections", async () => {
+  const f = fixture()
+  const machine = { ...f.machine, online: true }
+  f.remote.updateMachine(machine)
+  const catalog = vi.fn(), providers = vi.fn()
+  f.remote.api.catalog.onChanged(catalog)
+  f.remote.api.providers.onChanged(providers)
+  await f.remote.api.agent.prepare!("retained-agent")
+  vi.mocked(f.central.rpc).mockResolvedValue([{ id: "retained-terminal" }])
+  await f.remote.api.terminal.list()
+  f.emit({ type: "connection", connected: false })
+  f.emit({ type: "connection", connected: true })
+  expect(f.remote.api.agent.history!.available()).toBe(true)
+  expect(await f.remote.api.terminal.list()).toEqual([{ id: "retained-terminal" }])
+  expect(f.central.rpc).toHaveBeenCalledTimes(1)
+  expect(catalog).not.toHaveBeenCalled()
+  f.remote.updateMachine(machine, true)
+  expect(catalog).toHaveBeenCalledOnce()
+  expect(providers).toHaveBeenCalledOnce()
+  await f.remote.api.terminal.list()
+  expect(f.central.rpc).toHaveBeenCalledTimes(2)
+  expect(f.central.createPeer).toHaveBeenCalledOnce()
+  expect(f.central.closePeer).not.toHaveBeenCalled()
 })
 
 test("verified local targets use direct Agent/Git and terminal channels, while desktop retains WebRTC", async () => {

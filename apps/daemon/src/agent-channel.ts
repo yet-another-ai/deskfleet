@@ -47,7 +47,7 @@ const METHODS = new Set<AgentMethod>([
 ])
 const MAX_PENDING_REQUESTS = 128
 const MAX_QUEUED_BYTES = AGENT_MESSAGE_BYTES * 2
-const SEND_TIMEOUT_MS = 5_000
+const SEND_TIMEOUT_MS = 30_000
 const gzipAsync = promisify(gzip)
 
 function object(value: unknown): value is JsonObject {

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { setTimeout as delay } from "node:timers/promises"
+import { setImmediate as nextTurn, setTimeout as delay } from "node:timers/promises"
 import { FilesChannel, fileAction } from "./files-channel.ts"
 import { FilesService } from "./files-service.ts"
 import { FileFrameDecoder, encodeFileFrame, FILE_WIRE_CHUNK_BYTES, type FileFrame, type FileFrameHeader } from "./files-wire.ts"
@@ -17,6 +17,48 @@ async function until(predicate: () => boolean): Promise<void> {
 function receive(channel: FilesChannel, header: FileFrameHeader, data?: Uint8Array): void {
   const frame = encodeFileFrame(header, data)
   for (let offset = 0; offset < frame.length; offset += FILE_WIRE_CHUNK_BYTES) channel.receive(frame.subarray(offset, offset + FILE_WIRE_CHUNK_BYTES))
+}
+
+for (const recover of [true, false]) {
+  test(`file send backpressure ${recover ? "recovers after six seconds without repeating the write" : "closes its endpoint at thirty seconds"}`, async context => {
+    let blocked = true, calls = 0, closed = false
+    const replies: FileFrame[] = [], failures: unknown[] = [], decoder = new FileFrameDecoder()
+    const endpoint = {
+      async call() { calls++; return { value: { bytes: 1 } } },
+      async close() { closed = true },
+    } as FileEndpoint
+    const channel = new FilesChannel(endpoint, async bytes => {
+      if (blocked) {
+        if (recover) throw new Error("send buffer is full")
+        await new Promise(() => {})
+      }
+      replies.push(...decoder.push(bytes))
+    }, () => {}, error => failures.push(error))
+    context.after(() => channel.close())
+    context.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+    receive(channel, { id: 1, method: "write", params: { transferId: "upload", path: "", offset: 0 } }, new Uint8Array([1]))
+    await nextTurn()
+    context.mock.timers.tick(6_000)
+    await delay(20)
+    assert.deepEqual(failures, [])
+    assert.equal(closed, false)
+    if (recover) {
+      blocked = false
+      await until(() => replies.length === 1)
+      assert.equal(replies.length, 1)
+      assert.deepEqual(failures, [])
+    } else {
+      context.mock.timers.tick(23_999)
+      await nextTurn()
+      assert.equal(closed, false)
+      context.mock.timers.tick(1)
+      await nextTurn()
+      assert.equal(closed, true)
+      assert.match(String(failures[0]), /send buffer stalled/)
+      assert.deepEqual(replies, [])
+    }
+    assert.equal(calls, 1, "only the response bytes retry; writes execute once")
+  })
 }
 
 test("file channel transfers binary data and cleans incomplete uploads on close", async context => {

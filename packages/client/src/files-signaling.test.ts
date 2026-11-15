@@ -60,7 +60,7 @@ test("the setup deadline rejects a stalled offer without waiting for signaling t
   vi.useFakeTimers()
   const close = vi.fn(async () => {}), failed = vi.fn()
   const central = {
-    createPeer: async () => ({ peerId: "a", authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] }),
+    createPeer: async () => ({ peerId: "a", authorization: { expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, iceServers: [] }),
     onEvent: () => () => {}, offerPeer: () => new Promise(() => {}), closePeer: async () => {},
   } as unknown as CentralApi
   const connecting = connectFilePeer(central, { kind: "machine", machineId: "3", teamId: "1" }, async () => ({

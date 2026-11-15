@@ -3,10 +3,10 @@
  * traversal regularly takes several seconds, so a short deadline aborts peers
  * that would still connect.
  */
-export const PEER_SETUP_TIMEOUT_MS = 45_000
+export const PEER_SETUP_TIMEOUT_MS = 120_000
 
 /** `disconnected` is transient during network switches and app suspension. */
-export const PEER_DISCONNECT_GRACE_MS = 10_000
+export const PEER_DISCONNECT_GRACE_MS = 30_000
 
 export interface PeerDisconnectGuard {
   /** Feed peer connection states; only a sustained `disconnected` fails. */

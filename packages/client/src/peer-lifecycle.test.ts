@@ -1,20 +1,22 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { createPeerDisconnectGuard } from "./peer-lifecycle.ts"
+import { createPeerDisconnectGuard, PEER_DISCONNECT_GRACE_MS } from "./peer-lifecycle.ts"
 
 afterEach(() => { vi.useRealTimers() })
 
 test("a recovered disconnected state never fails the peer", () => {
   vi.useFakeTimers()
   const failed = vi.fn()
-  const guard = createPeerDisconnectGuard(failed, 10_000)
+  const guard = createPeerDisconnectGuard(failed)
   guard.update("disconnected")
-  vi.advanceTimersByTime(9_999)
+  vi.advanceTimersByTime(20_000)
   expect(failed).not.toHaveBeenCalled()
   guard.update("connected")
-  vi.advanceTimersByTime(10_000)
+  vi.advanceTimersByTime(PEER_DISCONNECT_GRACE_MS)
   expect(failed).not.toHaveBeenCalled()
   guard.update("disconnected")
-  vi.advanceTimersByTime(10_000)
+  vi.advanceTimersByTime(PEER_DISCONNECT_GRACE_MS - 1)
+  expect(failed).not.toHaveBeenCalled()
+  vi.advanceTimersByTime(1)
   expect(failed).toHaveBeenCalledOnce()
 })
 

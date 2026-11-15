@@ -1,14 +1,17 @@
 //! Real-PostgreSQL regressions for signaling across independent API instances.
 
 use super::*;
+use crate::hub::outbox::testing as mpsc;
 use crate::{config::ServerConfig, peers};
 use actix_web::{http::StatusCode, test};
 use deskfleet_control_store::{PeerCandidateState, PeerOfferState, now_ms};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 #[path = "cloudflare_turn_tests.rs"]
 mod cloudflare_turn_tests;
+#[path = "ingress_tests.rs"]
+mod ingress_tests;
 #[path = "local_tests.rs"]
 mod local_tests;
 #[path = "mux_tests.rs"]
@@ -26,8 +29,8 @@ struct Fixture {
     team: String,
     token: String,
     login: String,
-    requests: mpsc::Receiver<ControlMessage>,
-    events: mpsc::Receiver<ControlMessage>,
+    requests: mpsc::Receiver,
+    events: mpsc::Receiver,
 }
 
 impl Fixture {

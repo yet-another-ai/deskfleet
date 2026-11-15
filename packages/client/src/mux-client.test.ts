@@ -6,6 +6,7 @@ import { MUX_LABELS, MUX_PROFILE, type MuxLane } from "./mux/protocol.ts"
 import { HttpError } from "./http-central.ts"
 import { MuxDataChannel } from "./mux-data-channel.ts"
 import { LocalDataChannel, type LocalChannelEvent, type LocalChannelsApi } from "./local-channels.ts"
+import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 
 const sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n"
 const target = { teamId: "team", machineId: "machine" }
@@ -20,7 +21,7 @@ function fixture(capabilities: Record<string, unknown> = { mux: MUX_PROFILE, mux
   const central = {
     onEvent: (listener: (event: CentralEvent) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     machines: vi.fn(async () => [machine]),
-    createPeer: vi.fn(async () => ({ peerId: `peer-${++nextId}`, authorization: { expiresAt: new Date(Date.now() + 60_000).toISOString() }, iceServers: [] })),
+    createPeer: vi.fn(async () => ({ peerId: `peer-${++nextId}`, authorization: { expiresAt: new Date(Date.now() + 3_600_000).toISOString() }, iceServers: [] })),
     offerPeer: vi.fn(async () => ({ sdp })), candidatePeer: vi.fn(async () => {}), closePeer: vi.fn(async () => {}),
   } as unknown as CentralApi
   const factory: MuxPeerFactory = vi.fn(async (_ice, events) => {
@@ -175,7 +176,7 @@ test("a logical open deadline releases the stream without closing its shared phy
   }))
   const opening = f.registry.open(target, "terminal")
   const rejected = expect(opening).rejects.toThrow("stream opening timed out")
-  await vi.advanceTimersByTimeAsync(45_000)
+  await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS)
   await rejected
   expect(close).not.toHaveBeenCalled()
 })

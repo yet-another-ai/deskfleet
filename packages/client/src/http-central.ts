@@ -24,7 +24,7 @@ const CLOSE_GRACE_MS = 2_000
 const RETRY_MIN_MS = 1_000
 const RETRY_MAX_MS = 30_000
 /** Resume probes replace a socket only when the link misses this round trip. */
-const PROBE_TIMEOUT_MS = 3_000
+const PROBE_TIMEOUT_MS = 10_000
 
 type SocketMessage = CentralEvent | { type: "ready" } | { type: "ping" } | { type: "pong" }
 
@@ -239,7 +239,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   networkConfiguration(): Promise<NetworkConfiguration> {
     // The public configuration route can briefly return 404 during deployment.
     return this.request("GET", "/api/network-configuration", undefined, undefined, {
-      timeoutMs: 1_500, totalTimeoutMs: 5_000, retryStatusCodes: [404, ...API_RETRY_STATUS_CODES],
+      timeoutMs: 5_000, totalTimeoutMs: 15_000, retryStatusCodes: [404, ...API_RETRY_STATUS_CODES],
     })
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }

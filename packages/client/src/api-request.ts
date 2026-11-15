@@ -49,8 +49,8 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
   // Backend RPCs and peer negotiation may take 60 seconds. Their transport
   // deadline leaves room for the server's structured timeout response. Retry
   // eligibility does not change the operation's timeout budget.
-  const timeout = options.timeoutMs ?? (read ? 5_000 : 65_000)
-  const totalTimeout = options.totalTimeoutMs ?? (read ? 15_000 : 65_000)
+  const timeout = options.timeoutMs ?? (read ? 15_000 : 105_000)
+  const totalTimeout = options.totalTimeoutMs ?? (read ? 45_000 : 105_000)
   const path = new URL(url).pathname
   const started = performance.now()
   let phase: "fetch" | "response_body" = "fetch"

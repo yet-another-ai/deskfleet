@@ -231,6 +231,25 @@ test("catalog notifications refresh pinned remote history and removed machines l
   expect(store.isPinned("m2", "30")).toBe(true)
 })
 
+test("reconnection refreshes missed remote pin metadata with an unchanged machine roster", async () => {
+  const { account, fake, session, snapshot } = await accountFixture()
+  const { store } = fixture(account)
+  store.pin("m2", "30", "Cached")
+  await flushPromises()
+  expect(session).toHaveBeenCalledTimes(1)
+  fake.emit({ type: "connection", connected: false })
+  snapshot.session.title = "Renamed while disconnected"
+  snapshot.session.lastCompletedSeq = "12"
+  await flushPromises()
+  expect(store.items[0]?.title).toBe("Remote investigation")
+  expect(session).toHaveBeenCalledTimes(1)
+  fake.emit({ type: "connection", connected: true })
+  await flushPromises()
+  expect(session).toHaveBeenCalledTimes(2)
+  expect(store.items[0]).toMatchObject({ title: "Renamed while disconnected", lastCompletedSeq: "12" })
+  expect(store.pins[0]?.title).toBe("Renamed while disconnected")
+})
+
 test("shared unread markers refresh across machines and are not saved as device preferences", async () => {
   const { account, fake, snapshot } = await accountFixture()
   const { store, agents } = fixture(account)

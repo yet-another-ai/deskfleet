@@ -1,4 +1,5 @@
 //! Authenticated machine and viewer sockets, with bounded outbound queues.
+use crate::hub::outbox::{self, Outbound};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -8,11 +9,9 @@ use actix_ws::{CloseCode, CloseReason};
 use deskfleet_protocol::control::ControlMessage;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 
-static PEER_EVENT_TASKS: Semaphore = Semaphore::const_new(256);
+pub(crate) mod peer_events;
 
 pub async fn daemon(
     req: HttpRequest,
@@ -57,7 +56,7 @@ async fn connect(
         let token = if let Some(token) = browser_token {
             token
         } else {
-            let first = tokio::time::timeout(Duration::from_secs(10), stream.next()).await;
+            let first = tokio::time::timeout(Duration::from_secs(30), stream.next()).await;
             match first {
                 Ok(Some(Ok(actix_ws::AggregatedMessage::Text(text)))) => {
                     match serde_json::from_str::<ControlMessage>(&text) {
@@ -108,7 +107,7 @@ async fn connect(
             }
         };
         let connection_id = uuid::Uuid::new_v4().to_string();
-        let (send, mut receive) = tokio::sync::mpsc::channel(128);
+        let (send, mut receive) = outbox::channel(128);
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(None);
         if let Some(user) = &user {
             if state
@@ -179,20 +178,30 @@ async fn connect(
         .await;
         // A failed initial reconciliation is a service failure, not a normal close.
         let mut close_code = if setup.is_ok() { 1000 } else { 1012 };
+        let mut close_cause = if setup.is_ok() {
+            "transport_closed"
+        } else {
+            "setup_failed"
+        };
         let mut heartbeat = tokio::time::interval(Duration::from_secs(20));
         let mut last_pong = std::time::Instant::now();
-        let peer_tasks = Arc::new(Semaphore::new(16));
-        let mut peer_rate = crate::peers::events::Rate::new();
+        let peer_events = is_daemon.then(|| {
+            peer_events::PeerEvents::new(state.clone(), id.clone(), connection_id.clone())
+        });
         while setup.is_ok() {
             tokio::select! {
-                _=shutdown_rx.changed()=>{close_code=(*shutdown_rx.borrow()).unwrap_or(1012);break;},
+                _=shutdown_rx.changed()=>{close_code=(*shutdown_rx.borrow()).unwrap_or(1012);close_cause="requested_shutdown";break;},
                 outgoing=receive.recv()=>match outgoing{
-                    Some(message)=>{if send_json(&mut session,&message).await.is_err(){break}},
+                    Some(Outbound::Message(message))=>{if send_json(&mut session,&message).await.is_err(){close_cause="write_failed";break}},
+                    Some(Outbound::Reconcile)=>{
+                        if state.hub.reconcile_daemon(&id,&connection_id).await.is_err(){close_code=1012;close_cause="reconciliation_failed";break;}
+                    },
+                    Some(Outbound::Reconnect)=>{close_code=1012;close_cause="notification_overflow";break;},
                     None=>break,
                 },
                 incoming=stream.next()=>match incoming{
                     Some(Ok(actix_ws::AggregatedMessage::Text(text)))=>{
-                        let Ok(message)=serde_json::from_str::<ControlMessage>(&text)else{break};
+                        let Ok(message)=serde_json::from_str::<ControlMessage>(&text)else{close_cause="invalid_message";break};
                         match message{
                             ControlMessage::Ping=>{last_pong=std::time::Instant::now();let _=send_json(&mut session,&ControlMessage::Pong).await;},
                             ControlMessage::Pong=>last_pong=std::time::Instant::now(),
@@ -217,22 +226,11 @@ async fn connect(
                             ControlMessage::PeerEvent{peer_id,event} if is_daemon=>{
                                 // A native error can contain large diagnostics. Reject
                                 // that event without taking the whole Machine offline.
-                                match crate::peers::events::admit(&mut peer_rate,text.len(),&event) {
-                                    crate::peers::events::Admission::Accept=>{},
-                                    crate::peers::events::Admission::Drop=>continue,
-                                    crate::peers::events::Admission::Close=>{close_code=1008;break;},
-                                }
-                                let Ok(local_permit)=peer_tasks.clone().try_acquire_owned() else {close_code=1008;break};
-                                let Ok(global_permit)=PEER_EVENT_TASKS.try_acquire() else {close_code=1013;break};
-                                if state.hub.is_current(&id,&connection_id).await {
-                                    let state=state.clone(); let machine_id=id.clone(); let connection_id=connection_id.clone();
-                                    actix_web::rt::spawn(async move {
-                                        let (_local,_global)=(local_permit,global_permit);
-                                        let _=crate::peers::daemon_event(&state,&machine_id,&connection_id,peer_id,event).await;
-                                    });
+                                if crate::peers::events::admit(text.len(), &event) {
+                                    peer_events.as_ref().expect("daemon owns signaling worker").push(peer_id, event);
                                 }
                             },
-                            _=>break,
+                            _=>{close_cause="invalid_message";break},
                         }
                     },
                     Some(Ok(actix_ws::AggregatedMessage::Ping(bytes)))=>{last_pong=std::time::Instant::now();let _=session.pong(&bytes).await;},
@@ -240,22 +238,30 @@ async fn connect(
                     _=>break,
                 },
                 _=heartbeat.tick()=>{
-                    if last_pong.elapsed()>Duration::from_secs(60){break}
-                    if is_daemon && !state.hub.is_current(&id,&connection_id).await {close_code=1012;break;}
+                    if last_pong.elapsed()>Duration::from_secs(60){close_cause="heartbeat_timeout";break}
+                    if is_daemon && !state.hub.is_current(&id,&connection_id).await {close_code=1012;close_cause="route_replaced";break;}
                     let active=if is_daemon{state.store.machine(&id).await.map(|_|true)}else{state.store.session_is_active(&id).await};
                     match active {
                         Ok(true)=>{},
-                        Ok(false)=>{close_code=4401;break;},
-                        Err(error)=>{close_code=store_failure_close(&error,if is_daemon{4403}else{4401});break;},
+                        Ok(false)=>{close_code=4401;close_cause="session_inactive";break;},
+                        Err(error)=>{close_code=store_failure_close(&error,if is_daemon{4403}else{4401});close_cause="authorization_check_failed";break;},
                     }
                     if is_daemon{
-                        if state.hub.reconcile_daemon(&id,&connection_id).await.is_err(){close_code=1012;break;}
+                        if state.hub.reconcile_daemon(&id,&connection_id).await.is_err(){close_code=1012;close_cause="reconciliation_failed";break;}
                         let _=state.store.machine_seen(&id).await;
                     }
-                    if session.ping(b"deskfleet").await.is_err(){break}
+                    if session.ping(b"deskfleet").await.is_err(){close_cause="write_failed";break}
                 }
             }
         }
+        drop(peer_events);
+        tracing::info!(
+            registration_id = if is_daemon { Some(id.as_str()) } else { None },
+            socket_kind = if is_daemon { "daemon" } else { "client" },
+            close_code,
+            close_cause,
+            "control socket closed"
+        );
         if is_daemon {
             if state.hub.remove_daemon(&id, &connection_id).await
                 && let Some(team) = team
@@ -283,7 +289,7 @@ async fn send_json(
     message: &ControlMessage,
 ) -> std::result::Result<(), ()> {
     let json = serde_json::to_string(message).map_err(|_| ())?;
-    tokio::time::timeout(Duration::from_secs(10), session.text(json))
+    tokio::time::timeout(Duration::from_secs(30), session.text(json))
         .await
         .map_err(|_| ())?
         .map_err(|_| ())

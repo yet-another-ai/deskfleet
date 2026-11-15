@@ -58,6 +58,13 @@ impl ApiError {
             "target machine is unavailable",
         )
     }
+    pub fn busy() -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "machine_busy",
+            "target machine control queue is busy; retry later",
+        )
+    }
 }
 impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {

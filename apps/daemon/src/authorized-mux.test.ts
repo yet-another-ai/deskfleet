@@ -24,7 +24,7 @@ async function until(predicate: () => boolean): Promise<void> {
 }
 
 async function fixture(t: TestContext, permissions = actions) {
-  let now = Date.now(), closed = false, created = 0
+  let now = Date.now(), closed = false, created = 0, backpressured = false
   const grant: PeerAuthorization = {
     peerId: "mux", serverId: "server", teamId: "team", purpose: "mux", transport: "webrtc",
     actor: { kind: "user", userId: "user", deviceId: "login" },
@@ -46,6 +46,7 @@ async function fixture(t: TestContext, permissions = actions) {
   const native = {
     answerOffer: async () => sdp,
     sendData: async (label: string, bytes: Buffer) => {
+      if (backpressured) throw new Error("send buffer is full")
       const lane = (Object.keys(MUX_LABELS) as MuxLane[]).find(lane => MUX_LABELS[lane] === label)!
       lanes.push(lane); client.receive(lane, bytes)
     },
@@ -102,9 +103,46 @@ async function fixture(t: TestContext, permissions = actions) {
   return {
     server, client, open, rpc, grant, calls, lanes, signals, errors, agentListeners, terminalListeners,
     created: () => created, closed: () => closed, expire: () => { now += 60_001 },
+    backpressure: (value: boolean) => { backpressured = value },
     append: (text: string) => { transcript = Buffer.concat([transcript, Buffer.from(text)]); for (const listener of terminalListeners) listener("output") },
   }
 }
+
+test("authorized Mux output recovers past five seconds and retires only a peer that stalls for thirty", { timeout: 5_000 }, async t => {
+  const slow = await fixture(t), healthy = await fixture(t)
+  const agent = slow.open("agent"), sibling = healthy.open("agent")
+  await Promise.all([agent.stream.ready, sibling.stream.ready])
+  await slow.rpc(agent.stream, 1, "initialize", { protocolVersion: 1 })
+  await healthy.rpc(sibling.stream, 1, "initialize", { protocolVersion: 1 })
+  await until(() => agent.messages.some(value => value.id === 1) && sibling.messages.some(value => value.id === 1))
+  t.mock.timers.enable({ apis: ["Date"] })
+  slow.backpressure(true)
+  await slow.rpc(agent.stream, 2, "_deskfleet/session/list")
+  await until(() => slow.calls.length === 1)
+  await delay(20)
+  t.mock.timers.tick(6_000)
+  await delay(20)
+  assert.equal(slow.closed(), false)
+  slow.backpressure(false)
+  await until(() => agent.messages.some(value => value.id === 2))
+  assert.equal(agent.messages.filter(value => value.id === 2).length, 1)
+  assert.equal(slow.calls.length, 1)
+
+  slow.backpressure(true)
+  await slow.rpc(agent.stream, 3, "_deskfleet/session/list")
+  await until(() => slow.calls.length === 2)
+  await delay(20)
+  t.mock.timers.tick(29_999)
+  await delay(20)
+  assert.equal(slow.closed(), false)
+  t.mock.timers.tick(1)
+  await until(() => slow.closed())
+  assert.equal(slow.agentListeners.size, 0)
+  await healthy.rpc(sibling.stream, 2, "_deskfleet/session/list")
+  await until(() => sibling.messages.some(value => value.id === 2))
+  assert.equal(healthy.closed(), false)
+  assert.deepEqual(healthy.errors, [])
+})
 
 test("one authorized peer isolates Agent RPC IDs and terminal views while sharing four lanes", { timeout: 5_000 }, async t => {
   const f = await fixture(t)

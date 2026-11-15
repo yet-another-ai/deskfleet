@@ -269,16 +269,16 @@ test("desktop HTTP error codes survive IPC into Sentry without changing issue gr
     context: vi.fn(), onEvent: () => () => {},
   }, captureCentralRequestError)
   try {
-    for (const code of ["machine_offline", "private-code", undefined]) {
+    for (const code of ["machine_offline", "machine_busy", "private-code", undefined]) {
       fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: { code, message: "private-response" } }), { status: 503 }))
       await central.rpc("private-team", "private-machine", "terminalList", {}).catch(() => {})
     }
     await flushSdk()
-    expect(events()).toHaveLength(3)
-    expect(events().map(event => event.tags?.["central.api_error_code"])).toEqual(["machine_offline", undefined, undefined])
-    expect(events().map(event => event.contexts?.central_request?.api_error_code)).toEqual(["machine_offline", undefined, undefined])
+    expect(events()).toHaveLength(4)
+    expect(events().map(event => event.tags?.["central.api_error_code"])).toEqual(["machine_offline", "machine_busy", undefined, undefined])
+    expect(events().map(event => event.contexts?.central_request?.api_error_code)).toEqual(["machine_offline", "machine_busy", undefined, undefined])
     const fingerprint = ["central-request", "node_fetch", "POST", "/api/teams/:teamId/machines/:machineId/rpc", "terminalList", "http", "response_body", "HTTP 503"]
-    expect(events().map(event => event.fingerprint)).toEqual([fingerprint, fingerprint, fingerprint])
+    expect(events().map(event => event.fingerprint)).toEqual([fingerprint, fingerprint, fingerprint, fingerprint])
     for (const secret of ["private", "fleet.example"]) expect(JSON.stringify(events())).not.toContain(secret)
   } finally { http.dispose() }
 })

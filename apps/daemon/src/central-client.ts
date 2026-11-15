@@ -26,6 +26,7 @@ const IDLE_TIMEOUT_MS = 60_000
 const CLOSE_GRACE_MS = 5_000
 const RETRY_MIN_MS = 2_000
 const RETRY_MAX_MS = 30_000
+const CLOSE_REPORT_INTERVAL_MS = 60_000
 
 /** Only the backend's explicit machine credential error can retire an identity. */
 function machineCredentialRejected(error: unknown): boolean {
@@ -61,6 +62,8 @@ export class CentralClient {
   #closeDeadline: ReturnType<typeof setTimeout> | undefined
   #heartbeat: ReturnType<typeof setInterval> | undefined
   #lastReceived = 0
+  #nextCloseReport = 0
+  #suppressedCloseReports = 0
   #requests = new Set<Promise<void>>()
   #enrolling = false
   #revocation: Promise<void> | undefined
@@ -146,7 +149,7 @@ export class CentralClient {
     const credentials = this.#credentials
     if (!credentials || credentials.revoked || this.#stopping || this.#closed) throw new Error("Remote Agent delegation is unavailable")
     return this.#api(credentials, "/api/daemon/mcp", {
-      method: "POST", redirect: "error", json: request, timeoutMs: 55_000, totalTimeoutMs: 55_000,
+      method: "POST", redirect: "error", json: request, timeoutMs: 105_000, totalTimeoutMs: 105_000,
       errorPrefix: "Remote MCP request failed",
     })
   }
@@ -250,6 +253,7 @@ export class CentralClient {
     socket.addEventListener("error", () => { /* close schedules reconnection */ })
     socket.addEventListener("close", event => {
       if (this.#socket !== socket) return
+      this.#reportClose(event.code)
       clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
       this.#socket = undefined; this.#connected = false; this.#sync.disable(); clearInterval(this.#heartbeat)
       // 4401/4403 are durable credential rejection. Other codes (including 1012 for an
@@ -263,6 +267,20 @@ export class CentralClient {
       else this.#send({ type: "ping" })
     }, HEARTBEAT_MS)
     this.#heartbeat.unref()
+  }
+
+  /** Preserve a useful close code without letting a reconnect loop flood diagnostics. */
+  #reportClose(closeCode: number): void {
+    if (this.#stopping || this.#closed) return
+    const now = Date.now()
+    if (now < this.#nextCloseReport) { this.#suppressedCloseReports++; return }
+    this.#nextCloseReport = now + CLOSE_REPORT_INTERVAL_MS
+    console.warn("Central control link closed", {
+      teamId: this.#credentials?.teamId, machineId: this.#credentials?.machineId, closeCode,
+      ...(closeCode === 4401 || closeCode === 4403 ? {} : { reconnectDelayMs: this.#retryDelay }),
+      suppressedSinceLastReport: this.#suppressedCloseReports,
+    })
+    this.#suppressedCloseReports = 0
   }
 
   /**

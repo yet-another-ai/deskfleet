@@ -78,7 +78,7 @@ export class FilesChannel {
   }
 
   async #sendChunk(data: Uint8Array, method: FileMethod): Promise<void> {
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 30_000
     while (!this.#closed) {
       let timer: ReturnType<typeof setTimeout> | undefined
       let stopped: (() => void) | undefined

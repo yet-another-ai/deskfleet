@@ -68,6 +68,37 @@ beforeEach(() => {
 afterEach(() => {
   for (const client of clients.splice(0)) client.close()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+test("terminal requests survive a thirty-second drain without replaying input", async () => {
+  const { client, api } = setup()
+  const peer = await connected(client)
+  vi.useFakeTimers()
+  const input = client.input("terminal-1", "hello")
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(30_001)
+  expect(peer.close).not.toHaveBeenCalled()
+  expect(peer.channel.send).toHaveBeenCalledTimes(1)
+  const request = JSON.parse(peer.channel.send.mock.calls[0]![0])
+  peer.channel.message({ id: request.id, result: null })
+  await input
+  expect(api.offer).toHaveBeenCalledTimes(1)
+})
+
+test("a terminal request still times out at sixty seconds without retrying the write", async () => {
+  const { client } = setup()
+  const peer = await connected(client)
+  vi.useFakeTimers()
+  const input = client.input("terminal-1", "hello")
+  const rejected = expect(input).rejects.toThrow("Terminal input timed out")
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(59_999)
+  expect(peer.close).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  await rejected
+  expect(peer.close).toHaveBeenCalledTimes(1)
+  expect(peer.channel.send).toHaveBeenCalledTimes(1)
 })
 
 test("negotiates a reliable data-only channel and queues both directions of early ICE", async () => {

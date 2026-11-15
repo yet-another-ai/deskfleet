@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { setTimeout as delay } from "node:timers/promises"
+import { setImmediate as nextTurn, setTimeout as delay } from "node:timers/promises"
 import { gunzipSync } from "node:zlib"
 import { AgentChannel, type AgentChannelSessions } from "./agent-channel.ts"
 import { AgentLiveState } from "./agent-live.ts"
@@ -487,6 +487,56 @@ test("AgentChannel retries native backpressure without dropping or reordering ch
   assert.deepEqual(attempts[1], attempts[2])
   assert.deepEqual(attempts[2], Buffer.concat([wire({ id: "first", result: null }), wire({ id: "second", result: null })]))
   assert.deepEqual(h.failures, [])
+})
+
+test("AgentChannel recovers after more than five seconds of backpressure without replaying requests", async t => {
+  let blocked = false
+  const attempts: Buffer[] = []
+  const h = attach(undefined, actor, async chunk => {
+    if (blocked) { attempts.push(Buffer.from(chunk)); throw new Error("send buffer is full") }
+  })
+  t.after(() => h.channel.close())
+  await h.initialize()
+  t.mock.timers.enable({ apis: ["Date"] })
+  blocked = true
+  h.request("slow", "_deskfleet/session/list")
+  await nextTurn(); await nextTurn()
+  t.mock.timers.tick(6_000)
+  await delay(20)
+  assert.deepEqual(h.failures, [])
+  assert.equal(h.messages.some(message => message.id === "slow"), false)
+  blocked = false
+  await h.waitFor(message => message.id === "slow")
+  assert.equal(h.messages.filter(message => message.id === "slow").length, 1)
+  assert.equal(h.sessions.calls.length, 1)
+  assert.deepEqual(attempts[0], attempts[1], "capacity retries retain the exact output bytes")
+})
+
+test("a thirty-second send stall detaches only the Agent viewer and keeps its sibling and service alive", async t => {
+  const sessions = new Sessions()
+  let blocked = false
+  const slow = attach(sessions, actor, () => blocked ? new Promise(() => {}) : Promise.resolve())
+  const healthy = attach(sessions)
+  t.after(() => { slow.channel.close(); healthy.channel.close() })
+  await slow.initialize(); await healthy.initialize()
+  await slow.subscribe(); await healthy.subscribe()
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+  blocked = true
+  sessions.emit(event("1"))
+  await nextTurn()
+  t.mock.timers.tick(29_999)
+  await nextTurn()
+  assert.deepEqual(slow.failures, [])
+  assert.equal(sessions.listeners.size, 2)
+  t.mock.timers.tick(1)
+  await nextTurn()
+  assert.match(String(slow.failures[0]), /send buffer stalled/)
+  assert.equal(sessions.listeners.size, 1)
+  healthy.request("still-running", "_deskfleet/session/list")
+  await nextTurn(); await nextTurn()
+  assert.equal(healthy.messages.some(message => message.id === "still-running"), true)
+  assert.deepEqual(healthy.failures, [])
+  assert.equal(sessions.calls.some(call => call.method === "_deskfleet/turn/cancel"), false)
 })
 
 test("AgentChannel rejects malformed envelopes and bounds messages and slow viewers", async t => {

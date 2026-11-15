@@ -1,6 +1,7 @@
 //! Local sockets with PostgreSQL-backed cross-instance routing.
 mod cluster;
 mod delivery;
+pub(crate) mod outbox;
 mod wire;
 
 #[cfg(test)]
@@ -12,12 +13,14 @@ use crate::error::{ApiError, Result};
 pub(crate) use cluster::Router;
 use deskfleet_control_store::{ControlStore, RealtimeRoute};
 use deskfleet_protocol::control::{ControlMessage, PeerActor, PeerAuthorization};
+#[cfg(test)]
+use outbox::testing as mpsc;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, oneshot, watch};
 use wire::{Audience, Envelope, WireResult};
 
-type Sender = mpsc::Sender<ControlMessage>;
+type Sender = outbox::Sender;
 #[derive(Clone)]
 struct Daemon {
     team_id: String,
@@ -425,18 +428,26 @@ fn timeout_error() -> ApiError {
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn saturated_revocation_uses_independent_shutdown_and_replaced_route_is_isolated() {
+    async fn saturated_revocation_requests_reconciliation_and_preserves_machine_presence() {
         let hub = Hub::default();
-        let (send, _receive) = mpsc::channel(1);
-        let (shutdown, mut stopped) = watch::channel(None);
+        let (send, mut receive) = outbox::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
         send.try_send(ControlMessage::Ping).unwrap();
         hub.add_daemon("1", "team", "1", "old", send, shutdown)
             .await
             .unwrap();
         let peer: PeerAuthorization = serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"transport":"webrtc","purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
         hub.revoke(vec![peer], "logout").await.unwrap();
-        stopped.changed().await.unwrap();
-        assert_eq!(*stopped.borrow(), Some(1012));
+        assert_eq!(*stopped.borrow(), None);
+        assert!(hub.online("1").await);
+        assert!(matches!(
+            receive.recv().await,
+            Some(outbox::Outbound::Reconcile)
+        ));
+        assert!(matches!(
+            receive.recv().await,
+            Some(outbox::Outbound::Message(message)) if matches!(*message, ControlMessage::Ping)
+        ));
         let (send, _receive) = mpsc::channel(1);
         let (shutdown, stopped) = watch::channel(None);
         hub.add_daemon("1", "team", "1", "new", send, shutdown)
@@ -448,6 +459,211 @@ mod tests {
         hub.disconnect_machine("1").await.unwrap();
         assert_eq!(*stopped.borrow(), Some(4403));
         assert!(hub.remove_daemon("1", "new").await);
+    }
+
+    #[tokio::test]
+    async fn saturated_request_reports_busy_without_taking_machine_offline() {
+        let hub = Hub::default();
+        let (send, _receive) = mpsc::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
+        send.try_send(ControlMessage::Ping).unwrap();
+        hub.add_daemon("1", "team", "machine", "socket", send, shutdown)
+            .await
+            .unwrap();
+        let error = hub
+            .send_request("1", "socket", ControlMessage::Ping)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "machine_busy");
+        assert_eq!(*stopped.borrow(), None);
+        assert!(hub.online("1").await);
+    }
+
+    #[tokio::test]
+    async fn streaming_history_notifications_do_not_disconnect_a_slow_client() {
+        let hub = Hub::default();
+        let (send, mut receive) = mpsc::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
+        hub.add_client("login", "user", "connection", send, shutdown)
+            .await
+            .unwrap();
+        for session in 0..1_000 {
+            hub.notify_users(
+                &["user".into()],
+                ControlMessage::CatalogChanged {
+                    team_id: "team".into(),
+                    machine_id: "machine".into(),
+                    session_id: Some(session.to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        }
+        hub.send_client(
+            "login",
+            ControlMessage::PeerRevoked {
+                peer_id: "peer".into(),
+                reason: "closed".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(*stopped.borrow(), None);
+        assert!(matches!(
+            receive.recv().await,
+            Some(ControlMessage::PeerRevoked { .. })
+        ));
+        assert!(matches!(
+            receive.recv().await,
+            Some(ControlMessage::CatalogChanged {
+                session_id: None,
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn distinct_hint_overflow_reconnects_only_its_viewer_and_keeps_daemon_rpc_live() {
+        let hub = Hub::default();
+        let (daemon, mut daemon_messages) = mpsc::channel(1);
+        let (shutdown, daemon_stopped) = watch::channel(None);
+        hub.add_daemon(
+            "daemon",
+            "team",
+            "machine",
+            "daemon-socket",
+            daemon,
+            shutdown,
+        )
+        .await
+        .unwrap();
+        let (slow, mut slow_messages) = outbox::channel(2);
+        let (shutdown, slow_stopped) = watch::channel(None);
+        hub.add_client("login", "user", "slow", slow, shutdown)
+            .await
+            .unwrap();
+        let (fast, mut fast_messages) = mpsc::channel(2);
+        let (shutdown, fast_stopped) = watch::channel(None);
+        hub.add_client("login", "user", "fast", fast, shutdown)
+            .await
+            .unwrap();
+        for machine in 0..3 {
+            hub.notify_users(
+                &["user".into()],
+                ControlMessage::CatalogChanged {
+                    team_id: "team".into(),
+                    machine_id: machine.to_string(),
+                    session_id: None,
+                },
+            )
+            .await
+            .unwrap();
+            assert!(matches!(
+                fast_messages.recv().await,
+                Some(ControlMessage::CatalogChanged { .. })
+            ));
+        }
+        assert!(matches!(
+            slow_messages.recv().await,
+            Some(outbox::Outbound::Reconnect)
+        ));
+        assert!(slow_messages.recv().await.is_none());
+        assert_eq!(
+            *slow_stopped.borrow(),
+            None,
+            "the viewer socket consumes its own reconnect marker"
+        );
+        assert_eq!(*fast_stopped.borrow(), None);
+        assert_eq!(*daemon_stopped.borrow(), None);
+        assert!(hub.online("daemon").await);
+
+        let (replacement, mut replacement_messages) = mpsc::channel(1);
+        let (shutdown, _) = watch::channel(None);
+        hub.add_client("login", "user", "replacement", replacement, shutdown)
+            .await
+            .unwrap();
+        hub.remove_client("login", "slow").await;
+        hub.send_client("login", ControlMessage::Ping)
+            .await
+            .unwrap();
+        assert!(matches!(
+            replacement_messages.recv().await,
+            Some(ControlMessage::Ping)
+        ));
+        assert!(matches!(
+            fast_messages.recv().await,
+            Some(ControlMessage::Ping)
+        ));
+        assert_daemon_rpc(&hub, &mut daemon_messages).await;
+    }
+
+    #[tokio::test]
+    async fn a_slow_viewers_candidate_burst_does_not_block_revocation_other_viewers_or_rpc() {
+        let hub = Hub::default();
+        let (daemon, mut daemon_messages) = mpsc::channel(1);
+        let (shutdown, daemon_stopped) = watch::channel(None);
+        hub.add_daemon(
+            "daemon",
+            "team",
+            "machine",
+            "daemon-socket",
+            daemon,
+            shutdown,
+        )
+        .await
+        .unwrap();
+        let (slow, mut slow_messages) = mpsc::channel(128);
+        let (shutdown, slow_stopped) = watch::channel(None);
+        hub.add_client("slow-login", "user", "slow", slow, shutdown)
+            .await
+            .unwrap();
+        let (fast, mut fast_messages) = mpsc::channel(1);
+        let (shutdown, fast_stopped) = watch::channel(None);
+        hub.add_client("fast-login", "user", "fast", fast, shutdown)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            for candidate in 0..512 {
+                hub.notify_users(&["user".into()], ControlMessage::PeerEvent {
+                    peer_id: "peer".into(),
+                    event: serde_json::json!({"kind": "iceCandidate", "candidate": {"candidate": candidate.to_string()}}),
+                }).await.unwrap();
+                assert!(matches!(fast_messages.recv().await, Some(ControlMessage::PeerEvent { .. })));
+            }
+            hub.notify_users(&["user".into()], ControlMessage::PeerRevoked {
+                peer_id: "peer".into(), reason: "revoked".into(),
+            }).await.unwrap();
+        }).await.expect("candidate delivery must never wait for the critical queue deadline");
+        assert!(matches!(
+            slow_messages.recv().await,
+            Some(ControlMessage::PeerRevoked { .. })
+        ));
+        assert!(matches!(
+            fast_messages.recv().await,
+            Some(ControlMessage::PeerRevoked { .. })
+        ));
+        assert_eq!(*slow_stopped.borrow(), None);
+        assert_eq!(*fast_stopped.borrow(), None);
+        assert_eq!(*daemon_stopped.borrow(), None);
+        assert_daemon_rpc(&hub, &mut daemon_messages).await;
+    }
+
+    async fn assert_daemon_rpc(hub: &Hub, messages: &mut mpsc::Receiver) {
+        let request = hub.request("daemon", "test", serde_json::json!({}), None);
+        tokio::pin!(request);
+        assert!(futures_util::poll!(&mut request).is_pending());
+        let Some(ControlMessage::Request { id, .. }) = messages.recv().await else {
+            panic!("daemon must receive the RPC");
+        };
+        hub.response(
+            "daemon",
+            "daemon-socket",
+            &id,
+            Ok(serde_json::json!("completed")),
+        )
+        .await;
+        assert_eq!(request.await.unwrap(), serde_json::json!("completed"));
+        assert!(hub.online("daemon").await);
     }
 
     #[tokio::test]

@@ -227,7 +227,7 @@ export class TerminalClient {
       const id = ++this.#nextId
       const timeout = setTimeout(() => {
         if (this.#current) this.#fail(this.#current, new Error(`Terminal ${method} timed out`))
-      }, 15_000)
+      }, 60_000)
       this.#pending.set(id, { resolve: (result) => resolve(result as TerminalMethods[M]["result"]), reject, timeout })
       try { this.#send({ id, method, params }) }
       catch (error) {

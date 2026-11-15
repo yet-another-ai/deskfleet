@@ -494,10 +494,11 @@ function silentSockets(context: import("node:test").TestContext) {
     close() { this.closeCalls++; this.readyState = 3 }
     receive(value: unknown) { this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(value) })) }
     /** A real transport error, which does emit close. */
-    drop(code = 1012) {
+    drop(code = 1012, reason = "") {
       this.readyState = 3
       const event = new Event("close") as Event & { code: number }
       Object.defineProperty(event, "code", { value: code })
+      Object.defineProperty(event, "reason", { value: reason })
       this.dispatchEvent(event)
     }
   }
@@ -532,6 +533,36 @@ async function linkClient(context: import("node:test").TestContext, directory: s
   await central.init()
   return { central, sockets }
 }
+
+test("remote MCP allows the full server budget plus network latency and never retries a timed-out write", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-remote-mcp-timeout-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  const { central } = await linkClient(context, directory)
+  const pending: ((response: Response) => void)[] = []
+  context.mock.method(globalThis, "fetch", async (input: Parameters<typeof fetch>[0]) => {
+    const url = input instanceof Request ? input.url : String(input)
+    return url.endsWith("/api/daemon/mcp")
+      ? new Promise<Response>(resolve => { pending.push(resolve) })
+      : Response.json({ lastEventSeq: "1" })
+  })
+  const request = { userId: "user", deviceId: "device", sessionId: "source", operation: "sessionSend" as const, machineId: "target", arguments: {} }
+  let settled = false
+  const first = central.remoteMcp(request).finally(() => { settled = true })
+  await setImmediate()
+  assert.equal(pending.length, 1)
+  context.mock.timers.tick(90_000)
+  await setImmediate()
+  assert.equal(settled, false)
+  pending[0]!(Response.json({ accepted: true }))
+  assert.deepEqual(await first, { accepted: true })
+
+  const second = central.remoteMcp(request)
+  const rejected = assert.rejects(second, /timed out/)
+  await setImmediate()
+  context.mock.timers.tick(105_000)
+  await rejected
+  assert.equal(pending.length, 2, "mutating delegation must not be sent again after timeout")
+})
 
 test("a silent control link is abandoned after a bounded grace and replaced", { timeout: 10_000 }, async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-control-stale-"))
@@ -570,6 +601,31 @@ test("control link retries back off while reconnects fail and reset after ready"
   assert.equal(sockets.length, 3)
   context.mock.timers.tick(1)
   assert.equal(sockets.length, 4, "a ready link resets the retry delay")
+})
+
+test("control close diagnostics bound reconnect storms and omit remote reason text and credentials", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-control-diagnostics-"))
+  context.after(() => rm(directory, { recursive: true, force: true }))
+  const logs: unknown[][] = []
+  context.mock.method(console, "warn", (...values: unknown[]) => { logs.push(values) })
+  const { central, sockets } = await linkClient(context, directory)
+  sockets[0]!.drop(1008, "remote diagnostic containing private data")
+  context.mock.timers.tick(2_000)
+  sockets[1]!.drop(1013)
+  context.mock.timers.tick(4_000)
+  sockets[2]!.drop(1008)
+  context.mock.timers.tick(8_000)
+  assert.equal(logs.length, 1, "a burst has one diagnostic")
+  context.mock.timers.tick(46_000)
+  sockets[3]!.drop(1006)
+  assert.deepEqual(logs, [
+    ["Central control link closed", { teamId: "team", machineId: "machine", closeCode: 1008, reconnectDelayMs: 2_000, suppressedSinceLastReport: 0 }],
+    ["Central control link closed", { teamId: "team", machineId: "machine", closeCode: 1006, reconnectDelayMs: 16_000, suppressedSinceLastReport: 2 }],
+  ])
+  context.mock.timers.tick(16_000)
+  await central.stop()
+  sockets[4]!.drop(1000)
+  assert.equal(logs.length, 2, "intentional shutdown and stale socket events are silent")
 })
 
 test("a late rejection of a retired token cannot revoke a re-enrolled Team", async context => {
