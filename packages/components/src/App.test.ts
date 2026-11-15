@@ -409,7 +409,7 @@ test("settings replaces the app layout, returns to the previous page, and refres
   expect(view.get('main [role="switch"][aria-labelledby="keep-awake-label"]').attributes("aria-checked")).toBe("false")
   expect(view.get("#auto-download-updates-label").text()).toBe("Automatically download updates")
   expect(view.get('main [role="switch"][aria-labelledby="auto-download-updates-label"]').attributes("aria-checked")).toBe("true")
-  expect(view.get('main section[aria-labelledby="this-computer-heading"]').text()).toContain("Run local Agent")
+  expect(view.get('main section[aria-labelledby="this-computer-heading"]').text()).toContain("Allow this machine to be controlled")
   vi.mocked(platformClient.catalog.list).mockClear()
   list.mockClear()
   for (const listener of listeners) listener({ enabled: false, status: "stopping" })
@@ -455,7 +455,7 @@ test("completed desktop setup exposes permissions and About and retains the retu
     onboarding: {
       get: async () => ({ step: "complete", permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }),
       permissions, requestPermission, openLocalNetworkSettings: vi.fn(),
-      advancePermission: vi.fn(), complete: vi.fn(),
+      advancePermission: vi.fn(), advanceAccount: vi.fn(), setMachineControlEnabled: vi.fn(),
     },
     updates: { get: async () => ({ status: "idle", currentVersion: "0.2.0" }), check, install: vi.fn(), onChanged: () => () => {} },
   })

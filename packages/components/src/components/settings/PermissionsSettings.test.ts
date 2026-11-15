@@ -27,12 +27,13 @@ function setup(platform: DeskfleetDesktopApi["platform"] = "darwin", localAgent 
     permissions: vi.fn(async () => ({ ...permissions })),
     requestPermission: vi.fn<OnboardingApi["requestPermission"]>(async kind => kind === "localNetwork" ? { localNetwork: "attempted" } : { ...permissions, [`${kind}Permission`]: { status: "requesting" } }),
     openLocalNetworkSettings: vi.fn(async () => {}),
+    advanceAccount: vi.fn(async () => state),
+    setMachineControlEnabled: vi.fn(async () => state),
     advancePermission: vi.fn(async () => state),
-    complete: vi.fn(async () => state),
   } satisfies OnboardingApi
   const host: DeskfleetDesktopApi = {
     ...getClient(), platform, onboarding, application,
-    settings: { ...getClient().settings, onChanged(listener) { listeners.add(listener); return () => { listeners.delete(listener) } } },
+    settings: { ...getClient().settings, get: vi.fn(async () => ({ enabled: localAgent, status: localAgent ? "running" : "stopped" } as LocalAgentState)), onChanged(listener) { listeners.add(listener); return () => { listeners.delete(listener) } } },
   }
   return {
     host, state, permissions, onboarding, application, listeners,
@@ -74,6 +75,46 @@ test("Windows without a service API shows the empty permissions state", async ()
   await flushPromises()
   expect(view!.find('[role="switch"]').exists()).toBe(false)
   expect(view!.text()).toContain("No additional system permissions")
+})
+
+test.each([true, false])("Windows keeps service setup hidden when machine control is disabled (onboarding API: %s)", async withOnboarding => {
+  const app = setup("win32", false)
+  if (!withOnboarding) app.host.onboarding = undefined
+  const get = vi.fn(async () => ({ available: true, installed: false, running: false }))
+  const setEnabled = vi.fn()
+  app.host.windowsDesktopService = { get, setEnabled }
+  app.mount()
+  await flushPromises()
+  expect(view!.find('[data-permission="windowsDesktopService"]').exists()).toBe(false)
+  expect(view!.text()).toContain("No additional system permissions")
+  expect(get).not.toHaveBeenCalled()
+  expect(setEnabled).not.toHaveBeenCalled()
+  expect(app.onboarding.permissions).not.toHaveBeenCalled()
+
+  app.changedSnapshot({ enabled: true, status: "running" })
+  await flushPromises()
+  expect(view!.find('[data-permission="windowsDesktopService"]').exists()).toBe(true)
+  expect(get).toHaveBeenCalledOnce()
+  app.changedSnapshot({ enabled: false, status: "stopped" })
+  await flushPromises()
+  expect(view!.find('[data-permission="windowsDesktopService"]').exists()).toBe(false)
+  expect(setEnabled).not.toHaveBeenCalled()
+})
+
+test("disabling machine control keeps a stale settings refresh from reopening Windows service setup", async () => {
+  const app = setup("win32")
+  const get = vi.fn(async () => ({ available: true, installed: false, running: false }))
+  app.host.windowsDesktopService = { get, setEnabled: vi.fn() }
+  app.mount()
+  await flushPromises()
+  let resolve!: (state: OnboardingState) => void
+  app.onboarding.get.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  app.changedSnapshot({ enabled: false, status: "stopped" })
+  resolve({ ...app.state })
+  await flushPromises()
+  expect(view!.find('[data-permission="windowsDesktopService"]').exists()).toBe(false)
 })
 
 test("refreshing permissions also refreshes Windows service status", async () => {
@@ -136,7 +177,8 @@ test("reviews all macOS permissions after welcome and requests them without adva
   expect(app.onboarding.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
   expect(card("screenCapture").get('[role="status"]').text()).toBe("Waiting for macOS authorization…")
   expect(app.onboarding.advancePermission).not.toHaveBeenCalled()
-  expect(app.onboarding.complete).not.toHaveBeenCalled()
+  expect(app.onboarding.advanceAccount).not.toHaveBeenCalled()
+  expect(app.onboarding.setMachineControlEnabled).not.toHaveBeenCalled()
 })
 
 test("local network requests stay explicit and an attempted request is never shown as a grant", async () => {

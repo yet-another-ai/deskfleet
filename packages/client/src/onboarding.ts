@@ -6,7 +6,7 @@ export const DESKTOP_ONBOARDING_PERMISSIONS = ["fullDiskAccess", "screenCapture"
 const MACOS_ONBOARDING_PERMISSIONS = ["localNetwork", ...DESKTOP_ONBOARDING_PERMISSIONS] as const
 export const ONBOARDING_PERMISSIONS = [...MACOS_ONBOARDING_PERMISSIONS, "windowsDesktopService"] as const
 export type OnboardingPermission = typeof ONBOARDING_PERMISSIONS[number]
-export type OnboardingStep = OnboardingPermission | "account" | "complete"
+export type OnboardingStep = OnboardingPermission | "account" | "machineControl" | "complete"
 export interface OnboardingState {
   step: OnboardingStep
   permissionSteps: readonly OnboardingPermission[]
@@ -32,11 +32,13 @@ export function onboardingPermissions(platform: string, backend?: DesktopPermiss
 /** The desktop host owns setup, service installation, and client network access; the daemon owns capture/file/input access. */
 export interface OnboardingApi {
   get(): Promise<OnboardingState>
+  advanceAccount(): Promise<OnboardingState>
+  /** Uses the same persistent preference as Settings to start or stop the local daemon. */
+  setMachineControlEnabled(enabled: boolean): Promise<OnboardingState>
   /** Silent checks for the active welcome step, or all applicable permissions after setup. */
   permissions(): Promise<OnboardingPermissionsState>
   /** Completed setup allows revisiting any applicable permission without changing progress. */
   requestPermission(permission: OnboardingPermission): Promise<OnboardingPermissionsState>
   openLocalNetworkSettings(): Promise<void>
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState>
-  complete(): Promise<OnboardingState>
 }

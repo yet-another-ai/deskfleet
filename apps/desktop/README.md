@@ -406,7 +406,7 @@ recreate deleted entries. Built-in updates restart the new version, which
 refreshes the path. After upgrading a Nix package or manually moving, renaming,
 or replacing an AppImage, run the new version once to update the startup entry.
 
-The client opens its normal window and respects the separate **Run local Agent**
+The client opens its normal window and respects the separate **Allow this machine to be controlled**
 preference described below. The switch is unavailable in development runs, which
 use Electron's executable instead of an installed DeskFleet app.
 
@@ -414,7 +414,7 @@ use Electron's executable instead of an installed DeskFleet app.
 
 **Settings → Preferences → Keep Awake** prevents automatic system sleep while
 the desktop app runs, including while its windows are closed to the tray. It is
-disabled by default and applies independently of **Run local Agent**. Displays
+disabled by default and applies independently of **Allow this machine to be controlled**. Displays
 can still turn off normally.
 
 The main process saves the preference in `keep-awake.json` under Electron's
@@ -460,23 +460,31 @@ signed macOS application; see the [Electron notification documentation](https://
 
 ## Welcome and initial setup
 
-The welcome page guides macOS Local Network access, Full Disk Access,
-screen/system-audio recording, and Accessibility in that order, then signs in
-to the compiled backend. Local Network access supports direct connections to
-other machines and is offered even when the local Agent is disabled.
-On Windows, the welcome page offers optional remote control while locked before
-sign-in. It checks the desktop service silently; **Enable locked-session control**
-requests administrator approval to install or start it. Skipping or
-canceling approval leaves sign-in available, and installation can be retried
-from the welcome page or Settings → Permissions. An already running service
-needs no further approval.
+The welcome page starts with sign-in to the compiled backend, then asks whether
+this machine should be controlled. The choice saves the same `localAgentEnabled`
+preference used in **Settings → Preferences → Allow this machine to be controlled**.
+The local daemon does not start before this choice. Choosing to control only
+other machines keeps it off and skips its permissions. macOS still offers Local
+Network access because direct connections to other machines use it.
+
+Allowing control starts the local daemon and offers the applicable permissions.
+On macOS these are Local Network access, Full Disk Access, screen/system-audio
+recording, and Accessibility. Linux Wayland guides desktop sharing and control;
+X11 needs no Portal permission steps. On Windows, setup offers optional remote
+control while locked. **Enable locked-session control** requests administrator
+approval to install or start the desktop service. Users can skip it and enable
+it later in Settings → Permissions. An already running service needs no further
+approval.
+
 The desktop host saves the current step in `onboarding.json` under `userData`;
-closing the window or restarting the app resumes the unfinished step. Startup
-starts or reuses the local Agent when its saved preference is enabled. macOS
-startup checks permissions silently; Wayland requests its combined desktop
-authorization during startup. Clients with local Agent startup disabled and no
-running daemon skip the Agent's permissions. Other platforms without permission
-steps proceed directly to sign-in.
+closing the window or restarting the app resumes the unfinished step. Existing
+unfinished permission-first setups migrate to sign-in and the machine-control
+choice before starting the daemon, then resume only their remaining applicable
+permissions. An old account step does not repeat finished permissions; enabling
+previously disabled control offers the newly applicable daemon permissions.
+Completed installs retain their saved preference and start or reuse the local
+Agent according to that preference. macOS checks permissions silently;
+Wayland may request its combined desktop authorization when the daemon starts.
 
 Each permission page explains the capability and provides an explicit request,
 a way to continue without it, and a status refresh where the OS supports checking.
@@ -492,7 +500,8 @@ use the same welcome design for account sign-in.
 
 ## Local Agent
 
-**Settings → Preferences → Run local Agent** is enabled by default. The main process stores
+**Settings → Preferences → Allow this machine to be controlled** shares the choice
+made during welcome setup. The main process stores
 `localAgentEnabled` in `settings.json` under Electron's `userData` directory.
 Enabling it starts the bundled daemon library in the app's main process, or
 reuses an authenticated standalone daemon explicitly configured to serve the

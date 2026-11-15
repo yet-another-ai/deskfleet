@@ -894,8 +894,9 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
         fullDiskAccessPermission: { status: "granted" },
       }),
       openLocalNetworkSettings: async () => {},
-      advancePermission: async () => ({ step: "account", permissionSteps: [] }),
-      complete: async () => ({ step: "complete", permissionSteps: [] }),
+      advancePermission: async () => ({ step: "complete", permissionSteps: [] }),
+      advanceAccount: async () => ({ step: "machineControl", permissionSteps: [] }),
+      setMachineControlEnabled: async () => ({ step: "complete", permissionSteps: [] }),
     },
     appearance: {
       get: async () => ({ ...appearance }),

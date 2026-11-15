@@ -8,7 +8,7 @@ import type { WindowsDesktopServiceController } from "./windows-desktop-service-
 interface OnboardingOptions {
   path: string
   platform: NodeJS.Platform
-  localAgent: Pick<LocalAgentController, "state" | "refreshPermissions" | "requestPermission">
+  localAgent: Pick<LocalAgentController, "state" | "setEnabled" | "refreshPermissions" | "requestPermission">
   windowsDesktopService?: Pick<WindowsDesktopServiceController, "get" | "setEnabled">
   localNetwork: {
     request(): Promise<LocalNetworkAccessRequest>
@@ -33,12 +33,19 @@ export async function establishedDesktopProfile(directory: string): Promise<bool
   return false
 }
 
-const steps: readonly OnboardingStep[] = [...ONBOARDING_PERMISSIONS, "account", "complete"]
+const steps: readonly OnboardingStep[] = ["account", "machineControl", ...ONBOARDING_PERMISSIONS, "complete"]
+const onboardingFlow = "machine-control"
+interface OnboardingProgress {
+  flow: typeof onboardingFlow
+  step: OnboardingStep
+  /** Legacy setup already passed the permissions before this step. */
+  resumePermission?: OnboardingPermission | "complete"
+}
 
 /** The host requests network access and service installation; the daemon owns native permissions. */
 export class OnboardingController {
   readonly #options: OnboardingOptions
-  #state: Pick<OnboardingState, "step"> | undefined
+  #state: OnboardingProgress | undefined
   #localNetwork: OnboardingPermissionsState["localNetwork"] = "not-requested"
   #operation: Promise<unknown> | undefined
 
@@ -49,23 +56,46 @@ export class OnboardingController {
       try {
         const stored: unknown = JSON.parse(await readFile(this.#options.path, "utf8"))
         if (stored && typeof stored === "object" && "step" in stored && stored.step === "server") {
-          return this.#save(this.#initialStep())
+          return this.#save("account")
         }
         if (!stored || typeof stored !== "object" || !("step" in stored) || !steps.includes(stored.step as OnboardingStep)) {
           throw new Error("Invalid welcome setup progress")
         }
-        this.#state = { step: stored.step as OnboardingStep }
+        const step = stored.step as OnboardingStep
+        if (!("flow" in stored)) {
+          // The previous flow put account after permissions. Unfinished profiles
+          // must choose machine control before startup without replaying passed steps.
+          if (step === "account") {
+            const local = this.#options.localAgent.state
+            // Client-only setup passed no daemon permissions. If control is now
+            // enabled, resume with those permissions without replaying Local Network.
+            const resume = local.enabled || local.status === "running" ? "complete"
+              : onboardingPermissions(this.#options.platform, local.linuxDesktopBackend ?? "wayland", true)
+                .find(permission => permission !== "localNetwork") ?? "complete"
+            return this.#save("account", resume)
+          }
+          if (ONBOARDING_PERMISSIONS.includes(step as OnboardingPermission)) return this.#save("account", step as OnboardingPermission)
+          this.#state = { flow: onboardingFlow, step }
+        } else {
+          const resumePermission = "resumePermission" in stored ? stored.resumePermission : undefined
+          if (stored.flow !== onboardingFlow || resumePermission !== undefined
+            && (step !== "account" && step !== "machineControl"
+              || resumePermission !== "complete" && !ONBOARDING_PERMISSIONS.includes(resumePermission as OnboardingPermission))) {
+            throw new Error("Invalid welcome setup progress")
+          }
+          this.#state = { flow: onboardingFlow, step, ...(resumePermission !== undefined ? { resumePermission: resumePermission as OnboardingPermission | "complete" } : {}) }
+        }
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
         if (await this.#options.established?.()) {
           try { return await this.#save("complete") }
-          catch { this.#state = { step: "complete" } }
-        } else return this.#save(this.#initialStep())
+          catch { this.#state = { flow: onboardingFlow, step: "complete" } }
+        } else return this.#save("account")
       }
     }
     // The permission list preserves saved Wayland consent while its backend is unknown.
     if (ONBOARDING_PERMISSIONS.includes(this.#state.step as OnboardingPermission)
-      && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("account")
+      && !this.#permissionSteps().includes(this.#state.step as OnboardingPermission)) return this.#save("complete")
     return this.#snapshot(this.#state)
   }
 
@@ -84,14 +114,28 @@ export class OnboardingController {
   #snapshot(state: Pick<OnboardingState, "step">): OnboardingState {
     const backend = this.#options.localAgent.state.linuxDesktopBackend
     return {
-      ...state,
-      permissionSteps: this.#permissionSteps(),
+      step: state.step,
+      permissionSteps: state.step === "account" || state.step === "machineControl" ? [] : this.#permissionSteps(),
       ...(this.#options.platform === "linux" && backend !== undefined ? { linuxDesktopBackend: backend } : {}),
     }
   }
 
-  #initialStep(): OnboardingStep {
-    return this.#permissionSteps()[0] ?? "account"
+  advanceAccount(): Promise<OnboardingState> {
+    return this.#run(async () => {
+      await this.#requireStep("account")
+      return this.#save("machineControl")
+    })
+  }
+
+  setMachineControlEnabled(enabled: boolean): Promise<OnboardingState> {
+    return this.#run(async () => {
+      await this.#requireStep("machineControl")
+      const local = await this.#options.localAgent.setEnabled(enabled)
+      if (local.status === "error") throw new Error(local.error ?? "Could not change machine control")
+      const permissions = this.#permissionSteps()
+      const next = this.#state?.resumePermission ?? permissions[0] ?? "complete"
+      return this.#save(next !== "complete" && !permissions.includes(next) ? "complete" : next)
+    })
   }
 
   async permissions(): Promise<OnboardingPermissionsState> {
@@ -152,7 +196,7 @@ export class OnboardingController {
   advancePermission(permission: OnboardingPermission): Promise<OnboardingState> {
     return this.#run(async () => {
       const current = await this.get()
-      // X11 hello can rewrite a provisional Portal step; Skip/Continue must reach account.
+      // X11 hello can finish a provisional Portal step while Skip/Continue is pending.
       if (current.step !== permission) {
         if ((current.step === "account" || current.step === "complete")
           && !this.#permissionSteps().includes(permission)) return current
@@ -160,14 +204,7 @@ export class OnboardingController {
       }
       const permissions = this.#permissionSteps()
       const index = permissions.indexOf(permission)
-      return this.#save(permissions[index + 1] ?? "account")
-    })
-  }
-
-  complete(): Promise<OnboardingState> {
-    return this.#run(async () => {
-      await this.#requireStep("account")
-      return this.#save("complete")
+      return this.#save(permissions[index + 1] ?? "complete")
     })
   }
 
@@ -182,8 +219,11 @@ export class OnboardingController {
     return pending
   }
 
-  async #save(step: OnboardingStep): Promise<OnboardingState> {
-    const state = { step }
+  async #save(step: OnboardingStep, resumePermission = this.#state?.resumePermission): Promise<OnboardingState> {
+    const state: OnboardingProgress = {
+      flow: onboardingFlow, step,
+      ...((step === "account" || step === "machineControl") && resumePermission !== undefined ? { resumePermission } : {}),
+    }
     const path = this.#options.path
     await mkdir(dirname(path), { recursive: true })
     await writeFile(`${path}.tmp`, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 })

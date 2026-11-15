@@ -90,11 +90,11 @@ async function evaluate<T>(expression: string): Promise<T> {
   return result.result.value
 }
 
-async function inspectRenderer(): Promise<void> {
-  await rm(join(profile, "DevToolsActivePort"), { force: true })
-  launch([`--user-data-dir=${profile}`, "--remote-debugging-port=0", ...process.platform === "win32" ? ["--inspect=0"] : []])
+async function inspectRenderer(profileDirectory = profile): Promise<void> {
+  await rm(join(profileDirectory, "DevToolsActivePort"), { force: true })
+  launch([`--user-data-dir=${profileDirectory}`, "--remote-debugging-port=0", ...process.platform === "win32" ? ["--inspect=0"] : []])
   const port = await until(async () => {
-    const contents = await readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => "")
+    const contents = await readFile(join(profileDirectory, "DevToolsActivePort"), "utf8").catch(() => "")
     return contents ? Number(contents.split("\n")[0]) : undefined
   })
   const target = await until(async () => {
@@ -147,6 +147,30 @@ async function requestQuit(): Promise<void> {
   }
 }
 
+async function probeLegacyWelcome(step: "account" | "screenCapture"): Promise<void> {
+  const legacyProfile = join(directory, `legacy-${step}`)
+  const discovery = join(legacyProfile, "daemon", "daemon.json")
+  await mkdir(legacyProfile)
+  await writeFile(join(legacyProfile, "settings.json"), JSON.stringify({ localAgentEnabled: true }))
+  await writeFile(join(legacyProfile, "onboarding.json"), JSON.stringify({ step }))
+  await inspectRenderer(legacyProfile)
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(discovery), { code: "ENOENT" })
+  await evaluate("window.deskfleet.onboarding.advanceAccount()")
+  await stop()
+
+  await inspectRenderer(legacyProfile)
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "machineControl")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(discovery), { code: "ENOENT" })
+  // Both legacy states have already passed client networking. Declining must
+  // finish without replaying it or starting the daemon, including after restart.
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.setMachineControlEnabled(false)")).step, "complete")
+  await assert.rejects(stat(discovery), { code: "ENOENT" })
+  await stop()
+}
+
 /** The app hosts the daemon in its own process and stops it when it quits. */
 async function probeHostedDaemon(otherIdentity: LocalEnrollment["identity"]): Promise<void> {
   const hostProfile = join(directory, "host-profile")
@@ -184,6 +208,8 @@ async function probeHostedDaemon(otherIdentity: LocalEnrollment["identity"]): Pr
 
 try {
   await stat(join(appPath, "out/main/index.js"))
+  await probeLegacyWelcome("account")
+  await probeLegacyWelcome("screenCapture")
   // A desktop launch must ignore the independently running headless daemon,
   // even when its discovery directory is inherited through the environment.
   headless = await startDaemon(0, {
@@ -194,9 +220,23 @@ try {
   const headlessDiscovery = await readFile(join(headlessDirectory, "daemon.json"), "utf8")
   await mkdir(profile)
   await inspectRenderer()
-  const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
+  const initial = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
+  assert.equal(initial.step, "account")
+  assert.deepEqual(initial.permissionSteps, [])
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  await screenshot("welcome-account")
+  // Authentication itself is exercised by the backend client smoke. Exercise
+  // the host's persisted progress without opening a browser login here.
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.advanceAccount()")).step, "machineControl")
+  await stop()
+  await inspectRenderer()
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "machineControl")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.setMachineControlEnabled(true)")
   const permissionSteps = onboarding.permissionSteps
-  assert.equal(onboarding.step, permissionSteps[0] ?? "account")
+  assert.equal(onboarding.step, permissionSteps[0] ?? "complete")
   if (process.platform === "win32") {
     assert.deepEqual(permissionSteps, ["windowsDesktopService"])
     const service = await evaluate<{ available: boolean; installed: boolean; running: boolean }>(
@@ -207,7 +247,6 @@ try {
     assert.equal(typeof service.running, "boolean")
   }
   if (onboarding.linuxDesktopBackend === "x11") {
-    assert.equal(await evaluate("document.querySelectorAll('ol li').length"), 1)
     assert.equal(await evaluate("document.body.innerText.includes('desktop sharing dialog')"), false)
   }
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
@@ -218,24 +257,21 @@ try {
   finally { profileControl.close() }
   const identity = (await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity
   assert.notDeepEqual(identity, headlessIdentity, "Desktop IPC must use the profile daemon rather than headless discovery")
-  await screenshot("welcome-initial")
+  await screenshot("welcome-resumed-sign-in")
   // OS permission dialogs require manual interaction; skip them through
   // their production API so this smoke does not change machine permissions.
   for (const permission of permissionSteps) {
     await evaluate(`window.deskfleet.onboarding.advancePermission(${JSON.stringify(permission)})`)
   }
-  assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { step: "account" })
+  assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { flow: "machine-control", step: "complete" })
   await stop()
 
-  // An unfinished welcome resumes at account without a backend address field.
+  // Completed setup retains the enabled machine and its identity after restart.
   await inspectRenderer()
-  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "complete")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   assert.deepEqual((await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity, identity, "The profile daemon identity must survive an app restart")
-  await screenshot("welcome-account")
-  // The UI completes this after browser authentication; exercise persisted host progress here.
-  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
   await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
   await stop()
 
@@ -271,7 +307,7 @@ try {
   try { assert.deepEqual((await headlessClient.call("centralStatus", {})).registrations[0]!.identity, headlessIdentity) }
   finally { headlessClient.close() }
   assert.equal(await readFile(join(headlessDirectory, "daemon.json"), "utf8"), headlessDiscovery, "Desktop startup, disable, and shutdown must leave headless discovery untouched")
-  console.log("Electron startup smoke passed: welcome without server configuration, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, isolated profile daemon identities, untouched headless daemon, and authenticated management boundary")
+  console.log("Electron startup smoke passed: welcome without server configuration, legacy progress migration before daemon startup, saved progress, disabled auto-start, Codex, Claude Code, and Pi adapters, isolated profile daemon identities, untouched headless daemon, and authenticated management boundary")
 } catch (error) {
   if (diagnostics) console.error(diagnostics)
   throw error

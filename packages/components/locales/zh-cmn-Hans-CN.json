@@ -682,8 +682,8 @@
     "chooseWorktreeRoot": "选择文件夹…",
     "useDefaultWorktreeRoot": "使用默认目录",
     "choosingFolder": "正在选择文件夹…",
-    "runLocalAgent": "运行本地 Agent",
-    "stopsTerminals": "关闭后也会停止其终端。",
+    "runLocalAgent": "允许控制当前机器",
+    "stopsTerminals": "允许团队使用本机的 Agent、文件、终端和远程桌面。关闭后会停止本地 Agent 和终端，仍可控制其他机器。",
     "sections": "设置分类",
     "back": "返回应用",
     "loading": "正在加载设置…",
@@ -1663,18 +1663,26 @@
   },
   "welcome": {
     "title": "欢迎使用 DeskFleet",
-    "description": "按步骤完成这台电脑的设置，然后登录团队。",
+    "description": "登录后，选择如何使用这台电脑。",
     "notificationsTitle": "及时了解任务动态",
     "notificationsDescription": "智能体完成任务或需要你回应时，接收通知提醒。",
     "notificationsDetails": "允许浏览器通知后，只要 DeskFleet 保持打开，切换到其他标签页也能收到任务动态。你可以稍后在设置中更改。",
     "progress": "设置进度",
     "steps": {
+      "machineControl": "当前机器",
       "localNetwork": "本地网络",
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "鼠标和键盘控制",
       "windowsDesktopService": "锁屏时允许远程控制",
       "account": "登录账户"
+    },
+    "machineControl": {
+      "title": "需要让当前机器被控制吗？",
+      "description": "开启后，可以在这台电脑上运行 Agent、操作文件和终端，以及使用远程桌面。如果只需要控制其他机器，可以跳过这些权限。",
+      "enable": "需要，允许控制当前机器",
+      "disable": "不需要，仅控制其他机器",
+      "hint": "你可以随时在「设置 → 偏好设置 → 允许控制当前机器」中更改。"
     },
     "stepCount": "第 {current} 步，共 {total} 步",
     "continue": "继续",

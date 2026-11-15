@@ -16,7 +16,7 @@ checks compare actual locations. The selected remote target is identified
 by central Team and Machine IDs; the client computer is a separate local
 endpoint. The left local pane must never use the selected machine's directory
 browser by accident. The local Electron endpoint works independently of the
-**Run local Agent** preference and does not require local machine enrollment.
+**Allow this machine to be controlled** preference and does not require local machine enrollment.
 
 The server issues a shared `mux` grant or a legacy `files` peer grant, including
 `files:read` and `files:write` actions.

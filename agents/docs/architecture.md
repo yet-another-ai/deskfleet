@@ -845,9 +845,11 @@ use. Closing a window or losing a connection must leave ongoing work running.
 Local clients connect over authenticated IPC, such as a Unix-domain socket or
 Windows named pipe.
 
-Desktop Settings has a persistent **Run local Agent** preference, enabled by
-default. The app bundles `@deskfleet/daemon` and starts it in its own main
-process, with the bundled native addon and runtime. The daemon's lifetime is the
+Desktop Settings has a persistent **Allow this machine to be controlled**
+preference, backed by the existing `localAgentEnabled` setting. Fresh installs
+choose whether to enable it after sign-in, before the local daemon starts.
+Existing installs retain their saved preference. The app bundles
+`@deskfleet/daemon` and starts it in its own main process, with the bundled native addon and runtime. The daemon's lifetime is the
 app's: it keeps running while the app sits in the tray with no windows, and the
 app waits for its cleanup before exiting. The app never spawns a separate daemon
 process. The standalone Node.js SEA is the headless distribution of the same
@@ -869,25 +871,33 @@ daemon consumers use that directory. Standalone headless daemons default to
 ignores that environment variable and does not import data from the headless
 directory.
 
-Desktop first-run setup uses a welcome page: platform-specific permissions, then
-account sign-in. macOS first guides Local Network access for connections to other
-machines, followed by Full Disk Access, screen/system-audio recording,
-and Accessibility for its local Agent. Linux Wayland guides screen sharing and keyboard/mouse
+Desktop first-run setup uses a welcome page: account sign-in, a choice to allow
+control of this machine, then permissions for the selected capabilities. The
+choice uses the same setting as Preferences. Declining stops the local daemon
+and skips Full Disk Access, screen recording, Accessibility, and the optional
+Windows desktop service. It leaves the client able to control other machines.
+macOS still offers Local Network access for connections to other machines.
+Enabling starts or reuses the local Agent, then macOS guides Full Disk Access,
+screen/system-audio recording, and Accessibility. Windows offers optional remote
+control while locked. Linux Wayland guides screen sharing and keyboard/mouse
 control through its desktop authorization dialog. Linux X11 checks access to the
 existing X server and skips Portal permission steps. Linux has no Full Disk
-Access or macOS System Settings instructions. The host saves
-the current step in `onboarding.json` under its user-data directory and resumes
-it after restart. A profile that already has an account or desktop settings, but
-no welcome file, is treated as finished so sign-in is not repeated and the local
-Agent still starts. Startup starts or reuses the local Agent according to the
-existing enabled preference. Windows clients skip the OS permission steps.
-Clients with local Agent startup disabled and no running daemon skip the
-daemon's permission steps; macOS still offers Local Network access. macOS retains
-permission guidance when an enabled Agent fails to start. Linux preserves a saved
-Portal step while disconnected; a fresh profile with no known backend starts at
-account setup. When a later hello identifies X11, the renderer reloads the host's
-normalized account step after active permission work finishes. Users can defer an individual
-permission without blocking account setup or unrelated Agent work.
+Access or macOS System Settings instructions.
+
+The host saves the current step and a `machine-control` flow marker in
+`onboarding.json` under its user-data directory and resumes it after restart.
+Unfinished files from the earlier permission-first flow return to sign-in and
+the machine-control choice before daemon startup. Migration retains their next
+permission, or remembers that an old account step already finished its applicable
+permissions. If that profile had control disabled, enabling it now offers the
+newly applicable daemon permissions without replaying client networking. This resume marker is
+cleared after the choice succeeds. Account and machine-control steps do not start
+the daemon. A profile with an existing account or desktop settings but no welcome
+file is treated as finished and retains its startup preference. Completed setup
+is not repeated. macOS retains permission guidance when an enabled Agent fails
+to start. Linux preserves a saved Portal step while disconnected; when a later
+hello identifies X11, the host completes the now-unneeded permission guide.
+Users can defer individual permissions without blocking unrelated Agent work.
 
 Local Network access belongs to the desktop client, independently of its local
 Agent. Its welcome action calls a Rust native helper in Electron's main process.

@@ -150,6 +150,9 @@ async function smoke() {
   try {
     // Configure only this isolated Electron profile; the user's OS proxy is untouched.
     await session.defaultSession.setProxy({ mode: "fixed_servers", proxyRules: `http://127.0.0.1:${proxyPort}`, proxyBypassRules: "<-loopback>" })
+    // Wait for Chromium's network service to apply the override before resolving
+    // or sending requests; Linux can otherwise still return its initial DIRECT config.
+    await session.defaultSession.forceReloadProxyConfig()
     assert.equal(await session.defaultSession.resolveProxy(serverUrl), `PROXY 127.0.0.1:${proxyPort}`)
     await session.defaultSession.cookies.set({ url: serverUrl, name: "unrelated-session", value: "must-not-be-sent" })
     await Promise.race([failed, (async () => {
