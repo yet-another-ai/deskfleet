@@ -128,6 +128,34 @@ test("manual checks share an in-flight check and keep the installed version in s
   expect(driver.install).not.toHaveBeenCalled()
 })
 
+test.each([false, true])("a completed check exposes the available update while network cost is pending (metered=%s)", async metered => {
+  vi.useFakeTimers()
+  const network = deferred<boolean>()
+  const download = deferred<void>()
+  const { controller, driver, publish } = setup(true, vi.fn(() => network.promise))
+  driver.download.mockReturnValue(download.promise)
+
+  await controller.check()
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+  expect(publish).toHaveBeenLastCalledWith(controller.get())
+  expect(driver.download).not.toHaveBeenCalled()
+
+  network.resolve(metered)
+  await vi.advanceTimersByTimeAsync(0)
+  if (metered) {
+    expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+    expect(driver.download).not.toHaveBeenCalled()
+  } else {
+    expect(controller.get()).toEqual({ status: "downloading", version: "0.2.0", percent: 0 })
+    expect(driver.download).toHaveBeenCalledOnce()
+    download.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.get()).toEqual({ status: "downloaded", version: "0.2.0", percent: 100 })
+  }
+  expect(publish).toHaveBeenLastCalledWith(controller.get())
+  expect(driver.install).not.toHaveBeenCalled()
+})
+
 test("slow checks do not overlap and a failed check keeps the available update without Retry", async () => {
   vi.useFakeTimers()
   const { controller, driver } = setup()

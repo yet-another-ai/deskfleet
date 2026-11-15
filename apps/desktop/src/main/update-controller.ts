@@ -84,8 +84,9 @@ export class UpdateController {
         return
       }
       this.#downloadedVersion = undefined
+      // The feed check has finished; network-cost detection belongs to the background download.
+      this.#update({ status: "available", version })
       if (this.#autoDownload && !this.#installing) this.#startAutoDownload(version)
-      else this.#update({ status: "available", version })
     }).catch(error => {
       // Background checks must not look like a failed install: the notice treats
       // every error as Retry → install(), which would shut down the hosted daemon.
