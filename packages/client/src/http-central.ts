@@ -1,6 +1,6 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { PeerStartOptions } from "./central.ts"
-import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -234,6 +234,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     await this.request("POST", `/api/admin/account-deletion-requests/${encodeURIComponent(id)}/review`, { approve, ...(note ? { note } : {}) })
   }
   site() { return this.request<SiteSettings>("GET", "/api/site") }
+  async updateTelemetryConsent(update: TelemetryConsentUpdate) { await this.request("PUT", "/api/me/telemetry-consent", update) }
   /** Used by the desktop main process; renderer diagnostics never choose endpoints. */
   networkConfiguration(): Promise<NetworkConfiguration> {
     // The public configuration route can briefly return 404 during deployment.

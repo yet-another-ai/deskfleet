@@ -1,27 +1,50 @@
-import { STATSIG_CONNECT_ORIGINS } from "@deskfleet/client/analytics-config"
+import {
+  GOOGLE_TAG_CONNECT_ORIGINS,
+  GOOGLE_TAG_IMG_ORIGINS,
+  GOOGLE_TAG_SCRIPT_ORIGINS,
+  STATSIG_CONNECT_ORIGINS,
+} from "@deskfleet/client/analytics-config"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
 
 export const CSP_PLACEHOLDER = "__DESKFLEET_CONTENT_SECURITY_POLICY__"
 
-export function rendererContentSecurityPolicy(production: boolean, statsigEnabled = false, sentryDsn?: string): string {
+export function rendererContentSecurityPolicy(
+  production: boolean,
+  statsigEnabled = false,
+  sentryDsn?: string,
+  googleTagEnabled = false,
+): string {
   const sentry = parseSentryDsn(sentryDsn)
+  const scriptSources = [
+    "'self'",
+    "'wasm-unsafe-eval'",
+    ...(googleTagEnabled ? GOOGLE_TAG_SCRIPT_ORIGINS : []),
+  ]
+  const imgSources = [
+    "'self'",
+    "data:",
+    "blob:",
+    "https://gravatar.com",
+    ...(googleTagEnabled ? GOOGLE_TAG_IMG_ORIGINS : []),
+  ]
   const connectSources = [
     "'self'",
     "blob:",
     "data:",
     ...(production ? [] : ["ws://127.0.0.1:5173"]),
     ...(statsigEnabled ? STATSIG_CONNECT_ORIGINS : []),
+    ...(googleTagEnabled ? GOOGLE_TAG_CONNECT_ORIGINS : []),
     ...(sentry ? [sentry.origin] : []),
   ]
   return [
     "default-src 'none'",
     // Terminal image decoders and Office previews compile bundled WebAssembly.
-    "script-src 'self' 'wasm-unsafe-eval'",
+    `script-src ${scriptSources.join(" ")}`,
     // Office parsers run in module Workers constructed from bundled source.
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     // User avatars come from Gravatar.
-    "img-src 'self' data: blob: https://gravatar.com",
+    `img-src ${imgSources.join(" ")}`,
     "font-src 'self' data:",
     "media-src 'self' blob:",
     // Fetch bundled WASM and in-memory previews; API traffic stays in main.
@@ -33,9 +56,15 @@ export function rendererContentSecurityPolicy(production: boolean, statsigEnable
   ].join("; ")
 }
 
-export function injectRendererContentSecurityPolicy(html: string, production: boolean, statsigEnabled = false, sentryDsn?: string): string {
+export function injectRendererContentSecurityPolicy(
+  html: string,
+  production: boolean,
+  statsigEnabled = false,
+  sentryDsn?: string,
+  googleTagEnabled = false,
+): string {
   if (!html.includes(CSP_PLACEHOLDER)) {
     throw new Error("Renderer HTML is missing the CSP placeholder")
   }
-  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production, statsigEnabled, sentryDsn))
+  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production, statsigEnabled, sentryDsn, googleTagEnabled))
 }

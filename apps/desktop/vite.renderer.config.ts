@@ -8,6 +8,7 @@ import { injectRendererContentSecurityPolicy } from "./src/shared/renderer-csp.t
 
 export default defineConfig(({ command }) => {
   let statsigEnabled = false
+  let googleTagEnabled = false
   let sentryDsn: string | undefined
   return {
     base: "./",
@@ -18,6 +19,11 @@ export default defineConfig(({ command }) => {
         configResolved(config) {
           // Use the same mode, envDir, and process overrides as import.meta.env.
           statsigEnabled = Boolean(config.env.VITE_STATSIG_CLIENT_KEY?.trim())
+          googleTagEnabled = Boolean(
+            config.env.VITE_GTM_ID?.trim()
+            || config.env.VITE_GA_MEASUREMENT_ID?.trim()
+            || config.env.VITE_GOOGLE_ADS_ID?.trim(),
+          )
           sentryDsn = config.env.VITE_SENTRY_DSN
         },
         transformIndexHtml: {
@@ -25,7 +31,7 @@ export default defineConfig(({ command }) => {
           handler: (html, ctx) =>
             ctx.path === "/html-preview.html"
               ? html
-              : injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn),
+              : injectRendererContentSecurityPolicy(html, command === "build", statsigEnabled, sentryDsn, googleTagEnabled),
         },
       },
       UnoCSS({ configFile: resolve(import.meta.dirname, "../../packages/components/uno.config.ts") }),
