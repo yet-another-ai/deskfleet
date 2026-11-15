@@ -261,3 +261,45 @@ test("the warm budget closes stalled discovery and shutdown cancels outstanding 
   await cache.close()
   await reading
 })
+
+test("one foreground deadline bounds restoring and editing several configuration values", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const fake = fakeProvider({ async set() { await new Promise(resolve => setTimeout(resolve, 30_000)) } })
+  const cache = new AgentConfigurationCache({ maxStates: 1 })
+  t.after(() => cache.close())
+  cache.warm(params, "/workspace", fake)
+  await fake.closed
+  const rejected = assert.rejects(cache.read({ ...params, restore: { model: "second" },
+    reasoningEffort: "medium", configValues: { fast: true } }, "/workspace", fake), /configuration request timed out/)
+  await nextTurn()
+  assert.equal(fake.changes.length, 1)
+  t.mock.timers.tick(30_000)
+  await nextTurn()
+  assert.equal(fake.changes.length, 2)
+  t.mock.timers.tick(15_000)
+  await rejected
+  assert.equal(fake.clients[1]!.signal?.aborted, true, "Only the foreground process receives this request's cancellation")
+  t.mock.timers.tick(30_000)
+  await nextTurn()
+  assert.equal(fake.changes.length, 2, "A late setter response cannot start the next edit")
+  assert.equal(fake.closes, 2)
+  assert.equal((await cache.read(params, "/workspace", fake)).models?.currentValue, "first")
+})
+
+test("a reader can time out waiting for shared startup without cancelling warm discovery", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const started = deferred(), finish = deferred()
+  const fake = fakeProvider({ async connect() { started.resolve(); await finish.promise } })
+  const cache = new AgentConfigurationCache({ maxStates: 1, requestTimeoutMs: 10_000 })
+  t.after(() => cache.close())
+  const rejected = assert.rejects(cache.read(params, "/workspace", fake), /configuration request timed out/)
+  await started.promise
+  t.mock.timers.tick(10_000)
+  await rejected
+  assert.equal(fake.clients[0]!.signal?.aborted, false)
+  finish.resolve()
+  await fake.closed
+  const found = await cache.read(params, "/workspace", fake)
+  assert.equal(found.models?.currentValue, "first")
+  assert.equal(fake.configs.length, 1, "Other readers reuse the shared startup after the first request expires")
+})

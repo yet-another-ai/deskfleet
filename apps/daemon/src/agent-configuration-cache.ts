@@ -10,6 +10,7 @@ import type { AgentConfig, AgentProvider } from "./agents/acp.ts"
 
 interface Launch { provider: AgentProvider; config: AgentConfig }
 interface Target { provider: string; workspaceId?: string }
+interface ReadRequest { signal: AbortSignal; probes: Set<string> }
 interface Entry {
   params: Target
   cwd: string
@@ -58,14 +59,16 @@ export class AgentConfigurationCache {
   readonly #maxStates: number
   readonly #maxTransitions: number
   readonly #timeoutMs: number
+  readonly #requestTimeoutMs: number
   readonly #concurrency: number
   #active = 0
   #closed = false
 
-  constructor(options: { maxStates?: number; maxTransitions?: number; timeoutMs?: number; concurrency?: number } = {}) {
+  constructor(options: { maxStates?: number; maxTransitions?: number; timeoutMs?: number; requestTimeoutMs?: number; concurrency?: number } = {}) {
     this.#maxStates = options.maxStates ?? 256
     this.#maxTransitions = options.maxTransitions ?? 4_096
     this.#timeoutMs = options.timeoutMs ?? 120_000
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? 45_000
     this.#concurrency = options.concurrency ?? 2
   }
 
@@ -141,9 +144,9 @@ export class AgentConfigurationCache {
     return structuredClone({ ...configuration, matrix: entry.matrix })
   }
 
-  #readProbe(entry: Entry, probeId: string, selection: AgentConfigurationSelection = {}, composer = false): Promise<AgentConfiguration> {
+  #readProbe(entry: Entry, probeId: string, selection: AgentConfigurationSelection = {}, composer = false, launch = entry.launch): Promise<AgentConfiguration> {
     this.#check(entry)
-    return this.#probes.read(this.#scope, { ...entry.params, probeId, ...selection, ...(composer ? { composer: true } : {}) }, entry.cwd, entry.launch)
+    return this.#probes.read(this.#scope, { ...entry.params, probeId, ...selection, ...(composer ? { composer: true } : {}) }, entry.cwd, launch)
   }
 
   #initialize(entry: Entry): Promise<AgentConfigurationSnapshot> {
@@ -241,19 +244,34 @@ export class AgentConfigurationCache {
   }
 
   read(params: AgentConfigurationParams, cwd: string, launch: Launch): Promise<AgentConfiguration> {
-    return this.#track(this.#read(params, cwd, launch))
+    const controller = new AbortController()
+    const request: ReadRequest = { signal: controller.signal, probes: new Set() }
+    let timer: ReturnType<typeof setTimeout>
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        const error = new Error("Agent configuration request timed out")
+        controller.abort(error)
+        // Shared startup/traversal has its own budget and may serve other readers.
+        for (const probeId of request.probes) this.#track(this.#probes.release(this.#scope, probeId).catch(() => {}))
+        reject(error)
+      }, this.#requestTimeoutMs)
+    })
+    const reading = this.#track(this.#read(params, cwd, launch, request))
+    return this.#track(Promise.race([reading, deadline]).finally(() => clearTimeout(timer)))
   }
 
-  async #read(params: AgentConfigurationParams, cwd: string, launch: Launch): Promise<AgentConfiguration> {
+  async #read(params: AgentConfigurationParams, cwd: string, launch: Launch, request: ReadRequest): Promise<AgentConfiguration> {
     if (params.refresh) {
       const key = this.#key(params, cwd, launch)
       const old = this.#entries.get(key)
       if (old) { this.#entries.delete(key); await this.#cancel(old) }
     }
+    request.signal.throwIfAborted()
     const entry = this.#entry(params, cwd, launch)
     const initialized = entry.matrix.configurations.length > 0
     this.#queueWarm(entry)
     await this.#initialize(entry)
+    request.signal.throwIfAborted()
     this.#check(entry)
     if (!initialized && !entry.exploring) {
       entry.explored = false
@@ -266,20 +284,36 @@ export class AgentConfigurationCache {
     // click never queues behind background traversal of other configurations.
     const probeId = randomUUID()
     entry.probes.add(probeId)
+    request.probes.add(probeId)
+    const privateLaunch: Launch = {
+      config: entry.launch.config,
+      provider: {
+        id: entry.launch.provider.id,
+        connect: (config, client) => {
+          request.signal.throwIfAborted()
+          const signal = client.signal ? AbortSignal.any([client.signal, request.signal]) : request.signal
+          return entry.launch.provider.connect(config, { ...client, signal })
+        },
+      },
+    }
     try {
-      let current = await this.#readProbe(entry, probeId, {}, params.composer === true)
+      let current = await this.#readProbe(entry, probeId, {}, params.composer === true, privateLaunch)
+      request.signal.throwIfAborted()
       this.#remember(entry, current)
       for (const selection of [params.restore ?? {}, params]) {
         for (const step of selectionSteps(selection, current)) {
-          const next = await this.#readProbe(entry, probeId, step)
+          request.signal.throwIfAborted()
+          const next = await this.#readProbe(entry, probeId, step, false, privateLaunch)
+          request.signal.throwIfAborted()
           this.#transition(entry, current, step, next)
           current = next
         }
       }
       return this.#result(entry, current)
     } finally {
-      entry.probes.delete(probeId)
       await this.#probes.release(this.#scope, probeId).catch(() => {})
+      entry.probes.delete(probeId)
+      request.probes.delete(probeId)
     }
   }
 
