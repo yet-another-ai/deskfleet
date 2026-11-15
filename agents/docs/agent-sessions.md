@@ -418,6 +418,10 @@ startup prompts or enter `/login`, then `/exit` to return to setup. Executable
 detection leaves credential status unknown; **Test connection** opens a session
 without sending a prompt. Neither startup nor testing calls ACP `authenticate`,
 which clears the existing CodeBuddy account before starting interactive login.
+Executable detection validates a bare `--version` response against CodeBuddy's
+`--help` output. Each metadata command allows 10 seconds for cold startup and
+Windows npm launchers, within a shared 30-second detection deadline across all
+candidates; optional shell environment loading has its own additional budget.
 CodeBuddy 2.182.0 advertises saved-session loading, image and embedded-context
 prompts, and HTTP/SSE MCP support. Standard ACP configuration, permission,
 filesystem, and terminal operations use the shared client. CodeBuddy's private
