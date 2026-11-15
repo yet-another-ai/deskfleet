@@ -884,9 +884,15 @@ control through its desktop authorization dialog. Linux X11 checks access to the
 existing X server and skips Portal permission steps. Linux has no Full Disk
 Access or macOS System Settings instructions.
 
-The host saves the current step in `onboarding.json` under its user-data directory
-and resumes it after restart. Account and machine-control steps do not start the
-daemon. A profile with an existing account or desktop settings but no welcome
+The host saves the current step and a `machine-control` flow marker in
+`onboarding.json` under its user-data directory and resumes it after restart.
+Unfinished files from the earlier permission-first flow return to sign-in and
+the machine-control choice before daemon startup. Migration retains their next
+permission, or remembers that an old account step already finished its applicable
+permissions. If that profile had control disabled, enabling it now offers the
+newly applicable daemon permissions without replaying client networking. This resume marker is
+cleared after the choice succeeds. Account and machine-control steps do not start
+the daemon. A profile with an existing account or desktop settings but no welcome
 file is treated as finished and retains its startup preference. Completed setup
 is not repeated. macOS retains permission guidance when an enabled Agent fails
 to start. Linux preserves a saved Portal step while disconnected; when a later

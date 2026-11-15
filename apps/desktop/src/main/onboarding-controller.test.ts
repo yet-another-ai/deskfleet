@@ -3,13 +3,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import type { LocalNetworkAccessRequest } from "../../../../packages/client/src/onboarding.ts"
+import type { LocalNetworkAccessRequest, OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
 import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const macPermissions = { permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }
 const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility"] }
 const windowsPermissions = { permissionSteps: ["windowsDesktopService"] }
+const flow = "machine-control"
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 
@@ -52,6 +53,8 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
 test.each(["darwin", "linux", "win32"] as const)("%s starts with sign-in and a persisted machine-control choice before any permissions", async platform => {
   const f = await fixture(platform)
   expect(await f.controller.get()).toMatchObject({ step: "account", permissionSteps: [] })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "account" })
+  expect(await f.restart().get()).toMatchObject({ step: "account", permissionSteps: [] })
   await expect(f.controller.permissions()).rejects.toThrow("permission step")
   await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("step")
   await expect(f.controller.setMachineControlEnabled(true)).rejects.toThrow("step has changed")
@@ -117,7 +120,7 @@ test("macOS permission progress resumes after restart and completes after the la
   expect(await resumed.get()).toEqual({ ...macPermissions, step: "screenCapture" })
   await resumed.advancePermission("screenCapture")
   expect(await resumed.advancePermission("accessibility")).toEqual({ ...macPermissions, step: "complete" })
-  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "complete" })
 })
 
 test.each(["attempted", "unavailable", "not-required"] as const)("macOS reports a %s request without claiming authorization or persisting an attempt", async result => {
@@ -270,7 +273,7 @@ test.each(["x11", null] as const)("Linux %s finishes the machine choice without 
 
 test("a temporarily disconnected Wayland daemon retains saved permission guidance", async () => {
   const f = await fixture("linux")
-  await writeFile(f.path, JSON.stringify({ step: "accessibility" }))
+  await writeFile(f.path, JSON.stringify({ flow, step: "accessibility" }))
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
   expect(await f.restart().get()).toEqual({ ...waylandPermissions, step: "accessibility" })
@@ -279,7 +282,7 @@ test("a temporarily disconnected Wayland daemon retains saved permission guidanc
 
 test("a late X11 hello normalizes saved Portal guidance and lets an in-flight Skip finish", async () => {
   const f = await fixture("linux")
-  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
+  await writeFile(f.path, JSON.stringify({ flow, step: "screenCapture" }))
   f.localAgent.state.linuxDesktopBackend = undefined
   expect(await f.controller.get()).toEqual({ ...waylandPermissions, step: "screenCapture" })
   f.localAgent.refreshPermissions.mockImplementationOnce(async () => {
@@ -290,4 +293,175 @@ test("a late X11 hello normalizes saved Portal guidance and lets an in-flight Sk
   expect(await f.controller.advancePermission("screenCapture")).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
   expect(await f.restart().get()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
   await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("unavailable")
+})
+
+for (const platform of ["darwin", "linux", "win32"] as const) {
+  test.each([true, false])(`legacy ${platform} account progress finishes after machine choice without replaying permissions (enabled: %s)`, async enabled => {
+    const f = await fixture(platform)
+    await writeFile(f.path, JSON.stringify({ step: "account" }))
+    expect(await f.controller.get()).toMatchObject({ step: "account", permissionSteps: [] })
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "account", resumePermission: "complete" })
+    const signedIn = f.restart()
+    expect(await signedIn.get()).toMatchObject({ step: "account", permissionSteps: [] })
+    await signedIn.advanceAccount()
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "machineControl", resumePermission: "complete" })
+    const choice = f.restart()
+    expect(await choice.get()).toMatchObject({ step: "machineControl", permissionSteps: [] })
+    expect(f.localAgent.setEnabled).not.toHaveBeenCalled()
+    const completed = await choice.setMachineControlEnabled(enabled)
+    expect(completed.step).toBe("complete")
+    expect(completed).not.toHaveProperty("flow")
+    expect(completed).not.toHaveProperty("resumePermission")
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "complete" })
+    expect((await f.restart().get()).step).toBe("complete")
+    expect(f.localAgent.setEnabled).toHaveBeenCalledExactlyOnceWith(enabled)
+    expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+    expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+    expect(f.localNetwork.request).not.toHaveBeenCalled()
+    expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+    expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+  })
+
+  test.each([true, false])(`legacy completed ${platform} setup keeps its existing startup preference (enabled: %s)`, async enabled => {
+    const f = await fixture(platform)
+    f.localAgent.state.enabled = enabled
+    await writeFile(f.path, JSON.stringify({ step: "complete" }))
+    expect((await f.controller.get()).step).toBe("complete")
+    expect((await f.restart().get()).step).toBe("complete")
+    expect(f.localAgent.state.enabled).toBe(enabled)
+    expect(f.localAgent.setEnabled).not.toHaveBeenCalled()
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "complete" })
+  })
+}
+
+const legacyPermissions: { platform: NodeJS.Platform; permission: OnboardingPermission }[] = [
+  ...["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"].map(permission => ({ platform: "darwin" as const, permission: permission as OnboardingPermission })),
+  ...["screenCapture", "accessibility"].map(permission => ({ platform: "linux" as const, permission: permission as OnboardingPermission })),
+  { platform: "win32", permission: "windowsDesktopService" },
+]
+for (const { platform, permission } of legacyPermissions) {
+  test.each([true, false])(`legacy ${platform} ${permission} progress waits for account and machine choice (enabled: %s)`, async enabled => {
+    const f = await fixture(platform)
+    await writeFile(f.path, JSON.stringify({ step: permission }))
+    const initial = await f.controller.get()
+    expect(initial).toEqual({ step: "account", permissionSteps: [], ...(platform === "linux" ? { linuxDesktopBackend: "wayland" } : {}) })
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "account", resumePermission: permission })
+    await expect(f.controller.requestPermission(permission)).rejects.toThrow("step")
+    await expect(f.controller.setMachineControlEnabled(enabled)).rejects.toThrow("step has changed")
+    const signedIn = f.restart()
+    await signedIn.advanceAccount()
+    const choice = f.restart()
+    expect(await choice.get()).toMatchObject({ step: "machineControl", permissionSteps: [] })
+    expect(f.localAgent.setEnabled).not.toHaveBeenCalled()
+    expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+    expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+    expect(f.windowsDesktopService.get).not.toHaveBeenCalled()
+    const next = await choice.setMachineControlEnabled(enabled)
+    const step = enabled || permission === "localNetwork" ? permission : "complete"
+    expect(next.step).toBe(step)
+    expect(next).not.toHaveProperty("flow")
+    expect(next).not.toHaveProperty("resumePermission")
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step })
+    expect(await f.restart().get()).toEqual(next)
+    expect(f.localAgent.setEnabled).toHaveBeenCalledExactlyOnceWith(enabled)
+    expect(f.localNetwork.request).not.toHaveBeenCalled()
+    expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+  })
+}
+
+test("legacy Portal progress completes when the chosen machine now uses X11", async () => {
+  const f = await fixture("linux")
+  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
+  f.localAgent.state.linuxDesktopBackend = undefined
+  expect(await f.controller.get()).toEqual({ step: "account", permissionSteps: [] })
+  await f.controller.advanceAccount()
+  f.localAgent.state.linuxDesktopBackend = "x11"
+  expect(await f.controller.setMachineControlEnabled(true)).toEqual({ step: "complete", permissionSteps: [], linuxDesktopBackend: "x11" })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test("legacy progress retains its resume point when a choice fails and rejects duplicate choices", async () => {
+  const f = await fixture()
+  await writeFile(f.path, JSON.stringify({ step: "screenCapture" }))
+  await f.controller.advanceAccount()
+  let finish!: (value: LocalAgentState) => void
+  f.localAgent.setEnabled.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const selecting = f.controller.setMachineControlEnabled(true)
+  await vi.waitFor(() => expect(f.localAgent.setEnabled).toHaveBeenCalledOnce())
+  await expect(f.controller.setMachineControlEnabled(false)).rejects.toThrow("changing state")
+  finish({ enabled: true, status: "error", error: "Daemon startup failed" })
+  await expect(selecting).rejects.toThrow("Daemon startup failed")
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "machineControl", resumePermission: "screenCapture" })
+  const restarted = f.restart()
+  expect(await restarted.get()).toEqual({ step: "machineControl", permissionSteps: [] })
+  expect(await restarted.setMachineControlEnabled(true)).toEqual({ ...macPermissions, step: "screenCapture" })
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "screenCapture" })
+})
+
+test("failed legacy migration leaves the original progress available for retry", async () => {
+  const f = await fixture()
+  await writeFile(f.path, JSON.stringify({ step: "fullDiskAccess" }))
+  await mkdir(`${f.path}.tmp`)
+  await expect(f.controller.get()).rejects.toThrow()
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ step: "fullDiskAccess" })
+  expect(f.localAgent.setEnabled).not.toHaveBeenCalled()
+  await rm(`${f.path}.tmp`, { recursive: true })
+  expect(await f.controller.get()).toEqual({ step: "account", permissionSteps: [] })
+})
+
+for (const platform of ["darwin", "linux", "win32"] as const) {
+  test.each([true, false])(`legacy client-only ${platform} account guides newly enabled daemon permissions (enabled: %s)`, async enabled => {
+    const f = await fixture(platform)
+    f.localAgent.state.enabled = false
+    await writeFile(f.path, JSON.stringify({ step: "account" }))
+    expect(await f.controller.get()).toMatchObject({ step: "account", permissionSteps: [] })
+    const firstDaemonPermission = platform === "darwin" ? "fullDiskAccess" : platform === "linux" ? "screenCapture" : "windowsDesktopService"
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "account", resumePermission: firstDaemonPermission })
+    const signedIn = f.restart()
+    await signedIn.advanceAccount()
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "machineControl", resumePermission: firstDaemonPermission })
+    const choice = f.restart()
+    expect(await choice.get()).toMatchObject({ step: "machineControl", permissionSteps: [] })
+    expect(f.localAgent.setEnabled).not.toHaveBeenCalled()
+    expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+    expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+    const next = await choice.setMachineControlEnabled(enabled)
+    expect(next.step).toBe(enabled ? firstDaemonPermission : "complete")
+    expect(await f.restart().get()).toEqual(next)
+    expect(f.localAgent.setEnabled).toHaveBeenCalledExactlyOnceWith(enabled)
+    expect(f.localNetwork.request).not.toHaveBeenCalled()
+    expect(f.windowsDesktopService.setEnabled).not.toHaveBeenCalled()
+  })
+}
+
+test.each(["wayland", "x11", null] as const)("legacy client-only Linux account waits for the chosen daemon's %s backend", async backend => {
+  const f = await fixture("linux")
+  f.localAgent.state.enabled = false
+  f.localAgent.state.linuxDesktopBackend = undefined
+  await writeFile(f.path, JSON.stringify({ step: "account" }))
+  await f.controller.advanceAccount()
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "machineControl", resumePermission: "screenCapture" })
+  const choice = f.restart()
+  f.localAgent.setEnabled.mockImplementationOnce(async enabled => {
+    Object.assign(f.localAgent.state, { enabled, status: "running", linuxDesktopBackend: backend })
+    return { ...f.localAgent.state }
+  })
+  expect(await choice.setMachineControlEnabled(true)).toEqual({
+    step: backend === "wayland" ? "screenCapture" : "complete",
+    permissionSteps: backend === "wayland" ? ["screenCapture", "accessibility"] : [],
+    linuxDesktopBackend: backend,
+  })
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+})
+
+test("legacy account with a separately running daemon keeps its completed permission progress", async () => {
+  const f = await fixture()
+  f.localAgent.state.enabled = false
+  f.localAgent.state.status = "running"
+  await writeFile(f.path, JSON.stringify({ step: "account" }))
+  await f.controller.advanceAccount()
+  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ flow, step: "machineControl", resumePermission: "complete" })
+  expect((await f.controller.setMachineControlEnabled(true)).step).toBe("complete")
+  expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+  expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
 })

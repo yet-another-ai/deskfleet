@@ -477,8 +477,12 @@ approval.
 
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Existing
-installs retain their saved preference. Completed setups start or reuse the
-local Agent according to that preference. macOS checks permissions silently;
+unfinished permission-first setups migrate to sign-in and the machine-control
+choice before starting the daemon, then resume only their remaining applicable
+permissions. An old account step does not repeat finished permissions; enabling
+previously disabled control offers the newly applicable daemon permissions.
+Completed installs retain their saved preference and start or reuse the local
+Agent according to that preference. macOS checks permissions silently;
 Wayland may request its combined desktop authorization when the daemon starts.
 
 Each permission page explains the capability and provides an explicit request,
