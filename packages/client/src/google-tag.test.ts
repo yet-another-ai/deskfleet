@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { resolveSurfaceGoogleTagIds } from "./analytics-config.ts"
 import {
   configureGoogleTag,
   hasGoogleTagConfiguration,
   identifyGoogleTagUser,
   normalizeGooglePageLocation,
   resetGoogleTagForTests,
+  setNativeTelemetrySink,
   trackGoogleEvent,
 } from "./google-tag.ts"
 import { clearMarketingAttribution } from "./marketing-attribution.ts"
@@ -160,5 +162,59 @@ describe("google-tag", () => {
     const lengthAfterRevoke = entries.length
     trackGoogleEvent("app_opened")
     expect(entries).toHaveLength(lengthAfterRevoke)
+  })
+
+  it("resolves per-surface GA4/GTM stream IDs and keeps mobile WebViews isolated from Web G- streams", () => {
+    const env = {
+      VITE_GTM_ID: "GTM-FALLBACK",
+      VITE_GA_MEASUREMENT_ID: "G-FALLBACK",
+      VITE_DOCS_GA_MEASUREMENT_ID: "G-DOCS001",
+      VITE_WEB_GA_MEASUREMENT_ID: "G-WEB001",
+      VITE_DESKTOP_GA_MEASUREMENT_ID: "G-DESKTOP001",
+    }
+    expect(resolveSurfaceGoogleTagIds("docs", env)).toEqual({
+      gtmId: "GTM-FALLBACK",
+      gaMeasurementId: "G-DOCS001",
+      googleAdsId: undefined,
+      googleAdsInstallLabel: undefined,
+    })
+    expect(resolveSurfaceGoogleTagIds("web", env).gaMeasurementId).toBe("G-WEB001")
+    expect(resolveSurfaceGoogleTagIds("desktop", env).gaMeasurementId).toBe("G-DESKTOP001")
+    expect(resolveSurfaceGoogleTagIds("android", env).gaMeasurementId).toBeUndefined()
+    expect(resolveSurfaceGoogleTagIds("ios", env).gaMeasurementId).toBeUndefined()
+  })
+
+  it("forwards consent, userId, and events to the Capacitor native Firebase sink without injecting gtag.js", () => {
+    const { appendedScripts } = installFakeDom("capacitor://localhost/welcome")
+    const sink = {
+      setConsent: vi.fn(),
+      setUserId: vi.fn(),
+      logEvent: vi.fn(),
+    }
+    setNativeTelemetrySink(sink)
+    expect(hasGoogleTagConfiguration({ platform: "android" })).toBe(true)
+
+    configureGoogleTag({ platform: "android" }, false)
+    expect(sink.setConsent).toHaveBeenCalledWith(false)
+    expect(sink.setUserId).toHaveBeenCalledWith(null)
+    trackGoogleEvent("app_opened", { surface: "app" })
+    expect(sink.logEvent).not.toHaveBeenCalled()
+
+    configureGoogleTag({ platform: "android" }, true)
+    identifyGoogleTagUser("user-mobile-1")
+    trackGoogleEvent("account_registered", { method: "password" }, { isAcquisitionConversion: true })
+
+    expect(appendedScripts).toHaveLength(0)
+    expect(sink.setConsent).toHaveBeenLastCalledWith(true)
+    expect(sink.setUserId).toHaveBeenLastCalledWith("user-mobile-1")
+    expect(sink.logEvent).toHaveBeenCalledWith(
+      "account_registered",
+      expect.objectContaining({
+        method: "password",
+        user_id: "user-mobile-1",
+        app_platform: "android",
+        page_location: "https://app.deskfleet.org/welcome",
+      }),
+    )
   })
 })

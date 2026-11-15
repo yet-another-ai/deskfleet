@@ -56,7 +56,10 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "filesOpen", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "filesCall", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "filesChooseDirectory", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "filesClose", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "filesClose", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTelemetryConsent", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTelemetryUserId", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logTelemetryEvent", returnType: CAPPluginReturnPromise)
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
@@ -71,6 +74,25 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         localFiles.choose(call) { [weak self] in self?.bridge?.viewController }
     }
     @objc func filesClose(_ call: CAPPluginCall) { localFiles.close(call) }
+
+    @objc func setTelemetryConsent(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        call.resolve(["configured": FirebaseTelemetryBridge.setConsent(enabled: enabled)])
+    }
+
+    @objc func setTelemetryUserId(_ call: CAPPluginCall) {
+        let userId = call.getString("userId")
+        call.resolve(["configured": FirebaseTelemetryBridge.setUserId(userId)])
+    }
+
+    @objc func logTelemetryEvent(_ call: CAPPluginCall) {
+        guard let name = call.getString("name")?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            call.reject("Missing telemetry event name")
+            return
+        }
+        let params = call.getObject("params")
+        call.resolve(["configured": FirebaseTelemetryBridge.logEvent(name: name, params: params)])
+    }
 
     private func speech() -> SpeechInput {
         if let speechInput { return speechInput }

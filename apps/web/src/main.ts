@@ -6,8 +6,10 @@ import {
   createCapacitorNetworkDiagnosticsApi,
   createCapacitorOutlineAudioApi,
   createCapacitorSpeechApi,
+  createCapacitorTelemetrySink,
 } from "@deskfleet/capacitor-bridge"
 import { createAndroidUpdates } from "@deskfleet/capacitor-bridge/app-updates"
+import { setNativeTelemetrySink } from "@deskfleet/client/google-tag"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
@@ -23,6 +25,7 @@ const adapter = await browserClient(configuredServerUrl, captureCentralRequestEr
   ...(Capacitor.isNativePlatform() ? { createFiles: createCapacitorFilesApi } : {}),
 })
 if (Capacitor.isNativePlatform()) {
+  setNativeTelemetrySink(createCapacitorTelemetrySink())
   adapter.speech = createCapacitorSpeechApi()
 }
 if (Capacitor.getPlatform() === "ios") {

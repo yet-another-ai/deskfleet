@@ -1,5 +1,6 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core"
 import type { CentralApi } from "@deskfleet/client/central"
+import type { NativeTelemetrySink } from "@deskfleet/client/google-tag"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import type { NativeDesktopApi, NativeDesktopRequest } from "@deskfleet/client/native-desktop"
 import {
@@ -18,7 +19,16 @@ import { createBrowserFiles } from "@deskfleet/client/browser-files"
 import { CapacitorFilesEndpoint, type FilesBridgePlugin } from "./files.ts"
 import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "./speech.ts"
 
-export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin {
+export interface TelemetryBridgePlugin {
+  setTelemetryConsent(options: { enabled: boolean }): Promise<{ configured: boolean }>
+  setTelemetryUserId(options: { userId: string | null }): Promise<{ configured: boolean }>
+  logTelemetryEvent(options: {
+    name: string
+    params?: Record<string, string | number | boolean>
+  }): Promise<{ configured: boolean }>
+}
+
+export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin, TelemetryBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   getInstallSource?(): Promise<{ installerPackageName: string | null }>
   /** Android's metered status for the active network. */
@@ -67,6 +77,22 @@ export function createCapacitorFilesApi(central: CentralApi, plugin: FilesBridge
 
 export function createCapacitorSpeechApi(plugin: SpeechBridgePlugin = DeskFleetBridge) {
   return speechApi(plugin)
+}
+
+export function createCapacitorTelemetrySink(
+  plugin: TelemetryBridgePlugin = DeskFleetBridge,
+): NativeTelemetrySink {
+  return {
+    setConsent(enabled: boolean): void {
+      void plugin.setTelemetryConsent({ enabled }).catch(() => {})
+    },
+    setUserId(userId: string | null): void {
+      void plugin.setTelemetryUserId({ userId }).catch(() => {})
+    },
+    logEvent(name: string, params: Record<string, string | number | boolean>): void {
+      void plugin.logTelemetryEvent({ name, params }).catch(() => {})
+    },
+  }
 }
 
 const toErrorEvent = (error: unknown): ViewerEvent => ({

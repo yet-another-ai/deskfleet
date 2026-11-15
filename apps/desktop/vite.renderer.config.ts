@@ -3,6 +3,7 @@ import VueI18nPlugin from "@intlify/unplugin-vue-i18n/vite"
 import vue from "@vitejs/plugin-vue"
 import UnoCSS from "unocss/vite"
 import { defineConfig } from "vite"
+import { resolveSurfaceGoogleTagIds } from "../../packages/client/src/analytics-config.ts"
 import { clientCodeSplitting, tresTemplateCompilerOptions } from "../../packages/components/src/chunking.ts"
 import { injectRendererContentSecurityPolicy } from "./src/shared/renderer-csp.ts"
 
@@ -19,10 +20,9 @@ export default defineConfig(({ command }) => {
         configResolved(config) {
           // Use the same mode, envDir, and process overrides as import.meta.env.
           statsigEnabled = Boolean(config.env.VITE_STATSIG_CLIENT_KEY?.trim())
+          const googleIds = resolveSurfaceGoogleTagIds("desktop", config.env)
           googleTagEnabled = Boolean(
-            config.env.VITE_GTM_ID?.trim()
-            || config.env.VITE_GA_MEASUREMENT_ID?.trim()
-            || config.env.VITE_GOOGLE_ADS_ID?.trim(),
+            googleIds.gtmId || googleIds.gaMeasurementId || googleIds.googleAdsId,
           )
           sentryDsn = config.env.VITE_SENTRY_DSN
         },

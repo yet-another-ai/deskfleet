@@ -4,6 +4,7 @@ import { useData, useRouter } from "vitepress"
 import { computed, onMounted, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { usePreferredLanguages } from "@vueuse/core"
+import { resolveSurfaceGoogleTagIds } from "@deskfleet/client/analytics-config"
 import { resolveAppLocale, type AppLocale } from "@deskfleet/client/i18n"
 import { appendAttributionParams } from "@deskfleet/client/marketing-attribution"
 import {
@@ -27,14 +28,15 @@ const getStartedHref = computed(() =>
 watch(lang, value => { locale.value = resolveAppLocale([value]) }, { immediate: true })
 onMounted(() => {
   setSiteTelemetryEnabled(true)
+  const googleIds = resolveSurfaceGoogleTagIds("docs", import.meta.env)
   initializeAnalytics({
     clientKey: import.meta.env.VITE_STATSIG_CLIENT_KEY,
     environment: import.meta.env.VITE_STATSIG_ENVIRONMENT?.trim() || import.meta.env.MODE,
     platform: "docs",
-    gtmId: import.meta.env.VITE_GTM_ID,
-    gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID,
-    googleAdsId: import.meta.env.VITE_GOOGLE_ADS_ID,
-    googleAdsInstallLabel: import.meta.env.VITE_GOOGLE_ADS_INSTALL_LABEL,
+    gtmId: googleIds.gtmId,
+    gaMeasurementId: googleIds.gaMeasurementId,
+    googleAdsId: googleIds.googleAdsId,
+    googleAdsInstallLabel: googleIds.googleAdsInstallLabel,
     requireConsent: true,
   })
   const target = firstVisitLanguageRedirect(window, languages.value)

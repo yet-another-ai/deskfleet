@@ -33,8 +33,31 @@ import java.util.UUID
 class DeskFleetBridge : Plugin() {
     private var speechInput: SpeechInput? = null
     private var nativeFiles: NativeFilesBridge? = null
+    private var firebaseTelemetry: FirebaseTelemetryBridge? = null
 
     private fun files(): NativeFilesBridge = nativeFiles ?: NativeFilesBridge(context).also { nativeFiles = it }
+    private fun telemetry(): FirebaseTelemetryBridge =
+        firebaseTelemetry ?: FirebaseTelemetryBridge(context).also { firebaseTelemetry = it }
+
+    @PluginMethod
+    fun setTelemetryConsent(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        call.resolve(JSObject().put("configured", telemetry().setConsent(enabled)))
+    }
+
+    @PluginMethod
+    fun setTelemetryUserId(call: PluginCall) {
+        val userId = call.getString("userId")
+        call.resolve(JSObject().put("configured", telemetry().setUserId(userId)))
+    }
+
+    @PluginMethod
+    fun logTelemetryEvent(call: PluginCall) {
+        val name = call.getString("name")?.takeIf { it.isNotBlank() }
+            ?: return call.reject("Missing telemetry event name")
+        val params = call.getObject("params")
+        call.resolve(JSObject().put("configured", telemetry().logEvent(name, params)))
+    }
 
     @PluginMethod
     fun filesOpen(call: PluginCall) = files().open(call)

@@ -8,6 +8,12 @@ export interface GoogleTagConfiguration {
   platform?: string
 }
 
+export interface NativeTelemetrySink {
+  setConsent(enabled: boolean): Promise<void> | void
+  setUserId(userId: string | null): Promise<void> | void
+  logEvent(name: string, params: Record<string, string | number | boolean>): Promise<void> | void
+}
+
 interface DataLayerWindow {
   dataLayer?: unknown[]
   gtag?: (...args: unknown[]) => void
@@ -31,6 +37,7 @@ let currentConfig: GoogleTagConfiguration | undefined
 let activeConsent = false
 let currentUserId: string | undefined
 let defaultConsentPushed = false
+let nativeTelemetrySink: NativeTelemetrySink | undefined
 const injectedScripts = new Set<string>()
 
 function cleanId(value: string | undefined): string | undefined {
@@ -38,9 +45,17 @@ function cleanId(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
-export function hasGoogleTagConfiguration(config?: GoogleTagConfiguration): boolean {
+export function setNativeTelemetrySink(sink: NativeTelemetrySink | undefined): void {
+  nativeTelemetrySink = sink
+}
+
+function hasWebGoogleTagConfiguration(config?: GoogleTagConfiguration): boolean {
   if (!config) return false
   return Boolean(cleanId(config.gtmId) || cleanId(config.gaMeasurementId) || cleanId(config.googleAdsId))
+}
+
+export function hasGoogleTagConfiguration(config?: GoogleTagConfiguration): boolean {
+  return hasWebGoogleTagConfiguration(config) || Boolean(nativeTelemetrySink)
 }
 
 function getWindow(): (Window & DataLayerWindow) | undefined {
@@ -133,11 +148,16 @@ export function configureGoogleTag(
     platform: cleanId(config.platform),
   } : undefined
 
-  if (!hasGoogleTagConfiguration(currentConfig)) {
-    if (activeConsent) {
+  if (nativeTelemetrySink) {
+    void Promise.resolve(nativeTelemetrySink.setConsent(consented)).catch(() => {})
+    void Promise.resolve(nativeTelemetrySink.setUserId(consented ? (currentUserId ?? null) : null)).catch(() => {})
+  }
+
+  if (!hasWebGoogleTagConfiguration(currentConfig)) {
+    if (activeConsent && defaultConsentPushed) {
       pushGtag("consent", "update", { ...CONSENT_DENIED })
-      activeConsent = false
     }
+    activeConsent = Boolean(consented && nativeTelemetrySink)
     return
   }
 
@@ -202,6 +222,10 @@ export function identifyGoogleTagUser(userId?: string): void {
   if (currentUserId === next) return
   currentUserId = next
   if (!activeConsent || !hasGoogleTagConfiguration(currentConfig)) return
+  if (nativeTelemetrySink) {
+    void Promise.resolve(nativeTelemetrySink.setUserId(currentUserId ?? null)).catch(() => {})
+  }
+  if (!hasWebGoogleTagConfiguration(currentConfig)) return
   if (currentConfig?.gaMeasurementId) {
     pushGtag("set", { user_id: currentUserId ?? null })
   }
@@ -226,6 +250,11 @@ export function trackGoogleEvent(
   }
   if (currentUserId) cleanParams.user_id = currentUserId
 
+  if (nativeTelemetrySink) {
+    void Promise.resolve(nativeTelemetrySink.logEvent(name, cleanParams)).catch(() => {})
+  }
+  if (!hasWebGoogleTagConfiguration(currentConfig)) return
+
   if (currentConfig?.gtmId) {
     pushDataLayerObject({ event: name, ...cleanParams })
   }
@@ -245,6 +274,7 @@ export function resetGoogleTagForTests(): void {
   activeConsent = false
   currentUserId = undefined
   defaultConsentPushed = false
+  nativeTelemetrySink = undefined
   injectedScripts.clear()
   const win = getWindow()
   if (win) {

@@ -220,6 +220,7 @@ Configure these environment variables:
 | `VITE_DESKFLEET_SERVER_URL` | Required official API origin for Electron, such as `https://fleet.example.com`. A missing or empty value fails the release build. |
 | `VITE_STATSIG_CLIENT_KEY` | Optional Statsig client-public SDK key for Web and Electron. Missing or blank disables analytics. |
 | `VITE_STATSIG_ENVIRONMENT` | Optional Statsig environment for both clients; defaults to the Vite mode, `production`. |
+| `VITE_GTM_ID`, `VITE_GA_MEASUREMENT_ID`, `VITE_GOOGLE_ADS_ID`, `VITE_GOOGLE_ADS_INSTALL_LABEL` | Optional Google Tag / GA4 / Google Ads identifiers (or per-surface `VITE_DOCS_*`, `VITE_WEB_*`, `VITE_DESKTOP_*`, `VITE_APP_*` overrides). |
 | `VITE_SENTRY_DSN` | Optional public Sentry DSN for Web and Electron renderers. Missing, blank, or invalid disables error reporting. |
 | `VITE_SENTRY_ENVIRONMENT` | Optional Sentry environment for both clients; defaults to the Vite mode, `production`. |
 | `SENTRY_ORG`, `SENTRY_PROJECT` | Sentry organization and project slugs; required for source-map upload when a valid DSN is configured. |
@@ -263,6 +264,8 @@ Configure these secrets in the same environment:
 | `ANDROID_KEYSTORE_PASSWORD` | Keystore password for the Android upload key. |
 | `ANDROID_KEY_ALIAS` | Key alias inside the Android upload keystore. |
 | `ANDROID_KEY_PASSWORD` | Key password for the Android upload alias. |
+| `ANDROID_GOOGLE_SERVICES_JSON` | Optional `google-services.json` (plain JSON or base64) staged into `apps/web/android/app/google-services.json` during production Android builds and removed afterward. |
+| `IOS_GOOGLE_SERVICE_INFO_PLIST` | Optional `GoogleService-Info.plist` (plain XML or base64) staged into `apps/web/ios/App/App/GoogleService-Info.plist` during signed iOS builds and removed afterward. |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Google Play Developer API service account JSON credentials for publishing to the `internal` track. |
 
 The release overlay requires signing and notarization; missing credentials or a

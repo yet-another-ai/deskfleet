@@ -183,4 +183,15 @@ final class LocalFilesEndpointTests: XCTestCase {
         try endpoint.close()
         XCTAssertEqual(releases, 4)
     }
+
+    func testFirebaseTelemetryBridgeSanitizationAndUnconfiguredNoOp() {
+        XCTAssertEqual(FirebaseTelemetryBridge.sanitizeIdentifier("account_registered"), "account_registered")
+        XCTAssertEqual(FirebaseTelemetryBridge.sanitizeIdentifier("marketing-page.viewed"), "marketing_page_viewed")
+        XCTAssertEqual(FirebaseTelemetryBridge.sanitizeIdentifier("123-start"), "_123_start")
+        XCTAssertEqual(FirebaseTelemetryBridge.sanitizeIdentifier("   "), "event")
+        XCTAssertEqual(FirebaseTelemetryBridge.sanitizeIdentifier(String(repeating: "a", count: 60)).count, 40)
+        XCTAssertFalse(FirebaseTelemetryBridge.setConsent(enabled: true))
+        XCTAssertFalse(FirebaseTelemetryBridge.setUserId("user-1"))
+        XCTAssertFalse(FirebaseTelemetryBridge.logEvent(name: "app_opened", params: ["surface": "app"]))
+    }
 }

@@ -9,6 +9,7 @@ try {
   mkdirSync(join(workspace, "Sources", "DeskFleetLocalFiles"), { recursive: true })
   mkdirSync(join(workspace, "Tests", "DeskFleetLocalFilesTests"), { recursive: true })
   copyFileSync(new URL("../Sources/DeskFleetBridge/LocalFilesEndpoint.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "LocalFilesEndpoint.swift"))
+  copyFileSync(new URL("../Sources/DeskFleetBridge/FirebaseTelemetryBridge.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "FirebaseTelemetryBridge.swift"))
   copyFileSync(new URL("./LocalFilesEndpointTests.swift", import.meta.url), join(workspace, "Tests", "DeskFleetLocalFilesTests", "LocalFilesEndpointTests.swift"))
   writeFileSync(join(workspace, "Package.swift"), `// swift-tools-version: 5.9
 import PackageDescription

@@ -63,12 +63,42 @@ key in a `VITE_*` variable.
 ```sh
 export VITE_STATSIG_CLIENT_KEY=client-REPLACE_ME
 export VITE_STATSIG_ENVIRONMENT=development
-export VITE_GTM_ID=GTM-REPLACE_ME
-export VITE_GA_MEASUREMENT_ID=G-REPLACE_ME
+export VITE_DOCS_GA_MEASUREMENT_ID=G-DOCS_STREAM
+export VITE_WEB_GA_MEASUREMENT_ID=G-WEB_STREAM
+export VITE_DESKTOP_GA_MEASUREMENT_ID=G-DESKTOP_STREAM
 export VITE_GOOGLE_ADS_ID=AW-REPLACE_ME
 export VITE_GOOGLE_ADS_INSTALL_LABEL=REPLACE_ME
 mise run dev
 ```
+
+### Multi-stream GA4 and Native Firebase configuration
+
+One GA4 Property typically separates data streams by surface. `resolveSurfaceGoogleTagIds`
+in `packages/client/src/analytics-config.ts` resolves each surface's stream ID:
+
+| Surface | Primary variables | Fallback chain |
+| --- | --- | --- |
+| Marketing website (`docs/`) | `VITE_DOCS_GA_MEASUREMENT_ID`, `VITE_DOCS_GTM_ID` | `VITE_GA_MEASUREMENT_ID`, `VITE_GTM_ID` |
+| Web client (`apps/web`) | `VITE_WEB_GA_MEASUREMENT_ID`, `VITE_WEB_GTM_ID` | `VITE_APP_GA_MEASUREMENT_ID` / `VITE_APP_GTM_ID` → `VITE_GA_MEASUREMENT_ID` / `VITE_GTM_ID` |
+| Desktop client (`apps/desktop`) | `VITE_DESKTOP_GA_MEASUREMENT_ID`, `VITE_DESKTOP_GTM_ID` | `VITE_APP_GA_MEASUREMENT_ID` / `VITE_APP_GTM_ID` → `VITE_GA_MEASUREMENT_ID` / `VITE_GTM_ID` |
+| Android (`apps/web/android`) | Native `apps/web/android/app/google-services.json` | Optional `VITE_ANDROID_GA_MEASUREMENT_ID` (never falls back to Web `G-` IDs) |
+| iOS (`apps/web/ios`) | Native `apps/web/ios/App/App/GoogleService-Info.plist` | Optional `VITE_IOS_GA_MEASUREMENT_ID` (never falls back to Web `G-` IDs) |
+
+On Android and iOS, `apps/web/src/main.ts` registers `createCapacitorTelemetrySink()`
+from `@deskfleet/capacitor-bridge`. Consent changes (`setTelemetryConsent`),
+account identity (`setTelemetryUserId`), and forwarded lifecycle events
+(`logTelemetryEvent`) are bridged directly to the native Firebase Analytics SDK
+(`FirebaseTelemetryBridge.kt` and `FirebaseTelemetryBridge.swift`):
+
+- `apps/web/android/app/google-services.json` and
+  `apps/web/ios/App/App/GoogleService-Info.plist` are **gitignored and optional**.
+  Open-source checkouts and CI smoke builds without these files compile and run
+  cleanly; the native bridge reports `configured: false` and no-ops.
+- Both `AndroidManifest.xml` (`firebase_analytics_collection_enabled = false`)
+  and `Info.plist` (`FIREBASE_ANALYTICS_COLLECTION_ENABLED = false`) default
+  native collection and all four Consent Mode v2 signals (`analytics_storage`,
+  `ad_storage`, `ad_user_data`, `ad_personalization`) to disabled until both
+  `SiteSettings.telemetryEnabled` and `userTelemetryConsent` are `true`.
 
 `VITE_STATSIG_ENVIRONMENT` defaults to the Vite mode (`development` or
 `production`). Set it to the tier configured in Statsig, such as `staging`.

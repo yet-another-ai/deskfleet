@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolveSurfaceGoogleTagIds } from "@deskfleet/client/analytics-config"
 import type { AppLocale } from "@deskfleet/client/i18n"
 import { readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import { setUserTelemetryConsent } from "@deskfleet/components/services/analytics.ts"
@@ -46,10 +47,11 @@ const t = computed(() => copy[props.locale] ?? copy["en-US"])
 function hasConfiguredTelemetry(): boolean {
   if (props.forceVisible) return true
   const env = import.meta.env
+  const googleIds = resolveSurfaceGoogleTagIds("docs", env)
   return Boolean(
-    env.VITE_GTM_ID?.trim()
-    || env.VITE_GA_MEASUREMENT_ID?.trim()
-    || env.VITE_GOOGLE_ADS_ID?.trim()
+    googleIds.gtmId
+    || googleIds.gaMeasurementId
+    || googleIds.googleAdsId
     || env.VITE_STATSIG_CLIENT_KEY?.trim(),
   )
 }
