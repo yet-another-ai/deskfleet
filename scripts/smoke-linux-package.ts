@@ -146,6 +146,15 @@ async function gui(): Promise<void> {
   await until(async () => await evaluate<boolean>(
     "document.readyState === 'complete' && !!document.querySelector('#root h1') && !!window.deskfleet?.onboarding",
   ) ? true : undefined)
+  assert.equal((await evaluate<{ step: string }>("window.deskfleet.onboarding.get()")).step, "account")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(profile, "daemon", "daemon.json")), { code: "ENOENT" })
+  // Backend smoke tests cover authentication. Advance the local welcome flow
+  // and opt into machine control before checking the packaged daemon.
+  assert.equal((await evaluate<{ step: string }>("window.deskfleet.onboarding.advanceAccount()")).step, "machineControl")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(profile, "daemon", "daemon.json")), { code: "ENOENT" })
+  await evaluate("window.deskfleet.onboarding.setMachineControlEnabled(true)")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.updates.get()")).status, "disabled")
   await stat(join(profile, "daemon", "daemon.json"))
