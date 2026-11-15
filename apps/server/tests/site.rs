@@ -76,7 +76,7 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
     let defaults: Value = test::read_body_json(response).await;
     assert_eq!(
         defaults,
-        json!({"siteName":"DeskFleet","announcement":"","allowTeamCreation":true,"termsOfServiceUrl":"","privacyTermsUrl":""})
+        json!({"siteName":"DeskFleet","announcement":"","allowTeamCreation":true,"telemetryEnabled":false,"termsOfServiceUrl":"","privacyTermsUrl":""})
     );
     assert_eq!(
         test::call_service(
@@ -110,7 +110,7 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
         StatusCode::OK
     );
 
-    let changed = json!({"siteName":"Lab fleet", "announcement":"Welcome", "allowTeamCreation":false,"termsOfServiceUrl":"https://example.test/terms","privacyTermsUrl":"https://example.test/privacy"});
+    let changed = json!({"siteName":"Lab fleet", "announcement":"Welcome", "allowTeamCreation":false,"telemetryEnabled":true,"termsOfServiceUrl":"https://example.test/terms","privacyTermsUrl":"https://example.test/privacy"});
     assert_eq!(
         call!(patch, "/api/admin/site-settings", admin_token, &changed).status(),
         StatusCode::OK

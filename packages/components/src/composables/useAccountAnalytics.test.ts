@@ -1,4 +1,4 @@
-import { effectScope } from "vue"
+import { effectScope, ref } from "vue"
 import { flushPromises } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import { fakeCentral } from "../test/central.ts"
@@ -7,7 +7,13 @@ import { createAccountSession } from "./useAccountSession.ts"
 import { useAccountAnalytics } from "./useAccountAnalytics.ts"
 
 const setPlan = vi.hoisted(() => vi.fn())
-vi.mock("../services/analytics.ts", () => ({ identifyAnalytics: vi.fn(), analyticsEnabled: vi.fn(() => false), beginAnalyticsPlanRefresh: (team: string) => (plan: string) => setPlan(team, plan) }))
+vi.mock("../services/analytics.ts", () => ({
+  identifyAnalytics: vi.fn(),
+  analyticsEnabled: vi.fn(() => false),
+  setSiteTelemetryEnabled: vi.fn(),
+  userTelemetryConsent: ref(false),
+  beginAnalyticsPlanRefresh: (team: string) => (plan: string) => setPlan(team, plan),
+}))
 afterEach(() => { vi.clearAllMocks(); vi.mocked(analyticsEnabled).mockReturnValue(false) })
 
 test("account refreshes, email changes, account changes, and sign-out synchronize identity", async () => {
