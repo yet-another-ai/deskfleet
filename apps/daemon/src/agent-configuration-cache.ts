@@ -336,7 +336,10 @@ export class AgentConfigurationCache {
           current = next
         }
       }
-      return this.#result(entry, current)
+      this.#check(entry)
+      // Keep this private selection, but do not pair an older process's catalog
+      // with a matrix replaced by another reader while discovery was pending.
+      return generation === entry.matrixGeneration ? this.#result(entry, current) : structuredClone(current)
     } finally {
       await this.#probes.release(this.#scope, probeId).catch(() => {})
       entry.probes.delete(probeId)

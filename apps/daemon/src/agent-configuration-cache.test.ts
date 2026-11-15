@@ -256,6 +256,40 @@ test("fresh defaults discard old edges and an older warm traversal cannot restor
   assert.equal(fake.configs.length, 3, "Bounded warming restarts against the newly confirmed defaults")
 })
 
+for (const stage of ["startup", "setter"] as const) {
+  test(`a foreground read superseded during ${stage} returns its selection without a newer matrix`, async t => {
+    const blocked = deferred(), resume = deferred()
+    const fake = fakeProvider({
+      async connect(client) {
+        if (stage === "startup" && fake.clients.indexOf(client) === 1) { blocked.resolve(); await resume.promise }
+      },
+      async set(request, client) {
+        if (stage === "setter" && request.configId === "model" && fake.clients.indexOf(client) === 1) { blocked.resolve(); await resume.promise }
+      },
+      options: (options, client) => fake.clients.indexOf(client) < 2 ? options
+        : [...options, { id: "new-option", name: "New option", type: "boolean", currentValue: false }],
+    })
+    const cache = new AgentConfigurationCache({ maxStates: 1 })
+    t.after(() => cache.close())
+    cache.warm(params, "/workspace", fake)
+    await fake.closed
+    const older = cache.read({ ...params, model: "second" }, "/workspace", fake)
+    await blocked.promise
+    const newer = await cache.read({ ...params, mode: "auto" }, "/workspace", fake)
+    assert.ok(newer.matrix?.configurations[0]?.configOptions?.some(option => option.id === "new-option"))
+    resume.resolve()
+    const selected = await older
+    assert.equal(selected.models?.currentValue, "second", "The requested private selection remains confirmed")
+    assert.equal(selected.matrix === undefined, true, "A snapshot from the old generation must not carry the replacement matrix")
+    const latest = await cache.read(params, "/workspace", fake)
+    assert.equal(latest.models?.currentValue, "first")
+    assert.ok(latest.matrix?.configurations.every(configuration => configuration.configOptions?.some(option => option.id === "new-option")),
+      "Completing the older read does not change the newer shared graph")
+    assert.equal(cachedAgentConfiguration(latest.matrix!, undefined, {})?.models?.currentValue, "first")
+    assert.equal(fake.configs.length, 3)
+  })
+}
+
 test("invalidation cancels pending work and prevents stale results replacing refreshed catalogs", async t => {
   const started = deferred(), resume = deferred()
   const fake = fakeProvider({ async set(_request, client) {
