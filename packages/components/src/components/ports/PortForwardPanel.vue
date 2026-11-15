@@ -55,7 +55,8 @@ async function refresh(): Promise<void> {
 }
 
 const { pause, resume } = useIntervalFn(() => { void refresh() }, 3000, { immediate: false })
-watchImmediate(() => [props.api, props.target.teamId, props.target.machineId] as const, () => {
+// Roster refreshes replace target objects without changing the forwarding scope.
+watchImmediate([() => props.api, () => props.target.teamId, () => props.target.machineId], () => {
   scope++
   revision++
   forwards.value = []

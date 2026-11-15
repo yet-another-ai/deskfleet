@@ -180,3 +180,37 @@ test("discards a pending start result when the target scope changes without stop
   expect(view.find("[data-forward-id]").exists()).toBe(false)
   expect(api.stop).not.toHaveBeenCalled()
 })
+
+test("preserves forwards and the add draft when a roster refresh replaces the same target", async () => {
+  const { view, api } = await setup({ forwards: [forward()] })
+  await add(view, "5432", "15432")
+  await view.setProps({ target: { ...target } })
+  await flushPromises()
+
+  expect(view.get('[role="dialog"]').attributes("inert")).toBeUndefined()
+  expect(view.get('input[name="targetPort"]').element).toHaveProperty("value", "5432")
+  expect(view.get('input[name="localPort"]').element).toHaveProperty("value", "15432")
+  expect(view.get('[data-forward-id="forward"]').text()).toContain("127.0.0.1:53000")
+  expect(api.list).toHaveBeenCalledTimes(1)
+})
+
+test("preserves a pending start and its result when a roster refresh replaces the same target", async () => {
+  const { view, api } = await setup({ forwards: [forward()] })
+  const start = deferred<PortForward>()
+  vi.mocked(api.start).mockReturnValueOnce(start.promise)
+  await add(view, "5432", "15432")
+  await view.get("[data-ports-form]").trigger("submit")
+  await view.setProps({ target: { ...target } })
+  await flushPromises()
+
+  expect(view.get("[data-ports-start]").attributes("disabled")).toBeDefined()
+  expect(view.get('[role="dialog"]').attributes("inert")).toBeUndefined()
+  await view.get("[data-ports-form]").trigger("submit")
+  expect(api.start).toHaveBeenCalledTimes(1)
+  expect(api.list).toHaveBeenCalledTimes(1)
+
+  start.resolve(forward("new", { targetPort: 5432, localPort: 15432 }))
+  await flushPromises()
+  expect(view.get('[data-forward-id="new"]').text()).toContain("127.0.0.1:15432")
+  expect(view.find('[data-forward-id="forward"]').exists()).toBe(true)
+})
