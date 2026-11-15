@@ -297,8 +297,12 @@ impl BillingService {
                     match delivery.event.user_id.as_deref() {
                         Some(actor_id) => match store.user_marketing_attribution(actor_id).await {
                             Ok(Some(attribution)) => {
-                                self.deliver_ga_conversion(&delivery, &attribution, GA_MP_EVENTS_URL)
-                                    .await
+                                self.deliver_ga_conversion(
+                                    &delivery,
+                                    &attribution,
+                                    GA_MP_EVENTS_URL,
+                                )
+                                .await
                             }
                             Ok(None) => true,
                             Err(_) => false,

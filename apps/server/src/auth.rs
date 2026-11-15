@@ -149,7 +149,10 @@ pub fn configure(config: &mut web::ServiceConfig) {
         .route("/auth/exchange", web::post().to(desktop::exchange))
         .route("/auth/logout", web::post().to(logout))
         .route("/me", web::get().to(me))
-        .route("/me/telemetry-consent", web::put().to(update_telemetry_consent));
+        .route(
+            "/me/telemetry-consent",
+            web::put().to(update_telemetry_consent),
+        );
 }
 async fn authentication_methods(
     req: HttpRequest,

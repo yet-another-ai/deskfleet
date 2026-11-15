@@ -237,13 +237,23 @@ fn ga_conversion_body_formats_first_subscription_paid_invoice_with_attribution()
 
     delivery.event.id = format!("ga:{}", delivery.event.id);
     let retry_body = ga_conversion_body(&delivery, &attribution).unwrap();
-    assert_eq!(retry_body["events"][0]["params"]["transaction_id"], "in_123");
+    assert_eq!(
+        retry_body["events"][0]["params"]["transaction_id"],
+        "in_123"
+    );
 
     let mut renewal = invoice();
     renewal["billing_reason"] = json!("subscription_cycle");
     let renewal_delivery = BillingAnalyticsDelivery {
-        event: invoice_fact(&renewal, "in_456", Some("account-uuid".into()), "go", "year", None)
-            .unwrap(),
+        event: invoice_fact(
+            &renewal,
+            "in_456",
+            Some("account-uuid".into()),
+            "go",
+            "year",
+            None,
+        )
+        .unwrap(),
         team_id: "7".into(),
         claim_token: "claim".into(),
     };

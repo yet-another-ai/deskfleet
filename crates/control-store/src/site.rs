@@ -26,7 +26,10 @@ fn settings(row: site::Model) -> SiteSettings {
 }
 
 fn attribution_field(value: Option<&String>) -> Result<Option<String>> {
-    let Some(trimmed) = value.map(|item| item.trim()).filter(|item| !item.is_empty()) else {
+    let Some(trimmed) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
         return Ok(None);
     };
     if trimmed.len() > 256 {
@@ -195,9 +198,18 @@ impl ControlStore {
             .await?;
         let active = attribution::ActiveModel {
             user_id: Set(user_id.into()),
-            gclid: Set(existing.as_ref().and_then(|row| row.gclid.clone()).or(gclid)),
-            gbraid: Set(existing.as_ref().and_then(|row| row.gbraid.clone()).or(gbraid)),
-            wbraid: Set(existing.as_ref().and_then(|row| row.wbraid.clone()).or(wbraid)),
+            gclid: Set(existing
+                .as_ref()
+                .and_then(|row| row.gclid.clone())
+                .or(gclid)),
+            gbraid: Set(existing
+                .as_ref()
+                .and_then(|row| row.gbraid.clone())
+                .or(gbraid)),
+            wbraid: Set(existing
+                .as_ref()
+                .and_then(|row| row.wbraid.clone())
+                .or(wbraid)),
             utm_source: Set(existing
                 .as_ref()
                 .and_then(|row| row.utm_source.clone())
