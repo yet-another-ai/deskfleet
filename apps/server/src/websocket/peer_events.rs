@@ -49,7 +49,7 @@ impl PeerEvents {
                     match state.store.revoke_peer(peer_id).await {
                         Ok(peers) => {
                             if let Err(error) =
-                                state.hub.revoke(peers, rejection.reason.wire()).await
+                                state.hub.revoke(peers, "signaling_overloaded").await
                             {
                                 tracing::warn!(registration_id = %machine, code = %error.code,
                                     "peer signaling rejection delivery failed");
@@ -64,12 +64,10 @@ impl PeerEvents {
                 }
             })
         };
-        let failed = rejected.clone();
         let worker = actix_web::rt::spawn(run(receive, IN_FLIGHT_EVENTS, move |message| {
             let state = state.clone();
             let machine = machine.clone();
             let connection = connection.clone();
-            let failed = failed.clone();
             async move {
                 // Waiting for global capacity consumes only this socket's bounded
                 // task budget, never its heartbeat/RPC-response reader.
@@ -77,21 +75,20 @@ impl PeerEvents {
                     .acquire()
                     .await
                     .expect("static semaphore stays open");
-                let peer_id = message.peer_id;
                 if let Err(error) = peers::daemon_event(
                     &state,
                     &machine,
                     &connection,
-                    peer_id.clone(),
+                    message.peer_id,
                     message.event,
                 )
                 .await
                 {
                     tracing::debug!(registration_id = %machine, code = %error.code,
                         "peer signaling event failed");
-                    // A rejected candidate must fail its negotiation rather than
-                    // silently leaving a partially signaled connection behind.
-                    failed.push(peer_id, RejectionReason::Failed);
+                    // Rate limits and temporary storage failures do not revoke
+                    // the authorization of an otherwise healthy peer. Explicit
+                    // peer closure and bounded queue overload own revocation.
                 }
             }
         }));
@@ -108,24 +105,18 @@ impl PeerEvents {
             let message = error.into_inner();
             // Rejection work is bounded too. If a daemon floods distinct peers
             // beyond both queues, their normal negotiation deadlines still apply.
-            self.rejected
-                .push(message.peer_id, RejectionReason::Overloaded);
+            self.rejected.push(message.peer_id);
         }
     }
-}
 
-#[derive(Clone, Copy)]
-enum RejectionReason {
-    Overloaded,
-    Failed,
-}
-
-impl RejectionReason {
-    fn wire(self) -> &'static str {
-        match self {
-            Self::Overloaded => "signaling_overloaded",
-            Self::Failed => "signaling_failed",
-        }
+    #[cfg(test)]
+    pub(crate) async fn finish(mut self) {
+        // Let integration tests observe every handler and scoped rejection,
+        // instead of racing cleanup or aborting it in Drop.
+        self.send = mpsc::channel(1).0;
+        (&mut self.worker).await.unwrap();
+        self.rejected = Rejections::channel(1).0;
+        (&mut self.cleanup).await.unwrap();
     }
 }
 
@@ -140,7 +131,6 @@ struct Rejections {
 
 struct RejectedPeer {
     peer_id: String,
-    reason: RejectionReason,
     pending: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -157,7 +147,7 @@ impl Rejections {
         )
     }
 
-    fn push(&self, peer_id: String, reason: RejectionReason) {
+    fn push(&self, peer_id: String) {
         {
             let mut pending = self.pending.lock().expect("peer rejection lock poisoned");
             if pending.len() >= self.capacity || !pending.insert(peer_id.clone()) {
@@ -167,7 +157,6 @@ impl Rejections {
         // A failed send drops the guard and frees its deduplication slot.
         let _ = self.send.try_send(RejectedPeer {
             peer_id,
-            reason,
             pending: self.pending.clone(),
         });
     }
@@ -221,31 +210,29 @@ mod tests {
     async fn rejection_bursts_deduplicate_without_displacing_other_peers() {
         let (send, mut receive) = Rejections::channel(2);
         for _ in 0..10_000 {
-            send.push("noisy".into(), RejectionReason::Overloaded);
+            send.push("noisy".into());
         }
-        send.push("other".into(), RejectionReason::Failed);
-        send.push("over-capacity".into(), RejectionReason::Overloaded);
+        send.push("other".into());
+        send.push("over-capacity".into());
         let noisy = receive.recv().await.unwrap();
         assert_eq!(noisy.peer_id, "noisy");
-        assert_eq!(noisy.reason.wire(), "signaling_overloaded");
         // The peer being cleaned still owns one slot, even after being dequeued.
         for _ in 0..100 {
-            send.push("noisy".into(), RejectionReason::Overloaded);
+            send.push("noisy".into());
         }
         let other = receive.recv().await.unwrap();
         assert_eq!(other.peer_id, "other");
-        assert_eq!(other.reason.wire(), "signaling_failed");
         assert!(receive.try_recv().is_err());
         drop(other);
-        send.push("later".into(), RejectionReason::Failed);
+        send.push("later".into());
         let later = receive.recv().await.unwrap();
         assert_eq!(later.peer_id, "later");
         drop(noisy);
         drop(later);
-        send.push("noisy".into(), RejectionReason::Failed);
+        send.push("noisy".into());
         assert_eq!(receive.recv().await.unwrap().peer_id, "noisy");
         drop(receive);
-        send.push("closed".into(), RejectionReason::Failed);
+        send.push("closed".into());
         assert!(send.pending.lock().unwrap().is_empty());
     }
 

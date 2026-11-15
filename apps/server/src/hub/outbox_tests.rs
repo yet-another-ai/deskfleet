@@ -18,6 +18,13 @@ fn request(id: &str) -> ControlMessage {
     }
 }
 
+fn candidate(index: usize) -> ControlMessage {
+    ControlMessage::PeerEvent {
+        peer_id: "peer".into(),
+        event: json!({ "kind": "iceCandidate", "candidate": { "candidate": index.to_string() } }),
+    }
+}
+
 fn snapshot(id: &str) -> ControlMessage {
     ControlMessage::ReconcilePeers { peers: vec![serde_json::from_value(json!({
         "peerId": id, "serverId": "server", "teamId": "team",
@@ -29,8 +36,8 @@ fn snapshot(id: &str) -> ControlMessage {
 
 async fn message(receiver: &mut Receiver) -> ControlMessage {
     match receiver.recv().await.expect("sender stays open") {
-        Outbound::Message(message) => message,
-        Outbound::Reconcile => panic!("expected a wire message"),
+        Outbound::Message(message) => *message,
+        Outbound::Reconcile | Outbound::Reconnect => panic!("expected a wire message"),
     }
 }
 
@@ -81,26 +88,104 @@ async fn catalog_coalescing_broadens_sessions_and_keeps_team_machine_scope() {
 }
 
 #[tokio::test]
-async fn overflowing_distinct_hints_requests_one_refresh_and_resumes_after_drain() {
+async fn overflowing_distinct_hints_retires_the_queue_and_releases_critical_waiters() {
     let (send, mut receive) = channel(2);
-    for machine in 0..10_000 {
+    send.try_send(request("first")).unwrap();
+    send.try_send(request("second")).unwrap();
+    send.try_send(candidate(0)).unwrap();
+    let pending = send.send(request("waiting"));
+    tokio::pin!(pending);
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    for machine in 0..3 {
         send.try_send(catalog("team", &machine.to_string(), None))
             .unwrap();
     }
-    assert_eq!(send.0.state.lock().unwrap().hints.len(), 0);
-    send.try_send(request("still-responsive")).unwrap();
+    assert_eq!(pending.await, Err(SendError::Closed));
+    assert_eq!(send.try_send(request("late")), Err(SendError::Closed));
+    assert_eq!(send.try_send(candidate(1)), Err(SendError::Closed));
+    send.request_reconciliation();
+    {
+        let state = send.0.state.lock().unwrap();
+        assert!(state.commands.is_empty());
+        assert!(state.hints.is_empty());
+        assert!(state.candidates.is_empty());
+    }
+    assert!(matches!(receive.recv().await, Some(Outbound::Reconnect)));
+    assert!(receive.recv().await.is_none());
+    assert_eq!(
+        send.try_send(catalog("team", "later", None)),
+        Err(SendError::Closed)
+    );
+}
+
+#[tokio::test]
+async fn overflowing_ice_candidates_never_waits_for_or_consumes_critical_capacity() {
+    let (send, mut receive) = channel(128);
+    for index in 0..10_000 {
+        let sending = send.send(candidate(index));
+        tokio::pin!(sending);
+        assert!(matches!(
+            futures_util::poll!(&mut sending),
+            std::task::Poll::Ready(Ok(()))
+        ));
+    }
+    assert_eq!(send.0.state.lock().unwrap().candidates.len(), 128);
+    send.try_send(request("rpc")).unwrap();
+    send.try_send(ControlMessage::PeerEvent {
+        peer_id: "peer".into(),
+        event: json!({ "kind": "stateChanged", "state": "closed" }),
+    })
+    .unwrap();
+    send.try_send(ControlMessage::PeerRevoked {
+        peer_id: "peer".into(),
+        reason: "revoked".into(),
+    })
+    .unwrap();
     assert!(matches!(
         message(&mut receive).await,
         ControlMessage::Request { .. }
     ));
+    assert!(
+        matches!(message(&mut receive).await, ControlMessage::PeerEvent { event, .. } if event["kind"] == "stateChanged")
+    );
     assert!(matches!(
         message(&mut receive).await,
-        ControlMessage::RefreshRequired
+        ControlMessage::PeerRevoked { .. }
     ));
-    send.try_send(catalog("team", "later", None)).unwrap();
-    assert!(
-        matches!(message(&mut receive).await, ControlMessage::CatalogChanged { machine_id, .. } if machine_id == "later")
-    );
+    for index in 0..128 {
+        let expected = index.to_string();
+        assert!(
+            matches!(message(&mut receive).await, ControlMessage::PeerEvent { event, .. } if event["candidate"]["candidate"].as_str() == Some(expected.as_str()))
+        );
+    }
+    assert!(matches!(
+        receive.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+}
+
+#[tokio::test]
+async fn sustained_commands_give_both_candidates_and_refreshes_bounded_progress() {
+    let (send, mut receive) = channel(1);
+    send.try_send(candidate(0)).unwrap();
+    send.try_send(catalog("team", "machine", None)).unwrap();
+    for (hint, commands) in [(true, 16), (false, 15)] {
+        for index in 0..commands {
+            send.try_send(request(&index.to_string())).unwrap();
+            assert!(matches!(
+                message(&mut receive).await,
+                ControlMessage::Request { .. }
+            ));
+        }
+        send.try_send(request("after-background")).unwrap();
+        let delivered = message(&mut receive).await;
+        assert_eq!(is_hint(&delivered), hint);
+        assert_eq!(is_candidate(&delivered), !hint);
+        assert!(matches!(
+            message(&mut receive).await,
+            ControlMessage::Request { .. }
+        ));
+    }
 }
 
 #[tokio::test]

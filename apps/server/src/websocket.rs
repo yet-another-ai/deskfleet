@@ -196,6 +196,7 @@ async fn connect(
                     Some(Outbound::Reconcile)=>{
                         if state.hub.reconcile_daemon(&id,&connection_id).await.is_err(){close_code=1012;close_cause="reconciliation_failed";break;}
                     },
+                    Some(Outbound::Reconnect)=>{close_code=1012;close_cause="notification_overflow";break;},
                     None=>break,
                 },
                 incoming=stream.next()=>match incoming{

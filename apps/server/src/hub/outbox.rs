@@ -1,4 +1,4 @@
-//! Bounded socket delivery: replaceable refresh hints never crowd out commands.
+//! Bounded socket delivery: refresh hints and ICE candidates never crowd out commands.
 use deskfleet_protocol::control::ControlMessage;
 use std::{
     collections::VecDeque,
@@ -13,18 +13,22 @@ pub(crate) enum SendError {
 }
 
 pub(crate) enum Outbound {
-    Message(ControlMessage),
+    Message(Box<ControlMessage>),
     /// Fetch current grants and append the snapshot through the registration gate.
     Reconcile,
+    /// Client invalidations overflowed; reconnect through the existing wire protocol.
+    Reconnect,
 }
 
 struct State {
     commands: VecDeque<ControlMessage>,
     hints: VecDeque<ControlMessage>,
-    refresh_required: bool,
+    candidates: VecDeque<ControlMessage>,
+    reconnect: bool,
     reconcile: bool,
     reconciled_last: bool,
-    commands_since_hint: usize,
+    commands_since_background: usize,
+    hint_last: bool,
     receiver: bool,
     senders: usize,
 }
@@ -45,10 +49,12 @@ pub(crate) fn channel(capacity: usize) -> (Sender, Receiver) {
         state: Mutex::new(State {
             commands: VecDeque::new(),
             hints: VecDeque::new(),
-            refresh_required: false,
+            candidates: VecDeque::new(),
+            reconnect: false,
             reconcile: false,
             reconciled_last: false,
-            commands_since_hint: 0,
+            commands_since_background: 0,
+            hint_last: false,
             receiver: true,
             senders: 1,
         }),
@@ -117,21 +123,33 @@ impl Sender {
             return Err((SendError::Closed, Box::new(message)));
         }
         if is_hint(&message) {
-            if !state.refresh_required {
-                if let Some(previous) = state
-                    .hints
-                    .iter_mut()
-                    .find(|previous| same_hint(previous, &message))
-                {
-                    merge_hint(previous, message);
-                } else if state.hints.len() < self.0.capacity {
-                    state.hints.push_back(message);
-                } else {
-                    // One scope-free refresh covers every discarded invalidation,
-                    // including presence, without growing a per-client key map.
-                    state.hints.clear();
-                    state.refresh_required = true;
-                }
+            if let Some(previous) = state
+                .hints
+                .iter_mut()
+                .find(|previous| same_hint(previous, &message))
+            {
+                merge_hint(previous, message);
+            } else if state.hints.len() < self.0.capacity {
+                state.hints.push_back(message);
+            } else {
+                // Only viewer notifications enter this queue. Reconnect that
+                // viewer so existing clients reload every missed invalidation.
+                // Retire the queue now: producers and blocked critical sends
+                // must not continue feeding a socket that is about to close.
+                state.receiver = false;
+                state.reconnect = true;
+                state.commands.clear();
+                state.hints.clear();
+                state.candidates.clear();
+                state.reconcile = false;
+                self.0.space.notify_waiters();
+            }
+        } else if is_candidate(&message) {
+            // Extra ICE candidates are transient negotiation hints. A slow
+            // viewer cannot make their delivery wait behind its command FIFO
+            // or hold the shared cross-instance inbox for the critical deadline.
+            if state.candidates.len() < self.0.capacity {
+                state.candidates.push_back(message);
             }
         } else if matches!(message, ControlMessage::ReconcilePeers { .. }) {
             // Keep the first queued snapshot at its original FIFO position;
@@ -177,31 +195,38 @@ impl Receiver {
 
     fn try_recv(&self) -> Result<Outbound, tokio::sync::mpsc::error::TryRecvError> {
         let mut state = self.0.state.lock().expect("socket queue lock poisoned");
+        if state.reconnect {
+            state.reconnect = false;
+            return Ok(Outbound::Reconnect);
+        }
+        if !state.receiver {
+            return Err(tokio::sync::mpsc::error::TryRecvError::Disconnected);
+        }
         if state.reconcile && !state.reconciled_last && !has_snapshot(&state) {
             state.reconcile = false;
             state.reconciled_last = true;
             return Ok(Outbound::Reconcile);
         }
-        // Give refreshes progress under sustained command traffic while favoring
-        // peer negotiation, revocation and RPC delivery over background hints.
-        if state.commands_since_hint >= 16
-            && let Some(message) = take_hint(&mut state)
+        // Give both background queues progress under sustained command traffic
+        // while favoring revocation, peer state and RPC delivery.
+        if state.commands_since_background >= 16
+            && let Some(message) = take_background(&mut state)
         {
-            return Ok(Outbound::Message(message));
+            return Ok(Outbound::Message(Box::new(message)));
         }
         if let Some(message) = state.commands.pop_front() {
             state.reconciled_last = false;
-            state.commands_since_hint = state.commands_since_hint.saturating_add(1);
+            state.commands_since_background = state.commands_since_background.saturating_add(1);
             self.0.space.notify_waiters();
-            return Ok(Outbound::Message(message));
+            return Ok(Outbound::Message(Box::new(message)));
         }
         if state.reconcile {
             state.reconcile = false;
             state.reconciled_last = true;
             return Ok(Outbound::Reconcile);
         }
-        if let Some(message) = take_hint(&mut state) {
-            return Ok(Outbound::Message(message));
+        if let Some(message) = take_background(&mut state) {
+            return Ok(Outbound::Message(Box::new(message)));
         }
         Err(if state.senders == 0 {
             tokio::sync::mpsc::error::TryRecvError::Disconnected
@@ -218,15 +243,21 @@ fn has_snapshot(state: &State) -> bool {
         .any(|message| matches!(message, ControlMessage::ReconcilePeers { .. }))
 }
 
-fn take_hint(state: &mut State) -> Option<ControlMessage> {
-    let message = if state.refresh_required {
-        state.refresh_required = false;
-        Some(ControlMessage::RefreshRequired)
+fn take_background(state: &mut State) -> Option<ControlMessage> {
+    let message = if state.hint_last {
+        state
+            .candidates
+            .pop_front()
+            .or_else(|| state.hints.pop_front())
     } else {
-        state.hints.pop_front()
+        state
+            .hints
+            .pop_front()
+            .or_else(|| state.candidates.pop_front())
     };
-    if message.is_some() {
-        state.commands_since_hint = 0;
+    if let Some(message) = &message {
+        state.hint_last = is_hint(message);
+        state.commands_since_background = 0;
     }
     message
 }
@@ -237,6 +268,7 @@ impl Drop for Receiver {
         state.receiver = false;
         state.commands.clear();
         state.hints.clear();
+        state.candidates.clear();
         drop(state);
         self.0.space.notify_waiters();
     }
@@ -249,6 +281,10 @@ fn is_hint(message: &ControlMessage) -> bool {
             | ControlMessage::MachinesChanged { .. }
             | ControlMessage::Presence { .. }
     )
+}
+
+fn is_candidate(message: &ControlMessage) -> bool {
+    matches!(message, ControlMessage::PeerEvent { event, .. } if event["kind"] == "iceCandidate")
 }
 
 fn same_hint(previous: &ControlMessage, incoming: &ControlMessage) -> bool {
@@ -332,8 +368,9 @@ pub(crate) mod testing {
     }
     fn wire(value: Outbound) -> ControlMessage {
         match value {
-            Outbound::Message(message) => message,
+            Outbound::Message(message) => *message,
             Outbound::Reconcile => panic!("test socket must handle grant reconciliation"),
+            Outbound::Reconnect => panic!("test socket must handle viewer reconnect"),
         }
     }
 }

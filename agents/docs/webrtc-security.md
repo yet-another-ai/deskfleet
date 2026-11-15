@@ -45,7 +45,7 @@ saturation. WebRTC grants reserve capacity before requesting TURN credentials;
 provisioning failure revokes the reservation. Local grants use the same quotas.
 During provisioning, the persisted expiry is a two-minute reservation lease,
 started after admission locks are acquired. This covers the daemon RPC's full
-90-second timeout plus time for routing and final authorization/activation.
+60-second timeout plus time for routing and final authorization/activation.
 Only successful provisioning plus final authorization activates the immutable
 grant's full expiry, immediately before returning it. A cancelled request or
 crashed process therefore cannot hold unissued capacity for the full grant

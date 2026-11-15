@@ -268,7 +268,7 @@ async fn cancelled_creation_holds_only_a_short_reservation_and_cannot_activate_a
         .unwrap()
         .unwrap();
     let reserved: i64 = row.try_get("", "expires_at").unwrap();
-    assert!(reserved > now_ms() + 90_000 && reserved <= now_ms() + 120_000);
+    assert!(reserved > now_ms() + 60_000 && reserved <= now_ms() + 120_000);
     assert!(reserved < expires);
     for _ in 0..15 {
         let mut another = grant.clone();
@@ -349,15 +349,15 @@ async fn reservation_survives_the_full_daemon_rpc_window() {
         .reserve_peer(&grant, &fixture.login, expires)
         .await
         .unwrap();
-    // Simulate consuming the entire 90-second RPC window. The provisioning
-    // lease must retain time to activate the successfully delivered grant.
+    // Simulate consuming the entire 60-second RPC window. With the old lease,
+    // the successful reply would now race expiry and could not be activated.
     fixture
         .a
         .store
         .database()
         .execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
-            "UPDATE cp_peers SET expires_at=expires_at-90000 WHERE id=$1",
+            "UPDATE cp_peers SET expires_at=expires_at-60000 WHERE id=$1",
             [grant.peer_id.clone().into()],
         ))
         .await
@@ -870,29 +870,6 @@ async fn shared_negotiation_bounds_candidates_and_never_replays_expired_offer() 
             DbBackend::Postgres,
             "UPDATE cp_peer_negotiations SET started_at=$2 WHERE peer_id=$1",
             vec![peer.clone().into(), (now_ms() - 60_001).into()],
-        ))
-        .await
-        .unwrap();
-    // A slow remote answer remains valid beyond the previous one-minute
-    // budget, and other instances keep waiting for the same attempt.
-    assert_eq!(fixture.b.store.peer_answer(&peer).await.unwrap(), None);
-    assert_eq!(
-        fixture
-            .b
-            .store
-            .prepare_peer_offer(&peer, &sdp, &Value::Null)
-            .await
-            .unwrap(),
-        PeerOfferState::Waiting
-    );
-    fixture
-        .a
-        .store
-        .database()
-        .execute_raw(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "UPDATE cp_peer_negotiations SET started_at=$2 WHERE peer_id=$1",
-            vec![peer.clone().into(), (now_ms() - 90_001).into()],
         ))
         .await
         .unwrap();

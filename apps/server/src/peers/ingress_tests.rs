@@ -5,6 +5,154 @@ use std::collections::HashSet;
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_shared_event_rate_limit_preserves_the_healthy_peer_and_machine() {
+    let mut fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    let key =
+        deskfleet_control_store::secret_hash(&format!("peer-events:{}", fixture.registration));
+    let period = now_ms() / 1000 * 1000;
+    // Another instance already admitted this registration's 128 events. Seed
+    // adjacent buckets too so crossing a second cannot invalidate the fixture.
+    for offset in 0..=5 {
+        fixture
+            .a
+            .store
+            .database()
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "INSERT INTO cp_auth_limits (key_hash,period,requests) VALUES ($1,$2,128)",
+                vec![key.clone().into(), (period + offset * 1000).into()],
+            ))
+            .await
+            .unwrap();
+    }
+    let incoming = PeerEvents::new(
+        fixture.b.clone(),
+        fixture.registration.clone(),
+        "daemon-b".into(),
+    );
+    incoming.push(
+        peer.clone(),
+        json!({"kind":"stateChanged","state":"connected"}),
+    );
+    tokio::time::timeout(Duration::from_secs(5), incoming.finish())
+        .await
+        .unwrap();
+    let admitted: i32 = fixture
+        .a
+        .store
+        .database()
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT max(requests) AS requests FROM cp_auth_limits WHERE key_hash=$1",
+            [key.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "requests")
+        .unwrap();
+    assert_eq!(admitted, 129, "the worker crossed the shared rate limit");
+    assert!(fixture.a.store.peer(&peer, &fixture.login).await.is_ok());
+    assert!(
+        fixture
+            .b
+            .hub
+            .is_current(&fixture.registration, "daemon-b")
+            .await
+    );
+    assert!(
+        fixture.requests.try_recv().is_err(),
+        "no revocation reaches the daemon"
+    );
+    assert!(
+        fixture.events.try_recv().is_err(),
+        "the rate-limited event was dropped"
+    );
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_transient_event_storage_failure_keeps_grant_and_later_delivery() {
+    let mut fixture = Fixture::new().await;
+    let peer = fixture.peer().await;
+    // Sequences retain nextval after rollback, so exactly one event observes
+    // this transient SQL error and the same worker can deliver the next event.
+    fixture
+        .a
+        .store
+        .database()
+        .execute_unprepared(
+            "CREATE SEQUENCE event_storage_attempt;
+             CREATE FUNCTION fail_first_event_limit() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+               IF nextval('event_storage_attempt')=1 THEN
+                 RAISE EXCEPTION 'temporary event storage failure' USING ERRCODE='40001';
+               END IF;
+               RETURN NEW;
+             END $$;
+             CREATE TRIGGER fail_first_event_limit BEFORE INSERT ON cp_auth_limits
+             FOR EACH ROW EXECUTE FUNCTION fail_first_event_limit()",
+        )
+        .await
+        .unwrap();
+    let incoming = PeerEvents::new(
+        fixture.b.clone(),
+        fixture.registration.clone(),
+        "daemon-b".into(),
+    );
+    for _ in 0..2 {
+        incoming.push(
+            peer.clone(),
+            json!({"kind":"stateChanged","state":"connected"}),
+        );
+    }
+    tokio::time::timeout(Duration::from_secs(5), incoming.finish())
+        .await
+        .unwrap();
+    assert!(fixture.a.store.peer(&peer, &fixture.login).await.is_ok());
+    assert!(
+        fixture
+            .b
+            .hub
+            .is_current(&fixture.registration, "daemon-b")
+            .await
+    );
+    assert!(
+        fixture.requests.try_recv().is_err(),
+        "storage failure must not revoke the peer"
+    );
+    let delivered = tokio::time::timeout(Duration::from_secs(2), fixture.events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(delivered, ControlMessage::PeerEvent { peer_id, event }
+        if peer_id == peer && event["state"] == "connected")
+    );
+    let attempts: i64 = fixture
+        .a
+        .store
+        .database()
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT last_value FROM event_storage_attempt",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "last_value")
+        .unwrap();
+    assert_eq!(
+        attempts, 2,
+        "one failed event and one recovered event were attempted"
+    );
+    fixture.close().await;
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn postgres_early_ice_burst_preserves_machine_and_delivers_every_candidate() {
     let mut fixture = Fixture::new().await;
     let peer = fixture.peer().await;

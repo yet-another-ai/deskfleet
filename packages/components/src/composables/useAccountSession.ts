@@ -99,8 +99,6 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   // A slower response for a Team the user has already left must not replace the current list.
   let machinesRevision = 0
   let membersRevision = 0
-  let notificationRefreshRunning = false
-  let notificationRefreshRequested = false
   let machineDestination: { teamId: string; machineId: string; route: RouteLocationRaw } | undefined
   const resourceScope = () => JSON.stringify([account.value.serverUrl, account.value.user?.id, teamId.value])
 
@@ -238,22 +236,6 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     void router.push({ name })
   }
 
-  async function refreshNotifications(): Promise<void> {
-    // The socket is still connected. Only the authoritative projections need
-    // reconciliation, and a read from before this marker cannot finish it.
-    ++machinesRevision
-    machineRosterVersion.value = undefined
-    notificationRefreshRequested = true
-    if (notificationRefreshRunning) return
-    notificationRefreshRunning = true
-    try {
-      do {
-        notificationRefreshRequested = false
-        await background(reload)
-      } while (notificationRefreshRequested)
-    } finally { notificationRefreshRunning = false }
-  }
-
   const unsubscribe = central.onEvent(event => {
     if (event.type === "accountChanged") void background(reload)
     else if (event.type === "connection") {
@@ -262,8 +244,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       machineRosterVersion.value = undefined
       connected.value = event.connected
       if (event.connected) void background(reload)
-    } else if (event.type === "refreshRequired") void refreshNotifications()
-    else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
+    } else if (event.type === "machinesChanged" && event.teamId === teamId.value) void refreshMachines()
     else if (event.type === "presence" && event.teamId === teamId.value) {
       const target = machines.value.find(value => value.id === event.machineId)
       if (target) target.online = event.online

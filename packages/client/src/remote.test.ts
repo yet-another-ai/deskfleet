@@ -172,7 +172,7 @@ test("refreshing a retained local machine preserves its direct channels and loca
   expect(f.central.createPeer).not.toHaveBeenCalled()
 })
 
-test("local Agent and terminal traffic survives control outages and notification resync without replay", async () => {
+test("local Agent and terminal traffic survives control outages and reconnection without replay", async () => {
   const listeners = new Set<(event: LocalChannelEvent) => void>()
   const bridge: LocalChannelsApi = {
     open: vi.fn(async () => {}), send: vi.fn(async () => {}), close: vi.fn(async () => {}),
@@ -206,7 +206,6 @@ test("local Agent and terminal traffic survives control outages and notification
   expect((await f.remote.api.desktop.target()).online).toBe(false)
   await exchange("offline")
   f.emit({ type: "connection", connected: true })
-  f.emit({ type: "refreshRequired" })
   expect(await f.remote.api.terminal.list()).toEqual(terminals)
   expect(f.central.rpc).toHaveBeenCalledTimes(1)
   f.remote.updateMachine(machine, true)
@@ -221,7 +220,7 @@ test("local Agent and terminal traffic survives control outages and notification
   expect(f.remote.api.target?.local).toBe(true)
 })
 
-test("notification overflow waits for the roster then refreshes all retained projections without reconnecting peers", async () => {
+test("viewer reconnection waits for the authoritative roster before refreshing retained projections", async () => {
   const f = fixture()
   const machine = { ...f.machine, online: true }
   f.remote.updateMachine(machine)
@@ -231,7 +230,8 @@ test("notification overflow waits for the roster then refreshes all retained pro
   await f.remote.api.agent.prepare!("retained-agent")
   vi.mocked(f.central.rpc).mockResolvedValue([{ id: "retained-terminal" }])
   await f.remote.api.terminal.list()
-  f.emit({ type: "refreshRequired" })
+  f.emit({ type: "connection", connected: false })
+  f.emit({ type: "connection", connected: true })
   expect(f.remote.api.agent.history!.available()).toBe(true)
   expect(await f.remote.api.terminal.list()).toEqual([{ id: "retained-terminal" }])
   expect(f.central.rpc).toHaveBeenCalledTimes(1)

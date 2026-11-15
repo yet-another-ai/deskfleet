@@ -456,9 +456,8 @@ async fn postgres_critical_delivery_recovers_after_the_old_timeout_without_recon
     for _ in 0..8 {
         assert!(matches!(
             f.messages.recv().await,
-            Some(super::super::outbox::Outbound::Message(
-                ControlMessage::Ping
-            ))
+            Some(super::super::outbox::Outbound::Message(message))
+                if matches!(*message, ControlMessage::Ping)
         ));
     }
     let recovered = tokio::time::timeout(Duration::from_secs(2), f.messages.recv())
@@ -466,9 +465,9 @@ async fn postgres_critical_delivery_recovers_after_the_old_timeout_without_recon
         .expect("critical delivery resumes on the existing client socket");
     assert!(matches!(
         recovered,
-        Some(super::super::outbox::Outbound::Message(ControlMessage::PeerRevoked {
-            peer_id, ..
-        })) if peer_id == "revoked-peer"
+        Some(super::super::outbox::Outbound::Message(message))
+            if matches!(*message, ControlMessage::PeerRevoked { ref peer_id, .. }
+                if peer_id == "revoked-peer")
     ));
     assert!(f.stopped.borrow().is_none());
     assert!(f.hub.cluster.as_ref().unwrap().ready());

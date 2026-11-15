@@ -46,7 +46,7 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
   const method = (options.method ?? "GET").toUpperCase()
   const read = ["GET", "HEAD"].includes(method)
   const idempotent = options.idempotent ?? read
-  // Backend RPCs and peer negotiation may take 90 seconds. Their transport
+  // Backend RPCs and peer negotiation may take 60 seconds. Their transport
   // deadline leaves room for the server's structured timeout response. Retry
   // eligibility does not change the operation's timeout budget.
   const timeout = options.timeoutMs ?? (read ? 15_000 : 105_000)

@@ -7,7 +7,7 @@ use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, JoinType, LockType, OnCon
 use sea_orm::{ConnectionTrait, DatabaseTransaction, QueryResult, TransactionTrait};
 use serde_json::{Value, json};
 
-const OFFER_TIMEOUT_MS: i64 = 90_000;
+const OFFER_TIMEOUT_MS: i64 = 60_000;
 const FAILED: &str = "previous negotiation failed; create a new peer";
 
 #[derive(Debug, PartialEq)]

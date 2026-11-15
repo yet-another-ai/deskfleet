@@ -47,7 +47,7 @@ export interface AgentSessionSummary {
 export type CentralEvent =
   | { type: "peerTelemetry"; event: PeerTelemetryEvent }
   | { type: "peerEvent"; peerId: string; event: Omit<DesktopEvent, "sessionId"> }
-  | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" | "refreshRequired" }>
+  | Extract<ControlMessage, { type: "peerRevoked" | "catalogChanged" | "machinesChanged" | "presence" }>
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 

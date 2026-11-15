@@ -534,7 +534,7 @@ async function linkClient(context: import("node:test").TestContext, directory: s
   return { central, sockets }
 }
 
-test("remote MCP waits for the server's ninety-second budget and never retries a timed-out write", async context => {
+test("remote MCP allows the full server budget plus network latency and never retries a timed-out write", async context => {
   const directory = await mkdtemp(join(tmpdir(), "df-remote-mcp-timeout-"))
   context.after(() => rm(directory, { recursive: true, force: true }))
   const { central } = await linkClient(context, directory)

@@ -308,8 +308,6 @@ pub enum ControlMessage {
         machine_id: String,
         online: bool,
     },
-    /// Bounded invalidation queues can ask clients to reload their authorized views.
-    RefreshRequired,
     Ping,
     Pong,
 }

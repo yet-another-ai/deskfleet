@@ -119,9 +119,11 @@ HTTP 408/429/500/502/503/504 at most twice. Ky owns exponential backoff and
 seconds total, including waits and response decoding. Network configuration
 uses five seconds per attempt and fifteen seconds total, and also retries
 transient route 404s. Writes default to a single attempt with a 105-second
-deadline, allowing the backend's 90-second RPC/negotiation deadline to return a
+deadline, allowing the backend's 60-second RPC/negotiation deadline to return a
 structured error over a remote link. Peer connection and media startup each
 have an outer 120-second deadline covering signaling and transport setup.
+The server retains that existing deadline so older clients with a 65-second
+HTTP budget and API instances in a rolling deployment share the same limit.
 Operations with explicit shorter deadlines keep them. Retry eligibility does not
 change these timeout budgets. Admission writes opt into retries using their
 stable operation IDs and generations; generic RPC, MCP tools,
@@ -151,9 +153,12 @@ Control-plane congestion is scoped to its work, not interpreted as Machine
 offline. Each socket coalesces catalog, roster, and presence invalidations
 separately from its bounded command queue. Catalog hints for different Sessions
 on one `(Team, Machine)` promote to a whole-Machine refresh. If the bounded set of
-distinct invalidations fills, one `refreshRequired` tells the client to reload
-its authoritative roster and opened Machine state without disconnecting existing
-peers. Refreshes receive service even during continuous command traffic.
+distinct invalidations fills, the server reconnects only that viewer's signaling
+socket with code 1012. Old and new clients use their existing reconnect and
+authoritative roster recovery; no new wire event is required. The retired queue
+rejects further sends and wakes pending producers. This does not disconnect the
+daemon or revoke already authorized peers. Refreshes receive service even during
+continuous command traffic.
 A full daemon request queue returns `machine_busy`; it does not remove the route
 or replay the operation. A genuinely stalled client's critical delivery has a
 30-second deadline and closes only that client's signaling socket. Socket text
@@ -167,6 +172,11 @@ revocation path instead of disconnecting the Machine. Global worker saturation
 waits within each socket's bounded work budget. Socket teardown cancels its
 workers so old connections cannot retain signaling capacity. Rejection work is
 also bounded; negotiation deadlines remain the fallback under sustained overload.
+Outgoing ICE candidates have their own bounded queue and do not consume the
+critical command budget or wait on a stalled viewer. Excess candidates are
+dropped; state changes and revocations retain critical delivery. A transient
+event-processing or shared rate-limit failure is logged without revoking a
+healthy grant.
 
 Durable revocations that encounter a full daemon command queue request a fresh
 grant reconciliation. Its snapshot has a reserved queue slot and retains the
@@ -198,8 +208,7 @@ shared machine roster read before refreshing their catalog, history, providers,
 and terminal list. Presence notifications and renames do not complete that read.
 Terminal lists retain their cached entries while reconciliation is pending or the
 machine is offline; unchanged online machines still refresh after reconciliation.
-Roster reads started before a signaling connection change or `refreshRequired`
-are discarded. Overflow refreshes coalesce while a roster read is running. This
+Roster reads started before a signaling connection change are discarded. This
 reconciliation preserves already authorized peers and their live streams.
 
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
