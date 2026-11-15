@@ -6,7 +6,7 @@ import { snapshotIsWorking, type SessionActivity } from "../services/agent-conve
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { markRaw, onScopeDispose, ref, watch } from "vue"
+import { markRaw, onScopeDispose, ref, toRaw, watch } from "vue"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentPreviews } from "../services/agent-preview.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
@@ -72,7 +72,15 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     for (const id of cacheDirty) {
       const current = views.value[id]
       if (current?.snapshot && !retainedDisplays.has(id) && current.historySeq === current.snapshotSeq) {
-        void cache?.write(id, { snapshot: current.snapshot, events: [...journal(id).values()].sort((a, b) => sequenceCompare(a.seq, b.seq)) })
+        // Display history is already ordered. Resolve through the journal so
+        // previews are excluded, including previews promoted at the same seq.
+        const committed = journal(id)
+        const events: AgentEvent[] = []
+        for (const event of toRaw(current.events)) {
+          const durable = committed.get(event.seq)
+          if (durable) events.push(durable)
+        }
+        void cache?.write(id, { snapshot: current.snapshot, events })
       }
     }
     cacheDirty.clear()
@@ -213,6 +221,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
     snapshot.session.lastEventSeq = event.seq
   }
+  function updateSession(record: AgentSessionRecord): void {
+    const current = sessions.value[record.id]
+    // Keep metadata separate from immutable journal payloads. Updating just the
+    // cursor must not invalidate consumers of title, ownership or unread state.
+    if (!current) { sessions.value[record.id] = { ...record }; return }
+    for (const key of Object.keys(current)) if (!(key in record)) Reflect.deleteProperty(current, key)
+    Object.assign(current, record)
+  }
   function advance(id: string): void {
     const current = view(id)
     const events = journal(id)
@@ -224,7 +240,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       current.snapshotSeq = next.seq
       next = events.get((BigInt(current.snapshotSeq) + 1n).toString())
     }
-    if (sequenceCompare(current.snapshotSeq, sessions.value[id]?.lastEventSeq ?? "0") >= 0) sessions.value[id] = { ...current.snapshot.session }
+    if (sequenceCompare(current.snapshotSeq, sessions.value[id]?.lastEventSeq ?? "0") >= 0) updateSession(current.snapshot.session)
     if (cache) { cacheDirty.add(id); if (!cacheTimer.isPending.value) cacheTimer.start() }
     resolvePermissions()
     resolveElicitations(current.snapshot)
@@ -237,7 +253,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       markRaw(event)
       journal(event.sessionId).set(event.seq, event)
       if (sequenceCompare(event.seq, journalTails.get(event.sessionId) ?? "0") > 0) journalTails.set(event.sessionId, event.seq)
-      if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) sessions.value[event.sessionId] = event.payload as AgentSessionRecord
+      if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) updateSession(event.payload as AgentSessionRecord)
       if (event.kind === "input") delete optimisticInputs.value[event.sessionId]
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
       if (event.kind === "run" && (event.payload as AgentRun).state === "starting"
@@ -332,7 +348,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (snapshot.inputs.length) delete optimisticInputs.value[snapshot.session.id]
     current.snapshot = snapshot
     current.snapshotSeq = snapshot.session.lastEventSeq
-    if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) sessions.value[snapshot.session.id] = { ...snapshot.session }
+    if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) updateSession(snapshot.session)
     advance(snapshot.session.id)
   }
 
@@ -480,7 +496,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (!received.has(id) && !catalogSessions.has(id)) forgetSession(id)
     }
     if (cache) void cache.retain([...received.keys(), ...catalogSessions])
-    sessions.value = Object.fromEntries(received)
+    for (const record of received.values()) updateSession(record)
+    for (const id of Object.keys(sessions.value)) if (!received.has(id)) delete sessions.value[id]
     for (const id of Object.keys(activity.value)) if (!received.has(id)) delete activity.value[id]
   }
   function isWorking(id: string): SessionActivity | false {

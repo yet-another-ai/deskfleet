@@ -3,6 +3,7 @@ import { defineStore } from "pinia"
 import { computed, hasInjectionContext, onScopeDispose, ref } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
+import type { AgentSessionRecord } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { AgentSessionSummary, MachineSummary, TerminalSessionSummary, WorkspaceSummary, WorktreeSummary } from "./fleet-types.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { captureAnalyticsContext } from "../services/analytics.ts"
@@ -92,13 +93,34 @@ export const useFleetStore = defineStore("fleet", () => {
   const terminals = useTerminalsStore()
   const agents = useAgentSessionsStore()
   const providers = useProvidersStore()
+  // Ownership changes rebuild these indexes; streaming metadata does not rescan terminals.
+  const terminalsByWorktree = computed(() => {
+    const groups = new Map<string | undefined, TerminalSessionSummary[]>()
+    for (const terminal of terminals.sessions) {
+      const id = terminal.worktreeId
+      const group = groups.get(id)
+      if (group) group.push(terminal)
+      else groups.set(id, [terminal])
+    }
+    return groups
+  })
+  const sessionsByWorkspace = computed(() => {
+    const groups = new Map<string | undefined, AgentSessionRecord[]>()
+    for (const session of Object.values(agents.sessions)) {
+      const id = session.workspaceId || undefined
+      const group = groups.get(id)
+      if (group) group.push(session)
+      else groups.set(id, [session])
+    }
+    return groups
+  })
+  const providersById = computed(() => new Map(providers.providers.map(provider => [provider.id, provider])))
   // Build the resource tree from its owning stores instead of synchronizing copies.
   const workspaces = computed(() => (catalog.value?.workspaces ?? []).map(value => {
     const workspace = workspaceSummary(value)
     const summaries = new Map(workspace.sessions.map(session => [session.id, session]))
-    for (const metadata of Object.values(agents.sessions)) {
-      if (metadata.workspaceId !== workspace.id) continue
-      const provider = providers.providers.find(provider => provider.id === metadata.provider)
+    for (const metadata of sessionsByWorkspace.value.get(workspace.id) ?? []) {
+      const provider = providersById.value.get(metadata.provider)
       summaries.set(metadata.id, {
         ...summaries.get(metadata.id), id: metadata.id,
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
@@ -109,7 +131,7 @@ export const useFleetStore = defineStore("fleet", () => {
     }
     workspace.sessions = [...summaries.values()]
     for (const session of workspace.sessions) {
-      if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
+      if (session.worktree) session.worktree.terminals = terminalsByWorktree.value.get(session.worktree.id) ?? []
     }
     return workspace
   }))
@@ -119,9 +141,8 @@ export const useFleetStore = defineStore("fleet", () => {
       if (!worktree.sessionId) continue
       summaries.set(worktree.sessionId, { id: worktree.sessionId, worktree: worktreeSummary(worktree) })
     }
-    for (const metadata of Object.values(agents.sessions)) {
-      if (metadata.workspaceId) continue
-      const provider = providers.providers.find(provider => provider.id === metadata.provider)
+    for (const metadata of sessionsByWorkspace.value.get(undefined) ?? []) {
+      const provider = providersById.value.get(metadata.provider)
       summaries.set(metadata.id, {
         ...summaries.get(metadata.id), id: metadata.id,
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
@@ -132,7 +153,7 @@ export const useFleetStore = defineStore("fleet", () => {
     }
     const values = [...summaries.values()]
     for (const session of values) {
-      if (session.worktree) session.worktree.terminals = terminals.sessions.filter(terminal => terminal.worktreeId === session.worktree!.id)
+      if (session.worktree) session.worktree.terminals = terminalsByWorktree.value.get(session.worktree.id) ?? []
     }
     return values
   })
@@ -142,7 +163,7 @@ export const useFleetStore = defineStore("fleet", () => {
     // The server transport also connects this client's own daemon.
     local: account ? account.localMachineId.value === targetId : target?.local ?? true,
     lastSeen: target?.lastSeen,
-    terminals: terminals.sessions.filter(terminal => terminal.worktreeId === undefined),
+    terminals: terminalsByWorktree.value.get(undefined) ?? [],
     sessions: machineSessions.value,
     workspaces: workspaces.value,
   }])

@@ -180,6 +180,61 @@ test("machine and workspace session summaries follow shared completion and read 
   expect(store.findSession("40")?.session.lastReadSeq).toBe("11")
 })
 
+test("building a large fleet reads terminal ownership once and reuses it across session updates", async () => {
+  const store = setup()
+  const snapshot = catalogFixture()
+  const sessionCount = 60
+  snapshot.workspaces[0]!.worktrees.push(...Array.from({ length: sessionCount }, (_, index) => ({
+    id: `worktree-${index}`, sessionId: `session-${index}`, workspaceId, directories: [{ path: `/worktrees/${index}` }],
+  })))
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(snapshot)
+  await store.refreshLocalCatalog()
+  const terminals = useTerminalsStore()
+  let ownershipReads = 0
+  terminals.sessions = Array.from({ length: 240 }, (_, index) => ({
+    id: `terminal-${index}`, title: "shell", cwd: "/code/web", cols: 80, rows: 24, status: "running",
+    get worktreeId() { ownershipReads++; return `worktree-${index % sessionCount}` },
+  }))
+  const agents = useAgentSessionsStore()
+  agents.sessions[sessionId] = { ...agentSnapshot().session, id: sessionId, workspaceId, title: "Before" }
+
+  const workspace = store.findWorkspace(workspaceId)!.workspace
+  expect(workspace.sessions).toHaveLength(sessionCount + 1)
+  expect(workspace.sessions[1]!.worktree!.terminals.map(terminal => terminal.id)).toEqual([
+    "terminal-0", "terminal-60", "terminal-120", "terminal-180",
+  ])
+  // A bounded linear scan catches the previous Session × Terminal traversal
+  // without relying on wall-clock thresholds or Vue's exact getter call count.
+  expect(ownershipReads).toBeLessThanOrEqual(terminals.sessions.length * 2)
+  const initialReads = ownershipReads
+  agents.sessions[sessionId] = { ...agents.sessions[sessionId]!, title: "After" }
+  expect(store.findSession(sessionId)?.session.title).toBe("After")
+  expect(ownershipReads).toBe(initialReads)
+
+  const machines = store.machines
+  agents.sessions[sessionId]!.lastEventSeq = "99"
+  expect(store.machines).toBe(machines)
+})
+
+test("metadata-only sessions follow workspace ownership changes and removal", async () => {
+  const store = setup()
+  await store.refreshLocalCatalog()
+  const agents = useAgentSessionsStore()
+  agents.sessions.chat = { ...agentSnapshot().session, id: "chat", workspaceId, title: "Chat" }
+  expect(store.findSession("chat")?.workspace?.id).toBe(workspaceId)
+
+  delete agents.sessions.chat.workspaceId
+  expect(store.findSession("chat")?.workspace).toBeUndefined()
+  expect(store.machines[0]!.sessions.map(session => session.id)).toEqual(["chat"])
+  expect(store.findWorkspace(workspaceId)!.workspace.sessions.map(session => session.id)).not.toContain("chat")
+
+  agents.sessions.chat.workspaceId = workspaceId
+  expect(store.findSession("chat")?.workspace?.id).toBe(workspaceId)
+  expect(store.machines[0]!.sessions).toEqual([])
+  delete agents.sessions.chat
+  expect(store.findSession("chat")).toBeNull()
+})
+
 test("workspace creation selects its configured directories without exposing an empty main worktree", async () => {
   const store = setup()
   await store.refreshLocalCatalog()

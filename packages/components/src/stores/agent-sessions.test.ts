@@ -668,6 +668,36 @@ test("appends live events without replacing history and updates rendered transcr
 const textChunk = (seq: number, text: string) => agentEvent(seq, "acp", {
   sessionId: "provider-session", update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } },
 })
+
+test("streaming cursors preserve metadata consumers and session events remain immutable", async () => {
+  vi.useFakeTimers()
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  const metadata = store.sessions["30"]!
+  const summaries = computed(() => Object.values(store.sessions).map(session => ({ title: session.title, workspaceId: session.workspaceId })))
+  const before = summaries.value
+  receive(textChunk(1, "streaming"))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(store.sessions["30"]).toBe(metadata)
+  expect(metadata.lastEventSeq).toBe("1")
+  expect(summaries.value).toBe(before)
+
+  const record = { ...agentSnapshot().session, title: "Renamed", lastEventSeq: "2", lastReadSeq: "1" }
+  delete record.workspaceId
+  delete record.capabilities
+  const event = agentEvent(2, "session", record)
+  const original = JSON.stringify(event)
+  receive(event)
+  expect(store.sessions["30"]).toBe(metadata)
+  expect(summaries.value).toEqual([{ title: "Renamed", workspaceId: undefined }])
+  expect(metadata).not.toHaveProperty("capabilities")
+  expect(metadata.lastReadSeq).toBe("1")
+  receive(textChunk(3, "more"))
+  await vi.advanceTimersByTimeAsync(33)
+  expect(metadata.lastEventSeq).toBe("3")
+  expect(JSON.stringify(event)).toBe(original)
+})
+
 function preview(streamId: string, baseSeq: string, offset: number, texts: string[]): AgentPreview {
   return { sessionId: "30", streamId, baseSeq, offset, events: texts.map(text => {
     const { seq: _seq, ...draft } = textChunk(0, text)
@@ -1628,6 +1658,27 @@ test("only durable contiguous history is persisted, without streaming previews",
   await vi.advanceTimersByTimeAsync(1000)
   expect(store.views["30"]!.events).toHaveLength(1)
   expect(persistence.write).toHaveBeenCalledWith("30", { snapshot: agentSnapshot(), events: [] })
+})
+
+test("persisted history keeps repaired ordering and uses committed events instead of previews", async () => {
+  vi.useFakeTimers()
+  const { store, persistence } = cachedStore()
+  await store.open("30")
+  const first = textChunk(1, "first")
+  const second = textChunk(2, "second")
+  receive(second)
+  receive(first)
+  await vi.advanceTimersByTimeAsync(33)
+  mock.notification({ method: "_deskfleet/session/preview", params: preview("stream", "2", 0, ["draft", "pending"]) })
+  await vi.advanceTimersByTimeAsync(33)
+  const third = textChunk(3, "draft")
+  receive(third)
+  await vi.advanceTimersByTimeAsync(1000)
+  const saved = vi.mocked(persistence.write).mock.lastCall![1]
+  expect(saved.events).toEqual([first, second, third])
+  expect(saved.events[2]).toBe(third)
+  expect(saved.snapshot.session.lastEventSeq).toBe("3")
+  expect(store.views["30"]!.events).toHaveLength(4)
 })
 
 test("yolo mode delegates to daemon on create and setYolo and projects snapshot state", async () => {

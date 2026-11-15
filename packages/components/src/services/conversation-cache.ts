@@ -1,5 +1,6 @@
-import { hasInjectionContext, inject, type InjectionKey } from "vue"
+import { hasInjectionContext, inject, toRaw, type InjectionKey } from "vue"
 import type { AgentEvent, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
+import { maxConversationCacheBytes, serializeConversation } from "./conversation-cache-serializer.ts"
 
 export interface CachedConversation { snapshot: AgentSnapshot; events: AgentEvent[] }
 export interface ConversationCache {
@@ -13,12 +14,26 @@ export const useConversationCache = () => hasInjectionContext() ? inject(convers
 
 interface Row { key: string; owner: string; scope: string; id: string; touched: number; bytes: number; json: string }
 const maxEntries = 30
-const maxBytes = 32 * 1024 * 1024
 let database: Promise<IDBDatabase> | undefined
+let pending: Promise<unknown> = Promise.resolve()
+
+// Serialization may yield. Keep writes, reads, and removals ordered so a slow
+// save cannot recreate a cache entry after its Session or owner was removed.
+function enqueue<T>(operation: () => Promise<T>): Promise<T | undefined> {
+  const next = pending.then(operation).catch(() => undefined)
+  pending = next
+  return next
+}
+
 function open(): Promise<IDBDatabase> {
   return database ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open("deskfleet-conversations", 1)
-    request.onupgradeneeded = () => request.result.createObjectStore("conversations", { keyPath: "key" })
+    const request = indexedDB.open("deskfleet-conversations", 2)
+    request.onupgradeneeded = () => {
+      const store = request.result.objectStoreNames.contains("conversations")
+        ? request.transaction!.objectStore("conversations")
+        : request.result.createObjectStore("conversations", { keyPath: "key" })
+      store.createIndex("recency", ["touched", "bytes"])
+    }
     request.onsuccess = () => { request.result.onversionchange = () => { request.result.close(); database = undefined }; resolve(request.result) }
     request.onerror = () => reject(request.error)
   }).catch(error => { database = undefined; throw error })
@@ -42,7 +57,7 @@ export function createConversationCache(owner: string, scope: string): Conversat
   const key = (id: string) => JSON.stringify([owner, scope, id])
   return {
     async read(id) {
-      return transaction<CachedConversation>((store, finish) => {
+      return enqueue(() => transaction<CachedConversation>((store, finish) => {
         const request = store.get(key(id))
         request.onsuccess = () => {
           const row = request.result as Row | undefined
@@ -54,51 +69,65 @@ export function createConversationCache(owner: string, scope: string): Conversat
             finish(value)
           } catch { store.delete(key(id)) }
         }
-      })
+      }))
     },
     async write(id, value) {
-      const json = JSON.stringify(value)
-      const bytes = json.length * 2
-      await transaction((store) => {
-        if (bytes > maxBytes) { store.delete(key(id)); return }
-        const request = store.getAll()
-        request.onsuccess = () => {
-          const rows = (request.result as Row[]).filter(row => row.key !== key(id)).sort((a, b) => b.touched - a.touched)
+      // Capture the mutable snapshot now; only immutable journal events can be
+      // serialized later. Avoid walking Vue proxies while capturing it.
+      let snapshot: string
+      try { snapshot = JSON.stringify(toRaw(value.snapshot)) } catch { return }
+      const events = toRaw(value.events).slice()
+      await enqueue(async () => {
+        const json = await serializeConversation(snapshot, events)
+        const bytes = json === undefined ? 0 : json.length * 2
+        await transaction((store) => {
+          if (json === undefined) { store.delete(key(id)); return }
           let total = bytes
           let count = 1
-          for (const row of rows) {
-            total += row.bytes
-            if (++count > maxEntries || total > maxBytes) store.delete(row.key)
+          // Index keys contain the LRU metadata; never load old JSON payloads
+          // just to decide which entries should be evicted.
+          const request = store.index("recency").openKeyCursor(null, "prev")
+          request.onsuccess = () => {
+            const cursor = request.result
+            if (!cursor) {
+              store.put({ key: key(id), owner, scope, id, touched: Date.now(), bytes, json } satisfies Row)
+              return
+            }
+            if (cursor.primaryKey !== key(id)) {
+              total += (cursor.key as [number, number])[1]
+              if (++count > maxEntries || total > maxConversationCacheBytes) store.delete(cursor.primaryKey)
+            }
+            cursor.continue()
           }
-          store.put({ key: key(id), owner, scope, id, touched: Date.now(), bytes, json } satisfies Row)
-        }
+        })
       })
     },
     async retain(ids) {
       const keep = new Set(ids)
-      await transaction(store => {
-        const request = store.openCursor()
+      await enqueue(() => transaction(store => {
+        const request = store.openKeyCursor()
         request.onsuccess = () => {
           const cursor = request.result
           if (!cursor) return
-          const row = cursor.value as Row
-          if (row.owner === owner && row.scope === scope && !keep.has(row.id)) cursor.delete()
+          const [entryOwner, entryScope, id] = JSON.parse(cursor.primaryKey as string) as string[]
+          if (entryOwner === owner && entryScope === scope && !keep.has(id!)) store.delete(cursor.primaryKey)
           cursor.continue()
         }
-      })
+      }))
     },
-    async remove(id) { await transaction(store => { store.delete(key(id)) }) },
+    async remove(id) { await enqueue(() => transaction(store => { store.delete(key(id)) })) },
   }
 }
 
 export async function clearConversationOwner(owner: string): Promise<void> {
-  await transaction(store => {
-    const request = store.openCursor()
+  await enqueue(() => transaction(store => {
+    const request = store.openKeyCursor()
     request.onsuccess = () => {
       const cursor = request.result
       if (!cursor) return
-      if ((cursor.value as Row).owner === owner) cursor.delete()
+      const [entryOwner] = JSON.parse(cursor.primaryKey as string) as string[]
+      if (entryOwner === owner) store.delete(cursor.primaryKey)
       cursor.continue()
     }
-  })
+  }))
 }
