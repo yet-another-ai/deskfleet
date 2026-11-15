@@ -58,9 +58,9 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
         emit({ ...event.event, sessionId: local[0] } as DesktopEvent)
       }
       else emit({ sessionId: local[0], kind: "error", error: event.reason })
-    } else if (event.type === "connection") {
-      // The account reloads the roster after reconnect. Cached presence must not
-      // trigger a terminal RPC before that shared read has completed.
+    } else if (event.type === "connection" || event.type === "refreshRequired") {
+      // The account reloads after reconnect or notification overflow. Cached
+      // presence cannot trigger a terminal RPC before that shared read completes.
       awaitingRoster = true
     } else if (event.type === "catalogChanged" && event.teamId === machine.teamId && event.machineId === machine.id) {
       refreshCatalog(event.sessionId)

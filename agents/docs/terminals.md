@@ -277,9 +277,11 @@ The daemon pipelines chunks until that window is full. The client acknowledges
 the cumulative byte offset only after xterm consumes the output; acknowledgements
 release window capacity for more chunks. The window counts raw terminal bytes,
 before the transport's base64 encoding. Transient native send-buffer backpressure
-retries the same message in order, with the same five-second send deadline used
+retries the same message in order, with the same 30-second send deadline used
 by the other data channels. Replay readiness and process exit are
 published only after their preceding output has been consumed.
+The client's request-response deadline is 60 seconds, leaving room for that
+send-buffer wait and the remote reply without replaying accepted input.
 Input is chunked and waits for each PTY write; the
 renderer bounds queued paste/input to 256 KiB. Resize sends terminal columns and
 rows, not pixel dimensions.

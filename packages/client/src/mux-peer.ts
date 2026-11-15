@@ -56,7 +56,7 @@ export const browserMuxPeer: MuxPeerFactory = async (iceServers, events) => {
       }
       const ready = () => { cleanup(); resolve() }
       const lost = () => { cleanup(); reject(new Error("Mux send interrupted")) }
-      const timer = setTimeout(lost, 5_000)
+      const timer = setTimeout(lost, 30_000)
       channel.addEventListener("bufferedamountlow", ready, { once: true })
       stop.signal.addEventListener("abort", lost, { once: true })
       if (closed || channel.readyState !== "open") lost()

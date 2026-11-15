@@ -66,7 +66,7 @@ export class AuthorizedMux {
 
   async #send(lane: MuxLane, bytes: Uint8Array): Promise<void> {
     await this.#opened.get(lane)!.promise
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 30_000
     while (!this.#closed) {
       this.#authorize()
       try {

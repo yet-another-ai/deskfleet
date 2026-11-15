@@ -8,13 +8,13 @@ impl Hub {
         message: ControlMessage,
     ) -> Result<()> {
         let _registration = self.registration.lock().await;
-        self.send_current(machine, connection, message).await
+        self.send_current(machine, connection, message, None).await
     }
 
     #[tracing::instrument(skip_all, fields(registration_id = machine))]
     pub(crate) async fn reconcile_daemon(&self, machine: &str, connection: &str) -> Result<()> {
         // A peer offer must not overtake a snapshot that predates its grant.
-        // The same gate also fences local connection replacement and lease reset.
+        // The same gate also fences local connection replacement and routing recovery.
         let _registration = self.registration.lock().await;
         let cluster = self.cluster.as_ref().ok_or_else(ApiError::internal)?;
         cluster.ensure_ready()?;
@@ -23,6 +23,7 @@ impl Hub {
             machine,
             connection,
             ControlMessage::ReconcilePeers { peers },
+            None,
         )
         .await
     }
@@ -33,6 +34,7 @@ impl Hub {
         machine: &str,
         connection: &str,
         message: ControlMessage,
+        expires_at: Option<i64>,
     ) -> Result<()> {
         if !self.is_current(machine, connection).await {
             return Err(ApiError::unavailable());
@@ -43,10 +45,18 @@ impl Hub {
             .get(machine)
             .filter(|d| d.connection_id == connection)
             .ok_or_else(ApiError::unavailable)?;
+        // A ready gated future can win the timeout poll after its deadline.
+        // Check consumed envelopes again immediately before queue insertion.
+        if expires_at.is_some_and(|expiry| expiry <= deskfleet_control_store::now_ms()) {
+            return Err(timeout_error());
+        }
         daemon
             .sender
             .try_send(message)
-            .map_err(|_| ApiError::unavailable())
+            .map_err(|error| match error {
+                outbox::SendError::Full => ApiError::busy(),
+                outbox::SendError::Closed => ApiError::unavailable(),
+            })
     }
     pub(super) async fn dispatch(&self, envelope: Envelope) -> Result<()> {
         match envelope {
@@ -73,10 +83,29 @@ impl Hub {
                         expires_at,
                     },
                 );
-                if let Err(error) = self
-                    .send_request(&registration_id, &connection_id, message)
+                // Expiry also bounds waiting for the registration gate and
+                // route validation. Cancelling a consumed request must retire
+                // its forwarding entry, without fencing a healthy machine.
+                let remaining =
+                    u64::try_from(expires_at.saturating_sub(deskfleet_control_store::now_ms()))
+                        .unwrap_or_default();
+                let delivered = if remaining == 0 {
+                    Err(timeout_error())
+                } else {
+                    tokio::time::timeout(Duration::from_millis(remaining), async {
+                        let _registration = self.registration.lock().await;
+                        self.send_current(
+                            &registration_id,
+                            &connection_id,
+                            message,
+                            Some(expires_at),
+                        )
+                        .await
+                    })
                     .await
-                {
+                    .unwrap_or_else(|_| Err(timeout_error()))
+                };
+                if let Err(error) = delivered {
                     self.inner.lock().await.forwarded.remove(&id);
                     self.publish(
                         &source,
@@ -113,41 +142,68 @@ impl Hub {
                 }
             }
             Envelope::Notify { audience, message } => {
-                let routes = self.inner.lock().await;
-                for (login, clients) in &routes.clients {
-                    for client in clients.values() {
-                        if audience.matches(login, &client.user_id)
-                            && client.sender.try_send(message.clone()).is_err()
-                        {
-                            let _ = client.shutdown.send(Some(1012));
-                        }
-                    }
-                }
+                let deliveries = {
+                    let routes = self.inner.lock().await;
+                    routes
+                        .clients
+                        .iter()
+                        .flat_map(|(login, clients)| {
+                            clients
+                                .values()
+                                .filter(|client| audience.matches(login, &client.user_id))
+                                .map(|client| (client.sender.clone(), client.shutdown.clone()))
+                        })
+                        .collect::<Vec<_>>()
+                };
+                // Hints coalesce immediately. A critical event may wait for its
+                // own socket, without holding routes or stalling other viewers.
+                futures_util::future::join_all(
+                    deliveries.into_iter().map(|(sender, shutdown)| {
+                        deliver_client(sender, shutdown, message.clone())
+                    }),
+                )
+                .await;
             }
             Envelope::Revoke { peers, reason } => {
-                let routes = self.inner.lock().await;
-                for peer in peers {
-                    let message = ControlMessage::PeerRevoked {
-                        peer_id: peer.peer_id,
-                        reason: reason.clone(),
-                    };
-                    if let Some(daemon) = routes.daemons.values().find(|daemon| {
-                        daemon.team_id == peer.team_id
-                            && daemon.public_machine_id == peer.target_machine.id
-                    }) && daemon.sender.try_send(message.clone()).is_err()
-                    {
-                        let _ = daemon.shutdown.send(Some(1012));
-                    }
-                    for clients in routes.clients.values() {
-                        for client in clients.values() {
-                            if client.user_id == peer.actor.user_id
-                                && client.sender.try_send(message.clone()).is_err()
-                            {
-                                let _ = client.shutdown.send(Some(1012));
+                let deliveries = {
+                    let routes = self.inner.lock().await;
+                    let mut deliveries = Vec::new();
+                    for peer in peers {
+                        let message = ControlMessage::PeerRevoked {
+                            peer_id: peer.peer_id,
+                            reason: reason.clone(),
+                        };
+                        if let Some(daemon) = routes.daemons.values().find(|daemon| {
+                            daemon.team_id == peer.team_id
+                                && daemon.public_machine_id == peer.target_machine.id
+                        }) && daemon.sender.try_send(message.clone())
+                            == Err(outbox::SendError::Full)
+                        {
+                            // Revocation is already durable. Fetch a fresh grant
+                            // snapshot through the ordered registration gate;
+                            // unrelated active peers and the Machine stay live.
+                            daemon.sender.request_reconciliation();
+                        }
+                        for clients in routes.clients.values() {
+                            for client in clients.values() {
+                                if client.user_id == peer.actor.user_id {
+                                    deliveries.push((
+                                        client.sender.clone(),
+                                        client.shutdown.clone(),
+                                        message.clone(),
+                                    ));
+                                }
                             }
                         }
                     }
-                }
+                    deliveries
+                };
+                futures_util::future::join_all(
+                    deliveries.into_iter().map(|(sender, shutdown, message)| {
+                        deliver_client(sender, shutdown, message)
+                    }),
+                )
+                .await;
             }
             Envelope::Disconnect { audience } => {
                 let routes = self.inner.lock().await;
@@ -244,6 +300,23 @@ impl Hub {
         routes.forwarded.retain(|_, p| p.expires_at > now);
     }
 }
+
+async fn deliver_client(
+    sender: Sender,
+    shutdown: watch::Sender<Option<u16>>,
+    message: ControlMessage,
+) {
+    if tokio::time::timeout(Duration::from_secs(30), sender.send(message))
+        .await
+        .is_err()
+    {
+        // Only a critical sink that remains stalled loses its own signaling
+        // socket. Refresh traffic has a separate, coalescing budget.
+        tracing::warn!("client control delivery stalled");
+        let _ = shutdown.send(Some(1012));
+    }
+}
+
 impl Audience {
     fn matches(&self, login: &str, user: &str) -> bool {
         match self {

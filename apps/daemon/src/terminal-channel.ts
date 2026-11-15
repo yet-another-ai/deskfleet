@@ -152,7 +152,7 @@ export class TerminalChannel {
   }
 
   async #sendMessage(message: string, lane: "terminal" | "bulk"): Promise<void> {
-    const deadline = Date.now() + 5_000
+    const deadline = Date.now() + 30_000
     while (!this.#closed) {
       let timer: ReturnType<typeof setTimeout> | undefined
       let stopped: (() => void) | undefined

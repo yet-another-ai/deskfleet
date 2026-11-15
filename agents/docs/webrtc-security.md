@@ -45,7 +45,7 @@ saturation. WebRTC grants reserve capacity before requesting TURN credentials;
 provisioning failure revokes the reservation. Local grants use the same quotas.
 During provisioning, the persisted expiry is a two-minute reservation lease,
 started after admission locks are acquired. This covers the daemon RPC's full
-60-second timeout plus time for routing and final authorization/activation.
+90-second timeout plus time for routing and final authorization/activation.
 Only successful provisioning plus final authorization activates the immutable
 grant's full expiry, immediately before returning it. A cancelled request or
 crashed process therefore cannot hold unissued capacity for the full grant
@@ -160,10 +160,10 @@ retry by its owner can retrieve the same negotiation result; changing the offer,
 answer, actor, target, or purpose cannot mutate an established binding. A failed
 or replacement connection uses a new `peerId`, new authorization, and new
 PeerConnections. In-place renegotiation/ICE restart is not required for this
-release. Pending setup has a 45-second deadline, independently of the 24-hour
+release. Pending setup has a 120-second deadline, independently of the 24-hour
 authorization ceiling; mobile NAT traversal can consume several seconds before
 media starts. A `disconnected` connection is transient during network switches
-and page suspension, so clients wait 10 seconds for recovery before treating it
+and page suspension, so clients wait 30 seconds for recovery before treating it
 as failed. `failed` and `closed` remain immediate failures. A resumed page
 creates a new authorized peer rather than renegotiating the old transport.
 

@@ -12,7 +12,7 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done })
   return { promise, resolve }
 }
-function fixture(lifetime = 60_000) {
+function fixture(lifetime = 3_600_000) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const emit = (event: CentralEvent) => { for (const listener of listeners) listener(event) }
   const grant = { peerId: "ports", authorization: { expiresAt: new Date(Date.now() + lifetime).toISOString() }, iceServers: [] }

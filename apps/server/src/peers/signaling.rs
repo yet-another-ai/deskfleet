@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration;
 
-const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(60);
+const NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

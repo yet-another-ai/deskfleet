@@ -115,11 +115,13 @@ resource transports, and the Rust backend's external HTTP clients use reqwest.
 
 GET/HEAD requests retry transient network failures, per-attempt timeouts, and
 HTTP 408/429/500/502/503/504 at most twice. Ky owns exponential backoff and
-`Retry-After` handling. Reads default to five seconds per attempt and fifteen
+`Retry-After` handling. Reads default to fifteen seconds per attempt and forty-five
 seconds total, including waits and response decoding. Network configuration
-keeps its five-second total budget and also retries transient route 404s.
-Writes default to a single attempt with a 65-second deadline, allowing the
-backend's 60-second RPC/negotiation deadline to return a structured error.
+uses five seconds per attempt and fifteen seconds total, and also retries
+transient route 404s. Writes default to a single attempt with a 105-second
+deadline, allowing the backend's 90-second RPC/negotiation deadline to return a
+structured error over a remote link. Peer connection and media startup each
+have an outer 120-second deadline covering signaling and transport setup.
 Operations with explicit shorter deadlines keep them. Retry eligibility does not
 change these timeout budgets. Admission writes opt into retries using their
 stable operation IDs and generations; generic RPC, MCP tools,
@@ -145,11 +147,49 @@ or expired process lease stops that process from using its local sockets as
 authority. Closing signaling for recovery does not revoke an already authorized
 WebRTC connection or stop the daemon's execution.
 
+Control-plane congestion is scoped to its work, not interpreted as Machine
+offline. Each socket coalesces catalog, roster, and presence invalidations
+separately from its bounded command queue. Catalog hints for different Sessions
+on one `(Team, Machine)` promote to a whole-Machine refresh. If the bounded set of
+distinct invalidations fills, one `refreshRequired` tells the client to reload
+its authoritative roster and opened Machine state without disconnecting existing
+peers. Refreshes receive service even during continuous command traffic.
+A full daemon request queue returns `machine_busy`; it does not remove the route
+or replay the operation. A genuinely stalled client's critical delivery has a
+30-second deadline and closes only that client's signaling socket. Socket text
+writes and the initial authentication frame also allow 30 seconds.
+
+Peer-event work has a bounded pending queue and bounded concurrency, independent
+of the daemon socket reader. Early ICE waiting for an SDP answer cannot stop
+that same socket from delivering the answer, heartbeats, or other RPC responses.
+Overflow fails the affected peer through its existing authorization and
+revocation path instead of disconnecting the Machine. Global worker saturation
+waits within each socket's bounded work budget. Socket teardown cancels its
+workers so old connections cannot retain signaling capacity. Rejection work is
+also bounded; negotiation deadlines remain the fallback under sustained overload.
+
+Durable revocations that encounter a full daemon command queue request a fresh
+grant reconciliation. Its snapshot has a reserved queue slot and retains the
+registration gate's ordering with peer offers. A queued snapshot remains in its
+original FIFO position; subsequent reconciliation requests coalesce into one
+fresh query after that snapshot is delivered. New commands cannot continually
+push revocation cleanup to the back of the queue. This recovery preserves
+unrelated active peers and the Machine's presence.
+
+The API node's lease renewal runs independently of bounded inbox batches.
+Database deadlines apply to lease and inbox operations, rather than the aggregate
+time to deliver a batch. A failed envelope does not fence the node. Actual
+database failure or lease loss still cancels pending dispatch, marks routing
+unhealthy, and closes old sockets before recovery.
+Cross-instance requests retain their original expiry while waiting for the
+registration gate; an expired request is retired without enqueueing it later.
+
 An established control socket is not recovered by its close handshake alone: a
 dead peer never answers it and the WebSocket implementation has no closing
 deadline. The daemon and the client signaling socket therefore declare a link
-dead after 60 seconds without traffic, abandon it when an orderly close does not
-finish within 2 seconds, and reconnect with bounded backoff starting at 1 second.
+dead after 60 seconds without traffic. The daemon abandons an unfinished close
+after five seconds and starts retrying at two seconds; the client uses a
+two-second close grace and one-second initial retry. Both bound their backoff.
 The daemon reports `connected` false as soon as the link is declared dead, so a
 lost link cannot leave a machine offline until its process restarts.
 
@@ -158,14 +198,15 @@ shared machine roster read before refreshing their catalog, history, providers,
 and terminal list. Presence notifications and renames do not complete that read.
 Terminal lists retain their cached entries while reconciliation is pending or the
 machine is offline; unchanged online machines still refresh after reconciliation.
-Roster reads started before a signaling connection change are discarded. This
+Roster reads started before a signaling connection change or `refreshRequired`
+are discarded. Overflow refreshes coalesce while a roster read is running. This
 reconciliation preserves already authorized peers and their live streams.
 
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
 alone cannot time out a stale socket. Heartbeat traffic is skipped while the
 page is hidden. Returning to a visible page, restoring a page from the
 back/forward cache, or receiving an `online` event probes a recently active
-socket with an immediate ping and replaces it only when the 3-second round trip
+socket with an immediate ping and replaces it only when the 10-second round trip
 misses. A socket idle beyond the 60-second deadline is replaced immediately, and
 a pending retry is executed without waiting for its backoff.
 
@@ -1319,6 +1360,10 @@ sequences preserve order across lanes. A terminal attachment retains its existin
 output; ready and subsequent output use the terminal lane. Multiple embedded
 views retain separate replay and consumption state without extra physical peers.
 The lanes share SCTP congestion control and network bandwidth.
+Remote send-buffer backpressure allows up to 30 seconds for the current frame
+to drain while retaining the existing byte and message limits. A recovered
+sender continues in order; a permanently stalled transport still releases its
+resources. Transient peer disconnection has a separate 30-second recovery grace.
 
 The [client registry](../../packages/client/src/mux-client.ts) shares pending
 negotiations and retains working peers independently of their individual views.

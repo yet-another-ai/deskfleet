@@ -14,7 +14,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, autoStopped = true, autoConfigured = true, control = true, viewerCodecs = ["h264"] as VideoCodec[], grantLifetimeMs = 60_000 } = {}) {
+function fixture({ autoAnswerApplied = true, autoInputReady = true, autoVideoReady = true, autoStopped = true, autoConfigured = true, control = true, viewerCodecs = ["h264"] as VideoCodec[], grantLifetimeMs = 3_600_000 } = {}) {
   let receive!: (event: ViewerEvent) => void
   const listeners = new Set<(event: CentralEvent) => void>()
   const emit = (event: CentralEvent) => { for (const listener of [...listeners]) listener(event) }
@@ -150,7 +150,7 @@ test("candidate send failure before connection rejects startup and closes the gr
 
 test.each(["account", "revoked", "expired", "error"])("%s releases remote capture before explicit window closure", async cause => {
   vi.useFakeTimers()
-  const f = fixture()
+  const f = fixture({ grantLifetimeMs: 60_000 })
   const session = f.open()
   await vi.waitFor(() => expect(f.spawn).toHaveBeenCalled())
   f.receive({ type: "offer", sdp: "offer" })
@@ -248,7 +248,7 @@ test("view-only startup does not wait for an input channel", async () => {
 
 test.each(["success", "encoder failure"])("slow connection setup leaves time for capture %s", async outcome => {
   vi.useFakeTimers()
-  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"], grantLifetimeMs: 180_000 })
+  const f = fixture({ viewerCodecs: ["av1", "h265", "h264"] })
   const starting = deferred<void>()
   f.central.startPeer.mockReturnValueOnce(starting.promise)
   const session = f.open()
@@ -257,7 +257,7 @@ test.each(["success", "encoder failure"])("slow connection setup leaves time for
   f.receive({ type: "offer", sdp: "av1" }); f.receive({ type: "connected" })
   await vi.advanceTimersByTimeAsync(0)
   expect(f.central.startPeer).toHaveBeenCalledOnce()
-  await vi.advanceTimersByTimeAsync(30_000)
+  await vi.advanceTimersByTimeAsync(outcome === "success" ? 90_000 : 30_000)
   expect(f.failed).not.toHaveBeenCalled()
   expect(f.child.close).not.toHaveBeenCalled()
   if (outcome === "encoder failure") {
@@ -275,7 +275,7 @@ test.each(["success", "encoder failure"])("slow connection setup leaves time for
 
 test("capture has a bounded startup deadline independent of slow connection setup", async () => {
   vi.useFakeTimers()
-  const f = fixture({ grantLifetimeMs: 180_000 })
+  const f = fixture()
   const starting = deferred<void>()
   f.central.startPeer.mockReturnValueOnce(starting.promise)
   const session = f.open()
@@ -323,14 +323,14 @@ test.each(["local", "remote"])("%s disconnection recovers within grace but susta
     : f.emit({ type: "peerEvent", peerId: "peer", event: { kind: "stateChanged", state } as never })
   state("disconnected")
   expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connecting", inputReady: false }) }))
-  await vi.advanceTimersByTimeAsync(9_000)
+  await vi.advanceTimersByTimeAsync(20_000)
   state("connected")
   expect(f.child.send).toHaveBeenLastCalledWith(expect.objectContaining({ type: "ui", state: expect.objectContaining({ status: "connected", inputReady: true }) }))
   await vi.advanceTimersByTimeAsync(2_000)
   expect(f.failed).not.toHaveBeenCalled()
   expect(f.central.startPeer).toHaveBeenCalledOnce()
   state("disconnected")
-  await vi.advanceTimersByTimeAsync(10_000)
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
   expect(f.failed).toHaveBeenCalledOnce()
   expect(f.child.close).not.toHaveBeenCalled()
   expect(f.central.closePeer).toHaveBeenCalledOnce()

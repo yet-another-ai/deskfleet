@@ -23,7 +23,7 @@ test.each([401, 403, 409, 422])("HTTP %s preserves its business error without re
   expect(fetch).toHaveBeenCalledOnce()
 })
 
-test("read timeouts get fresh attempts within one fifteen-second deadline", async () => {
+test("read timeouts get fresh attempts within one forty-five-second deadline", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
   const signals: AbortSignal[] = []
   const fetch = vi.fn<typeof globalThis.fetch>(input => {
@@ -32,51 +32,79 @@ test("read timeouts get fresh attempts within one fifteen-second deadline", asyn
     return new Promise((_resolve, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true }))
   })
   const result = apiRequest("https://fleet.example/api/teams/private-team/billing", { fetch }).catch(error => error)
-  await vi.advanceTimersByTimeAsync(5_000)
+  await vi.advanceTimersByTimeAsync(15_000)
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(signals[0]!.aborted).toBe(true)
   await vi.advanceTimersByTimeAsync(300)
   expect(fetch).toHaveBeenCalledTimes(2)
   expect(signals[1]!.aborted).toBe(false)
   expect(signals[1]).not.toBe(signals[0])
-  await vi.advanceTimersByTimeAsync(9_700)
+  await vi.advanceTimersByTimeAsync(29_700)
   const error = await result
   expect(fetch).toHaveBeenCalledTimes(3)
   expect(error).toBeInstanceOf(CentralRequestError)
-  expect(error).toMatchObject({ message: "The request timed out", diagnostics: { kind: "timeout", elapsedMs: 15_000 } })
+  expect(error).toMatchObject({ message: "The request timed out", diagnostics: { kind: "timeout", elapsedMs: 45_000 } })
   expect(JSON.stringify(serializeCentralRequestError(error))).not.toMatch(/fleet\.example|private-team/)
 })
 
-test("disabling retries on a read retains its five-second attempt deadline", async () => {
+test("disabling retries on a read retains its fifteen-second attempt deadline", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
   const fetch = vi.fn<typeof globalThis.fetch>(input => {
     const request = input as Request
     return new Promise((_resolve, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true }))
   })
   const result = apiRequest("https://fleet.example/api/teams", { idempotent: false, fetch }).catch(error => error)
-  await vi.advanceTimersByTimeAsync(5_000)
-  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 5_000 } })
+  await vi.advanceTimersByTimeAsync(15_000)
+  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 15_000 } })
   await vi.advanceTimersByTimeAsync(1_000)
   expect(fetch).toHaveBeenCalledOnce()
 })
 
-test("enabling retries on an admission write retains its write deadline", async () => {
+test.each([false, true])("a slow admission write succeeds once with retries enabled=%s", async idempotent => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
   const fetch = vi.fn<typeof globalThis.fetch>(input => {
     const request = input as Request
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => resolve(Response.json({ admissionId: "operation" })), 20_000)
+      const timer = setTimeout(() => resolve(Response.json({ admissionId: "operation" })), 90_000)
       request.signal.addEventListener("abort", () => { clearTimeout(timer); reject(request.signal.reason) }, { once: true })
     })
   })
   const result = apiRequest("https://fleet.example/api/daemon/session-admissions", {
-    method: "POST", json: { operationId: "operation", kind: "create" }, idempotent: true, fetch,
+    method: "POST", json: { operationId: "operation", kind: "create" }, idempotent, fetch,
   }).catch(error => error)
-  await vi.advanceTimersByTimeAsync(15_000)
+  await vi.advanceTimersByTimeAsync(65_000)
   expect(fetch).toHaveBeenCalledOnce()
   expect((fetch.mock.calls[0]![0] as Request).signal.aborted).toBe(false)
-  await vi.advanceTimersByTimeAsync(5_000)
+  await vi.advanceTimersByTimeAsync(25_000)
   expect(await result).toEqual({ admissionId: "operation" })
+  expect(fetch).toHaveBeenCalledOnce()
+})
+
+test("a slow read completes within its first attempt", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
+  const fetch = vi.fn<typeof globalThis.fetch>(input => new Promise((resolve, reject) => {
+    const { signal } = input as Request
+    const timer = setTimeout(() => resolve(Response.json({ teams: [] })), 10_000)
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+  }))
+  const result = apiRequest("https://fleet.example/api/teams", { fetch })
+  await vi.advanceTimersByTimeAsync(10_000)
+  expect(await result).toEqual({ teams: [] })
+  expect(fetch).toHaveBeenCalledOnce()
+})
+
+test("a permanently stalled write stops at its deadline without being replayed", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
+  const fetch = vi.fn<typeof globalThis.fetch>(input => new Promise((_resolve, reject) => {
+    const { signal } = input as Request
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+  }))
+  const result = apiRequest("https://fleet.example/api/teams", { method: "POST", json: { name: "Team" }, fetch }).catch(error => error)
+  await vi.advanceTimersByTimeAsync(104_999)
+  expect((fetch.mock.calls[0]![0] as Request).signal.aborted).toBe(false)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 105_000 } })
+  await vi.advanceTimersByTimeAsync(105_000)
   expect(fetch).toHaveBeenCalledOnce()
 })
 
@@ -99,8 +127,8 @@ test("Retry-After cannot extend the total request deadline", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] })
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({}, { status: 503, headers: { "Retry-After": "60" } }))
   const result = apiRequest("https://fleet.example/api/teams", { fetch }).catch(error => error)
-  await vi.advanceTimersByTimeAsync(15_000)
-  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 15_000 } })
+  await vi.advanceTimersByTimeAsync(45_000)
+  expect(await result).toMatchObject({ diagnostics: { kind: "timeout", elapsedMs: 45_000 } })
   expect(fetch).toHaveBeenCalledOnce()
 })
 

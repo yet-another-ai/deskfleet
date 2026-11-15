@@ -146,8 +146,8 @@ retain their classification for every attached viewer.
 Audio produced before the first video packet is discarded so it cannot fill the
 broadcast while viewers wait for video readiness.
 Local desktop-start and close IPC allow 45 seconds for startup and cleanup;
-the browser and native viewers give connection setup 45 seconds, then start a
-separate 45-second media-start deadline when requesting capture on the connected
+the browser and native viewers give connection setup 120 seconds, then start a
+separate 120-second media-start deadline when requesting capture on the connected
 peer. Time spent negotiating SDP/ICE does not consume the encoder's startup
 window or mask its failure classification and codec fallback. After the first
 packet, a gap in encoder output alone does not fail the stream. Explicit capture,
@@ -722,6 +722,14 @@ Revocation and reconciliation cleanup errors are logged without disconnecting
 the daemon's authenticated control channel, so other requests and cleanup
 receipts can still complete.
 
+Early ICE events enter a bounded server worker queue instead of consuming the
+daemon control socket's reader. A thumbnail burst can wait for its SDP answer
+without interrupting heartbeats or unrelated RPC. If signaling work exceeds the
+queue budget, rejection is scoped to the affected peer; it does not take the
+Machine offline and trigger every overview thumbnail to negotiate again. See
+[control-plane congestion](architecture.md#multiple-api-instances) for queue,
+revocation reconciliation, and node-lease behavior.
+
 Once ICE is connected, a failed outgoing trickle-candidate request is logged
 without closing the established viewer; remaining candidates still get sent.
 Before connection, the same failure ends startup and releases the grant.
@@ -755,7 +763,7 @@ channel returns `ready`; an error or channel closure ends the session. Opening
 a control window waits for capture startup, the first decoded frame, and this readiness acknowledgement,
 with a 10-second input readiness deadline after capture starts. View-only windows
 do not create or wait for an input channel. A transient `disconnected` state on
-either peer has the shared 10-second recovery grace; recovery keeps the same
+either peer has the shared 30-second recovery grace; recovery keeps the same
 capture, while sustained loss releases the peer and grant and leaves the native
 window available to reconnect.
 

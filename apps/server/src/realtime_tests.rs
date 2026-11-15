@@ -1,10 +1,11 @@
 //! Routing between independent API instances backed by one PostgreSQL database.
+use crate::hub::outbox::testing as mpsc;
 use crate::{AppState, config::ServerConfig, error::ApiError};
 use actix_web::http::StatusCode;
 use deskfleet_protocol::control::{ControlMessage, PeerActor, PeerAuthorization, PeerTarget};
 use serde_json::json;
 use std::time::Duration;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -108,7 +109,7 @@ impl Fixture {
 }
 
 struct Socket {
-    messages: mpsc::Receiver<ControlMessage>,
+    messages: mpsc::Receiver,
     shutdown: watch::Receiver<Option<u16>>,
 }
 

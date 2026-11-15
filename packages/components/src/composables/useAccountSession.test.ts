@@ -245,6 +245,57 @@ test("a roster from before reconnect cannot complete reconciliation while the ne
   expect(session.machine.value?.online).toBe(false)
 })
 
+test("notification overflow fences stale rosters and coalesces refreshes without reporting a disconnect", async () => {
+  const original = machineFixture("mine", "team-1", "This computer")
+  const fake = fakeCentral({ machines: [original] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  const version = session.machineRosterVersion.value
+  const stale = Promise.withResolvers<Machine[]>()
+  vi.mocked(fake.central.machines).mockReturnValueOnce(stale.promise)
+  const oldRefresh = session.refreshMachines()
+  await flushPromises()
+  const status = await fake.central.status()
+  const statusCalls = fake.central.status.mock.calls.length
+  const pendingStatus = Promise.withResolvers<typeof status>()
+  vi.mocked(fake.central.status).mockReturnValueOnce(pendingStatus.promise)
+  fake.emit({ type: "refreshRequired" })
+  for (let index = 0; index < 100; index++) fake.emit({ type: "refreshRequired" })
+  expect(fake.central.status).toHaveBeenCalledTimes(statusCalls + 1)
+  expect(session.connected.value).toBe(true)
+  expect(session.machineRosterVersion.value).toBeUndefined()
+  stale.resolve([{ ...original, name: "Stale name", online: false }])
+  await oldRefresh
+  expect(session.machine.value?.name).toBe(original.name)
+  expect(session.machine.value?.online).toBe(true)
+  expect(session.machineRosterVersion.value).toBeUndefined()
+  original.name = "Current name"
+  pendingStatus.resolve(status)
+  await flushPromises()
+  expect(fake.central.status).toHaveBeenCalledTimes(statusCalls + 2)
+  expect(session.machine.value?.name).toBe("Current name")
+  expect(session.machineRosterVersion.value).toBeGreaterThan(version!)
+  expect(session.connected.value).toBe(true)
+})
+
+test("a failed notification refresh waits for another marker instead of retrying or marking the socket offline", async () => {
+  const fake = fakeCentral({ machines: [machineFixture("mine", "team-1", "This computer")] })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  vi.mocked(fake.central.status).mockRejectedValueOnce(new Error("Refresh unavailable"))
+  fake.emit({ type: "refreshRequired" })
+  await flushPromises()
+  expect(fake.central.status).toHaveBeenCalledTimes(2)
+  expect(session.notice.value).toBe("Refresh unavailable")
+  expect(session.machineRosterVersion.value).toBeUndefined()
+  expect(session.connected.value).toBe(true)
+  fake.emit({ type: "refreshRequired" })
+  await flushPromises()
+  expect(fake.central.status).toHaveBeenCalledTimes(3)
+  expect(session.notice.value).toBeUndefined()
+  expect(session.machineRosterVersion.value).toBeDefined()
+})
+
 test("a slow machine list for a Team the user already left is discarded", async () => {
   const fake = fakeCentral({
     teams: [{ id: "first", name: "First", role: "admin" }, { id: "second", name: "Second", role: "admin" }],

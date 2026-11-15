@@ -214,6 +214,44 @@ test("closing a terminal channel cancels native backpressure retries", async con
   assert.deepEqual(f.output(), [])
 })
 
+test("terminal output survives six seconds of native backpressure without restarting the attachment", async context => {
+  const f = fixture(context, Buffer.from("buffered output"))
+  let blocked = true
+  f.onSend(async message => {
+    if (blocked && "event" in message && message.event.kind === "output") throw new Error("send buffer is full")
+  })
+  context.mock.timers.enable({ apis: ["Date"] })
+  await f.attach(); await nextTurn()
+  context.mock.timers.tick(6_000)
+  await delay(20)
+  assert.deepEqual(f.output(), [])
+  assert.deepEqual(f.errors, [])
+  blocked = false
+  await until(() => f.output().length === 1)
+  assert.equal(f.output().length, 1)
+  assert.equal(Buffer.from(f.output()[0]!.data, "base64").toString(), "buffered output")
+})
+
+test("terminal output that remains stalled for thirty seconds releases its viewer", async context => {
+  const failure = new Error("Terminal send buffer stalled")
+  const f = fixture(context, Buffer.from("blocked output"), [failure])
+  f.onSend(async message => {
+    if ("event" in message && message.event.kind === "output") await new Promise(() => {})
+  })
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+  await f.attach(); await nextTurn()
+  context.mock.timers.tick(29_999)
+  await nextTurn()
+  assert.deepEqual(f.errors, [])
+  context.mock.timers.tick(1)
+  await nextTurn()
+  assert.deepEqual(f.errors, [failure])
+  f.append(Buffer.from("later output"))
+  await nextTurn()
+  assert.deepEqual(f.output(), [])
+  assert.equal(f.state.summary.status, "running")
+})
+
 test("non-backpressure send failures close the viewer without retrying or skipping output", async context => {
   const failure = new Error("native transport failed")
   const f = fixture(context, Buffer.alloc(TERMINAL_CHUNK_BYTES * 2, 65), [failure])

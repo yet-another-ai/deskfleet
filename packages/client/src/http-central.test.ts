@@ -119,7 +119,22 @@ test.each([401, 403])("does not retry configuration HTTP %s failures", async (st
   expect(f.fetch).toHaveBeenCalledOnce()
 })
 
-test("bounds configuration reads to five seconds including timeout retries", async () => {
+test("allows a slow configuration read to finish without retrying", async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  const configuration = { stunUrls: ["stun:primary.example:3478"] }
+  f.fetch.mockImplementation(input => new Promise((resolve, reject) => {
+    const { signal } = input as Request
+    const timer = setTimeout(() => resolve(Response.json(configuration)), 4_000)
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+  }))
+  const result = f.client.networkConfiguration()
+  await vi.advanceTimersByTimeAsync(4_000)
+  expect(await result).toEqual(configuration)
+  expect(f.fetch).toHaveBeenCalledOnce()
+})
+
+test("bounds configuration reads to fifteen seconds including timeout retries", async () => {
   vi.useFakeTimers()
   const fetch = vi.fn<typeof globalThis.fetch>((input) => new Promise((_resolve, reject) => {
     const { signal } = input as Request
@@ -128,7 +143,7 @@ test("bounds configuration reads to five seconds including timeout retries", asy
   const client = new HttpCentralClient({ account: { serverUrl: "https://fleet.example", token: "application-token" }, persist: async () => {}, authorize: async () => {}, fetch })
   clients.push(client)
   const failure = client.networkConfiguration().catch(error => error)
-  await vi.advanceTimersByTimeAsync(5_000)
+  await vi.advanceTimersByTimeAsync(15_000)
   expect(await failure).toMatchObject({ diagnostics: { kind: "timeout", route: "/api/network-configuration" } })
   expect(fetch).toHaveBeenCalledTimes(3)
   expect(fetch.mock.calls.every(([input]) => (input as Request).signal.aborted)).toBe(true)
@@ -569,8 +584,10 @@ test("a recovered network keeps an open socket that answers its probe", async ()
   f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
   page.windowTarget.dispatchEvent(new Event("online"))
   expect(f.sockets[0]!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "ping" }))
+  await vi.advanceTimersByTimeAsync(8_000)
+  expect(f.sockets[0]!.close).not.toHaveBeenCalled()
   f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "pong" }) })
-  await vi.advanceTimersByTimeAsync(3_000)
+  await vi.advanceTimersByTimeAsync(10_000)
   expect(f.sockets[0]!.close).not.toHaveBeenCalled()
   expect(f.sockets).toHaveLength(1)
 })
@@ -583,7 +600,7 @@ test("a recovered network replaces an open socket that misses its probe", async 
   f.sockets[0]!.onopen!()
   f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
   page.windowTarget.dispatchEvent(new Event("online"))
-  await vi.advanceTimersByTimeAsync(3_001)
+  await vi.advanceTimersByTimeAsync(10_001)
   await vi.advanceTimersByTimeAsync(10)
   expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
   expect(f.sockets).toHaveLength(2)

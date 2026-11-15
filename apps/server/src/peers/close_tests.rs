@@ -2,9 +2,10 @@
 
 use std::time::Duration;
 
+use crate::hub::outbox::testing as mpsc;
 use actix_web::{App, http::StatusCode, test};
 use deskfleet_protocol::control::ControlMessage;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 use super::*;
 

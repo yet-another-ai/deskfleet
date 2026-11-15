@@ -1,6 +1,7 @@
 //! Local sockets with PostgreSQL-backed cross-instance routing.
 mod cluster;
 mod delivery;
+pub(crate) mod outbox;
 mod wire;
 
 #[cfg(test)]
@@ -12,12 +13,14 @@ use crate::error::{ApiError, Result};
 pub(crate) use cluster::Router;
 use deskfleet_control_store::{ControlStore, RealtimeRoute};
 use deskfleet_protocol::control::{ControlMessage, PeerActor, PeerAuthorization};
+#[cfg(test)]
+use outbox::testing as mpsc;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, oneshot, watch};
 use wire::{Audience, Envelope, WireResult};
 
-type Sender = mpsc::Sender<ControlMessage>;
+type Sender = outbox::Sender;
 #[derive(Clone)]
 struct Daemon {
     team_id: String,
@@ -265,7 +268,7 @@ impl Hub {
             method,
             params,
             actor,
-            Duration::from_secs(60),
+            Duration::from_secs(90),
         )
         .await
     }
@@ -425,18 +428,26 @@ fn timeout_error() -> ApiError {
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn saturated_revocation_uses_independent_shutdown_and_replaced_route_is_isolated() {
+    async fn saturated_revocation_requests_reconciliation_and_preserves_machine_presence() {
         let hub = Hub::default();
-        let (send, _receive) = mpsc::channel(1);
-        let (shutdown, mut stopped) = watch::channel(None);
+        let (send, mut receive) = outbox::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
         send.try_send(ControlMessage::Ping).unwrap();
         hub.add_daemon("1", "team", "1", "old", send, shutdown)
             .await
             .unwrap();
         let peer: PeerAuthorization = serde_json::from_value(serde_json::json!({"peerId":"peer","serverId":"server","teamId":"team","actor":{"kind":"user","userId":"u","deviceId":"d"},"targetMachine":{"id":"1","originId":"origin","localMachineId":"1"},"transport":"webrtc","purpose":"agent","actions":[],"issuedAt":"now","expiresAt":"later"})).unwrap();
         hub.revoke(vec![peer], "logout").await.unwrap();
-        stopped.changed().await.unwrap();
-        assert_eq!(*stopped.borrow(), Some(1012));
+        assert_eq!(*stopped.borrow(), None);
+        assert!(hub.online("1").await);
+        assert!(matches!(
+            receive.recv().await,
+            Some(outbox::Outbound::Reconcile)
+        ));
+        assert!(matches!(
+            receive.recv().await,
+            Some(outbox::Outbound::Message(ControlMessage::Ping))
+        ));
         let (send, _receive) = mpsc::channel(1);
         let (shutdown, stopped) = watch::channel(None);
         hub.add_daemon("1", "team", "1", "new", send, shutdown)
@@ -448,6 +459,67 @@ mod tests {
         hub.disconnect_machine("1").await.unwrap();
         assert_eq!(*stopped.borrow(), Some(4403));
         assert!(hub.remove_daemon("1", "new").await);
+    }
+
+    #[tokio::test]
+    async fn saturated_request_reports_busy_without_taking_machine_offline() {
+        let hub = Hub::default();
+        let (send, _receive) = mpsc::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
+        send.try_send(ControlMessage::Ping).unwrap();
+        hub.add_daemon("1", "team", "machine", "socket", send, shutdown)
+            .await
+            .unwrap();
+        let error = hub
+            .send_request("1", "socket", ControlMessage::Ping)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "machine_busy");
+        assert_eq!(*stopped.borrow(), None);
+        assert!(hub.online("1").await);
+    }
+
+    #[tokio::test]
+    async fn streaming_history_notifications_do_not_disconnect_a_slow_client() {
+        let hub = Hub::default();
+        let (send, mut receive) = mpsc::channel(1);
+        let (shutdown, stopped) = watch::channel(None);
+        hub.add_client("login", "user", "connection", send, shutdown)
+            .await
+            .unwrap();
+        for session in 0..1_000 {
+            hub.notify_users(
+                &["user".into()],
+                ControlMessage::CatalogChanged {
+                    team_id: "team".into(),
+                    machine_id: "machine".into(),
+                    session_id: Some(session.to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        }
+        hub.send_client(
+            "login",
+            ControlMessage::PeerRevoked {
+                peer_id: "peer".into(),
+                reason: "closed".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(*stopped.borrow(), None);
+        assert!(matches!(
+            receive.recv().await,
+            Some(ControlMessage::PeerRevoked { .. })
+        ));
+        assert!(matches!(
+            receive.recv().await,
+            Some(ControlMessage::CatalogChanged {
+                session_id: None,
+                ..
+            })
+        ));
     }
 
     #[tokio::test]

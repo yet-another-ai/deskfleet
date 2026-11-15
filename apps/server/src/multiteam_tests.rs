@@ -1,9 +1,10 @@
 //! One public Machine identity, independently authorized Team registrations.
+use crate::hub::outbox::testing as mpsc;
 use crate::{AppState, config::ServerConfig, configure};
 use actix_web::{App, http::StatusCode, test, web};
 use deskfleet_protocol::control::ControlMessage;
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]

@@ -116,7 +116,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
     let usage: Value =
         test::read_body_json(call!(get, &usage_path, teammate_token, &json!({}))).await;
     assert_eq!(usage["memberCount"], 2);
-    let (send, mut roster) = tokio::sync::mpsc::channel(128);
+    let (send, mut roster) = crate::hub::outbox::testing::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub
@@ -129,7 +129,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         )
         .await
         .unwrap();
-    let (send, mut outside_roster) = tokio::sync::mpsc::channel(128);
+    let (send, mut outside_roster) = crate::hub::outbox::testing::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub
@@ -326,7 +326,7 @@ async fn postgres_http_permissions_replication_and_signaling() {
         call!(post, "/api/peers", token, &create).status(),
         StatusCode::SERVICE_UNAVAILABLE
     );
-    let (send, mut receive) = tokio::sync::mpsc::channel(128);
+    let (send, mut receive) = crate::hub::outbox::testing::channel(128);
     let (shutdown, _shutdown_rx) = tokio::sync::watch::channel(None);
     state
         .hub

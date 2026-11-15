@@ -3,7 +3,7 @@ import { effectScope } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { HttpError } from "../../../client/src/http-central.ts"
 import { DESKTOP_START_TIMEOUT_MS } from "../../../client/src/desktop-media.ts"
-import { PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
+import { PEER_DISCONNECT_GRACE_MS, PEER_SETUP_TIMEOUT_MS } from "../../../client/src/peer-lifecycle.ts"
 import { browserCodecs, deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
 import { browserCodecPreferences, commonDesktopCodecs, commonPreviewCodecs, useDesktopConnection } from "./useDesktopConnection.ts"
 
@@ -413,7 +413,7 @@ test("slow ICE setup leaves the full capture startup window and clears it on suc
   await vi.advanceTimersByTimeAsync(PEER_SETUP_TIMEOUT_MS - 1)
   const peer = TestPeer.instances[0]!
   peer.changeState("connected")
-  await vi.advanceTimersByTimeAsync(30_000)
+  await vi.advanceTimersByTimeAsync(90_000)
   expect(connection.state.value).toBe("starting")
   expect(connection.failure.value).toBeNull()
   expect(api.close).not.toHaveBeenCalled()
@@ -477,11 +477,11 @@ test("a transient disconnected state does not tear down a recoverable desktop pe
   peer.changeState("connected")
   await flushPromises()
   peer.changeState("disconnected")
-  await vi.advanceTimersByTimeAsync(9_999)
+  await vi.advanceTimersByTimeAsync(20_000)
   expect(connection.failure.value).toBeNull()
   expect(connection.state.value).toBe("connected")
   peer.changeState("connected")
-  await vi.advanceTimersByTimeAsync(10_000)
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
   expect(connection.failure.value).toBeNull()
   expect(peer.close).not.toHaveBeenCalled()
 })
@@ -496,7 +496,7 @@ test("late input readiness cannot cancel the desktop disconnect grace", async ()
   await flushPromises()
   peer.changeState("disconnected")
   peer.input.ready()
-  await vi.advanceTimersByTimeAsync(10_000)
+  await vi.advanceTimersByTimeAsync(PEER_DISCONNECT_GRACE_MS)
   expect(connection.failure.value).toEqual({ kind: "connection", detail: "Desktop connection lost" })
   expect(peer.close).toHaveBeenCalled()
 })
