@@ -77,8 +77,9 @@ test("offers a reload after the initial read fails", async () => {
 })
 
 test.each([
-  ["en-US", "Keep Awake", "Prevent idle sleep while DeskFleet is running, including in the tray. The display can still turn off."],
-  ["zh-cmn-Hans-CN", "保持唤醒", "DeskFleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。"],
+  ["en-US", "Keep Awake", "Keep this computer and its display awake while DeskFleet is running, including in the tray."],
+  ["zh-cmn-Hans-CN", "保持唤醒", "DeskFleet 运行时保持本机和屏幕唤醒，关闭到托盘后仍然有效。"],
+  ["ja-JP", "スリープを防止", "DeskFleet の実行中は、トレイに格納されている間も、このコンピューターとディスプレイのスリープを防ぎます。"],
 ] as const)("explains the app lifetime and display behavior in %s", async (locale, label, description) => {
   i18n.global.locale.value = locale
   const view = render()

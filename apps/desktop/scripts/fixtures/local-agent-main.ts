@@ -334,7 +334,11 @@ void app.whenReady().then(async () => {
   )
   let blockerId: number | undefined
   const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), {
-    start(type) { blockerId = powerSaveBlocker.start(type); return blockerId },
+    start(type) {
+      if (type !== "prevent-display-sleep") throw new Error("Keep Awake must prevent both system and display idle sleep")
+      blockerId = powerSaveBlocker.start(type)
+      return blockerId
+    },
     stop(id) { return powerSaveBlocker.stop(id) },
   })
   installDesktopMediaIpc()

@@ -668,7 +668,7 @@
     "launchAtStartupDescription": "登录系统时自动打开 DeskFleet。",
     "launchAtStartupUnavailable": "适用于 Linux、macOS 和 Windows 上已安装的应用。",
     "keepAwake": "保持唤醒",
-    "keepAwakeDescription": "DeskFleet 运行时阻止本机因空闲而休眠，关闭到托盘后仍然有效。屏幕仍可自动关闭。",
+    "keepAwakeDescription": "DeskFleet 运行时保持本机和屏幕唤醒，关闭到托盘后仍然有效。",
     "autoDownloadUpdates": "自动下载更新",
     "autoDownloadUpdatesDescription": "在后台自动下载新版本，并在安装和重启前等待你的确认。",
     "windowsLockControl": "锁屏时允许远程控制",
