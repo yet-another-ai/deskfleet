@@ -68,16 +68,14 @@ export function focusedPreviewFromRoute(
   }
 }
 
-/** Session renderers open previews as desktop tabs or mobile views. */
-export function openPreviewFromAction(item: PreviewDescriptor): boolean {
-  if (!getActivePinia()) return false
-  return useLayoutStore().requestSessionWindow({ kind: "preview", item })
+type LayoutStore = ReturnType<typeof useLayoutStore>
+
+function resolveLayoutStore(): LayoutStore | undefined {
+  return getActivePinia() ? useLayoutStore() : undefined
 }
 
-/** Session resource links open in a preview tab first and resolve workspace/type inside the tab. */
-export function openResourceFromAction(item: ResourceWindowItem): boolean {
-  if (!getActivePinia()) return false
-  const clean: ResourceWindowItem = {
+function cloneResourceWindowItem(item: ResourceWindowItem): ResourceWindowItem {
+  return {
     request: {
       target: { ...item.request.target },
       sessionId: item.request.sessionId,
@@ -86,7 +84,32 @@ export function openResourceFromAction(item: ResourceWindowItem): boolean {
     ...(item.title ? { title: item.title } : {}),
     ...(item.source ? { source: { ...item.source } } : {}),
   }
-  return useLayoutStore().requestSessionWindow({ kind: "resource", item: clean })
+}
+
+/** Session renderers open previews as desktop tabs or mobile views. */
+export function openPreviewFromAction(item: PreviewDescriptor): boolean {
+  return resolveLayoutStore()?.requestSessionWindow({ kind: "preview", item }) ?? false
+}
+
+/** Session resource links open in a preview tab first and resolve workspace/type inside the tab. */
+export function openResourceFromAction(item: ResourceWindowItem): boolean {
+  return resolveLayoutStore()?.requestSessionWindow({ kind: "resource", item: cloneResourceWindowItem(item) }) ?? false
+}
+
+/**
+ * Capture the component's Pinia layout store during setup so click and broadcast
+ * handlers still target its machine runtime after another Pinia becomes active.
+ */
+export function usePreviewActions() {
+  const layout = resolveLayoutStore()
+  return {
+    openPreviewFromAction(item: PreviewDescriptor): boolean {
+      return layout?.requestSessionWindow({ kind: "preview", item }) ?? false
+    },
+    openResourceFromAction(item: ResourceWindowItem): boolean {
+      return layout?.requestSessionWindow({ kind: "resource", item: cloneResourceWindowItem(item) }) ?? false
+    },
+  }
 }
 
 export function performPreviewLocateDom(request: PreviewLocateRequest | null = pendingPreviewLocate.value): boolean {
@@ -158,12 +181,13 @@ export function broadcastPreviewTab(item: PreviewDescriptor): void {
 
 export function listenPreviewWindowMessages(
   locate: (content: string, source?: PreviewSource) => void,
+  openTab: (item: PreviewDescriptor) => boolean = openPreviewFromAction,
 ): () => void {
   try {
     const channel = new BroadcastChannel(PREVIEW_WINDOW_CHANNEL)
     channel.onmessage = ({ data }) => {
       if (data?.type === "tab" && data.item && typeof data.item.content === "string") {
-        openPreviewFromAction(data.item as PreviewDescriptor)
+        openTab(data.item as PreviewDescriptor)
       } else if (data?.type === "locate" && typeof data.content === "string") {
         locate(data.content, data.source)
       }
