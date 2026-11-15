@@ -275,10 +275,11 @@ If a saved model or reasoning effort becomes unavailable, the menu offers valid
 alternatives so the Session can be recovered without deleting its conversation.
 
 The conversation shows streamed text, tool calls, plans, and permission requests.
-Messages submitted during a turn enter the shared candidate backlog. **Steer now**
-can send a new message or a selected candidate to the active turn when the provider
-supports it. Pending candidates can be withdrawn; confirmed delivery failures can
-be retried. Uncertain delivery requires checking the recorded result before
+Messages submitted during a turn enter the shared candidate backlog by default.
+When the provider supports steering, you can steer a queued candidate from the
+backlog. You can also set `Settings -> Preferences -> Input` to steer new
+messages directly on send. You can withdraw pending candidates and retry
+confirmed delivery failures. Uncertain delivery requires checking the recorded result before
 submitting again. The UI displays each input's author and source machine, plus the
 operator who steered it. A permission answered by another client immediately shows
 that decision and removes the choices.

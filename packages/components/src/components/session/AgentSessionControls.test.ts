@@ -3,15 +3,22 @@ import type { AgentEvent } from "../../../../../apps/daemon/src/agent-protocol.t
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test } from "vitest"
 import { i18n } from "../../i18n/index.ts"
+import { RUNNING_SEND_BEHAVIOR_STORAGE_KEY } from "../../composables/useRunningSendBehavior.ts"
 import { agentEvent, agentInput, agentPermission, agentSnapshot, actor } from "../../test/agent.ts"
+import { selectOption } from "../../test/controls.ts"
 import AgentConversation from "./AgentConversation.vue"
 import AgentBacklog from "./AgentBacklog.vue"
 import AgentPermissions from "./AgentPermissions.vue"
 import SessionComposer from "../composer/SessionComposer.vue"
+import PreferencesSettings from "../settings/PreferencesSettings.vue"
 const wrappers: VueWrapper[] = []
 let pinia: ReturnType<typeof createPinia>
 beforeEach(() => { pinia = createPinia(); setActivePinia(pinia) })
-afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount(); disposePinia(pinia) })
+afterEach(() => {
+  for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+  disposePinia(pinia)
+  localStorage.removeItem(RUNNING_SEND_BEHAVIOR_STORAGE_KEY)
+})
 const button = (view: VueWrapper, name: string) => view.findAll("button").find(button => button.text() === name || button.attributes("aria-label") === name)!
 test("message times render in every app locale", () => {
   const input = agentInput({ state: "delivered", deliveredAt: "2026-10-06T12:33:00Z" })
@@ -65,15 +72,18 @@ test("only pending permissions are actionable and an answer is recorded on its t
   expect(conversation.get('[data-permission-id="60"]').text()).toContain("Reject · Grace")
   expect(conversation.findAll("button").some(item => item.text() === "Reject")).toBe(false)
 })
-test("composer uses explicit submit and steer and protects IME composition", async () => {
+test("composer follows the running-turn send preference, falls back without steering, and protects IME composition", async () => {
   const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }
+  const settings = mount(PreferencesSettings, { attachTo: document.body, global: { plugins: [i18n] } }); wrappers.push(settings)
   const view = mount(SessionComposer, { props: { location, modelValue: "Draft", activeTurn: true, canSteer: true }, global: { plugins: [i18n] } }); wrappers.push(view)
   await view.get("textarea").trigger("keydown", { key: "Enter", isComposing: true }); expect(view.emitted("submit")).toBeUndefined()
   await view.get("textarea").trigger("keydown", { key: "Enter", shiftKey: true }); expect(view.emitted("submit")).toBeUndefined()
   await view.get("textarea").trigger("keydown", { key: "Enter" }); expect(view.emitted("submit")).toEqual([["backlog"]])
+  await selectOption(settings, "[data-running-send-setting]", "Steer now")
   await button(view, "Steer now").trigger("click"); expect(view.emitted("submit")?.at(-1)).toEqual(["steer"])
+  await view.setProps({ canSteer: false }); await view.get("textarea").trigger("keydown", { key: "Enter" }); expect(view.emitted("submit")?.at(-1)).toEqual(["backlog"])
   expect((view.get("textarea").element as HTMLTextAreaElement).value).toBe("Draft")
-  await view.setProps({ submitting: true }); await view.get("textarea").trigger("keydown", { key: "Enter" }); expect(view.emitted("submit")).toHaveLength(2)
+  await view.setProps({ submitting: true }); await view.get("textarea").trigger("keydown", { key: "Enter" }); expect(view.emitted("submit")).toHaveLength(3)
 })
 test("an empty composer offers to cancel the active turn instead of sending", async () => {
   const location = { machine: { id: "10", name: "Host", local: true, online: true, desktop: false, workspaces: [], sessions: [], terminals: [] }, workspace: { id: "20", name: "Workspace", directories: [], sessions: [], terminals: [] } }

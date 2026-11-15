@@ -5,6 +5,7 @@ import { defineComponent } from "vue"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import type { ComposerReferenceResult } from "../../../../../apps/daemon/src/composer-reference-protocol.ts"
 import { i18n } from "../../i18n/index.ts"
+import { RUNNING_SEND_BEHAVIOR_STORAGE_KEY } from "../../composables/useRunningSendBehavior.ts"
 import type { ComposerMention } from "../../services/composer-mentions.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { WorkspaceLocation } from "../../stores/fleet.ts"
@@ -16,6 +17,7 @@ afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   if (pinia) disposePinia(pinia)
   pinia = undefined
+  localStorage.removeItem(RUNNING_SEND_BEHAVIOR_STORAGE_KEY)
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -143,12 +145,14 @@ test("reopening provider completions discovers newly available commands without 
 })
 
 test("command and skill completion shares configuration discovery, limits slash skills to the beginning, and queues commands", async () => {
+  localStorage.setItem(RUNNING_SEND_BEHAVIOR_STORAGE_KEY, "steer")
   const configuration: AgentConfiguration = {
     provider: { id: "test", name: "Test" }, models: null, modes: null, reasoningEfforts: null,
     commands: [{ name: "compact", description: "Compact context", inputHint: "Focus" }],
     skills: [{ id: "native", name: "native", description: "Native skill", invocation: "$native" }, { id: "review", name: "review", description: "Review code", invocation: "/skill:review" }],
   }
   const { wrapper, textarea, type, discover } = fixture(configuration)
+  await wrapper.setProps({ activeTurn: true })
   await type("/co")
   expect(discover).toHaveBeenCalledTimes(1)
   expect(wrapper.get('[data-completion-kind="command"]').text()).toContain("/compact")
@@ -156,23 +160,23 @@ test("command and skill completion shares configuration discovery, limits slash 
   await flushPromises()
   expect(wrapper.props("modelValue")).toBe("/compact ")
   expect(wrapper.find("button:has(.lucide-corner-down-right)").exists()).toBe(false)
-  await wrapper.get('button[aria-label="Send"]').trigger("click")
+  await wrapper.get('button[aria-label="Add to backlog"]').trigger("click")
   expect(wrapper.emitted("submit")?.at(-1)).toEqual(["backlog"])
   await type("Use $")
   expect(wrapper.findAll('[data-completion-kind="skill"]')).toHaveLength(1)
   expect(wrapper.get('[data-completion-kind="skill"]').text()).toContain("$native")
   await textarea.trigger("keydown", { key: "Tab" })
   await flushPromises()
-  await wrapper.get("button:has(.lucide-corner-down-right)").trigger("click")
+  await wrapper.get('button[aria-label="Steer now"]:has(.lucide-corner-down-right)').trigger("click")
   expect(wrapper.emitted("submit")?.at(-1)).toEqual(["steer"])
   await type("$rev")
   await textarea.trigger("keydown", { key: "Tab" })
   await flushPromises()
   expect(wrapper.props("mentions")?.[0]?.reference).toMatchObject({ kind: "skill", invocation: "/skill:review", providerId: "test" })
   expect(wrapper.find("button:has(.lucide-corner-down-right)").exists()).toBe(false)
-  await wrapper.get('button[aria-label="Send"]').trigger("click")
+  await wrapper.get('button[aria-label="Add to backlog"]').trigger("click")
   expect(wrapper.emitted("submit")?.at(-1)).toEqual(["backlog"])
   await type("Continue with the tests")
-  await wrapper.get("button:has(.lucide-corner-down-right)").trigger("click")
+  await wrapper.get('button[aria-label="Steer now"]:has(.lucide-corner-down-right)').trigger("click")
   expect(wrapper.emitted("submit")?.at(-1)).toEqual(["steer"])
 })

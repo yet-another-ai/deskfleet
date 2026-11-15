@@ -758,6 +758,10 @@
     "placeholder": "描述要交给智能体的任务",
     "provider": "Agent",
     "send": "发送",
+    "runningSend": {
+      "label": "运行中发送",
+      "description": "选择任务运行期间发送消息的方式。"
+    },
     "attach": "添加附件",
     "attachments": "附件",
     "uploadLocalFiles": "上传本地文件",
@@ -1250,7 +1254,7 @@
     "plan": "计划",
     "steered": "已引导当前轮次",
     "backlog": "排队中",
-    "steer": "立即 Steer",
+    "steer": "立即引导",
     "withdraw": "撤回",
     "retryInput": "重试投递",
     "uncertainInput": "无法确认是否已投递。再次提交前请检查对话。",
@@ -1290,7 +1294,8 @@
       "cancelled": "计划批准已取消"
     },
     "backlogHint": "现在发送的消息会进入队列。",
-    "addToBacklog": "加入积压列表",
+    "steerHint": "现在发送的消息会直接引导当前轮次。",
+    "addToBacklog": "加入队列",
     "cancelTurn": "取消当前轮次",
     "stop": "停止 Agent",
     "delete": "删除会话",
