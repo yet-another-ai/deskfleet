@@ -218,7 +218,10 @@ impl ControlStore {
                 .as_ref()
                 .and_then(|row| row.utm_content.clone())
                 .or(utm_content)),
-            ga_client_id: Set(ga_client_id.or_else(|| existing.as_ref().and_then(|row| row.ga_client_id.clone()))),
+            ga_client_id: Set(existing
+                .as_ref()
+                .and_then(|row| row.ga_client_id.clone())
+                .or(ga_client_id)),
             consented_at: Set(existing.map_or_else(now_ms, |row| row.consented_at)),
         };
         attribution::Entity::insert(active)

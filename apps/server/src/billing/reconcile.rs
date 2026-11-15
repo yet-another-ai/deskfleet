@@ -43,7 +43,7 @@ impl BillingService {
         // Commit verified coverage before any extra historical analytics reads.
         // A later analytics failure keeps this inbox event retryable.
         self.reconcile_team(store, &profile.team_id).await?;
-        if self.config.statsig_server_key.is_some() && event.event_type.starts_with("invoice.") {
+        if self.analytics_enabled() && event.event_type.starts_with("invoice.") {
             let subscription_id =
                 stripe_id(&object["parent"]["subscription_details"]["subscription"]);
             if let Some(id) = subscription_id {

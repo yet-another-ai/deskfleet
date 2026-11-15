@@ -195,7 +195,7 @@ async fn failed_http_delivery_retries_identical_event_payload_without_exposing_r
 
 #[test]
 fn ga_conversion_body_formats_first_subscription_paid_invoice_with_attribution() {
-    let delivery = BillingAnalyticsDelivery {
+    let mut delivery = BillingAnalyticsDelivery {
         event: invoice_fact(
             &invoice(),
             "in_123",
@@ -234,6 +234,10 @@ fn ga_conversion_body_formats_first_subscription_paid_invoice_with_attribution()
     assert_eq!(event["params"]["campaign_source"], "google");
     assert_eq!(event["params"]["campaign_medium"], "cpc");
     assert_eq!(event["params"]["campaign_name"], "spring_launch");
+
+    delivery.event.id = format!("ga:{}", delivery.event.id);
+    let retry_body = ga_conversion_body(&delivery, &attribution).unwrap();
+    assert_eq!(retry_body["events"][0]["params"]["transaction_id"], "in_123");
 
     let mut renewal = invoice();
     renewal["billing_reason"] = json!("subscription_cycle");

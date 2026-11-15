@@ -5,7 +5,7 @@ import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
-import { trackEvent } from "../../services/analytics.ts"
+import { setUserTelemetryConsent, trackEvent, userTelemetryConsent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -73,6 +73,20 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
           <a v-if="config.privacyTermsUrl" :href="config.privacyTermsUrl" target="_blank" rel="noopener noreferrer" class="text-ui-accent hover:underline">{{ t("auth.privacyTerms") }}</a>
         </span>
       </div>
+      <label v-if="purpose === 'register' && config.telemetryEnabled" class="flex cursor-pointer items-start gap-3 rounded-lg border border-ui-border bg-ui-sidebar p-3 text-sm">
+        <input
+          type="checkbox"
+          name="telemetry-consent"
+          class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-ui-accent"
+          :checked="userTelemetryConsent"
+          :disabled="pending"
+          @change="setUserTelemetryConsent(($event.target as HTMLInputElement).checked)"
+        />
+        <span class="min-w-0">
+          <span class="block font-medium text-ui-text">{{ t("welcome.telemetryConsent") }}</span>
+          <span class="mt-1 block text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.telemetryConsentDescription") }}</span>
+        </span>
+      </label>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending" :disabled="requiresTerms && !acceptedTerms">{{ t(copy.submit) }}</UiButton>
     </form>

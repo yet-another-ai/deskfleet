@@ -1,6 +1,6 @@
 import { onScopeDispose, watch } from "vue"
 import { useEventListener } from "@vueuse/core"
-import { readMarketingAttribution } from "@deskfleet/client/marketing-attribution"
+import { readMarketingAttribution, readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import type { AccountSession } from "./useAccountSession.ts"
 import { analyticsEnabled, beginAnalyticsPlanRefresh, identifyAnalytics, setSiteTelemetryEnabled, userTelemetryConsent } from "../services/analytics.ts"
 
@@ -23,11 +23,13 @@ export function useAccountAnalytics(session: AccountSession): void {
     () => session.account.value.user?.id,
     () => session.site.value?.telemetryEnabled,
     userTelemetryConsent,
-  ], ([id, siteEnabled, consented]) => {
-    if (!id || !siteEnabled || !consented) return
+  ], ([id, siteEnabled, consented], oldValue) => {
+    if (!id || !siteEnabled) return
+    const wasConsented = oldValue?.[2]
+    if (!consented && !wasConsented && readStoredTelemetryConsent() !== "declined") return
     void session.central.updateTelemetryConsent?.({
-      consented: true,
-      attribution: readMarketingAttribution(true),
+      consented,
+      ...(consented ? { attribution: readMarketingAttribution(true) } : {}),
     })?.catch(() => { /* Never block session initialization on telemetry sync. */ })
   }, { immediate: true })
   watch([

@@ -10,8 +10,15 @@ import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/an
 import WelcomePage from "./WelcomePage.vue"
 
 const mockSite = ref<{ siteName: string; telemetryEnabled: boolean } | undefined>()
+const mockUpdateTelemetryConsent = vi.fn(async () => {})
 vi.mock("../../composables/useAccountSession.ts", () => ({
-  useAccountSession: () => ({ notice: ref(), account: ref({ user: { name: "Ada" } }), site: mockSite, signIn: vi.fn() }),
+  useAccountSession: () => ({
+    notice: ref(),
+    account: ref({ user: { name: "Ada" } }),
+    site: mockSite,
+    signIn: vi.fn(),
+    central: { updateTelemetryConsent: mockUpdateTelemetryConsent },
+  }),
 }))
 
 let view: VueWrapper | undefined
@@ -130,4 +137,10 @@ test("welcome account card only shows the default-unchecked telemetry consent ch
 
   await checkbox.setValue(true)
   expect(userTelemetryConsent.value).toBe(true)
+
+  await checkbox.setValue(false)
+  await view.get("form").trigger("submit")
+  await flushPromises()
+  expect(userTelemetryConsent.value).toBe(false)
+  expect(mockUpdateTelemetryConsent).toHaveBeenCalledWith({ consented: false })
 })

@@ -5,6 +5,7 @@ import {
   clearMarketingAttribution,
   GA_CLIENT_ID_STORAGE_KEY,
   MARKETING_ATTRIBUTION_STORAGE_KEY,
+  PENDING_MARKETING_ATTRIBUTION_SESSION_KEY,
   readMarketingAttribution,
   readOrCreateGaClientId,
   readStoredTelemetryConsent,
@@ -49,6 +50,31 @@ describe("marketing attribution and consent storage", () => {
       utmSource: "google",
       utmCampaign: "q4_launch",
     })
+  })
+
+  test("preserves pre-consent URL attribution in sessionStorage across navigations and clears on decline", () => {
+    const storage = memoryStorage()
+    const session = memoryStorage()
+    captureMarketingSearchParams("?gclid=oauth_gclid&utm_source=google", false, storage, session)
+    expect(storage.getItem(MARKETING_ATTRIBUTION_STORAGE_KEY)).toBeNull()
+    expect(JSON.parse(session.getItem(PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)!)).toEqual({
+      gclid: "oauth_gclid",
+      utmSource: "google",
+    })
+
+    // Simulate a redirect to /auth/login or OAuth callback without query params before consent
+    clearMarketingAttribution(memoryStorage(), memoryStorage())
+    captureMarketingSearchParams("", false, storage, session)
+    writeStoredTelemetryConsent("granted", storage, session)
+    expect(session.getItem(PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)).toBeNull()
+    expect(JSON.parse(storage.getItem(MARKETING_ATTRIBUTION_STORAGE_KEY)!)).toEqual({
+      gclid: "oauth_gclid",
+      utmSource: "google",
+    })
+
+    writeStoredTelemetryConsent("declined", storage, session)
+    expect(storage.getItem(MARKETING_ATTRIBUTION_STORAGE_KEY)).toBeNull()
+    expect(session.getItem(PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)).toBeNull()
   })
 
   test("preserves first-touch fields and clears everything when consent is declined", () => {

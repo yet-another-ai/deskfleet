@@ -33,7 +33,7 @@ fn seconds(value: &Value) -> Option<i64> {
 }
 
 impl BillingService {
-    fn analytics_enabled(&self) -> bool {
+    pub(super) fn analytics_enabled(&self) -> bool {
         self.config.statsig_server_key.is_some() || self.ga_analytics_enabled()
     }
 
@@ -253,9 +253,6 @@ impl BillingService {
                 tracing::warn!("site settings unavailable for billing analytics");
                 continue;
             };
-            if !settings.telemetry_enabled {
-                continue;
-            }
             for _ in 0..25 {
                 let delivery = match store.claim_billing_analytics().await {
                     Ok(Some(delivery)) => delivery,
@@ -265,12 +262,38 @@ impl BillingService {
                         break;
                     }
                 };
-                let statsig_ok = if self.config.statsig_server_key.is_some() {
+                if !settings.telemetry_enabled {
+                    // Drain queued items while site telemetry is off so they do not
+                    // accumulate and flush in a burst if telemetry is later enabled.
+                    if store
+                        .finish_billing_analytics(&delivery, true)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("billing analytics drain result could not be persisted");
+                    }
+                    continue;
+                }
+                let is_ga_only = delivery.event.id.starts_with("ga:");
+                let statsig_ok = if !is_ga_only && self.config.statsig_server_key.is_some() {
                     self.deliver_analytics(&delivery, STATSIG_EVENTS_URL).await
                 } else {
                     true
                 };
-                let ga_ok = if self.ga_analytics_enabled() {
+                if !statsig_ok {
+                    tracing::warn!("billing analytics delivery failed; scheduled retry");
+                    if store
+                        .finish_billing_analytics(&delivery, false)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("billing analytics delivery result could not be persisted");
+                    }
+                    continue;
+                }
+                let ga_ok = if self.ga_analytics_enabled()
+                    && is_ga_conversion_candidate(&delivery.event)
+                {
                     match delivery.event.user_id.as_deref() {
                         Some(actor_id) => match store.user_marketing_attribution(actor_id).await {
                             Ok(Some(attribution)) => {
@@ -285,9 +308,22 @@ impl BillingService {
                 } else {
                     true
                 };
-                let success = statsig_ok && ga_ok;
-                if !success {
-                    tracing::warn!("billing analytics delivery failed; scheduled retry");
+                let success = if ga_ok {
+                    true
+                } else if !is_ga_only && self.config.statsig_server_key.is_some() {
+                    // Statsig already accepted this event; split GA conversion into its
+                    // own outbox item so retries do not duplicate the Statsig event.
+                    let mut ga_retry = delivery.event.clone();
+                    ga_retry.id = format!("ga:{}", delivery.event.id);
+                    store
+                        .record_billing_analytics(&delivery.team_id, &[ga_retry])
+                        .await
+                        .is_ok()
+                } else {
+                    false
+                };
+                if !ga_ok {
+                    tracing::warn!("billing GA conversion delivery failed; scheduled retry");
                 }
                 if store
                     .finish_billing_analytics(&delivery, success)
@@ -448,20 +484,25 @@ fn major_currency_value(amount_minor: i64, currency: &str) -> f64 {
     }
 }
 
+fn is_ga_conversion_candidate(fact: &BillingAnalyticsEvent) -> bool {
+    fact.name == "billing_invoice_paid"
+        && fact.metadata.get("billing_reason").map(String::as_str) == Some("subscription_create")
+}
+
 fn ga_conversion_body(
     delivery: &BillingAnalyticsDelivery,
     attribution: &MarketingAttribution,
 ) -> Option<Value> {
     let fact = &delivery.event;
-    if fact.name != "billing_invoice_paid"
-        || fact.metadata.get("billing_reason").map(String::as_str) != Some("subscription_create")
-    {
+    if !is_ga_conversion_candidate(fact) {
         return None;
     }
     let amount_minor = fact.value.filter(|value| *value >= 0)?;
     let currency = fact.metadata.get("currency")?.to_ascii_uppercase();
     let transaction_id = fact
         .id
+        .strip_prefix("ga:")
+        .unwrap_or(&fact.id)
         .strip_prefix("invoice:")?
         .strip_suffix(":paid")?;
     let client_id = attribution

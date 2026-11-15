@@ -4,6 +4,7 @@ export type { MarketingAttribution } from "../../../crates/protocol/control.ts"
 
 export const TELEMETRY_CONSENT_STORAGE_KEY = "deskfleet-telemetry-consent"
 export const MARKETING_ATTRIBUTION_STORAGE_KEY = "deskfleet-marketing-attribution"
+export const PENDING_MARKETING_ATTRIBUTION_SESSION_KEY = "deskfleet-pending-marketing-attribution"
 export const GA_CLIENT_ID_STORAGE_KEY = "deskfleet-ga-client-id"
 const MAX_PARAM_LENGTH = 256
 
@@ -15,6 +16,14 @@ type WritableStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
 function defaultStorage(): WritableStorage | undefined {
   try {
     return typeof localStorage !== "undefined" ? localStorage : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function defaultSessionStorage(): WritableStorage | undefined {
+  try {
+    return typeof sessionStorage !== "undefined" ? sessionStorage : undefined
   } catch {
     return undefined
   }
@@ -91,9 +100,12 @@ export function mergeMarketingAttribution(
 
 let pendingMemoryAttribution: MarketingAttribution | undefined
 
-function readStoredObject(storage: ReadableStorage | undefined): MarketingAttribution | undefined {
+function readStoredObject(
+  storage: ReadableStorage | undefined,
+  key: string = MARKETING_ATTRIBUTION_STORAGE_KEY,
+): MarketingAttribution | undefined {
   try {
-    const raw = storage?.getItem(MARKETING_ATTRIBUTION_STORAGE_KEY)
+    const raw = storage?.getItem(key)
     if (!raw) return undefined
     const parsed = JSON.parse(raw) as Record<string, unknown>
     return mergeMarketingAttribution(undefined, {
@@ -128,17 +140,35 @@ export function captureMarketingSearchParams(
   search: string = typeof window !== "undefined" ? window.location?.search ?? "" : "",
   consented = false,
   storage: WritableStorage | undefined = defaultStorage(),
+  sessionStore: WritableStorage | undefined = defaultSessionStorage(),
 ): MarketingAttribution | undefined {
+  const sessionPending = readStoredTelemetryConsent(storage) === "declined"
+    ? undefined
+    : readStoredObject(sessionStore, PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)
   const parsed = parseAttributionFromSearch(search)
-  if (hasAttributionFields(parsed)) {
-    pendingMemoryAttribution = mergeMarketingAttribution(pendingMemoryAttribution, parsed)
+  pendingMemoryAttribution = mergeMarketingAttribution(
+    mergeMarketingAttribution(sessionPending, pendingMemoryAttribution),
+    hasAttributionFields(parsed) ? parsed : undefined,
+  )
+  if (!consented) {
+    if (pendingMemoryAttribution && readStoredTelemetryConsent(storage) !== "declined") {
+      try {
+        sessionStore?.setItem(
+          PENDING_MARKETING_ATTRIBUTION_SESSION_KEY,
+          JSON.stringify(pendingMemoryAttribution),
+        )
+      } catch {
+        // Ignore session storage write errors.
+      }
+    }
+    return pendingMemoryAttribution
   }
-  if (!consented) return pendingMemoryAttribution
   const stored = readStoredObject(storage)
   const merged = mergeMarketingAttribution(stored, pendingMemoryAttribution)
   if (merged) {
     try {
       storage?.setItem(MARKETING_ATTRIBUTION_STORAGE_KEY, JSON.stringify(merged))
+      sessionStore?.removeItem(PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)
       if (merged.gaClientId && !storage?.getItem(GA_CLIENT_ID_STORAGE_KEY)) {
         storage?.setItem(GA_CLIENT_ID_STORAGE_KEY, merged.gaClientId)
       }
@@ -151,11 +181,13 @@ export function captureMarketingSearchParams(
 
 export function clearMarketingAttribution(
   storage: Pick<Storage, "removeItem"> | undefined = defaultStorage(),
+  sessionStore: Pick<Storage, "removeItem"> | undefined = defaultSessionStorage(),
 ): void {
   pendingMemoryAttribution = undefined
   try {
     storage?.removeItem(MARKETING_ATTRIBUTION_STORAGE_KEY)
     storage?.removeItem(GA_CLIENT_ID_STORAGE_KEY)
+    sessionStore?.removeItem(PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)
   } catch {
     // Ignore storage removal errors.
   }
@@ -164,6 +196,7 @@ export function clearMarketingAttribution(
 export function writeStoredTelemetryConsent(
   decision: TelemetryConsentDecision,
   storage: WritableStorage | undefined = defaultStorage(),
+  sessionStore: WritableStorage | undefined = defaultSessionStorage(),
 ): void {
   try {
     storage?.setItem(TELEMETRY_CONSENT_STORAGE_KEY, decision)
@@ -171,9 +204,9 @@ export function writeStoredTelemetryConsent(
     // Ignore storage write errors.
   }
   if (decision === "granted") {
-    captureMarketingSearchParams("", true, storage)
+    captureMarketingSearchParams("", true, storage, sessionStore)
   } else {
-    clearMarketingAttribution(storage)
+    clearMarketingAttribution(storage, sessionStore)
   }
 }
 
@@ -183,9 +216,11 @@ export function readOrCreateGaClientId(
 ): string | undefined {
   if (!consented) return undefined
   try {
+    const sessionPending = readStoredObject(defaultSessionStorage(), PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)
     const existing = cleanParam(storage?.getItem(GA_CLIENT_ID_STORAGE_KEY))
       ?? readStoredObject(storage)?.gaClientId
       ?? pendingMemoryAttribution?.gaClientId
+      ?? sessionPending?.gaClientId
     if (existing) {
       storage?.setItem(GA_CLIENT_ID_STORAGE_KEY, existing)
       return existing
@@ -206,6 +241,8 @@ export function readMarketingAttribution(
 ): MarketingAttribution | undefined {
   if (!consented) return undefined
   const stored = readStoredObject(storage)
+  const sessionPending = readStoredObject(defaultSessionStorage(), PENDING_MARKETING_ATTRIBUTION_SESSION_KEY)
+  const pending = mergeMarketingAttribution(sessionPending, pendingMemoryAttribution)
   let gaClientId: string | undefined
   try {
     gaClientId = cleanParam(storage?.getItem(GA_CLIENT_ID_STORAGE_KEY))
@@ -213,7 +250,7 @@ export function readMarketingAttribution(
     gaClientId = undefined
   }
   return mergeMarketingAttribution(stored, {
-    ...pendingMemoryAttribution,
+    ...pending,
     ...(gaClientId ? { gaClientId } : {}),
   })
 }
