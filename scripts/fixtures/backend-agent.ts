@@ -1,21 +1,25 @@
-import type { AgentClient, AgentConnection, AgentProvider } from "../../apps/daemon/src/agents/acp.ts"
+import type { AgentClient, AgentConfig, AgentConnection, AgentProvider } from "../../apps/daemon/src/agents/acp.ts"
 
 /** Fixture ACP provider deliberately waits for approval so archive must cancel a live turn. */
 export class BackendAgent implements AgentProvider {
   id = "codex"
   starts = 0
   closes = 0
+  managedStarts = 0
+  managedCloses = 0
   prompts: string[] = []
   resumes: string[] = []
   blockNextCreation = false
   blockedCreations = 0
-  async connect(_config: unknown, client: AgentClient): Promise<AgentConnection> {
+  async connect(config: AgentConfig, client: AgentClient): Promise<AgentConnection> {
     this.starts++
+    const managed = config.authentication !== "existing"
+    if (managed) this.managedStarts++
     let releaseCreation: (() => void) | undefined
     return {
       initialization: { protocolVersion: 1, agentCapabilities: { sessionCapabilities: { resume: {} } } },
       newSession: async () => {
-        if (this.blockNextCreation) {
+        if (managed && this.blockNextCreation) {
           this.blockNextCreation = false; this.blockedCreations++
           await new Promise<void>(resolve => { releaseCreation = resolve })
         }
@@ -41,7 +45,7 @@ export class BackendAgent implements AgentProvider {
       },
       steer: async () => ({ outcome: "inactive" }),
       cancel: async () => {},
-      close: async () => { this.closes++; releaseCreation?.() },
+      close: async () => { this.closes++; if (managed) this.managedCloses++; releaseCreation?.() },
     }
   }
 }
