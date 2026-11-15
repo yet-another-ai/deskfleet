@@ -150,7 +150,13 @@ async function setup(t: { after(callback: () => Promise<void>): void }, selectio
   await service.init()
   const actor: AgentActor = { ...service.actor(), kind: "user", userId: "alice" }
   const bob: AgentActor = { ...actor, userId: "bob", sourceMachine: { originId: "other-origin", id: "2" } }
-  t.after(async () => { try { await service.close() } finally { await catalog.close(); await rm(directory, { recursive: true, force: true }) } })
+  t.after(async () => {
+    try { await service.close() } finally {
+      await catalog.close()
+      // Windows can retain the catalog's fs.watch handles briefly after close.
+      await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    }
+  })
   const create = { workspaceId: workspace.id, operationId: randomUUID(), provider: configured.id, context: "worktree", ...selection }
   const snapshot = await service.handle("_deskfleet/session/create", create, actor) as AgentSnapshot
   assert.equal(snapshot.session.lifecycle, "ready")
@@ -530,39 +536,40 @@ test("rename preserves running work, synchronizes its audited title, and takes p
     uploads.push(upload)
     return { lastEventSeq: upload.snapshot.session.lastEventSeq }
   }, async () => false)
-  t.after(() => sync.close())
-  sync.enable()
-  await sync.flush()
-  const params = { sessionId: f.sessionId, operationId: randomUUID(), title: "  Investigate payment errors  " }
-  const renamed = await f.service.handle("_deskfleet/session/rename", params, f.bob) as AgentSnapshot
-  assert.equal(renamed.session.title, "Investigate payment errors")
-  assert.equal(renamed.session.titleCustomized, true)
-  assert.deepEqual(renamed.runs, before.runs)
-  assert.deepEqual(renamed.inputs, before.inputs)
-  assert.deepEqual(renamed.turns, before.turns)
-  assert.deepEqual(renamed.session, { ...before.session, title: renamed.session.title, titleCustomized: true,
-    lastEventSeq: renamed.session.lastEventSeq, updatedAt: renamed.session.updatedAt })
-  assert.deepEqual(await f.read(), renamed)
-  await sync.flush()
-  const upload = uploads.at(-1)!
-  assert.deepEqual(upload.snapshot, renamed)
-  assert.ok(upload.events.some(event => event.kind === "session" && (event.payload as AgentSnapshot["session"]).title === renamed.session.title))
-  const receipt = upload.commands.find(command => command.operationId === params.operationId)!
-  assert.equal(receipt.actor.userId, "bob")
-  assert.equal(receipt.status, "completed")
-  assert.deepEqual(receipt.result, { kind: "session_snapshot", sessionId: f.sessionId })
-  assert.deepEqual(JSON.parse(await f.catalog.native.agentCommand(params.operationId)).result, receipt.result)
-  assert.deepEqual(upload.events.filter(event => event.commandId === receipt.id).map(event => event.kind), ["session"], "rename has no separately accepted intermediate command")
-  assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), renamed)
-  assert.deepEqual(await f.read(), renamed, "a retry does not emit another event")
-  const latest = await f.service.handle("_deskfleet/session/rename", { ...params, operationId: randomUUID(), title: "Latest title" }, f.bob) as AgentSnapshot
-  assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), latest, "retry resolves current state without repeating the old rename")
-  assert.deepEqual(await f.read(), latest)
-  await assert.rejects(f.service.handle("_deskfleet/session/rename", params, f.actor), /reused/u)
-  await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Later provider title" } })
-  assert.equal((await f.read()).session.title, latest.session.title)
-  assert.equal(f.provider.clients.length, 1)
-  assert.equal(f.provider.cancelCount, 0)
+  try {
+    sync.enable()
+    await sync.flush()
+    const params = { sessionId: f.sessionId, operationId: randomUUID(), title: "  Investigate payment errors  " }
+    const renamed = await f.service.handle("_deskfleet/session/rename", params, f.bob) as AgentSnapshot
+    assert.equal(renamed.session.title, "Investigate payment errors")
+    assert.equal(renamed.session.titleCustomized, true)
+    assert.deepEqual(renamed.runs, before.runs)
+    assert.deepEqual(renamed.inputs, before.inputs)
+    assert.deepEqual(renamed.turns, before.turns)
+    assert.deepEqual(renamed.session, { ...before.session, title: renamed.session.title, titleCustomized: true,
+      lastEventSeq: renamed.session.lastEventSeq, updatedAt: renamed.session.updatedAt })
+    assert.deepEqual(await f.read(), renamed)
+    await sync.flush()
+    const upload = uploads.at(-1)!
+    assert.deepEqual(upload.snapshot, renamed)
+    assert.ok(upload.events.some(event => event.kind === "session" && (event.payload as AgentSnapshot["session"]).title === renamed.session.title))
+    const receipt = upload.commands.find(command => command.operationId === params.operationId)!
+    assert.equal(receipt.actor.userId, "bob")
+    assert.equal(receipt.status, "completed")
+    assert.deepEqual(receipt.result, { kind: "session_snapshot", sessionId: f.sessionId })
+    assert.deepEqual(JSON.parse(await f.catalog.native.agentCommand(params.operationId)).result, receipt.result)
+    assert.deepEqual(upload.events.filter(event => event.commandId === receipt.id).map(event => event.kind), ["session"], "rename has no separately accepted intermediate command")
+    assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), renamed)
+    assert.deepEqual(await f.read(), renamed, "a retry does not emit another event")
+    const latest = await f.service.handle("_deskfleet/session/rename", { ...params, operationId: randomUUID(), title: "Latest title" }, f.bob) as AgentSnapshot
+    assert.deepEqual(await f.service.handle("_deskfleet/session/rename", params, f.bob), latest, "retry resolves current state without repeating the old rename")
+    assert.deepEqual(await f.read(), latest)
+    await assert.rejects(f.service.handle("_deskfleet/session/rename", params, f.actor), /reused/u)
+    await f.provider.client.onUpdate({ sessionId: "provider-conversation", update: { sessionUpdate: "session_info_update", title: "Later provider title" } })
+    assert.equal((await f.read()).session.title, latest.session.title)
+    assert.equal(f.provider.clients.length, 1)
+    assert.equal(f.provider.cancelCount, 0)
+  } finally { await sync.close() }
 })
 
 test("generated Session titles from create, submit, and provider updates are truncated for tabs", async t => {
