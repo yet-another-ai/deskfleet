@@ -15,7 +15,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function setup(autoDownload = false) {
+function setup(autoDownload = false, isNetworkMetered = vi.fn(async () => false)) {
   const driver = {
     check: vi.fn<UpdateDriver["check"]>().mockResolvedValue("0.2.0"),
     download: vi.fn<UpdateDriver["download"]>().mockResolvedValue(),
@@ -24,7 +24,7 @@ function setup(autoDownload = false) {
   }
   const publish = vi.fn<(state: UpdateState) => void>()
   const beforeInstall = vi.fn<() => Promise<void>>().mockResolvedValue()
-  const controller = new UpdateController(driver, publish, beforeInstall, undefined, autoDownload)
+  const controller = new UpdateController(driver, publish, beforeInstall, undefined, autoDownload, isNetworkMetered)
   controllers.push(controller)
   return { controller, driver, publish, beforeInstall }
 }
@@ -125,6 +125,34 @@ test("manual checks share an in-flight check and keep the installed version in s
   expect(publish).toHaveBeenLastCalledWith(controller.get())
   expect(driver.check).toHaveBeenCalledOnce()
   expect(driver.download).not.toHaveBeenCalled()
+  expect(driver.install).not.toHaveBeenCalled()
+})
+
+test.each([false, true])("a completed check exposes the available update while network cost is pending (metered=%s)", async metered => {
+  vi.useFakeTimers()
+  const network = deferred<boolean>()
+  const download = deferred<void>()
+  const { controller, driver, publish } = setup(true, vi.fn(() => network.promise))
+  driver.download.mockReturnValue(download.promise)
+
+  await controller.check()
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+  expect(publish).toHaveBeenLastCalledWith(controller.get())
+  expect(driver.download).not.toHaveBeenCalled()
+
+  network.resolve(metered)
+  await vi.advanceTimersByTimeAsync(0)
+  if (metered) {
+    expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+    expect(driver.download).not.toHaveBeenCalled()
+  } else {
+    expect(controller.get()).toEqual({ status: "downloading", version: "0.2.0", percent: 0 })
+    expect(driver.download).toHaveBeenCalledOnce()
+    download.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(controller.get()).toEqual({ status: "downloaded", version: "0.2.0", percent: 100 })
+  }
+  expect(publish).toHaveBeenLastCalledWith(controller.get())
   expect(driver.install).not.toHaveBeenCalled()
 })
 
@@ -333,9 +361,11 @@ test("newer release supersedes an un-installed downloaded update when auto-downl
 })
 
 test("newer release clears prior downloaded state when auto-download is disabled and downloads on install", async () => {
+  vi.useFakeTimers()
   const { controller, driver } = setup(true)
   driver.check.mockResolvedValueOnce("0.2.0")
   await controller.check()
+  await vi.advanceTimersByTimeAsync(0)
   expect(controller.get()).toEqual({ status: "downloaded", version: "0.2.0", percent: 100 })
   controller.setAutoDownload(false)
   driver.check.mockResolvedValueOnce("0.3.0")

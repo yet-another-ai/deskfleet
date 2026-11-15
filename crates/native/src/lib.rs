@@ -9,6 +9,7 @@ pub mod local_applications;
 pub mod local_network;
 pub mod media;
 pub mod nat;
+pub mod network_cost;
 #[cfg(target_os = "macos")]
 mod permission_settings;
 pub mod rtc;

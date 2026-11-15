@@ -21,6 +21,8 @@ import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "
 export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, FilesBridgePlugin {
   authenticate(options: { url: string; callbackScheme: string }): Promise<{ url: string }>
   getInstallSource?(): Promise<{ installerPackageName: string | null }>
+  /** Android's metered status for the active network. */
+  getNetworkCost(): Promise<{ metered: boolean }>
   openExternal(options: { url: string }): Promise<void>
   open(): Promise<void>
   send(options: { command: string }): Promise<void>

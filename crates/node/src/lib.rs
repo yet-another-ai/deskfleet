@@ -7,6 +7,7 @@ mod desktop_access;
 mod local_applications;
 mod media;
 mod nat;
+mod network_cost;
 mod permissions;
 mod rtc;
 mod speech;
@@ -29,6 +30,7 @@ pub use media::{
     DesktopConfig, DesktopStreamPool, DisplayInfo, capture_displays, supported_video_codecs,
 };
 pub use nat::{NatFiltering, NatMapping, NatTestResult, NatTestStatus, test_nat};
+pub use network_cost::is_network_metered;
 pub use permissions::{
     LocalNetworkAccessRequest, check_accessibility_access, check_full_disk_access,
     check_screen_capture_access, open_local_network_settings, request_accessibility_access,

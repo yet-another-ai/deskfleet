@@ -27,7 +27,7 @@ test("shows the Updates section on Web hosts installed from Google Play", async 
     updates: stubUpdates,
     settings: {
       ...host.settings,
-      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: true, installSource: "google_play" as const })),
+      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: true, pauseOnMetered: true, installSource: "google_play" as const })),
     },
   })
   wrapper = mount(PreferencesSettings, { global: { plugins: [i18n] } })
@@ -43,7 +43,7 @@ test("hides the Updates section on Web hosts installed from a sideloaded APK", a
     updates: stubUpdates,
     settings: {
       ...host.settings,
-      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: false, installSource: "apk" as const })),
+      getAutoDownloadUpdates: vi.fn(async () => ({ enabled: false, pauseOnMetered: true, installSource: "apk" as const })),
     },
   })
   wrapper = mount(PreferencesSettings, { global: { plugins: [i18n] } })

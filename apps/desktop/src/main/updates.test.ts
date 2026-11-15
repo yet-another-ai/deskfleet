@@ -6,17 +6,19 @@ import type { BackgroundLifecycle } from "./lifecycle.ts"
 import type { UpdateController } from "./update-controller.ts"
 import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
-const { handle, app, loadUpdater, createDriver, createAppImageUpdater, appImageUpdater, driver } = vi.hoisted(() => ({
+const { handle, app, loadUpdater, createDriver, createAppImageUpdater, appImageUpdater, driver, isNetworkMetered } = vi.hoisted(() => ({
   handle: vi.fn(), app: {
     isPackaged: false,
     getVersion: () => "0.1.0",
     getPath: vi.fn(() => "/Applications/DeskFleet.app/Contents/MacOS/deskfleet"),
   }, loadUpdater: vi.fn(), createDriver: vi.fn(), createAppImageUpdater: vi.fn(), appImageUpdater: {},
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
+  isNetworkMetered: vi.fn(),
 }))
 vi.mock("electron", () => ({ ipcMain: { handle }, app }))
 vi.mock("electron-updater", () => { loadUpdater(); return { default: { autoUpdater: {} } } })
 vi.mock("./electron-update-driver.ts", () => ({ electronUpdateDriver: createDriver }))
+vi.mock("@deskfleet/native", () => ({ isNetworkMetered }))
 vi.mock("./appimage-updater.ts", () => ({ RestartingAppImageUpdater: class {
   constructor() { createAppImageUpdater(); return appImageUpdater }
 } }))
@@ -33,6 +35,7 @@ beforeEach(() => {
   driver.check.mockResolvedValue("0.2.0")
   driver.download.mockResolvedValue(undefined)
   driver.install.mockReset()
+  isNetworkMetered.mockReset().mockResolvedValue(false)
 })
 afterEach(() => {
   for (const renderer of renderers.splice(0)) renderer.emit("destroyed")
@@ -118,6 +121,36 @@ test("Nix-managed macOS installs are disabled while ordinary app installs update
   expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
   expect(createDriver).toHaveBeenCalledOnce()
   expect(createAppImageUpdater).not.toHaveBeenCalled()
+})
+
+test.each([false, true])("installed updater respects native metered cost (%s)", async metered => {
+  let finishCost!: (metered: boolean) => void
+  isNetworkMetered.mockReturnValueOnce(new Promise<boolean>(resolve => { finishCost = resolve }))
+  app.isPackaged = true
+  Object.defineProperty(process, "platform", { value: "win32" })
+  const main = renderer()
+  attachUpdates(main.window)
+  const controller = await installUpdates(lifecycle(), vi.fn().mockResolvedValue(undefined))
+  controllers.push(controller)
+
+  await controller.check()
+  expect(isNetworkMetered).toHaveBeenCalledOnce()
+  expect(controller.get()).toMatchObject({ status: "available", version: "0.2.0" })
+  expect(driver.download).not.toHaveBeenCalled()
+
+  const settled = new Promise<void>(resolve => {
+    main.sender.send.mockImplementation((channel: string, state: UpdateState) => {
+      if (channel === UPDATES_CHANGED_EVENT && state.status === (metered ? "available" : "downloaded")) resolve()
+    })
+  })
+  finishCost(metered)
+  await settled
+  expect(driver.download).toHaveBeenCalledTimes(metered ? 0 : 1)
+  expect(driver.install).not.toHaveBeenCalled()
+
+  await controller.install()
+  expect(driver.download).toHaveBeenCalledOnce()
+  expect(driver.install).toHaveBeenCalledOnce()
 })
 
 test("update IPC only accepts registered application main frames", async () => {

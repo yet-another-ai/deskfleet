@@ -43,7 +43,12 @@ if (Capacitor.getPlatform() === "android") {
   adapter.outlineAudio = createCapacitorOutlineAudioApi()
   const androidUpdates = await createAndroidUpdates({ getAppInfo: () => CapApp.getInfo() })
   adapter.updates = androidUpdates.updates
-  adapter.settings = { ...adapter.settings, getAutoDownloadUpdates: androidUpdates.getAutoDownload, setAutoDownloadUpdates: androidUpdates.setAutoDownload }
+  adapter.settings = {
+    ...adapter.settings,
+    getAutoDownloadUpdates: androidUpdates.getAutoDownload,
+    setAutoDownloadUpdates: androidUpdates.setAutoDownload,
+    setPauseUpdatesOnMetered: androidUpdates.setPauseOnMetered,
+  }
   // Background checks are silent: transient network or Play failures keep the current state.
   const check = (): void => { void androidUpdates.updates.check().catch(() => {}) }
   check()

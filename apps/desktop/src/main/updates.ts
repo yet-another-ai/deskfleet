@@ -1,4 +1,5 @@
 import { app, ipcMain, type BrowserWindow, type WebContents } from "electron"
+import { isNetworkMetered } from "@deskfleet/native"
 import type { UpdateInstallSource } from "../../../../packages/client/src/settings.ts"
 import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateState } from "../../../../packages/client/src/updates.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
@@ -80,7 +81,7 @@ export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInsta
       },
     }
   }
-  const controller = new UpdateController(driver, publishUpdateState, beforeInstall, app.getVersion())
+  const controller = new UpdateController(driver, publishUpdateState, beforeInstall, app.getVersion(), true, isNetworkMetered)
   installUpdateIpc(controller)
   return controller
 }

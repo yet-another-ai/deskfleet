@@ -120,7 +120,7 @@ function start(): void {
     const updates = await installUpdates(lifecycle, closeServices)
     const updateSettings = new UpdateSettingsController(
       join(userData, "updates.json"),
-      enabled => updates.setAutoDownload(enabled),
+      state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
       resolveDesktopInstallSource(),
     )
     installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings, new RemoteAgentSettingsController(desktopDaemonDirectory()))

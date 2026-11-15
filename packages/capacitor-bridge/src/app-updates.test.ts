@@ -51,15 +51,15 @@ test("encodes and decodes the Gradle versionCode formula", () => {
 
 test("without automatic download a check only reports the available version", async () => {
   const { plugin } = fakePlay({})
-  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }))
+  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }), async () => false)
   expect(await play.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
-  expect(await play.getAutoDownload()).toEqual({ enabled: false, installSource: "google_play" })
+  expect(await play.getAutoDownload()).toEqual({ enabled: false, pauseOnMetered: true, installSource: "google_play" })
 })
 
 test("automatic download prompts once and waits for a click before restarting", async () => {
   const { plugin, event } = fakePlay({})
-  const play = createPlayUpdates(plugin, memoryStorage())
+  const play = createPlayUpdates(plugin, memoryStorage(), async () => false)
   const states: unknown[] = []
   play.updates.onChanged(state => states.push(state.status))
   await play.updates.check()
@@ -74,9 +74,79 @@ test("automatic download prompts once and waits for a click before restarting", 
   expect(states.at(-1)).toBe("installing")
 })
 
+test("metered networks pause automatic Play consent by default and resume on a later unmetered check", async () => {
+  const { plugin } = fakePlay({})
+  const isNetworkMetered = vi.fn(async () => true)
+  const play = createPlayUpdates(plugin, memoryStorage(), isNetworkMetered)
+  expect(await play.getAutoDownload()).toEqual({ enabled: true, pauseOnMetered: true, installSource: "google_play" })
+  await play.updates.check()
+  await vi.waitFor(() => expect(isNetworkMetered).toHaveBeenCalledOnce())
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+  expect((await play.updates.get()).status).toBe("available")
+
+  isNetworkMetered.mockResolvedValue(false)
+  await play.updates.check()
+  await vi.waitFor(() => expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce())
+})
+
+test("turning off metered pause starts the available update and persists independently of automatic downloads", async () => {
+  const { plugin } = fakePlay({})
+  const storage = memoryStorage()
+  const isNetworkMetered = vi.fn(async () => true)
+  const play = createPlayUpdates(plugin, storage, isNetworkMetered)
+  await play.updates.check()
+  await vi.waitFor(() => expect(isNetworkMetered).toHaveBeenCalledOnce())
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+
+  expect(await play.setPauseOnMetered(false)).toEqual({ enabled: true, pauseOnMetered: false, installSource: "google_play" })
+  await vi.waitFor(() => expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce())
+  await play.setAutoDownload(false)
+  const restored = createPlayUpdates(fakePlay({}).plugin, storage, isNetworkMetered)
+  expect(await restored.getAutoDownload()).toEqual({ enabled: false, pauseOnMetered: false, installSource: "google_play" })
+})
+
+test("explicit install bypasses the metered preference", async () => {
+  const { plugin } = fakePlay({})
+  const isNetworkMetered = vi.fn(async () => true)
+  const play = createPlayUpdates(plugin, memoryStorage(), isNetworkMetered)
+  await play.updates.check()
+  await vi.waitFor(() => expect(isNetworkMetered).toHaveBeenCalledOnce())
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+
+  await play.updates.install()
+  expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce()
+})
+
+test("turning off automatic download during a network query prevents a stale automatic prompt", async () => {
+  const { plugin } = fakePlay({})
+  let answer!: (metered: boolean) => void
+  const isNetworkMetered = vi.fn(() => new Promise<boolean>(resolve => { answer = resolve }))
+  const play = createPlayUpdates(plugin, memoryStorage(), isNetworkMetered)
+  await play.updates.check()
+  await vi.waitFor(() => expect(isNetworkMetered).toHaveBeenCalledOnce())
+  await play.setAutoDownload(false)
+  answer(false)
+  await Promise.resolve()
+  expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
+})
+
+test("an explicit install joining an automatic network query bypasses a failed cost lookup", async () => {
+  const { plugin } = fakePlay({})
+  let fail!: (error: Error) => void
+  const isNetworkMetered = vi.fn(() => new Promise<boolean>((_resolve, reject) => { fail = reject }))
+  const play = createPlayUpdates(plugin, memoryStorage(), isNetworkMetered)
+  await play.updates.check()
+  await vi.waitFor(() => expect(isNetworkMetered).toHaveBeenCalledOnce())
+  const installing = play.updates.install()
+  fail(new Error("Network status unavailable"))
+  await installing
+  expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce()
+  expect((await play.updates.get()).status).toBe("downloading")
+})
+
 test("an explicit install downloads through Play and completes when the download finishes", async () => {
   const { plugin, event } = fakePlay({})
-  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }))
+  const play = createPlayUpdates(plugin, memoryStorage({ "deskfleet.updates.autoDownload": "false" }), async () => false)
   await play.updates.check()
   await play.updates.install()
   expect(await play.updates.get()).toMatchObject({ status: "downloading", percent: 0 })
@@ -86,7 +156,7 @@ test("an explicit install downloads through Play and completes when the download
 
 test("a declined Play dialog is not reopened automatically, and an explicit install still can", async () => {
   const { plugin } = fakePlay({}, AppUpdateResultCode.CANCELED)
-  const play = createPlayUpdates(plugin, memoryStorage())
+  const play = createPlayUpdates(plugin, memoryStorage(), async () => false)
   await play.updates.check()
   await vi.waitFor(() => expect(plugin.startFlexibleUpdate).toHaveBeenCalledOnce())
   await vi.waitFor(async () => expect((await play.updates.get()).status).toBe("available"))
@@ -99,7 +169,7 @@ test("a declined Play dialog is not reopened automatically, and an explicit inst
 
 test("a download already finished in an earlier run is reported as downloaded", async () => {
   const { plugin } = fakePlay({ installStatus: FlexibleUpdateInstallStatus.DOWNLOADED })
-  const play = createPlayUpdates(plugin, memoryStorage())
+  const play = createPlayUpdates(plugin, memoryStorage(), async () => false)
   expect(await play.updates.check()).toMatchObject({ status: "downloaded", version: "0.14.0" })
   expect(plugin.startFlexibleUpdate).not.toHaveBeenCalled()
 })
@@ -119,7 +189,7 @@ test("APK updates check GitHub releases/latest, open the APK asset in the browse
     }),
   })
 
-  expect(await github.getAutoDownload()).toEqual({ enabled: false, installSource: "apk" })
+  expect(await github.getAutoDownload()).toEqual({ enabled: false, pauseOnMetered: true, installSource: "apk" })
   expect(await github.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   await github.updates.install()
   expect(openExternal).toHaveBeenCalledExactlyOnceWith(apkUrl)
@@ -145,11 +215,11 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
   const { plugin } = fakePlay({}, AppUpdateResultCode.OK)
   const playOnly = await createAndroidUpdates({
     getAppInfo: async () => ({ version: "0.13.1", build: "1301999" }),
-    bridge: { getInstallSource: async () => ({ installerPackageName: "com.android.vending" }), openExternal: vi.fn(async () => {}) },
+    bridge: { getNetworkCost: async () => ({ metered: false }), getInstallSource: async () => ({ installerPackageName: "com.android.vending" }), openExternal: vi.fn(async () => {}) },
     playPlugin: plugin,
     storage: memoryStorage({ "deskfleet.updates.autoDownload": "false" }),
   })
-  expect(await playOnly.getAutoDownload()).toEqual({ enabled: false, installSource: "google_play" })
+  expect(await playOnly.getAutoDownload()).toEqual({ enabled: false, pauseOnMetered: true, installSource: "google_play" })
   expect(await playOnly.updates.check()).toMatchObject({ status: "available", version: "0.14.0" })
   expect(plugin.getAppUpdateInfo).toHaveBeenCalledOnce()
 
@@ -157,7 +227,7 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
   const apkUrl = "https://github.com/yet-another-ai/deskfleet/releases/download/v0.14.0/deskfleet-0.14.0-android-arm64.apk"
   const sideloaded = await createAndroidUpdates({
     getAppInfo: async () => ({ version: "0.13.1", build: "1301999" }),
-    bridge: { getInstallSource: async () => ({ installerPackageName: "com.google.android.packageinstaller" }), openExternal },
+    bridge: { getNetworkCost: async () => ({ metered: false }), getInstallSource: async () => ({ installerPackageName: "com.google.android.packageinstaller" }), openExternal },
     playPlugin: plugin,
     storage: memoryStorage(),
     fetchImpl: releaseFetch({
@@ -168,7 +238,7 @@ test("createAndroidUpdates selects Play for com.android.vending and GitHub Relea
       assets: [{ name: "deskfleet-0.14.0-android-arm64.apk", browser_download_url: apkUrl }],
     }),
   })
-  expect(await sideloaded.getAutoDownload()).toEqual({ enabled: false, installSource: "apk" })
+  expect(await sideloaded.getAutoDownload()).toEqual({ enabled: false, pauseOnMetered: true, installSource: "apk" })
   expect(await sideloaded.updates.check()).toEqual({ status: "available", version: "0.14.0", currentVersion: "0.13.1" })
   expect(plugin.getAppUpdateInfo).toHaveBeenCalledOnce() // not called again for sideloaded
   await sideloaded.updates.install()

@@ -37,6 +37,16 @@ async function setEnabled(enabled: boolean) {
   } finally { saving.value = false }
 }
 
+async function setPauseOnMetered(enabled: boolean) {
+  saving.value = true
+  requestError.value = null
+  try {
+    state.value = await platformClient.settings.setPauseUpdatesOnMetered(enabled)
+  } catch (error) {
+    requestError.value = error instanceof Error ? error.message : String(error)
+  } finally { saving.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -53,6 +63,22 @@ onMounted(load)
       class="ml-2 disabled:cursor-default"
       @update:model-value="setEnabled"
      />
+  </SettingsRow>
+  <SettingsRow
+    v-if="state?.enabled"
+    :label="t('settings.pauseUpdatesOnMetered')"
+    label-id="pause-updates-on-metered-label"
+    description-id="pause-updates-on-metered-description"
+  >
+    <template #description>{{ t(state.installSource === "google_play" ? "settings.pauseUpdatesOnMeteredPlayDescription" : "settings.pauseUpdatesOnMeteredDescription") }}</template>
+    <UiSwitch
+      aria-labelledby="pause-updates-on-metered-label"
+      aria-describedby="pause-updates-on-metered-description"
+      :model-value="state.pauseOnMetered"
+      :disabled="busy"
+      class="ml-2 disabled:cursor-default"
+      @update:model-value="setPauseOnMetered"
+    />
   </SettingsRow>
   <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words px-4 pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>
 </template>

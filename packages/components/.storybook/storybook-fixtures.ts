@@ -867,6 +867,7 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
   const profiles = structuredClone(storybookProviderProfiles)
   let keepAwake = false
   let autoDownloadUpdates = true
+  let pauseUpdatesOnMetered = true
   let launchAtStartup = false
   let worktreeRoot: string | null = "/Users/ada/.deskfleet/worktrees"
   let worktreePreferences: WorktreePreferences = { branchNaming: "semantic", cleanup: { archived: true, merged: true, inactive: true, inactiveDays: 5, settled: true, settledDays: 6, unchanged: true, keepLocalChanges: "uncommitted" } }
@@ -931,8 +932,9 @@ export function createStorybookDesktopApi(): DeskfleetDesktopApi {
       setLaunchAtStartup: async (enabled) => ({ available: true, enabled: (launchAtStartup = enabled) }),
       getKeepAwake: async () => ({ enabled: keepAwake }),
       setKeepAwake: async (enabled) => ({ enabled: (keepAwake = enabled) }),
-      getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, installSource: "desktop_installer" }),
-      setAutoDownloadUpdates: async (enabled) => ({ enabled: (autoDownloadUpdates = enabled), installSource: "desktop_installer" }),
+      getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered, installSource: "desktop_installer" }),
+      setAutoDownloadUpdates: async (enabled) => ({ enabled: (autoDownloadUpdates = enabled), pauseOnMetered: pauseUpdatesOnMetered, installSource: "desktop_installer" }),
+      setPauseUpdatesOnMetered: async (enabled) => ({ enabled: autoDownloadUpdates, pauseOnMetered: (pauseUpdatesOnMetered = enabled), installSource: "desktop_installer" }),
       getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/Users/ada/.deskfleet/worktrees" }),
       getWorktreePreferences: async () => structuredClone(worktreePreferences),
       setWorktreePreferences: async (settings) => structuredClone(worktreePreferences = settings),
