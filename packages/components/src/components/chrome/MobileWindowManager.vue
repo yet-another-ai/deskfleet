@@ -169,7 +169,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
 
 <template>
   <main data-mobile-windows class="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-ui-canvas" @keydown.esc="dismissOverview">
-    <header class="box-content flex h-12 shrink-0 items-center gap-2 px-3 pt-[var(--safe-area-top,0px)]" :class="{ 'titlebar-overlay-inset': platform === 'win32' || platform === 'linux' }">
+    <header class="box-content flex h-12 shrink-0 items-center gap-2 px-3" :class="{ 'titlebar-overlay-inset': platform === 'win32' || platform === 'linux' }">
       <WindowToolbar :history="false" />
       <h1 class="m-0 min-w-0 flex-1 truncate text-sm font-medium">{{ overviewOpen ? t('mobileViews.overview') : activeView.title }}</h1>
       <div :id="headerId" v-show="activeId === 'chat' && !overviewOpen" />
