@@ -236,3 +236,57 @@ test("requireConsent gates Statsig and Google Tag until both site telemetry and 
   await flushPromises()
   expect(mock.sdk.shutdown).toHaveBeenCalledTimes(1)
 })
+
+test("lifecycle events that occur while site telemetry is off are not flushed after re-enable", async () => {
+  localStorage.setItem("deskfleet-telemetry-consent", "granted")
+  initializeAnalytics({
+    platform: "web",
+    environment: "test",
+    clientKey: "client-test",
+    requireConsent: true,
+  })
+  setSiteTelemetryEnabled(true)
+  setUserTelemetryConsent(true, { persist: false })
+  await flushPromises()
+  expect(mock.create).toHaveBeenCalledTimes(1)
+
+  setSiteTelemetryEnabled(false)
+  await flushPromises()
+  expect(mock.sdk.shutdown).toHaveBeenCalledTimes(1)
+  mock.sdk.logEvent.mockClear()
+
+  trackEvent("page_viewed", { page: "settings" })
+  trackEvent("app_opened", { surface: "app" })
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+
+  setSiteTelemetryEnabled(true)
+  await flushPromises()
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+
+  trackEvent("page_viewed", { page: "new-session" })
+  expect(mock.sdk.logEvent).toHaveBeenCalledExactlyOnceWith("page_viewed", undefined, { page: "new-session" })
+})
+
+test("site master switch resolving to off drops the pre-gate lifecycle buffer", async () => {
+  localStorage.removeItem("deskfleet-telemetry-consent")
+  initializeAnalytics({
+    platform: "web",
+    environment: "test",
+    clientKey: "client-test",
+    requireConsent: true,
+  })
+  trackEvent("app_opened", { surface: "app" })
+  trackEvent("page_viewed", { page: "authentication" })
+
+  setSiteTelemetryEnabled(false)
+  setUserTelemetryConsent(true)
+  await flushPromises()
+  expect(mock.create).not.toHaveBeenCalled()
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+
+  trackEvent("page_viewed", { page: "settings" })
+  setSiteTelemetryEnabled(true)
+  await flushPromises()
+  expect(mock.create).toHaveBeenCalledTimes(1)
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
+})
