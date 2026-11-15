@@ -184,8 +184,9 @@ test("Keep Awake settings restrict callers, validate writes, and report failures
 
 test("automatic update settings restrict callers, validate writes, and report failures", async () => {
   const updates = {
-    get: vi.fn(() => ({ enabled: true, installSource: "desktop_installer" as const })),
-    setEnabled: vi.fn((enabled: boolean) => ({ enabled, installSource: "desktop_installer" as const })),
+    get: vi.fn(() => ({ enabled: true, pauseOnMetered: true, installSource: "desktop_installer" as const })),
+    setEnabled: vi.fn((enabled: boolean) => ({ enabled, pauseOnMetered: true, installSource: "desktop_installer" as const })),
+    setPauseOnMetered: vi.fn((pauseOnMetered: boolean) => ({ enabled: true, pauseOnMetered, installSource: "desktop_installer" as const })),
   }
   installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController, updates)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
@@ -193,17 +194,39 @@ test("automatic update settings restrict callers, validate writes, and report fa
   const sender = Object.assign(new EventEmitter(), { mainFrame })
   const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
   await expect(invoke(event, "setAutoDownloadUpdates", false)).rejects.toThrow("restricted")
+  await expect(invoke(event, "setPauseUpdatesOnMetered", false)).rejects.toThrow("restricted")
   attachSettings({ webContents: sender } as unknown as BrowserWindow)
   await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "setAutoDownloadUpdates", false)).rejects.toThrow("restricted")
+  await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "setPauseUpdatesOnMetered", false)).rejects.toThrow("restricted")
   expect(await invoke(event, "setAutoDownloadUpdates", "false")).toEqual({ ok: false, error: "Automatic update setting must be a boolean" })
   expect(updates.setEnabled).not.toHaveBeenCalled()
-  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: true, value: { enabled: true, installSource: "desktop_installer" } })
-  expect(await invoke(event, "setAutoDownloadUpdates", false)).toEqual({ ok: true, value: { enabled: false, installSource: "desktop_installer" } })
+  for (const invalid of [undefined, "false", null, 0, {}]) {
+    expect(await invoke(event, "setPauseUpdatesOnMetered", invalid)).toEqual({ ok: false, error: "Metered network update setting must be a boolean" })
+  }
+  expect(updates.setPauseOnMetered).not.toHaveBeenCalled()
+  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: true, installSource: "desktop_installer" } })
+  expect(await invoke(event, "setAutoDownloadUpdates", false)).toEqual({ ok: true, value: { enabled: false, pauseOnMetered: true, installSource: "desktop_installer" } })
   expect(updates.setEnabled).toHaveBeenCalledExactlyOnceWith(false)
+  expect(await invoke(event, "setPauseUpdatesOnMetered", false)).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: false, installSource: "desktop_installer" } })
+  expect(updates.setPauseOnMetered).toHaveBeenCalledExactlyOnceWith(false)
   updates.setEnabled.mockImplementationOnce(() => { throw new Error("Could not save automatic updates") })
   expect(await invoke(event, "setAutoDownloadUpdates", true)).toEqual({ ok: false, error: "Could not save automatic updates" })
+  updates.setPauseOnMetered.mockImplementationOnce(() => { throw new Error("Could not save metered update preference") })
+  expect(await invoke(event, "setPauseUpdatesOnMetered", true)).toEqual({ ok: false, error: "Could not save metered update preference" })
   updates.get.mockImplementationOnce(() => { throw new Error("Invalid automatic update settings") })
   expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: false, error: "Invalid automatic update settings" })
   sender.emit("destroyed")
   await expect(invoke(event, "getAutoDownloadUpdates")).rejects.toThrow("restricted")
+  await expect(invoke(event, "setPauseUpdatesOnMetered", false)).rejects.toThrow("restricted")
+})
+
+test("metered update preference reports unavailable settings", async () => {
+  installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController)
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  attachSettings({ webContents: sender } as unknown as BrowserWindow)
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  expect(await invoke(event, "setPauseUpdatesOnMetered", false)).toEqual({ ok: false, error: "Automatic update settings are unavailable" })
+  sender.emit("destroyed")
 })

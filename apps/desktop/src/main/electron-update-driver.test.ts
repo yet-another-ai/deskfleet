@@ -81,3 +81,20 @@ test("installation is explicit and reports asynchronous installer failure once",
   driver.close()
   expect(() => mock.emit("error", new Error("Late request failure"))).not.toThrow()
 })
+
+test("pausing aborts the updater transfer and a resumed download gets a fresh token", async () => {
+  const { mock, api } = updater()
+  const driver = electronUpdateDriver(api)
+  const abort = new AbortController()
+  mock.downloadUpdate.mockImplementationOnce(token => new Promise((_resolve, reject) => {
+    token.onCancel(() => reject(new Error("cancelled")))
+  }))
+  const downloading = driver.download(vi.fn(), abort.signal)
+  const canceled = expect(downloading).rejects.toThrow("cancelled")
+  abort.abort()
+  await canceled
+  expect(mock.downloadUpdate.mock.calls[0]![0].cancelled).toBe(true)
+  expect(mock.listenerCount("download-progress")).toBe(0)
+  await driver.download(vi.fn(), new AbortController().signal)
+  expect(mock.downloadUpdate.mock.calls[1]![0].cancelled).toBe(false)
+})

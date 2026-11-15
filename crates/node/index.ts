@@ -60,6 +60,11 @@ export function systemStatus(): Promise<SystemStatus> {
   return (bindings ??= loadBindings()).systemStatus()
 }
 
+/** Read the current connection's OS metered/low-data hint; false if unknown. */
+export function isNetworkMetered(): Promise<boolean> {
+  return (bindings ??= loadBindings()).isNetworkMetered()
+}
+
 /** Test the desktop client's current IPv4 NAT behavior against an RFC 5780 server. */
 export function testNat(server: string): Promise<NatTestResult> {
   return (bindings ??= loadBindings()).testNat(server)

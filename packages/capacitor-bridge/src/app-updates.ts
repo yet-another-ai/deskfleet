@@ -12,6 +12,7 @@ import type { UpdateApi, UpdateState } from "@deskfleet/client/updates"
 import { DeskFleetBridge, type DeskFleetBridgeCapacitorPlugin } from "./index.ts"
 
 const AUTO_DOWNLOAD_STORAGE_KEY = "deskfleet.updates.autoDownload"
+const PAUSE_ON_METERED_STORAGE_KEY = "deskfleet.updates.pauseOnMetered"
 const PLAY_STORE_PACKAGE = "com.android.vending"
 const LATEST_RELEASE_API_URL = "https://api.github.com/repos/yet-another-ai/deskfleet/releases/latest"
 
@@ -21,6 +22,7 @@ export interface AndroidUpdates {
   updates: UpdateApi
   getAutoDownload(): Promise<AutoDownloadUpdatesState>
   setAutoDownload(enabled: boolean): Promise<AutoDownloadUpdatesState>
+  setPauseOnMetered(enabled: boolean): Promise<AutoDownloadUpdatesState>
 }
 
 interface GitHubReleasePayload {
@@ -76,15 +78,18 @@ export function playVersionName(versionCode: string): string {
 /**
  * Google Play flexible in-app updates. Play shows its own consent dialog before downloading;
  * automatic download means that dialog opens as soon as a check finds an update.
+ * Metered policy defers that automatic dialog; Play owns transfers after the user accepts.
  */
 export function createPlayUpdates(
   plugin: PlayUpdatePlugin = AppUpdate,
   storage: Pick<Storage, "getItem" | "setItem"> = localStorage,
+  isNetworkMetered: () => Promise<boolean> = async () => (await DeskFleetBridge.getNetworkCost()).metered,
 ): AndroidUpdates {
   const listeners = new Set<(state: UpdateState) => void>()
   let state: UpdateState = { status: "idle" }
   let currentVersion: string | undefined
   let autoDownload = storage.getItem(AUTO_DOWNLOAD_STORAGE_KEY) !== "false"
+  let pauseOnMetered = storage.getItem(PAUSE_ON_METERED_STORAGE_KEY) !== "false"
   // A version the user declined in Play's dialog is not prompted again automatically this run.
   let declinedVersion: string | undefined
   let installRequested = false
@@ -143,11 +148,20 @@ export function createPlayUpdates(
   }
 
   /** Opens Play's consent dialog; resolves once the user answers. Download progress arrives through events. */
-  function consent(): Promise<void> {
+  function consent(automatic = false): Promise<void> {
     consenting ??= (async () => {
       // The plugin discards its cached info after every flexible flow, so each attempt needs fresh info.
       apply(await plugin.getAppUpdateInfo())
       if (state.status !== "available") return
+      if (automatic && !installRequested) {
+        const metered = pauseOnMetered && await isNetworkMetered().catch(error => {
+          // An explicit install joining this query does not need its network-cost result.
+          if (!installRequested) throw error
+          return false
+        })
+        // Preferences and explicit install consent can change during the native query.
+        if (!installRequested && (!autoDownload || (pauseOnMetered && metered))) return
+      }
       const version = state.version
       const { code } = await plugin.startFlexibleUpdate()
       if (code === AppUpdateResultCode.OK) {
@@ -181,7 +195,7 @@ export function createPlayUpdates(
     checking ??= plugin.getAppUpdateInfo().then(info => {
       apply(info)
       // A failed automatic prompt is not an install failure; the notice still offers Install.
-      if (autoDownload && state.status === "available" && state.version !== declinedVersion) void consent().catch(() => {})
+      if (autoDownload && state.status === "available" && state.version !== declinedVersion) void consent(true).catch(() => {})
       return snapshot()
     }).finally(() => { checking = undefined })
     return checking
@@ -209,15 +223,23 @@ export function createPlayUpdates(
 
   return {
     updates,
-    async getAutoDownload() { return { enabled: autoDownload, installSource: "google_play" } },
+    async getAutoDownload() { return { enabled: autoDownload, pauseOnMetered, installSource: "google_play" } },
     async setAutoDownload(enabled) {
       storage.setItem(AUTO_DOWNLOAD_STORAGE_KEY, String(enabled))
       autoDownload = enabled
       if (enabled && state.status === "available") {
         declinedVersion = undefined
-        void consent().catch(() => {})
+        void consent(true).catch(() => {})
       }
-      return { enabled, installSource: "google_play" }
+      return { enabled, pauseOnMetered, installSource: "google_play" }
+    },
+    async setPauseOnMetered(enabled) {
+      storage.setItem(PAUSE_ON_METERED_STORAGE_KEY, String(enabled))
+      pauseOnMetered = enabled
+      if (autoDownload && state.status === "available" && state.version !== declinedVersion) {
+        void consent(true).catch(() => {})
+      }
+      return { enabled: autoDownload, pauseOnMetered, installSource: "google_play" }
     },
   }
 }
@@ -322,14 +344,15 @@ export function createGitHubApkUpdates(options: GitHubApkUpdatesOptions): Androi
 
   return {
     updates,
-    async getAutoDownload() { return { enabled: false, installSource: "apk" } },
+    async getAutoDownload() { return { enabled: false, pauseOnMetered: true, installSource: "apk" } },
     async setAutoDownload() { throw new Error("Automatic update downloads are unavailable for APK installs") },
+    async setPauseOnMetered() { throw new Error("Automatic update downloads are unavailable for APK installs") },
   }
 }
 
 export interface AndroidUpdatesOptions {
   getAppInfo(): Promise<{ version: string; build: string }>
-  bridge?: Pick<DeskFleetBridgeCapacitorPlugin, "getInstallSource" | "openExternal">
+  bridge?: Pick<DeskFleetBridgeCapacitorPlugin, "getInstallSource" | "getNetworkCost" | "openExternal">
   playPlugin?: PlayUpdatePlugin
   storage?: Pick<Storage, "getItem" | "setItem">
   fetchImpl?: typeof fetch
@@ -354,7 +377,7 @@ export async function createAndroidUpdates(options: AndroidUpdatesOptions): Prom
   const bridge = options.bridge ?? DeskFleetBridge
   const installer = await getInstallerPackageName(bridge)
   if (installer === PLAY_STORE_PACKAGE) {
-    return createPlayUpdates(options.playPlugin, options.storage)
+    return createPlayUpdates(options.playPlugin, options.storage, async () => (await bridge.getNetworkCost()).metered)
   }
   return createGitHubApkUpdates({
     getAppInfo: options.getAppInfo,

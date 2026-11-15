@@ -1,10 +1,11 @@
 import type { UpdateState } from "../../../../packages/client/src/updates.ts"
 
 export const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000
+export const UPDATE_NETWORK_CHECK_INTERVAL = 10 * 1000
 
 export interface UpdateDriver {
   check(): Promise<string | null>
-  download(progress: (percent: number) => void): Promise<void>
+  download(progress: (percent: number) => void, signal?: AbortSignal): Promise<void>
   install(failed: (error: Error) => void): void
   close(): void
 }
@@ -16,6 +17,12 @@ export class UpdateController {
   readonly #beforeInstall: () => Promise<void>
   readonly #currentVersion: string | undefined
   #autoDownload: boolean
+  #pauseOnMetered = true
+  readonly #isNetworkMetered: () => Promise<boolean>
+  #networkCheck: Promise<boolean> | undefined
+  #networkTimer: ReturnType<typeof setInterval> | undefined
+  #automaticAbort: AbortController | undefined
+  #pausedOnMetered = false
   #state: UpdateState
   #timer: ReturnType<typeof setInterval> | undefined
   #checking: Promise<void> | undefined
@@ -24,12 +31,13 @@ export class UpdateController {
   #downloadedVersion: string | undefined
   #closed = false
 
-  constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>, currentVersion?: string, autoDownload = true) {
+  constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>, currentVersion?: string, autoDownload = true, isNetworkMetered: () => Promise<boolean> = async () => false) {
     this.#driver = driver
     this.#publish = publish
     this.#beforeInstall = beforeInstall
     this.#currentVersion = currentVersion
     this.#autoDownload = autoDownload
+    this.#isNetworkMetered = isNetworkMetered
     this.#state = { status: driver ? "idle" : "disabled" }
   }
 
@@ -38,16 +46,24 @@ export class UpdateController {
   }
 
   setAutoDownload(enabled: boolean): void {
+    this.setDownloadPreferences(enabled, this.#pauseOnMetered)
+  }
+
+  setDownloadPreferences(enabled: boolean, pauseOnMetered: boolean): void {
     this.#autoDownload = enabled
+    this.#pauseOnMetered = pauseOnMetered
     if (enabled && this.#state.status === "available" && this.#state.version) {
       this.#startAutoDownload(this.#state.version)
     }
+    void this.#refreshNetworkPolicy()
   }
 
   start(): void {
     if (this.#closed || !this.#driver || this.#timer) return
     this.#timer = setInterval(() => { void this.check().catch(() => {}) }, UPDATE_CHECK_INTERVAL)
     this.#timer.unref()
+    this.#networkTimer = setInterval(() => { void this.#refreshNetworkPolicy() }, UPDATE_NETWORK_CHECK_INTERVAL)
+    this.#networkTimer.unref()
     void this.check().catch(() => {})
   }
 
@@ -59,6 +75,7 @@ export class UpdateController {
     this.#checking = this.#driver.check().then(version => {
       if (!version) {
         this.#downloadedVersion = undefined
+        this.#pausedOnMetered = false
         this.#update({ status: "idle" })
         return
       }
@@ -115,23 +132,62 @@ export class UpdateController {
 
   #startAutoDownload(version: string): void {
     if (this.#closed || !this.#driver || this.#downloading || this.#installing || this.#state.status === "installing" || this.#downloadedVersion === version) return
-    const downloading = this.#download(version).catch(error => {
+    const abort = new AbortController()
+    const downloading = (async () => {
+      const metered = this.#pauseOnMetered && await this.#networkMetered()
+      if (this.#closed) return
+      if (!this.#autoDownload || (metered && this.#pauseOnMetered && !this.#installing)) {
+        this.#pausedOnMetered = Boolean(metered)
+        this.#update({ status: "available", version })
+        return
+      }
+      this.#pausedOnMetered = false
+      this.#automaticAbort = abort
+      await this.#download(version, abort.signal)
+    })().catch(error => {
+      if (abort.signal.aborted) {
+        this.#update({ status: "available", version })
+        return
+      }
       if (!this.#installing) this.#update({ status: "available", version })
       throw error
     }).finally(() => {
+      this.#automaticAbort = undefined
       this.#downloading = undefined
+      // A preference may change while cancellation is settling.
+      if (abort.signal.aborted && !this.#pauseOnMetered && this.#autoDownload) this.#startAutoDownload(version)
     })
     this.#downloading = downloading
     void downloading.catch(() => {})
   }
 
-  async #download(version: string): Promise<void> {
+  #networkMetered(): Promise<boolean> {
+    this.#networkCheck ??= this.#isNetworkMetered().catch(() => false).finally(() => { this.#networkCheck = undefined })
+    return this.#networkCheck
+  }
+
+  async #refreshNetworkPolicy(): Promise<void> {
+    if (this.#closed || !this.#driver || !this.#autoDownload || !this.#pauseOnMetered || this.#installing
+      || (!this.#automaticAbort && !this.#pausedOnMetered)) return
+    const metered = await this.#networkMetered()
+    if (this.#closed || !this.#autoDownload || !this.#pauseOnMetered || this.#installing) return
+    if (metered && this.#automaticAbort) {
+      this.#pausedOnMetered = true
+      this.#automaticAbort.abort()
+    } else if (!metered && this.#pausedOnMetered && this.#state.status === "available" && this.#state.version) {
+      this.#startAutoDownload(this.#state.version)
+    }
+  }
+
+  async #download(version: string, signal?: AbortSignal): Promise<void> {
     this.#update({ status: "downloading", version, percent: 0 })
     await this.#driver!.download(percent => {
+      if (signal?.aborted) return
       if (!Number.isFinite(percent)) return
       const progress = Math.max(0, Math.min(100, Math.floor(percent)))
       if (progress !== this.#state.percent) this.#update({ status: "downloading", version, percent: progress })
-    })
+    }, signal)
+    signal?.throwIfAborted()
     if (this.#closed) return
     this.#downloadedVersion = version
     this.#update({ status: "downloaded", version, percent: 100 })
@@ -142,6 +198,9 @@ export class UpdateController {
     this.#closed = true
     if (this.#timer) clearInterval(this.#timer)
     this.#timer = undefined
+    if (this.#networkTimer) clearInterval(this.#networkTimer)
+    this.#networkTimer = undefined
+    this.#automaticAbort?.abort()
     this.#driver?.close()
   }
 

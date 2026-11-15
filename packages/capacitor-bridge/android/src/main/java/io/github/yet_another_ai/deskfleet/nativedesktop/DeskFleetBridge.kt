@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -131,6 +132,13 @@ class DeskFleetBridge : Plugin() {
             val installer = context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName
             call.resolve(JSObject().put("installerPackageName", installer))
         }.getOrElse { call.reject(it.message ?: "Failed to read install source") }
+    }
+
+    @PluginMethod
+    fun getNetworkCost(call: PluginCall) {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+            ?: return call.reject("Network status unavailable")
+        call.resolve(JSObject().put("metered", manager.isActiveNetworkMetered))
     }
 
     @PluginMethod

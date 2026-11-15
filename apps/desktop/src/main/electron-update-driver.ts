@@ -1,4 +1,4 @@
-import type { AppUpdater } from "electron-updater"
+import { CancellationToken, type AppUpdater } from "electron-updater"
 import type { UpdateDriver } from "./update-controller.ts"
 
 export function electronUpdateDriver(updater: AppUpdater, channel = "latest"): UpdateDriver {
@@ -24,12 +24,17 @@ export function electronUpdateDriver(updater: AppUpdater, channel = "latest"): U
       const result = await updater.checkForUpdates()
       return result?.isUpdateAvailable ? result.updateInfo.version : null
     },
-    async download(progress) {
+    async download(progress, signal) {
+      signal?.throwIfAborted()
+      const cancellation = new CancellationToken()
+      const abort = (): void => cancellation.cancel()
+      signal?.addEventListener("abort", abort, { once: true })
       const listener = (info: { percent: number }): void => progress(info.percent)
       updater.on("download-progress", listener)
       try {
-        await updater.downloadUpdate()
+        await updater.downloadUpdate(cancellation)
       } finally {
+        signal?.removeEventListener("abort", abort)
         updater.removeListener("download-progress", listener)
       }
     },

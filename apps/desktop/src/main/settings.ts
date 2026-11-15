@@ -32,7 +32,7 @@ export function installSettings(
   keepAwake: KeepAwakeController,
   notifications: NotificationSettingsController,
   worktrees: WorktreeRootSettingsController,
-  updates?: Pick<UpdateSettingsController, "get" | "setEnabled">,
+  updates?: Pick<UpdateSettingsController, "get" | "setEnabled" | "setPauseOnMetered">,
   remoteAgents?: RemoteAgentSettingsController,
 ): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
@@ -66,6 +66,10 @@ export function installSettings(
           if (typeof enabled !== "boolean") throw new Error("Automatic update setting must be a boolean")
           if (!updates) throw new Error("Automatic update settings are unavailable")
           return { ok: true, value: updates.setEnabled(enabled) }
+        case "setPauseUpdatesOnMetered":
+          if (typeof enabled !== "boolean") throw new Error("Metered network update setting must be a boolean")
+          if (!updates) throw new Error("Automatic update settings are unavailable")
+          return { ok: true, value: updates.setPauseOnMetered(enabled) }
         case "getWorktreeRoot": return { ok: true, value: await worktrees.get() }
         case "getWorktreePreferences": return { ok: true, value: await worktrees.getPreferences() }
         case "setWorktreePreferences":

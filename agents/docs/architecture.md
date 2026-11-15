@@ -966,7 +966,20 @@ OS session end, or a termination signal quits the app and its hosted daemon.
 Packaged Electron clients check the public GitHub release feed at startup and
 every 30 minutes, including while hidden in the tray. Settings → Updates displays
 the installed version and offers an explicit check against the same feed. Opening
-the page only reads updater state; manual checks do not download or install.
+the page only reads updater state; checking never authorizes installation.
+Preferences enables automatic background downloads by default. When enabled,
+it also exposes **Pause on metered networks**, defaulting on and retaining its
+value when automatic downloads are disabled. The main process persists both
+preferences in `updates.json`. Existing preferences without a metered choice
+use the default.
+
+Before an automatic download, the native library reads the current OS network
+cost: NetworkManager's primary connection on Linux, Windows connection cost,
+and Network.framework expensive/Low Data Mode on macOS. Unknown or unavailable
+cost is treated as unmetered. While an automatic transfer is active or deferred,
+the main process checks cost every ten seconds. A metered connection cancels the
+background transfer without an install error; an unmetered connection starts it
+again. Explicit installation permits downloading regardless of network cost.
 The main process owns
 the updater and its state; the sandboxed renderer reads snapshots and subscribes
 through a narrow preload API. The lower-left sidebar offers an update only when
@@ -988,7 +1001,11 @@ from the OS installer package name:
   the offer opens Play's consent dialog, downloads, and then restarts into the
   update. Automatic download opens that dialog as soon as a check finds an
   update and waits for a click before restarting; a declined version is not
-  offered again automatically until the next launch.
+  offered again automatically until the next launch. The same default-on
+  metered preference uses Android's active-network cost to defer automatic
+  consent dialogs. Launch/foreground checks and preference changes re-evaluate
+  it; manual installation bypasses it. Google Play owns transfers after consent,
+  so DeskFleet cannot pause an already accepted Play download.
 - **APK installs** check GitHub's `releases/latest` endpoint for a newer stable
   `deskfleet-<version>-android-arm64.apk` asset. Clicking the offer opens that
   signed APK URL in the system browser without requiring
