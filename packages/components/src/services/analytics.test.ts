@@ -208,17 +208,22 @@ test("requireConsent gates Statsig and Google Tag until both site telemetry and 
     requireConsent: true,
   })
   trackEvent("app_opened", { surface: "app" })
+  trackEvent("page_viewed", { page: "new-session" })
   trackMarketingEvent("marketing_cta_clicked", { section: "hero" })
   expect(mock.create).not.toHaveBeenCalled()
   expect(mock.sdk.logEvent).not.toHaveBeenCalled()
 
   setSiteTelemetryEnabled(true)
   expect(mock.create).not.toHaveBeenCalled()
+  expect(mock.sdk.logEvent).not.toHaveBeenCalled()
 
   setUserTelemetryConsent(true)
   expect(mock.create).toHaveBeenCalledTimes(1)
   await flushPromises()
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("app_opened", undefined, { surface: "app" })
+  expect(mock.sdk.logEvent).toHaveBeenCalledWith("page_viewed", undefined, { page: "new-session" })
 
+  mock.sdk.logEvent.mockClear()
   trackMarketingEvent("marketing_cta_clicked", { section: "hero" })
   expect(mock.sdk.logEvent).not.toHaveBeenCalled()
   expect(win.dataLayer?.some((entry: unknown) => Array.isArray(entry) && entry[0] === "event" && entry[1] === "marketing_cta_clicked")).toBe(true)

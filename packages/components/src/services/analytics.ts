@@ -85,6 +85,8 @@ let email: string | undefined
 let team: Pick<Team, "id" | "role"> | undefined
 let plan: BillingPlan | undefined
 let planRevision = 0
+let pendingAppOpened: AnalyticsEvents["app_opened"] | undefined
+let pendingPageViewed: AnalyticsEvents["page_viewed"] | undefined
 const revision = ref(0)
 const siteTelemetryEnabledRef = ref(false)
 const userTelemetryConsentRef = ref(false)
@@ -144,6 +146,16 @@ function syncAnalyticsRuntime(): void {
     startStatsigIfNeeded()
     configureGoogleTag({ ...savedConfig, platform }, true)
     identifyGoogleTagUser(userId)
+    if (pendingAppOpened) {
+      const opened = pendingAppOpened
+      pendingAppOpened = undefined
+      trackEvent("app_opened", opened)
+    }
+    if (pendingPageViewed) {
+      const viewed = pendingPageViewed
+      pendingPageViewed = undefined
+      trackEvent("page_viewed", viewed)
+    }
   } else {
     stopStatsigIfRunning()
     configureGoogleTag({ ...savedConfig, platform }, false)
@@ -167,6 +179,10 @@ export function initializeAnalytics(configuration: AnalyticsConfiguration): void
 /** Updates the backend master switch (`SiteSettings.telemetryEnabled`). */
 export function setSiteTelemetryEnabled(enabled: boolean): void {
   consentRequired = true
+  if (!enabled) {
+    pendingAppOpened = undefined
+    pendingPageViewed = undefined
+  }
   if (siteTelemetryEnabledRef.value === enabled) return
   siteTelemetryEnabledRef.value = enabled
   syncAnalyticsRuntime()
@@ -175,6 +191,10 @@ export function setSiteTelemetryEnabled(enabled: boolean): void {
 /** Updates the user's opt-in telemetry & marketing attribution consent. */
 export function setUserTelemetryConsent(consented: boolean, options: { persist?: boolean } = {}): void {
   consentRequired = true
+  if (!consented) {
+    pendingAppOpened = undefined
+    pendingPageViewed = undefined
+  }
   userTelemetryConsentRef.value = consented
   if (options.persist !== false) {
     writeStoredTelemetryConsent(consented ? "granted" : "declined")
@@ -212,6 +232,13 @@ export function beginAnalyticsPlanRefresh(teamId: string): (value: BillingPlan) 
 }
 
 export function trackEvent<Name extends keyof AnalyticsEvents>(name: Name, metadata: AnalyticsEvents[Name]): void {
+  if (!canRunTelemetry()) {
+    if (consentRequired && readStoredTelemetryConsent() !== "declined") {
+      if (name === "app_opened") pendingAppOpened = metadata as AnalyticsEvents["app_opened"]
+      else if (name === "page_viewed") pendingPageViewed = metadata as AnalyticsEvents["page_viewed"]
+    }
+    return
+  }
   const context = team && name !== "team_joined" ? { team_id: team.id, team_role: team.role, current_plan: plan ?? "unknown" } : {}
   const merged = Object.fromEntries(Object.entries({ ...context, ...metadata })
     .filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]))
@@ -281,6 +308,8 @@ export async function shutdownAnalytics(): Promise<void> {
   sdk = undefined
   savedConfig = undefined
   consentRequired = false
+  pendingAppOpened = undefined
+  pendingPageViewed = undefined
   siteTelemetryEnabledRef.value = false
   userTelemetryConsentRef.value = false
   userId = undefined

@@ -17,13 +17,14 @@ export function useAccountAnalytics(session: AccountSession): void {
     } catch { /* Analytics context must not interrupt account initialization. */ }
   }
   watch(() => session.site.value?.telemetryEnabled, enabled => {
-    setSiteTelemetryEnabled(Boolean(enabled))
+    if (enabled !== undefined) setSiteTelemetryEnabled(enabled)
   }, { immediate: true, flush: "sync" })
   watch([
     () => session.account.value.user?.id,
     () => session.site.value?.telemetryEnabled,
     userTelemetryConsent,
   ], ([id, siteEnabled, consented], oldValue) => {
+    if (consented && siteEnabled) void refreshPlan()
     if (!id || !siteEnabled) return
     const wasConsented = oldValue?.[2]
     if (!consented && !wasConsented && readStoredTelemetryConsent() !== "declined") return
