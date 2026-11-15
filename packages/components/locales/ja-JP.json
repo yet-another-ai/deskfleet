@@ -264,7 +264,10 @@
     "termsOfServiceUrl": "利用規約の URL", "privacyTermsUrl": "プライバシー規約の URL",
     "termsDescription": "HTTP または HTTPS で始まる完全な URL を指定してください。新規アカウントの登録には、設定された規約への同意が必要です。URL を空欄にすると、そのリンクは表示されません。", "announcement": "お知らせ",
     "announcementDescription": "このサイトを利用するすべてのユーザーに表示されます。空欄にすると非表示になります。", "allowTeamCreation": "チームの作成を許可",
-    "allowTeamCreationDescription": "ログイン済みのユーザーがチームを作成できます。", "teamCreationDisabled": "管理者からの招待でチームに参加してください。",
+    "allowTeamCreationDescription": "ログイン済みのユーザーがチームを作成できます。",
+    "telemetryEnabled": "テレメトリとマーケティングアトリビューションを有効化",
+    "telemetryEnabledDescription": "ユーザーが製品分析とマーケティングアトリビューションの共有を選択できるようにします。プライベート環境やセルフホスト環境ではオフのままにしてください。",
+    "teamCreationDisabled": "管理者からの招待でチームに参加してください。",
     "saved": "サイト設定を保存しました。", "accounts": "アカウント",
     "createAccount": "アカウントを作成",
     "createAccountDescription": "パスワード付きの検証済みアカウントを作成します。確認メールは送信されません。パスワードは安全な方法で共有してください。",
@@ -525,7 +528,11 @@
     "returnToSettings": "GitHub 設定を開く"
   },
   "settings": {
-    "preferences": "環境設定", "appearance": "外観",
+    "preferences": "環境設定",
+    "privacyAndAnalytics": "プライバシーと分析",
+    "telemetryConsent": "利用状況の分析とマーケティングアトリビューションを共有",
+    "telemetryConsentDescription": "匿名の製品利用状況とキャンペーンアトリビューションを共有して DeskFleet の改善に協力します。プロンプト、コード、ファイルは一切含まれません。",
+    "appearance": "外観",
     "notifications": "通知", "notificationsEnabled": "デスクトップ通知",
     "notificationsDescription": "このコンピューターで DeskFleet からの通知を許可します。", "browserNotificationsEnabled": "ブラウザー通知",
     "browserNotificationsDescription": "このページが開いている間、DeskFleet からの通知を許可します。", "notificationPermission": "ブラウザーの権限",
@@ -1201,6 +1208,8 @@
   },
   "welcome": {
     "title": "DeskFleet へようこそ", "description": "サインインして、このコンピューターの使い方を選びましょう。",
+    "telemetryConsent": "利用状況とアトリビューションの分析で DeskFleet の改善に協力する",
+    "telemetryConsentDescription": "任意。有効にすると匿名の製品イベントとキャンペーンアトリビューションを共有します。プロンプト、コード、ファイルは収集されません。",
     "notificationsTitle": "タスクの状況を通知で確認", "notificationsDescription": "エージェントがタスクを完了したときや、入力が必要なときに通知を受け取れます。",
     "notificationsDetails": "ブラウザー通知を許可すると、DeskFleet を開いている間は別のタブを使用中でも通知を受け取れます。後で設定から変更できます。", "progress": "セットアップの進行状況",
     "steps": {

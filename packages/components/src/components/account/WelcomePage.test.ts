@@ -6,14 +6,16 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { ref } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
+import { setUserTelemetryConsent, userTelemetryConsent } from "../../services/analytics.ts"
 import WelcomePage from "./WelcomePage.vue"
 
+const mockSite = ref<{ siteName: string; telemetryEnabled: boolean } | undefined>()
 vi.mock("../../composables/useAccountSession.ts", () => ({
-  useAccountSession: () => ({ notice: ref(), account: ref({ user: { name: "Ada" } }), site: ref(), signIn: vi.fn() }),
+  useAccountSession: () => ({ notice: ref(), account: ref({ user: { name: "Ada" } }), site: mockSite, signIn: vi.fn() }),
 }))
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); view = undefined; vi.restoreAllMocks() })
+afterEach(() => { view?.unmount(); view = undefined; mockSite.value = undefined; setUserTelemetryConsent(false); vi.restoreAllMocks() })
 
 function setup(step: "screenCapture" | "accessibility" = "screenCapture") {
   const state: OnboardingState = { step, permissionSteps: ["screenCapture", "accessibility"], linuxDesktopBackend: "wayland" }
@@ -106,4 +108,26 @@ test("welcome control step points to permission settings without requesting anot
   expect(view!.text()).toContain("Settings → Permissions → Screen sharing")
   expect(view!.text()).not.toContain("Authorize again")
   expect(app.onboarding.requestPermission).not.toHaveBeenCalled()
+})
+
+test("welcome account card only shows the default-unchecked telemetry consent checkbox when site telemetry is enabled", async () => {
+  const app = setup()
+  const state: OnboardingState = { step: "account", permissionSteps: [] }
+  const host: DeskfleetDesktopApi = {
+    ...getClient(),
+    platform: "darwin",
+    onboarding: app.onboarding,
+  }
+  mockSite.value = { siteName: "DeskFleet", telemetryEnabled: false }
+  view = mount(WelcomePage, { props: { host, state }, global: { plugins: [i18n] } })
+  expect(view.find('input[name="telemetry-consent"]').exists()).toBe(false)
+
+  mockSite.value = { siteName: "DeskFleet", telemetryEnabled: true }
+  await flushPromises()
+  const checkbox = view.get<HTMLInputElement>('input[name="telemetry-consent"]')
+  expect(checkbox.element.checked).toBe(false)
+  expect(userTelemetryConsent.value).toBe(false)
+
+  await checkbox.setValue(true)
+  expect(userTelemetryConsent.value).toBe(true)
 })

@@ -10,6 +10,11 @@ export function installAnalytics(app: App, router?: Router): void {
     clientKey: import.meta.env.VITE_STATSIG_CLIENT_KEY,
     environment: import.meta.env.VITE_STATSIG_ENVIRONMENT?.trim() || import.meta.env.MODE,
     platform: clientAnalyticsPlatform(host.platform),
+    gtmId: import.meta.env.VITE_GTM_ID,
+    gaMeasurementId: import.meta.env.VITE_GA_MEASUREMENT_ID,
+    googleAdsId: import.meta.env.VITE_GOOGLE_ADS_ID,
+    googleAdsInstallLabel: import.meta.env.VITE_GOOGLE_ADS_INSTALL_LABEL,
+    requireConsent: true,
   })
   const peerEvent = (event: PeerTelemetryEvent) => {
     // Main-process transfers can finish after the user navigates to another Team.

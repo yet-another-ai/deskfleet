@@ -9,7 +9,7 @@ import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, DesktopStart, IceCandidate, VideoCodec } from "./desktop-media.ts"
-import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, MarketingAttribution, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
+import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface GithubAppSettings { configured: boolean; manageUrl: string | null; authorized: boolean; login: string | null; actAsYou: boolean }

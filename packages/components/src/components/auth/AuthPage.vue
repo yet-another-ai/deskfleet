@@ -3,8 +3,10 @@ import { useAsyncState, useEventListener } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import { accountAuthentication } from "@deskfleet/client/account-security"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
+import { readMarketingAttribution } from "@deskfleet/client/marketing-attribution"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import { useErrorReportingUser } from "../../composables/useErrorReportingUser.ts"
+import { setSiteTelemetryEnabled, userTelemetryConsent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
 import AccountSecurity from "./AccountSecurity.vue"
 import AuthLayout from "./AuthLayout.vue"
@@ -35,6 +37,13 @@ if (token) history.replaceState(null, "", location.pathname + location.search)
 if (githubError || googleError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
+  setSiteTelemetryEnabled(Boolean(config.telemetryEnabled))
+  if (status.user && config.telemetryEnabled && userTelemetryConsent.value) {
+    void account.updateTelemetryConsent({
+      consented: true,
+      attribution: readMarketingAttribution(true),
+    }).catch(() => {})
+  }
   return { config, user: status.user }
 }, undefined, { resetOnExecute: false })
 useErrorReportingUser(() => state.value?.user)

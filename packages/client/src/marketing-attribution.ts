@@ -125,8 +125,8 @@ export function readStoredTelemetryConsent(
 }
 
 export function captureMarketingSearchParams(
-  search: string,
-  consented: boolean,
+  search: string = typeof window !== "undefined" ? window.location?.search ?? "" : "",
+  consented = false,
   storage: WritableStorage | undefined = defaultStorage(),
 ): MarketingAttribution | undefined {
   const parsed = parseAttributionFromSearch(search)

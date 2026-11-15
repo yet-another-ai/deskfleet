@@ -595,6 +595,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     siteName: "DeskFleet Cloud",
     announcement: "Scheduled maintenance on Sunday 02:00 UTC.",
     allowTeamCreation: true,
+    telemetryEnabled: false,
     termsOfServiceUrl: "https://deskfleet.dev/terms",
     privacyTermsUrl: "https://deskfleet.dev/privacy",
   }
@@ -626,6 +627,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     }),
     login: async () => {},
     logout: async () => {},
+    updateTelemetryConsent: async () => {},
     openAccountSettings: async () => {},
     githubSettings: async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false }),
     githubPullRequest: async () => ({ pullRequest: null }),
@@ -1291,6 +1293,7 @@ export function createSeededStorybookState() {
     siteName: "DeskFleet Cloud",
     announcement: "Scheduled maintenance on Sunday 02:00 UTC.",
     allowTeamCreation: true,
+    telemetryEnabled: false,
     termsOfServiceUrl: "https://deskfleet.dev/terms",
     privacyTermsUrl: "https://deskfleet.dev/privacy",
   }
