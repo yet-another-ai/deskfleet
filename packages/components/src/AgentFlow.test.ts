@@ -565,7 +565,7 @@ test("new sessions use the selected configured provider and show its name", asyn
   await flushPromises()
   expect(wrapper.findAll('[data-agent-configuration-trigger]')).toHaveLength(1)
   expect(wrapper.find('[aria-label="Choose provider"]').exists()).toBe(false)
-  expect(transport.call).toHaveBeenCalledWith("_deskfleet/agent/configuration", { provider: "work-codex", workspaceId, probeId: expect.any(String) })
+  expect(transport.call).toHaveBeenCalledWith("_deskfleet/agent/configuration", { provider: "work-codex", workspaceId, probeId: expect.any(String), cache: true })
   await vi.waitFor(() => expect(wrapper.find('[data-provider-icon="deepseek"]').exists()).toBe(true))
   await wrapper.get("textarea").setValue("Use the work account")
   await wrapper.get('[aria-label="Send"]').trigger("click")

@@ -165,12 +165,12 @@ try {
   assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "retained untracked smoke file\n")
   await assert.rejects(agent.rpc("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "blocked" }] }), /Restore this Session/u)
   await assert.rejects(rpc(machines[0]!, "terminalDial", { mode: "create", terminalId: randomUUID(), worktreeId: worktree.id, cols: 80, rows: 24 }), /Restore this Session/u)
-  const starts = providers[0]!.starts
+  const starts = providers[0]!.managedStarts
   const restored = await rpc<AgentSnapshot>(machines[0]!, "_deskfleet/session/restore", { sessionId, operationId: randomUUID() }, member)
   assert.equal(restored.session.archiveState, "active")
   assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "uncommitted smoke changes\n")
   assert.equal(await readFile(join(cwd, "untracked.txt"), "utf8"), "retained untracked smoke file\n")
-  assert.equal(providers[0]!.starts, starts)
+  assert.equal(providers[0]!.managedStarts, starts)
   assert.equal(providers[0]!.prompts.length, 1)
   assert.match(providers[0]!.prompts[0]!, /^DeskFleet worktree branch naming preference: semantic prefix\./u)
   assert.ok(providers[0]!.prompts[0]!.endsWith("WebRTC request from Bob"))
@@ -191,7 +191,7 @@ try {
   assert.equal(recreated.inputs[1]!.state, "pending")
   assert.equal(await readFile(join(cwd, "README.md"), "utf8"), "machine 0\n")
   await assert.rejects(readFile(join(cwd, "untracked.txt")), { code: "ENOENT" })
-  assert.equal(providers[0]!.starts, starts)
+  assert.equal(providers[0]!.managedStarts, starts)
   await until(readCentral, value => value.snapshot.session.archiveState === "active"
     && BigInt(value.lastEventSeq) >= BigInt(recreated.session.lastEventSeq)
     && value.lastEventSeq === value.snapshot.session.lastEventSeq, "complete synchronized archive and restore journal")
@@ -219,7 +219,7 @@ try {
   await reconnectAgent.rpc("_deskfleet/input/submit", { sessionId: reconnectSessionId, operationId: randomUUID(), delivery: "backlog", content: [{ type: "text", text: "Accepted while signaling is unavailable" }] })
   await reconnectTerminal.rpc("input", { sessionId: reconnectShell.id, data: Buffer.from("echo deskfleet-offline-peer\r").toString("base64") })
   await until(() => reconnectTerminal.messages, values => values.some(value => value.event?.kind === "output" && Buffer.from(value.event.data, "base64").toString("utf8").includes("deskfleet-offline-peer")), "terminal input survives signaling loss")
-  assert.equal(providers[1]!.closes, 0)
+  assert.equal(providers[1]!.managedCloses, 0)
   await until(() => reconnectAgent.rpc<AgentSnapshot>("_deskfleet/session/subscribe", { sessionId: reconnectSessionId }),
     value => value.inputs.length === 1 && value.inputs[0]!.state === "pending" && !!value.session.turnLimitReason,
     "offline input waits for current Team entitlement authority")
@@ -241,7 +241,7 @@ try {
   await reconnectRequest("/auth/logout", {})
   await until(() => [reconnectAgent.disconnected(), reconnectTerminal.disconnected()], values => values.every(Boolean), "logout revokes established peer access")
   await assert.rejects(reconnectAgent.rpc("_deskfleet/session/list", {}), /closed/u)
-  assert.equal(providers[1]!.closes, 0, "Revoking access must preserve the accepted Agent task")
+  assert.equal(providers[1]!.managedCloses, 0, "Revoking access must preserve the accepted Agent task")
   assert.equal(registration(daemons[1]!).terminals.list().find(value => value.id === reconnectShell.id)?.status, "running", "Revoking access must preserve the shell")
   assert.ok((await secondCentral()).snapshot.permissions.some(permission => permission.state === "pending"))
   console.log("Established Agent/Terminal peers survive server interruption and restart; logout revokes access without terminating accepted work")

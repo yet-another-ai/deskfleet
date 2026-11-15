@@ -6,11 +6,12 @@ import { Link } from "@lucide/vue"
 import { computed, inject, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { agentResourceContextKey, isFileResource } from "../../services/agent-resources.ts"
-import { openResourceFromAction } from "../../stores/previews.ts"
+import { usePreviewActions } from "../../stores/previews.ts"
 
 const client = usePlatformClient()
 const props = defineProps<{ uri: string; name: string }>()
 const { t } = useI18n()
+const { openResourceFromAction } = usePreviewActions()
 const root = useTemplateRef<HTMLElement>("root")
 const context = inject(agentResourceContextKey, computed(() => undefined))
 const resource = ref<FileResourceRequest>()

@@ -13,7 +13,7 @@ import MobileWindowManager from "./components/chrome/MobileWindowManager.vue"
 import WindowManager from "./components/chrome/WindowManager.vue"
 import AppSidebar from "./components/sidebar/AppSidebar.vue"
 import { listenMermaidLocate, locateMermaidInMainView, useLayoutStore } from "./stores/layout.ts"
-import { listenPreviewWindowMessages, locatePreviewInMainView } from "./stores/previews.ts"
+import { listenPreviewWindowMessages, locatePreviewInMainView, usePreviewActions } from "./stores/previews.ts"
 import { useFleetStore } from "./stores/fleet.ts"
 import { useTerminalsStore } from "./stores/terminals.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
@@ -41,10 +41,11 @@ const unsubscribeSettings = platformClient.settings.onChanged(({ status }) => {
     void terminals.refresh()
   }
 })
+const { openPreviewFromAction } = usePreviewActions()
 const unsubscribePreviewMessages = listenPreviewWindowMessages((content, source) => {
   window.focus()
   void locatePreviewInMainView(content, source)
-})
+}, openPreviewFromAction)
 const unsubscribeMermaidLocate = listenMermaidLocate((code, source) => {
   window.focus()
   void locateMermaidInMainView(code, source)

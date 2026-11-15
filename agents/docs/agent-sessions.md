@@ -418,6 +418,10 @@ startup prompts or enter `/login`, then `/exit` to return to setup. Executable
 detection leaves credential status unknown; **Test connection** opens a session
 without sending a prompt. Neither startup nor testing calls ACP `authenticate`,
 which clears the existing CodeBuddy account before starting interactive login.
+Executable detection validates a bare `--version` response against CodeBuddy's
+`--help` output. Each metadata command allows 10 seconds for cold startup and
+Windows npm launchers, within a shared 30-second detection deadline across all
+candidates; optional shell environment loading has its own additional budget.
 CodeBuddy 2.182.0 advertises saved-session loading, image and embedded-context
 prompts, and HTTP/SSE MCP support. Standard ACP configuration, permission,
 filesystem, and terminal operations use the shared client. CodeBuddy's private
@@ -1176,13 +1180,40 @@ efforts, and modes come from that provider's ACP select options, including
 grouped options. Mode names and descriptions retain the provider's wording:
 they can describe permission policies or workflows such as Plan, and are not
 mapped onto a shared permission scale. A provider that offers no mode choices
-has no selectable modes. Draft discovery resolves the selected provider's current
-launch settings and creates a temporary provider session in the Workspace's
-default directory, without sending a prompt or allocating a managed Session.
-The composer supplies a random `probeId` to reuse that connection for successive
-choices. The daemon scopes it to the verified user and login session, and checks
-the provider, Workspace directory, and launch settings on each request. Requests
-without a probe ID remain one-shot discoveries.
+has no selectable modes.
+
+Each registration warms draft configuration matrices in the background when the
+daemon starts and when Agents settings change. It visits every configured
+provider in the home directory and each Workspace's default directory; catalog
+changes also warm newly added or moved Workspace directories. Startup does not
+wait for discovery. Temporary ACP sessions use existing credentials, empty MCP
+server lists, and no prompts, login flow, or managed Session/worktree allocation.
+Completed warmups close their provider processes and retain only in-memory
+configuration snapshots.
+
+ACP returns the current catalog rather than a bulk matrix. Discovery explores
+advertised model, reasoning, mode, select, and boolean choices, recording each
+provider-confirmed transition and its dependent defaults. Before exploring an
+edge it restores and checks the source configuration; a declined or changed
+restore does not establish that edge. Warmup runs two providers/contexts at a
+time, bounded to 256 configurations, 4,096 transition attempts, and two minutes
+per context. A dynamic or larger matrix remains usable for its confirmed paths;
+missing paths use independent foreground discovery and retain the result.
+Unavailable providers do not block other providers or retry on ordinary catalog
+traffic. A foreground request or explicit reload can retry them.
+
+The daemon cache belongs to one Team registration and keys entries by provider,
+launch settings, Workspace ID, and resolved directory. Client matrices belong
+to the selected machine runtime and Workspace. Once a matrix is available,
+draft selections follow its confirmed transitions locally without a request or
+loading state. Uncached selections restore that draft's confirmed choices into
+a fresh probe; separate drafts never share mutable ACP state. Existing Session
+configuration writes still wait for the live provider's authoritative response.
+
+The configuration API also retains caller-scoped `probeId` sessions for direct
+clients that do not request the cache. Their keys include the verified user and
+login session, provider, Workspace directory, and launch settings. Requests
+without a probe ID or cache flag remain one-shot discoveries.
 
 The same menu exposes every additional advertised select or boolean option,
 retaining the provider's name, description, category, and option groups. This
@@ -1213,16 +1244,21 @@ additional option, and command choices recorded before that sequence belong to
 the previous Agent and are not reapplied.
 
 Public provider metadata includes a random registry revision that changes only
-when settings change or the daemon reloads them. The UI uses that revision for
-invalidation; ordinary catalog/history notifications do not restart probes.
+when settings change or the daemon reloads them. The UI uses that revision to
+invalidate matrices; ordinary catalog/history notifications do not discard
+unchanged configuration contexts. Provider edits cancel the previous daemon
+cache generation before warming the new settings. Commands and skills remain
+Workspace-specific; moving a Workspace's primary directory also discards its
+client matrices and ignores pending replies for the old directory. Explicit
+reload replaces that provider/Workspace matrix.
 The revision is not derived from credentials or environment values.
 
-Changes on one probe run sequentially. The model picker can show a pending model
+Uncached changes on one draft run sequentially. The model picker can show a pending model
 while the provider confirms its dependent effort and mode options; sending a
 prompt and editing dependent choices wait for confirmation. Rapid model choices
 keep only the latest queued change. Failed changes retain the UI's last confirmed
 choices and discard the probe, so partial provider mutations cannot leak into a
-retry. An explicit reload creates a fresh probe with the provider's defaults.
+retry. An explicit reload discovers the provider's current defaults.
 
 The composer releases its probe on unmount or context/settings changes, using
 the same configuration method with `release: true` (which returns `null`). A

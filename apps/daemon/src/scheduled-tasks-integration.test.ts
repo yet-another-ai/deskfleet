@@ -65,7 +65,8 @@ test("machine scheduling uses real Session persistence, retains approvals, and r
   await assert.rejects(runtime.current.operations.handle("workspaceDelete", { workspaceId: workspace.id }, actor), /scheduled tasks/u)
 
   await runtime.close()
-  assert.equal(provider.closes, 1)
+  assert.equal(provider.managedCloses, 1)
+  assert.equal(provider.closes, provider.starts, "Shutdown closes managed Sessions and configuration probes")
   t.mock.timers.tick(2 * 60 * 60 * 1000)
   runtime = new MachineRuntime(directory, options)
   await runtime.init()

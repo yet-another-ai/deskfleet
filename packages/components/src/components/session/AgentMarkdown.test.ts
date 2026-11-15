@@ -455,3 +455,27 @@ test("opens all resource links in a right-side preview tab first and locates the
   expect(linkElement.dataset.previewLocated).toBe("true")
 })
 
+test("resource link click targets the component Pinia even when another Pinia becomes active", async () => {
+  await router.push("/sessions/12")
+  const view = render({}, "- **After**：[after.mp4](file:///tmp/after.mp4)")
+  await flushPromises()
+
+  const otherPinia = createPinia()
+  setActivePinia(otherPinia)
+  try {
+    await view.get("a[data-resource-link]").trigger("click")
+    await flushPromises()
+    expect(useLayoutStore(pinia).sessionWindowRequest).toMatchObject({
+      kind: "resource",
+      item: {
+        request: { sessionId: "12", uri: "file:///tmp/after.mp4" },
+        title: "after.mp4",
+      },
+    })
+    expect(useLayoutStore(otherPinia).sessionWindowRequest).toBeUndefined()
+  } finally {
+    disposePinia(otherPinia)
+    setActivePinia(pinia)
+  }
+})
+

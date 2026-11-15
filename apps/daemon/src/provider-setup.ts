@@ -12,6 +12,8 @@ import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { TerminalRun, TerminalSessions } from "./terminals.ts"
 
 const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
+const CODEBUDDY_COMMAND_TIMEOUT_MS = 10_000
+const CODEBUDDY_PROBE_TIMEOUT_MS = 30_000
 
 export interface ProbeDependencies {
   directory?: string
@@ -169,7 +171,10 @@ function text(output: string): string {
 }
 
 async function identity(template: AgentProviderTemplateId, binary: string, ctx: Context): Promise<string | undefined> {
-  const result = await ctx.run(binary, ["--version"], ctx.env, ctx.home)
+  // CodeBuddy prints a bare version; its help loads the CLI bundle and can exceed
+  // the default three-second command budget on Windows, including npm launchers.
+  const timeoutMs = template === "codebuddy" ? CODEBUDDY_COMMAND_TIMEOUT_MS : undefined
+  const result = await ctx.run(binary, ["--version"], ctx.env, ctx.home, timeoutMs)
   if (result.code !== 0) return undefined
   const version = text(`${result.stdout}\n${result.stderr}`)
   const pattern = template === "codex" ? /\bcodex\b/iu : template === "claude-code" ? /\bclaude\b/iu
@@ -178,7 +183,7 @@ async function identity(template: AgentProviderTemplateId, binary: string, ctx: 
         : template === "codebuddy" ? /\bcodebuddy\b/iu : template === "antigravity" ? /\bagy\b|Antigravity/iu : /\bgrok\b/iu
   if (!pattern.test(version)) {
     // Some CLIs print just a version; their help identifies the provider.
-    const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home)
+    const help = await ctx.run(binary, ["--help"], ctx.env, ctx.home, timeoutMs)
     if (help.code !== 0 || !pattern.test(text(`${help.stdout}\n${help.stderr}`))) return undefined
   }
   return version.split(/\r?\n/u)[0]?.slice(0, 200)
@@ -231,7 +236,8 @@ async function deepseekAuthentication(ctx: Context): Promise<ProviderProbeResult
 export async function probeProvider(input: AgentProviderInput, dependencies: ProbeDependencies = {}): Promise<ProviderProbeResult> {
   const controller = new AbortController()
   const signal = dependencies.signal ? AbortSignal.any([controller.signal, dependencies.signal]) : controller.signal
-  const probeTimeout = input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : 10_000
+  const probeTimeout = input.template === "deepseek-harness" && !input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS
+    : input.template === "codebuddy" ? CODEBUDDY_PROBE_TIMEOUT_MS : 10_000
   // Shell startup has its own bounded budget; preserve the full detection budget after it.
   const timeout = dependencies.timeoutMs ?? (probeTimeout + (shellEnvironmentEnabled(input.inheritShellEnvironment, dependencies.platform) ? SHELL_ENVIRONMENT_TIMEOUT_MS : 0))
   let timer: ReturnType<typeof setTimeout>

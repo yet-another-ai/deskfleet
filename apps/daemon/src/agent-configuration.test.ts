@@ -298,6 +298,7 @@ test("configuration parameters reject invalid provider IDs and malformed choices
     { provider: "codex", mode: "" }, { provider: "codex", mode: "invalid\0mode" },
     { provider: "codex", probeId: "not-a-uuid" }, { provider: "codex", release: true },
     { provider: "codex", release: "true" },
+    { provider: "codex", cache: "true" }, { provider: "codex", refresh: "true" },
     { provider: "codex", restore: {} },
     { provider: "codex", probeId: "cc8b5b3d-154a-4bf8-89f6-dd2403a646f5", restore: { mode: "" } },
   ]) assert.throws(() => validateAgentConfigurationParams(params))

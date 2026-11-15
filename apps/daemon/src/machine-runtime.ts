@@ -109,6 +109,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     cleanup.start()
     schedules.start()
     providerUpdates.start()
+    agents.startConfigurationCache()
     return { directory, catalog, providers, mcpServers, setup, providerUpdates, agents, terminals, central, schedules, mcp, operations, stop, close }
   } catch (error) {
     try { await close() }
