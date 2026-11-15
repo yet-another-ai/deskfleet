@@ -539,6 +539,87 @@ Metadata records exact build/source hashes. The native-anchor overlay manifest
 records the baseline's benchmark-only changes. The parser/component tests pass
 22/22, the full renderer suite passes 1,391 tests, and root/desktop typechecks pass.
 
+## Fleet projection and persistent-cache stalls
+
+The November 14, 2026 desktop capture (`Trace-20261114T204554.json`) identifies
+a separate bottleneck from Markdown rendering. Its 4.09-second visible window
+contains eight renderer tasks lasting 433–449 ms each. Sampled stacks descend
+from incoming Session events through `advance`, reactive notification, and
+`fleet.workspaces` into repeated Terminal filtering. The workspaces calculation
+accounts for about 3.30 seconds of sampled time, including about 3.2 seconds in
+filtering and proxy reads. Frames wait 433–532 ms for the main thread, then take
+only 2.4–3.2 ms from beginning main-thread frame work through commit. The capture
+also includes a 492 ms profiler startup interruption; it is not normal cache
+callback execution time.
+
+`fleet` now indexes Terminals by Worktree, Session metadata by Workspace, and
+providers by ID. A Session update reuses Terminal ownership groups instead of
+filtering every Terminal for every Session. Session ingestion and list refreshes
+retain metadata object identity, update changed fields, and remove absent fields.
+Advancing only `lastEventSeq` consequently leaves consumers of title, ownership,
+and read/completion markers cached. Metadata remains separate from immutable
+journal payloads, so later updates cannot alter an earlier event.
+
+Persistent conversation saves use the already ordered display sequence to look
+up authoritative events in the journal, excluding previews without sorting all
+history again. Snapshot JSON is captured synchronously from the raw Vue object;
+immutable event encodings are reused. Cold event encoding yields between batches
+after a 4 ms budget. Both output and the retained encoding memo have a 32 MiB
+limit. This is not a hard task-duration bound: one large event, snapshot capture,
+and the final string join remain synchronous, and each save still writes one
+complete JSON record.
+
+IndexedDB version 2 retains the existing records and adds a recency/size index.
+Eviction traverses index keys, and retention/owner clearing traverse primary
+keys, without loading all cached JSON bodies. Cache operations execute in call
+order, including asynchronous encoding, so a delayed save cannot undo a later
+remove or owner clear. The existing 30-entry/32 MiB limits and best-effort failure
+behavior remain in effect.
+
+An isolated Electron 45.2.3 comparison uses the cache from
+`33aac2402c6de612581a315a467f23efa898d5e0` and the updated implementation, with
+6,000 immutable events, 600 snapshot inputs, and about 16.6 MB of accounted UTF-16
+JSON. Each of three rounds performs one cold save and three appended saves.
+Medians of the per-round medians for appended saves, in milliseconds:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Synchronous `write()` invocation | 10.1 | 0.3 |
+| Largest timer interval during the save | 10.3 | 5.3 |
+| Complete asynchronous save | 27.9 | 20.3 |
+
+An independent comparison of the actual Vue/Pinia stores sends 100 synchronous
+journal notifications per scale, split over three rounds, followed by a
+`fleet.machines` read after each notification. Each round also measures ten
+renames and ten Terminal ownership changes. Medians of per-round operation
+medians, in milliseconds:
+
+| Workspaces / Sessions / Terminals | Operation | Before | After |
+| --- | --- | ---: | ---: |
+| 20 / 200 / 1,000 | Advance event sequence | 48.76 | 0.026 |
+| 20 / 200 / 1,000 | Rename Session | 50.24 | 0.987 |
+| 20 / 200 / 1,000 | Move Terminal | 50.20 | 1.109 |
+| 40 / 400 / 2,000 | Advance event sequence | 187.02 | 0.023 |
+| 40 / 400 / 2,000 | Rename Session | 181.20 | 1.523 |
+| 40 / 400 / 2,000 | Move Terminal | 184.95 | 2.258 |
+
+Terminal ownership getter counts across the 100 sequence updates drop from
+20,100,000 and 80,200,000 to zero. The harness instruments those getters in both
+variants; their overhead contributes to the timings. Source snapshots and hashes
+identify both variants, and transform caching is disabled for source overlays.
+An independent baseline source check reproduces the same getter counts.
+
+These are synthetic store/cache measurements, not visible application FPS or a
+replay of the original Session. Real Chromium checks cover v1 record upgrades,
+snapshot capture, write/remove ordering, owner/scope retention, entry/byte limits,
+and oversized replacement. Local scripts and raw cache results are under
+`result/trace-20261114-fix/`; the fleet comparison is under
+`result/fleet-trace-optimization/`.
+
+Validation passes all 2,115 renderer tests and the desktop typecheck. Real
+Chromium cache validation passes 17 assertions, including retention across
+different scopes and preservation of the newest entry during eviction.
+
 ## Remaining optimization candidates
 
 Evaluate each candidate with the collapsed and expanded/history scenarios, then
