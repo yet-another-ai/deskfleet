@@ -52,6 +52,7 @@ export class UpdateController {
   setDownloadPreferences(enabled: boolean, pauseOnMetered: boolean): void {
     this.#autoDownload = enabled
     this.#pauseOnMetered = pauseOnMetered
+    if (!enabled && !this.#installing) this.#automaticAbort?.abort()
     if (enabled && this.#state.status === "available" && this.#state.version) {
       this.#startAutoDownload(this.#state.version)
     }
@@ -156,7 +157,7 @@ export class UpdateController {
       this.#automaticAbort = undefined
       this.#downloading = undefined
       // A preference may change while cancellation is settling.
-      if (abort.signal.aborted && !this.#pauseOnMetered && this.#autoDownload) this.#startAutoDownload(version)
+      if (abort.signal.aborted && this.#autoDownload) this.#startAutoDownload(version)
     })
     this.#downloading = downloading
     void downloading.catch(() => {})

@@ -68,6 +68,65 @@ test("a switch to metered cancels an active background transfer and unmetered re
   expect(controller.get().status).toBe("downloaded")
 })
 
+test("disabling automatic downloads cancels an active transfer and leaves manual installation available", async () => {
+  const { controller, driver, beforeInstall } = setup(false)
+  let finish!: () => void
+  driver.download.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  controller.start()
+  await vi.advanceTimersByTimeAsync(0)
+  controller.setAutoDownload(false)
+  const [progress, signal] = driver.download.mock.calls[0]!
+  expect(signal?.aborted).toBe(true)
+  progress(90)
+  expect(controller.get().percent).toBe(0)
+  // A late completion after cancellation must not make the update downloaded.
+  finish()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(controller.get()).toEqual({ status: "available", version: "0.2.0" })
+  await vi.advanceTimersByTimeAsync(UPDATE_NETWORK_CHECK_INTERVAL)
+  expect(driver.download).toHaveBeenCalledOnce()
+  expect(beforeInstall).not.toHaveBeenCalled()
+  await controller.install()
+  expect(driver.download).toHaveBeenLastCalledWith(expect.any(Function), undefined)
+  expect(driver.install).toHaveBeenCalledOnce()
+})
+
+test.each([false, true])("re-enabling automatic downloads during cancellation rechecks the network (metered: %s)", async metered => {
+  const { controller, driver, network } = setup(false)
+  let cancel!: (reason: unknown) => void
+  driver.download.mockImplementationOnce(() => new Promise((_resolve, reject) => { cancel = reject }))
+  controller.start()
+  await vi.advanceTimersByTimeAsync(0)
+  controller.setAutoDownload(false)
+  const signal = driver.download.mock.calls[0]![1]!
+  expect(signal.aborted).toBe(true)
+  network.mockResolvedValue(metered)
+  controller.setAutoDownload(true)
+  cancel(signal.reason)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(driver.download).toHaveBeenCalledTimes(metered ? 1 : 2)
+  expect(controller.get().status).toBe(metered ? "available" : "downloaded")
+})
+
+test.each(["before", "during"])("manual installation started %s automatic download cancellation completes", async timing => {
+  const { controller, driver, beforeInstall } = setup(false)
+  let finish!: () => void
+  driver.download.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  controller.start()
+  await vi.advanceTimersByTimeAsync(0)
+  let installing = timing === "before" ? controller.install() : undefined
+  controller.setAutoDownload(false)
+  expect(driver.download.mock.calls[0]![1]?.aborted).toBe(timing === "during")
+  installing ??= controller.install()
+  finish()
+  await installing
+  expect(driver.download).toHaveBeenCalledTimes(timing === "before" ? 1 : 2)
+  if (timing === "during") expect(driver.download).toHaveBeenLastCalledWith(expect.any(Function), undefined)
+  expect(beforeInstall).toHaveBeenCalledOnce()
+  expect(driver.install).toHaveBeenCalledOnce()
+  expect(controller.get().status).toBe("installing")
+})
+
 test("manual installation can download on a metered connection", async () => {
   const { controller, driver, beforeInstall } = setup()
   controller.start()

@@ -979,7 +979,9 @@ and Network.framework expensive/Low Data Mode on macOS. Unknown or unavailable
 cost is treated as unmetered. While an automatic transfer is active or deferred,
 the main process checks cost every ten seconds. A metered connection cancels the
 background transfer without an install error; an unmetered connection starts it
-again. Explicit installation permits downloading regardless of network cost.
+again. Disabling automatic downloads also cancels an active background transfer.
+Explicit installation permits downloading regardless of network cost or the
+automatic-download preference, including a background transfer it has joined.
 The main process owns
 the updater and its state; the sandboxed renderer reads snapshots and subscribes
 through a narrow preload API. The lower-left sidebar offers an update only when
