@@ -1,8 +1,9 @@
 # TCP port forwarding
 
 Desktop can forward a local loopback TCP listener to a loopback TCP port on an
-enrolled Machine over WebRTC. This is a programmatic capability with no menu,
-button, or route in the UI. Web clients do not have a local forwarding API.
+enrolled Machine over WebRTC. Remote control's **Port forwarding** tab manages
+these listeners for the selected Team and Machine in the Desktop app. Web and
+mobile clients do not expose this tab or have a local forwarding API.
 
 ```text
 Local browser / debugger / other TCP client
@@ -29,6 +30,19 @@ The target daemon owns the remote sockets. Closing those sockets does not stop
 the target service. Forwards are ephemeral and are not catalog resources. They
 target a Machine's network environment, without a Workspace or Session ownership
 association. A Worktree does not provide a separate network namespace.
+
+## Remote control UI
+
+The tab is available on remote Machines and can be opened directly with
+`?tab=ports`. Add forwarding chooses an IPv4 or IPv6 loopback destination, a
+remote TCP port, and an optional local port. Leaving the local port blank asks
+the OS to select an available port. The active list shows the actual local
+address, supports copying it, and stops individual forwards.
+
+The renderer filters the host-wide list by both Team and Machine. It refreshes
+while the tab is active and when returning to it; navigating away does not stop
+listeners. Offline Machines cannot start new forwards, but existing listeners
+can still be stopped. Configuration is not saved or automatically reconnected.
 
 ## Programmatic Desktop API
 

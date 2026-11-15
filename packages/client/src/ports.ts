@@ -1,4 +1,4 @@
-/** Desktop-only TCP forwarding. No renderer controls are provided yet. */
+/** Desktop-only loopback TCP forwarding, managed from Remote control. */
 export const PORTS_IPC_CHANNEL = "deskfleet:ports"
 
 export interface PortForwardTarget { teamId: string; machineId: string }

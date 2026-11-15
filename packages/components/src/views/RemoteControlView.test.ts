@@ -1,14 +1,16 @@
 import { client as platformClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
-import { defineComponent, reactive } from "vue"
+import { defineComponent, reactive, ref } from "vue"
 import { createMemoryHistory, createRouter, type LocationQueryRaw } from "vue-router"
 import { afterEach, expect, test, vi } from "vitest"
 import type { FilesApi } from "../../../client/src/files.ts"
+import type { PortsApi } from "../../../client/src/ports.ts"
 import type { TerminalSummary } from "../../../client/src/terminal.ts"
 import { i18n } from "../i18n/index.ts"
 import { selectOption } from "../test/controls.ts"
 import { useRouteWorktree } from "../composables/useRouteWorktree.ts"
+import { accountSessionKey } from "../composables/account-session-context.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { deferred, mockDesktopApi, stubWebRtc, TestPeer } from "../test/desktop-media.ts"
@@ -21,21 +23,35 @@ const TerminalStub = defineComponent({
 const DesktopStub = defineComponent({ name: "DesktopView", props: ["machineId"], template: '<div data-tool="desktop" />' })
 const FilesStub = defineComponent({ name: "FileTransferPanel", props: ["api", "target", "machineName"], template: '<div data-tool="files" />' })
 const SystemStub = defineComponent({ name: "SystemStatusPanel", props: ["machineId", "machineName", "online", "active"], template: '<div data-tool="system" />' })
+const PortsStub = defineComponent({ name: "PortForwardPanel", props: ["api", "target", "machineName", "online", "active"], template: '<div data-tool="ports" />' })
 const shell: TerminalSummary = { id: "shell", title: "zsh", cwd: "/workspace", cols: 80, rows: 24, status: "running" }
 const originalFiles = platformClient.files
 const originalDesktop = platformClient.desktop
 const originalTarget = platformClient.target
+const originalPorts = platformClient.ports
+const originalPlatform = platformClient.platform
+const originalMobile = platformClient.mobile
 const cleanup: (() => void)[] = []
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop()
   platformClient.files = originalFiles
   platformClient.desktop = originalDesktop
   platformClient.target = originalTarget
+  platformClient.ports = originalPorts
+  platformClient.platform = originalPlatform
+  platformClient.mobile = originalMobile
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
-async function setup(options: { local?: boolean; desktop?: boolean; machineId?: string; query?: LocationQueryRaw; sessions?: TerminalSummary[]; realDesktop?: boolean; legacyDesktop?: boolean } = {}) {
+async function setup(options: { local?: boolean; desktop?: boolean; machineId?: string; query?: LocationQueryRaw; sessions?: TerminalSummary[]; realDesktop?: boolean; legacyDesktop?: boolean; ports?: boolean; platform?: typeof platformClient.platform; mobile?: boolean; account?: boolean } = {}) {
+  // Finish Vite's first transform before asserting the async panel's mount deadline.
+  if (options.realDesktop) await import("./DesktopView.vue")
+  const ports: PortsApi = { list: vi.fn(async () => []), start: vi.fn(async () => { throw new Error("Unexpected forwarding") }), stop: vi.fn(async () => {}) }
+  platformClient.ports = options.ports ? ports : undefined
+  platformClient.platform = options.platform ?? originalPlatform
+  platformClient.mobile = options.mobile
+  const accountMachines = ref([{ id: "local-daemon", teamId: "team-1" }, { id: "other", teamId: "team-1" }])
   const files: FilesApi = {
     list: vi.fn(async () => { throw new Error("Unexpected file listing") }),
     chooseLocalDirectory: vi.fn(async () => null), enqueue: vi.fn(async () => "transfer"), transfers: vi.fn(async () => []),
@@ -66,14 +82,15 @@ async function setup(options: { local?: boolean; desktop?: boolean; machineId?: 
   const host = defineComponent({ setup: () => ({ worktree: useRouteWorktree() }), template: "<RouterView />" })
   const wrapper = mount(host, {
     attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: {
+    global: { plugins: [pinia, router, i18n], provide: options.ports && options.account !== false ? { [accountSessionKey as symbol]: { machines: accountMachines } } : {}, stubs: {
       TerminalWorkspace: TerminalStub, DesktopView: options.realDesktop ? false : DesktopStub, FileTransferPanel: FilesStub,
       SystemStatusPanel: SystemStub,
+      PortForwardPanel: PortsStub,
     } },
   })
   cleanup.push(() => { wrapper.unmount(); disposePinia(pinia) })
   await flushPromises()
-  return { wrapper, router, fleet, terminals, files, create }
+  return { wrapper, router, fleet, terminals, files, create, ports, accountMachines }
 }
 
 const tabs = (wrapper: VueWrapper) => wrapper.findAll('[role="tab"]')
@@ -399,4 +416,53 @@ test("the system query opens System status directly without mounting other tools
   expect(wrapper.findComponent(TerminalStub).exists()).toBe(false)
   expect(wrapper.findComponent(DesktopStub).exists()).toBe(false)
   expect(wrapper.findComponent(FilesStub).exists()).toBe(false)
+})
+
+test("Port forwarding mounts on demand with its Team and Machine and survives tab switches", async () => {
+  const { wrapper, router, fleet, ports, accountMachines } = await setup({ ports: true })
+  expect(tabs(wrapper).map(tab => tab.text())).toEqual(["Terminal", "Desktop", "File transfer", "System status", "Port forwarding"])
+  expect(wrapper.findComponent(PortsStub).exists()).toBe(false)
+  await select(wrapper, 4)
+  const panel = wrapper.getComponent(PortsStub)
+  expect(router.currentRoute.value.query.tab).toBe("ports")
+  expect(panel.props()).toMatchObject({ api: ports, target: { teamId: "team-1", machineId: fleet.targetId }, online: true, active: true })
+  await select(wrapper, 0)
+  expect(panel.isVisible()).toBe(false)
+  expect(panel.props("active")).toBe(false)
+  await select(wrapper, 4)
+  expect(wrapper.getComponent(PortsStub).vm).toBe(panel.vm)
+  fleet.localDesktopTarget.online = false
+  await flushPromises()
+  expect(panel.props("online")).toBe(false)
+  accountMachines.value = [{ id: fleet.targetId, teamId: "team-2" }]
+  await flushPromises()
+  expect(wrapper.getComponent(PortsStub).vm).not.toBe(panel.vm)
+  expect(wrapper.getComponent(PortsStub).props("target")).toEqual({ teamId: "team-2", machineId: fleet.targetId })
+  expect(ports.stop).not.toHaveBeenCalled()
+})
+
+test.each(["win32", "darwin", "linux"] as const)("the ports query opens only Port forwarding on %s", async platform => {
+  const { wrapper } = await setup({ ports: true, platform, query: { tab: "ports" } })
+  expect(wrapper.getComponent(PortsStub).props("active")).toBe(true)
+  for (const component of [TerminalStub, DesktopStub, FilesStub, SystemStub]) expect(wrapper.findComponent(component).exists()).toBe(false)
+})
+
+test.each([
+  { platform: "web" as const, ports: true },
+  { platform: "web" as const, ports: true, mobile: true },
+  { platform: "darwin" as const, ports: true, mobile: true },
+  { ports: false },
+  { ports: true, local: true },
+])("Port forwarding is hidden without a remote Desktop capability: %j", async options => {
+  const { wrapper } = await setup({ ...options, query: { tab: "ports" } })
+  expect(tabs(wrapper).some(tab => tab.text() === "Port forwarding")).toBe(false)
+  expect(wrapper.findComponent(PortsStub).exists()).toBe(false)
+  expect(wrapper.getComponent(TerminalStub).isVisible()).toBe(true)
+})
+
+test.each([{ account: false }, { machineId: "other" }, { machineId: "missing" }])("Port forwarding never guesses a target: %j", async options => {
+  const { wrapper, ports } = await setup({ ...options, ports: true, query: { tab: "ports" } })
+  expect(wrapper.findComponent(PortsStub).exists()).toBe(false)
+  expect(ports.start).not.toHaveBeenCalled()
+  expect(ports.list).not.toHaveBeenCalled()
 })
