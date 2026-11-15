@@ -88,6 +88,8 @@ let planRevision = 0
 let pendingAppOpened: AnalyticsEvents["app_opened"] | undefined
 let pendingPageViewed: AnalyticsEvents["page_viewed"] | undefined
 const revision = ref(0)
+/** False until `/api/site` (or auth config) applies the master switch. */
+let siteTelemetryResolved = false
 const siteTelemetryEnabledRef = ref(false)
 const userTelemetryConsentRef = ref(false)
 
@@ -97,6 +99,18 @@ export const userTelemetryConsent = readonly(userTelemetryConsentRef)
 function canRunTelemetry(): boolean {
   if (!consentRequired) return true
   return siteTelemetryEnabledRef.value && userTelemetryConsentRef.value
+}
+
+/**
+ * Buffer startup lifecycle events only before the site gate resolves, or while
+ * site telemetry is on and waiting for user consent. Once the master switch is
+ * known off, do not re-buffer — a later re-enable must not flush events from the
+ * disabled window.
+ */
+function canBufferLifecycleEvents(): boolean {
+  if (!consentRequired) return false
+  if (readStoredTelemetryConsent() === "declined") return false
+  return !siteTelemetryResolved || siteTelemetryEnabledRef.value
 }
 
 function user(): StatsigUser {
@@ -183,7 +197,9 @@ export function setSiteTelemetryEnabled(enabled: boolean): void {
     pendingAppOpened = undefined
     pendingPageViewed = undefined
   }
-  if (siteTelemetryEnabledRef.value === enabled) return
+  const unchanged = siteTelemetryResolved && siteTelemetryEnabledRef.value === enabled
+  siteTelemetryResolved = true
+  if (unchanged) return
   siteTelemetryEnabledRef.value = enabled
   syncAnalyticsRuntime()
 }
@@ -233,7 +249,7 @@ export function beginAnalyticsPlanRefresh(teamId: string): (value: BillingPlan) 
 
 export function trackEvent<Name extends keyof AnalyticsEvents>(name: Name, metadata: AnalyticsEvents[Name]): void {
   if (!canRunTelemetry()) {
-    if (consentRequired && readStoredTelemetryConsent() !== "declined") {
+    if (canBufferLifecycleEvents()) {
       if (name === "app_opened") pendingAppOpened = metadata as AnalyticsEvents["app_opened"]
       else if (name === "page_viewed") pendingPageViewed = metadata as AnalyticsEvents["page_viewed"]
     }
@@ -310,6 +326,7 @@ export async function shutdownAnalytics(): Promise<void> {
   consentRequired = false
   pendingAppOpened = undefined
   pendingPageViewed = undefined
+  siteTelemetryResolved = false
   siteTelemetryEnabledRef.value = false
   userTelemetryConsentRef.value = false
   userId = undefined
