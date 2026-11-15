@@ -1324,11 +1324,12 @@ a billing action. Relay guidance appears only after direct transport fails,
 never in place of an authorization or capture error. Generic desktop failures
 also suggest checking that the machine is awake and unlocked.
 
-Desktop's programmatic [TCP forwarding](ports.md) API owns local loopback
+Desktop's [TCP forwarding](ports.md) API owns local loopback
 listeners in its main process, independently of windows and the local Agent.
 The target daemon enables native forwarding only for a `ports:forward` grant.
-Forwards are ephemeral Machine connections, without UI controls or a new
-catalog resource; closing them does not stop the target service.
+Remote control's Port forwarding tab manages these ephemeral connections within
+the selected Team and Machine. They are not catalog resources; closing them
+does not stop the target service.
 
 The central backend optionally collects coturn Redis Pub/Sub counters by Team
 and stores them in PostgreSQL. See

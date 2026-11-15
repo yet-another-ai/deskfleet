@@ -2,7 +2,7 @@
 import { vNavigationMotion } from "../directives/navigation-motion.ts"
 import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
-import { Activity, FolderSync, MonitorPlay, SquareTerminal } from "@lucide/vue"
+import { Activity, FolderSync, MonitorPlay, Network, SquareTerminal } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
 import { computed, defineAsyncComponent, ref, useTemplateRef } from "vue"
@@ -23,6 +23,7 @@ const TerminalWorkspace = defineAsyncComponent(() => import("../components/termi
 const FileTransferPanel = defineAsyncComponent(() => import("../components/files/FileTransferPanel.vue"))
 const DesktopView = defineAsyncComponent(() => import("./DesktopView.vue"))
 const SystemStatusPanel = defineAsyncComponent(() => import("../components/system/SystemStatusPanel.vue"))
+const PortForwardPanel = defineAsyncComponent(() => import("../components/ports/PortForwardPanel.vue"))
 
 const props = defineProps<{ machineId: string }>()
 const { t } = useI18n()
@@ -33,17 +34,24 @@ const machine = computed(() => fleet.findMachine(props.machineId))
 const currentTarget = computed(() => props.machineId === fleet.targetId)
 const controlLabel = computed(() => machine.value?.local ? "machine.localControl" : "machine.remoteControl")
 const files = platformClient.files
+const ports = platformClient.platform !== "web" && !platformClient.mobile ? platformClient.ports : undefined
 const tabsList = useTemplateRef<InstanceType<typeof TabsList>>("tabsList")
 const { fadeStyle: tabsFadeStyle } = useScrollFade(() => tabsList.value?.$el as HTMLElement | undefined, { fade: "x", size: "sm" })
 const target = useFileTarget(() => props.machineId)
+const portsTarget = computed(() => target.value?.kind === "machine"
+  ? { teamId: target.value.teamId, machineId: target.value.machineId } : undefined)
 const tabs = [
   { id: "terminal", label: "remoteControl.terminal", icon: SquareTerminal },
   { id: "desktop", label: "remoteControl.desktop", icon: MonitorPlay },
   { id: "files", label: "files.title", icon: FolderSync },
   { id: "system", label: "systemStatus.title", icon: Activity },
+  { id: "ports", label: "ports.title", icon: Network },
 ] as const
 type Tool = typeof tabs[number]["id"]
-const availableTabs = computed(() => tabs.filter(tab => tab.id !== "desktop" || !machine.value?.local))
+const availableTabs = computed(() => tabs.filter(tab => {
+  if (tab.id === "ports") return !!ports && !machine.value?.local
+  return tab.id !== "desktop" || !machine.value?.local
+}))
 const active = computed<Tool>(() => availableTabs.value.find(tab => tab.id === route.query.tab)?.id
   ?? (machine.value?.desktop && !machine.value.local ? "desktop" : "terminal"))
 const desktopDisplay = computed(() => {
@@ -110,6 +118,12 @@ const activeTerminal = computed({
         <UiScrollArea orientation="both" class="min-h-0 flex-1" content-class="flex min-h-full flex-col">
           <SystemStatusPanel v-if="currentTarget" :machine-id="machineId" :machine-name="machine.name" :online="machine.online" :active="active === 'system'" />
           <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('systemStatus.unavailable') }}</p>
+        </UiScrollArea>
+      </TabsContent>
+      <TabsContent v-if="ports && !machine.local && visited.has('ports')" v-show="active === 'ports'" value="ports" force-mount class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <UiScrollArea orientation="both" class="min-h-0 flex-1" content-class="flex min-h-full flex-col">
+          <PortForwardPanel v-if="portsTarget && currentTarget" :key="`${portsTarget.teamId}:${portsTarget.machineId}`" :api="ports" :target="portsTarget" :machine-name="machine.name" :online="machine.online" :active="active === 'ports'" />
+          <p v-else class="m-auto p-6 text-sm text-ui-text-muted">{{ t('ports.unavailable') }}</p>
         </UiScrollArea>
       </TabsContent>
     </TabsRoot>
