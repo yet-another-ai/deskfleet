@@ -10,7 +10,7 @@ vi.mock("electron", () => ({ ipcMain: { handle: mocks.handle } }))
 beforeEach(() => vi.clearAllMocks())
 
 function fixture() {
-  const controller = { get: vi.fn(async () => ({ step: "account", permissionSteps: [] })), permissions: vi.fn(), requestPermission: vi.fn(), openLocalNetworkSettings: vi.fn(), advancePermission: vi.fn(), complete: vi.fn() }
+  const controller = { get: vi.fn(async () => ({ step: "account", permissionSteps: [] })), advanceAccount: vi.fn(), setMachineControlEnabled: vi.fn(), permissions: vi.fn(), requestPermission: vi.fn(), openLocalNetworkSettings: vi.fn(), advancePermission: vi.fn() }
   installOnboarding(controller as unknown as OnboardingController)
   expect(mocks.handle.mock.calls[0]![0]).toBe(ONBOARDING_CHANNEL)
   const invoke = mocks.handle.mock.calls[0]![1] as (event: IpcMainInvokeEvent, method: unknown, value?: unknown) => Promise<unknown>
@@ -22,6 +22,11 @@ function fixture() {
 test("welcome IPC accepts only the main renderer and known permission actions", async () => {
   const f = fixture()
   expect(await f.invoke(f.event, "get")).toEqual({ step: "account", permissionSteps: [] })
+  await f.invoke(f.event, "advanceAccount")
+  expect(f.controller.advanceAccount).toHaveBeenCalledOnce()
+  await f.invoke(f.event, "setMachineControlEnabled", false)
+  expect(f.controller.setMachineControlEnabled).toHaveBeenCalledExactlyOnceWith(false)
+  await expect(f.invoke(f.event, "setMachineControlEnabled", "false")).rejects.toThrow("must be a boolean")
   await f.invoke(f.event, "requestPermission", "screenCapture")
   expect(f.controller.requestPermission).toHaveBeenCalledExactlyOnceWith("screenCapture")
   await f.invoke(f.event, "requestPermission", "localNetwork")

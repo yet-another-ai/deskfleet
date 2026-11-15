@@ -18,7 +18,7 @@ const { t } = useI18n()
 const session = useAccountSession()!
 const onboarding = props.host.onboarding
 const firstRun = props.state.step !== "complete"
-const step = ref<OnboardingStep>(firstRun ? props.state.step : "account")
+const step = ref<OnboardingStep>(firstRun && session.account.value.user ? props.state.step : "account")
 const pending = ref(false)
 const refreshing = ref(false)
 const error = ref(session.notice.value)
@@ -46,8 +46,8 @@ const canRequest = computed(() => windowsService.value
     || !refreshing.value && currentPermission.value?.status !== "checking"))
 const canRestart = computed(() => props.host.platform === "darwin" && !!props.host.application)
 const permissionMessages = computed(() => `welcome.${wayland.value ? "wayland" : "permissions"}.${permission.value}`)
-const steps = computed<OnboardingStep[]>(() => [...(firstRun ? permissionSteps.value : []), "account"])
-const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, account: KeyRound, complete: Check }
+const steps = computed<OnboardingStep[]>(() => firstRun ? ["account", "machineControl", ...permissionSteps.value] : ["account"])
+const icons = { localNetwork: Network, fullDiskAccess: FolderOpen, screenCapture: Monitor, accessibility: MousePointer2, windowsDesktopService: ShieldCheck, account: KeyRound, machineControl: Monitor, complete: Check }
 const currentIndex = computed(() => steps.value.indexOf(step.value))
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "screenCapture" || value === "accessibility")
@@ -56,7 +56,7 @@ const stepLabel = (value: OnboardingStep) => t(wayland.value && (value === "scre
 function move(next: OnboardingState): void {
   // Keep act/refresh errors when reconcile only records a late Linux backend.
   if (next.step !== step.value) error.value = undefined
-  step.value = next.step
+  step.value = session.account.value.user ? next.step : "account"
   currentBackend = next.linuxDesktopBackend
   emit("change", next)
 }
@@ -101,8 +101,16 @@ async function submit(): Promise<void> {
   await act(async () => {
     session.notice.value = undefined
     if (!session.account.value.user) await session.signIn()
-    move(firstRun && onboarding ? await onboarding.complete() : { step: "complete", permissionSteps: [] })
+    if (firstRun && onboarding) {
+      // A restarted guide may need sign-in again without resetting saved progress.
+      const current = await onboarding.get()
+      move(current.step === "account" ? await onboarding.advanceAccount() : current)
+    } else move({ step: "complete", permissionSteps: [] })
   })
+}
+
+async function chooseMachineControl(enabled: boolean): Promise<void> {
+  await act(async () => { move(await onboarding!.setMachineControlEnabled(enabled)) })
 }
 
 async function refreshPermissions(): Promise<void> {
@@ -155,6 +163,7 @@ function restartApplication(): void {
 }
 
 whenever(permission, () => { void refreshPermissions() }, { immediate: true })
+whenever(() => !session.account.value.user, () => { step.value = "account" })
 const unsubscribe = onboarding ? props.host.settings.onChanged(state => {
   if (!DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`]) && state.linuxDesktopBackend === undefined) return
   ++permissionRevision
@@ -192,7 +201,19 @@ onBeforeUnmount(() => { unsubscribe?.() })
         </ol>
       </aside>
       <section class="flex min-w-0 flex-col justify-center p-7 md:min-h-110 md:p-9">
-        <template v-if="permission">
+        <template v-if="step === 'machineControl'">
+          <Monitor :size="30" :stroke-width="1.5" class="mb-5 text-ui-text-muted" aria-hidden="true" />
+          <p class="m-0 mb-2 text-xs text-ui-text-muted">{{ t("welcome.stepCount", { current: currentIndex + 1, total: steps.length }) }}</p>
+          <h1 class="m-0 text-xl font-semibold">{{ t("welcome.machineControl.title") }}</h1>
+          <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t("welcome.machineControl.description") }}</p>
+          <p v-if="error" role="alert" class="m-0 mt-5 break-words text-sm text-ui-danger">{{ error }}</p>
+          <div class="mt-6 flex flex-col gap-3">
+            <UiButton variant="primary" type="button" :disabled="pending || refreshing" @click="chooseMachineControl(true)">{{ t("welcome.machineControl.enable") }}</UiButton>
+            <UiButton type="button" :disabled="pending || refreshing" @click="chooseMachineControl(false)">{{ t("welcome.machineControl.disable") }}</UiButton>
+          </div>
+          <p class="m-0 mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.machineControl.hint") }}</p>
+        </template>
+        <template v-else-if="permission">
           <ShieldCheck :size="30" :stroke-width="1.5" class="mb-5 text-ui-text-muted" aria-hidden="true" />
           <p class="m-0 mb-2 text-xs text-ui-text-muted">{{ t("welcome.stepCount", { current: currentIndex + 1, total: steps.length }) }}</p>
           <h1 class="m-0 text-xl font-semibold">{{ stepLabel(permission) }}</h1>

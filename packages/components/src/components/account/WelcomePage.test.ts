@@ -9,7 +9,7 @@ import { i18n } from "../../i18n/index.ts"
 import WelcomePage from "./WelcomePage.vue"
 
 vi.mock("../../composables/useAccountSession.ts", () => ({
-  useAccountSession: () => ({ notice: ref(), account: ref({}), site: ref(), signIn: vi.fn() }),
+  useAccountSession: () => ({ notice: ref(), account: ref({ user: { name: "Ada" } }), site: ref(), signIn: vi.fn() }),
 }))
 
 let view: VueWrapper | undefined
@@ -31,7 +31,8 @@ function setup(step: "screenCapture" | "accessibility" = "screenCapture") {
     })),
     openLocalNetworkSettings: vi.fn(async () => {}),
     advancePermission: vi.fn(async () => ({ ...state, step: "accessibility" as const })),
-    complete: vi.fn(async () => state),
+    advanceAccount: vi.fn(async () => state),
+    setMachineControlEnabled: vi.fn(async () => state),
   } satisfies OnboardingApi
   const host: DeskfleetDesktopApi = {
     ...getClient(), platform: "linux", onboarding,

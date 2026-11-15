@@ -14,7 +14,9 @@ const onboarding = client.onboarding
 const { t } = useI18n()
 type SystemPermission = Exclude<OnboardingPermission, "windowsDesktopService">
 const systemPermissions = (steps: readonly OnboardingPermission[]) => steps.filter((kind): kind is SystemPermission => kind !== "windowsDesktopService")
-const hasWindowsService = client.platform === "win32" && !!client.windowsDesktopService
+const windowsServiceAvailable = client.platform === "win32" && !!client.windowsDesktopService
+const windowsServiceEnabled = ref(false)
+const hasWindowsService = computed(() => windowsServiceAvailable && windowsServiceEnabled.value)
 const windowsService = ref<InstanceType<typeof WindowsDesktopServiceSettings>>()
 const permissionSteps = ref<readonly SystemPermission[]>([])
 const permissions = ref<OnboardingPermissionsState>({})
@@ -50,14 +52,20 @@ function accept(value: OnboardingPermissionsState, requestedRevision: number): v
 }
 
 async function refresh(): Promise<void> {
-  if (!onboarding || busy.value) return
+  if ((!onboarding && !windowsServiceAvailable) || busy.value) return
   refreshing.value = true
   error.value = undefined
   const requestedRevision = revision
   try {
+    if (!onboarding) {
+      const state = await client.settings.get()
+      if (revision === requestedRevision) windowsServiceEnabled.value = state.enabled || state.status === "running"
+      return
+    }
     const state = await onboarding.get()
     if (revision === requestedRevision) {
       permissionSteps.value = systemPermissions(state.permissionSteps)
+      windowsServiceEnabled.value = state.permissionSteps.includes("windowsDesktopService")
       backend.value = state.linuxDesktopBackend
     }
     if (permissionSteps.value.length) accept(await onboarding.permissions(), requestedRevision)
@@ -93,17 +101,20 @@ function restartApplication(): void {
   void client.application?.restart().catch(reason => { error.value = message(reason) })
 }
 
-const unsubscribe = onboarding ? client.settings.onChanged(state => {
+const unsubscribe = onboarding || windowsServiceAvailable ? client.settings.onChanged(state => {
   if (state.linuxDesktopBackend !== undefined) backend.value = state.linuxDesktopBackend
-  const nextSteps = systemPermissions(onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running"))
+  const nextPermissions = onboardingPermissions(client.platform, backend.value, state.enabled || state.status === "running")
+  const nextSteps = systemPermissions(nextPermissions)
+  const nextWindowsService = nextPermissions.includes("windowsDesktopService")
   const stepsChanged = nextSteps.length !== permissionSteps.value.length || nextSteps.some((kind, index) => kind !== permissionSteps.value[index])
   // Missing permission data in a lifecycle event is not a new access decision.
-  if (stepsChanged || state.linuxDesktopBackend !== undefined || DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`])) ++revision
+  if (stepsChanged || nextWindowsService !== windowsServiceEnabled.value || state.linuxDesktopBackend !== undefined || DESKTOP_ONBOARDING_PERMISSIONS.some(kind => state[`${kind}Permission`])) ++revision
   for (const kind of DESKTOP_ONBOARDING_PERMISSIONS) {
     const value = state[`${kind}Permission`]
     if (value !== undefined) permissions.value[`${kind}Permission`] = value
   }
   permissionSteps.value = nextSteps
+  windowsServiceEnabled.value = nextWindowsService
 }) : undefined
 useEventListener(window, "focus", () => { void refresh() })
 onMounted(() => { void refresh() })
@@ -117,15 +128,15 @@ onBeforeUnmount(() => { unsubscribe?.() })
       <UiButton v-if="canRestart" type="button" :disabled="busy" @click="restartApplication">
         <RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}
       </UiButton>
-      <UiButton v-if="onboarding || hasWindowsService" type="button" :disabled="busy" @click="refreshAll">
+      <UiButton v-if="onboarding || windowsServiceAvailable" type="button" :disabled="busy" @click="refreshAll">
         <RefreshCw :size="14" :class="refreshing && 'animate-spin'" aria-hidden="true" />
         {{ t(refreshing ? "permissionsSettings.refreshing" : "permissionsSettings.refresh") }}
       </UiButton>
     </div>
   </div>
   <p class="m-0 mb-6 text-sm leading-relaxed text-ui-text-muted">{{ t("permissionsSettings.description") }}</p>
-  <p v-if="!onboarding && !hasWindowsService" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.unavailable") }}</p>
-  <template v-if="onboarding">
+  <p v-if="!onboarding && !windowsServiceAvailable" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.unavailable") }}</p>
+  <template v-if="onboarding || windowsServiceAvailable">
     <p v-if="refreshing && !permissionSteps.length" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("permissionsSettings.refreshing") }}</p>
     <p v-else-if="!permissionSteps.length && !error && !hasWindowsService" class="ui-card m-0 p-4 text-sm text-ui-text-muted">{{ t("permissionsSettings.noPermissions") }}</p>
     <p v-if="error" role="alert" class="m-0 mb-4 break-words text-sm text-ui-danger">{{ error }}</p>

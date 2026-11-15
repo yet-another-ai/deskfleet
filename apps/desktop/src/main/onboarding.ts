@@ -13,11 +13,14 @@ export function installOnboarding(controller: OnboardingController): void {
     if (!isDesktopMediaSender(event)) throw new Error("Welcome IPC is restricted to the main renderer")
     switch (method) {
       case "get": return controller.get()
+      case "advanceAccount": return controller.advanceAccount()
+      case "setMachineControlEnabled":
+        if (typeof value !== "boolean") throw new Error("Machine control setting must be a boolean")
+        return controller.setMachineControlEnabled(value)
       case "permissions": return controller.permissions()
       case "requestPermission": return controller.requestPermission(permission(value))
       case "openLocalNetworkSettings": return controller.openLocalNetworkSettings()
       case "advancePermission": return controller.advancePermission(permission(value))
-      case "complete": return controller.complete()
       default: throw new Error("Unknown welcome operation")
     }
   })

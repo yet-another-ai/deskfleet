@@ -62,11 +62,12 @@ test("loads the saved preference before enabling changes and follows start progr
   expect(view.get('[role="switch"]').attributes("disabled")).toBeUndefined()
 })
 
-test("turns off directly, describes its effect on terminals, and retains state after a rejected write", async () => {
+test("uses the machine control switch to stop the local Agent and retains state after a rejected write", async () => {
   const save = vi.spyOn(platformClient.settings, "setLocalAgentEnabled").mockRejectedValueOnce(new Error("Could not save settings"))
   const view = render()
   await flushPromises()
-  expect(view.get(`#${view.get('[role="switch"]').attributes("aria-describedby")}`).text()).toBe("Turning it off also stops its terminals.")
+  expect(switchLabel(view)).toBe(i18n.global.t("settings.runLocalAgent"))
+  expect(view.get(`#${view.get('[role="switch"]').attributes("aria-describedby")}`).text()).toBe(i18n.global.t("settings.stopsTerminals"))
   await view.get('[role="switch"]').trigger("click")
   await flushPromises()
   expect(save).toHaveBeenCalledExactlyOnceWith(false)
@@ -117,7 +118,7 @@ test("localizes settings and explains an independently started Agent", async () 
   vi.mocked(platformClient.settings.get).mockResolvedValue({ enabled: false, status: "running" })
   const view = render()
   await flushPromises()
-  expect(switchLabel(view)).toBe("运行本地 Agent")
+  expect(switchLabel(view)).toBe(i18n.global.t("settings.runLocalAgent"))
   expect(view.get('[role="status"]').text()).toBe("在外部运行")
 })
 

@@ -137,8 +137,11 @@ function start(): void {
     })
     try { keepAwake.get() } catch (error) { console.error(error) }
     try { updateSettings.get() } catch (error) { console.error(error) }
-    await localAgent.initialize()
-    try { await onboarding.get() } catch (error) { console.error(error) }
+    await localAgent.initialize({ start: false })
+    try {
+      const { step } = await onboarding.get()
+      if (step !== "account" && step !== "machineControl") await localAgent.startIfEnabled()
+    } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
     updates.start()
     createTray({ show, quit: () => lifecycle.quit() })

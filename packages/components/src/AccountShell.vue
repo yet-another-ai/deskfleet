@@ -49,6 +49,16 @@ provide(platformClientKey, props.host)
 provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore()))
 useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
+let localAgentRunning: boolean | undefined
+const stopLocalAgentUpdates = props.host.platform !== "web" ? props.host.settings.onChanged(state => {
+  // Read enrollment after startup/shutdown settles; stopping can still accept IPC.
+  if (state.status === "starting" || state.status === "stopping") return
+  const running = state.status === "running"
+  if (running === localAgentRunning) return
+  localAgentRunning = running
+  if (account.value.user) void session.refreshMachines()
+}) : undefined
+onBeforeUnmount(() => { stopLocalAgentUpdates?.() })
 const machineScopeKey = computed(() => JSON.stringify([account.value.serverUrl, account.value.user?.id, session.teamId.value, machine.value?.id]))
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)

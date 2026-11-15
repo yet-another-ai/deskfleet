@@ -194,9 +194,23 @@ try {
   const headlessDiscovery = await readFile(join(headlessDirectory, "daemon.json"), "utf8")
   await mkdir(profile)
   await inspectRenderer()
-  const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
+  const initial = await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")
+  assert.equal(initial.step, "account")
+  assert.deepEqual(initial.permissionSteps, [])
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  await screenshot("welcome-account")
+  // Authentication itself is exercised by the backend client smoke. Exercise
+  // the host's persisted progress without opening a browser login here.
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.advanceAccount()")).step, "machineControl")
+  await stop()
+  await inspectRenderer()
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "machineControl")
+  assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
+  await assert.rejects(stat(join(daemonDirectory, "daemon.json")), { code: "ENOENT" })
+  const onboarding = await evaluate<OnboardingState>("window.deskfleet.onboarding.setMachineControlEnabled(true)")
   const permissionSteps = onboarding.permissionSteps
-  assert.equal(onboarding.step, permissionSteps[0] ?? "account")
+  assert.equal(onboarding.step, permissionSteps[0] ?? "complete")
   if (process.platform === "win32") {
     assert.deepEqual(permissionSteps, ["windowsDesktopService"])
     const service = await evaluate<{ available: boolean; installed: boolean; running: boolean }>(
@@ -207,7 +221,6 @@ try {
     assert.equal(typeof service.running, "boolean")
   }
   if (onboarding.linuxDesktopBackend === "x11") {
-    assert.equal(await evaluate("document.querySelectorAll('ol li').length"), 1)
     assert.equal(await evaluate("document.body.innerText.includes('desktop sharing dialog')"), false)
   }
   assert.equal(await evaluate("document.querySelector('input[name=server-url]') === null && !('saveServer' in window.deskfleet.onboarding)"), true)
@@ -218,24 +231,21 @@ try {
   finally { profileControl.close() }
   const identity = (await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity
   assert.notDeepEqual(identity, headlessIdentity, "Desktop IPC must use the profile daemon rather than headless discovery")
-  await screenshot("welcome-initial")
+  await screenshot("welcome-resumed-sign-in")
   // OS permission dialogs require manual interaction; skip them through
   // their production API so this smoke does not change machine permissions.
   for (const permission of permissionSteps) {
     await evaluate(`window.deskfleet.onboarding.advancePermission(${JSON.stringify(permission)})`)
   }
-  assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { step: "account" })
+  assert.deepEqual(JSON.parse(await readFile(join(profile, "onboarding.json"), "utf8")), { step: "complete" })
   await stop()
 
-  // An unfinished welcome resumes at account without a backend address field.
+  // Completed setup retains the enabled machine and its identity after restart.
   await inspectRenderer()
-  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "account")
+  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.get()")).step, "complete")
   assert.equal(await evaluate("document.querySelector('input[type=url]') === null"), true)
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   assert.deepEqual((await evaluate<LocalMachineStatus>("window.deskfleet.centralBridge.invoke('localEnrollment', []).then(result => { if (!result.ok) throw new Error(result.error.message); return result.value })")).registrations[0]!.identity, identity, "The profile daemon identity must survive an app restart")
-  await screenshot("welcome-account")
-  // The UI completes this after browser authentication; exercise persisted host progress here.
-  assert.equal((await evaluate<OnboardingState>("window.deskfleet.onboarding.complete()")).step, "complete")
   await evaluate("window.deskfleet.settings.setLocalAgentEnabled(false)")
   await stop()
 

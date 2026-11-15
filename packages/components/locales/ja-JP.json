@@ -556,8 +556,8 @@
     "windowsLockControlStart": "開始",
     "worktreeRoot": "ワークツリーのルートディレクトリ", "worktreeRootDescription": "このコンピューターで新しいセッションのワークツリーを保存する場所です。既存のファイルは移動しません。",
     "chooseWorktreeRoot": "フォルダーを選択…", "useDefaultWorktreeRoot": "デフォルトを使用",
-    "choosingFolder": "フォルダーを選択中…", "runLocalAgent": "ローカルエージェントを実行",
-    "stopsTerminals": "オフにすると、そのターミナルも停止します。", "sections": "設定項目",
+    "choosingFolder": "フォルダーを選択中…", "runLocalAgent": "このマシンの操作を許可",
+    "stopsTerminals": "チームによるローカルエージェント、ファイル、ターミナル、リモートデスクトップへのアクセスを許可します。オフにするとローカルエージェントとターミナルが停止します。他のマシンは引き続き操作できます。", "sections": "設定項目",
     "back": "アプリに戻る", "loading": "設定を読み込み中…",
     "unavailable": "設定を利用できません", "stopped": "停止中",
     "starting": "起動中…", "running": "実行中",
@@ -1158,13 +1158,21 @@
     "showHidden": "隠し項目を表示"
   },
   "welcome": {
-    "title": "DeskFleet へようこそ", "description": "このコンピューターの準備を整え、チームにログインしましょう。順を追ってご案内します。",
+    "title": "DeskFleet へようこそ", "description": "サインインして、このコンピューターの使い方を選びましょう。",
     "notificationsTitle": "タスクの状況を通知で確認", "notificationsDescription": "エージェントがタスクを完了したときや、入力が必要なときに通知を受け取れます。",
     "notificationsDetails": "ブラウザー通知を許可すると、DeskFleet を開いている間は別のタブを使用中でも通知を受け取れます。後で設定から変更できます。", "progress": "セットアップの進行状況",
     "steps": {
+      "machineControl": "このマシン",
       "localNetwork": "ローカルネットワーク",
       "fullDiskAccess": "フルディスクアクセス", "screenCapture": "画面収録",
       "accessibility": "マウスとキーボードの操作", "windowsDesktopService": "ロック中のリモート操作", "account": "アカウント"
+    },
+    "machineControl": {
+      "title": "このマシンの操作を許可しますか？",
+      "description": "許可すると、このコンピューターでエージェントを実行し、ファイルやターミナル、リモートデスクトップを利用できます。他のマシンの操作だけに使う場合、これらの権限は不要です。",
+      "enable": "はい、操作を許可",
+      "disable": "いいえ、他のマシンのみ操作",
+      "hint": "「設定 → 環境設定 → このマシンの操作を許可」でいつでも変更できます。"
     },
     "stepCount": "ステップ {current} / {total}", "continue": "続ける",
     "continueAs": "{name} として続ける", "systemSettings": "macOS システム設定",

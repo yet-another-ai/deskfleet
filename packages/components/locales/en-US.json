@@ -682,8 +682,8 @@
     "chooseWorktreeRoot": "Choose folder…",
     "useDefaultWorktreeRoot": "Use default",
     "choosingFolder": "Choosing folder…",
-    "runLocalAgent": "Run local Agent",
-    "stopsTerminals": "Turning it off also stops its terminals.",
+    "runLocalAgent": "Allow this machine to be controlled",
+    "stopsTerminals": "Allow team access to local agents, files, terminals, and remote desktop. Turning this off stops local agents and terminals. You can still control other machines.",
     "sections": "Settings sections",
     "back": "Back to app",
     "loading": "Loading settings…",
@@ -1623,18 +1623,26 @@
   },
   "welcome": {
     "title": "Welcome to DeskFleet",
-    "description": "Get this computer ready and sign in to your team, one step at a time.",
+    "description": "Sign in, then choose how you want to use this computer.",
     "notificationsTitle": "Stay up to date with your tasks",
     "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
     "notificationsDetails": "Allow browser notifications to receive updates while DeskFleet is open, even when you are using another tab. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
+      "machineControl": "This machine",
       "localNetwork": "Local network",
       "fullDiskAccess": "Full Disk Access",
       "screenCapture": "Screen recording",
       "accessibility": "Mouse and keyboard control",
       "windowsDesktopService": "Remote control while locked",
       "account": "Your account"
+    },
+    "machineControl": {
+      "title": "Allow this machine to be controlled?",
+      "description": "Enable access to this computer to run agents, work with files and terminals, and use remote desktop. If you only want to control other machines, you can skip these permissions.",
+      "enable": "Yes, allow control",
+      "disable": "No, only control other machines",
+      "hint": "You can change this anytime in Settings → Preferences → Allow this machine to be controlled."
     },
     "stepCount": "Step {current} of {total}",
     "continue": "Continue",
