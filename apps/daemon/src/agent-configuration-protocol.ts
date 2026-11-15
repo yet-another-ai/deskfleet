@@ -57,6 +57,18 @@ export interface AgentConfiguration {
   promptCapabilities?: AgentPromptCapabilities
   commands?: AgentComposerCommand[]
   skills?: AgentComposerSkill[]
+  /** Confirmed draft configurations and transitions, scoped to the provider and Workspace. */
+  matrix?: AgentConfigurationMatrix
+}
+
+export type AgentConfigurationSnapshot = Omit<AgentConfiguration, "matrix">
+
+export interface AgentConfigurationMatrix {
+  /** The first configuration is the provider's initial default. */
+  configurations: AgentConfigurationSnapshot[]
+  transitions: { from: number; selection: AgentConfigurationSelection; to: number }[]
+  /** False while warming or when a dynamic catalog exceeds the discovery budget. */
+  complete: boolean
 }
 
 export interface AgentConfigurationSelection {
@@ -77,6 +89,10 @@ export interface AgentConfigurationParams extends AgentConfigurationSelection {
   release?: boolean
   /** Wait briefly for the provider's initial command notification. */
   composer?: boolean
+  /** Use the registration's prewarmed, immutable draft configuration matrix. */
+  cache?: boolean
+  /** Discard this provider/Workspace matrix and discover fresh defaults. */
+  refresh?: boolean
 }
 
 export function validateAgentConfigurationParams(params: Record<string, unknown>): void {
@@ -87,6 +103,8 @@ export function validateAgentConfigurationParams(params: Record<string, unknown>
   }
   if (params.release !== undefined && typeof params.release !== "boolean") throw new Error("Invalid Agent configuration release")
   if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid Agent composer discovery")
+  if (params.cache !== undefined && typeof params.cache !== "boolean") throw new Error("Invalid Agent configuration cache flag")
+  if (params.refresh !== undefined && typeof params.refresh !== "boolean") throw new Error("Invalid Agent configuration refresh flag")
   if (params.release && !params.probeId) throw new Error("Agent configuration release requires a probe ID")
   if (params.restore !== undefined) {
     if (!params.probeId || !params.restore || typeof params.restore !== "object" || Array.isArray(params.restore)) {

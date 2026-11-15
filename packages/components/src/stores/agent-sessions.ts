@@ -691,7 +691,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }
   }
 
-  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; composer?: boolean; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
+  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; composer?: boolean; cache?: boolean; refresh?: boolean; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
     const result = await call("_deskfleet/agent/configuration", params)
     if (!result) throw new Error("Agent configuration is unavailable")
     return result
