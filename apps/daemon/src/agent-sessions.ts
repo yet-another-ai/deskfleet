@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path"
 import { createHash } from "node:crypto"
 import { readAgentConfiguration } from "./agent-configuration.ts"
 import { AgentConfigurationProbes } from "./agent-configuration-probes.ts"
+import { AgentConfigurationCache } from "./agent-configuration-cache.ts"
 import { AgentUsageCache } from "./agent-usage.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { validateProviderId } from "./provider-protocol.ts"
@@ -119,9 +120,14 @@ export class AgentSessions {
   readonly #discovery = new Set<Promise<unknown>>()
   readonly #presence = new SessionPresence()
   readonly #configurationProbes = new AgentConfigurationProbes()
+  readonly #configurationCache = new AgentConfigurationCache()
+  readonly #configuredProviderIds: () => string[]
   readonly #usage = new AgentUsageCache()
   readonly #unsubscribeProviders?: () => void
   readonly #closing = new AbortController()
+  #configurationCacheStarted = false
+  #configurationGeneration = 0
+  #unsubscribeConfigurationCatalog?: () => void
   #closed = false
 
   constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
@@ -136,10 +142,39 @@ export class AgentSessions {
       if (id !== "codex") throw new Error("Agent provider is unavailable")
       return { provider, config: { name: "Codex" } }
     }
+    this.#configuredProviderIds = providers ? () => providers.metadata().providers.map(provider => provider.id) : () => ["codex"]
     this.#unsubscribeProviders = providers?.onChanged(() => {
       this.#usage.clear()
       void this.#configurationProbes.invalidate().catch(error => console.error("Could not close Agent configuration probes", error))
+      this.#configurationGeneration++
+      void this.#configurationCache.invalidate().catch(error => console.error("Could not close old Agent configuration cache", error)).then(() => {
+        if (this.#configurationCacheStarted) this.#warmConfigurations()
+      })
     })
+  }
+
+  /** Startup and settings changes prewarm metadata without delaying machine readiness. */
+  startConfigurationCache(): void {
+    if (this.#closed || this.#configurationCacheStarted) return
+    this.#configurationCacheStarted = true
+    this.#unsubscribeConfigurationCatalog = this.#catalog.onChange(() => this.#warmConfigurations())
+    this.#warmConfigurations()
+  }
+
+  #warmConfigurations(): void {
+    const generation = this.#configurationGeneration
+    void this.#catalog.native.snapshot().then(snapshot => {
+      if (this.#closed || generation !== this.#configurationGeneration) return
+      const contexts: { workspaceId?: string; cwd: string }[] = [{ cwd: homedir() }]
+      for (const workspace of snapshot.workspaces) {
+        const directory = workspace.worktrees.find(worktree => !worktree.sessionId)?.directories[0]
+        if (directory) contexts.push({ workspaceId: workspace.id, cwd: directory.path })
+      }
+      for (const provider of this.#configuredProviderIds()) {
+        const launch = this.#resolveProvider(provider)
+        for (const { workspaceId, cwd } of contexts) this.#configurationCache.warm({ provider, workspaceId }, cwd, launch)
+      }
+    }).catch(error => { if (!this.#closed) console.error("Could not warm Agent configurations", error) })
   }
 
   async init(): Promise<void> {
@@ -357,7 +392,9 @@ export class AgentSessions {
         cwd = directory.path
       }
       const launch = this.#resolveProvider(request.provider)
-      const pending = request.probeId
+      const pending = request.cache
+        ? this.#configurationCache.read(request, cwd, launch)
+        : request.probeId
         ? this.#configurationProbes.read(scope, request, cwd, launch)
         : readAgentConfiguration(request, cwd, { ...launch, signal: this.#closing.signal })
       this.#discovery.add(pending)
@@ -1074,10 +1111,11 @@ export class AgentSessions {
   async close(): Promise<void> {
     this.#closed = true
     this.#unsubscribeProviders?.()
+    this.#unsubscribeConfigurationCatalog?.()
     this.#usage.clear()
     this.#closing.abort(new Error("Agent service is stopping"))
     this.#git.close()
-    const stopping = Promise.allSettled([this.#configurationProbes.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
+    const stopping = Promise.allSettled([this.#configurationProbes.close(), this.#configurationCache.close(), ...[...this.#runtimes.values()].map(runtime => runtime.stop())])
     await Promise.allSettled(this.#discovery)
     await Promise.allSettled(this.#operations.values())
     await Promise.allSettled(this.#provisioning.values())

@@ -94,7 +94,7 @@ test("opens a compact configuration menu and dynamically populates checked subme
   expect(api).not.toHaveBeenCalled()
   expect(content(view).find('[role="menu"]').exists()).toBe(false)
   await trigger(view).trigger("keydown", { key: "ArrowDown" }); await flushPromises()
-  expect(api).toHaveBeenCalledExactlyOnceWith({ probeId: expect.any(String), provider: "codex", workspaceId: "11" })
+  expect(api).toHaveBeenCalledExactlyOnceWith({ probeId: expect.any(String), provider: "codex", workspaceId: "11", cache: true })
   expect(content(view).findAll("[data-agent-control]")).toHaveLength(4)
   expect(row(view, "agent").text()).toBe("AgentCodex")
   expect(document.activeElement).toBe(row(view, "agent").element)
@@ -168,7 +168,7 @@ test("controlled draft configuration discovers and edits form-local choices with
   })
   wrappers.push(view)
   await trigger(view).trigger("click"); await flushPromises()
-  expect(api).toHaveBeenCalledExactlyOnceWith({ probeId: expect.any(String), provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan" })
+  expect(api).toHaveBeenCalledExactlyOnceWith({ probeId: expect.any(String), provider: "codex", workspaceId: "11", model: "orbit", reasoningEffort: "high", mode: "plan", cache: true })
   expect(agents.draftConfiguration).toEqual(defaults)
   api.mockResolvedValueOnce(nativeConfiguration("auto", "orbit", "high"))
   await choose(view, "mode", "auto")
@@ -665,7 +665,7 @@ test("reload discovers defaults with a new probe and no rejected choices", async
   const view = render(); await trigger(view).trigger("click"); await flushPromises()
   const first = api.mock.calls[0]![0].probeId
   await content(view).findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
-  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String) })
+  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String), cache: true, refresh: true })
   expect(api.mock.calls.at(-1)![0].probeId).not.toBe(first)
 })
 
@@ -764,10 +764,10 @@ test("explicit draft edits carry confirmed restoration choices separately from t
   const probeId = api.mock.calls[0]![0].probeId
   api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "sequoia", "medium"))
   await choose(view, "model", "sequoia")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, model: "sequoia", restore: { model: "orbit", reasoningEffort: "high", mode: "auto" } })
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, model: "sequoia", cache: true, restore: { model: "orbit", reasoningEffort: "high", mode: "auto" } })
   api.mockResolvedValueOnce(nativeConfiguration("acceptEdits", "sequoia", "high"))
   await choose(view, "reasoning", "high")
-  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, reasoningEffort: "high", restore: { model: "sequoia", reasoningEffort: "medium", mode: "acceptEdits" } })
+  expect(api).toHaveBeenLastCalledWith({ provider: "codex", workspaceId: "11", probeId, reasoningEffort: "high", cache: true, restore: { model: "sequoia", reasoningEffort: "medium", mode: "acceptEdits" } })
   await view.setProps({ workspaceId: "22" }); await flushPromises()
   expect(api.mock.calls.at(-1)![0].restore).toBeUndefined()
   expect(api.mock.calls.at(-1)![0].probeId).not.toBe(probeId)
@@ -780,7 +780,7 @@ test("reload after a rejected edit omits the previous confirmed restoration choi
   await choose(view, "mode", "plan")
   expect(api.mock.calls.at(-1)![0].restore).toEqual({ model: "orbit", reasoningEffort: "high", mode: "auto" })
   await content(view).findAll("button").find(button => button.text() === "Reload from agent")!.trigger("click"); await flushPromises()
-  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String) })
+  expect(api.mock.calls.at(-1)![0]).toEqual({ provider: "codex", workspaceId: "11", probeId: expect.any(String), cache: true, refresh: true })
 })
 
 test("shows View usage submenu at the bottom for providers that support quota usage", async () => {

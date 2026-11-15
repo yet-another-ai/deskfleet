@@ -2,9 +2,10 @@ import { computed, onScopeDispose, ref, toRef, watch, type Ref } from "vue"
 import { agentConfigurationSelection, type AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
+import { useAgentConfigurationCacheStore } from "../../stores/agent-configuration-cache.ts"
 
 type Choices = Omit<AgentSelection, "provider">
-interface DraftRequest { id: number; choices: Choices; restore?: Choices; resolve(): void }
+interface DraftRequest { id: number; choices: Choices; restore?: Choices; refresh?: boolean; resolve(): void }
 interface ConfigurationProbe {
   params: { provider: string; workspaceId?: string; probeId: string; composer?: boolean }
   pending?: Promise<AgentConfiguration>
@@ -16,6 +17,7 @@ interface ConfigurationProbe {
 export function useAgentConfiguration(target: () => { workspaceId?: string; sessionId?: string; providerId?: string }, draft?: Ref<AgentSelection>) {
   const agents = useAgentSessionsStore()
   const providers = useProvidersStore()
+  const cache = useAgentConfigurationCacheStore()
   const draftConfiguration = draft ?? toRef(agents, "draftConfiguration")
   const discovered = ref<AgentConfiguration | null>(null)
   const configuration = computed(() => target().sessionId ? agents.configurations[target().sessionId!] ?? null : discovered.value)
@@ -42,7 +44,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     const { workspaceId, providerId } = target()
     return probe = { params: { provider: providerId!, workspaceId, probeId: crypto.randomUUID() }, retired: false }
   }
-  function confirm(result: AgentConfiguration, params: ConfigurationProbe["params"]): void {
+  function confirm(result: AgentConfiguration, params: Pick<ConfigurationProbe["params"], "provider" | "workspaceId">): void {
     discovered.value = result
     confirmedTarget = { provider: params.provider, workspaceId: params.workspaceId }
     draftConfiguration.value = {
@@ -58,12 +60,17 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   async function readDraft(current: ConfigurationProbe): Promise<void> {
     if (current.pending || current.retired || !current.next) return
     const request = takeNext(current)!
+    const epoch = cache.epoch(current.params)
     try {
-      current.pending = agents.agentConfiguration({ ...request.choices, ...current.params, ...(request.restore && { restore: request.restore }) })
+      current.pending = agents.agentConfiguration({ ...request.choices, ...current.params, cache: true,
+        ...(request.refresh && { refresh: true }), ...(request.restore && { restore: request.restore }) })
       const result = await current.pending
       const latest = target()
-      if (request.id === requestId && !current.retired && !latest.sessionId
-        && latest.providerId === current.params.provider && latest.workspaceId === current.params.workspaceId) confirm(result, current.params)
+      if (request.id === requestId && !current.retired && !latest.sessionId && cache.current(current.params, epoch)
+        && latest.providerId === current.params.provider && latest.workspaceId === current.params.workspaceId) {
+        cache.remember(current.params, result, epoch)
+        confirm(result, current.params)
+      }
     } catch (cause) {
       const next = takeNext(current)
       retire(current)
@@ -83,12 +90,25 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
   }
 
-  async function configure(choices?: Choices, composer = false): Promise<void> {
+  async function configure(choices?: Choices, composer = false, refresh = false): Promise<void> {
     const currentRequest = ++requestId
     const { workspaceId, sessionId, providerId } = target()
     if (!sessionId && !providerId) return
-    loading.value = true
     error.value = null
+    if (!sessionId && !refresh) {
+      const confirmed = confirmedTarget && confirmedTarget.provider === providerId && confirmedTarget.workspaceId === workspaceId ? discovered.value ?? undefined : undefined
+      const result = cache.read({ provider: providerId!, workspaceId }, confirmed, choices ?? selection.value ?? {}, composer)
+      if (result) {
+        // Cached choices do not mutate a retained ACP probe. A later cache miss
+        // must restore the locally confirmed state into a fresh probe.
+        retire()
+        confirm(result, { provider: providerId!, workspaceId })
+        loading.value = false
+        requestedModel.value = undefined
+        return
+      }
+    }
+    loading.value = true
     const changingModel = choices?.model !== undefined && choices.reasoningEffort === undefined && choices.mode === undefined
     requestedModel.value = !sessionId && changingModel && configuration.value?.models?.options.some(option => option.id === choices.model) ? choices.model : undefined
     if (!sessionId) {
@@ -101,7 +121,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
       const restore = choices && Object.values(choices).some(value => value !== undefined) && confirmed && confirmed.provider.id === providerId
         && confirmedTarget?.provider === providerId && confirmedTarget.workspaceId === workspaceId ? agentConfigurationSelection(confirmed) : undefined
       return new Promise(resolve => {
-        current.next = { id: currentRequest, choices: { ...(choices ?? selection.value) }, restore, resolve }
+        current.next = { id: currentRequest, choices: { ...(choices ?? selection.value) }, restore, refresh, resolve }
         void readDraft(current)
       })
     }
@@ -135,7 +155,9 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   }
   function reload(): Promise<void> {
     retire()
-    return configure(target().sessionId ? undefined : {})
+    const { providerId, workspaceId, sessionId } = target()
+    if (!sessionId && providerId) cache.forget({ provider: providerId, workspaceId })
+    return configure(sessionId ? undefined : {}, false, !sessionId)
   }
   /** Completion discovery shares this composer's existing draft provider session. */
   async function discover(): Promise<void> {
@@ -160,6 +182,11 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     const settingsChanged = previous[3] !== undefined && current[3] !== undefined && current[3] !== previous[3]
     if (targetChanged || settingsChanged && !target().sessionId) invalidate()
   })
+  watch(() => [target().workspaceId, cache.workspaceDirectory(target().workspaceId)] as const, (current, previous) => {
+    // A catalog refresh can move this Workspace without changing its ID. Fence
+    // pending replies immediately; the first catalog does not replace a probe.
+    if (current[0] === previous[0] && previous[1] !== undefined && current[1] !== previous[1] && !target().sessionId) invalidate()
+  }, { flush: "sync" })
   onScopeDispose(() => { ++requestId; retire() })
 
   const modelValue = computed(() => requestedModel.value ?? configuration.value?.models?.currentValue)
