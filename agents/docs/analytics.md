@@ -1,27 +1,73 @@
-# Product analytics and billing conversions
+# Product analytics, marketing attribution, and billing conversions
 
-Web and Electron use `@statsig/js-client` through the shared Vue frontend.
+Web, Electron, and the VitePress marketing site (`docs/`) share a unified
+telemetry layer in `packages/components/src/services/analytics.ts` backed by:
+
+- **`@statsig/js-client`** for product analytics, feature gates, and experiments.
+- **Google Tag (`packages/client/src/google-tag.ts`)** supporting `GTM-XXXX`,
+  `G-XXXX` (GA4), and `AW-XXXX` (Google Ads) with Google Consent Mode v2.
+- **First-touch marketing attribution (`packages/client/src/marketing-attribution.ts`)**
+  preserving `gclid`, `gbraid`, `wbraid`, `utm_*`, and `ga_cid` across the website,
+  web authentication, desktop browser-login handoff, and server-side Stripe
+  paid conversions.
+
 `packages/components/src/services/analytics.ts` owns one client per renderer
 document. It survives selected-Machine application remounts and shuts down when
-the root application unmounts. The SDK handles event batching and browser
-page-lifecycle flushing. The Rust backend separately emits verified billing
-facts through a durable delivery queue. The daemon does not send product events.
+the root application unmounts. The Rust backend separately emits verified billing
+facts through a durable delivery queue to both Statsig and GA4 Measurement
+Protocol. The daemon does not send product events.
+
+## Privacy gates: site master switch and user opt-in consent
+
+Telemetry requires **two** gates to be enabled before any client SDK (`StatsigClient`
+or Google `gtm.js`/`gtag.js`) initializes or any server-side conversion is delivered:
+
+1. **Backend master switch (`SiteSettings.telemetryEnabled`)**:
+   - Stored in `cp_site_settings.telemetry_enabled` (Migration 35), defaulting to
+     `false` so self-hosted deployments never load third-party scripts or show
+     consent prompts unless an administrator turns it on in **Site Administration → General**.
+   - Exposed in `GET /api/site`, `GET/PUT /api/admin/site-settings`, and
+     `GET /api/auth/config`.
+2. **Explicit user opt-in (`userTelemetryConsent`)**:
+   - Stored locally in `localStorage["deskfleet-telemetry-consent"]` (`"granted"` or `"declined"`).
+   - Default is `false` (unchecked / denied). Google Consent Mode v2 defaults all
+     four storage categories (`ad_storage`, `ad_user_data`, `ad_personalization`,
+     `analytics_storage`) to `'denied'` before any tag script can load.
+   - Users can opt in or out from:
+     - The lightweight bottom consent banner on `docs/` (`MarketingConsentBanner.vue`),
+     - The default-unchecked checkbox inside the account sign-in card in `WelcomePage.vue`,
+     - The toggle in **Settings → Preferences → Privacy & analytics** (`PreferencesSettings.vue`).
+   - When signed in with consent enabled, the client syncs consent and first-touch
+     attribution to `PUT /api/me/telemetry-consent` (and during desktop browser
+     approval via `POST /api/auth/desktop/complete`). Revoking consent (`consented: false`)
+     deletes the user's `cp_user_marketing_attribution` row on the server.
+
+## Event routing tiers
+
+| Tier | Helper | Statsig | Google Tag (`GTM-` / `G-` / `AW-`) | Typical events |
+| --- | --- | --- | --- | --- |
+| `marketing_only` | `trackMarketingEvent` | No | Yes | `marketing_page_viewed`, `marketing_hero_cta_clicked`, `marketing_social_clicked` |
+| `acquisition_conversion` | `trackAcquisitionConversion` | Yes | Yes (`send_to` Ads conversion label when configured) | `marketing_download_clicked`, `marketing_install_command_copied`, `marketing_mobile_download_clicked`, `marketing_get_started_clicked` |
+| `product_funnel` | `trackEvent` | Yes | Key lifecycle subset only (`app_opened`, `page_viewed`, `account_registered`, `account_verified`, `account_signed_in`, `team_created`, `machine_enrolled`, `billing_checkout`) | Full product event catalog |
+| `revenue_conversion` | Rust billing worker | Yes (`billing_invoice_paid`) | Yes (GA4 Measurement Protocol `purchase` on `subscription_create`) | Server-verified Stripe invoice payment |
 
 ## Build configuration
 
-Analytics is disabled when `VITE_STATSIG_CLIENT_KEY` is missing or blank. In that
-case no Statsig client is created, no events are sent, gates return false, and
-experiment parameters return their supplied defaults.
+Analytics is disabled when no `VITE_STATSIG_CLIENT_KEY`, `VITE_GTM_ID`,
+`VITE_GA_MEASUREMENT_ID`, or `VITE_GOOGLE_ADS_ID` is configured, or when either
+the site master switch or user consent is off.
 
-Use a Statsig **client** SDK key (`client-...`), which is public and embedded in
-the bundle. Never put a server secret key in a `VITE_*` variable.
+Use public client identifiers in `VITE_*` variables. Never put a server secret
+key in a `VITE_*` variable.
 
 ```sh
 export VITE_STATSIG_CLIENT_KEY=client-REPLACE_ME
 export VITE_STATSIG_ENVIRONMENT=development
+export VITE_GTM_ID=GTM-REPLACE_ME
+export VITE_GA_MEASUREMENT_ID=G-REPLACE_ME
+export VITE_GOOGLE_ADS_ID=AW-REPLACE_ME
+export VITE_GOOGLE_ADS_INSTALL_LABEL=REPLACE_ME
 mise run dev
-# The same process environment applies to mise run desktop:dev,
-# mise run web:build, and mise run desktop:build.
 ```
 
 `VITE_STATSIG_ENVIRONMENT` defaults to the Vite mode (`development` or
@@ -146,9 +192,18 @@ The billing server accepts these optional **runtime** settings:
 | --- | --- |
 | `DESKFLEET_STATSIG_SERVER_KEY` | Statsig server secret key for event delivery; keep out of all frontend/Vite variables |
 | `DESKFLEET_STATSIG_ENVIRONMENT` | Tier for server events, default `production`; match the frontend tier |
+| `DESKFLEET_GA_MEASUREMENT_ID` | Optional GA4 Measurement ID (`G-XXXX`) for server-side `purchase` conversion delivery |
+| `DESKFLEET_GA_API_SECRET` | Optional GA4 Measurement Protocol API secret; keep out of all frontend/Vite variables |
 
-Without the server key, no billing analytics facts are enqueued and no delivery
-requests run. No key is committed. Enable the frontend and server keys for the
+Without at least one configured destination (`DESKFLEET_STATSIG_SERVER_KEY` or
+both `DESKFLEET_GA_MEASUREMENT_ID` and `DESKFLEET_GA_API_SECRET`), or when
+`cp_site_settings.telemetry_enabled` is `false`, no billing analytics requests
+are sent. When a `billing_invoice_paid` event with
+`billing_reason = "subscription_create"` is delivered and the actor has a stored
+`cp_user_marketing_attribution` row, the worker also sends a GA4 Measurement
+Protocol `purchase` event carrying the stored `client_id`, `user_id`,
+`transaction_id` (`invoice_id`), decimal `value`, `currency`, and first-touch
+campaign attribution parameters. No key is committed. Enable the frontend and server keys for the
 same Statsig project to join exposures, usage, and verified conversion.
 Register `teamID` under the project's Custom IDs settings to analyze Team-level
 conversion and experiments. Use account-level metrics for individual actions and
@@ -291,9 +346,13 @@ ownership remain enforced by the server and daemon.
 endpoints. Dynamic endpoint fallbacks are disabled. Configured Electron builds
 permit the three Statsig origins in addition to the existing development
 HMR policy: `https://featureassets.org`, `https://prodregistryv2.org`, and
-`https://statsigapi.net` (SDK exceptions). Optional
+`https://statsigapi.net` (SDK exceptions). When a Google Tag (`VITE_GTM_ID`,
+`VITE_GA_MEASUREMENT_ID`, or `VITE_GOOGLE_ADS_ID`) is configured at build time,
+`buildRendererCsp` also permits the explicit Google Tag origins (`googletagmanager.com`,
+`google-analytics.com`, `analytics.google.com`, `googleadservices.com`, and
+`doubleclick.net`) in `script-src`, `connect-src`, and `img-src`. Optional
 [Sentry error reporting](error-reporting.md) adds its configured DSN origin.
-Without either integration, production keeps `connect-src 'none'`. A Web host
+Without any configured integration, production keeps `connect-src 'none'`. A Web host
 that supplies its own CSP must allow these origins alongside the application's
 API/peer requirements.
 

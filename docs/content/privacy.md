@@ -31,3 +31,11 @@ When you run Codex CLI, Claude Code, Cursor CLI, Grok CLI, Oh My Pi, DeepSeek Ha
 ## Interactive website demos
 
 The interactive workspace examples on this website run entirely in your browser using sample data and local memory state. They do not connect to a backend, launch an agent, run shell commands, or access your computer. Reloading the page resets the examples.
+
+## Optional analytics and marketing attribution
+
+Telemetry and campaign attribution are **opt-in** and controlled at both the server and user levels:
+
+- **Self-hosted by default:** Every self-hosted DeskFleet server defaults to `telemetryEnabled: false` in **Site Administration → General**. While disabled, no analytics or marketing tags run, consent prompts stay hidden, and the backend ignores attribution payloads.
+- **Explicit user consent (Google Consent Mode v2):** On sites where telemetry is enabled, analytics and marketing storage (`ad_storage`, `ad_user_data`, `ad_personalization`, `analytics_storage`) start as `denied` until you explicitly opt in via the website consent banner, the desktop Welcome screen, or **Settings → Preferences → Privacy & analytics**.
+- **Strict field allowlist:** When you opt in, DeskFleet only records anonymous product lifecycle events, installer/CLI conversion events, and first-touch campaign parameters (`gclid`, `gbraid`, `wbraid`, `utm_*`, and GA client ID) so we can measure download and subscription conversions. Prompts, source code, terminal transcripts, file paths, and workspace names are never included. You can revoke consent at any time in **Settings → Preferences**, which immediately stops client collection and deletes any stored attribution record on the server.

@@ -2,6 +2,7 @@
 import { Check, Copy, Terminal } from "@lucide/vue"
 import { useClipboard } from "@vueuse/core"
 import { ref } from "vue"
+import { trackAcquisitionConversion } from "@deskfleet/components/services/analytics.ts"
 
 const props = defineProps<{
   title: string
@@ -16,7 +17,10 @@ const failed = ref(false)
 
 async function copyCommand() {
   failed.value = false
-  try { await copy() } catch { failed.value = true }
+  try {
+    await copy()
+    trackAcquisitionConversion("marketing_install_command_copied", { title: props.title })
+  } catch { failed.value = true }
 }
 </script>
 
