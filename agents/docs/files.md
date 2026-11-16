@@ -143,6 +143,12 @@ alternate-stream colons are rejected in upload paths. Reads and writes check
 chunk sizes and offsets; writes are sequential. Source size and modification
 time detect changes while copying.
 
+Electron keeps the composer's `AbortSignal` in the renderer. Its context bridge
+passes an opaque upload request ID, file bytes, and a progress callback; cancellation
+uses that ID to abort the main process's own controller. Native `AbortSignal`
+objects do not cross the isolated preload boundary. Upload startup failures,
+including synchronous bridge errors, enter the composer's retryable error state.
+
 Bulk copies and resource previews open one source read session per file. The
 native endpoint retains its file handle; each read validates the path's file
 identity, size, and modification time before returning bytes. `closeRead`

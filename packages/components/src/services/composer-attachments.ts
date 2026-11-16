@@ -71,13 +71,13 @@ export function cancelAttachmentUpload(id: string): void {
   uploadStates.delete(id)
 }
 
-function startAttachmentUpload(
+async function startAttachmentUpload(
   item: Extract<ComposerAttachment, { kind: "local_file" }>,
   target: FileTarget,
   targetKey: string,
   sessionId: string | undefined,
   filesApi: FilesApi,
-): void {
+): Promise<void> {
   if (!filesApi.uploadAttachment) return
   cancelAttachmentUpload(item.id)
   if (item.uploadedTargetKey && item.uploadedTargetKey !== targetKey) {
@@ -94,31 +94,32 @@ function startAttachmentUpload(
   })
   uploadStates.set(item.id, state)
   activeUploads.set(item.id, { targetKey, controller })
-  void filesApi.uploadAttachment(
-    { target, ...(sessionId ? { sessionId } : { draftId: item.id }), name: item.name, data: item.bytes },
-    {
-      signal: controller.signal,
-      onProgress: ({ transferredBytes, totalBytes }) => {
-        if (controller.signal.aborted || uploadStates.get(item.id) !== state) return
-        state.transferredBytes = transferredBytes
-        state.totalBytes = totalBytes
-        state.progress = totalBytes > 0 ? Math.max(0, Math.min(1, transferredBytes / totalBytes)) : 1
+  try {
+    const uploaded = await filesApi.uploadAttachment(
+      { target, ...(sessionId ? { sessionId } : { draftId: item.id }), name: item.name, data: item.bytes },
+      {
+        signal: controller.signal,
+        onProgress: ({ transferredBytes, totalBytes }) => {
+          if (controller.signal.aborted || uploadStates.get(item.id) !== state) return
+          state.transferredBytes = transferredBytes
+          state.totalBytes = totalBytes
+          state.progress = totalBytes > 0 ? Math.max(0, Math.min(1, transferredBytes / totalBytes)) : 1
+        },
       },
-    },
-  ).then(uploaded => {
+    )
     if (controller.signal.aborted) return
     item.uploadedUri = uploaded.uri
     item.uploadedTargetKey = targetKey
     if (uploadStates.get(item.id) === state) {
       Object.assign(state, { status: "uploaded", transferredBytes: item.size, totalBytes: item.size, progress: 1, uri: uploaded.uri })
     }
-  }).catch(reason => {
+  } catch (reason) {
     if (controller.signal.aborted || uploadStates.get(item.id) !== state) return
     state.status = "error"
     state.error = reason instanceof Error ? reason.message : String(reason)
-  }).finally(() => {
+  } finally {
     if (activeUploads.get(item.id)?.controller === controller) activeUploads.delete(item.id)
-  })
+  }
 }
 
 export function retryAttachmentUpload(params: {
@@ -131,7 +132,7 @@ export function retryAttachmentUpload(params: {
   if (!params.target || !key || !params.filesApi?.uploadAttachment) return
   params.item.uploadedUri = undefined
   params.item.uploadedTargetKey = undefined
-  startAttachmentUpload(params.item, params.target, key, params.sessionId, params.filesApi)
+  void startAttachmentUpload(params.item, params.target, key, params.sessionId, params.filesApi)
 }
 
 export function syncAttachmentUploads(params: {
@@ -147,7 +148,7 @@ export function syncAttachmentUploads(params: {
     if (activeUploads.get(item.id)?.targetKey === key) continue
     const state = uploadStates.get(item.id)
     if (state?.targetKey === key && state.status === "error") continue
-    startAttachmentUpload(item, params.target, key, params.sessionId, params.filesApi)
+    void startAttachmentUpload(item, params.target, key, params.sessionId, params.filesApi)
   }
 }
 

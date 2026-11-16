@@ -5,6 +5,7 @@ import { TerminalClient } from "../../../../packages/components/src/services/ter
 import type { AgentSnapshot } from "../../../daemon/src/agent-protocol.ts"
 import type { GitStatusSnapshot } from "../../../daemon/src/git-protocol.ts"
 import type { DesktopPreloadApi } from "../../src/shared/preload-api.ts"
+import { filesBridgeClient } from "../../src/shared/files-bridge.ts"
 
 function require(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -20,7 +21,8 @@ const rounded = (value: number) => Math.round(value * 100) / 100
 
 /** Real renderer clients use the shipped preload, main-process authority and daemon IPC. */
 export async function exercise(context: { teamId: string; machineId: string; sessionId: string }) {
-  const host = (window as unknown as { deskfleet: DesktopPreloadApi }).deskfleet
+  const bridge = (window as unknown as { deskfleet: DesktopPreloadApi }).deskfleet
+  const host = { ...bridge, files: bridge.files ? filesBridgeClient(bridge.files) : undefined }
   const guard = (window as unknown as { __deskfleetRtcGuard: { blocked: boolean; forbiddenAttempts: number; connections: number } }).__deskfleetRtcGuard
   require(host.centralBridge && host.localChannels, "The production preload must expose central and local message channel bridges")
   const central = centralBridgeClient(host.centralBridge, () => {})
