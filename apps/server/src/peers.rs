@@ -235,6 +235,13 @@ async fn authorize_webrtc(req: &HttpRequest, s: &AppState, id: &str) -> Result<P
     }
     Ok(grant)
 }
+/// Durably revoke a grant whose setup failed, then always notify its daemon and owner.
+/// A concurrent revocation can reach the daemon before this setup request and close
+/// nothing. The store returns only newly revoked grants, so notify this grant again.
+async fn revoke_failed_setup(s: &AppState, grant: &PeerAuthorization, reason: &str) -> Result<()> {
+    s.store.revoke_peer(&grant.peer_id).await?;
+    s.hub.revoke(vec![grant.clone()], reason).await
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Start {

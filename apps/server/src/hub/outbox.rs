@@ -365,6 +365,12 @@ pub(crate) mod testing {
         ) -> Result<ControlMessage, tokio::sync::mpsc::error::TryRecvError> {
             self.0.try_recv().map(wire)
         }
+
+        pub(crate) fn try_recv_outbound(
+            &mut self,
+        ) -> Result<Outbound, tokio::sync::mpsc::error::TryRecvError> {
+            self.0.try_recv()
+        }
     }
     fn wire(value: Outbound) -> ControlMessage {
         match value {

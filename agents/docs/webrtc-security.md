@@ -8,6 +8,9 @@ SDP, DTLS, and ICE requirements apply specifically to WebRTC.
 The native transport performs DTLS. Central identity binding is implemented in
 the server's peer routes, with independent grant enforcement in the daemon's
 `AuthorizedPeers` service and both client adapters.
+[Control-plane verification](control-plane-verification.md) checks
+interleavings of the authorization and signaling rules below. This document
+remains the decision.
 
 ## Signaling resource admission
 
@@ -239,10 +242,17 @@ Removing a Team member invalidates their peers in that Team; removing a machine
 invalidates peers targeting that machine. Revocation notices travel over the
 authenticated daemon control connection and are applied when received. If that
 connection is unavailable, delivery is delayed until reconnection; the local
-24-hour deadline still bounds the old grant. On reconnect, reconcile surviving
-peers with current authorization before restoring their signaling routes, closing
-any that are revoked or expired. A surviving peer cannot be rebound to another
-user or machine.
+24-hour deadline still bounds the old grant. A notice can also reach the daemon
+before an offer or local claim that was already in flight, and close nothing.
+So whenever an offer or local claim fails after its grant was withdrawn, the
+setup revokes the grant again and sends a fresh notice, even if the grant was
+already revoked. This covers an offer whose answer can no longer be committed
+and an offer or claim that fails its final login, access, or grant check.
+A setup that times out or fails for another reason also revokes its grant and
+notifies once. The heartbeat snapshot remains a backstop, not the revocation
+path. On reconnect, reconcile surviving peers with current authorization before
+restoring their signaling routes, closing any that are revoked or expired. A
+surviving peer cannot be rebound to another user or machine.
 
 Loss of signaling alone does not close an established, functioning peer with an
 unexpired grant. It can continue operations already covered by that grant;

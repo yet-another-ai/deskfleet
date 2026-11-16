@@ -17,6 +17,7 @@ import { configureClient } from "@deskfleet/client/platform"
 import { captureCentralRequestError, initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
 import { watch } from "vue"
 import { capacitorClientOptions } from "./capacitor-auth.ts"
+import { listenForNativeResume } from "./native-resume.ts"
 import "virtual:uno.css"
 
 initializeErrorReporting("web")
@@ -26,6 +27,7 @@ const adapter = await browserClient(configuredServerUrl, captureCentralRequestEr
   ...(Capacitor.isNativePlatform() ? { createFiles: createCapacitorFilesApi } : {}),
 })
 if (Capacitor.isNativePlatform()) {
+  void listenForNativeResume((event, listener) => CapApp.addListener(event, listener))
   setNativeTelemetrySink(createCapacitorTelemetrySink())
   adapter.speech = createCapacitorSpeechApi()
   adapter.haptic = kind => { void DeskFleetBridge.haptic({ kind }) }

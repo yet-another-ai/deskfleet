@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      specs_only: ${{ steps.classify.outputs.specs_only }}
       run_build: ${{ steps.classify.outputs.run_build }}
       all_platforms: ${{ steps.classify.outputs.all_platforms }}
       run_backend: ${{ steps.classify.outputs.run_backend }}
@@ -45,12 +46,14 @@ jobs:
           # Use the hosted runner's Node without provisioning a toolchain. Older
           # runtimes or missing output must fall back to full CI, never a skip.
           echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          echo "specs_only=false" >> "$GITHUB_OUTPUT"
           echo "run_build=true" >> "$GITHUB_OUTPUT"
           echo "all_platforms=true" >> "$GITHUB_OUTPUT"
           echo "run_backend=true" >> "$GITHUB_OUTPUT"
           if ! node scripts/ci-docs-only.ts; then
             echo "::warning::Classification could not run; running full CI."
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            echo "specs_only=false" >> "$GITHUB_OUTPUT"
             echo "run_build=true" >> "$GITHUB_OUTPUT"
             echo "all_platforms=true" >> "$GITHUB_OUTPUT"
             echo "run_backend=true" >> "$GITHUB_OUTPUT"
@@ -63,6 +66,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       docs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+      specs_only: ${{ needs.changes.result == 'success' && needs.changes.outputs.specs_only == 'true' }}
       draft_pr: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
       # Classification failure must expand coverage (same fail-safe direction as docs_only=false).
       all_platforms: ${{ needs.changes.result != 'success' || needs.changes.outputs.all_platforms == 'true' }}
@@ -165,9 +169,9 @@ jobs:
 
   deploy-pages:
     name: Deploy website
-    needs: [gate, test]
-    # Documentation-only runs skip Build, so explicitly use Gate's result.
-    if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
+    needs: [changes, gate, test]
+    # Spec-only runs skip the static job that uploads the website artifact.
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.changes.outputs.specs_only != 'true' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:

@@ -1,6 +1,6 @@
 //! Central grants for an authenticated local IPC claim, without ICE or relay allocation.
 
-use super::{Create, PeerTransport, authorize, create_grant, registration};
+use super::{Create, PeerTransport, authorize, create_grant, registration, revoke_failed_setup};
 use crate::{
     AppState,
     error::{ApiError, Result},
@@ -46,8 +46,7 @@ pub async fn create(
     }
     .await;
     if let Err(error) = result {
-        let peers = s.store.revoke_peer(id).await?;
-        s.hub.revoke(peers, "local_connection_failed").await?;
+        revoke_failed_setup(&s, &authorization, "local_connection_failed").await?;
         return Err(error);
     }
     Ok(web::Json(payload))

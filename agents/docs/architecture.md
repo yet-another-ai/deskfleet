@@ -214,10 +214,13 @@ reconciliation preserves already authorized peers and their live streams.
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
 alone cannot time out a stale socket. Heartbeat traffic is skipped while the
 page is hidden. Returning to a visible page, restoring a page from the
-back/forward cache, or receiving an `online` event probes a recently active
-socket with an immediate ping and replaces it only when the 10-second round trip
-misses. A socket idle beyond the 60-second deadline is replaced immediately, and
-a pending retry is executed without waiting for its backoff.
+back/forward cache, receiving an `online` event, or a native app returning to
+the foreground probes a recently active socket with an immediate ping and
+replaces it only when the 10-second round trip misses. The native foreground
+event covers a process switch that leaves the WebView visible and emits neither
+`visibilitychange` nor `pageshow`. A socket idle beyond the 60-second deadline
+is replaced immediately, and a pending retry is executed without waiting for
+its backoff.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the
@@ -785,8 +788,13 @@ retains its explicit `4401`/`4403` credential-rejection close codes.
 Preparing the same backend and Team again reuses its directory and origin.
 After removal, re-enrollment reactivates the same association and rotates only
 its execution token; Workspaces, Sessions, history, and other Teams' runtimes are
-retained. Active registrations cannot be overwritten by a new token. Adding a
-different Team creates a separate empty catalog under the same public Machine ID.
+retained. A rejected credential makes the daemon close that registration's peers
+and persist the logout. Both steps finish before the cleanup settles. If either
+fails, the next re-enrollment runs the cleanup again before verifying the new
+token. A repeated failure fails only that attempt, so a fault that clears never
+requires a daemon restart. Active registrations cannot be overwritten by a new
+token. Adding a different Team creates a separate empty catalog under the same
+public Machine ID.
 
 Revoked registrations retain their durable Session admission receipts but do not
 occupy Team capacity. Reactivation checks retained non-deleted Sessions and live
@@ -1775,6 +1783,11 @@ declarations describe the native API separately.
 `PROTOCOL_VERSION` stays at `1` until the first freeze is explicitly declared.
 Contracts evolve in place, including incompatible changes. Do not add version
 bump tasks or compatibility layers for earlier provisional shapes.
+
+Executable control-plane models live in the repository-root `specs/` directory.
+[Control-plane verification](control-plane-verification.md) owns their toolchain,
+invariants, and CI class. The models cover server, daemon, and client
+interleavings for peer authorization and signaling.
 
 mise manages tools and tasks with lockfile mode enabled. APM owns the checked-in
 skills. See the [development environment](environment.md), [CI workflow](ci.md),

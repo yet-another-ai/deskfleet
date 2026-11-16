@@ -1,8 +1,11 @@
-min_version = "2026.10.2"
+min_version = "2026.11.1"
 
 [settings]
 lockfile = true
 lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"]
+
+[settings.npm]
+package_manager = "pnpm"
 
 [tools]
 apm = "0.35.0"
@@ -10,6 +13,7 @@ java = "temurin-21.0.13+9.0.LTS"
 rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"], targets = ["aarch64-linux-android"] }
 node = "24.22.1"
 pnpm = "12.15.0"
+"npm:@informalsystems/quint" = "0.33.1"
 "cargo:cargo-shear" = "1.14.0"
 cmake = "4.4.4"
 
@@ -459,6 +463,42 @@ depends = ["rust:test"]
 
 # CI splits `check:static` and the bundle builds by cost. Preflight needs no
 # Rust compilation and gates the platform tests; the rest runs beside them.
+[tasks."spec:test"]
+description = "Typecheck and simulate the Quint control-plane models"
+run = "node scripts/check-specs.ts"
+
+[tasks."spec:verify"]
+description = "Symbolically check each control-plane model to its recorded step bound"
+run = """
+set -eu
+quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants \
+  inv_binding_stable inv_outage_keeps_established inv_sealed_stays_closed \
+  inv_reservation_required inv_single_claim inv_transport_separation \
+  inv_expiry_not_extended inv_accepted_work_survives
+quint verify specs/route_fence.qnt --max-steps 6 --invariants \
+  inv_route_identity inv_authority_follows_lease inv_snapshot_before_grant \
+  inv_reconcile_closes_captured inv_one_snapshot inv_queue_bounded \
+  inv_offer_stable inv_route_survives inv_inbox
+quint verify specs/mux_streams.qnt --max-steps 6 --invariants \
+  inv_grant_stable inv_release_closes_streams inv_legacy_before_business \
+  inv_accepted_work_survives
+quint verify specs/link_liveness.qnt --max-steps 6 --invariants \
+  inv_client_identity inv_daemon_identity inv_link_phases \
+  inv_peer_close inv_expiry_fixed
+quint verify specs/credential_close.qnt --max-steps 6 --invariants \
+  inv_expiry_fixed inv_accepted_work_survives inv_close_cause \
+  inv_revoked_closes inv_reenrolled_stays_closed inv_credential_domain
+quint verify specs/local_claim.qnt --max-steps 6 --invariants \
+  inv_blank inv_local_spent inv_webrtc_unspent inv_prepared \
+  inv_claimed inv_sealed inv_domain
+quint verify specs/revocation_cleanup.qnt --max-steps 11 --invariants \
+  inv_healthy_enroll_succeeds inv_settles_after_both inv_resolved_is_clean \
+  inv_revoked_has_cleanup inv_closed_after_close inv_attempt inv_domain
+quint verify specs/offer_revocation.qnt --max-steps 9 --invariants \
+  inv_revocation_is_prompt inv_failed_setup_closes inv_failed_revokes \
+  inv_closed_after_revocation inv_one_offer inv_commit_follows_answer inv_domain
+"""
+
 [tasks."ci:preflight"]
 hide = true
 depends = [
@@ -467,6 +507,7 @@ depends = [
     "rust:format:check",
     "rust:shear",
     "check:scripts",
+    "spec:test",
     "web:typecheck",
     "docs:typecheck",
 ]

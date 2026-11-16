@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
+import { runInNewContext } from "node:vm"
 import {
   classifyChanges,
   classifyDocumentation,
@@ -11,6 +12,8 @@ import {
   isDocumentationDiff,
   isPackagingPath,
   isPlatformPath,
+  isSpecPath,
+  isSpecsOnlyDiff,
 } from "./ci-docs-only.ts"
 
 const sha = "a".repeat(40)
@@ -159,33 +162,33 @@ test("classifies draft PRs and packaging-related changes", context => {
   // Standard Rust source change triggers platform matrix and backend integration
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code } }
-  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
 
   // Pure frontend UI change (apps/web) skips Windows/macOS matrix and backend integration
   save("apps/web/src/App.vue", "<template>hello</template>\n")
   const frontendSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: code }, head: { sha: frontendSha } }
-  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
 
   // Draft PR skips runtime matrix and backend tests
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: code }, draft: true }
-  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
 
   // Packaging change in PR triggers release build
   save("packaging/aur/PKGBUILD.in", "pkgbuild\n")
   const packagingSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: packagingSha } }
-  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // Desktop electron-builder and staging inputs also trigger packaging
   save("apps/desktop/electron-builder.yml", "appId: test\n")
   const desktopPackaging = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: desktopPackaging } }
-  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // A dependency change that only updates the pnpm lockfile must still run the
   // packaging build: the Nix Web derivation installs from that lockfile.
@@ -193,17 +196,17 @@ test("classifies draft PRs and packaging-related changes", context => {
   const lockfileSha = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: lockfileSha } }
-  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 
   // Packaging change in Draft PR still skips release build until ready
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
     pull_request: { base: { sha: initial }, head: { sha: packagingSha }, draft: true }
-  }, cwd), { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
 
   // Push to main always runs build and all platforms on code changes
   assert.deepEqual(classifyChanges("push", "refs/heads/main", {
     before: initial, after: code
-  }, cwd), { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
 })
 
 test("platform and backend detectors cover shared actions and build-env paths", () => {
@@ -235,6 +238,55 @@ test("platform and backend detectors cover shared actions and build-env paths", 
   }
 })
 
+test("a spec-only pull request and main push skip product suites", context => {
+  const cwd = temporary(context)
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=CI", "-c", "user.email=ci@example.invalid", ...args], {
+    cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]
+  }).trim()
+  const save = (file: string, content: string) => {
+    const full = join(cwd, file)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content)
+  }
+  const snapshot = () => { git("add", "."); git("commit", "-qm", "Fixture"); return git("rev-parse", "HEAD") }
+  git("init", "-q", "-b", "main")
+  save("README.md", "docs\n")
+  save("source.rs", "source\n")
+  const initial = snapshot()
+  save("specs/grant_lifecycle.qnt", "module grant_lifecycle {}\n")
+  save("agents/docs/control-plane-verification.md", "plan\n")
+  const specs = snapshot()
+  const specsOnly = { docsOnly: false, specsOnly: true, runBuild: false, allPlatforms: false, runBackend: false }
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: specs } }
+  }, cwd), specsOnly)
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: specs }, cwd), specsOnly)
+  save("docs/content/guide/index.md", "website guide\n")
+  const website = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: website } }
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: website }, cwd),
+    { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
+  save("source.rs", "changed\n")
+  const mixed = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: mixed } }
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: true, runBackend: true })
+})
+
+test("spec models skip product suites and any other file restores them", () => {
+  assert.equal(isSpecPath("specs/grant_lifecycle.qnt"), true)
+  assert.equal(isSpecPath("specs/notes.md"), false)
+  assert.equal(isSpecPath("apps/daemon/src/grant_lifecycle.qnt"), false)
+  const spec = record("specs/grant_lifecycle.qnt")
+  assert.equal(isSpecsOnlyDiff(spec), true)
+  assert.equal(isSpecsOnlyDiff(spec + record("agents/docs/control-plane-verification.md")), true)
+  assert.equal(isSpecsOnlyDiff(record("agents/docs/ci.md")), false, "documentation alone is not a spec change")
+  assert.equal(isSpecsOnlyDiff(spec + record("apps/server/src/peers.rs")), false)
+  assert.equal(isSpecsOnlyDiff(record("specs/grant_lifecycle.qnt", "100644", "120000")), false)
+})
+
 test("manual Test workflow_dispatch declares full matrix and backend defaults", () => {
   const yaml = workflowYaml("../.github/workflows/test.yml")
   const dispatch = yaml.match(/^on:\n([\s\S]*?)^permissions:/m)?.[1]
@@ -242,6 +294,7 @@ test("manual Test workflow_dispatch declares full matrix and backend defaults", 
   assert.match(dispatch, /workflow_dispatch:\n(?: {4}.+\n)*? {4}inputs:/)
   assert.match(dispatch, /workflow_dispatch:[\s\S]*?all_platforms:[\s\S]*?default:\s*true/)
   assert.match(dispatch, /workflow_dispatch:[\s\S]*?run_backend:[\s\S]*?default:\s*true/)
+  assert.match(dispatch, /workflow_dispatch:[\s\S]*?specs_only:[\s\S]*?default:\s*false/)
 })
 
 test("manual and scheduled runs, unrelated refs, and malformed events retain full validation", context => {
@@ -260,7 +313,7 @@ test("manual and scheduled runs, unrelated refs, and malformed events retain ful
     })
     assert.equal(
       readFileSync(output, "utf8"),
-      "docs_only=false\nrun_build=true\nall_platforms=true\nrun_backend=true\n"
+      "docs_only=false\nspecs_only=false\nrun_build=true\nall_platforms=true\nrun_backend=true\n"
     )
   }
 })
@@ -294,6 +347,25 @@ test("packaging jobs run independently of Test and only Linux packages waits on 
   assert.match(linuxPackages, /needs\.changes\.outputs\.run_build\s*==\s*'true'/)
 })
 
+test("website deployment skips spec-only runs without an uploaded artifact", () => {
+  const yaml = workflowYaml("../.github/workflows/ci.yml")
+  const job = yaml.match(/^  deploy-pages:[\s\S]*?(?=^  [a-z]|(?![\s\S]))/m)?.[0]
+  assert.ok(job, "Missing deploy-pages job")
+  assert.match(job, /needs:\s*\[changes,\s*gate,\s*test\]/)
+  const condition = job.match(/^    if:\s*\$\{\{\s*(.*?)\s*\}\}$/m)?.[1]
+  assert.ok(condition, "Missing deploy-pages condition")
+  const deploys = (specsOnly: string, eventName = "push", gate = "success") => runInNewContext(condition, {
+    cancelled: () => false,
+    needs: { changes: { outputs: { specs_only: specsOnly } }, gate: { result: gate } },
+    github: { ref: "refs/heads/main", event_name: eventName },
+  })
+  assert.equal(deploys("true"), false)
+  assert.equal(deploys("false"), true)
+  assert.equal(deploys("false", "workflow_dispatch"), true)
+  assert.equal(deploys("false", "schedule"), false)
+  assert.equal(deploys("false", "push", "failure"), false)
+})
+
 test("failed classification keeps the full Test matrix and backend jobs", () => {
   const yaml = workflowYaml("../.github/workflows/ci.yml")
   const test = yaml.match(/^  test:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
@@ -309,6 +381,10 @@ test("failed classification keeps the full Test matrix and backend jobs", () => 
   assert.match(
     test,
     /docs_only:\s*\$\{\{\s*needs\.changes\.result\s*==\s*'success'\s*&&\s*needs\.changes\.outputs\.docs_only\s*==\s*'true'\s*\}\}/,
+  )
+  assert.match(
+    test,
+    /specs_only:\s*\$\{\{\s*needs\.changes\.result\s*==\s*'success'\s*&&\s*needs\.changes\.outputs\.specs_only\s*==\s*'true'\s*\}\}/,
   )
 })
 
@@ -366,6 +442,7 @@ test("classifier process failure or missing output cannot skip CI", { skip: proc
     execFileSync("bash", ["-c", script], { env: { ...process.env, PATH: `${cwd}:${process.env.PATH}`, GITHUB_OUTPUT: output } })
     const lines = readFileSync(output, "utf8").trim().split("\n")
     assert.ok(lines.includes("docs_only=false"))
+    assert.ok(lines.includes("specs_only=false"))
     assert.ok(lines.includes("run_build=true"))
     assert.ok(lines.includes("all_platforms=true"))
     assert.ok(lines.includes("run_backend=true"))

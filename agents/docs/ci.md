@@ -19,7 +19,8 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   pull requests run static checks only, automatically triggering the full runtime
   test suite upon `ready_for_review`. Configure `Gate` under the `CI` workflow as
   the required status check in repository branch protection. Successful push and
-  manual runs on `main` then deploy the product website to GitHub Pages.
+  manual runs on `main` then deploy the product website to GitHub Pages, except
+  `specs_only` pushes, which produce no website artifact.
   A new pull request push cancels that pull request's previous run; runs on
   `main` and the daily run are never cancelled, so every main commit finishes
   and saves its caches. The reusable workflows declare no concurrency groups of
@@ -28,7 +29,8 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
   rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
-  patch/Renovate contract check, and the Web and website type checks. Platform
+  patch/Renovate contract check, the Quint simulator (`spec:test`), and the Web
+  and website type checks. Platform
   tests and backend integration jobs wait for it (`needs: preflight`), providing
   fast-fail feedback before running on expensive runners. `Static checks` runs
   beside them with `mise run ci:check:static`: Clippy, the type checks that need
@@ -39,8 +41,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   `*.rs`, root build configs, workflows, scripts, or patches), running Linux x64 only
   for frontend-only changes; backend integration tests run only when backend, server,
   database, or shared protocol files are touched (`apps/server/`, `crates/`, `compose.yaml`,
-  etc.). Pushes to `main`, daily scheduled runs, and manual dispatches always run the
-  full matrix and all integration suites. Once Preflight passes, active platform
+  etc.). Pushes to `main` run the full matrix and all integration suites, except a
+  `specs_only` change, which runs preflight only. Daily scheduled runs and manual
+  dispatches always run the full matrix and all integration suites. Once Preflight passes, active platform
   tests run in parallel. Linux uses `mise run test`, including the renderer Vitest
   project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
   script, and desktop main/shared/client checks, without repeating the happy-dom renderer
@@ -177,8 +180,8 @@ endpoint. Unix tests also require clean signal-driven shutdown; Windows tests te
 The static-check job uploads `docs/.vitepress/dist` as the `github-pages`
 artifact on `main`, reusing the website build from `mise run ci:check:static`.
 After `Gate` succeeds, the CI workflow deploys that artifact through the
-`github-pages` environment. Both pushes and manual CI runs on `main` publish;
-scheduled runs, pull requests, and other branches do not. Documentation-only
+`github-pages` environment. Pushes other than `specs_only` and manual CI runs on
+`main` publish; scheduled runs, pull requests, and other branches do not. Documentation-only
 pushes still publish even when release packaging is skipped.
 
 Only the deployment job receives `pages: write` and `id-token: write`; build
@@ -680,6 +683,15 @@ for local commands and lockfile-driven Web dependency installs.
 Static validation still runs for documentation changes. The independent runtime
 test and build jobs can be skipped only when the complete change is ordinary
 documentation under the classifier's explicit allowlist.
+Files under `specs/` are executable models, not documentation. A change that is
+only those models, or those models plus repository documentation outside
+`docs/`, is `specs_only`.
+`scripts/ci-docs-only.ts` sets that class, preflight runs `spec:test`, and
+static checks, runtime suites, and packaging are skipped. `Gate` accepts the
+packaging skip because `run_build` is false. Website deployment also skips this
+class because no artifact was built. Any website edit under `docs/` retains
+the static build and deployment. The class is specified in
+[control-plane verification](control-plane-verification.md).
 
 This static tier includes the website typecheck and VitePress build, even for
 Markdown-only edits under `docs/content/`. Website theme components,
@@ -687,8 +699,10 @@ configuration, and assets require the full tier because they are not Markdown.
 
 The classifier checks the PR merge-base-to-head diff or the entire main push's
 before-to-after diff. Executable files, symlinks, skills, manifests, lockfiles,
-tool configuration, and workflow changes require full validation. Empty or
-unavailable diffs, malformed events, and classification errors also select the
+tool configuration, and workflow changes require full validation. A diff whose
+paths are only `specs/*.qnt` and repository documentation outside `docs/` is
+the `specs_only` exception above. Empty or unavailable diffs, malformed events,
+and classification errors also select the
 full tier. Manual and scheduled runs use full validation. Classification uses
 the hosted runner's Node and does not install a toolchain. An older runtime or
 missing output keeps the full tier.

@@ -92,8 +92,34 @@ export function hasBackendChanges(raw: string): boolean {
   return hasMatchingChanges(raw, isBackendPath)
 }
 
+export function isSpecPath(path: string): boolean {
+  return /^specs\/[^/]+\.qnt$/u.test(path)
+}
+
+function ordinaryRecord(metadata: string): boolean {
+  return /^:(100644|000000) (100644|000000) [0-9a-f]{40} [0-9a-f]{40} [AMD]$/u.test(metadata)
+}
+
+/** Quint models may include repository documentation, but website edits need their build. */
+export function isSpecsOnlyDiff(raw: string): boolean {
+  const records = raw.split("\0")
+  if (records.pop() !== "" || records.length === 0 || records.length % 2 !== 0) return false
+  let sawSpec = false
+  for (let i = 0; i < records.length; i += 2) {
+    const metadata = records[i] ?? ""
+    const file = records[i + 1] ?? ""
+    if (!ordinaryRecord(metadata)) return false
+    if (isSpecPath(file)) sawSpec = true
+    else if (file.startsWith("docs/") || !documentation(file)) return false
+  }
+  return sawSpec
+}
+
+const fullValidation = { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+
 export interface ClassificationResult {
   docsOnly: boolean
+  specsOnly: boolean
   runBuild: boolean
   allPlatforms: boolean
   runBackend: boolean
@@ -118,43 +144,42 @@ export function classifyChanges(
       isDraft = Boolean(event.pull_request?.draft)
       const source = event.pull_request?.head?.sha
       const target = event.pull_request?.base?.sha
-      if (!commit(source) || !commit(target)) {
-        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
-      }
+      if (!commit(source) || !commit(target)) return fullValidation
       head = source
       base = git("merge-base", target, source).trim()
-      if (!commit(base)) {
-        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
-      }
+      if (!commit(base)) return fullValidation
     } else if (eventName === "push" && ref === "refs/heads/main") {
-      if (!commit(event.before) || !commit(event.after)) {
-        return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
-      }
+      if (!commit(event.before) || !commit(event.after)) return fullValidation
       base = event.before
       head = event.after
     } else {
-      return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+      return fullValidation
     }
     // Disabling rename detection ensures moving code into docs still checks its deletion.
     const raw = git("diff", "--raw", "--no-abbrev", "--no-renames", "-z", base, head, "--")
     const docsOnly = isDocumentationDiff(raw)
     if (docsOnly) {
-      return { docsOnly: true, runBuild: false, allPlatforms: false, runBackend: false }
+      return { docsOnly: true, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false }
+    }
+    // Model edits skip the product suites. Packaging stays off because mise files are not spec paths.
+    if (isSpecsOnlyDiff(raw)) {
+      return { docsOnly: false, specsOnly: true, runBuild: false, allPlatforms: false, runBackend: false }
     }
     if (isPr) {
       if (isDraft) {
-        return { docsOnly: false, runBuild: false, allPlatforms: false, runBackend: false }
+        return { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false }
       }
       return {
         docsOnly: false,
+        specsOnly: false,
         runBuild: hasPackagingChanges(raw),
         allPlatforms: hasPlatformChanges(raw),
         runBackend: hasBackendChanges(raw),
       }
     }
-    return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+    return fullValidation
   } catch {
-    return { docsOnly: false, runBuild: true, allPlatforms: true, runBackend: true }
+    return fullValidation
   }
 }
 
@@ -169,6 +194,7 @@ export function classifyDocumentation(
 
 if (import.meta.main) {
   let docsOnly = false
+  let specsOnly = false
   let runBuild = true
   let allPlatforms = true
   let runBackend = true
@@ -176,6 +202,7 @@ if (import.meta.main) {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH ?? "", "utf8")) as ChangeEvent
     const res = classifyChanges(process.env.GITHUB_EVENT_NAME ?? "", process.env.GITHUB_REF ?? "", event)
     docsOnly = res.docsOnly
+    specsOnly = res.specsOnly
     runBuild = res.runBuild
     allPlatforms = res.allPlatforms
     runBackend = res.runBackend
@@ -185,17 +212,19 @@ if (import.meta.main) {
   console.log(
     docsOnly
       ? "Documentation change: static checks remain required."
-      : [
-          `Running CI:`,
-          `platforms=${allPlatforms ? "all (Linux, Windows, macOS)" : "Linux only"}`,
-          `backend=${runBackend ? "yes" : "skip"}`,
-          `packaging_build=${runBuild ? "yes" : "skip"}`,
-        ].join(" ")
+      : specsOnly
+        ? "Spec change: preflight runs spec:test and skips static checks, runtime suites, and packaging."
+        : [
+            `Running CI:`,
+            `platforms=${allPlatforms ? "all (Linux, Windows, macOS)" : "Linux only"}`,
+            `backend=${runBackend ? "yes" : "skip"}`,
+            `packaging_build=${runBuild ? "yes" : "skip"}`,
+          ].join(" ")
   )
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
-      `docs_only=${docsOnly}\nrun_build=${runBuild}\nall_platforms=${allPlatforms}\nrun_backend=${runBackend}\n`
+      `docs_only=${docsOnly}\nspecs_only=${specsOnly}\nrun_build=${runBuild}\nall_platforms=${allPlatforms}\nrun_backend=${runBackend}\n`
     )
   }
 }

@@ -1,11 +1,14 @@
 //! Shared SDP exchanges without retaining SQL locks while awaiting a daemon.
 
-use super::{authorize_webrtc, binding, issued_ice_servers, normalize_candidate, registration};
+use super::{
+    authorize_webrtc, binding, issued_ice_servers, normalize_candidate, registration,
+    revoke_failed_setup,
+};
 use crate::{
     AppState,
     error::{ApiError, Result},
 };
-use actix_web::{HttpRequest, web};
+use actix_web::{HttpRequest, http::StatusCode, web};
 use deskfleet_control_store::{PeerCandidateState, PeerOfferState};
 use deskfleet_protocol::control::{ControlMessage, PeerAuthorization};
 use serde::Deserialize;
@@ -33,40 +36,68 @@ pub async fn offer(
     deskfleet_control_store::signaling_limits::options(&b.options)?;
     let state = s.store.prepare_peer_offer(&p, &b.sdp, &b.options).await?;
     let answer = match state {
-        PeerOfferState::Answered(answer) => answer,
+        PeerOfferState::Answered(answer) => Ok(answer),
         PeerOfferState::Start | PeerOfferState::Waiting => {
-            let result = tokio::time::timeout(NEGOTIATION_TIMEOUT, async {
-                if state == PeerOfferState::Start {
-                    exchange_offer(&s, &p, &b, &authorization).await
-                } else {
-                    wait_answer(&s, &p).await
-                }
-            })
-            .await
-            .unwrap_or_else(|_| Err(ApiError::bad("negotiation timed out; create a new peer")));
-            match result {
-                Ok(answer) => answer,
-                Err(error) => match recover_committed_answer(&s, &p).await? {
-                    Some(answer) => answer,
-                    None => {
-                        if s.store.fail_peer_offer(&p).await? {
-                            let peers = s.store.revoke_peer(&p).await?;
-                            s.hub.revoke(peers, "negotiation_failed").await?;
-                            return Err(error);
-                        }
-                        // Answer committed between the first check and fail.
-                        match recover_committed_answer(&s, &p).await? {
-                            Some(answer) => answer,
-                            None => return Err(error),
-                        }
-                    }
-                },
-            }
+            negotiate(&s, &p, &b, &authorization, state).await
         }
     };
     // The grant can be revoked while the first request waits on another host.
-    authorize_webrtc(&req, &s, &p).await?;
-    Ok(web::Json(json!({"sdp":answer})))
+    let answer = match answer {
+        Ok(answer) => authorize_webrtc(&req, &s, &p).await.map(|_| answer),
+        failed => failed,
+    };
+    if let Err(error) = &answer
+        && withdrawn(error)
+    {
+        // That revocation's notice can reach the daemon before this offer creates
+        // its peer and close nothing. Notify again now that the offer was answered
+        // or abandoned.
+        revoke_failed_setup(&s, &authorization, "negotiation_failed").await?;
+    }
+    Ok(web::Json(json!({"sdp":answer?})))
+}
+
+/// Login, access, and grant checks that fail once the grant has been withdrawn.
+fn withdrawn(error: &ApiError) -> bool {
+    matches!(
+        error.status,
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+    )
+}
+
+/// Exchange or await the daemon's answer, including one another instance committed.
+async fn negotiate(
+    s: &AppState,
+    peer_id: &str,
+    offer: &Offer,
+    authorization: &PeerAuthorization,
+    state: PeerOfferState,
+) -> Result<String> {
+    let result = tokio::time::timeout(NEGOTIATION_TIMEOUT, async {
+        if state == PeerOfferState::Start {
+            exchange_offer(s, peer_id, offer, authorization).await
+        } else {
+            wait_answer(s, peer_id).await
+        }
+    })
+    .await
+    .unwrap_or_else(|_| Err(ApiError::bad("negotiation timed out; create a new peer")));
+    let error = match result {
+        Ok(answer) => return Ok(answer),
+        Err(error) => error,
+    };
+    if let Some(answer) = recover_committed_answer(s, peer_id).await? {
+        return Ok(answer);
+    }
+    if s.store.fail_peer_offer(peer_id).await? {
+        // The caller notifies a withdrawn grant once.
+        if !withdrawn(&error) {
+            revoke_failed_setup(s, authorization, "negotiation_failed").await?;
+        }
+        return Err(error);
+    }
+    // Answer committed between the first check and fail.
+    recover_committed_answer(s, peer_id).await?.ok_or(error)
 }
 
 /// Shared negotiations may finish on another instance while this request fails.

@@ -265,6 +265,9 @@ development tools. Lockfile mode is enabled and `mise.lock` records the resolved
 versions and available platform metadata. `Cargo.lock` owns Rust dependencies;
 `pnpm-lock.yaml` owns JavaScript dependencies. Cargo's `rust-version` declares
 compiler requirements; it does not select the installed toolchain.
+[Control-plane verification](control-plane-verification.md) specifies the Quint
+tool and the `spec:test` and `spec:verify` tasks. Those land with that work.
+Quint is a mise tool installed with the locked pnpm, not a workspace dependency.
 
 Native media builds use locked CMake 4.4 to compile bundled Opus, plus the host C/C++
 toolchain. CMake 4.2 or newer is required for the Visual Studio 18 2026 generator
@@ -346,6 +349,8 @@ to check module initialization order as well as file sizes.
 | `mise run format-check` | Check Rust formatting |
 | `mise run lint` | Check Rust dependency usage and Clippy |
 | `mise run skills:install` | Restore skills from the APM lockfile |
+| `mise run spec:test` | Typecheck and simulate every Quint model in `specs/` with the committed seed |
+| `mise run spec:verify` | Symbolically check every Quint model in `specs/` to its recorded step bound; local only, not part of `check` or CI |
 
 Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when

@@ -618,9 +618,11 @@ native window.
 Disconnect, switching away from the Desktop tab, navigation away from the desktop
 view, renderer reload/crash, and client exit release the corresponding media
 session. Tab switches retain display and stream settings; returning to Desktop
-does not reconnect automatically. A browser page or installed PWA that resumes
-from suspension retries a connection or setup timeout automatically, while
-capture and permission failures keep their manual Connect action. Hiding the
+does not reconnect automatically. A browser page, installed PWA, or native app
+that resumes from suspension retries a connection or setup timeout
+automatically. The native app uses its foreground event when the WebView stays
+visible across a process switch. Capture and permission failures keep their
+manual Connect action. Hiding the
 desktop view or ending its stream also exits its fullscreen stage; an
 unsuccessful exit keeps the manual exit
 control available when the view is shown. Closing the window to the

@@ -12,6 +12,7 @@ import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
 import { apiRequest, API_RETRY_STATUS_CODES, type ApiRequestOptions } from "./api-request.ts"
 import { HttpError } from "./request-diagnostics.ts"
+import { APP_FOREGROUND_EVENT } from "./app-foreground.ts"
 import type { CentralSocket, CentralTransport } from "./central-transport.ts"
 import type { Machine as WireMachine, NetworkConfiguration } from "../../../crates/protocol/control.ts"
 
@@ -105,11 +106,13 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   constructor(options: HttpCentralOptions) {
     this.#options = options
     this.#account = { ...options.account, serverUrl: serverAddress(options.account.serverUrl) }
-    // Installed windows and mobile PWAs are suspended without closing the page.
-    // Recover on resume and on network changes rather than on a throttled timer.
+    // Installed windows, PWAs, and native apps are suspended without closing the page.
+    // A process switch can leave the WebView visible, so native resume dispatches
+    // its own foreground event. Recover from that instead of a throttled timer.
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       window.addEventListener("online", this.#wake)
       window.addEventListener("pageshow", this.#wake)
+      window.addEventListener(APP_FOREGROUND_EVENT, this.#wake)
       document.addEventListener("visibilitychange", this.#visibility)
     }
   }
@@ -385,6 +388,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       window.removeEventListener("online", this.#wake)
       window.removeEventListener("pageshow", this.#wake)
+      window.removeEventListener(APP_FOREGROUND_EVENT, this.#wake)
       document.removeEventListener("visibilitychange", this.#visibility)
     }
     this.#disconnect()
