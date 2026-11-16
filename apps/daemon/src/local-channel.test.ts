@@ -22,7 +22,9 @@ const token = "one-use-local-secret-at-least-32-characters"
 const actor = { kind: "user" as const, userId: "user", deviceId: "device" }
 
 async function until(predicate: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 200 && !predicate(); attempt++) await delay(5)
+  // CI runs daemon tests concurrently with native/Rust work on the same runner;
+  // keep the assertion identical but allow up to ~5s for channel activity.
+  for (let attempt = 0; attempt < 1_000 && !predicate(); attempt++) await delay(5)
   assert.equal(predicate(), true, "Expected channel activity")
 }
 
