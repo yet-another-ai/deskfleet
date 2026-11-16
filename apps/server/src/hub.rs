@@ -464,7 +464,7 @@ mod tests {
     #[tokio::test]
     async fn saturated_request_reports_busy_without_taking_machine_offline() {
         let hub = Hub::default();
-        let (send, _receive) = mpsc::channel(1);
+        let (send, mut receive) = mpsc::channel(1);
         let (shutdown, stopped) = watch::channel(None);
         send.try_send(ControlMessage::Ping).unwrap();
         hub.add_daemon("1", "team", "machine", "socket", send, shutdown)
@@ -477,6 +477,12 @@ mod tests {
         assert_eq!(error.code, "machine_busy");
         assert_eq!(*stopped.borrow(), None);
         assert!(hub.online("1").await);
+        assert!(hub.is_current("1", "socket").await);
+        assert!(matches!(receive.recv().await, Some(ControlMessage::Ping)));
+        assert!(matches!(
+            receive.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[tokio::test]
@@ -576,6 +582,21 @@ mod tests {
         assert_eq!(*fast_stopped.borrow(), None);
         assert_eq!(*daemon_stopped.borrow(), None);
         assert!(hub.online("daemon").await);
+        assert!(hub.is_current("daemon", "daemon-socket").await);
+        match daemon_messages.try_recv_outbound() {
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+            Ok(outbox::Outbound::Reconnect) => panic!("viewer overflow reconnected the daemon"),
+            Ok(outbox::Outbound::Message(message))
+                if matches!(*message, ControlMessage::PeerRevoked { .. }) =>
+            {
+                panic!("viewer overflow revoked a peer")
+            }
+            Ok(outbox::Outbound::Message(message)) => {
+                panic!("viewer overflow queued {message:?} on the daemon")
+            }
+            Ok(outbox::Outbound::Reconcile) => panic!("viewer overflow reconciled the daemon"),
+            Err(error) => panic!("viewer overflow closed the daemon queue: {error}"),
+        }
 
         let (replacement, mut replacement_messages) = mpsc::channel(1);
         let (shutdown, _) = watch::channel(None);

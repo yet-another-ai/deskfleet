@@ -279,7 +279,11 @@ and the following reconnect fences the old identity.
 
 Viewer invalidation overflow and a full daemon queue stay in the architecture
 prose. This module does not vary them. `route_fence.qnt` already checks
-peer-event overflow.
+peer-event overflow. `apps/server/src/hub.rs`
+`distinct_hint_overflow_reconnects_only_its_viewer_and_keeps_daemon_rpc_live`
+keeps the daemon route current and its queue empty.
+`saturated_request_reports_busy_without_taking_machine_offline` returns
+`machine_busy` and leaves the original command as the only queued message.
 
 | Action | Rule |
 | --- | --- |
