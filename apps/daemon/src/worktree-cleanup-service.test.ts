@@ -29,7 +29,7 @@ test("cleanup timers use durable activity and only completed, idle turns settle"
   assert.equal(cleanupTimeReason(state, settings, now), "settled")
   state.turns[0]!.state = "failed"
   assert.equal(cleanupTimeReason(state, settings, now), undefined)
-  assert.equal(cleanupGitEligible(state), false)
+  assert.equal(cleanupGitEligible(state, now), false)
   state.turns[0]!.state = "completed"
   settings.inactive = true; settings.settled = false
   state.session.viewers = [{ userId: "7", seenAt: ago(0) }]
@@ -52,7 +52,7 @@ test("archived cleanup is independently enabled and directory Sessions are never
   assert.equal(cleanupTimeReason(state, settings, now), "archived")
   settings.archived = false
   assert.equal(cleanupTimeReason(state, settings, now), undefined)
-  assert.equal(cleanupGitEligible(state), false)
+  assert.equal(cleanupGitEligible(state, now), false)
   state.session.context = "directory"
   assert.equal(cleanupSessionIdle(state), false)
 })
@@ -64,7 +64,22 @@ test("settled zero runs on the next cleanup, but a never-started Session is not 
   assert.equal(cleanupTimeReason(state, settings, now), "settled")
   state.turns = []
   assert.equal(cleanupTimeReason(state, settings, now), undefined)
-  assert.equal(cleanupGitEligible(state), false)
+  assert.equal(cleanupGitEligible(state, now), false)
+})
+
+test("git cleanup (unchanged/merged) waits for the minimum idle grace period", async () => {
+  const f = serviceFixture()
+  f.preferences.cleanup.inactive = false; f.preferences.cleanup.settled = false
+  f.state.turns[0]!.endedAt = new Date(now - 30 * 60_000).toISOString()
+  assert.equal(cleanupGitEligible(f.state, now), false)
+  await f.service.run()
+  assert.deepEqual(f.removed, [])
+  f.state.session.viewers = [{ userId: "7", seenAt: new Date(now - 2 * 60 * 60_000).toISOString() }]
+  f.state.turns[0]!.endedAt = ago(2)
+  assert.equal(cleanupGitEligible(f.state, now), false)
+  await f.service.run()
+  assert.deepEqual(f.removed, [])
+  await f.service.close()
 })
 
 test("preferences round trip, validate day ranges, and reject corrupt saved settings", async t => {

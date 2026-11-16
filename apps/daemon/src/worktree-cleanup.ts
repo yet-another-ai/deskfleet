@@ -58,8 +58,9 @@ export class WorktreeCleanup {
       try {
         const snapshot = await agents.journal.read(session.id)
         if (!cleanupSessionIdle(snapshot) || agents.presence().some(presence => presence.sessionId === session.id && presence.userIds.length)) continue
-        const timed = cleanupTimeReason(snapshot, cleanup, (this.#options.now ?? Date.now)())
-        const gitEligible = cleanupGitEligible(snapshot) && (cleanup.unchanged || cleanup.merged)
+        const now = (this.#options.now ?? Date.now)()
+        const timed = cleanupTimeReason(snapshot, cleanup, now)
+        const gitEligible = cleanupGitEligible(snapshot, now) && (cleanup.unchanged || cleanup.merged)
         if (!timed && !gitEligible) continue
         if (!timed) await catalog.refreshSessionWorktreeDefaults(session.id)
         const inspection = await catalog.inspectSessionWorktreeCleanup(session.id, cleanup.keepLocalChanges)
