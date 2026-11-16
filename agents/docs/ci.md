@@ -27,13 +27,13 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   entries, as described under [Toolchains and caches](#toolchains-and-caches).
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
-  rustfmt, cargo-shear, script tests, the Rust skills harness check, and the Web
-  and website type checks. Platform tests and backend integration jobs wait for
-  it (`needs: preflight`), providing fast-fail feedback before running on
-  expensive runners. `Static checks` runs beside them with
-  `mise run ci:check:static`: Clippy, the type checks that need the native
-  addon, and the desktop, Web, and website builds. Test fails if either job
-  fails, so `Gate` requires both. Furthermore, pull requests filter runtime test jobs by changed paths:
+  rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
+  patch/Renovate contract check, and the Web and website type checks. Platform
+  tests and backend integration jobs wait for it (`needs: preflight`), providing
+  fast-fail feedback before running on expensive runners. `Static checks` runs
+  beside them with `mise run ci:check:static`: Clippy, the type checks that need
+  the native addon, and the desktop, Web, and website builds. Test fails if
+  either job fails, so `Gate` requires both. Furthermore, pull requests filter runtime test jobs by changed paths:
   cross-platform matrix checks (macOS arm64 and Windows x64) run only when
   native/cross-platform paths are modified (`crates/`, `apps/desktop/`, `apps/daemon/`,
   `*.rs`, root build configs, workflows, scripts, or patches), running Linux x64 only

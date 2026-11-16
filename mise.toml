@@ -398,10 +398,15 @@ run = "cargo build --workspace --locked"
 hide = true
 run = "node scripts/check-rust-skills-harness.ts"
 
+[tasks."check:pnpm-patches"]
+description = "Validate pnpm patchedDependencies against Renovate and the lockfile"
+run = "node scripts/check-pnpm-patches.ts"
+
 [tasks."check:static"]
 hide = true
 depends = [
     "check:rust-skills-harness",
+    "check:pnpm-patches",
     "check:types",
     "check:desktop-types",
     "web:typecheck",
@@ -458,6 +463,7 @@ depends = ["rust:test"]
 hide = true
 depends = [
     "check:rust-skills-harness",
+    "check:pnpm-patches",
     "rust:format:check",
     "rust:shear",
     "check:scripts",

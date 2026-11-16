@@ -457,12 +457,29 @@ Node types stay on 24 because the standalone daemon's SEA build targets Node 24.
 PostgreSQL major updates use a separate group and require Dependency Dashboard
 approval so the development volume migration or reset can be reviewed explicitly.
 
-The patched `@agentclientprotocol/codex-acp` and `pi-acp` dependencies are updated
-manually: review or rebase their patches, update the version-specific
-`patchedDependencies` entries, regenerate `pnpm-lock.yaml`, and run the affected
-adapter tests and daemon packaging smoke checks. Other ACP dependencies remain
-eligible for Renovate updates. Preserve the TypeScript 6 npm aliases used by
-vue-tsc when reviewing the grouped PR.
+pnpm `patchedDependencies` use two contracts, checked by
+`scripts/check-pnpm-patches.ts` (via `mise run check:pnpm-patches` and script
+tests):
+
+- Exact pins (`pkg@1.2.3`) for patches that must be rebased by hand. Renovate
+  npm updates for those packages stay disabled. Today that is
+  `@agentclientprotocol/codex-acp` and `pi-acp`: review or rebase the patch,
+  keep the exact `patchedDependencies` key, regenerate `pnpm-lock.yaml`, and run
+  the affected adapter tests and daemon packaging smoke checks.
+- Carry-across selectors (`pkg@*`) for patches that should travel with ordinary
+  Renovate bumps. Artifact refresh applies the existing patch to the new
+  version. When the hunk still matches, the lockfile updates automatically. When
+  it does not, pnpm fails with `ERR_PNPM_PATCH_FAILED` (not
+  `ERR_PNPM_UNUSED_PATCH`); rebase the patch content against the new package,
+  keep the `@*` key, regenerate the lockfile, and re-run the affected checks.
+  Claude Agent ACP, DSH app-boot, the patched xterm addons, and
+  `stream-markdown-parser` use this path.
+
+Do not set `allowUnusedPatches` or `ignorePatchFailures: true` to paper over a
+stale pin. Mend-hosted Renovate cannot run arbitrary `postUpgradeTasks`, so the
+`@*` selectors are the durable artifact-refresh fix under the default app token.
+Preserve the TypeScript 6 npm aliases used by vue-tsc when reviewing the grouped
+PR.
 
 Renovate ignores `vendor/`. Vendored packages preserve their upstream manifests
 and sources except for documented local patches; update them together with their
