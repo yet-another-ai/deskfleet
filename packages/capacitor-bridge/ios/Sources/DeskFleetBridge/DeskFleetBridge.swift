@@ -59,13 +59,16 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "filesClose", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTelemetryConsent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTelemetryUserId", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "logTelemetryEvent", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "logTelemetryEvent", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "haptic", returnType: CAPPluginReturnPromise)
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
     private var authSession: ASWebAuthenticationSession?
     private var speechInput: SpeechInput?
+    private lazy var impactFeedback = UIImpactFeedbackGenerator(style: .light)
+    private lazy var selectionFeedback = UISelectionFeedbackGenerator()
     private let localFiles = LocalFilesBridge()
 
     @objc func filesOpen(_ call: CAPPluginCall) { localFiles.open(call) }
@@ -92,6 +95,19 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         }
         let params = call.getObject("params")
         call.resolve(["configured": FirebaseTelemetryBridge.logEvent(name: name, params: params)])
+    }
+
+    @objc func haptic(_ call: CAPPluginCall) {
+        let activate = call.getString("kind") == "activate"
+        DispatchQueue.main.async { [weak self] in
+            if activate {
+                self?.impactFeedback.impactOccurred()
+            } else {
+                self?.selectionFeedback.selectionChanged()
+            }
+            self?.selectionFeedback.prepare()
+            call.resolve()
+        }
     }
 
     private func speech() -> SpeechInput {

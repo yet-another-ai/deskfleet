@@ -41,6 +41,7 @@ export interface DeskfleetDesktopApi {
   outlineAudio?: OutlineAudioApi
   application?: ApplicationApi
   speech?: SpeechApi
+  haptic?: (kind: "activate" | "tick") => void
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi

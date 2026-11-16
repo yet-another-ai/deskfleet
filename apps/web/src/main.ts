@@ -1,6 +1,7 @@
 import { App as CapApp } from "@capacitor/app"
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core"
 import {
+  DeskFleetBridge,
   createCapacitorFilesApi,
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
@@ -27,6 +28,7 @@ const adapter = await browserClient(configuredServerUrl, captureCentralRequestEr
 if (Capacitor.isNativePlatform()) {
   setNativeTelemetrySink(createCapacitorTelemetrySink())
   adapter.speech = createCapacitorSpeechApi()
+  adapter.haptic = kind => { void DeskFleetBridge.haptic({ kind }) }
 }
 if (Capacitor.getPlatform() === "ios") {
   adapter.outlineAudio = createCapacitorOutlineAudioApi()
