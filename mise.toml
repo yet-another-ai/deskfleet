@@ -485,6 +485,12 @@ quint verify specs/mux_streams.qnt --max-steps 6 --invariants \
 quint verify specs/link_liveness.qnt --max-steps 6 --invariants \
   inv_client_identity inv_daemon_identity inv_link_phases \
   inv_peer_close inv_expiry_fixed
+quint verify specs/credential_close.qnt --max-steps 6 --invariants \
+  inv_expiry_fixed inv_accepted_work_survives inv_close_cause \
+  inv_revoked_closes inv_reenrolled_stays_closed inv_credential_domain
+quint verify specs/local_claim.qnt --max-steps 6 --invariants \
+  inv_blank inv_local_spent inv_webrtc_unspent inv_prepared \
+  inv_claimed inv_sealed inv_domain
 """
 
 [tasks."ci:preflight"]

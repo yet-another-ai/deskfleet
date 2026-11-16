@@ -14,8 +14,8 @@ layer for an earlier provisional shape.
 
 ## What a model is for
 
-A model checks interleavings of grants, signaling, link liveness, routing, and
-Mux stream lifetime. The prose documents remain the decisions. A model is updated in the
+A model checks interleavings of grants, signaling, link liveness, credential
+close, local claims, routing, and Mux stream lifetime. The prose documents remain the decisions. A model is updated in the
 same change as the decision it can violate. A refactor that preserves those
 decisions leaves the model alone. Codecs, byte budgets, file layout, and
 catalog or history behavior are outside that rule.
@@ -75,6 +75,8 @@ identical.
 | `specs/route_fence.qnt` | 2 API nodes, 1 registration, 2 peers | 6 steps |
 | `specs/mux_streams.qnt` | 1 peer, 2 logical streams | 6 steps |
 | `specs/link_liveness.qnt` | 1 client socket, 1 daemon socket, 1 peer, 2 identities each | 6 steps |
+| `specs/credential_close.qnt` | 1 daemon socket, 1 peer, 2 credential generations | 6 steps |
+| `specs/local_claim.qnt` | 1 claim secret | 6 steps |
 
 Deadlines are actions (`reservation_due`, `authorization_due`, `setup_due`,
 `link_dead`), not counters. Changing a duration in the prose leaves the model
@@ -111,8 +113,9 @@ its invariants with `--invariants`, so a failure names the predicate:
 quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants <names>
 ```
 
-Start at 6 steps. `route_fence`, `mux_streams`, and `link_liveness` finish in
-seconds. `grant_lifecycle` takes about 5 minutes. Apalache rejects an inductive
+Start at 6 steps. `route_fence`, `mux_streams`, `link_liveness`,
+`credential_close`, and `local_claim` finish in seconds. `grant_lifecycle`
+takes about 5 minutes. Apalache rejects an inductive
 check of its maps because the next-state value is unconstrained. Splitting
 the module would drop the interleavings its invariants exist to check, so
 the task keeps the 6-step search. Raising the step bound is not the
@@ -154,7 +157,7 @@ task or shell is still running.
 | `revoke` / `authorization_due` | Applying a revocation needs the signaling connection; a revocation that commits while that connection is down is delivered later by route reconciliation. The local authorization deadline still closes the peer during an outage. The Agent or shell boolean stays set. |
 | `setup_due` | A negotiation that never establishes fails. The replacement is a new `peerId`. |
 | `disconnected_grace` / `failed_immediate` | A transient disconnect waits for `recovery_due`. `failed` and `closed` close immediately. A resumed page opens a new authorized peer. |
-| `claim_local` | The one-use secret succeeds once, and only for a `local` grant inside the claim window. A second claim, a claim after close, and a claim of a `webrtc` grant fail. A `local` grant cannot submit SDP. |
+| `claim_local` | The one-use secret succeeds once, and only for a `local` grant inside the claim window. A second claim, a claim after close, and a claim of a `webrtc` grant fail. A `local` grant cannot submit SDP. The unclaimed window is `specs/local_claim.qnt`. |
 
 Invariants:
 
@@ -336,6 +339,93 @@ Named runs: `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`,
 and daemon-link tests. Add an implementation test only when a verifier trace
 shows the current client or daemon can close that peer or move its expiry.
 
+## Credential close
+
+`specs/credential_close.qnt` is one daemon control socket, one established
+peer, and two credential generations. `generation` stops at 1 so the
+re-enrollment stays finite; that bound is not a product limit. `retryable_close`
+and `reconnect` are this module's `signaling_down` / `signaling_up`.
+`late_rejection` is `late_message` for the retired token. Reservation, inbox,
+and lease loss stay in the grant and route modules.
+
+A close code of 1012, a transport drop, or a link declared dead reconnects
+with the same credential and leaves the peer open. Close codes 4401 and 4403
+retire that credential, close the registration's peers, and do not schedule
+that reconnect. Re-enrollment replaces the token. A rejection that belonged to
+the retired token leaves the new credential in place. Accepted work stays set.
+Expiry stays at the value written for the established peer.
+
+| Action | Rule |
+| --- | --- |
+| `retryable_close` / `reconnect` | The same credential returns. The peer and its expiry stay. |
+| `credential_rejected` | The current credential is retired and the peer closes. Reconnect is disabled. |
+| `reenroll` | A revoked registration receives the next credential. The closed peer stays closed. |
+| `late_rejection` | A rejection of the retired token does not revoke the re-enrolled credential. |
+| `rejected_credential_stays` | Once that re-enrollment is itself rejected, the credential stays revoked. |
+| `accept_work` | Credential rejection leaves the accepted-work boolean set. |
+
+Invariants:
+
+- Expiry stays at the value written for the established peer.
+- The accepted-work boolean stays set once work is accepted.
+- A closed peer records `credential`. An established peer has an empty close cause.
+- A revoked credential has a down link and a closed peer.
+- Generation 1 is reached only after that peer has closed for credential rejection.
+- The generation is 0 or 1, and the link is `up` or `down`.
+
+Named runs: `retryable_close_keeps_the_peer`,
+`credential_rejection_closes_peers_without_reconnect`, and
+`late_rejection_keeps_the_reenrolled_credential`.
+
+| Run | Implementation evidence already present |
+| --- | --- |
+| `retryable_close_keeps_the_peer` | `apps/daemon/src/central-client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. |
+| `credential_rejection_closes_peers_without_reconnect` | `apps/daemon/src/central-client.test.ts` `explicit credential rejection persists logout without treating transport loss as revocation`. `#revoked` closes the registration's peers and retains execution. |
+| `late_rejection_keeps_the_reenrolled_credential` | `apps/daemon/src/central-client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
+
+## Local claim
+
+`specs/local_claim.qnt` is one claim secret from `prepareLocal`. The 30-second
+window and the grant expiry are actions, `claim_due` and `authorization_due`.
+The secret is recorded when the local grant is prepared. Inbox retention of
+that secret stays in the authorization prose. This module keeps one secret.
+A prepare after that secret's grant expiry is a new grant and is not an
+action here.
+
+An unclaimed window or the grant expiry closes a prepared peer and leaves the
+secret spent. Opening the claim, then closing the socket or reaching grant
+expiry, also leaves it spent. A second open and another prepare of the same
+secret fail. A WebRTC grant is rejected before a secret is recorded.
+
+| Action | Rule |
+| --- | --- |
+| `issue_local` | Preparing a local grant records the secret and opens the claim window. |
+| `issue_webrtc` | A WebRTC grant records nothing and cannot be opened as a local claim. |
+| `open_local` | The secret succeeds once, from the prepared phase. |
+| `claim_due` | The unclaimed window closes the peer. The secret stays spent. |
+| `authorization_due` | Grant expiry closes a prepared or claimed peer. The secret stays spent. |
+| `close_claimed` | Closing the claimed socket does not make the secret reusable. |
+| `spent_secret_stays` | A sealed secret, or a WebRTC grant that was never recorded, stays unchanged. |
+
+Invariants:
+
+- A local grant has its secret spent. A WebRTC grant is absent, unspent, and unsealed.
+- Prepared and claimed phases are local, spent, and unsealed.
+- A sealed claim is closed and spent.
+- The blank claim is absent, unspent, and unsealed.
+
+Named runs: `unclaimed_window_spends_the_secret`,
+`unclaimed_window_rejects_another_prepare`, `second_open_fails`,
+`claimed_close_spends_the_secret`, `authorization_due_spends_the_secret`, and
+`webrtc_grant_cannot_be_claimed`.
+
+| Run | Implementation evidence already present |
+| --- | --- |
+| `unclaimed_window_spends_the_secret`, `unclaimed_window_rejects_another_prepare` | `apps/daemon/src/authorized-peers.test.ts` `an unclaimed local secret expires after 30 seconds without extending its grant`. |
+| `second_open_fails`, `claimed_close_spends_the_secret` | `apps/daemon/src/authorized-peers.test.ts` `unclaimed local peers are capped and a closed claim retains replay protection`. `apps/daemon/src/local-channel.test.ts` rejects a second `localOpen` of a live claim. |
+| `authorization_due_spends_the_secret` | The closed-claim test above retains replay protection through close. Grant expiry uses the same `#used` entry, which is removed only when that expiry has passed. |
+| `webrtc_grant_cannot_be_claimed` | `apps/daemon/src/authorized-peers.test.ts` rejects `prepareLocal` unless the grant transport is `local`. |
+
 ## Outside the models
 
 The following stay in the implementation and its existing tests:
@@ -381,6 +471,7 @@ runs packaging. Later model-only edits do not.
 3. Add `specs/route_fence.qnt` and its verify invocation in one change.
 4. Add `specs/mux_streams.qnt` and its verify invocation in one change.
 5. Add `specs/link_liveness.qnt` and its verify invocation in one change.
+6. Add `specs/credential_close.qnt` and `specs/local_claim.qnt` with their verify invocations.
 
 Each step merges on its own. A decision change after that updates the one
 module that contains the affected action, that module's named runs, and the
