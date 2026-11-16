@@ -51,14 +51,16 @@ export async function smokePortForwarding(backend: string, login: FixtureLogin, 
   const targetPort = (server.address() as AddressInfo).port
   async function exchange(localPort: number, payload: Buffer): Promise<void> {
     const socket = createConnection({ host: "127.0.0.1", port: localPort })
-    socket.setTimeout(20_000, () => socket.destroy(new Error("Forwarded TCP response timed out")))
+    // The native listener can buffer the upload before TURN finishes delivering it.
+    // Local TCP idleness does not measure relay progress; bound the whole exchange.
+    const deadline = setTimeout(() => socket.destroy(new Error("Forwarded TCP exchange timed out")), 60_000)
     try {
       await once(socket, "connect")
       socket.end(payload)
       const received: Buffer[] = []
       for await (const chunk of socket) received.push(Buffer.from(chunk))
       assert.deepEqual(Buffer.concat(received), Buffer.concat([greeting, createHash("sha256").update(payload).digest()]))
-    } finally { socket.destroy() }
+    } finally { clearTimeout(deadline); socket.destroy() }
   }
   let live: Socket | undefined
   try {
