@@ -1772,6 +1772,11 @@ declarations describe the native API separately.
 Contracts evolve in place, including incompatible changes. Do not add version
 bump tasks or compatibility layers for earlier provisional shapes.
 
+Executable control-plane models live in the repository-root `specs/` directory.
+[Control-plane verification](control-plane-verification.md) owns their toolchain,
+invariants, and CI class. The models cover server, daemon, and client
+interleavings for peer authorization and signaling.
+
 mise manages tools and tasks with lockfile mode enabled. APM owns the checked-in
 skills. See the [development environment](environment.md), [CI workflow](ci.md),
 and [agent guide](../../AGENTS.md) for repository conventions.

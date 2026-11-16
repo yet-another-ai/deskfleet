@@ -19,6 +19,9 @@
 mise.local.toml
 mise.local.lock
 
+# Apalache traces from `mise run spec:verify`. The check is local and not part of CI.
+_apalache-out/
+
 # APM download cache only; deployed .agents/skills/ and apm.lock.yaml are tracked.
 apm_modules/
 

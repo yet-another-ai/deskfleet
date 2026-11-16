@@ -8,6 +8,11 @@ on:
         type: boolean
         required: false
         default: false
+      specs_only:
+        description: Run preflight only, including spec:test, for Quint models and documentation.
+        type: boolean
+        required: false
+        default: false
       draft_pr:
         description: Keep static checks and skip runtime tests for draft pull requests.
         type: boolean
@@ -27,6 +32,11 @@ on:
     inputs:
       docs_only:
         description: Keep static checks and skip runtime tests for classified documentation changes.
+        type: boolean
+        required: false
+        default: false
+      specs_only:
+        description: Run preflight only, including spec:test, for Quint models and documentation.
         type: boolean
         required: false
         default: false
@@ -73,6 +83,7 @@ jobs:
   # tests instead of ahead of them.
   static:
     name: Static checks
+    if: ${{ !inputs.specs_only }}
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -100,7 +111,7 @@ jobs:
     name: Tests (${{ matrix.name }})
     needs: preflight
     if: >-
-      ${{ !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ${{ matrix.os }}
@@ -163,7 +174,7 @@ jobs:
     name: Tests (Android)
     needs: preflight
     if: >-
-      ${{ !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ubuntu-26.04
@@ -185,7 +196,7 @@ jobs:
     name: Tests (iOS)
     needs: preflight
     if: >-
-      ${{ inputs.all_platforms && !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ inputs.all_platforms && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: macos-latest
@@ -207,7 +218,7 @@ jobs:
     name: PostgreSQL and remote backend
     needs: preflight
     if: >-
-      ${{ inputs.run_backend && !inputs.draft_pr && !(inputs.docs_only &&
+      ${{ inputs.run_backend && !inputs.specs_only && !inputs.draft_pr && !(inputs.docs_only &&
           (github.event_name == 'pull_request' ||
           (github.event_name == 'push' && github.ref == 'refs/heads/main'))) }}
     runs-on: ubuntu-26.04

@@ -8,6 +8,9 @@ SDP, DTLS, and ICE requirements apply specifically to WebRTC.
 The native transport performs DTLS. Central identity binding is implemented in
 the server's peer routes, with independent grant enforcement in the daemon's
 `AuthorizedPeers` service and both client adapters.
+[Control-plane verification](control-plane-verification.md) checks
+interleavings of the authorization and signaling rules below. This document
+remains the decision.
 
 ## Signaling resource admission
 
