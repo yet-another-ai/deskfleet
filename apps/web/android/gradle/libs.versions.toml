@@ -1,5 +1,8 @@
 [versions]
 agp = "9.5.1"
+# AGP 9 embeds Kotlin 2.2; Firebase Analytics 24 ships Kotlin 2.4 metadata.
+# Keep this in sync with the buildscript classpath override in build.gradle.kts.
+kotlin = "2.4.21"
 compileSdk = "37"
 minSdk = "34"
 targetSdk = "37"
