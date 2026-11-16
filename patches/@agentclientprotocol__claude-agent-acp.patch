@@ -1,0 +1,24 @@
+diff --git a/dist/v1/acp-agent.js b/dist/v1/acp-agent.js
+--- a/dist/v1/acp-agent.js
++++ b/dist/v1/acp-agent.js
+@@ -855,6 +855,7 @@
+                     : {}),
+                 steering: {
+                     supported: true,
++                    supportsPromptRequired: true,
+                 },
+             },
+         };
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -16,7 +16,8 @@
+       "types": "./dist/lib.d.ts",
+       "import": "./dist/lib.js"
+     },
+-    "./package.json": "./package.json"
++    "./package.json": "./package.json",
++    "./*": "./*"
+   },
+   "files": [
+     "dist/",

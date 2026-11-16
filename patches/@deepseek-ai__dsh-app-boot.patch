@@ -1,0 +1,19 @@
+diff --git a/lib/index.js b/lib/index.js
+index 927ba78f65abd7d9a17f9b52c5743eac07d8bfaa..d347ef4dc15779b659675c883c1ac0634eb10db3 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2566,6 +2566,8 @@ function internalModules() {
+-	const addon = createRequire(import.meta.url)("node-addon-require-builtin");
+-	const esmModule = addon.requireBuiltin("internal/modules/esm/loader");
+-	const cjsModule = addon.requireBuiltin("internal/modules/cjs/loader");
+-	const cjsHelpers = addon.requireBuiltin("internal/modules/helpers");
+-	const esmUtils = addon.requireBuiltin("internal/modules/esm/utils");
+-	const esmResolve = addon.requireBuiltin("internal/modules/esm/resolve");
++	const require = createRequire(import.meta.url);
++	// Electron exposes these modules explicitly; avoid the native addon's version-specific ABI bridge.
++	const requireBuiltin = process.execArgv.includes("--expose-internals") ? require : require("node-addon-require-builtin").requireBuiltin;
++	const esmModule = requireBuiltin("internal/modules/esm/loader");
++	const cjsModule = requireBuiltin("internal/modules/cjs/loader");
++	const cjsHelpers = requireBuiltin("internal/modules/helpers");
++	const esmUtils = requireBuiltin("internal/modules/esm/utils");
++	const esmResolve = requireBuiltin("internal/modules/esm/resolve");

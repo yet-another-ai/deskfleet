@@ -37,7 +37,7 @@
       "extends": ["schedule:monthly"]
     },
     {
-      "description": "Rebase the version-specific pnpm patches and validate bundled adapters before updating.",
+      "description": "Exact-pinned pnpm patches: rebase patchedDependencies and validate adapters before updating. Carry-across `@*` patches stay enabled so Renovate can refresh lockfiles when the patch still applies.",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@agentclientprotocol/codex-acp", "pi-acp"],
       "enabled": false
