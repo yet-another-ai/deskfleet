@@ -177,7 +177,12 @@ export class CentralClient {
     }
     this.#enrolling = true
     try {
-      await this.#revocation
+      try { await this.#revocation } catch {
+        // A failed cleanup must not block every later enrollment. Retry it now
+        // that the fault may have cleared; a repeated failure fails only this attempt.
+        this.#revocation = this.#retire()
+        await this.#revocation
+      }
       const serverUrl = centralUrl(value.serverUrl)
       const verified = await apiRequest<{
         serverId: string; machine: { id: string; teamId: string; originId: string; localMachineId: string }
@@ -367,10 +372,21 @@ export class CentralClient {
     if (credentials) this.#credentials = { ...credentials, revoked: true }
     // Retain this Team's execution and history. Re-enrollment replaces its token
     // without changing the catalog or stopping accepted work.
-    return this.#revocation = Promise.all([
+    return this.#revocation = this.#retire()
+  }
+
+  /**
+   * Close this registration's peers and persist its logout. Settle only after both
+   * finish, so a retry never overlaps an earlier write of the credential file.
+   */
+  async #retire(): Promise<void> {
+    const results = await Promise.allSettled([
       this.#peers.closeAll(),
       this.#credentials ? this.#save(this.#credentials) : undefined,
-    ]).then(() => {})
+    ])
+    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : [])
+    if (failures.length === 1) throw failures[0]
+    if (failures.length) throw new AggregateError(failures, "Revoked machine cleanup failed")
   }
 
   stop(): Promise<void> {

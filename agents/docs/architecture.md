@@ -784,8 +784,13 @@ retains its explicit `4401`/`4403` credential-rejection close codes.
 Preparing the same backend and Team again reuses its directory and origin.
 After removal, re-enrollment reactivates the same association and rotates only
 its execution token; Workspaces, Sessions, history, and other Teams' runtimes are
-retained. Active registrations cannot be overwritten by a new token. Adding a
-different Team creates a separate empty catalog under the same public Machine ID.
+retained. A rejected credential makes the daemon close that registration's peers
+and persist the logout. Both steps finish before the cleanup settles. If either
+fails, the next re-enrollment runs the cleanup again before verifying the new
+token. A repeated failure fails only that attempt, so a fault that clears never
+requires a daemon restart. Active registrations cannot be overwritten by a new
+token. Adding a different Team creates a separate empty catalog under the same
+public Machine ID.
 
 Revoked registrations retain their durable Session admission receipts but do not
 occupy Team capacity. Reactivation checks retained non-deleted Sessions and live

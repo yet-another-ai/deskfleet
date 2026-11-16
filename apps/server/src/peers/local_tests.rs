@@ -161,14 +161,50 @@ async fn local_grants_revoke_when_daemon_rejects_or_login_is_revoked_during_deli
         .unwrap();
     assert!(matches!(message, ControlMessage::PeerRevoked { .. }));
 
+    // The grant is revoked while the daemon prepares the claim. Its own notice is
+    // dropped, as if it reached the daemon first and closed nothing.
+    let creating = start_local(&fixture, "agent");
+    let (id, params) = fixture.next_request("peer.local").await;
+    fixture
+        .a
+        .store
+        .revoke_login_peers(&fixture.login)
+        .await
+        .unwrap();
+    fixture.response(&id, json!({})).await;
+    assert_eq!(
+        creating.await.unwrap().unwrap_err().status,
+        StatusCode::NOT_FOUND
+    );
+    let message = tokio::time::timeout(Duration::from_secs(5), fixture.requests.recv())
+        .await
+        .expect("the daemon must drop the claim it prepared for this grant")
+        .unwrap();
+    assert!(matches!(
+        message,
+        ControlMessage::PeerRevoked { peer_id, reason }
+            if peer_id == params["peerId"] && reason == "local_connection_failed"
+    ));
+
     let creating = start_local(&fixture, "terminal");
     let (id, params) = fixture.next_request("peer.local").await;
+    // The login ends while the daemon prepares the claim. Only the failed final
+    // check revokes this grant, and the daemon must still learn of it.
     fixture.a.store.logout(&fixture.login).await.unwrap();
     fixture.response(&id, json!({})).await;
     assert_eq!(
         creating.await.unwrap().unwrap_err().status,
         StatusCode::UNAUTHORIZED
     );
+    let message = tokio::time::timeout(Duration::from_secs(5), fixture.requests.recv())
+        .await
+        .expect("the daemon must drop the claim it prepared for this grant")
+        .unwrap();
+    assert!(matches!(
+        message,
+        ControlMessage::PeerRevoked { peer_id, reason }
+            if peer_id == params["peerId"] && reason == "local_connection_failed"
+    ));
     assert!(
         fixture
             .a

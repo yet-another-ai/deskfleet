@@ -169,9 +169,9 @@ jobs:
 
   deploy-pages:
     name: Deploy website
-    needs: [gate, test]
-    # Documentation-only runs skip Build, so explicitly use Gate's result.
-    if: ${{ !cancelled() && needs.gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
+    needs: [changes, gate, test]
+    # Spec-only runs skip the static job that uploads the website artifact.
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.changes.outputs.specs_only != 'true' && github.ref == 'refs/heads/main' && github.event_name != 'schedule' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:

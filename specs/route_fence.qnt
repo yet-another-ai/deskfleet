@@ -26,8 +26,9 @@ module route_fence {
     authority: bool,
     link: bool,
     routed: bool,
-    health: str,
   }
+
+  type NodeLease = { live: bool, healthy: bool }
 
   /// At most one snapshot shares the command queue. It keeps the index it was appended at.
   type Queue = {
@@ -60,7 +61,7 @@ module route_fence {
   }
 
   var route: Route
-  var lease: str -> bool
+  var lease: str -> NodeLease
   var peer: str -> Peer
   var queue: Queue
   var capture: Capture
@@ -125,8 +126,8 @@ module route_fence {
     else p
 
   action init: bool = all {
-    route' = { identity: "", holder: "", previous: "", authority: false, link: true, routed: false, health: "healthy" },
-    lease' = Map("n1" -> true, "n2" -> true),
+    route' = { identity: "", holder: "", previous: "", authority: false, link: true, routed: false },
+    lease' = Map("n1" -> { live: true, healthy: true }, "n2" -> { live: true, healthy: true }),
     peer' = Map("p1" -> blank, "p2" -> blank),
     queue' = empty_queue,
     capture' = no_capture,
@@ -134,8 +135,8 @@ module route_fence {
   }
 
   action replace_as(conn: str, node: str): bool = all {
-    route.health == "healthy",
-    lease.get(node),
+    lease.get(node).healthy,
+    lease.get(node).live,
     conn != route.identity,
     route' = route
       .with("previous", route.identity)
@@ -204,8 +205,8 @@ module route_fence {
   }
 
   action lease_lost_as(node: str): bool = all {
-    lease.get(node),
-    lease' = lease.set(node, false),
+    lease.get(node).live,
+    lease' = lease.set(node, lease.get(node).with("live", false)),
     route' = if (route.holder == node) route.with("authority", false).with("link", false) else route,
     peer' = peer,
     queue' = queue,
@@ -218,12 +219,12 @@ module route_fence {
     lease_lost_as(node)
   }
 
-  /// Releasing the route failed. Renewal cannot make that row authoritative again.
+  /// Releasing the route failed. Renewal cannot make that node authoritative again.
   action release_failed: bool = all {
     route.routed,
-    route.health == "healthy",
-    route' = route.with("authority", false).with("link", false).with("health", "unhealthy"),
-    lease' = lease,
+    lease.get(route.holder).healthy,
+    route' = route.with("authority", false).with("link", false),
+    lease' = lease.set(route.holder, lease.get(route.holder).with("healthy", false)),
     peer' = peer,
     queue' = queue,
     capture' = capture,
@@ -232,9 +233,9 @@ module route_fence {
 
   /// A lease renewal leaves an unhealthy release unchanged.
   action renew: bool = all {
-    route.health == "unhealthy",
     route.holder != "",
-    lease.get(route.holder),
+    not(lease.get(route.holder).healthy),
+    lease.get(route.holder).live,
     route' = route,
     lease' = lease,
     peer' = peer,
@@ -246,7 +247,7 @@ module route_fence {
   /// A failed presence notification leaves the committed registration in place.
   action presence_notify_failed: bool = all {
     route.routed,
-    route.health == "healthy",
+    lease.get(route.holder).healthy,
     side.presence == "",
     side' = side.with("presence", "failed"),
     route' = route,
@@ -554,13 +555,11 @@ module route_fence {
     (route.identity == "" or route.identity == "c1" or route.identity == "c2") and
     (route.holder == "" or route.holder == "n1" or route.holder == "n2") and
     ((route.identity == "") == (route.holder == "")) and
-    (not(route.routed) or route.identity != "") and
-    (route.health == "healthy" or route.health == "unhealthy")
+    (not(route.routed) or route.identity != "")
 
   val inv_authority_follows_lease: bool =
     if (route.holder == "") not(route.authority)
-    else if (route.health == "unhealthy") not(route.authority)
-    else route.authority == lease.get(route.holder)
+    else route.authority == (lease.get(route.holder).live and lease.get(route.holder).healthy)
 
   val inv_inbox: bool =
     (side.request == "" or side.request == "waiting" or side.request == "retired" or side.request == "queued") and
@@ -695,9 +694,9 @@ module route_fence {
       .then(envelope_failed)
       .expect(
         route.identity == "c1" and route.holder == "n1" and route.authority and
-        lease.get("n1") and side.envelope == "failed" and peer.get("p1").phase == "live")
+        lease.get("n1").live and side.envelope == "failed" and peer.get("p1").phase == "live")
       .then(lease_lost_as("n1"))
-      .expect(not(route.authority) and not(lease.get("n1")) and route.identity == "c1" and side.envelope == "failed")
+      .expect(not(route.authority) and not(lease.get("n1").live) and route.identity == "c1" and side.envelope == "failed")
   }
 
   run expired_request_is_not_enqueued = {
@@ -708,7 +707,7 @@ module route_fence {
       .then(expire_request)
       .expect(side.request == "retired" and queue.len == 0 and route.identity == "c1" and route.authority)
       .then(release_gate)
-      .expect(side.request == "retired" and not(queued(queue, "req")) and route.authority and lease.get("n1"))
+      .expect(side.request == "retired" and not(queued(queue, "req")) and route.authority and lease.get("n1").live)
   }
 
   run release_failure_stays_offline_across_renewal = {
@@ -716,13 +715,25 @@ module route_fence {
       .then(replace_as("c1", "n1"))
       .then(release_failed)
       .expect(
-        route.health == "unhealthy" and not(route.authority) and lease.get("n1") and
+        not(lease.get("n1").healthy) and not(route.authority) and lease.get("n1").live and
         route.identity == "c1" and route.holder == "n1")
       .then(renew)
       .expect(
-        route.health == "unhealthy" and not(route.authority) and lease.get("n1") and
+        not(lease.get("n1").healthy) and not(route.authority) and lease.get("n1").live and
         route.identity == "c1")
-      .then(replace_as("c2", "n2").fail())
+      .then(replace_as("c2", "n1").fail())
+  }
+
+  run release_failure_allows_healthy_node_replacement = {
+    init
+      .then(replace_as("c1", "n1"))
+      .then(release_failed)
+      .then(renew)
+      .then(replace_as("c2", "n2"))
+      .expect(
+        route.identity == "c2" and route.holder == "n2" and route.authority and route.link and
+        lease.get("n2").healthy and not(lease.get("n1").healthy))
+      .then(replace_as("c1", "n1").fail())
   }
 
   run presence_failure_keeps_the_registration = {
@@ -731,6 +742,6 @@ module route_fence {
       .then(presence_notify_failed)
       .expect(
         route.identity == "c1" and route.holder == "n1" and route.authority and
-        route.health == "healthy" and lease.get("n1") and side.presence == "failed")
+        lease.get("n1").healthy and lease.get("n1").live and side.presence == "failed")
   }
 }

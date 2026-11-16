@@ -468,7 +468,7 @@ description = "Typecheck and simulate the Quint control-plane models"
 run = "node scripts/check-specs.ts"
 
 [tasks."spec:verify"]
-description = "Symbolically check each control-plane model up to 6 steps"
+description = "Symbolically check each control-plane model to its recorded step bound"
 run = """
 set -eu
 quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants \
@@ -491,6 +491,12 @@ quint verify specs/credential_close.qnt --max-steps 6 --invariants \
 quint verify specs/local_claim.qnt --max-steps 6 --invariants \
   inv_blank inv_local_spent inv_webrtc_unspent inv_prepared \
   inv_claimed inv_sealed inv_domain
+quint verify specs/revocation_cleanup.qnt --max-steps 11 --invariants \
+  inv_healthy_enroll_succeeds inv_settles_after_both inv_resolved_is_clean \
+  inv_revoked_has_cleanup inv_closed_after_close inv_attempt inv_domain
+quint verify specs/offer_revocation.qnt --max-steps 9 --invariants \
+  inv_revocation_is_prompt inv_failed_setup_closes inv_failed_revokes \
+  inv_closed_after_revocation inv_one_offer inv_commit_follows_answer inv_domain
 """
 
 [tasks."ci:preflight"]

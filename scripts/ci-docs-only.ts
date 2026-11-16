@@ -100,7 +100,7 @@ function ordinaryRecord(metadata: string): boolean {
   return /^:(100644|000000) (100644|000000) [0-9a-f]{40} [0-9a-f]{40} [AMD]$/u.test(metadata)
 }
 
-/** A diff of Quint models, optionally with documentation. Any other path is a full change. */
+/** Quint models may include repository documentation, but website edits need their build. */
 export function isSpecsOnlyDiff(raw: string): boolean {
   const records = raw.split("\0")
   if (records.pop() !== "" || records.length === 0 || records.length % 2 !== 0) return false
@@ -110,7 +110,7 @@ export function isSpecsOnlyDiff(raw: string): boolean {
     const file = records[i + 1] ?? ""
     if (!ordinaryRecord(metadata)) return false
     if (isSpecPath(file)) sawSpec = true
-    else if (!documentation(file)) return false
+    else if (file.startsWith("docs/") || !documentation(file)) return false
   }
   return sawSpec
 }

@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test, { type TestContext } from "node:test"
+import { runInNewContext } from "node:vm"
 import {
   classifyChanges,
   classifyDocumentation,
@@ -260,6 +261,13 @@ test("a spec-only pull request and main push skip product suites", context => {
     pull_request: { base: { sha: initial }, head: { sha: specs } }
   }, cwd), specsOnly)
   assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: specs }, cwd), specsOnly)
+  save("docs/content/guide/index.md", "website guide\n")
+  const website = snapshot()
+  assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
+    pull_request: { base: { sha: initial }, head: { sha: website } }
+  }, cwd), { docsOnly: false, specsOnly: false, runBuild: false, allPlatforms: false, runBackend: false })
+  assert.deepEqual(classifyChanges("push", "refs/heads/main", { before: initial, after: website }, cwd),
+    { docsOnly: false, specsOnly: false, runBuild: true, allPlatforms: true, runBackend: true })
   save("source.rs", "changed\n")
   const mixed = snapshot()
   assert.deepEqual(classifyChanges("pull_request", "refs/pull/1/merge", {
@@ -337,6 +345,25 @@ test("packaging jobs run independently of Test and only Linux packages waits on 
   assert.doesNotMatch(linuxPackages, /needs\.test\.result/)
   assert.match(linuxPackages, /needs\.build\.result\s*==\s*'success'/)
   assert.match(linuxPackages, /needs\.changes\.outputs\.run_build\s*==\s*'true'/)
+})
+
+test("website deployment skips spec-only runs without an uploaded artifact", () => {
+  const yaml = workflowYaml("../.github/workflows/ci.yml")
+  const job = yaml.match(/^  deploy-pages:[\s\S]*?(?=^  [a-z]|(?![\s\S]))/m)?.[0]
+  assert.ok(job, "Missing deploy-pages job")
+  assert.match(job, /needs:\s*\[changes,\s*gate,\s*test\]/)
+  const condition = job.match(/^    if:\s*\$\{\{\s*(.*?)\s*\}\}$/m)?.[1]
+  assert.ok(condition, "Missing deploy-pages condition")
+  const deploys = (specsOnly: string, eventName = "push", gate = "success") => runInNewContext(condition, {
+    cancelled: () => false,
+    needs: { changes: { outputs: { specs_only: specsOnly } }, gate: { result: gate } },
+    github: { ref: "refs/heads/main", event_name: eventName },
+  })
+  assert.equal(deploys("true"), false)
+  assert.equal(deploys("false"), true)
+  assert.equal(deploys("false", "workflow_dispatch"), true)
+  assert.equal(deploys("false", "schedule"), false)
+  assert.equal(deploys("false", "push", "failure"), false)
 })
 
 test("failed classification keeps the full Test matrix and backend jobs", () => {

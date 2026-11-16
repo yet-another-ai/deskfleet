@@ -2,7 +2,7 @@ import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { EventEmitter, once } from "node:events"
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -651,6 +651,36 @@ test("a late rejection of a retired token cannot revoke a re-enrolled Team", asy
   const rejection = assert.rejects(pending, /Team allowance request failed/)
   rejectOld(Response.json({ error: { code: "machine_credential_rejected" } }, { status: 401 }))
   await rejection
+  assert.equal(central.status().revoked, false)
+  assert.equal(JSON.parse(await readFile(join(directory, "central.json"), "utf8")).token, "new-token")
+})
+
+test("a failed revocation cleanup does not block re-enrollment after the fault clears", async context => {
+  const directory = await mkdtemp(join(tmpdir(), "df-revocation-retry-"))
+  const { sockets } = silentSockets(context)
+  const errors: unknown[][] = []
+  context.mock.method(console, "error", (...values: unknown[]) => { errors.push(values) })
+  const credentials = { serverUrl: "http://127.0.0.1:8080", serverId: "server", teamId: "team", machineId: "machine", token: "old-token" }
+  await writeFile(join(directory, "central.json"), JSON.stringify(credentials))
+  context.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const address = input instanceof Request ? input.url : String(input)
+    if (address.endsWith("/api/daemon/me")) return Response.json({ serverId: "server", machine: { id: "machine", teamId: "team", originId: "origin", localMachineId: "local" } })
+    return Response.json({ lastEventSeq: "0" })
+  })
+  const central = new CentralClient(directory, linkOperations(), {} as ControlPeers)
+  context.after(async () => { await central.close(); await rm(directory, { recursive: true, force: true }) })
+  await central.init()
+  // A directory at the temporary path makes every credential save fail.
+  const blocked = join(directory, "central.json.tmp")
+  await mkdir(blocked)
+  sockets[0]!.drop(4403)
+  assert.equal(central.status().revoked, true)
+  const enrollment = { ...credentials, token: "new-token", originId: "origin" }
+  await assert.rejects(central.enroll(enrollment))
+  assert.equal(central.status().revoked, true)
+  assert.ok(errors.some(([message]) => message === "Revoked machine cleanup failed"))
+  await rm(blocked, { recursive: true })
+  await central.enroll(enrollment)
   assert.equal(central.status().revoked, false)
   assert.equal(JSON.parse(await readFile(join(directory, "central.json"), "utf8")).token, "new-token")
 })

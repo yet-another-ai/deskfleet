@@ -812,6 +812,68 @@ async fn closing_shared_peer_during_offer_prevents_answer_and_ice_publication() 
 
 #[actix_web::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn offer_revoked_during_delivery_notifies_the_daemon_after_it_answers() {
+    let mut fixture = Fixture::new().await;
+    let sdp = peers::tests::sdp();
+    // Each revocation commits while the daemon handles the offer. Its own notice
+    // is dropped, as if it reached the daemon first and closed nothing.
+    let peer = fixture.peer().await;
+    let offering = start_offer(
+        fixture.a.clone(),
+        fixture.token.clone(),
+        peer.clone(),
+        sdp.clone(),
+    );
+    let (id, _) = fixture.next_request("peer.offer").await;
+    fixture
+        .a
+        .store
+        .revoke_login_peers(&fixture.login)
+        .await
+        .unwrap();
+    fixture.response(&id, json!({"sdp":sdp})).await;
+    // The answer cannot be committed for a revoked grant.
+    assert_eq!(
+        offering.await.unwrap().unwrap_err().status,
+        StatusCode::NOT_FOUND
+    );
+    assert_revoked_again(&mut fixture, &peer).await;
+
+    let peer = fixture.peer().await;
+    let offering = start_offer(
+        fixture.a.clone(),
+        fixture.token.clone(),
+        peer.clone(),
+        sdp.clone(),
+    );
+    let (id, _) = fixture.next_request("peer.offer").await;
+    fixture.a.store.logout(&fixture.login).await.unwrap();
+    fixture.response(&id, json!({"sdp":sdp})).await;
+    // The answer is committed, then the final authorization check fails.
+    assert_eq!(
+        offering.await.unwrap().unwrap_err().status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_revoked_again(&mut fixture, &peer).await;
+    assert!(fixture.a.store.peer_answer(&peer).await.is_err());
+    fixture.close().await;
+}
+
+async fn assert_revoked_again(fixture: &mut Fixture, peer: &str) {
+    let message = tokio::time::timeout(Duration::from_secs(5), fixture.requests.recv())
+        .await
+        .expect("the daemon must close the peer it created for this offer")
+        .unwrap();
+    assert!(matches!(
+        message,
+        ControlMessage::PeerRevoked { peer_id, reason }
+            if peer_id == peer && reason == "negotiation_failed"
+    ));
+    assert!(fixture.requests.try_recv().is_err());
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn shared_negotiation_bounds_candidates_and_never_replays_expired_offer() {
     let mut fixture = Fixture::new().await;
     let peer = fixture.peer().await;

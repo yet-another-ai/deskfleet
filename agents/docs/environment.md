@@ -350,7 +350,7 @@ to check module initialization order as well as file sizes.
 | `mise run lint` | Check Rust dependency usage and Clippy |
 | `mise run skills:install` | Restore skills from the APM lockfile |
 | `mise run spec:test` | Typecheck and simulate every Quint model in `specs/` with the committed seed |
-| `mise run spec:verify` | Symbolically check every Quint model in `specs/` for 6 steps; local only, not part of `check` or CI |
+| `mise run spec:verify` | Symbolically check every Quint model in `specs/` to its recorded step bound; local only, not part of `check` or CI |
 
 Public tasks compose focused tasks in `mise.toml`. Independent checks can run in
 parallel. Cargo operations sharing `target/` use mise's `wait_for` ordering when

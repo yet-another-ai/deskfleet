@@ -15,7 +15,8 @@ layer for an earlier provisional shape.
 ## What a model is for
 
 A model checks interleavings of grants, signaling, link liveness, credential
-close, local claims, routing, and Mux stream lifetime. The prose documents remain the decisions. A model is updated in the
+close and its cleanup, local claims, offer revocation, routing, and Mux stream
+lifetime. The prose documents remain the decisions. A model is updated in the
 same change as the decision it can violate. A refactor that preserves those
 decisions leaves the model alone. Codecs, byte budgets, file layout, and
 catalog or history behavior are outside that rule.
@@ -77,6 +78,8 @@ identical.
 | `specs/link_liveness.qnt` | 1 client socket, 1 daemon socket, 1 peer, 2 identities each | 6 steps |
 | `specs/credential_close.qnt` | 1 daemon socket, 1 peer, 2 credential generations | 6 steps |
 | `specs/local_claim.qnt` | 1 claim secret | 6 steps |
+| `specs/revocation_cleanup.qnt` | 1 registration, 1 peer set, 1 fault window | 11 steps |
+| `specs/offer_revocation.qnt` | 1 grant, 1 offer, 1 daemon route of 4 frames | 9 steps |
 
 Deadlines are actions (`reservation_due`, `authorization_due`, `setup_due`,
 `link_dead`), not counters. Changing a duration in the prose leaves the model
@@ -120,6 +123,15 @@ check of its maps because the next-state value is unconstrained. Splitting
 the module would drop the interleavings its invariants exist to check, so
 the task keeps the 6-step search. Raising the step bound is not the
 response to a slow or inconclusive check.
+
+A bound exceeds 6 only when the race a module exists for is longer. The
+shortest trace in which the earlier daemon cleanup or offer notice failed is
+7 steps, so a 6-step search passes that code. `revocation_cleanup` uses 11
+steps, the length of a failed cleanup retried after faults stop and followed by
+a successful enrollment; it finishes in seconds. `offer_revocation` uses 9
+steps, the length of an early notice repeated after the answer and applied by
+the daemon; it takes under a minute. Record such a bound with the trace that
+sets it.
 
 ## Shared fault model
 
@@ -192,8 +204,8 @@ perform that transition.
 ## Route fence
 
 `specs/route_fence.qnt` is the multi-instance control connection. Each API
-node has a lease and a connection identity. PostgreSQL holds the current
-route, the immutable offer and answer, and the bounded early-ICE list. The
+node has its own lease, routing health, and connection identity. PostgreSQL
+holds the current route, the immutable offer and answer, and the bounded early-ICE list. The
 daemon queue has a reserved reconciliation slot. One registration is in
 scope; another Team's connection is a distinct route and cannot replace this
 one.
@@ -203,7 +215,7 @@ one.
 | `replace_route` | The new connection identity becomes the route. |
 | `late_message` / `disconnect_cleanup` | An old identity cannot deliver, revoke, or clean up the new route. |
 | `lease_lost` | The node's local sockets lose authority. |
-| `release_failed` / `renew` | A failed route release marks the node unhealthy and drops its authority. A later lease renewal leaves that row offline. |
+| `release_failed` / `renew` | A failed route release marks its holder unhealthy and drops its authority. A later lease renewal leaves that holder fenced; a different healthy node can claim the route. |
 | `presence_notify_failed` | A failed presence notification leaves the committed registration in place. |
 | `envelope_failed` | A failed or malformed inbox envelope leaves that lease and the current route in place. |
 | `await_request` / `expire_request` / `release_gate` | A cross-instance request keeps the expiry it arrived with while it waits for the registration gate. Expiry retires it. Opening the gate afterwards leaves it out of the daemon queue. |
@@ -220,7 +232,7 @@ Invariants:
 - Coalesced reconciliation does not move an already queued snapshot behind newer commands.
 - Peer-event overflow and a full ICE queue do not remove the route.
 - A lost inbox delivery does not mutate an existing binding.
-- Route authority matches the current holder's live lease while the node is healthy. An unhealthy release has no authority, including across renewal.
+- Route authority requires the current holder's live lease and healthy routing. An unhealthy holder stays fenced across renewal and replacement by another healthy node.
 - A retired cross-instance request is absent from the daemon queue.
 
 Named runs: `stale_identity_cannot_fence_the_new_route`,
@@ -228,7 +240,8 @@ Named runs: `stale_identity_cannot_fence_the_new_route`,
 `coalesce_keeps_snapshot_position`, `early_ice_cannot_block_the_answer`,
 `overflow_fails_the_peer_only`, `lost_negotiation_opens_a_new_peer`,
 `failed_envelope_keeps_authority`, `expired_request_is_not_enqueued`,
-`release_failure_stays_offline_across_renewal`, and
+`release_failure_stays_offline_across_renewal`,
+`release_failure_allows_healthy_node_replacement`, and
 `presence_failure_keeps_the_registration`.
 
 | Run | Implementation evidence already present |
@@ -238,7 +251,7 @@ Named runs: `stale_identity_cannot_fence_the_new_route`,
 | `overflow_fails_the_peer_only` | `apps/server/src/hub.rs` `saturated_revocation_requests_reconciliation_and_preserves_machine_presence`. `apps/server/src/websocket.rs` covers transient storage failure and an interrupted handshake, which must not revoke an existing peer. |
 | `failed_envelope_keeps_authority` | `apps/server/src/hub/cluster_tests.rs` `postgres_bad_envelope_isolated_without_losing_the_following_disconnect`. `postgres_database_failure_still_fences_existing_sockets` and `postgres_expired_lease_fences_before_waiting_for_the_registration_gate` are the database and lease failures that still remove authority. |
 | `expired_request_is_not_enqueued` | `apps/server/src/hub/cluster_tests.rs` `an_expired_request_is_not_queued_when_its_gate_and_timer_are_both_ready` and `postgres_request_expiry_cancels_gated_enqueue_without_taking_machine_offline`. |
-| `release_failure_stays_offline_across_renewal` | `apps/server/src/hub.rs` `remove_daemon` marks realtime routing unhealthy when `release_machine_route` fails, and `apps/server/src/hub/cluster.rs` `renew` refuses a node that is not ready. |
+| `release_failure_stays_offline_across_renewal`, `release_failure_allows_healthy_node_replacement` | `apps/server/src/hub.rs` `remove_daemon` marks its node's realtime routing unhealthy when `release_machine_route` fails, and `apps/server/src/hub/cluster.rs` `renew` refuses a node that is not ready. `Hub::add_daemon` checks the receiving node's independent health before claiming the route. |
 | `presence_failure_keeps_the_registration` | `apps/server/src/websocket.rs` keeps a committed daemon registration when the presence notification fails. |
 
 The identity, lease, and lost-inbox runs are model runs until a trace shows
@@ -447,6 +460,107 @@ Named runs: `unclaimed_window_spends_the_secret`,
 | `authorization_due_spends_the_secret` | The closed-claim test above retains replay protection through close. Grant expiry uses the same `#used` entry, which is removed only when that expiry has passed. |
 | `webrtc_grant_cannot_be_claimed` | `apps/daemon/src/authorized-peers.test.ts` rejects `prepareLocal` unless the grant transport is `local`. |
 
+## Revocation cleanup
+
+`specs/revocation_cleanup.qnt` is the daemon side of `credential_rejected` in
+`credential_close.qnt`: one registration, its peers as one set, and the
+re-enrollment that waits for their cleanup. `rejected` starts one cleanup
+memo; a later rejection returns that same memo and is not a separate action.
+The cleanup closes the peers and persists the revoked credential. Faults can
+fail either step until `heal`, which is permanent. An attempt records whether
+it started after `heal`.
+
+The memo settles only after both steps finish, and resolves only if both
+succeeded. Each close removes its peer before awaiting resources, so a failed
+close still empties the set. Re-enrollment awaits the memo. A rejected memo
+is replaced by a new cleanup once in that attempt. If the new cleanup also
+fails, only that attempt fails; the next attempt retries again. A resolved
+memo lets the attempt verify and save the new token, which clears the memo.
+
+| Action | Rule |
+| --- | --- |
+| `rejected` | A rejection of the current credential revokes it and starts the cleanup. |
+| `close_ok` / `close_fails` | Closing empties the peer set either way. Only an open peer can fail to close, and only before `heal`. |
+| `save_ok` / `save_fails` | Persisting the revoked credential can fail only before `heal`. |
+| `settle` | The memo waits for both steps, then resolves or rejects. |
+| `heal` | Faults stop for the rest of the trace. |
+| `enroll_start` | An attempt starts on a revoked credential and waits on the memo. |
+| `enroll_retry` | A rejected memo is replaced by a new cleanup, once per attempt. |
+| `enroll_gives_up` | The retried cleanup failed. Only this attempt fails. |
+| `enroll_fails` / `enroll_succeeds` | After a resolved memo, verification can fail only before `heal`. Success activates the new credential and clears the memo. |
+| `open_peer` | An active registration opens peers again. |
+
+Invariants:
+
+- An attempt that starts after `heal` does not fail.
+- A settled memo has both steps finished, so a retry never overlaps an earlier credential write.
+- A resolved memo has both steps succeeded and no open peer.
+- An active credential has no cleanup. A revoked credential has a started cleanup.
+- A finished close leaves no open peer.
+- A running attempt has a revoked credential. Otherwise the attempt record is blank.
+- Every field stays within its named values.
+
+Named runs: `failed_cleanup_is_retried_by_reenrollment`,
+`reenrollment_waits_for_pending_cleanup`, `cleanup_settles_after_both_steps`,
+`faulty_retry_fails_only_that_attempt`, and
+`reenrolled_registration_opens_peers`.
+
+| Run | Implementation evidence already present |
+| --- | --- |
+| `failed_cleanup_is_retried_by_reenrollment`, `faulty_retry_fails_only_that_attempt` | `apps/daemon/src/central-client.test.ts` `a failed revocation cleanup does not block re-enrollment after the fault clears`. |
+| `cleanup_settles_after_both_steps` | `apps/daemon/src/central-client.ts` `#retire` waits for both steps with `Promise.allSettled`. |
+| `reenrollment_waits_for_pending_cleanup`, `reenrolled_registration_opens_peers` | `apps/daemon/src/central-client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |
+
+## Offer revocation
+
+`specs/offer_revocation.qnt` is one WebRTC offer, its grant, and the
+daemon route that receives both. The route is first-in, first-out, holding
+four frames. An offer passes the registration gate, so it is ordered after
+earlier snapshots. A revocation notice bypasses that gate and can reach the
+route before an offer that was checked earlier. The daemon checks expiry, not
+revocation, and closing a peer it never created does nothing. `access_ends`
+is a login or Team access change that leaves the grant row valid.
+
+A notice can therefore arrive first and close nothing. The offer then
+creates a live daemon peer. Committing the answer locks only an unrevoked
+grant, and the final check needs the login, access, and grant. Each failure
+revokes the grant again and queues a new notice. An offer abandoned for any
+other reason also revokes and notifies.
+
+| Action | Rule |
+| --- | --- |
+| `offer_check` | The first check needs a valid grant and access. A failure sends no offer. |
+| `offer_send` | The offer joins the route through the registration gate. |
+| `revoke` / `notice_queued` | Revocation commits and publishes one notice. The notice joins the route outside the gate. |
+| `access_ends` | Login or access ends without revoking the grant row. |
+| `heartbeat` | A snapshot lists the grant only while it is valid. |
+| `daemon_receive` | The daemon applies the head frame. An offer creates the peer; a notice or a snapshot without the grant closes it. |
+| `offer_commit` | The answer commits only for a valid grant. A revoked grant fails and notifies again. |
+| `offer_recheck` | The final check fails on a withdrawn login, access, or grant, then revokes and notifies. |
+| `offer_abandoned` | A timeout, daemon error, or lost route revokes and notifies. |
+
+Invariants:
+
+- Once no frame, notice, or setup step is pending, a revoked grant has no live daemon peer.
+- Once nothing is pending, a failed setup has no live daemon peer.
+- A failed setup has a revoked grant. A closed daemon peer has a revoked grant.
+- The offer is sent at most once, and only from a request that passed its first check.
+- A committed or answered offer has reached the daemon.
+- The route holds at most four known frames.
+
+Named runs: `early_notice_is_repeated_after_the_answer`,
+`ended_access_revokes_the_answered_grant`,
+`abandoned_offer_closes_the_late_daemon_peer`,
+`revoked_grant_sends_no_offer`, and `answered_offer_keeps_the_daemon_peer`.
+
+| Run | Implementation evidence already present |
+| --- | --- |
+| `early_notice_is_repeated_after_the_answer` | `apps/server/src/peers/shared_tests.rs` `offer_revoked_during_delivery_notifies_the_daemon_after_it_answers` revokes the grant while the daemon holds the offer and expects a second `PeerRevoked`. |
+| `ended_access_revokes_the_answered_grant` | The same test ends the login while the daemon holds the offer. `apps/server/src/peers/local_tests.rs` `local_grants_revoke_when_daemon_rejects_or_login_is_revoked_during_delivery` covers the local claim. |
+| `abandoned_offer_closes_the_late_daemon_peer` | `apps/server/src/peers/signaling.rs` `negotiate` revokes and notifies after a timeout or daemon error. |
+| `revoked_grant_sends_no_offer` | `apps/server/src/peers/signaling.rs` `offer` runs `authorize_webrtc` before it stores or sends the offer. `closing_shared_peer_during_offer_prevents_answer_and_ice_publication` covers a close that lands while the daemon holds the offer. |
+| `answered_offer_keeps_the_daemon_peer` | `apps/server/src/peers/shared_tests.rs` `shared_offer_candidates_and_daemon_ice_cross_instances`. |
+
 ## Outside the models
 
 The following stay in the implementation and its existing tests:
@@ -467,10 +581,12 @@ tests cited above. It is not a separate model.
 before moving the task off preflight. `spec:verify` is not a CI job.
 
 A pull request or `main` push is `specs_only` when every changed path is
-either `specs/*.qnt` or already classified as documentation. That class runs
+either `specs/*.qnt` or already classified as documentation outside `docs/`.
+Website edits retain their static build and deployment. That class runs
 preflight, including `spec:test`, and skips static checks, the platform and
 Android and iOS test jobs, backend integration, Build, the Nix server image,
-and Linux packages. `Gate` treats those skips like a documentation-only
+and Linux packages. Website deployment also skips the class because it produces
+no website artifact. `Gate` treats those skips like a documentation-only
 skip. `scripts/ci-docs-only.test.ts` covers the class.
 
 Any implementation file in the same diff leaves the class. The ordinary
@@ -493,6 +609,9 @@ runs packaging. Later model-only edits do not.
 4. Add `specs/mux_streams.qnt` and its verify invocation in one change.
 5. Add `specs/link_liveness.qnt` and its verify invocation in one change.
 6. Add `specs/credential_close.qnt` and `specs/local_claim.qnt` with their verify invocations.
+7. Add `specs/revocation_cleanup.qnt` and `specs/offer_revocation.qnt` with
+   their verify invocations, the daemon cleanup retry, and the repeated offer
+   notice.
 
 Each step merges on its own. A decision change after that updates the one
 module that contains the affected action, that module's named runs, and the
