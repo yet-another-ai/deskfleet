@@ -32,7 +32,7 @@ colors until changed.
 ## Frontend addons
 
 The shared terminal pins xterm.js 6.0.0 and its compatible stable addons.
-The [WebGL patch](../../patches/@xterm__addon-webgl@0.19.0.patch) emits an
+The [WebGL patch](../../patches/@xterm__addon-webgl.patch) emits an
 explicit `normal` font style so canvas font strings never start with whitespace.
 Electron 45.2.3 rejects that whitespace and otherwise draws normal text with the
 canvas's fallback font inside full-size cells
@@ -76,7 +76,7 @@ and `\x1bf`).
 
 Search 0.16.0 caches highlights across option changes; the UI clears that cache
 when case, whole-word, or regex mode changes. The pinned
-[search patch](../../patches/@xterm__addon-search@0.16.0.patch) also continues past
+[search patch](../../patches/@xterm__addon-search.patch) also continues past
 non-whole-word candidates within a line, so searching `food foo` for the whole
 word `foo` finds the second occurrence in both navigation directions.
 

@@ -33,12 +33,15 @@ overrides:
   # The docs render the same Vue components as the desktop and Web clients.
   'vitepress>vue': '3.6.0-rc.14'
 
+# Exact pins require a Renovate npm disable rule (manual rebase). `@*` keys
+# survive Renovate version bumps; pnpm still fails the install if the patch no
+# longer applies, which is the intended fixable path.
 patchedDependencies:
-  '@agentclientprotocol/claude-agent-acp@0.104.1': patches/@agentclientprotocol__claude-agent-acp@0.104.1.patch
+  '@agentclientprotocol/claude-agent-acp@*': patches/@agentclientprotocol__claude-agent-acp.patch
   '@agentclientprotocol/codex-acp@2.3.0': patches/@agentclientprotocol__codex-acp@2.3.0.patch
-  '@deepseek-ai/dsh-app-boot@0.2.2-rc.1': patches/@deepseek-ai__dsh-app-boot@0.2.2-rc.1.patch
-  '@xterm/addon-ligatures@0.10.0': patches/@xterm__addon-ligatures@0.10.0.patch
-  '@xterm/addon-search@0.16.0': patches/@xterm__addon-search@0.16.0.patch
-  '@xterm/addon-webgl@0.19.0': patches/@xterm__addon-webgl@0.19.0.patch
+  '@deepseek-ai/dsh-app-boot@*': patches/@deepseek-ai__dsh-app-boot.patch
+  '@xterm/addon-ligatures@*': patches/@xterm__addon-ligatures.patch
+  '@xterm/addon-search@*': patches/@xterm__addon-search.patch
+  '@xterm/addon-webgl@*': patches/@xterm__addon-webgl.patch
   pi-acp@0.0.34: patches/pi-acp@0.0.34.patch
-  stream-markdown-parser@1.2.25: patches/stream-markdown-parser@1.2.25.patch
+  stream-markdown-parser@*: patches/stream-markdown-parser.patch
