@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.HapticFeedbackConstants
 import android.view.Surface
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +58,23 @@ class DeskFleetBridge : Plugin() {
             ?: return call.reject("Missing telemetry event name")
         val params = call.getObject("params")
         call.resolve(JSObject().put("configured", telemetry().logEvent(name, params)))
+    }
+
+    @PluginMethod
+    fun haptic(call: PluginCall) {
+        val constant = if (call.getString("kind") == "activate") {
+            HapticFeedbackConstants.LONG_PRESS
+        } else {
+            HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+        }
+        Handler(Looper.getMainLooper()).post {
+            val view = bridge?.webView ?: activity?.window?.decorView
+            val flags = HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+            if (view?.performHapticFeedback(constant, flags) == false && constant != HapticFeedbackConstants.LONG_PRESS) {
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK, flags)
+            }
+            call.resolve()
+        }
     }
 
     @PluginMethod

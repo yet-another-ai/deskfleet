@@ -364,6 +364,10 @@ own drag behavior. Once a horizontal window swipe locks its axis, a non-passive
 from treating mid-screen horizontal swipes as history navigation. The viewport
 returns to its current view at either end of the list or after a canceled
 gesture.
+On touch screens, touching and dragging the conversation outline scrubs
+messages immediately. Scrubbing previews each prompt and reply beside the
+outline, scrolls the conversation to the selected message, isolates the gesture
+from horizontal view swipes, and triggers device haptics on Capacitor clients.
 Opened views stay mounted during view changes, which preserve drafts, scroll
 positions, and terminal connections. Explicit terminal closure still ends its
 shell. Mobile touch surfaces disable browser pinch and double-tap zoom while

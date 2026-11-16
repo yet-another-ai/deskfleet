@@ -41,6 +41,7 @@ export interface DeskFleetBridgeCapacitorPlugin extends SpeechBridgePlugin, File
   startOutlineAudio(): Promise<{ started: boolean }>
   stopOutlineAudio(): Promise<void>
   outlineAudioStatus(): Promise<OutlineAudioStatus>
+  haptic(options: { kind: "activate" | "tick" }): Promise<void>
   addListener(
     eventName: "speechEvent",
     listenerFunc: Parameters<SpeechBridgePlugin["addListener"]>[1],
