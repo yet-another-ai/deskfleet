@@ -14,8 +14,8 @@ layer for an earlier provisional shape.
 
 ## What a model is for
 
-A model checks interleavings of grants, signaling, routing, and Mux stream
-lifetime. The prose documents remain the decisions. A model is updated in the
+A model checks interleavings of grants, signaling, link liveness, routing, and
+Mux stream lifetime. The prose documents remain the decisions. A model is updated in the
 same change as the decision it can violate. A refactor that preserves those
 decisions leaves the model alone. Codecs, byte budgets, file layout, and
 catalog or history behavior are outside that rule.
@@ -74,6 +74,7 @@ identical.
 | `specs/grant_lifecycle.qnt` | 1 client, 1 daemon, 2 peers | 6 steps |
 | `specs/route_fence.qnt` | 2 API nodes, 1 registration, 2 peers | 6 steps |
 | `specs/mux_streams.qnt` | 1 peer, 2 logical streams | 6 steps |
+| `specs/link_liveness.qnt` | 1 client socket, 1 daemon socket, 1 peer, 2 identities each | 6 steps |
 
 Deadlines are actions (`reservation_due`, `authorization_due`, `setup_due`,
 `link_dead`), not counters. Changing a duration in the prose leaves the model
@@ -110,8 +111,8 @@ its invariants with `--invariants`, so a failure names the predicate:
 quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants <names>
 ```
 
-Start at 6 steps. `route_fence` and `mux_streams` finish in seconds.
-`grant_lifecycle` takes about 5 minutes. Apalache rejects an inductive
+Start at 6 steps. `route_fence`, `mux_streams`, and `link_liveness` finish in
+seconds. `grant_lifecycle` takes about 5 minutes. Apalache rejects an inductive
 check of its maps because the next-state value is unconstrained. Splitting
 the module would drop the interleavings its invariants exist to check, so
 the task keeps the 6-step search. Raising the step bound is not the
@@ -257,6 +258,69 @@ Named runs: `close_stream_keeps_sibling`, `peer_close_releases_every_stream`,
 | `close_stream_keeps_sibling` and `peer_close_releases_every_stream` | `packages/client/src/mux-client.test.ts` retains streams across signaling loss and closes all of them on revocation without replaying requests. |
 | `unsupported_profile_selects_legacy` and `auth_failure_stays_failed` | The same file rejects missing or mismatched `mux` / `muxServer` markers without requesting a Mux grant, and authentication, network, and protocol failures do not fall back. |
 
+## Link liveness
+
+`specs/link_liveness.qnt` is one client signaling socket, one daemon control
+socket, and one already established peer. Each socket has two connection
+identities. `generation` stops at 2 so the route stays finite; that bound is
+not a product limit. Durations stay in the architecture prose. The client
+actions are this module's `signaling_down` / `signaling_up`. The daemon actions
+are the same pair for the control link. `late_client` and `late_daemon` are
+`late_message`. Reservation, inbox, and lease loss stay in the grant and route
+modules because this peer starts established.
+
+A hidden page skips heartbeats, so `link_dead` is enabled only from a visible
+socket. Returning while the socket is still inside the idle deadline probes
+it. A probe that is answered keeps the identity. A missed probe, a visible
+idle deadline, or a resume that finds the socket already idle declares that
+client link dead and then replaces only that socket. The daemon does not
+suspend heartbeats. Declaring its link dead reports the machine disconnected
+and the following reconnect fences the old identity.
+
+Viewer invalidation overflow and a full daemon queue stay in the architecture
+prose. This module does not vary them. `route_fence.qnt` already checks
+peer-event overflow.
+
+| Action | Rule |
+| --- | --- |
+| `hide_page` | Heartbeats stop. The client identity and the peer stay. |
+| `show_page` / `probe_ok` / `probe_miss` | A fresh resume probes the open socket. An answer keeps it. A miss declares that client link dead. |
+| `resume_idle` | A hidden socket already past the idle deadline is declared dead without a probe. |
+| `link_dead` | A visible client socket is declared dead. A hidden socket does not take this action. |
+| `daemon_link_dead` | The daemon reports the control link down. The client socket and the peer stay. |
+| `replace_client_socket` | The next client identity replaces a dead client socket. Only this action writes that identity. The daemon route, the peer, and expiry stay. |
+| `replace_daemon_route` | The next daemon identity replaces a dead control link and fences the previous identity. Only this action writes that identity. Expiry stays. |
+| `late_client` / `late_daemon` | A message carrying the replaced identity leaves the new route, the other socket, and the peer unchanged. |
+| `disconnected_grace` / `recover` / `recovery_due` | A transient disconnect can recover. The recovery deadline closes the peer. |
+| `failed_immediate` | `failed` and `closed` close the peer immediately, including during the grace window. Signaling identities stay. |
+
+Invariants:
+
+- The client route is one of the three identity shapes `(c1, none, 0)`, `(c2, c1, 1)`, and `(c1, c2, 2)`. The daemon route is the same shape on `d1` and `d2`.
+- The client phase is `up`, `hidden`, `probing`, or `dead`. The daemon phase is `up` or `dead`.
+- A closed peer records `failed` or `recovery`. An established or grace peer has an empty close cause.
+- Expiry stays at the value written for the established peer.
+
+Named runs: `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`,
+`probe_ok_keeps_the_socket`, `probe_miss_replaces_only_the_client`,
+`resume_idle_replaces_the_client_only`, `both_links_down_keep_the_established_peer`,
+`daemon_replace_fences_the_old_identity`,
+`hidden_client_keeps_the_peer_across_daemon_replace`,
+`grace_recovers_without_closing`, `recovery_due_closes_the_peer`, and
+`failed_closes_the_peer`.
+
+| Run | Implementation evidence already present |
+| --- | --- |
+| `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`, `probe_ok_keeps_the_socket`, `probe_miss_replaces_only_the_client`, `resume_idle_replaces_the_client_only` | `packages/client/src/http-central.test.ts` skips liveness traffic while hidden, probes a resumed socket, keeps a socket that answers, replaces a socket that misses the probe, and replaces an idle suspended socket on return. |
+| `both_links_down_keep_the_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/http-central.test.ts` reports signaling loss without a peer revocation. `apps/daemon/src/central-client.test.ts` `a silent control link is abandoned after a bounded grace and replaced` reports the daemon disconnected before the replacement socket exists. |
+| `daemon_replace_fences_the_old_identity` | The daemon test above replaces the control link. Fencing a late frame on the retired identity remains a model run until a trace shows that frame changing the new route. |
+| `grace_recovers_without_closing`, `recovery_due_closes_the_peer` | `packages/client/src/peer-lifecycle.test.ts` `a recovered disconnected state never fails the peer`. `packages/components/src/composables/useDesktopConnection.test.ts` `a transient disconnected state does not tear down a recoverable desktop peer`. |
+| `failed_closes_the_peer` | `packages/components/src/composables/useDesktopConnection.test.ts` `native errors and browser connection failures close the peer and surface errors`. |
+
+`hidden_client_keeps_the_peer_across_daemon_replace` composes the hidden-page
+and daemon-link tests. Add an implementation test only when a verifier trace
+shows the current client or daemon can close that peer or move its expiry.
+
 ## Outside the models
 
 The following stay in the implementation and its existing tests:
@@ -301,6 +365,7 @@ runs packaging. Later model-only edits do not.
    `spec:verify` for that module before considering its action set checked.
 3. Add `specs/route_fence.qnt` and its verify invocation in one change.
 4. Add `specs/mux_streams.qnt` and its verify invocation in one change.
+5. Add `specs/link_liveness.qnt` and its verify invocation in one change.
 
 Each step merges on its own. A decision change after that updates the one
 module that contains the affected action, that module's named runs, and the

@@ -482,6 +482,9 @@ quint verify specs/route_fence.qnt --max-steps 6 --invariants \
 quint verify specs/mux_streams.qnt --max-steps 6 --invariants \
   inv_grant_stable inv_release_closes_streams inv_legacy_before_business \
   inv_accepted_work_survives
+quint verify specs/link_liveness.qnt --max-steps 6 --invariants \
+  inv_client_identity inv_daemon_identity inv_link_phases \
+  inv_peer_close inv_expiry_fixed
 """
 
 [tasks."ci:preflight"]
