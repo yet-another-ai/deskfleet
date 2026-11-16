@@ -53,6 +53,8 @@ module route_fence {
     ice: int,
     answer: bool,
     inbox_lost: bool,
+    request: str,
+    envelope: str,
   }
 
   var route: Route
@@ -126,7 +128,7 @@ module route_fence {
     peer' = Map("p1" -> blank, "p2" -> blank),
     queue' = empty_queue,
     capture' = no_capture,
-    side' = { epoch: 1, ice: 0, answer: false, inbox_lost: false },
+    side' = { epoch: 1, ice: 0, answer: false, inbox_lost: false, request: "", envelope: "" },
   }
 
   action replace_as(conn: str, node: str): bool = all {
@@ -211,6 +213,18 @@ module route_fence {
   action lease_lost: bool = {
     nondet node = oneOf(node_ids)
     lease_lost_as(node)
+  }
+
+  /// A failed or malformed inbox envelope leaves the lease and the route in place.
+  action envelope_failed: bool = all {
+    route.identity != "",
+    side.envelope == "",
+    side' = side.with("envelope", "failed"),
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
   }
 
   action link_dead: bool = all {
@@ -433,6 +447,40 @@ module route_fence {
     open_replacement_as(id)
   }
 
+  /// A cross-instance request waits for the registration gate with its original expiry.
+  action await_request: bool = all {
+    route.authority,
+    route.link,
+    side.request == "",
+    side' = side.with("request", "waiting"),
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
+  }
+
+  action expire_request: bool = all {
+    side.request == "waiting",
+    side' = side.with("request", "retired"),
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
+  }
+
+  /// Opening the gate enqueues a request that is still waiting, and leaves a retired one out.
+  action release_gate: bool = all {
+    (side.request == "waiting" and queue.len < 3) or side.request == "retired",
+    queue' = if (side.request == "waiting") enqueue(queue, "req") else queue,
+    side' = if (side.request == "waiting") side.with("request", "queued") else side,
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    capture' = capture,
+  }
+
   action step: bool = any {
     replace_route,
     late_message,
@@ -452,6 +500,10 @@ module route_fence {
     peer_event_overflow,
     drop_inbox,
     open_replacement,
+    envelope_failed,
+    await_request,
+    expire_request,
+    release_gate,
   }
 
   val inv_route_identity: bool =
@@ -461,7 +513,13 @@ module route_fence {
     (not(route.routed) or route.identity != "")
 
   val inv_authority_follows_lease: bool =
-    not(route.authority) or (route.holder != "" and lease.get(route.holder))
+    if (route.holder == "") not(route.authority)
+    else route.authority == lease.get(route.holder)
+
+  val inv_inbox: bool =
+    (side.request == "" or side.request == "waiting" or side.request == "retired" or side.request == "queued") and
+    (side.envelope == "" or side.envelope == "failed") and
+    (side.request != "retired" or not(queued(queue, "req")))
 
   val inv_snapshot_before_grant: bool =
     queue.snap_pos < 0 or (
@@ -581,5 +639,28 @@ module route_fence {
       .expect(peer.get("p1").offer == "o" and side.inbox_lost)
       .then(open_replacement_as("p2"))
       .expect(peer.get("p2").phase == "live" and peer.get("p2").offer == "n" and peer.get("p1").offer == "o")
+  }
+
+  run failed_envelope_keeps_authority = {
+    init
+      .then(replace_as("c1", "n1"))
+      .then(grant_as("p1"))
+      .then(envelope_failed)
+      .expect(
+        route.identity == "c1" and route.holder == "n1" and route.authority and
+        lease.get("n1") and side.envelope == "failed" and peer.get("p1").phase == "live")
+      .then(lease_lost_as("n1"))
+      .expect(not(route.authority) and not(lease.get("n1")) and route.identity == "c1" and side.envelope == "failed")
+  }
+
+  run expired_request_is_not_enqueued = {
+    init
+      .then(replace_as("c1", "n1"))
+      .then(await_request)
+      .expect(side.request == "waiting" and queue.len == 0 and route.authority)
+      .then(expire_request)
+      .expect(side.request == "retired" and queue.len == 0 and route.identity == "c1" and route.authority)
+      .then(release_gate)
+      .expect(side.request == "retired" and not(queued(queue, "req")) and route.authority and lease.get("n1"))
   }
 }

@@ -478,7 +478,7 @@ quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants \
 quint verify specs/route_fence.qnt --max-steps 6 --invariants \
   inv_route_identity inv_authority_follows_lease inv_snapshot_before_grant \
   inv_reconcile_closes_captured inv_one_snapshot inv_queue_bounded \
-  inv_offer_stable inv_route_survives
+  inv_offer_stable inv_route_survives inv_inbox
 quint verify specs/mux_streams.qnt --max-steps 6 --invariants \
   inv_grant_stable inv_release_closes_streams inv_legacy_before_business \
   inv_accepted_work_survives

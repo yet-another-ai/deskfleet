@@ -200,6 +200,8 @@ one.
 | `replace_route` | The new connection identity becomes the route. |
 | `late_message` / `disconnect_cleanup` | An old identity cannot deliver, revoke, or clean up the new route. |
 | `lease_lost` | The node's local sockets lose authority. |
+| `envelope_failed` | A failed or malformed inbox envelope leaves that lease and the current route in place. |
+| `await_request` / `expire_request` / `release_gate` | A cross-instance request keeps the expiry it arrived with while it waits for the registration gate. Expiry retires it. Opening the gate afterwards leaves it out of the daemon queue. |
 | `enqueue_offer` / `take_snapshot` | A snapshot whose read is ordered before a grant is enqueued cannot close that grant. A revoked or expired grant in the snapshot is closed. Unrelated established peers stay. |
 | `coalesce_reconcile` | Further reconciliation requests collapse into one fresh read after the queued snapshot. The queued snapshot keeps its FIFO position. |
 | `peer_event_overflow` | Early ICE waiting for an answer does not block that answer, heartbeats, or other RPC responses. Overflow fails the affected peer through its normal close and leaves the Machine route in place. |
@@ -213,17 +215,22 @@ Invariants:
 - Coalesced reconciliation does not move an already queued snapshot behind newer commands.
 - Peer-event overflow and a full ICE queue do not remove the route.
 - A lost inbox delivery does not mutate an existing binding.
+- Route authority is exactly the current holder's live lease.
+- A retired cross-instance request is absent from the daemon queue.
 
 Named runs: `stale_identity_cannot_fence_the_new_route`,
 `snapshot_before_grant_cannot_close_it`, `missed_revocation_closes_on_reconcile`,
 `coalesce_keeps_snapshot_position`, `early_ice_cannot_block_the_answer`,
-`overflow_fails_the_peer_only`, and `lost_negotiation_opens_a_new_peer`.
+`overflow_fails_the_peer_only`, `lost_negotiation_opens_a_new_peer`,
+`failed_envelope_keeps_authority`, and `expired_request_is_not_enqueued`.
 
 | Run | Implementation evidence already present |
 | --- | --- |
 | `snapshot_before_grant_cannot_close_it` | `apps/server/src/hub/reconcile_tests.rs` `postgres_reconciliation_repairs_missed_revocation_and_precedes_new_offers`. |
 | `coalesce_keeps_snapshot_position` | `apps/server/src/hub/outbox_tests.rs` `reconciliation_uses_reserved_capacity_and_follows_intervening_offers` and `repeated_reconciliation_cannot_move_a_snapshot_behind_new_requests`. |
 | `overflow_fails_the_peer_only` | `apps/server/src/hub.rs` `saturated_revocation_requests_reconciliation_and_preserves_machine_presence`. `apps/server/src/websocket.rs` covers transient storage failure and an interrupted handshake, which must not revoke an existing peer. |
+| `failed_envelope_keeps_authority` | `apps/server/src/hub/cluster_tests.rs` `postgres_bad_envelope_isolated_without_losing_the_following_disconnect`. `postgres_database_failure_still_fences_existing_sockets` and `postgres_expired_lease_fences_before_waiting_for_the_registration_gate` are the database and lease failures that still remove authority. |
+| `expired_request_is_not_enqueued` | `apps/server/src/hub/cluster_tests.rs` `an_expired_request_is_not_queued_when_its_gate_and_timer_are_both_ready` and `postgres_request_expiry_cancels_gated_enqueue_without_taking_machine_offline`. |
 
 The identity, lease, and lost-inbox runs are model runs until a trace shows
 the hub or peer routes can apply a stale identity, use a socket after lease
@@ -277,13 +284,17 @@ client link dead and then replaces only that socket. The daemon does not
 suspend heartbeats. Declaring its link dead reports the machine disconnected
 and the following reconnect fences the old identity.
 
-Viewer invalidation overflow and a full daemon queue stay in the architecture
-prose. This module does not vary them. `route_fence.qnt` already checks
-peer-event overflow. `apps/server/src/hub.rs`
+Viewer invalidation overflow, a full daemon queue, and a stalled critical
+delivery each affect one client socket. This module does not vary them.
+`route_fence.qnt` checks peer-event overflow separately. `apps/server/src/hub.rs`
 `distinct_hint_overflow_reconnects_only_its_viewer_and_keeps_daemon_rpc_live`
-keeps the daemon route current and its queue empty.
-`saturated_request_reports_busy_without_taking_machine_offline` returns
-`machine_busy` and leaves the original command as the only queued message.
+reconnects only that viewer and leaves the daemon route current with an empty
+queue. `saturated_request_reports_busy_without_taking_machine_offline` returns
+`machine_busy`, keeps that route, and leaves the original command as the only
+queued message. `apps/server/src/hub/cluster_tests.rs`
+`postgres_stalled_critical_delivery_closes_its_client_without_fencing_the_node`
+closes the stalled client with 1012 and leaves the other client and the node's
+lease in place.
 
 | Action | Rule |
 | --- | --- |
