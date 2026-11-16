@@ -10,22 +10,10 @@ module grant_lifecycle {
   type Grant = {
     phase: str,
     actor: str,
-    target: str,
-    team: str,
-    purpose: str,
-    actions: str,
     transport: str,
     fingerprint: str,
     offer: str,
     answer: str,
-    latched_actor: str,
-    latched_target: str,
-    latched_team: str,
-    latched_purpose: str,
-    latched_actions: str,
-    latched_transport: str,
-    latched_answer: str,
-    latched_fingerprint: str,
     reservation_open: bool,
     activated: bool,
     expired: bool,
@@ -39,33 +27,31 @@ module grant_lifecycle {
     expiry: int,
     expiry_cap: int,
     inbox_lost: bool,
+  }
+
+  /// Written by reservation and the first offer or answer. Every other action keeps it.
+  type Binding = {
+    actor: str,
+    transport: str,
+    offer: str,
+    answer: str,
+    fingerprint: str,
     identity_latched: bool,
     fingerprint_latched: bool,
   }
 
   var grant: str -> Grant
+  var binding: str -> Binding
   var signaling: bool
   var outage: Set[str]
 
   pure val blank: Grant = {
     phase: "absent",
     actor: "",
-    target: "",
-    team: "",
-    purpose: "",
-    actions: "",
     transport: "",
     fingerprint: "",
     offer: "",
     answer: "",
-    latched_actor: "",
-    latched_target: "",
-    latched_team: "",
-    latched_purpose: "",
-    latched_actions: "",
-    latched_transport: "",
-    latched_answer: "",
-    latched_fingerprint: "",
     reservation_open: false,
     activated: false,
     expired: false,
@@ -79,6 +65,14 @@ module grant_lifecycle {
     expiry: 0,
     expiry_cap: 0,
     inbox_lost: false,
+  }
+
+  pure val unbound: Binding = {
+    actor: "",
+    transport: "",
+    offer: "",
+    answer: "",
+    fingerprint: "",
     identity_latched: false,
     fingerprint_latched: false,
   }
@@ -87,18 +81,13 @@ module grant_lifecycle {
     blank
       .with("phase", "reserved")
       .with("actor", actor)
-      .with("target", "m1")
-      .with("team", "t1")
-      .with("purpose", "agent")
-      .with("actions", "use")
       .with("transport", transport)
-      .with("latched_actor", actor)
-      .with("latched_target", "m1")
-      .with("latched_team", "t1")
-      .with("latched_purpose", "agent")
-      .with("latched_actions", "use")
-      .with("latched_transport", transport)
       .with("reservation_open", true)
+
+  pure def bind_identity(actor: str, transport: str): Binding =
+    unbound
+      .with("actor", actor)
+      .with("transport", transport)
       .with("identity_latched", true)
 
   pure def close_grant(g: Grant): Grant =
@@ -112,6 +101,7 @@ module grant_lifecycle {
 
   action init: bool = all {
     grant' = Map("p1" -> blank, "p2" -> blank),
+    binding' = Map("p1" -> unbound, "p2" -> unbound),
     signaling' = true,
     outage' = Set(),
   }
@@ -120,6 +110,7 @@ module grant_lifecycle {
     signaling,
     grant.get(id).phase == "absent",
     grant' = grant.set(id, reserve(transport, actor)),
+    binding' = binding.set(id, bind_identity(actor, transport)),
     signaling' = signaling,
     outage' = outage,
   }
@@ -143,6 +134,7 @@ module grant_lifecycle {
       .with("activated", true)
       .with("expiry", 1)
       .with("expiry_cap", 1)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -157,6 +149,7 @@ module grant_lifecycle {
     not(grant.get(id).activated),
     grant.get(id).phase == "reserved",
     grant' = grant.set(id, close_grant(grant.get(id))),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -181,12 +174,14 @@ module grant_lifecycle {
     grant.get(id).phase == "reserved",
     not(grant.get(id).inbox_lost),
     not(grant.get(id).sealed),
-    not(grant.get(id).fingerprint_latched),
+    not(binding.get(id).fingerprint_latched),
     grant' = grant.set(id, grant.get(id)
       .with("phase", "bound")
       .with("offer", offer)
+      .with("fingerprint", offer)),
+    binding' = binding.set(id, binding.get(id)
+      .with("offer", offer)
       .with("fingerprint", offer)
-      .with("latched_fingerprint", offer)
       .with("fingerprint_latched", true)),
     signaling' = signaling,
     outage' = outage,
@@ -204,8 +199,9 @@ module grant_lifecycle {
     grant.get(id).transport == "webrtc",
     not(grant.get(id).inbox_lost),
     not(grant.get(id).sealed),
-    grant.get(id).answer == "",
-    grant' = grant.set(id, grant.get(id).with("phase", "answered").with("answer", "a1").with("latched_answer", "a1")),
+    binding.get(id).answer == "",
+    grant' = grant.set(id, grant.get(id).with("phase", "answered").with("answer", "a1")),
+    binding' = binding.set(id, binding.get(id).with("answer", "a1")),
     signaling' = signaling,
     outage' = outage,
   }
@@ -220,6 +216,7 @@ module grant_lifecycle {
     not(grant.get(id).inbox_lost),
     not(grant.get(id).sealed),
     grant' = grant.set(id, grant.get(id).with("phase", "established")),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -237,6 +234,7 @@ module grant_lifecycle {
     not(grant.get(id).expired),
     grant.get(id).phase == "reserved" or grant.get(id).phase == "established",
     grant' = grant.set(id, grant.get(id).with("claims", 1).with("phase", "established")),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -254,6 +252,7 @@ module grant_lifecycle {
     not(grant.get(id).ice_seen),
     negotiating(grant.get(id)),
     grant' = grant.set(id, grant.get(id).with("ice_seen", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -269,6 +268,7 @@ module grant_lifecycle {
     grant.get(id).phase == "established",
     not(grant.get(id).sealed),
     grant' = grant,
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -282,6 +282,7 @@ module grant_lifecycle {
     signaling,
     signaling' = false,
     grant' = grant,
+    binding' = binding,
     outage' = peer_ids.filter(id => grant.get(id).phase == "established" and not(grant.get(id).expired)),
   }
 
@@ -289,6 +290,7 @@ module grant_lifecycle {
     not(signaling),
     signaling' = true,
     grant' = grant,
+    binding' = binding,
     outage' = Set(),
   }
 
@@ -298,6 +300,7 @@ module grant_lifecycle {
     grant.get(id).activated,
     not(grant.get(id).sealed),
     grant' = grant.set(id, close_grant(grant.get(id)).with("revoked", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -311,6 +314,7 @@ module grant_lifecycle {
     grant.get(id).activated,
     not(grant.get(id).sealed),
     grant' = grant.set(id, close_grant(grant.get(id)).with("expired", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -326,6 +330,7 @@ module grant_lifecycle {
     not(grant.get(id).sealed),
     grant.get(id).phase == "reserved" or grant.get(id).phase == "bound" or grant.get(id).phase == "answered",
     grant' = grant.set(id, close_grant(grant.get(id))),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -340,6 +345,7 @@ module grant_lifecycle {
     not(grant.get(id).grace),
     not(grant.get(id).sealed),
     grant' = grant.set(id, grant.get(id).with("grace", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -353,6 +359,7 @@ module grant_lifecycle {
     grant.get(id).grace,
     grant.get(id).phase == "established",
     grant' = grant.set(id, close_grant(grant.get(id))),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -366,6 +373,7 @@ module grant_lifecycle {
     grant.get(id).phase == "established",
     not(grant.get(id).sealed),
     grant' = grant.set(id, close_grant(grant.get(id))),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage.filter(x => x != id),
   }
@@ -385,6 +393,7 @@ module grant_lifecycle {
       grant.get(old_id).sealed,
       grant.get(new_id).phase == "absent",
       grant' = grant.set(new_id, reserve(transport, "u1")),
+      binding' = binding.set(new_id, bind_identity("u1", transport)),
       signaling' = signaling,
       outage' = outage,
     }
@@ -395,6 +404,7 @@ module grant_lifecycle {
     not(grant.get(id).sealed),
     not(grant.get(id).accepted),
     grant' = grant.set(id, grant.get(id).with("accepted", true).with("accepted_work", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -408,6 +418,7 @@ module grant_lifecycle {
     grant.get(id).phase == "bound" or grant.get(id).phase == "answered",
     not(grant.get(id).inbox_lost),
     grant' = grant.set(id, grant.get(id).with("inbox_lost", true)),
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -418,9 +429,10 @@ module grant_lifecycle {
   }
 
   action duplicate_as(id: str): bool = all {
-    grant.get(id).fingerprint_latched,
-    grant.get(id).offer != "",
+    binding.get(id).fingerprint_latched,
+    binding.get(id).offer != "",
     grant' = grant,
+    binding' = binding,
     signaling' = signaling,
     outage' = outage,
   }
@@ -455,18 +467,12 @@ module grant_lifecycle {
     duplicate_delivery,
   }
 
-  pure def binding_ok(g: Grant): bool =
-    (not(g.identity_latched) or (
-      g.actor == g.latched_actor and
-      g.target == g.latched_target and
-      g.team == g.latched_team and
-      g.purpose == g.latched_purpose and
-      g.actions == g.latched_actions and
-      g.transport == g.latched_transport
-    )) and g.answer == g.latched_answer and
-    (not(g.fingerprint_latched) or (g.fingerprint == g.latched_fingerprint and g.offer == g.latched_fingerprint))
+  pure def binding_ok(g: Grant, frozen: Binding): bool =
+    (not(frozen.identity_latched) or (g.actor == frozen.actor and g.transport == frozen.transport)) and
+    g.answer == frozen.answer and
+    (not(frozen.fingerprint_latched) or (g.fingerprint == frozen.fingerprint and g.offer == frozen.offer))
 
-  val inv_binding_stable: bool = peer_ids.forall(id => binding_ok(grant.get(id)))
+  val inv_binding_stable: bool = peer_ids.forall(id => binding_ok(grant.get(id), binding.get(id)))
 
   val inv_outage_keeps_established: bool = outage.forall(id =>
     grant.get(id).phase == "established" and not(grant.get(id).expired))
@@ -522,7 +528,7 @@ module grant_lifecycle {
       .then(request_as("p1", "webrtc"))
       .then(activate_as("p1"))
       .then(submit_offer_as("p1", "o1"))
-      .expect(grant.get("p1").offer == "o1" and grant.get("p1").fingerprint == "o1" and grant.get("p1").phase == "bound")
+      .expect(grant.get("p1").offer == "o1" and binding.get("p1").fingerprint == "o1" and grant.get("p1").fingerprint == "o1" and grant.get("p1").phase == "bound")
       .then(submit_offer_as("p1", "o2").fail())
   }
 

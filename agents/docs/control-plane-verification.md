@@ -111,11 +111,11 @@ quint verify specs/grant_lifecycle.qnt --max-steps 6 --invariants <names>
 ```
 
 Start at 6 steps. `route_fence` and `mux_streams` finish in seconds.
-`grant_lifecycle` takes about 12 minutes: the grant map is wide, and
-Apalache rejects an inductive check of that map because the next-state
-value is unconstrained. Splitting the module would drop the interleavings
-its invariants exist to check, so the task keeps the 6-step search.
-Raising the step bound is not the response to a slow or inconclusive check.
+`grant_lifecycle` takes about 5 minutes. Apalache rejects an inductive
+check of its maps because the next-state value is unconstrained. Splitting
+the module would drop the interleavings its invariants exist to check, so
+the task keeps the 6-step search. Raising the step bound is not the
+response to a slow or inconclusive check.
 
 ## Shared fault model
 
@@ -134,16 +134,19 @@ message is a new action; the fault actions stay.
 ## Grant lifecycle
 
 `specs/grant_lifecycle.qnt` is the state of one grant: `reserved`, `bound`,
-`answered`, `established`, or `closed`. The record holds actor, target, Team,
-purpose, transport (`local` or `webrtc`), actions, fingerprints, and the
-activation and expiry deadlines. A separate boolean records that an accepted
-Agent task or shell is still running.
+`answered`, `established`, or `closed`. The record holds actor, transport
+(`local` or `webrtc`), fingerprints, and the activation and expiry deadlines.
+A separate binding holds actor, transport, and the offer and answer
+fingerprints. Only reservation and the first offer or answer write it.
+Target, Team, purpose, and actions stay in the authorization prose; this
+module does not vary them. A separate boolean records that an accepted Agent
+task or shell is still running.
 
 | Action | Rule |
 | --- | --- |
 | `request_grant` / `activate` | Activation writes the full expiry and only from a reservation that is still inside its lease. Requesting a grant, submitting an offer or answer, and trickling ICE require the signaling connection. |
 | `reservation_due` / `crash_before_activate` | The reservation can no longer be activated. |
-| `submit_offer` / `submit_answer` | The first offer and answer bind fingerprints and the actor, target, purpose, and transport. A different offer, answer, actor, target, or purpose leaves that binding unchanged and requires a new `peerId`. |
+| `submit_offer` / `submit_answer` | The first offer and answer write the binding's fingerprints. Reservation writes actor and transport. Later actions leave that binding unchanged. A different offer or answer requires a new `peerId`. |
 | `trickle_ice` | Candidates attach to this peer's one negotiation, including candidates that arrive before the description. |
 | `relay_refresh` | A refreshed relay allocation does not move `expiresAt`. |
 | `signaling_down` / `signaling_up` | An established, unexpired peer stays open. Reconnect does not move `expiresAt`. |
@@ -154,7 +157,7 @@ Agent task or shell is still running.
 
 Invariants:
 
-- After binding, actor, target, Team, purpose, transport, actions, and fingerprints are unchanged.
+- After binding, actor, transport, and fingerprints match the separate binding, and later actions leave that binding unchanged.
 - A signaling transition does not close an established, unexpired peer and does not extend its expiry.
 - A closed, revoked, or expired peer is not activated or rebound.
 - Reservation expiry and a crash before activation both refuse activation.
