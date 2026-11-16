@@ -8,7 +8,7 @@ export const PASTED_TEXT_CHAR_THRESHOLD = 1500
 
 export type ComposerAttachment =
   | { id: string; kind: "image"; name: string; mimeType: string; data: string; size: number }
-  | { id: string; kind: "pasted_text"; text: string; lines: number }
+  | { id: string; kind: "pasted_text"; text: string; lines: number; label?: string; uri?: string; diff?: { key: string; startIndex: number; endIndex: number } }
   | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string }
   | { id: string; kind: "machine_file"; name: string; path: string; uri: string; size?: number }
 
@@ -206,7 +206,7 @@ export function sessionTitleFromDraft(draft: string, attachments: readonly Compo
 
 function attachmentToBlock(item: ComposerAttachment, uri?: string): AgentInput["content"][number] {
   if (item.kind === "image") return { type: "image", mimeType: item.mimeType, data: item.data }
-  if (item.kind === "pasted_text") return { type: "resource", resource: { uri: `deskfleet://pasted-text/${item.id}.txt`, mimeType: "text/plain", text: item.text } }
+  if (item.kind === "pasted_text") return { type: "resource", resource: { uri: item.uri ?? `deskfleet://pasted-text/${item.id}.txt`, mimeType: "text/plain", text: item.text } }
   if (item.kind === "machine_file") return { type: "resource_link", uri: item.uri, name: item.name, ...(item.size !== undefined ? { size: item.size } : {}) }
   return {
     type: "resource_link",
