@@ -128,11 +128,22 @@ function lockfileResolvedVersions(lockfile: string, name: string): Set<string> {
   const versions = new Set<string>()
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
   const pattern = new RegExp(`^  (?:'${escaped}@([^']+)'|"${escaped}@([^"]+)"|${escaped}@([^:\\s(]+))`, "u")
-  for (const line of lockfile.split(/\r?\n/u)) {
+  let inPackages = false
+  for (const rawLine of lockfile.split(/\r?\n/u)) {
+    const line = rawLine.replace(/\r$/u, "")
+    if (line === "packages:") {
+      inPackages = true
+      continue
+    }
+    if (inPackages && /^\S/u.test(line)) inPackages = false
+    if (!inPackages) continue
     const match = pattern.exec(line)
     if (!match) continue
     const version = match[1] ?? match[2] ?? match[3]
-    if (version) versions.add(version.split("(")[0]!)
+    if (!version) continue
+    // Skip selectors that are not concrete package snapshots (`pkg@*` / ranges).
+    if (/[<>^*=| ]/u.test(version)) continue
+    versions.add(version.split("(")[0]!)
   }
   return versions
 }

@@ -114,6 +114,23 @@ test("unused exact patch after a version bump is reported clearly", () => {
   assert.match(report.errors.join("\n"), /unused|does not match declared/)
 })
 
+test("lockfile version scan ignores patchedDependencies keys", () => {
+  // Manifest still pins 1.3.0, and the leftover exact patch key remains in
+  // patchedDependencies, but packages: only resolves 1.4.0. Scanning the patch
+  // key as a version would hide this unused-pin case.
+  const dir = fixture({
+    "pnpm-workspace.yaml": `packages:\n  - apps/demo\npatchedDependencies:\n  left-pad@1.3.0: patches/left-pad.patch\n`,
+    "pnpm-lock.yaml": `lockfileVersion: '9.0'\npatchedDependencies:\n  left-pad@1.3.0: deadbeef\npackages:\n  left-pad@1.4.0:\n    resolution: {integrity: sha512-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff}\n`,
+    "renovate.json": renovateExactDisabled,
+    "package.json": "{}",
+    "apps/demo/package.json": JSON.stringify({ dependencies: { "left-pad": "1.3.0" } }),
+    "patches/left-pad.patch": "diff --git a/index.js b/index.js\n",
+  })
+  const report = checkPnpmPatches(dir)
+  assert.equal(report.ok, false)
+  assert.match(report.errors.join("\n"), /exact patch left-pad@1\.3\.0 is unused/)
+})
+
 test("repository patchedDependencies satisfy the Renovate patch contract", () => {
   const report = checkPnpmPatches()
   assert.equal(report.ok, true, report.errors.join("\n"))
