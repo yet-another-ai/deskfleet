@@ -4,7 +4,7 @@ name: deskfleet-dev
 
 services:
   postgres:
-    image: postgres:18.7@sha256:9f4fd4aa918f52ae3d6f3b687f1de90d8f867cd4d520021545a9a50c120eae3b
+    image: postgres:18.7@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
     environment:
       POSTGRES_USER: deskfleet
       POSTGRES_PASSWORD: deskfleet-dev
@@ -24,7 +24,7 @@ services:
   # Test fixtures never share the development database. Stopping this service
   # discards its data; no development volume is involved in a test reset.
   postgres-test:
-    image: postgres:18.7@sha256:9f4fd4aa918f52ae3d6f3b687f1de90d8f867cd4d520021545a9a50c120eae3b
+    image: postgres:18.7@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
     environment:
       POSTGRES_USER: deskfleet_test
       POSTGRES_PASSWORD: deskfleet-test
@@ -53,7 +53,7 @@ services:
       retries: 30
 
   turn:
-    image: coturn/coturn:4.18.0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
+    image: coturn/coturn:4.19.0@sha256:0a3c026baaab092c79c9005823a72747bd09bf211071d537bb0865d95eae4638
     depends_on:
       valkey:
         condition: service_healthy

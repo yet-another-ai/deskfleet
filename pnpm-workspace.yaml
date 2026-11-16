@@ -31,7 +31,7 @@ minimumReleaseAgeExclude:
 
 overrides:
   # The docs render the same Vue components as the desktop and Web clients.
-  'vitepress>vue': '3.6.0-rc.14'
+  'vitepress>vue': '3.6.0-rc.15'
 
 # Exact pins require a Renovate npm disable rule (manual rebase). `@*` keys
 # survive Renovate version bumps; pnpm still fails the install if the patch no

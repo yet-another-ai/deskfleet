@@ -80,7 +80,7 @@ portable-pty = "0.9"
 sysinfo = { version = "0.40.0", default-features = false, features = ["system"] }
 socket2 = "0.6.5"
 filedescriptor = "0.8"
-nix = { version = "0.31", features = ["signal"] }
+nix = { version = "0.32", features = ["signal"] }
 libloading = "0.9"
 x11rb = { version = "0.14.0", features = ["randr", "xfixes", "xtest", "xkb"] }
 zbus = { version = "6.1", default-features = false, features = ["tokio", "proxy", "tracing"] }

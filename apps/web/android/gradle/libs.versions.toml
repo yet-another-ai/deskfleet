@@ -1,5 +1,8 @@
 [versions]
 agp = "9.5.1"
+# AGP 9 embeds Kotlin 2.2; Firebase Analytics 24 ships Kotlin 2.4 metadata.
+# Keep this in sync with the buildscript classpath override in build.gradle.kts.
+kotlin = "2.4.21"
 compileSdk = "37"
 minSdk = "34"
 targetSdk = "37"
@@ -14,8 +17,8 @@ androidxWebkit = "1.18.0"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
 androidxEspressoCore = "3.7.0"
-googleServices = "4.4.4"
-firebaseAnalytics = "22.4.0"
+googleServices = "4.6.0"
+firebaseAnalytics = "24.0.0"
 
 [libraries]
 androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "androidxActivity" }

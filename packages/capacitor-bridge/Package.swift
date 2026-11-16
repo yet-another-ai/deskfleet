@@ -12,7 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.6.2"),
-        .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "11.15.0")
+        .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "13.2.0")
     ],
     targets: [
         .binaryTarget(

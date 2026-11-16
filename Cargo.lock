@@ -2639,7 +2639,7 @@ dependencies = [
  "image",
  "jni",
  "ndk",
- "nix 0.31.3",
+ "nix 0.32.0",
  "nsh-base",
  "nsh-core",
  "nsh-platform-gpui",
@@ -2746,7 +2746,7 @@ dependencies = [
  "deskfleet-windows-desktop",
  "deskfleet-x11",
  "filedescriptor",
- "nix 0.31.3",
+ "nix 0.32.0",
  "portable-pty",
  "rand 0.10.4",
  "rtc",
@@ -6070,6 +6070,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.2.2",
  "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -6137,9 +6138,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-base"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7bae08ed29b11f2595cf5b4ce406430b14493d24f07f2f4a9f068188fb35079"
+checksum = "2cadcf71a3a758271ee9ab5d4768de9054d1a97091eece01fa1a174b394ef53e"
 dependencies = [
  "chrono",
  "html5ever",
@@ -6168,9 +6169,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-core"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f93e2fa3cc4e18b393b7935d5551deba8330968f69f2a1b2ff1928cb125782a"
+checksum = "7283cdcd0a6703ecdcd2fc9f621705a3f4efbd3c88376219a6194a2f126b7573"
 dependencies = [
  "cap-std",
  "crc32fast",
@@ -6210,9 +6211,9 @@ dependencies = [
 
 [[package]]
 name = "nsh-engine"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c0dda64a09a18ae35ba04be534f140d6f3cbcdb30a81b1926dc4718fefaefd2"
+checksum = "24a7d05151d74e2c1c24800c009016ea17d82268c5ccb821118a06188456db89"
 dependencies = [
  "block2 0.6.2",
  "crossbeam-channel",
@@ -6249,11 +6250,12 @@ dependencies = [
 
 [[package]]
 name = "nsh-platform-gpui"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0e8c5546a30ff8d51084101584a12e009a5e808c1efb15dc6ba082cca222649"
+checksum = "f3d1a2d63bd02eb5be3be62c784365b0d74a9b8fa9336d4ef189a1b76e61b012"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "crossbeam-channel",
  "fontdb",
  "futures-channel",
