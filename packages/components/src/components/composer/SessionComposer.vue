@@ -366,7 +366,7 @@ function removeAttachment(id: string): void {
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
 function attachmentLabel(item: ComposerAttachment): string {
-  return item.kind === "pasted_text" ? t("composer.pastedText") : item.name
+  return item.kind === "pasted_text" ? (item.label ?? t("composer.pastedText")) : item.name
 }
 function previewAttachment(item: ComposerAttachment): void {
   const preview = itemPreview(item)
@@ -608,7 +608,7 @@ onBeforeUnmount(() => {
           <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
         </li>
       </ul>
-      <textarea ref="textarea" :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
+      <textarea ref="textarea" data-composer-input :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
       <div v-if="dictation.active" class="relative mx-3 mb-2 flex items-center justify-center rounded-lg bg-ui-accent/5 px-10 py-2" data-dictation-panel>
         <div class="flex h-7 shrink-0 items-center gap-0.5" role="img" :aria-label="t(`dictation.${dictation.state}`)" data-dictation-waveform>
           <span v-for="(level, index) in dictation.levels" :key="index" class="w-0.5 rounded-full bg-ui-accent transition-opacity duration-100 motion-reduce:transition-none" v-spring="{ height: `${3 + level * 23}px` }" :style="{ opacity: 0.3 + level * 0.7 }" />

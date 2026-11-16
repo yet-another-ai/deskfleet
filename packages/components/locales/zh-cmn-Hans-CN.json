@@ -1007,6 +1007,7 @@
     "binaryDiff": "二进制文件已变更，无法显示文本差异。",
     "emptyDiff": "此差异中已无变更。",
     "truncatedDiff": "差异内容较大，仅显示开头部分。",
+    "addLineComment": "评论第 {line} 行",
     "changeKind": {
       "staged": "已暂存",
       "unstaged": "未暂存",

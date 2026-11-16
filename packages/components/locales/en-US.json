@@ -1007,6 +1007,7 @@
     "binaryDiff": "Binary file changed. A text diff is not available.",
     "emptyDiff": "No changes remain in this diff.",
     "truncatedDiff": "This diff is large. Only the first part is shown.",
+    "addLineComment": "Comment on line {line}",
     "changeKind": {
       "staged": "Staged",
       "unstaged": "Unstaged",
