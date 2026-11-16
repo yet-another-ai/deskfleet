@@ -83,6 +83,35 @@ module link_liveness {
     peer' = peer,
   }
 
+  /// The close handshake has no deadline. Disconnect is reported before the socket is replaced.
+  action begin_client_close: bool = all {
+    client.phase == "up",
+    client' = client.with("phase", "closing"),
+    daemon' = daemon,
+    peer' = peer,
+  }
+
+  action begin_daemon_close: bool = all {
+    daemon.phase == "up",
+    daemon' = daemon.with("phase", "closing"),
+    client' = client,
+    peer' = peer,
+  }
+
+  action abandon_client_close: bool = all {
+    client.phase == "closing",
+    client' = client.with("phase", "dead"),
+    daemon' = daemon,
+    peer' = peer,
+  }
+
+  action abandon_daemon_close: bool = all {
+    daemon.phase == "closing",
+    daemon' = daemon.with("phase", "dead"),
+    client' = client,
+    peer' = peer,
+  }
+
   /// Only this action writes the client identity. The daemon route and the peer stay.
   action replace_client_socket: bool = all {
     client.phase == "dead",
@@ -161,6 +190,10 @@ module link_liveness {
     resume_idle,
     link_dead,
     daemon_link_dead,
+    begin_client_close,
+    begin_daemon_close,
+    abandon_client_close,
+    abandon_daemon_close,
     replace_client_socket,
     replace_daemon_route,
     late_client,
@@ -182,8 +215,8 @@ module link_liveness {
     (daemon.generation == 2 and daemon.identity == "d1" and daemon.previous == "d2")
 
   val inv_link_phases: bool =
-    (client.phase == "up" or client.phase == "hidden" or client.phase == "probing" or client.phase == "dead") and
-    (daemon.phase == "up" or daemon.phase == "dead")
+    (client.phase == "up" or client.phase == "hidden" or client.phase == "probing" or client.phase == "closing" or client.phase == "dead") and
+    (daemon.phase == "up" or daemon.phase == "closing" or daemon.phase == "dead")
 
   val inv_peer_close: bool =
     if (peer.phase == "closed") peer.closed_by == "failed" or peer.closed_by == "recovery"
@@ -291,6 +324,31 @@ module link_liveness {
       .expect(
         peer.phase == "closed" and peer.closed_by == "recovery" and peer.expiry == 1 and
         client.phase == "up" and client.identity == "c1" and daemon.phase == "up" and daemon.identity == "d1")
+  }
+
+  run closing_daemon_reports_down_before_replace = {
+    init
+      .then(begin_daemon_close)
+      .expect(
+        daemon.phase == "closing" and daemon.identity == "d1" and daemon.generation == 0 and
+        client.phase == "up" and client.identity == "c1" and
+        peer.phase == "established" and peer.expiry == 1)
+      .then(abandon_daemon_close)
+      .expect(daemon.phase == "dead" and daemon.identity == "d1" and peer.phase == "established")
+      .then(replace_daemon_route)
+      .expect(
+        daemon.phase == "up" and daemon.identity == "d2" and daemon.previous == "d1" and
+        peer.phase == "established" and peer.expiry == 1)
+  }
+
+  run closing_socket_cannot_be_replaced = {
+    init
+      .then(begin_daemon_close)
+      .then(begin_client_close)
+      .expect(
+        daemon.phase == "closing" and client.phase == "closing" and
+        daemon.identity == "d1" and client.identity == "c1" and peer.phase == "established")
+      .then(replace_daemon_route.fail())
   }
 
   run failed_closes_the_peer = {

@@ -203,6 +203,8 @@ one.
 | `replace_route` | The new connection identity becomes the route. |
 | `late_message` / `disconnect_cleanup` | An old identity cannot deliver, revoke, or clean up the new route. |
 | `lease_lost` | The node's local sockets lose authority. |
+| `release_failed` / `renew` | A failed route release marks the node unhealthy and drops its authority. A later lease renewal leaves that row offline. |
+| `presence_notify_failed` | A failed presence notification leaves the committed registration in place. |
 | `envelope_failed` | A failed or malformed inbox envelope leaves that lease and the current route in place. |
 | `await_request` / `expire_request` / `release_gate` | A cross-instance request keeps the expiry it arrived with while it waits for the registration gate. Expiry retires it. Opening the gate afterwards leaves it out of the daemon queue. |
 | `enqueue_offer` / `take_snapshot` | A snapshot whose read is ordered before a grant is enqueued cannot close that grant. A revoked or expired grant in the snapshot is closed. Unrelated established peers stay. |
@@ -218,14 +220,16 @@ Invariants:
 - Coalesced reconciliation does not move an already queued snapshot behind newer commands.
 - Peer-event overflow and a full ICE queue do not remove the route.
 - A lost inbox delivery does not mutate an existing binding.
-- Route authority is exactly the current holder's live lease.
+- Route authority matches the current holder's live lease while the node is healthy. An unhealthy release has no authority, including across renewal.
 - A retired cross-instance request is absent from the daemon queue.
 
 Named runs: `stale_identity_cannot_fence_the_new_route`,
 `snapshot_before_grant_cannot_close_it`, `missed_revocation_closes_on_reconcile`,
 `coalesce_keeps_snapshot_position`, `early_ice_cannot_block_the_answer`,
 `overflow_fails_the_peer_only`, `lost_negotiation_opens_a_new_peer`,
-`failed_envelope_keeps_authority`, and `expired_request_is_not_enqueued`.
+`failed_envelope_keeps_authority`, `expired_request_is_not_enqueued`,
+`release_failure_stays_offline_across_renewal`, and
+`presence_failure_keeps_the_registration`.
 
 | Run | Implementation evidence already present |
 | --- | --- |
@@ -234,6 +238,8 @@ Named runs: `stale_identity_cannot_fence_the_new_route`,
 | `overflow_fails_the_peer_only` | `apps/server/src/hub.rs` `saturated_revocation_requests_reconciliation_and_preserves_machine_presence`. `apps/server/src/websocket.rs` covers transient storage failure and an interrupted handshake, which must not revoke an existing peer. |
 | `failed_envelope_keeps_authority` | `apps/server/src/hub/cluster_tests.rs` `postgres_bad_envelope_isolated_without_losing_the_following_disconnect`. `postgres_database_failure_still_fences_existing_sockets` and `postgres_expired_lease_fences_before_waiting_for_the_registration_gate` are the database and lease failures that still remove authority. |
 | `expired_request_is_not_enqueued` | `apps/server/src/hub/cluster_tests.rs` `an_expired_request_is_not_queued_when_its_gate_and_timer_are_both_ready` and `postgres_request_expiry_cancels_gated_enqueue_without_taking_machine_offline`. |
+| `release_failure_stays_offline_across_renewal` | `apps/server/src/hub.rs` `remove_daemon` marks realtime routing unhealthy when `release_machine_route` fails, and `apps/server/src/hub/cluster.rs` `renew` refuses a node that is not ready. |
+| `presence_failure_keeps_the_registration` | `apps/server/src/websocket.rs` keeps a committed daemon registration when the presence notification fails. |
 
 The identity, lease, and lost-inbox runs are model runs until a trace shows
 the hub or peer routes can apply a stale identity, use a socket after lease
@@ -306,6 +312,7 @@ lease in place.
 | `resume_idle` | A hidden socket already past the idle deadline is declared dead without a probe. |
 | `link_dead` | A visible client socket is declared dead. A hidden socket does not take this action. |
 | `daemon_link_dead` | The daemon reports the control link down. The client socket and the peer stay. |
+| `begin_client_close` / `begin_daemon_close` / `abandon_client_close` / `abandon_daemon_close` | An orderly close reports the socket down immediately. The handshake stall abandons that socket, and only then may its identity be replaced. |
 | `replace_client_socket` | The next client identity replaces a dead client socket. Only this action writes that identity. The daemon route, the peer, and expiry stay. |
 | `replace_daemon_route` | The next daemon identity replaces a dead control link and fences the previous identity. Only this action writes that identity. Expiry stays. |
 | `late_client` / `late_daemon` | A message carrying the replaced identity leaves the new route, the other socket, and the peer unchanged. |
@@ -315,7 +322,7 @@ lease in place.
 Invariants:
 
 - The client route is one of the three identity shapes `(c1, none, 0)`, `(c2, c1, 1)`, and `(c1, c2, 2)`. The daemon route is the same shape on `d1` and `d2`.
-- The client phase is `up`, `hidden`, `probing`, or `dead`. The daemon phase is `up` or `dead`.
+- The client phase is `up`, `hidden`, `probing`, `closing`, or `dead`. The daemon phase is `up`, `closing`, or `dead`. A `closing` socket keeps its identity.
 - A closed peer records `failed` or `recovery`. An established or grace peer has an empty close cause.
 - Expiry stays at the value written for the established peer.
 
@@ -324,13 +331,15 @@ Named runs: `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`,
 `resume_idle_replaces_the_client_only`, `both_links_down_keep_the_established_peer`,
 `daemon_replace_fences_the_old_identity`,
 `hidden_client_keeps_the_peer_across_daemon_replace`,
-`grace_recovers_without_closing`, `recovery_due_closes_the_peer`, and
-`failed_closes_the_peer`.
+`grace_recovers_without_closing`, `recovery_due_closes_the_peer`,
+`failed_closes_the_peer`, `closing_daemon_reports_down_before_replace`, and
+`closing_socket_cannot_be_replaced`.
 
 | Run | Implementation evidence already present |
 | --- | --- |
 | `hidden_page_skips_link_dead`, `fresh_resume_probes_before_replace`, `probe_ok_keeps_the_socket`, `probe_miss_replaces_only_the_client`, `resume_idle_replaces_the_client_only` | `packages/client/src/http-central.test.ts` skips liveness traffic while hidden, probes a resumed socket, keeps a socket that answers, replaces a socket that misses the probe, and replaces an idle suspended socket on return. |
 | `both_links_down_keep_the_established_peer` | `packages/client/src/remote.test.ts` preserves peers during signaling loss. `packages/client/src/http-central.test.ts` reports signaling loss without a peer revocation. `apps/daemon/src/central-client.test.ts` `a silent control link is abandoned after a bounded grace and replaced` reports the daemon disconnected before the replacement socket exists. |
+| `closing_daemon_reports_down_before_replace`, `closing_socket_cannot_be_replaced` | The daemon test above sets `connected` false when the close begins, then replaces the socket only after the close grace. `packages/client/src/http-central.ts` does the same for the client signaling socket. |
 | `daemon_replace_fences_the_old_identity` | The daemon test above replaces the control link. Fencing a late frame on the retired identity remains a model run until a trace shows that frame changing the new route. |
 | `grace_recovers_without_closing`, `recovery_due_closes_the_peer` | `packages/client/src/peer-lifecycle.test.ts` `a recovered disconnected state never fails the peer`. `packages/components/src/composables/useDesktopConnection.test.ts` `a transient disconnected state does not tear down a recoverable desktop peer`. |
 | `failed_closes_the_peer` | `packages/components/src/composables/useDesktopConnection.test.ts` `native errors and browser connection failures close the peer and surface errors`. |
@@ -341,22 +350,30 @@ shows the current client or daemon can close that peer or move its expiry.
 
 ## Credential close
 
-`specs/credential_close.qnt` is one daemon control socket, one established
-peer, and two credential generations. `generation` stops at 1 so the
-re-enrollment stays finite; that bound is not a product limit. `retryable_close`
-and `reconnect` are this module's `signaling_down` / `signaling_up`.
-`late_rejection` is `late_message` for the retired token. Reservation, inbox,
-and lease loss stay in the grant and route modules.
+`specs/credential_close.qnt` is one daemon control socket, one machine
+identity, and two credential generations. It starts in `hello`, before the
+peer exists. `generation` stops at 1 so the re-enrollment stays finite; that
+bound is not a product limit. `retryable_close` and `reconnect` are this
+module's `signaling_down` / `signaling_up`. `hello_blip` is the pre-auth form
+of that pair. `late_rejection` is `late_message` for the retired token.
+Reservation, inbox, and lease loss stay in the grant and route modules.
 
-A close code of 1012, a transport drop, or a link declared dead reconnects
-with the same credential and leaves the peer open. Close codes 4401 and 4403
-retire that credential, close the registration's peers, and do not schedule
-that reconnect. Re-enrollment replaces the token. A rejection that belonged to
-the retired token leaves the new credential in place. Accepted work stays set.
-Expiry stays at the value written for the established peer.
+A close during `hello` with code 1012 reconnects the same machine identity and
+does not record a logout. An invalid authenticate frame uses 4401, records the
+logout, and keeps that machine identity; re-enrollment does not open the
+closed hello as a live peer. After `hello_ready`, a close code of 1012, a
+transport drop, or a link declared dead reconnects with the same credential
+and leaves the peer open. Close codes 4401 and 4403 retire that credential,
+close the registration's peers, and do not schedule that reconnect.
+Re-enrollment replaces the token. A rejection that belonged to the retired
+token leaves the new credential in place. Accepted work stays set. Expiry
+stays at the value written for the established peer.
 
 | Action | Rule |
 | --- | --- |
+| `hello_blip` / `reconnect` | A pre-auth transport close is retryable. The machine identity stays, and no peer is opened. |
+| `hello_reject` | An invalid authenticate frame records logout and keeps the machine identity. Reconnect stays disabled until re-enrollment. |
+| `hello_ready` | A completed hello opens the peer. A rejected hello cannot take this step. |
 | `retryable_close` / `reconnect` | The same credential returns. The peer and its expiry stay. |
 | `credential_rejected` | The current credential is retired and the peer closes. Reconnect is disabled. |
 | `reenroll` | A revoked registration receives the next credential. The closed peer stays closed. |
@@ -371,14 +388,18 @@ Invariants:
 - A closed peer records `credential`. An established peer has an empty close cause.
 - A revoked credential has a down link and a closed peer.
 - Generation 1 is reached only after that peer has closed for credential rejection.
-- The generation is 0 or 1, and the link is `up` or `down`.
+- The generation is 0 or 1, the link is `up` or `down`, and admission is `hello` or `ready`.
+- The machine identity stays `m1`. An established peer has already left `hello`.
 
-Named runs: `retryable_close_keeps_the_peer`,
+Named runs: `hello_blip_reconnects_the_same_machine`,
+`hello_reject_keeps_the_machine_identity`,
+`hello_reject_reenrolls_the_same_machine`, `retryable_close_keeps_the_peer`,
 `credential_rejection_closes_peers_without_reconnect`, and
 `late_rejection_keeps_the_reenrolled_credential`.
 
 | Run | Implementation evidence already present |
 | --- | --- |
+| `hello_blip_reconnects_the_same_machine`, `hello_reject_keeps_the_machine_identity`, `hello_reject_reenrolls_the_same_machine` | `apps/server/src/websocket.rs` `pre_auth_close` uses 1012 for an interrupted hello and 4401 for an invalid authenticate frame. `apps/daemon/src/central-client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. `apps/daemon/src/central-client.ts` `enroll` retains the Team machine identity. |
 | `retryable_close_keeps_the_peer` | `apps/daemon/src/central-client.test.ts` `network drop mid-hello reconnects with the same machine credentials instead of revoking`. |
 | `credential_rejection_closes_peers_without_reconnect` | `apps/daemon/src/central-client.test.ts` `explicit credential rejection persists logout without treating transport loss as revocation`. `#revoked` closes the registration's peers and retains execution. |
 | `late_rejection_keeps_the_reenrolled_credential` | `apps/daemon/src/central-client.test.ts` `a late rejection of a retired token cannot revoke a re-enrolled Team`. |

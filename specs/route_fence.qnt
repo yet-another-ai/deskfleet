@@ -26,6 +26,7 @@ module route_fence {
     authority: bool,
     link: bool,
     routed: bool,
+    health: str,
   }
 
   /// At most one snapshot shares the command queue. It keeps the index it was appended at.
@@ -55,6 +56,7 @@ module route_fence {
     inbox_lost: bool,
     request: str,
     envelope: str,
+    presence: str,
   }
 
   var route: Route
@@ -123,15 +125,16 @@ module route_fence {
     else p
 
   action init: bool = all {
-    route' = { identity: "", holder: "", previous: "", authority: false, link: true, routed: false },
+    route' = { identity: "", holder: "", previous: "", authority: false, link: true, routed: false, health: "healthy" },
     lease' = Map("n1" -> true, "n2" -> true),
     peer' = Map("p1" -> blank, "p2" -> blank),
     queue' = empty_queue,
     capture' = no_capture,
-    side' = { epoch: 1, ice: 0, answer: false, inbox_lost: false, request: "", envelope: "" },
+    side' = { epoch: 1, ice: 0, answer: false, inbox_lost: false, request: "", envelope: "", presence: "" },
   }
 
   action replace_as(conn: str, node: str): bool = all {
+    route.health == "healthy",
     lease.get(node),
     conn != route.identity,
     route' = route
@@ -213,6 +216,44 @@ module route_fence {
   action lease_lost: bool = {
     nondet node = oneOf(node_ids)
     lease_lost_as(node)
+  }
+
+  /// Releasing the route failed. Renewal cannot make that row authoritative again.
+  action release_failed: bool = all {
+    route.routed,
+    route.health == "healthy",
+    route' = route.with("authority", false).with("link", false).with("health", "unhealthy"),
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
+    side' = side,
+  }
+
+  /// A lease renewal leaves an unhealthy release unchanged.
+  action renew: bool = all {
+    route.health == "unhealthy",
+    route.holder != "",
+    lease.get(route.holder),
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
+    side' = side,
+  }
+
+  /// A failed presence notification leaves the committed registration in place.
+  action presence_notify_failed: bool = all {
+    route.routed,
+    route.health == "healthy",
+    side.presence == "",
+    side' = side.with("presence", "failed"),
+    route' = route,
+    lease' = lease,
+    peer' = peer,
+    queue' = queue,
+    capture' = capture,
   }
 
   /// A failed or malformed inbox envelope leaves the lease and the route in place.
@@ -501,6 +542,9 @@ module route_fence {
     drop_inbox,
     open_replacement,
     envelope_failed,
+    release_failed,
+    renew,
+    presence_notify_failed,
     await_request,
     expire_request,
     release_gate,
@@ -510,15 +554,18 @@ module route_fence {
     (route.identity == "" or route.identity == "c1" or route.identity == "c2") and
     (route.holder == "" or route.holder == "n1" or route.holder == "n2") and
     ((route.identity == "") == (route.holder == "")) and
-    (not(route.routed) or route.identity != "")
+    (not(route.routed) or route.identity != "") and
+    (route.health == "healthy" or route.health == "unhealthy")
 
   val inv_authority_follows_lease: bool =
     if (route.holder == "") not(route.authority)
+    else if (route.health == "unhealthy") not(route.authority)
     else route.authority == lease.get(route.holder)
 
   val inv_inbox: bool =
     (side.request == "" or side.request == "waiting" or side.request == "retired" or side.request == "queued") and
     (side.envelope == "" or side.envelope == "failed") and
+    (side.presence == "" or side.presence == "failed") and
     (side.request != "retired" or not(queued(queue, "req")))
 
   val inv_snapshot_before_grant: bool =
@@ -662,5 +709,28 @@ module route_fence {
       .expect(side.request == "retired" and queue.len == 0 and route.identity == "c1" and route.authority)
       .then(release_gate)
       .expect(side.request == "retired" and not(queued(queue, "req")) and route.authority and lease.get("n1"))
+  }
+
+  run release_failure_stays_offline_across_renewal = {
+    init
+      .then(replace_as("c1", "n1"))
+      .then(release_failed)
+      .expect(
+        route.health == "unhealthy" and not(route.authority) and lease.get("n1") and
+        route.identity == "c1" and route.holder == "n1")
+      .then(renew)
+      .expect(
+        route.health == "unhealthy" and not(route.authority) and lease.get("n1") and
+        route.identity == "c1")
+      .then(replace_as("c2", "n2").fail())
+  }
+
+  run presence_failure_keeps_the_registration = {
+    init
+      .then(replace_as("c1", "n1"))
+      .then(presence_notify_failed)
+      .expect(
+        route.identity == "c1" and route.holder == "n1" and route.authority and
+        route.health == "healthy" and lease.get("n1") and side.presence == "failed")
   }
 }

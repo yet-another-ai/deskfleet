@@ -20,11 +20,15 @@ module credential_close {
   var link: str
   var credential: Credential
   var peer: Peer
+  var admission: str
+  var machine: str
 
   action init: bool = all {
     link' = "up",
     credential' = { generation: 0, revoked: false },
-    peer' = { phase: "established", closed_by: "", expiry: 1, accepted: false, accepted_work: false },
+    peer' = { phase: "absent", closed_by: "", expiry: 1, accepted: false, accepted_work: false },
+    admission' = "hello",
+    machine' = "m1",
   }
 
   action accept_work: bool = all {
@@ -33,15 +37,56 @@ module credential_close {
     peer' = peer.with("accepted", true).with("accepted_work", true),
     link' = link,
     credential' = credential,
+    admission' = admission,
+    machine' = machine,
   }
 
-  /// 1012, transport loss, and a link declared dead reconnect with the same credential.
-  action retryable_close: bool = all {
+  /// A network blip during authenticate is 1012. The machine identity stays.
+  action hello_blip: bool = all {
+    admission == "hello",
     link == "up",
     not(credential.revoked),
     link' = "down",
     credential' = credential,
     peer' = peer,
+    admission' = admission,
+    machine' = machine,
+  }
+
+  /// An invalid authenticate frame is 4401. Logout keeps the same machine identity.
+  action hello_reject: bool = all {
+    admission == "hello",
+    link == "up",
+    not(credential.revoked),
+    link' = "down",
+    credential' = credential.with("revoked", true),
+    peer' = peer.with("phase", "closed").with("closed_by", "credential"),
+    admission' = admission,
+    machine' = machine,
+  }
+
+  action hello_ready: bool = all {
+    admission == "hello",
+    link == "up",
+    not(credential.revoked),
+    peer.phase == "absent",
+    admission' = "ready",
+    peer' = peer.with("phase", "established"),
+    link' = link,
+    credential' = credential,
+    machine' = machine,
+  }
+
+  /// 1012, transport loss, and a link declared dead reconnect with the same credential.
+  action retryable_close: bool = all {
+    admission == "ready",
+    link == "up",
+    not(credential.revoked),
+    link' = "down",
+    credential' = credential,
+    peer' = peer,
+    admission' = admission,
+    machine' = machine,
   }
 
   action reconnect: bool = all {
@@ -50,15 +95,20 @@ module credential_close {
     link' = "up",
     credential' = credential,
     peer' = peer,
+    admission' = admission,
+    machine' = machine,
   }
 
   /// 4401 and 4403 retire the current credential and close this registration's peers.
   action credential_rejected: bool = all {
+    admission == "ready",
     link == "up",
     not(credential.revoked),
     link' = "down",
     credential' = credential.with("revoked", true),
     peer' = peer.with("phase", "closed").with("closed_by", "credential"),
+    admission' = admission,
+    machine' = machine,
   }
 
   action reenroll: bool = all {
@@ -67,6 +117,8 @@ module credential_close {
     credential' = { generation: credential.generation + 1, revoked: false },
     link' = "up",
     peer' = peer,
+    admission' = admission,
+    machine' = machine,
   }
 
   /// A rejection for the retired token leaves the re-enrolled credential in place.
@@ -76,6 +128,8 @@ module credential_close {
     credential' = credential,
     link' = link,
     peer' = peer,
+    admission' = admission,
+    machine' = machine,
   }
 
   /// The one modeled re-enrollment has been rejected. That credential stays revoked.
@@ -85,9 +139,14 @@ module credential_close {
     credential' = credential,
     link' = link,
     peer' = peer,
+    admission' = admission,
+    machine' = machine,
   }
 
   action step: bool = any {
+    hello_blip,
+    hello_reject,
+    hello_ready,
     accept_work,
     retryable_close,
     reconnect,
@@ -103,7 +162,7 @@ module credential_close {
 
   val inv_close_cause: bool =
     if (peer.phase == "closed") peer.closed_by == "credential"
-    else if (peer.phase == "established") peer.closed_by == ""
+    else if (peer.phase == "established" or peer.phase == "absent") peer.closed_by == ""
     else false
 
   val inv_revoked_closes: bool =
@@ -113,10 +172,48 @@ module credential_close {
     credential.generation == 0 or (peer.phase == "closed" and peer.closed_by == "credential")
 
   val inv_credential_domain: bool =
-    (credential.generation == 0 or credential.generation == 1) and (link == "up" or link == "down")
+    (credential.generation == 0 or credential.generation == 1) and
+    (link == "up" or link == "down") and
+    (admission == "hello" or admission == "ready") and
+    machine == "m1" and
+    (admission == "ready" or peer.phase != "established")
+
+  run hello_blip_reconnects_the_same_machine = {
+    init
+      .then(hello_blip)
+      .expect(
+        admission == "hello" and link == "down" and not(credential.revoked) and machine == "m1" and
+        peer.phase == "absent" and credential.generation == 0)
+      .then(reconnect)
+      .expect(
+        admission == "hello" and link == "up" and not(credential.revoked) and machine == "m1" and
+        peer.phase == "absent")
+      .then(hello_ready)
+      .expect(admission == "ready" and peer.phase == "established" and machine == "m1" and not(credential.revoked))
+  }
+
+  run hello_reject_keeps_the_machine_identity = {
+    init
+      .then(hello_reject)
+      .expect(
+        admission == "hello" and credential.revoked and link == "down" and machine == "m1" and
+        peer.phase == "closed" and peer.closed_by == "credential")
+      .then(reconnect.fail())
+  }
+
+  run hello_reject_reenrolls_the_same_machine = {
+    init
+      .then(hello_reject)
+      .then(reenroll)
+      .expect(
+        credential.generation == 1 and not(credential.revoked) and machine == "m1" and
+        peer.phase == "closed" and admission == "hello" and link == "up")
+      .then(hello_ready.fail())
+  }
 
   run retryable_close_keeps_the_peer = {
     init
+      .then(hello_ready)
       .then(accept_work)
       .then(retryable_close)
       .expect(
@@ -130,6 +227,7 @@ module credential_close {
 
   run credential_rejection_closes_peers_without_reconnect = {
     init
+      .then(hello_ready)
       .then(accept_work)
       .then(credential_rejected)
       .expect(
@@ -140,6 +238,7 @@ module credential_close {
 
   run late_rejection_keeps_the_reenrolled_credential = {
     init
+      .then(hello_ready)
       .then(accept_work)
       .then(credential_rejected)
       .then(reenroll)
