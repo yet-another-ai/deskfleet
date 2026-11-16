@@ -1,3 +1,4 @@
+import { APP_FOREGROUND_EVENT } from "@deskfleet/client/app-foreground"
 import { effectScope } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { useConnectionResume } from "./useConnectionResume.ts"
@@ -19,4 +20,14 @@ test("resumes on visible pages and network recovery only", () => {
   scope.stop()
   window.dispatchEvent(new Event("online"))
   expect(resume).toHaveBeenCalledTimes(3)
+})
+
+test("resumes when a native app returns to the foreground", () => {
+  const resume = vi.fn()
+  const scope = effectScope()
+  scope.run(() => useConnectionResume(resume))
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
+  window.dispatchEvent(new Event(APP_FOREGROUND_EVENT))
+  expect(resume).toHaveBeenCalledOnce()
+  scope.stop()
 })

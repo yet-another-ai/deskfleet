@@ -1,4 +1,5 @@
 import { afterEach, expect, test, vi, type Mock } from "vitest"
+import { APP_FOREGROUND_EVENT } from "./app-foreground.ts"
 import { HttpCentralClient, HttpError } from "./http-central.ts"
 import { CentralRequestError, serializeCentralRequestError } from "./request-diagnostics.ts"
 import type { DeskfleetDesktopApi } from "./desktop-api.ts"
@@ -620,6 +621,40 @@ test("returning to a suspended page replaces a silent signaling socket immediate
 
   page.documentTarget.visibilityState = "visible"
   page.documentTarget.dispatchEvent(new Event("visibilitychange"))
+  await vi.advanceTimersByTimeAsync(1)
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+  expect(f.sockets).toHaveLength(2)
+})
+
+test("a native foreground event probes an open socket while the page stays visible", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  page.documentTarget.visibilityState = "visible"
+  page.windowTarget.dispatchEvent(new Event(APP_FOREGROUND_EVENT))
+  expect(f.sockets[0]!.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "ping" }))
+  expect(f.sockets[0]!.close).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(10_001)
+  await vi.advanceTimersByTimeAsync(10)
+  expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
+  expect(f.sockets).toHaveLength(2)
+})
+
+test("a native foreground event replaces an idle socket without a visibility event", async () => {
+  vi.useFakeTimers()
+  const page = pageGlobals()
+  page.documentTarget.visibilityState = "hidden"
+  const f = setup()
+  f.client.onEvent(vi.fn())
+  f.sockets[0]!.onopen!()
+  f.sockets[0]!.onmessage!({ data: JSON.stringify({ type: "ready" }) })
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(f.sockets[0]!.close).not.toHaveBeenCalled()
+
+  page.windowTarget.dispatchEvent(new Event(APP_FOREGROUND_EVENT))
   await vi.advanceTimersByTimeAsync(1)
   expect(f.sockets[0]!.close).toHaveBeenCalledTimes(1)
   expect(f.sockets).toHaveLength(2)

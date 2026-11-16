@@ -214,10 +214,13 @@ reconciliation preserves already authorized peers and their live streams.
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
 alone cannot time out a stale socket. Heartbeat traffic is skipped while the
 page is hidden. Returning to a visible page, restoring a page from the
-back/forward cache, or receiving an `online` event probes a recently active
-socket with an immediate ping and replaces it only when the 10-second round trip
-misses. A socket idle beyond the 60-second deadline is replaced immediately, and
-a pending retry is executed without waiting for its backoff.
+back/forward cache, receiving an `online` event, or a native app returning to
+the foreground probes a recently active socket with an immediate ping and
+replaces it only when the 10-second round trip misses. The native foreground
+event covers a process switch that leaves the WebView visible and emits neither
+`visibilitychange` nor `pageshow`. A socket idle beyond the 60-second deadline
+is replaced immediately, and a pending retry is executed without waiting for
+its backoff.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the
