@@ -8,7 +8,8 @@ import { centralBridgeClient, type CentralBridge, type CentralIpcResult } from "
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 
 vi.mock("electron", () => ({
-  app: { getPath: vi.fn(), once: vi.fn() },
+  app: { getPath: vi.fn(), once: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
+  powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
   ipcMain: { handle: vi.fn() },
   safeStorage: { isAsyncEncryptionAvailable: vi.fn(), decryptStringAsync: vi.fn(), encryptStringAsync: vi.fn() },
@@ -18,7 +19,7 @@ vi.mock("electron", () => ({
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
-import { app, BrowserWindow, ipcMain, net, safeStorage } from "electron"
+import { app, BrowserWindow, ipcMain, net, powerMonitor, safeStorage } from "electron"
 import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
@@ -267,4 +268,43 @@ test("central IPC distinguishes HTTP failures from network failures", async () =
       request: { diagnostics: { kind: "http", status: 502, rpcMethod: "_deskfleet/agent/configuration" } },
     },
   })
+})
+
+
+test("desktop recovery follows blur then focus, ignores initial and repeated focus, and detaches on quit", async () => {
+  const f = await setup()
+  const client = await f.install()
+  const wake = vi.spyOn(client, "wake")
+  const resumed = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "resume")![1]
+  const focused = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-focus")![1]
+  focused()
+  expect(wake).not.toHaveBeenCalled()
+  const blurred = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-blur")![1]
+  blurred()
+  focused()
+  expect(wake).toHaveBeenCalledTimes(1)
+  focused()
+  expect(wake).toHaveBeenCalledTimes(1)
+  resumed()
+  expect(wake).toHaveBeenCalledTimes(2)
+  blurred()
+  focused()
+  expect(wake).toHaveBeenCalledTimes(3)
+  const quitting = vi.mocked(app.once).mock.calls.find(([event]) => String(event) === "will-quit")![1]
+  quitting()
+  expect(powerMonitor.removeListener).toHaveBeenCalledWith("resume", resumed)
+  expect(app.removeListener).toHaveBeenCalledWith("browser-window-focus", focused)
+  expect(app.removeListener).toHaveBeenCalledWith("browser-window-blur", blurred)
+})
+
+
+test("initial desktop focus preserves startup machine admission", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  const client = await f.install()
+  const focused = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-focus")![1]
+  focused()
+  f.fetch.mockResolvedValueOnce(Response.json({ status: "ready" }))
+  await expect(client.rpc("team", "machine", "systemStatus", {})).resolves.toEqual({ status: "ready" })
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(sentRequest(f.fetch)).toMatchObject({ method: "POST", url: `${serverUrl}/api/teams/team/machines/machine/rpc` })
 })

@@ -27,6 +27,14 @@ const RETRY_MAX_MS = 30_000
 /** Resume probes replace a socket only when the link misses this round trip. */
 const PROBE_TIMEOUT_MS = 10_000
 
+interface RecoveryRoster {
+  controller: AbortController
+  promise: Promise<Machine[]>
+  reject: (error: Error) => void
+}
+
+function recovering(): Error { return new Error("Connection is recovering. Try again once reconnected.") }
+
 type SocketMessage = CentralEvent | { type: "ready" } | { type: "ping" } | { type: "pong" }
 
 /** Enrollment can precede the daemon's first capability report. */
@@ -69,8 +77,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #connected = false
   #disposed = false
   #csrf: string | undefined
-  readonly #wake = (): void => {
+  #recoveryEpoch = 0
+  readonly #recoveryRosters = new Map<string, RecoveryRoster>()
+  /** Host-only resume hook. It is deliberately absent from the renderer IPC API. */
+  readonly wake = (): void => {
     if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user))) return
+    this.#recover()
     if (this.#retry) {
       clearTimeout(this.#retry)
       this.#retry = undefined
@@ -86,7 +98,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     this.#stale(socket, 0)
   }
   readonly #visibility = (): void => {
-    if (document.visibilityState === "visible") this.#wake()
+    if (document.visibilityState === "visible") this.wake()
+  }
+  readonly #pageShow = (event: PageTransitionEvent): void => {
+    // Initial page load is not recovery; only a restored document needs a probe.
+    if (event.persisted) this.wake()
   }
   /**
    * A suspended page can resume with an OPEN socket whose route is already
@@ -110,9 +126,9 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     // A process switch can leave the WebView visible, so native resume dispatches
     // its own foreground event. Recover from that instead of a throttled timer.
     if (typeof window !== "undefined" && typeof document !== "undefined") {
-      window.addEventListener("online", this.#wake)
-      window.addEventListener("pageshow", this.#wake)
-      window.addEventListener(APP_FOREGROUND_EVENT, this.#wake)
+      window.addEventListener("online", this.wake)
+      window.addEventListener("pageshow", this.#pageShow)
+      window.addEventListener(APP_FOREGROUND_EVENT, this.wake)
       document.addEventListener("visibilitychange", this.#visibility)
     }
   }
@@ -121,6 +137,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (this.#account.token || this.#options.cookieAuth) {
       try {
         const result = await this.request<{ user: AccountUser; siteAdmin: boolean }>("GET", "/api/me")
+        if (this.#account.user && this.#account.user.id !== result.user.id) this.#disconnect()
         this.#account.user = result.user
         siteAdmin = result.siteAdmin === true
         this.#connect()
@@ -154,8 +171,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       finally { this.#disconnect(); await this.#save({ serverUrl: this.#account.serverUrl }); this.#emit({ type: "accountChanged" }) }
     }
   }
-  async #save(account: SavedAccount): Promise<void> { await this.#options.persist(account); this.#account = account }
-  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, options: Pick<ApiRequestOptions, "timeoutMs" | "totalTimeoutMs" | "retryStatusCodes"> = {}): Promise<T> {
+  async #save(account: SavedAccount): Promise<void> {
+    await this.#options.persist(account)
+    if ((this.#account.token || this.#account.user) && (this.#account.token !== account.token || this.#account.user?.id !== account.user?.id)) this.#disconnect()
+    this.#account = account
+  }
+  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, options: Pick<ApiRequestOptions, "timeoutMs" | "totalTimeoutMs" | "retryStatusCodes" | "beforeFetch"> = {}): Promise<T> {
     if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
       await this.request("GET", "/api/auth/config", undefined, signal)
     }
@@ -300,25 +321,71 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   session(teamId: string, machineId: string, sessionId: string) { return this.request<{ snapshot: AgentSnapshot; lastEventSeq: string; lastObservedAt: string }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}`) }
   events(teamId: string, machineId: string, sessionId: string, after: string, limit: number) { return this.request<{ events: AgentEvent[]; lastEventSeq: string }>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}/events?after=${encodeURIComponent(after)}&limit=${limit}`) }
-  rpc<T>(teamId: string, machineId: string, method: string, params: unknown) { return this.request<T>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }) }
-  createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports" | "mux") { return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }) }
-  createLocalPeer(teamId: string, machineId: string, purpose: "agent" | "terminal") { return this.request<LocalPeerGrant>("POST", "/api/peers/local", { teamId, machineId, purpose }) }
+  async rpc<T>(teamId: string, machineId: string, method: string, params: unknown) { const beforeFetch = await this.#admitMachine(teamId, machineId); return this.request<T>("POST", `/api/teams/${encodeURIComponent(teamId)}/machines/${encodeURIComponent(machineId)}/rpc`, { method, params }, undefined, { beforeFetch }) }
+  async createPeer(teamId: string, machineId: string, purpose: "agent" | "terminal" | "desktop" | "files" | "ports" | "mux") { const beforeFetch = await this.#admitMachine(teamId, machineId); return this.request<PeerGrant>("POST", "/api/peers", { teamId, machineId, purpose }, undefined, { beforeFetch }) }
+  async createLocalPeer(teamId: string, machineId: string, purpose: "agent" | "terminal") { const beforeFetch = await this.#admitMachine(teamId, machineId); return this.request<LocalPeerGrant>("POST", "/api/peers/local", { teamId, machineId, purpose }, undefined, { beforeFetch }) }
   offerPeer(peerId: string, sdp: string, options?: PeerOfferOptions) { return this.request<{ sdp: string }>("POST", `/api/peers/${encodeURIComponent(peerId)}/offer`, { sdp, options }) }
   async startPeer(peerId: string, options: PeerStartOptions) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
   async candidatePeer(peerId: string, candidate: IceCandidate) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/candidate`, { candidate }) }
   async closePeer(peerId: string) { await this.request("DELETE", `/api/peers/${encodeURIComponent(peerId)}`) }
   onEvent(listener: (event: CentralEvent) => void): () => void { this.#listeners.add(listener); this.#connect(); return () => this.#listeners.delete(listener) }
   #emit(event: CentralEvent): void { for (const listener of this.#listeners) listener(event) }
-  #setConnected(value: boolean): void {
-    if (this.#connected === value) return
+  #setConnected(value: boolean, force = false): void {
+    if (this.#connected === value && !force) return
     this.#connected = value
     this.#emit({ type: "connection", connected: value })
+  }
+  #invalidateRoster(teamId?: string): void {
+    for (const [team, roster] of this.#recoveryRosters) {
+      if (teamId !== undefined && team !== teamId) continue
+      this.#recoveryRosters.delete(team)
+      roster.reject(recovering())
+      roster.controller.abort()
+    }
+  }
+  #recover(): void {
+    this.#recoveryEpoch++
+    this.#invalidateRoster()
+    // Also invalidate an in-flight UI roster when a second resume happens
+    // before the first probe finishes. Existing peer traffic remains usable.
+    this.#setConnected(false, true)
+  }
+  async #admitMachine(teamId: string, machineId: string): Promise<() => void> {
+    // Preserve initial API-only clients. Known recovery is the admission boundary;
+    // it does not turn every operation into a network health check.
+    if (this.#recoveryEpoch === 0) return () => { if (this.#recoveryEpoch !== 0) throw recovering() }
+    if (this.#disposed || !this.#connected) throw recovering()
+    const epoch = this.#recoveryEpoch
+    let roster = this.#recoveryRosters.get(teamId)
+    if (!roster) {
+      let resolve!: (machines: Machine[]) => void
+      let reject!: (error: unknown) => void
+      const promise = new Promise<Machine[]>((yes, no) => { resolve = yes; reject = no })
+      roster = { controller: new AbortController(), promise, reject }
+      this.#recoveryRosters.set(teamId, roster)
+      const current = roster
+      void this.request<WireMachine[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/machines`, undefined, roster.controller.signal).then(machines => machines.map(machineFromWire)).then(machines => {
+        if (this.#recoveryRosters.get(teamId) !== current) return
+        resolve(machines)
+      }, error => {
+        if (this.#recoveryRosters.get(teamId) !== current) return
+        this.#recoveryRosters.delete(teamId)
+        reject(error)
+      })
+    }
+    const machines = await roster.promise
+    return () => {
+      // Check immediately before fetch too: cookie-auth may first await CSRF.
+      if (epoch !== this.#recoveryEpoch || !this.#connected || this.#disposed || this.#recoveryRosters.get(teamId) !== roster) throw recovering()
+      if (!machines.some(machine => machine.id === machineId && machine.online)) throw new Error("Machine is offline or no longer available. Try again when it reconnects.")
+    }
   }
   #connect(): void {
     if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user)) || this.#socket || this.#retry) return
     const url = new URL(`${this.#account.serverUrl}/api/client/ws`); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
     const socket = (this.#options.socket ?? (url => new WebSocket(url)))(url.toString())
     this.#socket = socket
+    let authenticated = false
     this.#lastReceived = Date.now()
     socket.onopen = () => { if (!this.#options.cookieAuth) socket.send(JSON.stringify({ type: "authenticate", token: this.#account.token })) }
     socket.onmessage = ({ data }) => {
@@ -326,8 +393,11 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       let event: SocketMessage
       try { event = JSON.parse(String(data)) as SocketMessage } catch { return }
       this.#lastReceived = Date.now()
+      const probing = this.#probeTimer !== undefined
       clearTimeout(this.#probeTimer); this.#probeTimer = undefined
-      if (event.type === "ready") { this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
+      if (probing && authenticated) this.#setConnected(true)
+      if (event.type === "presence" || event.type === "machinesChanged") this.#invalidateRoster(event.teamId)
+      if (event.type === "ready") { authenticated = true; this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
       else if (event.type === "ping") socket.send(JSON.stringify({ type: "pong" }))
       else if (event.type !== "pong") this.#emit(event)
     }
@@ -339,7 +409,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
       clearTimeout(this.#probeTimer); this.#probeTimer = undefined
       // A signaling outage is not a peer revocation. Existing DataChannels keep running.
-      this.#setConnected(false)
+      this.#recover()
       if (event.code === 4401) {
         void this.#save({ serverUrl: this.#account.serverUrl }).then(() => this.#emit({ type: "accountChanged" }))
       } else this.#schedule()
@@ -360,7 +430,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #stale(socket: CentralSocket, graceMs = CLOSE_GRACE_MS): void {
     if (this.#socket !== socket || this.#closeDeadline) return
     clearTimeout(this.#probeTimer); this.#probeTimer = undefined
-    this.#setConnected(false)
+    this.#recover()
     socket.close()
     this.#closeDeadline = setTimeout(() => {
       this.#closeDeadline = undefined
@@ -376,6 +446,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (!immediate) this.#retryDelay = Math.min(this.#retryDelay * 2, RETRY_MAX_MS)
   }
   #disconnect(): void {
+    this.#recoveryEpoch++
+    this.#invalidateRoster()
     clearTimeout(this.#retry); this.#retry = undefined
     clearInterval(this.#heartbeat); this.#heartbeat = undefined
     clearTimeout(this.#closeDeadline); this.#closeDeadline = undefined
@@ -386,9 +458,9 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   dispose(): void {
     this.#disposed = true
     if (typeof window !== "undefined" && typeof document !== "undefined") {
-      window.removeEventListener("online", this.#wake)
-      window.removeEventListener("pageshow", this.#wake)
-      window.removeEventListener(APP_FOREGROUND_EVENT, this.#wake)
+      window.removeEventListener("online", this.wake)
+      window.removeEventListener("pageshow", this.#pageShow)
+      window.removeEventListener(APP_FOREGROUND_EVENT, this.wake)
       document.removeEventListener("visibilitychange", this.#visibility)
     }
     this.#disconnect()

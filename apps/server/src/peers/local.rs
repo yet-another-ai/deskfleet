@@ -46,7 +46,7 @@ pub async fn create(
     }
     .await;
     if let Err(error) = result {
-        revoke_failed_setup(&s, &authorization, "local_connection_failed").await?;
+        revoke_failed_setup(&s, &authorization, "local_connection_failed", &error).await;
         return Err(error);
     }
     Ok(web::Json(payload))

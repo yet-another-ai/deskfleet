@@ -143,13 +143,13 @@ test("local terminal opens during fast Agent previews and durable events replace
   const provider: AgentProvider = {
     id: "fixture",
     async connect(_config, client) {
-      providerClient = client
       return {
         initialization: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } },
         newSession: async () => ({ sessionId: "provider-session" }),
         resume: async () => ({}), setConfigOption: async () => ({ configOptions: [] }),
-        prompt: async () => { promptStarted = true; await prompted; return { stopReason: "end_turn" } },
-        steer: async () => ({ outcome: "inactive" }), cancel: async () => { finishPrompt() }, close: async () => { finishPrompt() },
+        // Background configuration probes connect too; only the prompted connection owns this stream.
+        prompt: async () => { providerClient = client; promptStarted = true; await prompted; return { stopReason: "end_turn" } },
+        steer: async () => ({ outcome: "inactive" }), cancel: async () => { if (providerClient === client) finishPrompt() }, close: async () => { if (providerClient === client) finishPrompt() },
       }
     },
   }
@@ -172,6 +172,10 @@ test("local terminal opens during fast Agent previews and durable events replace
     sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Stream thoughts" }], delivery: "backlog",
   })
   await until(() => promptStarted)
+  // Configuration metadata is durable ACP too, but it has no streaming preview.
+  await providerClient.onUpdate({ sessionId: "provider-session", update: {
+    sessionUpdate: "config_option_update", configOptions: [],
+  } })
   const chunks: string[] = []
   producing = (async () => {
     while (streaming || chunks.length < 1_024) {
@@ -220,8 +224,11 @@ test("local terminal opens during fast Agent previews and durable events replace
     assert.equal(preview.offset, offsets.get(preview.streamId) ?? 0)
     offsets.set(preview.streamId, preview.offset + preview.events.length)
   }
-  assert.ok(packets.findIndex(packet => packet.method === "_deskfleet/session/preview")
-    < packets.findIndex(packet => packet.method === "_deskfleet/session/event" && (packet.params as AgentEvent).kind === "acp"))
+  const firstPreview = packets.findIndex(packet => packet.method === "_deskfleet/session/preview")
+  const firstDurableThought = packets.findIndex(packet => packet.method === "_deskfleet/session/event"
+    && text([packet.params as AgentEvent]) !== "")
+  assert.ok(firstPreview >= 0 && firstDurableThought > firstPreview,
+    `Thought preview (${firstPreview}) must precede its durable event (${firstDurableThought})`)
   assert.equal(text(previews.flatMap(preview => preview.events)), chunks.join(""))
   const durable = packets.filter(packet => packet.method === "_deskfleet/session/event").map(packet => packet.params as AgentEvent)
   assert.equal(new Set(durable.map(event => event.seq)).size, durable.length)

@@ -497,6 +497,11 @@ quint verify specs/revocation_cleanup.qnt --max-steps 11 --invariants \
 quint verify specs/offer_revocation.qnt --max-steps 9 --invariants \
   inv_revocation_is_prompt inv_failed_setup_closes inv_failed_revokes \
   inv_closed_after_revocation inv_one_offer inv_commit_follows_answer inv_domain
+quint verify specs/recovery_admission.qnt --max-steps 10 --invariants \
+  inv_current_roster_before_dispatch inv_existing_work_survives inv_domain
+quint verify specs/peer_creation_failure.qnt --max-steps 4 --invariants \
+  inv_primary_error_preserved inv_notification_follows_revoke \
+  inv_failed_notice_keeps_revocation inv_no_false_cleanup_success inv_domain
 """
 
 [tasks."ci:preflight"]

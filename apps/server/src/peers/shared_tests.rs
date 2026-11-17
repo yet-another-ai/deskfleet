@@ -10,6 +10,8 @@ use tokio::sync::watch;
 
 #[path = "cloudflare_turn_tests.rs"]
 mod cloudflare_turn_tests;
+#[path = "creation_failure_tests.rs"]
+mod creation_failure_tests;
 #[path = "ingress_tests.rs"]
 mod ingress_tests;
 #[path = "local_tests.rs"]

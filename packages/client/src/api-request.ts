@@ -13,6 +13,8 @@ export interface ApiRequestOptions {
   signal?: AbortSignal
   fetch?: typeof fetch
   transport?: RequestTransport
+  /** Revalidate machine admission immediately before fetch; failures remain local errors. */
+  beforeFetch?: () => void
   timeoutMs?: number
   totalTimeoutMs?: number
   /** Writes require an explicit server-side idempotency guarantee before opting in. */
@@ -55,13 +57,19 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
   const started = performance.now()
   let phase: "fetch" | "response_body" = "fetch"
   let status: number | undefined
+  let admissionError: unknown
   const details = () => ({ method, path, body: options.json, signal: options.signal, transport: options.transport,
     elapsedMs: performance.now() - started, phase, ...(status === undefined ? {} : { status }) })
   try {
     return await ky(url, {
       method, json: options.json, headers: options.headers,
       credentials: options.credentials, redirect: options.redirect,
-      signal: options.signal, fetch: options.fetch,
+      signal: options.signal,
+      fetch: options.beforeFetch ? (input, init) => {
+        try { options.beforeFetch!() }
+        catch (error) { admissionError = error; throw error }
+        return options.fetch ? options.fetch(input, init) : globalThis.fetch(input, init)
+      } : options.fetch,
       timeout, totalTimeout,
       retry: {
         limit: idempotent ? 2 : 0,
@@ -76,6 +84,7 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
       },
     }).json<T>()
   } catch (error) {
+    if (admissionError !== undefined) throw admissionError
     if (error instanceof HTTPError) {
       const response = error.response
       const envelope = errorEnvelope(error.data)
