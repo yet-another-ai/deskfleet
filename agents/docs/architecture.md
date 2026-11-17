@@ -211,6 +211,17 @@ machine is offline; unchanged online machines still refresh after reconciliation
 Roster reads started before a signaling connection change are discarded. This
 reconciliation preserves already authorized peers and their live streams.
 
+A known signaling recovery immediately marks the client connection untrusted,
+including while a resume ping is pending. New machine RPCs and local or WebRTC
+peer creation require a live signaling connection and a fresh online machine
+roster from the current account/recovery generation. Concurrent operations share
+one roster read per Team; another recovery, account replacement, disposal, or a
+Team presence change invalidates it. Admission is checked again immediately
+before the host fetch, after both CSRF acquisition and HTTP library preparation.
+This gate does not replay writes, revoke authorized peers, or block account and
+catalog reads. An online snapshot cannot prevent the daemon going offline after
+the read.
+
 Browser and installed-PWA pages suspend timers while hidden, so heartbeat ticks
 alone cannot time out a stale socket. Heartbeat traffic is skipped while the
 page is hidden. Returning to a visible page, restoring a page from the
@@ -220,7 +231,8 @@ replaces it only when the 10-second round trip misses. The native foreground
 event covers a process switch that leaves the WebView visible and emits neither
 `visibilitychange` nor `pageshow`. A socket idle beyond the 60-second deadline
 is replaced immediately, and a pending retry is executed without waiting for
-its backoff.
+its backoff. Electron's main-process client takes the same recovery path on
+power resume and window focus; it does not depend on renderer DOM events.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the

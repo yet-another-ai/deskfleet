@@ -52,7 +52,7 @@ pub async fn offer(
         // That revocation's notice can reach the daemon before this offer creates
         // its peer and close nothing. Notify again now that the offer was answered
         // or abandoned.
-        revoke_failed_setup(&s, &authorization, "negotiation_failed").await?;
+        revoke_failed_setup(&s, &authorization, "negotiation_failed", error).await;
     }
     Ok(web::Json(json!({"sdp":answer?})))
 }
@@ -92,7 +92,7 @@ async fn negotiate(
     if s.store.fail_peer_offer(peer_id).await? {
         // The caller notifies a withdrawn grant once.
         if !withdrawn(&error) {
-            revoke_failed_setup(s, authorization, "negotiation_failed").await?;
+            revoke_failed_setup(s, authorization, "negotiation_failed", &error).await;
         }
         return Err(error);
     }

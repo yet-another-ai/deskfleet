@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from "electron"
+import { app, BrowserWindow, ipcMain, powerMonitor, safeStorage, shell } from "electron"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
@@ -114,6 +114,13 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   client.onEvent(broadcast)
   // File and port peers live in main; the renderer owns the analytics SDK.
   const stopTelemetry = setPeerTelemetrySink(event => broadcast({ type: "peerTelemetry", event }))
-  app.once("will-quit", () => { stopTelemetry(); client.dispose() })
+  const wake = () => client.wake()
+  powerMonitor.on("resume", wake)
+  app.on("browser-window-focus", wake)
+  app.once("will-quit", () => {
+    powerMonitor.removeListener("resume", wake)
+    app.removeListener("browser-window-focus", wake)
+    stopTelemetry(); client.dispose()
+  })
   return client
 }

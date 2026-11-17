@@ -14,10 +14,11 @@ layer for an earlier provisional shape.
 
 ## What a model is for
 
-A model checks interleavings of grants, signaling, link liveness, credential
-close and its cleanup, local claims, offer revocation, routing, and Mux stream
-lifetime. The prose documents remain the decisions. A model is updated in the
-same change as the decision it can violate. A refactor that preserves those
+A model checks interleavings of grants, signaling, link liveness, recovery
+admission, credential close and its cleanup, local claims, offer revocation,
+setup error preservation, routing, and Mux stream lifetime. The prose documents
+remain the decisions. A model is updated in the same change as the decision it
+can violate. A refactor that preserves those
 decisions leaves the model alone. Codecs, byte budgets, file layout, and
 catalog or history behavior are outside that rule.
 
@@ -80,34 +81,47 @@ identical.
 | `specs/local_claim.qnt` | 1 claim secret | 6 steps |
 | `specs/revocation_cleanup.qnt` | 1 registration, 1 peer set, 1 fault window | 11 steps |
 | `specs/offer_revocation.qnt` | 1 grant, 1 offer, 1 daemon route of 4 frames | 9 steps |
+| `specs/recovery_admission.qnt` | 1 client, 1 Team/Machine, 2 recovery generations | 10 steps |
+| `specs/peer_creation_failure.qnt` | 1 grant, 1 primary failure, independent revoke/notice failures | 4 steps |
 
 Deadlines are actions (`reservation_due`, `authorization_due`, `setup_due`,
 `link_dead`), not counters. Changing a duration in the prose leaves the model
 unchanged. Changing which event closes, preserves, or replaces a peer updates
 the action.
 
-`mise run spec:test` typechecks and simulates every `specs/*.qnt`:
+`mise run spec:test` typechecks every `specs/*.qnt`, executes its named
+regression runs, and samples interleavings through its `init` and `step`:
 
 ```sh
 quint typecheck "$spec"
-quint test "$spec" --max-samples 200 --seed 1 --match '^(?:<run names>)$'
+quint test "$spec" --backend typescript --max-samples 200 --seed 1 --match '^(?:<run names>)$'
+quint run "$spec" --backend typescript --max-samples 200 --max-steps 20 \
+  --seed 1 --verbosity 1 --invariants <all inv_* names>
 ```
 
 Quint's default test filter executes only definitions whose names end in
 `Test`. `scripts/check-specs.ts` selects every `run` in the file instead, so
-the witness names below stay free of that suffix.
+the witness names below stay free of that suffix. Each model declares its
+state predicates as `val inv_*`, with an optional `: bool` annotation. The
+script passes every such predicate to the simulator. Named runs assert their
+specific witness; sampled runs check every invariant at initialization and
+after each transition they visit. Repeating a named run does not explore
+different action orderings unless that run itself chooses them.
 
-The task fails when `specs/` contains no model, so deleting the last file
-cannot pass. A disabled step is written `action.fail()` and is the last step
-of its run: Quint does not carry state past `fail()`. While editing one
+The task fails when `specs/` contains no model or a model has no named run or
+invariant, so missing checks cannot pass silently. A disabled step is written
+`action.fail()` and is the last step of its run: Quint does not carry state past
+`fail()`. While editing one
 scenario, narrow it with
-`quint test specs/<file>.qnt --match <run> --max-samples 20 --seed 1`.
+`quint test specs/<file>.qnt --backend typescript --match <run> --max-samples 20 --seed 1`.
 The committed task keeps the shared seed and the full sample count. A seed
 that exposes a real invariant failure is added as its own named `run`; the
 task does not accumulate extra seeds.
 
-The simulator backend stays Quint's default TypeScript runner. The Rust
-runner is a later switch only if `spec:test` exceeds the budget below.
+The task explicitly selects the TypeScript runner rather than depending on
+Quint's backend default. The 200 sampled traces of at most 20 transitions
+complement the named regressions; they do not exhaust all interleavings or
+replace the symbolic checks below.
 
 `mise run spec:verify` is local. Each module is listed explicitly and passes
 its invariants with `--invariants`, so a failure names the predicate:
@@ -561,6 +575,74 @@ Named runs: `early_notice_is_repeated_after_the_answer`,
 | `revoked_grant_sends_no_offer` | `apps/server/src/peers/signaling.rs` `offer` runs `authorize_webrtc` before it stores or sends the offer. `closing_shared_peer_during_offer_prevents_answer_and_ice_publication` covers a close that lands while the daemon holds the offer. |
 | `answered_offer_keeps_the_daemon_peer` | `apps/server/src/peers/shared_tests.rs` `shared_offer_candidates_and_daemon_ice_cross_instances`. |
 
+## Recovery admission
+
+`specs/recovery_admission.qnt` connects signaling recovery to admission of new
+machine work. `link_liveness.qnt` checks socket replacement and existing peer
+lifetime; it does not track whether a cached machine roster can authorize a
+new request. This model adds a recovery generation, the generation and online
+state of a roster read, and the moment a machine RPC or peer creation is sent.
+Native foreground and Electron power resume use the same `resume` action.
+
+The old behavior has a two-transition counterexample: `resume` enters probing
+while the cached machine remains online; `dispatch` sends a request using that
+old roster. `inv_current_roster_before_dispatch` fails. The corrected dispatch
+requires both a ready signaling connection and a roster from the current
+generation. A pong alone cannot certify the machine roster. Late reads, failed
+reads, a second resume, and disposal are separate transitions. The invariant
+records whether an unsafe dispatch ever occurred, so a later successful read
+cannot hide the violation.
+
+The named runs cover blocking during a probe, fresh online/offline rosters,
+discarding late reads, retrying a failed read without replaying a write, disposal,
+and preserving existing peers and accepted work. The 10-step symbolic bound
+includes two recoveries, a new offline roster, the old online read arriving
+after it, and attempted dispatch.
+`packages/client/src/http-central-recovery.test.ts` exercises these schedules
+against the real HTTP client with controlled sockets and fetch completion.
+It also resumes during CSRF acquisition and HTTP library preparation, checking
+admission at the host fetch rather than only before asynchronous preparation.
+`apps/desktop/src/main/central-account.test.ts` checks the main-process resume
+and focus hooks and their cleanup.
+
+The model intentionally covers one Team/Machine. Implementation tests cover
+separate Teams and account replacement. Initial API-only clients and already
+authorized peer traffic retain their existing behavior. An online snapshot
+does not promise that the daemon stays online after the read, and the model
+does not assert that every HTTP 503 is preventable.
+
+## Peer setup error preservation
+
+`specs/peer_creation_failure.qnt` starts after a grant has been reserved and
+the initial online check has passed. Setup failure, durable revocation, and
+notification are independent actions. The primary error and returned error
+are explicit state; resource cleanup alone cannot establish correct HTTP
+behavior.
+
+The old behavior has two counterexamples:
+
+- `setup_fails` then `revoke_fails` returns the storage error instead of the
+  original failure (2 transitions).
+- `router_fails`, `setup_fails`, `revoke_ok`, then `notify_fails` returns
+  `machine_offline` instead of the original failure despite committed
+  revocation (4 transitions).
+
+Both violate `inv_primary_error_preserved`. The fixed model keeps cleanup
+failure separate from the response. Its other invariants require notification
+to follow revocation, retain committed revocation after a failed notice, and
+avoid claiming cleanup succeeded when it did not. The 4-step bound includes
+both minimal counterexamples. Five named runs cover revocation failure,
+notification failure after TURN/local/offer failure, withdrawn authorization,
+and successful cleanup.
+
+`apps/server/src/peers/creation_failure_tests.rs` injects failures into an
+isolated PostgreSQL test schema and calls the actual handlers. The five
+regressions assert the original HTTP status, code, message, and relevant reason,
+as well as the persisted revocation state. They fail on the old implementation
+and pass with cleanup errors logged separately. These traces prove reachable
+code defects; they do not identify the cause of a particular production event
+without its corresponding server evidence.
+
 ## Outside the models
 
 The following stay in the implementation and its existing tests:
@@ -571,14 +653,16 @@ The following stay in the implementation and its existing tests:
 - Media codecs, capture, and desktop input.
 - Catalog synchronization, ACP, Git, and session history.
 
-A transient rate-limit or storage failure is covered by the existing server
-tests cited above. It is not a separate model.
+Rate-limit policy and storage implementation remain in server tests. A storage
+failure is an abstract transition where its ordering affects cleanup or the
+error returned to a caller.
 
 ## CI class
 
-`spec:test` is part of `ci:preflight`. Its budget for all current modules at
-200 samples is 60 seconds. Above that, reduce samples or split a module
-before moving the task off preflight. `spec:verify` is not a CI job.
+`spec:test` is part of `ci:preflight`. Its budget for all current modules,
+including named runs and 200 sampled traces per model, is 60 seconds. Above
+that, reduce samples or split a module before moving the task off preflight.
+`spec:verify` is not a CI job.
 
 A pull request or `main` push is `specs_only` when every changed path is
 either `specs/*.qnt` or already classified as documentation outside `docs/`.
