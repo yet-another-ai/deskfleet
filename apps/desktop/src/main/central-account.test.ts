@@ -271,17 +271,40 @@ test("central IPC distinguishes HTTP failures from network failures", async () =
 })
 
 
-test("desktop wake and window activation invoke shared recovery and quit removes listeners", async () => {
+test("desktop recovery follows blur then focus, ignores initial and repeated focus, and detaches on quit", async () => {
   const f = await setup()
   const client = await f.install()
   const wake = vi.spyOn(client, "wake")
   const resumed = vi.mocked(powerMonitor.on).mock.calls.find(([event]) => String(event) === "resume")![1]
   const focused = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-focus")![1]
-  resumed()
   focused()
+  expect(wake).not.toHaveBeenCalled()
+  const blurred = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-blur")![1]
+  blurred()
+  focused()
+  expect(wake).toHaveBeenCalledTimes(1)
+  focused()
+  expect(wake).toHaveBeenCalledTimes(1)
+  resumed()
   expect(wake).toHaveBeenCalledTimes(2)
+  blurred()
+  focused()
+  expect(wake).toHaveBeenCalledTimes(3)
   const quitting = vi.mocked(app.once).mock.calls.find(([event]) => String(event) === "will-quit")![1]
   quitting()
   expect(powerMonitor.removeListener).toHaveBeenCalledWith("resume", resumed)
   expect(app.removeListener).toHaveBeenCalledWith("browser-window-focus", focused)
+  expect(app.removeListener).toHaveBeenCalledWith("browser-window-blur", blurred)
+})
+
+
+test("initial desktop focus preserves startup machine admission", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
+  const client = await f.install()
+  const focused = vi.mocked(app.on).mock.calls.find(([event]) => String(event) === "browser-window-focus")![1]
+  focused()
+  f.fetch.mockResolvedValueOnce(Response.json({ status: "ready" }))
+  await expect(client.rpc("team", "machine", "systemStatus", {})).resolves.toEqual({ status: "ready" })
+  expect(f.fetch).toHaveBeenCalledOnce()
+  expect(sentRequest(f.fetch)).toMatchObject({ method: "POST", url: `${serverUrl}/api/teams/team/machines/machine/rpc` })
 })

@@ -241,7 +241,10 @@ is replaced immediately, and a pending retry is executed without waiting for
 its backoff. Only a persisted `pageshow` (back/forward-cache restore) enters
 recovery; the initial page load must not invalidate startup admission or roster
 reads. Electron's main-process client takes the same recovery path on
-power resume and window focus; it does not depend on renderer DOM events.
+power resume and a window focus following blur; it does not depend on renderer
+DOM events. Initial focus and repeated focus without an intervening blur leave
+admission unchanged. An actual blur/focus transition between app windows still
+conservatively triggers recovery.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the

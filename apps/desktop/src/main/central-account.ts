@@ -115,11 +115,21 @@ export async function installCentralAccount(options: { openAuthorization?: (url:
   // File and port peers live in main; the renderer owns the analytics SDK.
   const stopTelemetry = setPeerTelemetrySink(event => broadcast({ type: "peerTelemetry", event }))
   const wake = () => client.wake()
+  // Initial window creation and duplicate focus notifications are not a resume.
+  let blurred = false
+  const blur = () => { blurred = true }
+  const focus = () => {
+    if (!blurred) return
+    blurred = false
+    wake()
+  }
   powerMonitor.on("resume", wake)
-  app.on("browser-window-focus", wake)
+  app.on("browser-window-blur", blur)
+  app.on("browser-window-focus", focus)
   app.once("will-quit", () => {
     powerMonitor.removeListener("resume", wake)
-    app.removeListener("browser-window-focus", wake)
+    app.removeListener("browser-window-blur", blur)
+    app.removeListener("browser-window-focus", focus)
     stopTelemetry(); client.dispose()
   })
   return client
