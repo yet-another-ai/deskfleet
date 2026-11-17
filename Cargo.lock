@@ -3853,9 +3853,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a069272b90d908d15152711b38153edabcf67a5dcc490123197af7fd9ad78d9d"
+checksum = "4481f1c7729d23de02a516384278293a4f95a3bdd4b735fc474076675fed9634"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -3919,9 +3919,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-apple"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94395e1c8cc1e0795d3bac933d8701582eb3e6b274db09919dca24eab379d801"
+checksum = "eb35019b322abbb04c24f6549a0f6582ca6581e6efa8ddd5a3baefdcdae05e9f"
 dependencies = [
  "anyhow",
  "async-task",
@@ -3959,9 +3959,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-linux"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a92c93a4828b4d54f47bad288950da47f2fbaa51bd8b845ac5ef14d86c5f7c8e"
+checksum = "61627577b59b2f97a4758c17f389e3a02f300fc3531cb6350ea79da832b54516"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -4004,9 +4004,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-macos"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a33d8962910c761956b806a318f8ae4d2b582066cc440a6be3502ddaaa1272cb"
+checksum = "c74b7984a584eebefdf69aec1b5d89d928e2efde862006427b09695425117ad0"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -4038,6 +4038,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle",
  "semver",
+ "serde_json",
  "smallvec",
  "strum",
  "uuid",
@@ -4057,9 +4058,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-platform"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27afaeacefaeeb7b3c509a6447375afa13dbf17f9fa4a99c534d6bad59b48b47"
+checksum = "1360d84fd3872d05c73df7bd9a6ed95deb06cb643fff5d6bc08dc49f869b2fdb"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -4073,9 +4074,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-web"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cebce373802858838045347792f4aa634591a73739582664ac2019a0348bbff1"
+checksum = "7130937fb0559085cd0bbf5a2434857588f76f6a2aaa9dac19f04abad9e27ae9"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -4102,9 +4103,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-wgpu"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c02b5c6805781c8978d568df0bd62845a728bc9ac176ec8c4337b65a5daf41f"
+checksum = "65445d0869ebcec35e3ffcae1f8f5ab7f2f6e9da9abacf6d42b284da455f7cba"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -4129,9 +4130,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-fast-windows"
-version = "0.1.15"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e07b0bad5ff42b905882f91797540299a6747a1a34d07696083e3be3bb580c67"
+checksum = "59fb3d59d263955c73b7acf8b19df9ade3ef2805eae81ef740a91217b38e04e2"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -5339,9 +5340,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "lettre"
-version = "0.11.23"
+version = "0.11.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
+checksum = "f294f3d7cdb313e578acef7d7727d4e8d897e0fcd0d6d58c19959cec95073f19"
 dependencies = [
  "async-trait",
  "base64 0.23.1",

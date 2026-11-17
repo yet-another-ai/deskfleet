@@ -27,8 +27,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-gpui = { package = "gpui-fast", version = "=0.1.15", default-features = false, features = ["font-kit", "wayland", "x11"] }
-gpui_platform = { package = "gpui-fast-platform", version = "=0.1.15", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui = { package = "gpui-fast", version = "=0.1.17", default-features = false, features = ["font-kit", "wayland", "x11"] }
+gpui_platform = { package = "gpui-fast-platform", version = "=0.1.17", default-features = false, features = ["font-kit", "wayland", "x11"] }
 nsh-core = "=0.5.1"
 nsh-base = { version = "=0.5.1", default-features = false }
 nsh-platform-gpui = { version = "=0.5.1", default-features = false }
