@@ -26,7 +26,13 @@ provide(agentResourceContextKey, computed(() => {
 }))
 const { t } = useI18n()
 const projection = useConversationProjection(() => props.events, () => props.snapshot)
-const transcript = computed<TranscriptEntry[]>(previous => groupTranscript(props.projection ?? projection.value, props.snapshot, previous))
+const previewing = computed(() => {
+  const lastSeq = props.events.at(-1)?.seq
+  return !!lastSeq && BigInt(lastSeq) > BigInt(props.snapshot.session.lastEventSeq || "0")
+})
+const transcript = computed<TranscriptEntry[]>(previous =>
+  groupTranscript(props.projection ?? projection.value, props.snapshot, previous, { previewing: previewing.value }),
+)
 const optimisticKey = "initial-session-input"
 const optimisticSessions = new Set<string>()
 const displayedTranscript = computed<TranscriptEntry[]>(() => {

@@ -11,7 +11,7 @@ import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
 import { resolveAuvPath } from "./auv.ts"
-import { desktopDaemonDirectory } from "./daemon-directory.ts"
+import { desktopDaemonDirectory, desktopWorkspaceDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
@@ -81,10 +81,13 @@ function start(): void {
     process.once("SIGTERM", () => lifecycle.quit())
     // Logging out or shutting down must not wait on a client hidden in the tray.
     powerMonitor.on("shutdown", () => lifecycle.quit())
+    const daemonDirectory = desktopDaemonDirectory()
+    const workspaceDirectory = desktopWorkspaceDirectory()
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
       createLocalAgentRuntime({
-        directory: desktopDaemonDirectory(),
+        directory: daemonDirectory,
+        workspaceDirectory,
         auvPath: resolveAuvPath({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }),
       }),
       publishLocalAgentState,
@@ -123,7 +126,14 @@ function start(): void {
       state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
       resolveDesktopInstallSource(),
     )
-    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings, new RemoteAgentSettingsController(desktopDaemonDirectory()))
+    installSettings(
+      localAgent,
+      keepAwake,
+      notificationSettings,
+      new WorktreeRootSettingsController(daemonDirectory, workspaceDirectory === daemonDirectory ? daemonDirectory : join(workspaceDirectory, "worktrees")),
+      updateSettings,
+      new RemoteAgentSettingsController(daemonDirectory),
+    )
     app.on("will-quit", (event) => {
       updates.close()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier

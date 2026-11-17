@@ -37,11 +37,14 @@ function resourceFileName(uri: string): string {
 export class SessionAttachments {
   readonly #directory: string
   readonly #draftsDirectory: string
+  readonly #legacyDirectory: string | undefined
   #lastSweepAt = 0
 
-  constructor(directory: string) {
+  constructor(directory: string, legacyDirectory?: string) {
     this.#directory = resolve(directory, "session-attachments")
     this.#draftsDirectory = join(this.#directory, ".drafts")
+    const legacy = legacyDirectory ? resolve(legacyDirectory, "session-attachments") : undefined
+    this.#legacyDirectory = legacy && legacy !== this.#directory ? legacy : undefined
   }
 
   #sessionPath(sessionId: string): string {
@@ -176,5 +179,6 @@ export class SessionAttachments {
 
   async destroy(sessionId: string): Promise<void> {
     await rm(this.#sessionPath(sessionId), { recursive: true, force: true })
+    if (this.#legacyDirectory) await rm(join(this.#legacyDirectory, sessionId), { recursive: true, force: true })
   }
 }

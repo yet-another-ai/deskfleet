@@ -5,8 +5,12 @@ import type { WorktreeRootState } from "../../../../packages/client/src/settings
 /** The local daemon reads the same preference before provisioning each Session. */
 export class WorktreeRootSettingsController {
   readonly #directory: string
+  readonly #defaultRoot: string
 
-  constructor(directory: string) { this.#directory = directory }
+  constructor(directory: string, defaultRoot = directory) {
+    this.#directory = directory
+    this.#defaultRoot = defaultRoot
+  }
 
   getPreferences(): Promise<WorktreePreferences> {
     return readWorktreePreferences(this.#directory)
@@ -20,9 +24,7 @@ export class WorktreeRootSettingsController {
   async get(): Promise<WorktreeRootState> {
     return {
       root: await readWorktreeRoot(this.#directory),
-      // Existing machine/ and newer machines/<id>/ catalogs each keep their own
-      // session-worktrees directory. Show their common parent, not one Team.
-      defaultRoot: this.#directory,
+      defaultRoot: this.#defaultRoot,
     }
   }
 

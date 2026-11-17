@@ -15,6 +15,7 @@ export interface HostedDaemon {
 
 export interface LocalAgentRuntimeOptions {
   directory: string
+  workspaceDirectory?: string
   auvPath?: string
   /** Starts the daemon library in this process; tests inject a deterministic host. */
   start?: (directory: string) => Promise<HostedDaemon>
@@ -29,6 +30,7 @@ export function createLocalAgentRuntime(options: LocalAgentRuntimeOptions): Loca
     permissionMode: "guided",
     centralTransport: desktopCentralTransport,
     ...(options.auvPath ? { auvPath: options.auvPath } : {}),
+    ...(options.workspaceDirectory ? { workspaceDirectory: options.workspaceDirectory } : {}),
   }))
   let hosted: HostedDaemon | undefined
   return {
