@@ -600,7 +600,9 @@ includes two recoveries, a new offline roster, the old online read arriving
 after it, and attempted dispatch.
 `packages/client/src/http-central-recovery.test.ts` exercises these schedules
 against the real HTTP client with controlled sockets and fetch completion.
-It also resumes during CSRF acquisition and HTTP library preparation, checking
+Handler tests distinguish initial `pageshow` from a persisted back/forward-cache
+restore: only the latter maps to the model's `resume` action.
+The tests also resume during CSRF acquisition and HTTP library preparation, checking
 admission at the host fetch rather than only before asynchronous preparation.
 `apps/desktop/src/main/central-account.test.ts` checks the main-process resume
 and focus hooks and their cleanup.

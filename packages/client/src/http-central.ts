@@ -100,6 +100,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   readonly #visibility = (): void => {
     if (document.visibilityState === "visible") this.wake()
   }
+  readonly #pageShow = (event: PageTransitionEvent): void => {
+    // Initial page load is not recovery; only a restored document needs a probe.
+    if (event.persisted) this.wake()
+  }
   /**
    * A suspended page can resume with an OPEN socket whose route is already
    * dead. Probe before replacing it so the server never holds two viewer
@@ -123,7 +127,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     // its own foreground event. Recover from that instead of a throttled timer.
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       window.addEventListener("online", this.wake)
-      window.addEventListener("pageshow", this.wake)
+      window.addEventListener("pageshow", this.#pageShow)
       window.addEventListener(APP_FOREGROUND_EVENT, this.wake)
       document.addEventListener("visibilitychange", this.#visibility)
     }
@@ -455,7 +459,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     this.#disposed = true
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       window.removeEventListener("online", this.wake)
-      window.removeEventListener("pageshow", this.wake)
+      window.removeEventListener("pageshow", this.#pageShow)
       window.removeEventListener(APP_FOREGROUND_EVENT, this.wake)
       document.removeEventListener("visibilitychange", this.#visibility)
     }

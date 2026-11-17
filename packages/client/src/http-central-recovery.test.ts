@@ -14,7 +14,7 @@ class Socket {
 }
 const clients: HttpCentralClient[] = []
 afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
-function setup(cookieAuth = false) {
+function setup(cookieAuth = false, signalingReady = true) {
   const window = new EventTarget()
   vi.stubGlobal("window", window)
   vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }))
@@ -33,7 +33,7 @@ function setup(cookieAuth = false) {
   const events = vi.fn()
   client.onEvent(events)
   const socket = sockets[0]!
-  socket.message("ready")
+  if (signalingReady) socket.message("ready")
   const resume = () => window.dispatchEvent(new Event(APP_FOREGROUND_EVENT))
   const readyRoster = async (online = true, index = 0) => {
     await vi.waitFor(() => expect(pending[index]).toBeDefined())
@@ -48,6 +48,31 @@ function operations(client: HttpCentralClient, team = "team") {
     client.rpc(team, "machine", "systemStatus", {}),
   ].map(result => result.catch(error => error))
 }
+
+test.each([false, true])("initial pageshow preserves startup admission when signaling ready is %s", async signalingReady => {
+  const f = setup(false, signalingReady)
+  f.events.mockClear()
+  window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: false }))
+  expect(f.events).not.toHaveBeenCalled()
+  expect(f.socket.send).not.toHaveBeenCalled()
+  await expect(f.client.rpc("team", "machine", "systemStatus", {})).resolves.toEqual({})
+  expect(f.pending).toHaveLength(0)
+  expect(f.requests).toHaveLength(1)
+})
+
+test("persisted pageshow requires a probe and current roster before new work", async () => {
+  const f = setup()
+  window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }))
+  expect(f.events).toHaveBeenLastCalledWith({ type: "connection", connected: false })
+  expect(f.socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "ping" }))
+  await expect(f.client.createPeer("team", "machine", "mux")).rejects.toThrow(/recovering/)
+  expect(f.requests).toHaveLength(0)
+  f.socket.message("pong")
+  const creating = f.client.createPeer("team", "machine", "mux")
+  await f.readyRoster()
+  await expect(creating).resolves.toEqual({})
+  expect(f.requests.filter(request => request.method === "POST")).toHaveLength(1)
+})
 
 test("native foreground while visible blocks new operations until probe and current roster finish", async () => {
   const f = setup()

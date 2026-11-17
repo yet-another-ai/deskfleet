@@ -231,7 +231,9 @@ replaces it only when the 10-second round trip misses. The native foreground
 event covers a process switch that leaves the WebView visible and emits neither
 `visibilitychange` nor `pageshow`. A socket idle beyond the 60-second deadline
 is replaced immediately, and a pending retry is executed without waiting for
-its backoff. Electron's main-process client takes the same recovery path on
+its backoff. Only a persisted `pageshow` (back/forward-cache restore) enters
+recovery; the initial page load must not invalidate startup admission or roster
+reads. Electron's main-process client takes the same recovery path on
 power resume and window focus; it does not depend on renderer DOM events.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
