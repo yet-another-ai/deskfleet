@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import SpringSurface from "../common/SpringSurface.ts"
-import { Archive, ArchiveRestore, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
+import { Archive, ArchiveRestore, ExternalLink, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger, DialogTitle } from "reka-ui"
 import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
+import { openSessionInNewWindow } from "@deskfleet/client/session-window"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { sessionCanMarkUnread } from "../../services/agent-conversation.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -15,10 +18,13 @@ import SessionConfirmDialog from "./SessionConfirmDialog.vue"
 
 const props = defineProps<{ sessionId: string; machineId?: string; title: string; context?: "directory" | "worktree"; archiveState?: "active" | "archiving" | "archived"; disabled?: boolean }>()
 const { t } = useI18n()
+const client = usePlatformClient()
+const account = useAccountSession()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const pins = usePinnedSessionsStore()
-const machineId = computed(() => props.machineId ?? fleet.targetId)
+const machineId = computed(() => props.machineId ?? fleet.findSession(props.sessionId)?.machine.id ?? account?.machineId.value ?? fleet.targetId)
+const canOpenInNewWindow = computed(() => client.platform !== "web" && !client.mobile)
 const pinned = computed(() => pins.isPinned(machineId.value, props.sessionId))
 const canMarkUnread = computed(() => sessionCanMarkUnread(agents.sessions[props.sessionId]))
 const trigger = useTemplateRef<InstanceType<typeof ContextMenuTrigger>>("trigger")
@@ -68,6 +74,14 @@ function togglePin(): void {
   if (pinned.value) pins.unpin(machineId.value, props.sessionId)
   else pins.pin(machineId.value, props.sessionId, props.title)
 }
+function openInNewWindow(): void {
+  open.value = false
+  openSessionInNewWindow({
+    sessionId: props.sessionId,
+    ...(account?.teamId.value ? { teamId: account.teamId.value } : {}),
+    ...(machineId.value ? { machineId: machineId.value } : {}),
+  })
+}
 function confirm(): void {
   if (props.disabled || !props.context) return
   const action = dialog.value
@@ -82,6 +96,7 @@ function confirm(): void {
     <ContextMenuTrigger ref="trigger" as="div" @keydown="keyboardOpen"><slot :request-archive="() => choose('archive')" :pending="pending" /></ContextMenuTrigger>
     <ContextMenuPortal>
       <ContextMenuContent :as="SpringSurface" :aria-label="t('agent.sessionActions')" :collision-padding="8" class="ui-menu z-50 flex w-44 flex-col" loop @close-auto-focus="closeFocus" @interact-outside="dialog && $event.preventDefault()">
+        <ContextMenuItem v-if="canOpenInNewWindow" as="button" type="button" class="ui-menu-item" data-session-action="open-in-new-window" @select="openInNewWindow"><ExternalLink :size="14" aria-hidden="true" />{{ t('agent.openInNewWindow') }}</ContextMenuItem>
         <ContextMenuItem v-if="archiveState !== 'archived'" as="button" type="button" class="ui-menu-item" @select="togglePin"><component :is="pinned ? PinOff : Pin" :size="14" aria-hidden="true" />{{ t(pinned ? 'agent.unpin' : 'agent.pin') }}</ContextMenuItem>
         <ContextMenuItem v-if="canMarkUnread" as="button" type="button" class="ui-menu-item" :disabled="disabled || pending" @select="markUnread"><Mail :size="14" aria-hidden="true" />{{ t('agent.markUnread') }}</ContextMenuItem>
         <ContextMenuItem as="button" type="button" class="ui-menu-item" :disabled="disabled || !archiveState" @select="choose('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</ContextMenuItem>

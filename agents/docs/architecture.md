@@ -859,7 +859,9 @@ opening its local resource; integer local IDs do not identify resources across
 machines. Closing the account, changing Teams, or removing a Machine releases
 the affected scopes and connections. The UI displays synchronized history
 while a machine is offline and attaches through WebRTC for remote live Agent,
-Git, and terminal operations. The local transport below replaces
+Git, and terminal operations. The desktop client can also open an individual
+Session in a focused standalone window (singleton per Team, Machine, and
+Session) without the workspace sidebar. The local transport below replaces
 WebRTC for those messages when Electron operates its own machine.
 The working directory remains separate from terminal
 ownership. Failed Session provisioning remains visible without a fabricated

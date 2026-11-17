@@ -3,6 +3,7 @@ import { defineStore } from "pinia"
 import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { FileResourceRequest } from "../../../client/src/files.ts"
+import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
@@ -82,6 +83,10 @@ export function listenMermaidLocate(handler: (code: string, source?: MermaidSour
 }
 
 export const useLayoutStore = defineStore("layout", () => {
+  const standaloneSession = ref(
+    (typeof window !== "undefined" && parseSessionWindowHash(window.location.hash) !== undefined)
+      || router.currentRoute.value.query.window === "session",
+  )
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
   const desktopSidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
@@ -91,8 +96,9 @@ export const useLayoutStore = defineStore("layout", () => {
   const sessionWindowRequest = shallowRef<SessionWindowRequest>()
   const sessionWindowsAvailable = computed(() => router.currentRoute.value.name === "session")
   const sidebarOpen = computed({
-    get: () => compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
+    get: () => standaloneSession.value ? false : compact.value ? compactPanel.value === "sidebar" : desktopSidebarOpen.value,
     set: value => {
+      if (standaloneSession.value) return
       if (!compact.value) desktopSidebarOpen.value = value
       else if (value) compactPanel.value = "sidebar"
       else if (compactPanel.value === "sidebar") compactPanel.value = null
@@ -110,7 +116,10 @@ export const useLayoutStore = defineStore("layout", () => {
   const terminalPanelOpen = useLocalStorage("deskfleet.terminal-panel-open", false)
   const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)
 
-  function toggleSidebar(): void { sidebarOpen.value = !sidebarOpen.value }
+  function toggleSidebar(): void {
+    if (standaloneSession.value) return
+    sidebarOpen.value = !sidebarOpen.value
+  }
   function toggleDetails(): void {
     compactPanel.value = detailsOpen.value ? null : "details"
   }
@@ -132,6 +141,7 @@ export const useLayoutStore = defineStore("layout", () => {
   return {
     compact,
     closeCompactPanel,
+    standaloneSession,
     sidebarOpen,
     sidebarWidth,
     detailsOpen,

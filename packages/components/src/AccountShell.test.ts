@@ -689,3 +689,36 @@ test("mobile hides the sidebar billing entry and labels Team usage navigation wi
   expect(page().findAll('nav[aria-label="Settings sections"] a').map(link => link.text())).toEqual(["Team settings", "Usage", "AI usage"])
   expect(events).not.toHaveBeenCalledWith("billing_entry_clicked", expect.anything())
 })
+
+test("standalone Session window selects its Team and Machine and opens focused without a sidebar", async () => {
+  const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+  const fake = fakeCentral({
+    teams: [{ id: "6", name: "Other", role: "member" }, { id: "7", name: "Team", role: "member" }],
+    machines: [machineFixture("101", "6", "First", false), machineFixture("102", "7", "Second", false)],
+  })
+  const snapshot = (machineId: string) => ({
+    ...agentSnapshot(),
+    session: { ...agentSnapshot().session, workspaceId: "20", lastEventSeq: "1" },
+    inputs: [agentInput({ content: [{ type: "text", text: `Message from ${machineId}` }] })],
+  })
+  Object.assign(fake.central, {
+    catalog: vi.fn(async (_teamId: string, machineId: string) => ({ machineId, lastObservedAt: "2026-10-25T00:00:00Z", providers: { providers: [] }, snapshot: { teamId: "1", machineId: "1", machineName: machineId, workspaces: [{ id: "20", name: `Workspace ${machineId}`, worktrees: [{ id: "21", workspaceId: "20", directories: [{ path: "/code" }] }] }], sessions: [] } })),
+    sessions: vi.fn(async (_teamId: string, machineId: string) => [snapshot(machineId)]),
+    session: vi.fn(async (_teamId: string, machineId: string) => ({ snapshot: snapshot(machineId), lastEventSeq: "1", lastObservedAt: "2026-10-25T00:00:00Z" })),
+    events: vi.fn(async (_teamId: string, machineId: string) => ({ events: [agentEvent(1, "input", snapshot(machineId).inputs[0]!)], lastEventSeq: "1" })),
+  })
+
+  mountShell(fake.central, "darwin")
+  await settled(() => expect(view!.text()).toContain("Workspace 101"))
+  await page().get('aside section[data-machine-id="101"] a[href="#/sessions/30"]').trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 })
+  await flushPromises()
+  await page().get('[data-session-action="open-in-new-window"]').trigger("click")
+  expect(openSpy).toHaveBeenCalledWith(`${window.location.origin}${window.location.pathname}#/sessions/30?window=session&teamId=6&machineId=101`, "_blank", "popup,width=1120,height=780")
+
+  view!.unmount(); disposePinia(pinia); pinia = createPinia()
+  await router.replace("/sessions/30?window=session&teamId=7&machineId=102")
+  mountShell(fake.central, "darwin")
+  await settled(() => expect(view!.text()).toContain("Message from 102"))
+  expect(fake.central.machines).toHaveBeenLastCalledWith("7")
+  expect(page().find("aside [data-sidebar-scroll-area]").exists()).toBe(false)
+})

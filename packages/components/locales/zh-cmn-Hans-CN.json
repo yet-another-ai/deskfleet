@@ -1367,6 +1367,7 @@
       "search": "进行了 {n} 次搜索",
       "other": "使用了 {n} 个工具"
     },
+    "openInNewWindow": "在新窗口中打开",
     "pin": "置顶会话",
     "unpin": "取消置顶",
     "sessionActions": "会话操作",
