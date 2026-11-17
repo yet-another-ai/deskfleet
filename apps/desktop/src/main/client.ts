@@ -42,6 +42,7 @@ import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
+import { installGoogleTag } from "./google-tag.ts"
 
 function start(): void {
   const dshHost = electronDshHost(process.execPath)
@@ -60,6 +61,7 @@ function start(): void {
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
+    installGoogleTag()
     installRendererDownloadGuard()
     installDesktopMediaIpc()
     const windowsDesktopService = installWindowsDesktopService()

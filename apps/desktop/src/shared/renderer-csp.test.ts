@@ -73,15 +73,15 @@ test("production renderers do not open connect-src for Gravatar avatar probes", 
   expect(connect).toBe("connect-src 'self' blob: data:")
 })
 
-test("configured Google Tag renderers permit only Google Tag script, beacon, and image origins", () => {
-  const policy = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true, true, undefined, true)
+test("Google Tag runs outside the application renderer without opening its CSP", () => {
+  const policy = injectRendererContentSecurityPolicy(CSP_PLACEHOLDER, true, true)
   const directives = Object.fromEntries(policy.split("; ").map(entry => {
     const [name, ...rest] = entry.split(" ")
     return [name, rest.join(" ")]
   }))
-  expect(directives["script-src"]).toBe("'self' 'wasm-unsafe-eval' https://www.googletagmanager.com")
-  expect(directives["img-src"]).toBe("'self' data: blob: https://gravatar.com https://www.googletagmanager.com https://www.google-analytics.com https://www.googleadservices.com https://googleads.g.doubleclick.net")
-  expect(directives["connect-src"]).toBe("'self' blob: data: https://featureassets.org https://prodregistryv2.org https://statsigapi.net https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://region1.google-analytics.com https://www.googleadservices.com https://googleads.g.doubleclick.net")
+  expect(directives["script-src"]).toBe("'self' 'wasm-unsafe-eval'")
+  expect(directives["img-src"]).toBe("'self' data: blob: https://gravatar.com")
+  expect(directives["connect-src"]).toBe("'self' blob: data: https://featureassets.org https://prodregistryv2.org https://statsigapi.net")
 })
 
 test("renderer HTML must declare the policy placeholder", () => {

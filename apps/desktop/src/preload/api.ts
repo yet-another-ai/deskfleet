@@ -22,6 +22,7 @@ import { muxChannelsApi } from "./mux-channels.ts"
 import { windowsDesktopServiceApi } from "./windows-desktop-service.ts"
 import { NATIVE_DESKTOP_CHANNEL } from "@deskfleet/client/native-desktop"
 import { APPLICATION_RESTART_CHANNEL } from "@deskfleet/client/application"
+import { GOOGLE_TAG_CHANNEL } from "../shared/google-tag-bridge.ts"
 
 const locale = process.argv
   .find((argument) => argument.startsWith(LOCALE_ARGUMENT_PREFIX))
@@ -59,6 +60,7 @@ return {
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
   application: { restart: () => ipcRenderer.invoke(APPLICATION_RESTART_CHANNEL) as Promise<void> },
+  googleTag: { send: message => ipcRenderer.invoke(GOOGLE_TAG_CHANNEL, message) as Promise<void> },
   appearance: appearanceApi(),
   applications: applicationsApi(),
   networkDiagnostics: networkDiagnosticsApi(),
