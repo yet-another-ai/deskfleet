@@ -13,6 +13,7 @@ import { filesApi } from "./files.ts"
 import { onboardingApi } from "./onboarding.ts"
 import { appearanceApi } from "./appearance.ts"
 import { portsApi } from "./ports.ts"
+import { webPreviewApi } from "./web-preview.ts"
 import { applicationsApi } from "./applications.ts"
 import { networkDiagnosticsApi } from "./network-diagnostics.ts"
 import { speechApi } from "./speech.ts"
@@ -75,6 +76,7 @@ return {
   ...(process.platform === "linux" || process.platform === "win32" || process.platform === "darwin" ? { nativeDesktop: { open: (request: import("@deskfleet/client/native-desktop").NativeDesktopRequest) => ipcRenderer.invoke(NATIVE_DESKTOP_CHANNEL, request) as Promise<void> } } : {}),
   files: filesApi(),
   ports: portsApi(),
+  webPreview: webPreviewApi(),
   localChannels: localChannelsApi(),
   muxChannels: muxChannelsApi(),
   settings: {

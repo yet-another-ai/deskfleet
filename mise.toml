@@ -345,6 +345,11 @@ description = "Verify Appearance controls, native theme, CSS fonts, and restart 
 depends = ["desktop:build"]
 run = "node apps/desktop/scripts/smoke-appearance.ts"
 
+[tasks."desktop:smoke-web-preview"]
+description = "Verify real Electron webview containment, CSP, preload stripping, and loopback loading"
+depends = ["install"]
+run = "node apps/desktop/scripts/smoke-web-preview.ts"
+
 [tasks."desktop:smoke-updates"]
 description = "Verify update consent, progress, retry, shutdown ordering, and sidebar UI in Electron"
 depends = ["desktop:build"]

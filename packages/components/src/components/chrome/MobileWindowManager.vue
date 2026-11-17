@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
-import { useElementSize, useLocalStorage, usePreferredReducedMotion } from "@vueuse/core"
+import { Globe, Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
+import { StorageSerializers, useElementSize, useLocalStorage, usePreferredReducedMotion } from "@vueuse/core"
 import { computed, defineAsyncComponent, nextTick, provide, reactive, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useMobileViewportSwipe } from "../../composables/useMobileViewportSwipe.ts"
+import {
+  formatWebPreviewTabTitle,
+  isWebPreviewSupported,
+  normalizeStoredWebPreviewTarget,
+  type WebPreviewTarget,
+} from "../../services/web-preview.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { pendingMermaidLocate, useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { pendingPreviewLocate } from "../../stores/previews.ts"
@@ -17,19 +23,28 @@ import ChangesPanel from "../details/ChangesPanel.vue"
 import GithubPanel from "../details/GithubPanel.vue"
 import GithubIcon from "../common/GithubIcon.vue"
 import SessionDesktopPanel from "../desktop/SessionDesktopPanel.vue"
+import SessionWebPreviewPanel from "../preview/SessionWebPreviewPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import WindowToolbar from "./WindowToolbar.vue"
 import MobileViewFrame from "./MobileViewFrame.vue"
 import { windowHeaderActionsId, windowHeaderActionsTarget, windowHeaderActionsTargetKey } from "./windowHeaderActions.ts"
 
+interface StoredMobileWebPreview {
+  id: string
+  target: WebPreviewTarget | null
+}
+
 type MobileView =
   | { id: string; title: string; kind: "chat" | "changes" | "desktops" | "github" }
   | { id: string; title: string; kind: "terminal"; terminalId: string }
   | { id: string; title: string; kind: "preview"; request: SessionWindowRequest }
+  | { id: string; title: string; kind: "webPreview"; previewId: string; target: WebPreviewTarget | null }
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
-const platform = usePlatformClient().platform
+const platformClient = usePlatformClient()
+const platform = platformClient.platform
+const webPreviewAvailable = computed(() => isWebPreviewSupported(platformClient))
 const fleet = useFleetStore()
 const layout = useLayoutStore()
 const terminals = useTerminalsStore()
@@ -41,6 +56,12 @@ const worktree = computed(() => location.value?.worktree)
 const hasGithub = computed(() => !!location.value?.workspace?.githubRepositories?.length)
 const githubOpen = useLocalStorage(() => `deskfleet.mobile-github-tab:${props.sessionId}`, false)
 const previews = ref<Extract<MobileView, { kind: "preview" }>[]>([])
+const storedWebPreviews = useLocalStorage<StoredMobileWebPreview[]>(
+  () => `deskfleet.mobile-web-previews:${props.sessionId}`,
+  [],
+  { serializer: StorageSerializers.object },
+)
+const webPreviewTitles = reactive<Record<string, string>>({})
 const activeId = ref("chat")
 const visited = ref(new Set(["chat"]))
 const overviewOpen = ref(false)
@@ -48,6 +69,21 @@ const busy = ref(false)
 const error = ref<string>()
 const headerId = computed(() => windowHeaderActionsId(`mobile-${props.sessionId}`))
 provide(windowHeaderActionsTargetKey, computed(() => windowHeaderActionsTarget(`mobile-${props.sessionId}`)))
+
+const webPreviewViews = computed<Extract<MobileView, { kind: "webPreview" }>[]>(() => {
+  if (!webPreviewAvailable.value || !Array.isArray(storedWebPreviews.value)) return []
+  return storedWebPreviews.value.flatMap(entry => {
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || !entry.id) return []
+    const target = normalizeStoredWebPreviewTarget(entry.target)
+    return [{
+      id: `web-preview:${entry.id}`,
+      kind: "webPreview" as const,
+      previewId: entry.id,
+      target,
+      title: webPreviewTitles[entry.id] || formatWebPreviewTabTitle(target, undefined, t("webPreview.title")),
+    }]
+  })
+})
 
 const views = computed<MobileView[]>(() => [
   { id: "chat", kind: "chat", title: location.value ? sessionLabel(location.value.session) : t("panel.chat") },
@@ -59,14 +95,15 @@ const views = computed<MobileView[]>(() => [
     title: terminals.titles[shell.id]?.trim() || shell.title.trim() || t("terminal.tab", { number: index + 1 }),
   })),
   ...previews.value,
+  ...webPreviewViews.value,
 ])
 const activeIndex = computed(() => Math.max(0, views.value.findIndex(view => view.id === activeId.value)))
 const activeView = computed(() => views.value[activeIndex.value]!)
 
 function reveal(index: number): void {
   const view = views.value[index]
-  // A peek or overview must not start a terminal or a remote desktop connection.
-  if (view && view.kind !== "terminal" && view.kind !== "desktops") visited.value.add(view.id)
+  // A peek or overview must not start a terminal, a remote desktop, or a web preview connection.
+  if (view && view.kind !== "terminal" && view.kind !== "desktops" && view.kind !== "webPreview") visited.value.add(view.id)
 }
 function select(index: number): void {
   const view = views.value[index]
@@ -81,6 +118,11 @@ function openGithub(): void {
   selectId("github")
 }
 
+watch(() => props.sessionId, () => {
+  activeId.value = "chat"
+  visited.value = new Set(["chat"])
+  for (const key of Object.keys(webPreviewTitles)) delete webPreviewTitles[key]
+})
 watch(views, next => {
   if (!next.some(view => view.id === activeId.value)) { activeId.value = "chat"; reveal(0) }
 })
@@ -102,6 +144,34 @@ watch([pendingPreviewLocate, pendingMermaidLocate], requests => {
 }, { flush: "sync" })
 
 if (!terminals.loaded) void terminals.refresh()
+function targetsEqual(a: WebPreviewTarget | null, b: WebPreviewTarget | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.displayHost === b.displayHost
+    && a.targetHost === b.targetHost
+    && a.targetPort === b.targetPort
+    && a.path === b.path
+}
+function updateWebPreviewTarget(previewId: string, target: WebPreviewTarget | null): void {
+  const normalized = normalizeStoredWebPreviewTarget(target)
+  const list = Array.isArray(storedWebPreviews.value) ? storedWebPreviews.value : []
+  let changed = false
+  const next = list.map(entry => {
+    if (entry?.id !== previewId) return entry
+    const existing = normalizeStoredWebPreviewTarget(entry.target)
+    if (targetsEqual(existing, normalized)) return entry
+    changed = true
+    return { id: previewId, target: normalized }
+  })
+  if (changed) storedWebPreviews.value = next
+}
+function newWebPreview(): void {
+  if (!webPreviewAvailable.value || busy.value) return
+  const id = crypto.randomUUID()
+  const current = Array.isArray(storedWebPreviews.value) ? storedWebPreviews.value : []
+  storedWebPreviews.value = [...current, { id, target: null }]
+  selectId(`web-preview:${id}`)
+}
 async function newTerminal(): Promise<void> {
   if (!worktree.value || busy.value) return
   busy.value = true
@@ -120,6 +190,12 @@ async function closeView(view: MobileView): Promise<void> {
     if (view.kind === "terminal") await terminals.hangup(view.terminalId)
     else if (view.kind === "github") githubOpen.value = false
     else if (view.kind === "preview") previews.value = previews.value.filter(preview => preview.id !== view.id)
+    else if (view.kind === "webPreview") {
+      const list = Array.isArray(storedWebPreviews.value) ? storedWebPreviews.value : []
+      storedWebPreviews.value = list.filter(entry => entry?.id !== view.previewId)
+      delete webPreviewTitles[view.previewId]
+      visited.value.delete(view.id)
+    }
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { busy.value = false }
 }
@@ -188,8 +264,8 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
     <ErrorNotice v-if="error" :error="error" />
     <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging: dragging || settling, zooming }">
       <div ref="scroller" class="absolute inset-0 overscroll-contain" :class="overviewOpen ? 'overflow-x-hidden overflow-y-auto' : 'overflow-clip'" :data-view-overview="overviewOpen ? '' : undefined">
-        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree || hasGithub ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
-          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview' || view.kind === 'github'" :busy="busy" :direct="!overviewOpen && !zooming && (dragging || settling)" :scroll-origin="scrollOrigin" @motion="surfaceMotion[view.id] = $event" @select="select(index)" @close="closeView(view)">
+        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree || hasGithub || webPreviewAvailable ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
+          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview' || view.kind === 'github' || view.kind === 'webPreview'" :busy="busy" :direct="!overviewOpen && !zooming && (dragging || settling)" :scroll-origin="scrollOrigin" @motion="surfaceMotion[view.id] = $event" @select="select(index)" @close="closeView(view)">
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />
@@ -197,6 +273,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
               <SessionDesktopPanel v-else-if="view.kind === 'desktops'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" class="h-full" />
               <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = truncateGeneratedTitle($event)" />
               <SessionPreviewWindow v-else-if="view.kind === 'preview'" :request="view.request" />
+              <SessionWebPreviewPanel v-else-if="view.kind === 'webPreview'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" :initial-target="view.target" class="h-full" @title="webPreviewTitles[view.previewId] = $event" @change="updateWebPreviewTarget(view.previewId, $event)" />
             </template>
             <div v-else-if="view.kind === 'terminal'" data-unopened-terminal class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">
               <SquareTerminal :size="80" :stroke-width="1.25" aria-hidden="true" />
@@ -206,10 +283,15 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
               <MonitorPlay :size="80" :stroke-width="1.25" aria-hidden="true" />
               <span class="text-4xl">{{ t('desktopOverview.title') }}</span>
             </div>
+            <div v-else-if="view.kind === 'webPreview'" data-unopened-web-preview class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">
+              <Globe :size="80" :stroke-width="1.25" aria-hidden="true" />
+              <span class="text-4xl">{{ view.title }}</span>
+            </div>
           </MobileViewFrame>
           <div v-if="overviewOpen" class="absolute inset-x-4 flex gap-2" :style="{ top: `${gridHeight}px` }">
             <button v-if="hasGithub && !githubOpen" type="button" class="ui-button h-11 flex-1" @click="openGithub"><GithubIcon :size="16" />{{ t('githubPanel.addTab') }}</button>
             <button v-if="worktree" type="button" :disabled="busy" class="ui-button h-11 flex-1 disabled:op-40" @click="newTerminal"><Plus :size="18" aria-hidden="true" />{{ t('terminal.new') }}</button>
+            <button v-if="webPreviewAvailable" type="button" :disabled="busy" data-new-web-preview class="ui-button h-11 flex-1 disabled:op-40" @click="newWebPreview"><Globe :size="18" aria-hidden="true" />{{ t('webPreview.new') }}</button>
           </div>
         </div>
       </div>

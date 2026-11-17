@@ -1,14 +1,18 @@
 # TCP port forwarding
 
-Desktop can forward a local loopback TCP listener to a loopback TCP port on an
+Clients can forward a local loopback TCP listener to a loopback TCP port on an
 enrolled Machine over WebRTC. Remote control's **Port forwarding** tab manages
-these listeners for the selected Team and Machine in the Desktop app. Web and
-mobile clients do not expose this tab or have a local forwarding API.
+manual listeners for the selected Team and Machine in the Desktop app. Pure Web
+browsers expose neither this tab nor a local forwarding API; Capacitor iOS and
+Android clients expose only the programmatic `ports` bridge (through
+`crates/desktop-viewer` JNI/C-FFI and `@deskfleet/capacitor-bridge`) to power
+Session Web Preview.
 
 ```text
-Local browser / debugger / other TCP client
+Local browser / WebView / debugger / other TCP client
   -> 127.0.0.1:<local port>
-  -> Desktop main process -> WebRTC DataChannel -> target daemon
+  -> Local WebRTC peer (Desktop main or Capacitor native bridge)
+  -> WebRTC DataChannel -> target daemon
   -> 127.0.0.1:<target port> or [::1]:<target port>
 ```
 
@@ -60,12 +64,15 @@ const active = await window.deskfleet.ports.list()
 await window.deskfleet.ports.stop(forward.id)
 ```
 
-`targetHost` defaults to `127.0.0.1`; only the exact literals `127.0.0.1` and `::1`
-are accepted. `targetPort` is 1–65535. `localPort` defaults to zero, asking the OS
+`targetHost` defaults to `127.0.0.1`; only the exact literals `localhost`,
+`127.0.0.1`, and `::1` are accepted (`localhost` instructs `deskfleet-ports`
+to try `[::1]` and then `127.0.0.1` without DNS resolution). `targetPort` is
+1–65535. `localPort` defaults to zero, asking the OS
 to choose an available port; an explicit port must be available. Local listeners
-always bind `127.0.0.1`. The bridge validates parameters and accepts calls only
-from the trusted main renderer. There is no automatic discovery, persistence,
-UDP, reverse forwarding, or remote LAN destination support.
+always bind `127.0.0.1`. Both Electron preload (`window.deskfleet.ports` from
+the trusted main renderer) and the Capacitor bridge expose this API. There is no
+automatic discovery, persistent daemon-side forwarding, UDP, reverse forwarding,
+or remote LAN destination support.
 
 ## Authorization and native transport
 
@@ -99,10 +106,15 @@ transport head-of-line delays.
 
 ## Validation
 
-Native tests exercise real WebRTC peers and loopback sockets. Desktop tests
-cover parameter validation, trusted-renderer access, native adaptation, and
-cleanup of active and pending forwards. Signaling tests cover early ICE,
-revocation, expiry, account changes, setup cancellation, and signaling outages.
+Native tests exercise real WebRTC peers and loopback sockets (including
+`localhost` auto-family probing and the mobile JSON command registry). Desktop
+tests cover parameter validation, trusted-renderer access, native adaptation,
+`WebPreviewController` `<webview>` lockdown, and cleanup of active and pending
+forwards. Electron smoke verification (`desktop:smoke-web-preview`) exercises a
+real `<webview>` guest under production CSP, including loading `X-Frame-Options: DENY`
+content, preload stripping, and main-frame origin containment. Signaling tests
+cover early ICE, revocation, expiry, account changes, setup cancellation, and
+signaling outages.
 
 The existing backend smoke workflow also exercises port forwarding through the
 real owned-account/PostgreSQL backend and daemon, with concurrent binary streams, a
@@ -113,6 +125,39 @@ directly and with a configured TURN service:
 mise -E development run backend:smoke
 DESKFLEET_SMOKE_RELAY_ONLY=1 mise -E development run backend:smoke
 ```
+
+## Session Web Preview
+
+Sessions allow opening multiple interactive Web Preview windows from the Dockview
+`+` menu or the compact/mobile overview on Desktop and Capacitor mobile clients.
+Pure Web browsers omit Web Preview creation and discard restored Web Preview
+entries because browsers cannot bind or tunnel loopback ports safely.
+
+Preview inputs accept loopback port shorthands (`5173`, `:5173/docs`) or HTTP
+loopback URLs (`localhost`, `127.0.0.1`, `[::1]`) and reject credentials or
+non-`http:` schemes. The toolbar always shows the logical loopback URL while the
+underlying transport connects directly on local Desktop machines or opens an
+ephemeral `ports.start()` forward (`127.0.0.1:<localPort>`) on remote machines
+and Capacitor mobile clients.
+
+- **Desktop (Electron)** renders pages inside an isolated `<webview>` in the
+  ephemeral `temp:deskfleet-web-preview` partition. `WebPreviewController` in
+  main authorizes loopback origins per `BrowserWindow`, enforces
+  `will-attach-webview` and guest `will-navigate` / `will-redirect` containment,
+  strips preloads, enables sandbox/context isolation with `nodeIntegration` off,
+  denies guest `window.open` and permission prompts, and exposes a Desktop-only
+  detached DevTools toggle.
+- **Mobile (Capacitor iOS & Android)** binds local forwards through
+  `crates/desktop-viewer` JNI / C-FFI (`mobile_ports`), renders in an
+  `<iframe>` under loopback-only HTTP cleartext configuration (`NSAllowsLocalNetworking`
+  on iOS, loopback `network_security_config.xml` and compatibility mixed-content
+  mode on Android), omits DevTools, and allows external browser handoff.
+
+Open targets persist per Session (`deskfleet.window-layout-v4:<sessionId>` and
+`deskfleet.mobile-web-previews:<sessionId>`). Restored background tabs and mobile
+overview cards remain disconnected until first activated, and keep their live
+preview alive once opened until the user changes target port/host or closes the
+tab.
 
 ## Relation to external editors
 

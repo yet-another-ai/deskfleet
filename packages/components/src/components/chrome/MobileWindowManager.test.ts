@@ -1,6 +1,9 @@
+import { getClient } from "@deskfleet/client/platform"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
@@ -22,17 +25,52 @@ afterEach(async () => {
   await router.replace("/")
 })
 
-async function setup() {
+const webPreviewStub = {
+  props: ["sessionId", "active", "initialTarget"],
+  emits: ["title", "change"],
+  template: '<div data-session-web-preview :data-session-id="sessionId" :data-active="String(active)" :data-target="initialTarget ? `${initialTarget.displayHost}:${initialTarget.targetPort}${initialTarget.path}` : \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', { displayHost: \'localhost\', targetHost: \'localhost\', targetPort: 5173, path: \'/app\' })" /></div>',
+}
+
+interface SetupOptions {
+  platform?: DeskfleetDesktopApi["platform"]
+  mobile?: boolean
+  ports?: DeskfleetDesktopApi["ports"]
+}
+
+async function setup(options: SetupOptions = {}) {
   useFleetStore(pinia).catalog = catalogFixture()
   useTerminalsStore(pinia).loaded = true
   await router.replace(`/sessions/${sessionId}`)
+  const baseClient = getClient()
+  const platform = options.platform ?? "web"
+  const mobile = options.mobile ?? true
+  const ports = "ports" in options
+    ? options.ports
+    : {
+        start: async () => ({
+          id: "fwd-1",
+          target: { teamId: "1", machineId: "1" },
+          targetHost: "localhost" as const,
+          targetPort: 5173,
+          localHost: "127.0.0.1" as const,
+          localPort: 41234,
+          createdAt: "2026-11-16T00:00:00.000Z",
+        }),
+        stop: async () => {},
+        list: async () => [],
+      }
   wrapper = mount(MobileWindowManager, {
     props: { sessionId }, attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], stubs: {
-      SessionView: true, ChangesPanel: true, WindowToolbar: true,
-      GithubPanel: { emits: ["insert"], template: '<button data-insert-github @click="$emit(\'insert\')">Insert</button>' },
-      SessionDesktopPanel: { props: ["sessionId", "active"], template: '<div data-session-desktops :data-session-id="sessionId" :data-active="String(active)" />' },
-    } },
+    global: {
+      plugins: [pinia, router, i18n],
+      provide: { [platformClientKey as symbol]: { ...baseClient, platform, mobile, ports } },
+      stubs: {
+        SessionView: true, ChangesPanel: true, WindowToolbar: true,
+        GithubPanel: { emits: ["insert"], template: '<button data-insert-github @click="$emit(\'insert\')">Insert</button>' },
+        SessionDesktopPanel: { props: ["sessionId", "active"], template: '<div data-session-desktops :data-session-id="sessionId" :data-active="String(active)" />' },
+        SessionWebPreviewPanel: webPreviewStub,
+      },
+    },
   })
   await flushPromises()
   return wrapper
@@ -86,4 +124,65 @@ test("mobile previews pause in overview, behind the sidebar and when another vie
   await flushPromises()
   expect(panel().attributes("data-active")).toBe("false")
   expect(view.get('[data-mobile-view="changes"]').attributes("aria-hidden")).toBe("false")
+})
+
+test("pure web omits mobile web preview creation even when persisted views exist", async () => {
+  window.localStorage.setItem(
+    `deskfleet.mobile-web-previews:${sessionId}`,
+    JSON.stringify([{ id: "saved-1", target: { displayHost: "localhost", targetHost: "localhost", targetPort: 5173, path: "/" } }]),
+  )
+  const view = await setup({ platform: "web", mobile: false, ports: undefined })
+  await view.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+
+  expect(view.find("[data-new-web-preview]").exists()).toBe(false)
+  expect(view.find('[data-mobile-view="web-preview:saved-1"]').exists()).toBe(false)
+})
+
+test("mobile overview creates, persists lazily, activates, and closes web previews", async () => {
+  const first = await setup({ platform: "web", mobile: true })
+  await first.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+
+  await first.get("[data-new-web-preview]").trigger("click")
+  await flushPromises()
+  expect(first.get("[data-session-web-preview]").attributes("data-active")).toBe("true")
+
+  await first.get("[data-stub-commit]").trigger("click")
+  await flushPromises()
+
+  const storedAfterCommit = JSON.parse(window.localStorage.getItem(`deskfleet.mobile-web-previews:${sessionId}`)!)
+  expect(storedAfterCommit).toHaveLength(1)
+  expect(storedAfterCommit[0].target).toEqual({
+    displayHost: "localhost",
+    targetHost: "localhost",
+    targetPort: 5173,
+    path: "/app",
+  })
+  const previewId = storedAfterCommit[0].id as string
+
+  first.unmount()
+  disposePinia(pinia)
+  pinia = createPinia()
+
+  const second = await setup({ platform: "web", mobile: true })
+  expect(second.find("[data-session-web-preview]").exists()).toBe(false)
+
+  await second.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+  expect(second.find("[data-session-web-preview]").exists()).toBe(false)
+  expect(second.find("[data-unopened-web-preview]").exists()).toBe(true)
+
+  await second.get(`[data-mobile-view="web-preview:${previewId}"] button[aria-label="localhost:5173"]`).trigger("click")
+  await flushPromises()
+  expect(second.get("[data-session-web-preview]").attributes("data-active")).toBe("true")
+  expect(second.get("[data-session-web-preview]").attributes("data-target")).toBe("localhost:5173/app")
+
+  await second.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+  await second.get(`[data-mobile-view="web-preview:${previewId}"] button[aria-label^="Close "]`).trigger("click")
+  await flushPromises()
+
+  expect(second.find(`[data-mobile-view="web-preview:${previewId}"]`).exists()).toBe(false)
+  expect(JSON.parse(window.localStorage.getItem(`deskfleet.mobile-web-previews:${sessionId}`)!)).toEqual([])
 })

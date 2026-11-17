@@ -378,15 +378,17 @@ the browser's scrolling behavior. Reduced-motion preferences settle targeted
 movement immediately and stop inertial movement at its current position.
 
 Below 1024 CSS pixels, a Session shows one full-width view at a time.
-Chat, Changes, each terminal, and each preview form one ordered list without
+Chat, Changes, Desktops, each terminal, each static preview, and (on Desktop
+and Capacitor mobile) each persisted Web Preview form one ordered list without
 nested tabs or a two-dimensional window layout. The title bar zooms the content
 out into a three-column overview. Existing view instances keep their DOM parents
 and original layout dimensions while their live surfaces scale and move into
 cards. Selecting a card animates it back to full size. Preview content is inert;
 the overview scrolls vertically and closes with its title-bar button or Escape.
-Unopened terminals show placeholders. Only selecting a terminal view, including
-committing a horizontal swipe to it, mounts its renderer and attaches to the shell.
-Opening the overview or canceling a swipe does not attach unopened terminals.
+Unopened terminals, Desktops, and Web Previews show placeholders. Only selecting
+one of those views, including committing a horizontal swipe to it, mounts its
+renderer and starts its connection. Opening the overview or canceling a swipe
+does not attach or connect unopened views.
 The sidebar uses a Reka UI Drawer bottom sheet with opening and closing
 animations and swipe-to-dismiss. It closes on navigation and does not overwrite
 saved desktop panel widths or open states.
@@ -1504,11 +1506,15 @@ never in place of an authorization or capture error. Generic desktop failures
 also suggest checking that the machine is awake and unlocked.
 
 Desktop's [TCP forwarding](ports.md) API owns local loopback
-listeners in its main process, independently of windows and the local Agent.
+listeners in its main process, independently of windows and the local Agent;
+Capacitor mobile clients reuse the same `deskfleet-ports` native engine through
+`crates/desktop-viewer` and `@deskfleet/capacitor-bridge` for Session Web
+Preview (`localhost`, `127.0.0.1`, or `::1`, where `localhost` probes `[::1]`
+then `127.0.0.1` without DNS).
 The target daemon enables native forwarding only for a `ports:forward` grant.
-Remote control's Port forwarding tab manages these ephemeral connections within
-the selected Team and Machine. They are not catalog resources; closing them
-does not stop the target service.
+Remote control's Port forwarding tab (Desktop-only) manages manual connections
+within the selected Team and Machine. They are not catalog resources; closing
+them does not stop the target service.
 
 The central backend optionally collects coturn Redis Pub/Sub counters by Team
 and stores them in PostgreSQL. See
@@ -1620,6 +1626,11 @@ Opening a preview selects that machine and display in Remote control, where
 the full desktop connects with mouse/keyboard control and supported system audio
 enabled by default. Viewers can change these settings while connected.
 Tools mount when first visited and retain their connections while switching tabs.
+On Desktop and Capacitor mobile, Sessions can also open and persist multiple Web
+Preview tabs from the `+` window menu or compact overview; they remain lazily
+disconnected until first activated, connecting directly on local Desktop
+machines or over ephemeral loopback forwards on remote Machines, while pure Web
+browsers omit Web Preview creation.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, battery charge and power
 direction when the machine reports a battery, and machine details from the owning

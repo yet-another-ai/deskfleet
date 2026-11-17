@@ -19,7 +19,9 @@ function port(value: unknown, allowZero: boolean): number {
 }
 function request(value: unknown): PortForwardRequest {
   const input = object(value), target = object(input.target)
-  if (input.targetHost !== undefined && input.targetHost !== "127.0.0.1" && input.targetHost !== "::1") throw new Error("Target must be a literal loopback address")
+  if (input.targetHost !== undefined && input.targetHost !== "localhost" && input.targetHost !== "127.0.0.1" && input.targetHost !== "::1") {
+    throw new Error("Target must be a loopback host")
+  }
   if (input.localHost !== undefined) throw new Error("Local listener always binds 127.0.0.1")
   return {
     target: { teamId: identifier(target.teamId), machineId: identifier(target.machineId) },

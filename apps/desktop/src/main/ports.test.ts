@@ -17,7 +17,9 @@ test("the hidden bridge validates loopback targets and applies ephemeral local p
   expect(start).toHaveBeenLastCalledWith({ target, localPort: 0, targetHost: "127.0.0.1", targetPort: 3000 })
   await invokePorts(api, "start", [{ target, targetHost: "::1", localPort: 41000, targetPort: 9229 }])
   expect(start).toHaveBeenLastCalledWith({ target, localPort: 41000, targetHost: "::1", targetPort: 9229 })
-  for (const value of ["localhost", "0.0.0.0", "192.168.0.1", "127.1", "[::1]", null]) {
+  await invokePorts(api, "start", [{ target, targetHost: "localhost", targetPort: 5173 }])
+  expect(start).toHaveBeenLastCalledWith({ target, localPort: 0, targetHost: "localhost", targetPort: 5173 })
+  for (const value of ["localhost.example", "0.0.0.0", "192.168.0.1", "127.1", "[::1]", null]) {
     await expect(invokePorts(api, "start", [{ target, targetPort: 3000, targetHost: value }])).rejects.toThrow("loopback")
   }
   await expect(invokePorts(api, "start", [{ target, targetPort: 3000, localHost: "0.0.0.0" }])).rejects.toThrow("always binds")
@@ -34,7 +36,7 @@ test("the hidden bridge validates loopback targets and applies ephemeral local p
   await invokePorts(api, "stop", ["id"])
   expect(list).toHaveBeenCalledOnce()
   expect(stop).toHaveBeenCalledWith("id")
-  expect(start).toHaveBeenCalledTimes(2)
+  expect(start).toHaveBeenCalledTimes(3)
 })
 
 test("only the trusted main renderer can invoke the app-owned forwarding service", async () => {
