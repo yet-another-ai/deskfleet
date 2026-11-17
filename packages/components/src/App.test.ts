@@ -676,3 +676,45 @@ test.each(["/details", `/workspaces/${workspaceId}`])("removed page %s falls bac
   await flushPromises()
   expect(wrapper.find('aside[aria-label="Changes"]').exists()).toBe(false)
 })
+
+test("desktop Session menus open a focused standalone window while web and mobile omit the action", async () => {
+  const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+  const hydrate = (p = createPinia()) => {
+    const agents = useAgentSessionsStore(p)
+    const snapshot = agentSnapshot()
+    snapshot.session = { ...snapshot.session, id: sessionId, workspaceId, title: "Inspect menu" }
+    agents.sessions[sessionId] = snapshot.session
+    agents.views[sessionId] = { snapshot, events: [], loading: false, error: null, historySeq: "0", snapshotSeq: "0" }
+    vi.spyOn(agents, "open").mockResolvedValue(); vi.spyOn(agents, "refresh").mockResolvedValue()
+    return p
+  }
+
+  const mainPinia = hydrate()
+  usePinnedSessionsStore(mainPinia).pin("local-daemon", sessionId, "Inspect menu")
+  const wrapper = await mountApp(`/sessions/${sessionId}`, mainPinia, true)
+  const expectedUrl = `${window.location.origin}${window.location.pathname}#/sessions/${sessionId}?window=session&machineId=local-daemon`
+  for (const trigger of [
+    () => wrapper.get(`aside section[data-machine-id="local-daemon"] a[href="#/sessions/${sessionId}"]`).trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }),
+    () => wrapper.get("aside [data-pinned-sessions] button").trigger("contextmenu", { button: 2, clientX: 24, clientY: 48 }),
+    () => new DOMWrapper(document.body).get('[aria-label="Session actions"]').trigger("click"),
+  ]) {
+    await trigger(); await flushPromises()
+    await new DOMWrapper(document.body).get('[data-session-action="open-in-new-window"]').trigger("click"); await flushPromises()
+  }
+  expect(openSpy).toHaveBeenCalledTimes(3)
+  expect(openSpy).toHaveBeenLastCalledWith(expectedUrl, "_blank", "popup,width=1120,height=780")
+  wrapper.unmount()
+
+  const standalone = await mountApp(`/sessions/${sessionId}?window=session`, hydrate(), true)
+  expect(standalone.find(".deskfleet-windows").exists()).toBe(true)
+  expect(standalone.find("aside [data-sidebar-scroll-area]").exists()).toBe(false)
+  expect(standalone.find('[aria-label="Hide sidebar"]').exists()).toBe(false)
+  await new DOMWrapper(document.body).get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  expect(new DOMWrapper(document.body).find('[data-session-action="open-in-new-window"]').exists()).toBe(false)
+  standalone.unmount()
+
+  configureClient({ ...host, platform: "web" })
+  await mountApp(`/sessions/${sessionId}`, hydrate(), true)
+  await new DOMWrapper(document.body).get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
+  expect(new DOMWrapper(document.body).find('[data-session-action="open-in-new-window"]').exists()).toBe(false)
+})

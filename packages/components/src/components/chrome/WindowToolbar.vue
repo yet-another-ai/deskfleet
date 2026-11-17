@@ -8,12 +8,13 @@ import { useLayoutStore } from "../../stores/layout.ts"
 import UiButton from "../common/UiButton.vue"
 
 const { t } = useI18n()
-withDefaults(defineProps<{ sidebar?: boolean; history?: boolean }>(), {
+const props = withDefaults(defineProps<{ sidebar?: boolean; history?: boolean }>(), {
   sidebar: true,
   history: true,
 })
 const layout = useLayoutStore()
-const { sidebarOpen } = storeToRefs(layout)
+const { sidebarOpen, standaloneSession } = storeToRefs(layout)
+const showSidebar = computed(() => props.sidebar && !standaloneSession.value)
 const router = useRouter()
 const route = useRoute()
 
@@ -28,9 +29,9 @@ const canGoForward = computed(() => historyEntry("forward"))
 </script>
 
 <template>
-  <div class="flex items-center gap-1">
+  <div v-if="showSidebar || history" class="flex items-center gap-1">
     <UiButton
-      v-if="sidebar"
+      v-if="showSidebar"
       variant="ghost"
       size="icon"
       :label="sidebarOpen ? t('toolbar.hideSidebar') : t('toolbar.showSidebar')"

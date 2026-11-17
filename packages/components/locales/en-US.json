@@ -1367,6 +1367,7 @@
       "search": "Ran {n} search | Ran {n} searches",
       "other": "Used {n} tool | Used {n} tools"
     },
+    "openInNewWindow": "Open in new window",
     "pin": "Pin session",
     "unpin": "Unpin session",
     "sessionActions": "Session actions",
