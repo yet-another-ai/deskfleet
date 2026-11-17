@@ -77,7 +77,7 @@ Leaving a page or closing a desktop window never interrupts a running agent whil
 Alongside the conversation, DeskFleet gives you direct WebRTC access to the machine's working environment:
 
 - **Changes panel**: Inspect live staged and unstaged file diffs in the session's repositories as the agent edits code.
-- **Session & machine terminals**: Open persistent native PTY shells in the session's worktree, workspace, or machine. Terminals support WebGL rendering, buffer search (`Ctrl/Cmd+F`), color themes (DeskFleet, Dracula, One Dark, Nord, Solarized Light), and ANSI/HTML export. Closing a client window does not terminate the underlying shell.
+- **Session & machine terminals**: Open persistent native PTY shells in the session's worktree, workspace, or machine. Terminals support WebGL rendering, buffer search (`Ctrl/Cmd+F`), color themes (DeskFleet, Dracula, One Dark, Nord, Solarized Light, Catppuccin Latte / Frappé / Macchiato / Mocha) with optional separate light/dark presets, and ANSI/HTML export. Closing a client window does not terminate the underlying shell.
 - **File transfers (`Remote control → Files`)**: Use the two-pane file browser to upload, download, and manage files directly between your local computer and any enrolled machine over WebRTC, with confirmation before replacing existing files.
 - **Remote desktop (`Remote control → Desktop`)**: Connect to the machine's desktop stream to handle browser sign-ins, visual inspection, or GUI tools, then hand control back to your agent.
 

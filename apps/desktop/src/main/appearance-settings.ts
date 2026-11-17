@@ -26,7 +26,7 @@ export class AppearanceSettingsController {
         this.#settings = validateAppearanceSettings(DEFAULT_APPEARANCE_SETTINGS)
       }
     }
-    return { ...this.#settings, terminalColors: { ...this.#settings.terminalColors } }
+    return { ...this.#settings, terminalColors: { ...this.#settings.terminalColors }, terminalLightColors: { ...this.#settings.terminalLightColors } }
   }
 
   set(value: AppearanceSettings): AppearanceSettings {
@@ -36,6 +36,6 @@ export class AppearanceSettingsController {
     writeFileSync(temporary, JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 })
     renameSync(temporary, this.#path)
     this.#settings = settings
-    return { ...settings, terminalColors: { ...settings.terminalColors } }
+    return { ...settings, terminalColors: { ...settings.terminalColors }, terminalLightColors: { ...settings.terminalLightColors } }
   }
 }

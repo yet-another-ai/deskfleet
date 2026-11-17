@@ -1,3 +1,5 @@
+import { flavorEntries } from "@catppuccin/palette"
+
 export const TERMINAL_COLOR_KEYS = [
   "background", "foreground", "cursor", "selectionBackground",
   "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
@@ -6,6 +8,16 @@ export const TERMINAL_COLOR_KEYS = [
 
 export type TerminalColorKey = typeof TERMINAL_COLOR_KEYS[number]
 export type TerminalColors = Record<TerminalColorKey, string>
+
+function catppuccinColors({ colors, ansiColors }: (typeof flavorEntries)[number][1]): TerminalColors {
+  return {
+    background: colors.base.hex, foreground: colors.text.hex, cursor: colors.rosewater.hex, selectionBackground: colors.surface2.hex,
+    black: ansiColors.black.normal.hex, red: ansiColors.red.normal.hex, green: ansiColors.green.normal.hex, yellow: ansiColors.yellow.normal.hex,
+    blue: ansiColors.blue.normal.hex, magenta: ansiColors.magenta.normal.hex, cyan: ansiColors.cyan.normal.hex, white: ansiColors.white.normal.hex,
+    brightBlack: ansiColors.black.bright.hex, brightRed: ansiColors.red.bright.hex, brightGreen: ansiColors.green.bright.hex, brightYellow: ansiColors.yellow.bright.hex,
+    brightBlue: ansiColors.blue.bright.hex, brightMagenta: ansiColors.magenta.bright.hex, brightCyan: ansiColors.cyan.bright.hex, brightWhite: ansiColors.white.bright.hex,
+  }
+}
 
 export const TERMINAL_THEME_PRESETS = [
   {
@@ -63,6 +75,9 @@ export const TERMINAL_THEME_PRESETS = [
       brightBlue: "#657b83", brightMagenta: "#6c71c4", brightCyan: "#586e75", brightWhite: "#002b36",
     },
   },
+  ...flavorEntries.map(([id, flavor]) => ({
+    id: `catppuccin-${id}` as const, label: `Catppuccin ${flavor.name}`, colors: catppuccinColors(flavor),
+  })),
 ] as const satisfies readonly { id: string; label: string; colors: TerminalColors }[]
 
 export type TerminalThemeId = typeof TERMINAL_THEME_PRESETS[number]["id"]

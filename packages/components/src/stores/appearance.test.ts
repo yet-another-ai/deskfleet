@@ -228,3 +228,27 @@ test("custom theme hue and dynamic RGB mode update root chromatic tokens and res
   expect(document.documentElement.style.getPropertyValue("--ui-color-accent")).toBe("")
 })
 
+test("separate light and dark terminal themes switch with the resolved appearance mode and retain light overrides when toggled off", async () => {
+  const media = new EventTarget() as MediaQueryList
+  let dark = false
+  Object.defineProperty(media, "matches", { get: () => dark })
+  vi.spyOn(window, "matchMedia").mockReturnValue(media)
+  const appearance = useAppearanceStore(pinia)
+  await appearance.initialize()
+  await appearance.set({
+    theme: "system", terminalSeparateThemes: true, terminalTheme: "catppuccin-mocha",
+    terminalColors: { cursor: "#112233" }, terminalLightTheme: "catppuccin-latte", terminalLightColors: { background: "#eef0f5" },
+  })
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("catppuccin-latte", { background: "#eef0f5" }))
+  expect(document.documentElement.style.getPropertyValue("--ui-color-terminal")).toBe("#eef0f5")
+  dark = true
+  media.dispatchEvent(Object.assign(new Event("change"), { matches: dark }))
+  await nextTick()
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("catppuccin-mocha", { cursor: "#112233" }))
+  await appearance.set({ theme: "light" })
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("catppuccin-latte", { background: "#eef0f5" }))
+  await appearance.set({ terminalSeparateThemes: false })
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("catppuccin-mocha", { cursor: "#112233" }))
+  expect(appearance.settings.terminalLightColors).toEqual({ background: "#eef0f5" })
+})
+

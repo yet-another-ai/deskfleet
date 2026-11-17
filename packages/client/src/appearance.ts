@@ -1,5 +1,5 @@
 import { isAppLocale, type AppLocale } from "./i18n.ts"
-import { isTerminalThemeId, validateTerminalColors, type TerminalColors, type TerminalThemeId } from "./terminal-theme.ts"
+import { isTerminalThemeId, resolveTerminalTheme, validateTerminalColors, type TerminalColors, type TerminalThemeId } from "./terminal-theme.ts"
 
 export const APPEARANCE_CHANNEL = "deskfleet:appearance"
 export const APPEARANCE_CHANGED_EVENT = "deskfleet:appearance-changed"
@@ -24,9 +24,13 @@ export interface AppearanceSettings {
   interfaceFont: string
   terminalFont: string
   terminalLigatures: boolean
+  /** Whether light and dark UI modes use separate terminal presets and color overrides. */
+  terminalSeparateThemes: boolean
   terminalTheme: TerminalThemeId
   /** Color overrides applied on top of the selected terminal preset. */
   terminalColors: Partial<TerminalColors>
+  terminalLightTheme: TerminalThemeId
+  terminalLightColors: Partial<TerminalColors>
   outlineAudio: boolean
   outlineAudioRgb: boolean
   outlineAudioMaxWidth: number
@@ -45,8 +49,11 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   interfaceFont: "",
   terminalFont: "",
   terminalLigatures: false,
+  terminalSeparateThemes: false,
   terminalTheme: "deskfleet",
   terminalColors: {},
+  terminalLightTheme: "catppuccin-latte",
+  terminalLightColors: {},
   outlineAudio: false,
   outlineAudioRgb: false,
   outlineAudioMaxWidth: 48,
@@ -81,7 +88,9 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     || !("interfaceFont" in value) || typeof value.interfaceFont !== "string"
     || !("terminalFont" in value) || typeof value.terminalFont !== "string"
     || ("terminalLigatures" in value && typeof value.terminalLigatures !== "boolean")
+    || ("terminalSeparateThemes" in value && typeof value.terminalSeparateThemes !== "boolean")
     || ("terminalTheme" in value && !isTerminalThemeId(value.terminalTheme))
+    || ("terminalLightTheme" in value && !isTerminalThemeId(value.terminalLightTheme))
     || ("outlineAudio" in value && typeof value.outlineAudio !== "boolean")
     || ("outlineAudioRgb" in value && typeof value.outlineAudioRgb !== "boolean")
     || ("outlineAudioMaxWidth" in value && !isNonNegativeNumber(value.outlineAudioMaxWidth))
@@ -98,8 +107,11 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     interfaceFont: value.interfaceFont,
     terminalFont: value.terminalFont,
     terminalLigatures: "terminalLigatures" in value && value.terminalLigatures === true,
+    terminalSeparateThemes: "terminalSeparateThemes" in value && value.terminalSeparateThemes === true,
     terminalTheme: "terminalTheme" in value ? value.terminalTheme as TerminalThemeId : "deskfleet",
     terminalColors: "terminalColors" in value ? validateTerminalColors(value.terminalColors) : {},
+    terminalLightTheme: "terminalLightTheme" in value ? value.terminalLightTheme as TerminalThemeId : "catppuccin-latte",
+    terminalLightColors: "terminalLightColors" in value ? validateTerminalColors(value.terminalLightColors) : {},
     outlineAudio: "outlineAudio" in value && value.outlineAudio === true,
     outlineAudioRgb: "outlineAudioRgb" in value && value.outlineAudioRgb === true,
     outlineAudioMaxWidth: "outlineAudioMaxWidth" in value && typeof value.outlineAudioMaxWidth === "number"
@@ -113,4 +125,13 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
       ? value.readingSpotlightStyle
       : DEFAULT_APPEARANCE_SETTINGS.readingSpotlightStyle,
   }
+}
+
+export function resolveActiveTerminalTheme(
+  settings: Pick<AppearanceSettings, "terminalSeparateThemes" | "terminalTheme" | "terminalColors" | "terminalLightTheme" | "terminalLightColors">,
+  isDark: boolean,
+): TerminalColors {
+  return settings.terminalSeparateThemes && !isDark
+    ? resolveTerminalTheme(settings.terminalLightTheme, settings.terminalLightColors)
+    : resolveTerminalTheme(settings.terminalTheme, settings.terminalColors)
 }
