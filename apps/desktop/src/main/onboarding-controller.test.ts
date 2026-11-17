@@ -3,12 +3,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import type { LocalAgentState, DesktopPermissionKind, DesktopPermissionsState } from "../../../../packages/client/src/local-agent.ts"
-import type { LocalNetworkAccessRequest, OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
+import type { AuvPermissionsState, LocalNetworkAccessRequest, OnboardingPermission } from "../../../../packages/client/src/onboarding.ts"
 import type { WindowsDesktopServiceState } from "../../../../packages/client/src/windows-desktop-service.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
 
 const macPermissions = { permissionSteps: ["localNetwork", "fullDiskAccess", "screenCapture", "accessibility"] }
-const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility"] }
+const waylandPermissions = { permissionSteps: ["screenCapture", "accessibility", "auv"] }
+const auvPermissions = { permissionSteps: ["auv"] }
 const windowsPermissions = { permissionSteps: ["windowsDesktopService"] }
 const flow = "machine-control"
 const directories: string[] = []
@@ -39,7 +40,11 @@ async function fixture(platform: NodeJS.Platform = "darwin") {
     get: vi.fn(async () => serviceState),
     setEnabled: vi.fn(async (_enabled: boolean) => ({ ...serviceState, installed: true, running: true })),
   }
-  const options = { path, platform, localAgent, localNetwork, windowsDesktopService }
+  const auv = {
+    get: vi.fn(async (): Promise<AuvPermissionsState> => ({ status: "not-requested" })),
+    request: vi.fn(async (): Promise<AuvPermissionsState> => ({ status: "saved" })),
+  }
+  const options = { path, platform, localAgent, localNetwork, windowsDesktopService, auv }
   const controller = new OnboardingController(options)
   return {
     ...options, controller, restart: () => new OnboardingController(options),
@@ -159,7 +164,13 @@ test("Linux guides linked Portal permissions and resumes the saved selection", a
   const resumed = f.restart()
   expect(await resumed.get()).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "accessibility" })
   await resumed.requestPermission("accessibility")
-  expect(await resumed.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "complete" })
+  expect(await resumed.advancePermission("accessibility")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "auv" })
+  expect(await resumed.permissions()).toEqual({ auv: { status: "not-requested" } })
+  expect(f.auv.get).toHaveBeenCalledOnce()
+  expect(await resumed.requestPermission("auv")).toEqual({ auv: { status: "saved" } })
+  expect(f.auv.request).toHaveBeenCalledOnce()
+  expect(await resumed.advancePermission("auv")).toEqual({ ...waylandPermissions, linuxDesktopBackend: "wayland", step: "complete" })
+  expect(f.localAgent.requestPermission).toHaveBeenLastCalledWith("accessibility")
 })
 
 test("Windows service setup checks silently, installs explicitly, and supports elevation retry", async () => {
@@ -176,6 +187,9 @@ test("Windows service setup checks silently, installs explicitly, and supports e
   expect(await f.controller.advancePermission("windowsDesktopService")).toEqual({ ...windowsPermissions, step: "complete" })
   expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  expect(f.auv.get).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
+  await expect(f.controller.requestPermission("auv")).rejects.toThrow("unavailable")
 })
 
 test("Windows service setup can be skipped in builds without a helper", async () => {
@@ -202,6 +216,20 @@ test("completed setup exposes only applicable permission actions without repeati
   f.localAgent.state.enabled = false
   expect(await f.controller.permissions()).toEqual({ localNetwork: "attempted" })
   await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("unavailable")
+  await expect(f.controller.requestPermission("auv")).rejects.toThrow("unavailable")
+  expect(f.auv.get).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
+})
+
+test.each(["darwin", "win32"] as const)("%s welcome never offers or queries Linux AUV authorization", async platform => {
+  const f = await fixture(platform)
+  const selected = await f.choose()
+  expect(selected.permissionSteps).not.toContain("auv")
+  expect(await f.controller.permissions()).not.toHaveProperty("auv")
+  await expect(f.controller.requestPermission("auv")).rejects.toThrow("step has changed")
+  expect(await f.controller.advancePermission("auv")).toEqual(selected)
+  expect(f.auv.get).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
 })
 
 test.each(["linux", "win32"] as const)("completed %s setup rejects irrelevant permissions", async platform => {
@@ -263,12 +291,15 @@ test("invalid progress is reported and old server setup returns to account", asy
   expect(await f.restart().get()).toEqual({ permissionSteps: [], step: "account" })
 })
 
-test.each(["x11", null] as const)("Linux %s finishes the machine choice without Portal guidance", async backend => {
+test.each(["x11", null] as const)("Linux %s keeps only AUV's independent authorization after the machine choice", async backend => {
   const f = await fixture("linux")
   f.localAgent.state.linuxDesktopBackend = backend
-  expect(await f.choose()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: backend })
+  expect(await f.choose()).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: backend })
+  expect(await f.controller.permissions()).toEqual({ auv: { status: "not-requested" } })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
   expect(f.localAgent.refreshPermissions).not.toHaveBeenCalled()
+  expect(await f.controller.advancePermission("auv")).toEqual({ ...auvPermissions, step: "complete", linuxDesktopBackend: backend })
+  expect(f.auv.request).not.toHaveBeenCalled()
 })
 
 test("a temporarily disconnected Wayland daemon retains saved permission guidance", async () => {
@@ -277,7 +308,7 @@ test("a temporarily disconnected Wayland daemon retains saved permission guidanc
   f.localAgent.state.linuxDesktopBackend = undefined
   f.localAgent.state.status = "error"
   expect(await f.restart().get()).toEqual({ ...waylandPermissions, step: "accessibility" })
-  expect(await f.restart().advancePermission("accessibility")).toEqual({ permissionSteps: [], step: "complete" })
+  expect(await f.restart().advancePermission("accessibility")).toEqual({ permissionSteps: ["auv"], step: "auv" })
 })
 
 test("a late X11 hello normalizes saved Portal guidance and lets an in-flight Skip finish", async () => {
@@ -290,9 +321,11 @@ test("a late X11 hello normalizes saved Portal guidance and lets an in-flight Sk
     return { linuxDesktopBackend: "x11", fullDiskAccessPermission: { status: "not-required" }, screenCapturePermission: { status: "not-required" }, accessibilityPermission: { status: "not-required" } }
   })
   await f.controller.permissions()
-  expect(await f.controller.advancePermission("screenCapture")).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
-  expect(await f.restart().get()).toEqual({ permissionSteps: [], step: "complete", linuxDesktopBackend: "x11" })
-  await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("unavailable")
+  // The saved Portal step is gone; Skip for it becomes a no-op on the AUV step.
+  expect(await f.controller.advancePermission("screenCapture")).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: "x11" })
+  expect(await f.restart().get()).toEqual({ ...auvPermissions, step: "auv", linuxDesktopBackend: "x11" })
+  await expect(f.controller.requestPermission("screenCapture")).rejects.toThrow("step has changed")
+  expect(await f.controller.advancePermission("auv")).toEqual({ ...auvPermissions, step: "complete", linuxDesktopBackend: "x11" })
 })
 
 for (const platform of ["darwin", "linux", "win32"] as const) {
@@ -376,8 +409,10 @@ test("legacy Portal progress completes when the chosen machine now uses X11", as
   expect(await f.controller.get()).toEqual({ step: "account", permissionSteps: [] })
   await f.controller.advanceAccount()
   f.localAgent.state.linuxDesktopBackend = "x11"
-  expect(await f.controller.setMachineControlEnabled(true)).toEqual({ step: "complete", permissionSteps: [], linuxDesktopBackend: "x11" })
+  // AUV authorization stays available in Settings → Permissions for this profile.
+  expect(await f.controller.setMachineControlEnabled(true)).toEqual({ step: "complete", permissionSteps: ["auv"], linuxDesktopBackend: "x11" })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
 })
 
 test("legacy progress retains its resume point when a choice fails and rejects duplicate choices", async () => {
@@ -448,10 +483,11 @@ test.each(["wayland", "x11", null] as const)("legacy client-only Linux account w
   })
   expect(await choice.setMachineControlEnabled(true)).toEqual({
     step: backend === "wayland" ? "screenCapture" : "complete",
-    permissionSteps: backend === "wayland" ? ["screenCapture", "accessibility"] : [],
+    permissionSteps: backend === "wayland" ? ["screenCapture", "accessibility", "auv"] : ["auv"],
     linuxDesktopBackend: backend,
   })
   expect(f.localAgent.requestPermission).not.toHaveBeenCalled()
+  expect(f.auv.request).not.toHaveBeenCalled()
 })
 
 test("legacy account with a separately running daemon keeps its completed permission progress", async () => {
