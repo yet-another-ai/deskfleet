@@ -1,10 +1,9 @@
 import { getClient } from "@deskfleet/client/platform"
 import {
   DEFAULT_APPEARANCE_SETTINGS, DEFAULT_INTERFACE_FONT, DEFAULT_TERMINAL_FONT, DEFAULT_THEME_HUE,
-  validateAppearanceSettings, type AppearanceSettings,
+  resolveActiveTerminalTheme, validateAppearanceSettings, type AppearanceSettings,
 } from "@deskfleet/client/appearance"
 import { intlLocale, resolveAppLocale } from "@deskfleet/client/i18n"
-import { resolveTerminalTheme } from "@deskfleet/client/terminal-theme"
 import { chromaticColorFrom, fittedOklch, type Shade } from "@proj-airi/chromatic"
 import { usePreferredDark, usePreferredLanguages, useRafFn, useStorage } from "@vueuse/core"
 import { defineStore, type Pinia } from "pinia"
@@ -90,7 +89,7 @@ const defineAppearanceStore = defineStore("appearance", () => {
   const interfaceFont = computed(() => settings.value.interfaceFont.trim() || DEFAULT_INTERFACE_FONT)
   const terminalFont = computed(() => settings.value.terminalFont.trim() || DEFAULT_TERMINAL_FONT)
   const terminalLigatures = computed(() => settings.value.terminalLigatures)
-  const terminalTheme = computed(() => resolveTerminalTheme(settings.value.terminalTheme, settings.value.terminalColors))
+  const terminalTheme = computed(() => resolveActiveTerminalTheme(settings.value, isDark.value))
   const locale = computed(() => settings.value.language === "system"
     ? (host.platform === "web" ? resolveAppLocale(languages.value) : host.locale)
     : settings.value.language)

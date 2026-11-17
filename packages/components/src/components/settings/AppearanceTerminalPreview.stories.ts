@@ -19,3 +19,5 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {}
 export const SolarizedLight: Story = { args: { theme: resolveTerminalTheme("solarized-light", {}) } }
 export const Dracula: Story = { args: { theme: resolveTerminalTheme("dracula", {}) } }
+export const CatppuccinLatte: Story = { args: { theme: resolveTerminalTheme("catppuccin-latte", {}) } }
+export const CatppuccinMocha: Story = { args: { theme: resolveTerminalTheme("catppuccin-mocha", {}) } }

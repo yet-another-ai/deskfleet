@@ -321,6 +321,9 @@ importers:
 
   packages/client:
     dependencies:
+      '@catppuccin/palette':
+        specifier: 1.8.0
+        version: 1.8.0
       ky:
         specifier: 2.2.0
         version: 2.2.0
@@ -804,6 +807,9 @@ packages:
     resolution: {integrity: sha512-1TzM4hMN4wgCDu3O0UhaIIoVspUFNfNJ+q+K/EKSQRKkfCbG79S1Fn/sXwMdtMO1Me55LQxdjw1I9rctFtKBOQ==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
+
+  '@catppuccin/palette@1.8.0':
+    resolution: {integrity: sha512-qXhwKiLzQomUygUJYB36YAFgs+dET5bIocfkiaFIatQF5Pwc7L112TlF9P8J5Oqs3x3XTjYSucG0ncHXSCuk7Q==}
 
   '@chenglou/pretext@1.0.0':
     resolution: {integrity: sha512-BxKiDMxWJhyzL8asvcgg3T9YnUU7OUFsKO8oRaR2SYAPX4Sh2wM9gqTBjrBaZ4fnl84cEQ8czC0Q1M83z3chsA==}
@@ -10626,6 +10632,8 @@ snapshots:
   '@capawesome/capacitor-app-update@8.1.1(@capacitor/core@8.6.2)':
     dependencies:
       '@capacitor/core': 8.6.2
+
+  '@catppuccin/palette@1.8.0': {}
 
   '@chenglou/pretext@1.0.0': {}
 
