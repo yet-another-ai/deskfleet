@@ -78,6 +78,14 @@ terminal.attachCustomKeyEventHandler(event => {
     return false
   }
 
+  if (event.ctrlKey && !event.altKey && event.key === "c" && terminal.hasSelection()) {
+    if (event.type === "keydown") {
+      event.preventDefault()
+      void navigator.clipboard?.writeText(terminal.getSelection())?.catch(() => {})
+    }
+    return false
+  }
+
   const cursor = !event.ctrlKey && !event.shiftKey && event.altKey !== event.metaKey
     ? CURSOR_SEQUENCES[event.key]
     : undefined
