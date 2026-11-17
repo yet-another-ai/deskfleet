@@ -139,8 +139,9 @@ async function refreshPermissions(): Promise<void> {
   const revision = permissionRevision
   try {
     const value = await onboarding.permissions()
-    // Service state belongs to the host; daemon permission events cannot replace it.
+    // Host-owned state survives daemon permission events that arrive during the read.
     if (value.windowsDesktopService !== undefined) permissions.value.windowsDesktopService = value.windowsDesktopService
+    if (value.auv !== undefined) permissions.value.auv = value.auv
     if (revision === permissionRevision) {
       permissions.value = value
       noteBackend(value)

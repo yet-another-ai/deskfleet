@@ -509,6 +509,20 @@ test("Linux welcome authorizes AUV as its own step and continues after saved con
   expect(view!.text()).toContain("Welcome, Ada")
 })
 
+test("Welcome keeps the AUV result when a daemon event lands during the silent read", async () => {
+  const app = setup("auv", true, "linux")
+  const read = Promise.withResolvers<typeof app.permissions>()
+  app.onboarding.permissions.mockImplementationOnce(() => read.promise)
+  app.mount()
+  await flushPromises()
+  // A native permission event bumps the renderer revision before the read resolves.
+  app.changed()
+  read.resolve({ ...app.permissions, auv: { status: "saved" } })
+  await flushPromises()
+  expect(view!.get('[role="status"]').text()).toBe("AUV authorization saved")
+  expect(view!.findAll("button").map(button => button.text())).toContain("Continue")
+})
+
 test.each(["darwin", "win32"] as const)("%s welcome never offers AUV authorization", async platform => {
   const steps = onboardingPermissions(platform, undefined, true)
   expect(steps).not.toContain("auv")

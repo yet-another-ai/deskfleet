@@ -101,16 +101,21 @@ test("cancelled authorization can be retried", async () => {
   expect(execFile).toHaveBeenCalledTimes(2)
 })
 
-test("duplicate requests share consent and checks report requesting while it is pending", async () => {
+test("duplicate requests share consent and silent reads wait for its result", async () => {
   let complete!: Completed
   execFile.mockImplementation((_binary, _args, _options, callback: Completed) => { complete = callback })
   const controller = new AuvPermissionsController(binary)
   const first = controller.request()
   const second = controller.request()
   expect(second).toBe(first)
-  await expect(controller.get()).resolves.toEqual({ status: "requesting" })
+  let settled = false
+  const checking = controller.get().then(state => { settled = true; return state })
+  await Promise.resolve()
+  // The read joins the pending authorization instead of spawning a second helper.
+  expect(settled).toBe(false)
   expect(execFile).toHaveBeenCalledTimes(1)
   complete(null, JSON.stringify(report), "")
+  await expect(checking).resolves.toEqual({ status: "saved" })
   await expect(first).resolves.toEqual({ status: "saved" })
   respond({ ...report, capture_token_present: false })
   await expect(controller.get()).resolves.toEqual({ status: "not-requested" })
@@ -123,15 +128,16 @@ test("closing aborts in-flight checks and consent and prevents more helpers from
     options.signal.addEventListener("abort", () => complete(new Error("aborted"), "", ""), { once: true })
   })
   const controller = new AuvPermissionsController(binary)
-  const check = controller.get()
   const request = controller.request()
+  // A read joins the pending authorization rather than launching a second helper.
+  const check = controller.get()
+  expect(signals).toHaveLength(1)
   controller.close()
-  expect(signals).toHaveLength(2)
   expect(signals.every(signal => signal.aborted)).toBe(true)
   const closed = { status: "error", error: "AUV authorization is unavailable because the application is closing." }
   await expect(check).resolves.toEqual(closed)
   await expect(request).resolves.toEqual(closed)
   await expect(controller.get()).resolves.toEqual(closed)
   await expect(controller.request()).resolves.toEqual(closed)
-  expect(execFile).toHaveBeenCalledTimes(2)
+  expect(execFile).toHaveBeenCalledTimes(1)
 })

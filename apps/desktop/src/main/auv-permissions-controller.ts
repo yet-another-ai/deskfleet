@@ -43,9 +43,12 @@ export class AuvPermissionsController {
 
   constructor(binary: string) { this.#binary = binary }
 
-  get(): Promise<AuvPermissionsState> {
-    if (this.#abort.signal.aborted) return Promise.resolve(this.#closed())
-    if (this.#pending) return Promise.resolve({ status: "requesting" })
+  async get(): Promise<AuvPermissionsState> {
+    if (this.#abort.signal.aborted) return this.#closed()
+    // A read that lands mid-authorization waits for that result. Reporting a
+    // transient `requesting` would leave a remounted view stuck on it after the
+    // desktop dialog closes, with every control disabled.
+    if (this.#pending) return this.#pending
     return this.#execute(false)
   }
 
