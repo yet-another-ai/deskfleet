@@ -143,13 +143,13 @@ test("local terminal opens during fast Agent previews and durable events replace
   const provider: AgentProvider = {
     id: "fixture",
     async connect(_config, client) {
-      providerClient = client
       return {
         initialization: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } },
         newSession: async () => ({ sessionId: "provider-session" }),
         resume: async () => ({}), setConfigOption: async () => ({ configOptions: [] }),
-        prompt: async () => { promptStarted = true; await prompted; return { stopReason: "end_turn" } },
-        steer: async () => ({ outcome: "inactive" }), cancel: async () => { finishPrompt() }, close: async () => { finishPrompt() },
+        // Background configuration probes connect too; only the prompted connection owns this stream.
+        prompt: async () => { providerClient = client; promptStarted = true; await prompted; return { stopReason: "end_turn" } },
+        steer: async () => ({ outcome: "inactive" }), cancel: async () => { if (providerClient === client) finishPrompt() }, close: async () => { if (providerClient === client) finishPrompt() },
       }
     },
   }
