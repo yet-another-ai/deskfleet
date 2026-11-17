@@ -1,9 +1,4 @@
-import {
-  GOOGLE_TAG_CONNECT_ORIGINS,
-  GOOGLE_TAG_IMG_ORIGINS,
-  GOOGLE_TAG_SCRIPT_ORIGINS,
-  STATSIG_CONNECT_ORIGINS,
-} from "@deskfleet/client/analytics-config"
+import { STATSIG_CONNECT_ORIGINS } from "@deskfleet/client/analytics-config"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
 
 export const CSP_PLACEHOLDER = "__DESKFLEET_CONTENT_SECURITY_POLICY__"
@@ -12,20 +7,17 @@ export function rendererContentSecurityPolicy(
   production: boolean,
   statsigEnabled = false,
   sentryDsn?: string,
-  googleTagEnabled = false,
 ): string {
   const sentry = parseSentryDsn(sentryDsn)
   const scriptSources = [
     "'self'",
     "'wasm-unsafe-eval'",
-    ...(googleTagEnabled ? GOOGLE_TAG_SCRIPT_ORIGINS : []),
   ]
   const imgSources = [
     "'self'",
     "data:",
     "blob:",
     "https://gravatar.com",
-    ...(googleTagEnabled ? GOOGLE_TAG_IMG_ORIGINS : []),
   ]
   const connectSources = [
     "'self'",
@@ -33,7 +25,6 @@ export function rendererContentSecurityPolicy(
     "data:",
     ...(production ? [] : ["ws://127.0.0.1:5173"]),
     ...(statsigEnabled ? STATSIG_CONNECT_ORIGINS : []),
-    ...(googleTagEnabled ? GOOGLE_TAG_CONNECT_ORIGINS : []),
     ...(sentry ? [sentry.origin] : []),
   ]
   return [
@@ -61,10 +52,9 @@ export function injectRendererContentSecurityPolicy(
   production: boolean,
   statsigEnabled = false,
   sentryDsn?: string,
-  googleTagEnabled = false,
 ): string {
   if (!html.includes(CSP_PLACEHOLDER)) {
     throw new Error("Renderer HTML is missing the CSP placeholder")
   }
-  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production, statsigEnabled, sentryDsn, googleTagEnabled))
+  return html.replaceAll(CSP_PLACEHOLDER, rendererContentSecurityPolicy(production, statsigEnabled, sentryDsn))
 }

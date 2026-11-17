@@ -91,6 +91,13 @@ Experiment decisions never grant authorization, subscription entitlements, or
 quota capacity; those remain server and daemon responsibilities. The
 [analytics guide](analytics.md) owns identity, event scope, and configuration.
 
+Google Tag runs in the Web document and in a separate, sandboxed Electron
+`WebContentsView` with a locally handled HTTPS origin. GA4 rejects Electron's
+custom application protocol. The application renderer retains consent, identity,
+and event ownership; a main-frame-only IPC bridge relays tag commands to this
+isolated host without exposing application APIs to Google scripts. Revoking
+consent or losing the owner document destroys the host and its pending commands.
+
 Optional Sentry error reporting also belongs to the shared Vue frontend. Web
 and Electron renderers use a build-time public DSN; an absent or invalid DSN
 disables reporting. Each renderer captures Vue and unhandled JavaScript errors,

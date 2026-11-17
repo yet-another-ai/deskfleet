@@ -6,7 +6,7 @@ import type { Team } from "@deskfleet/client/central"
 import {
   configureGoogleTag,
   identifyGoogleTagUser,
-  resetGoogleTagForTests,
+  shutdownGoogleTag,
   trackGoogleEvent,
   type GoogleTagConfiguration,
 } from "@deskfleet/client/google-tag"
@@ -335,7 +335,7 @@ export async function shutdownAnalytics(): Promise<void> {
   plan = undefined
   planRevision++
   revision.value++
-  resetGoogleTagForTests()
+  shutdownGoogleTag()
   await instance?.shutdown().catch(() => {})
 }
 

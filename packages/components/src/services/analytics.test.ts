@@ -226,11 +226,11 @@ test("requireConsent gates Statsig and Google Tag until both site telemetry and 
   mock.sdk.logEvent.mockClear()
   trackMarketingEvent("marketing_cta_clicked", { section: "hero" })
   expect(mock.sdk.logEvent).not.toHaveBeenCalled()
-  expect(win.dataLayer?.some((entry: unknown) => Array.isArray(entry) && entry[0] === "event" && entry[1] === "marketing_cta_clicked")).toBe(true)
+  expect(win.dataLayer?.some((entry: unknown) => Object.prototype.toString.call(entry) === "[object Arguments]" && (entry as IArguments)[0] === "event" && (entry as IArguments)[1] === "marketing_cta_clicked")).toBe(true)
 
   trackAcquisitionConversion("marketing_download_clicked", { os: "macOS", primary: true })
   expect(mock.sdk.logEvent).toHaveBeenCalledWith("marketing_download_clicked", undefined, { os: "macOS", primary: "true" })
-  expect(win.dataLayer?.some((entry: unknown) => Array.isArray(entry) && entry[0] === "event" && entry[1] === "marketing_download_clicked")).toBe(true)
+  expect(win.dataLayer?.some((entry: unknown) => Object.prototype.toString.call(entry) === "[object Arguments]" && (entry as IArguments)[0] === "event" && (entry as IArguments)[1] === "marketing_download_clicked")).toBe(true)
 
   setUserTelemetryConsent(false)
   await flushPromises()

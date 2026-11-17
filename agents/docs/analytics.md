@@ -17,6 +17,19 @@ the root application unmounts. The Rust backend separately emits verified billin
 facts through a durable delivery queue to both Statsig and GA4 Measurement
 Protocol. The daemon does not send product events.
 
+Web and website Google Tag commands use the SDK's `Arguments` queue contract.
+Arrays are reserved for data-layer method calls and do not dispatch gtag commands.
+Electron relays cloneable commands through its main-frame preload bridge to
+`apps/desktop/src/main/google-tag-host.ts`. That host loads a local, fixed HTTPS
+document in an isolated, hidden `WebContentsView`: GA4 rejects the main renderer's
+`deskfleet-app:` protocol even when `page_location` is normalized to HTTPS.
+The main application keeps its existing origin and storage. It still owns the
+persisted GA client ID, consent, identity, platform, and event parameters.
+The Google document has no application preload or Node access, uses an in-memory
+session, and starts only when consent permits a tag script to load. Revocation,
+owner-document navigation, renderer loss, and owner destruction close it and
+discard pending commands. Re-enabling consent creates a fresh document.
+
 ## Privacy gates: site master switch and user opt-in consent
 
 Telemetry requires **two** gates to be enabled before any client SDK (`StatsigClient`
@@ -376,15 +389,14 @@ ownership remain enforced by the server and daemon.
 endpoints. Dynamic endpoint fallbacks are disabled. Configured Electron builds
 permit the three Statsig origins in addition to the existing development
 HMR policy: `https://featureassets.org`, `https://prodregistryv2.org`, and
-`https://statsigapi.net` (SDK exceptions). When a Google Tag (`VITE_GTM_ID`,
-`VITE_GA_MEASUREMENT_ID`, or `VITE_GOOGLE_ADS_ID`) is configured at build time,
-`buildRendererCsp` also permits the explicit Google Tag origins (`googletagmanager.com`,
-`google-analytics.com`, `analytics.google.com`, `googleadservices.com`, and
-`doubleclick.net`) in `script-src`, `connect-src`, and `img-src`. Optional
+`https://statsigapi.net` (SDK exceptions). Google Tag scripts and network access
+belong only to the isolated desktop Google document, whose CSP and session
+restrict requests to its local bootstrap and explicit Google origins. The main
+renderer does not permit Google scripts or connections. Optional
 [Sentry error reporting](error-reporting.md) adds its configured DSN origin.
-Without any configured integration, production keeps `connect-src 'none'`. A Web host
-that supplies its own CSP must allow these origins alongside the application's
-API/peer requirements.
+Without Statsig or Sentry, the main renderer permits only self, Blob, and data
+connections. A Web host that supplies its own CSP must allow the Google and
+Statsig origins it configures alongside the application's API/peer requirements.
 
 Focused tests cover disabled configuration, identity replacement and logout,
 initialization failure, reactive/default evaluations, route metadata, root

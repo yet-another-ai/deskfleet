@@ -13,6 +13,7 @@ import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
 import { attachApplication } from "./application.ts"
+import { attachGoogleTag } from "./google-tag.ts"
 
 let mainWindow: BrowserWindow | null = null
 const sessionWindows = new Map<string, BrowserWindow>()
@@ -57,6 +58,7 @@ function auxiliaryWindowOptions(url: string): BrowserWindowConstructorOptions | 
 
 function attachRendererWindow(window: BrowserWindow): void {
   attachApplication(window)
+  attachGoogleTag(window)
   attachDesktopMedia(window)
   attachSettings(window)
   attachAppearance(window)
