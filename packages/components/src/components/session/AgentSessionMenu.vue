@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import SpringSurface from "../common/SpringSurface.ts"
 import UiButton from "../common/UiButton.vue"
-import { Archive, ArchiveRestore, Ellipsis, GitFork, Pencil, Square } from "@lucide/vue"
+import { Archive, ArchiveRestore, Ellipsis, ExternalLink, GitFork, Pencil, Square } from "@lucide/vue"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import SessionConfirmDialog from "./SessionConfirmDialog.vue"
 /** Archival closes execution and removes generated worktrees while retaining the conversation. */
-defineProps<{ canStop: boolean; canFork?: boolean; forkDisabled?: boolean; disabled: boolean; context: "directory" | "worktree"; archiveState: "active" | "archiving" | "archived" }>()
-const emit = defineEmits<{ stop: []; archive: []; restore: []; fork: []; rename: [] }>()
+defineProps<{ canStop: boolean; canFork?: boolean; forkDisabled?: boolean; canOpenInNewWindow?: boolean; disabled: boolean; context: "directory" | "worktree"; archiveState: "active" | "archiving" | "archived" }>()
+const emit = defineEmits<{ stop: []; archive: []; restore: []; fork: []; rename: []; openInNewWindow: [] }>()
 const { t } = useI18n()
 const actions = useTemplateRef<HTMLElement>("actions")
 const open = ref(false)
@@ -17,6 +17,10 @@ const confirming = ref<"stop" | "archive" | "restore" | null>(null)
 function changeOpen(value: boolean): void {
   open.value = value
   if (value) openingDialog.value = false
+}
+function openInNewWindow(): void {
+  open.value = false
+  emit("openInNewWindow")
 }
 function openDialog(kind: "fork" | "rename"): void {
   openingDialog.value = true
@@ -48,6 +52,7 @@ function restoreFocus(event: Event): void {
       <DropdownMenuTrigger :as="UiButton" variant="ghost" size="icon" :label="t('agent.sessionActions')" :disabled="disabled"><Ellipsis :size="16" :stroke-width="1.75" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent :as="SpringSurface" align="end" :side-offset="4" :collision-padding="8" :aria-label="t('agent.sessionActions')" class="ui-menu z-50 flex w-44 flex-col" @close-auto-focus="(confirming || openingDialog) && $event.preventDefault()" @interact-outside="openingDialog && $event.preventDefault()" loop>
+          <DropdownMenuItem v-if="canOpenInNewWindow" as="button" type="button" class="ui-menu-item" data-session-action="open-in-new-window" @select="openInNewWindow"><ExternalLink :size="14" aria-hidden="true" />{{ t('agent.openInNewWindow') }}</DropdownMenuItem>
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="openDialog('rename')"><Pencil :size="14" aria-hidden="true" />{{ t('agent.rename') }}</DropdownMenuItem>
           <DropdownMenuItem v-if="canFork" as="button" type="button" class="ui-menu-item" :disabled="disabled || forkDisabled" @select="openDialog('fork')"><GitFork :size="14" aria-hidden="true" />{{ t('agent.fork') }}</DropdownMenuItem>
           <DropdownMenuItem v-if="canStop" as="button" type="button" class="ui-menu-item" @select="choose('stop')"><Square :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t('agent.stop') }}</DropdownMenuItem>

@@ -167,6 +167,20 @@
     "restart": "更改此权限后，请完全退出并重新打开 DeskFleet，让本地 Agent 使用新权限。",
     "waylandShared": "屏幕共享与鼠标键盘控制使用同一次桌面授权。"
   },
+  "auvPermissions": {
+    "description": "允许 AI 智能体通过 AUV 截取屏幕并操作鼠标和键盘。",
+    "instructions": "在桌面授权对话框中选择屏幕，并允许远程控制。",
+    "savedHint": "授权已保存，供后续 AUV 会话使用。权限过期或被撤销后，桌面环境可能会再次请求授权。",
+    "request": "授权 AUV",
+    "retry": "重新授权 AUV",
+    "skip": "你可以稍后在设置 → 权限配置中授权 AUV。",
+    "status": {
+      "not-requested": "尚未授权 AUV",
+      "requesting": "正在等待 AUV 授权…",
+      "saved": "AUV 授权已保存",
+      "error": "AUV 授权未保存"
+    }
+  },
   "updatesSettings": {
     "title": "应用更新",
     "description": "检查 DeskFleet 新版本，并在准备好后安装。",
@@ -581,6 +595,9 @@
     "terminalPreview": "终端预览",
     "terminalColors": "终端配色",
     "terminalColorsHint": "选择预设，再按喜好调整。修改会应用到当前客户端的所有终端。",
+    "terminalSeparateThemes": "分别配置浅色与深色",
+    "terminalSeparateThemesHint": "在浅色和深色外观下分别使用不同的终端预设与自定义颜色。",
+    "terminalThemeMode": "终端外观模式",
     "terminalPreset": "终端配色预设",
     "customizeTerminalColors": "自定义颜色",
     "customTerminalColors": "已自定义颜色",
@@ -1367,6 +1384,7 @@
       "search": "进行了 {n} 次搜索",
       "other": "使用了 {n} 个工具"
     },
+    "openInNewWindow": "在新窗口中打开",
     "pin": "置顶会话",
     "unpin": "取消置顶",
     "sessionActions": "会话操作",
@@ -1685,6 +1703,7 @@
       "fullDiskAccess": "完全磁盘访问权限",
       "screenCapture": "屏幕录制",
       "accessibility": "鼠标和键盘控制",
+      "auv": "AI 电脑操作权限",
       "windowsDesktopService": "锁屏时允许远程控制",
       "account": "登录账户"
     },

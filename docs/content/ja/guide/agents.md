@@ -56,7 +56,7 @@ DeskFleet は、**Codex CLI**、**Claude Code**、**Cursor CLI**、**Grok CLI**�
 会話画面とあわせて、WebRTC 経由でマシンの作業環境に直接アクセスできます：
 
 - **変更パネル（Changes）**：エージェントの編集に合わせて、ステージ済み・未ステージのファイル差分をリアルタイムに確認できます。
-- **セッション・マシンターミナル（Terminal）**：ワークツリー、ワークスペース、またはマシン単位で永続的なネイティブ PTY シェルを開けます。WebGL 描画、バッファー内検索（`Ctrl/Cmd+F`）、カラーテーマ（DeskFleet、Dracula、One Dark、Nord、Solarized Light）、ANSI/HTML エクスポートに対応しています。ウィンドウを閉じてもシェルは終了しません。
+- **セッション・マシンターミナル（Terminal）**：ワークツリー、ワークスペース、またはマシン単位で永続的なネイティブ PTY シェルを開けます。WebGL 描画、バッファー内検索（`Ctrl/Cmd+F`）、カラーテーマ（DeskFleet、Dracula、One Dark、Nord、Solarized Light、Catppuccin Latte / Frappé / Macchiato / Mocha、ライト／ダーク別の個別設定にも対応）、ANSI/HTML エクスポートに対応しています。ウィンドウを閉じてもシェルは終了しません。
 - **ファイル転送（`リモート操作 → ファイル` / `Remote control → Files`）**：2 ペインのファイルブラウザーを使い、手元のコンピューターと登録マシンの間で WebRTC 経由のファイル送受信・管理を行えます。既存ファイルを上書きする際は確認ダイアログが表示されます。
 - **リモートデスクトップ（`リモート操作 → デスクトップ` / `Remote control → Desktop`）**：マシンのデスクトップ映像に接続してブラウザーログインや GUI ツールの操作を行い、完了後に作業をエージェントへ戻せます。
 

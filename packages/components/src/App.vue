@@ -22,7 +22,7 @@ import { useProvidersStore } from "./stores/providers.ts"
 const platformClient = usePlatformClient()
 
 const layout = useLayoutStore()
-const { compact, sidebarOpen } = storeToRefs(layout)
+const { compact, sidebarOpen, standaloneSession } = storeToRefs(layout)
 const { t } = useI18n()
 const route = useRoute()
 provideNavigationMotion()
@@ -66,7 +66,7 @@ onBeforeUnmount(() => {
     <WindowManager v-if="!compact && route.name === 'session'" :key="String(route.params.sessionId)" :session-id="String(route.params.sessionId)" />
     <MobileWindowManager v-else-if="compact && route.name === 'session'" :key="`mobile:${route.params.sessionId}`" :session-id="String(route.params.sessionId)" />
     <AppMainWindow v-else />
-    <BottomSheet v-if="compact && !route.meta.fullWindow" :open="sidebarOpen" :title="t('catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
+    <BottomSheet v-if="compact && !route.meta.fullWindow && !standaloneSession" :open="sidebarOpen" :title="t('catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
       <AppSidebar class="h-full" />
     </BottomSheet>
   </div>

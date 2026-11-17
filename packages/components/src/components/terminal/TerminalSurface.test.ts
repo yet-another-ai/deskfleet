@@ -49,6 +49,9 @@ class FakeTerminal {
   options: Record<string, unknown>
   cols = 100
   rows = 30
+  selection = ""
+  hasSelection = vi.fn(() => Boolean(this.selection))
+  getSelection = vi.fn(() => this.selection)
   input: (data: string) => void = () => {}
   resized: (size: { cols: number; rows: number }) => void = () => {}
   titled: (title: string) => void = () => {}
@@ -384,7 +387,19 @@ test("opens local search without sending its shortcut to the shell and keeps sea
   expect(openSearch).toHaveBeenCalledTimes(2)
   expect(handle(new KeyboardEvent("keyup", { key: "f", ctrlKey: true }))).toBe(false)
   expect(openSearch).toHaveBeenCalledTimes(2)
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
   expect(handle(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(true)
+  expect(copy).not.toHaveBeenCalled()
+  terminal.selection = "selected text"
+  const copyEvent = new KeyboardEvent("keydown", { key: "c", ctrlKey: true, cancelable: true })
+  expect(handle(copyEvent)).toBe(false)
+  expect(copyEvent.defaultPrevented).toBe(true)
+  expect(copy).toHaveBeenCalledTimes(1)
+  expect(copy).toHaveBeenCalledWith("selected text")
+  expect(handle(new KeyboardEvent("keyup", { key: "c", ctrlKey: true }))).toBe(false)
+  expect(copy).toHaveBeenCalledTimes(1)
+  copy.mockRestore()
+  terminal.selection = ""
   expect(handle(new KeyboardEvent("keydown", { key: "f" }))).toBe(true)
   await wrapper.setProps({ interactive: true })
   terminal.input("c")

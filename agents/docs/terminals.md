@@ -21,13 +21,16 @@ Every terminal surface has 12 px of padding around its output. The fit addon
 measures the inner host so terminal rows and columns exclude this space.
 Appearance settings belong to the viewing client and apply to live terminals,
 history, and Agent output. Presets include DeskFleet, Dracula, One Dark, Nord,
-and Solarized Light. Users can override the background, text, cursor, selection,
-and 16 ANSI colors, or reset overrides to the selected preset. Selecting another
-preset clears overrides. Colors update existing xterm instances without clearing
-their buffers; applications that explicitly emit truecolor retain those colors.
-Desktop preferences persist in the installation's appearance settings; Web
-preferences persist in browser storage. Existing saved preferences use DeskFleet
-colors until changed.
+Solarized Light, and Catppuccin (Latte, Frappé, Macchiato, Mocha). Users can
+override the background, text, cursor, selection, and 16 ANSI colors, or reset
+overrides to the selected preset. Users can also enable separate light and dark
+terminal presets and color overrides that switch automatically with the client's
+resolved light or dark theme (defaulting the light preset to Catppuccin Latte).
+Selecting another preset clears overrides for the active slot. Colors update
+existing xterm instances without clearing their buffers; applications that
+explicitly emit truecolor retain those colors. Desktop preferences persist in
+the installation's appearance settings; Web preferences persist in browser
+storage. Existing saved preferences use DeskFleet colors until changed.
 
 ## Frontend addons
 
@@ -70,6 +73,8 @@ The terminal toolbar exposes search, copy selection, and both export formats in
 machine, Session, and read-only Agent terminals. Ctrl/Cmd+F opens search within
 the focused terminal; Enter/Shift+Enter or F3/Shift+F3 navigate matches while
 search has focus, and Escape closes it and returns focus to the terminal.
+Ctrl+C copies the terminal selection when text is selected and otherwise sends
+`\x03` in interactive terminals.
 In interactive terminals, Cmd+Left and Cmd+Right move the cursor to the line
 start (`\x01`) and end (`\x05`). Alt+Left and Alt+Right move it by word (`\x1bb`
 and `\x1bf`).

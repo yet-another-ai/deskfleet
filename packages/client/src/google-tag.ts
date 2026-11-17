@@ -14,6 +14,27 @@ export interface NativeTelemetrySink {
   logEvent(name: string, params: Record<string, string | number | boolean>): Promise<void> | void
 }
 
+/** Cloneable commands for a desktop host; browser gtag queues still use Arguments objects. */
+export type GoogleTagMessage =
+  | { type: "gtag"; args: unknown[] }
+  | { type: "dataLayer"; payload: Record<string, unknown> }
+  | { type: "loadScript"; src: string }
+  | { type: "reset" }
+
+let googleTagTransport: ((message: GoogleTagMessage) => void) | undefined
+
+/** Installed by the desktop entry point before analytics initializes. */
+export function setGoogleTagTransport(transport: (message: GoogleTagMessage) => void): void {
+  googleTagTransport = transport
+}
+
+function resetGoogleTagTransport(): void {
+  if (!googleTagTransport) return
+  googleTagTransport({ type: "reset" })
+  injectedScripts.clear()
+  defaultConsentPushed = false
+}
+
 interface DataLayerWindow {
   dataLayer?: unknown[]
   gtag?: (...args: unknown[]) => void
@@ -63,17 +84,26 @@ function getWindow(): (Window & DataLayerWindow) | undefined {
 }
 
 function pushGtag(...args: unknown[]): void {
+  if (googleTagTransport) {
+    googleTagTransport({ type: "gtag", args })
+    return
+  }
   const win = getWindow()
   if (!win) return
   win.dataLayer ??= []
   if (typeof win.gtag === "function") {
     win.gtag(...args)
   } else {
-    win.dataLayer.push(args)
+    // gtag.js recognizes commands as Arguments objects, not arrays.
+    win.dataLayer.push(arguments)
   }
 }
 
 function pushDataLayerObject(payload: Record<string, unknown>): void {
+  if (googleTagTransport) {
+    googleTagTransport({ type: "dataLayer", payload })
+    return
+  }
   const win = getWindow()
   if (!win) return
   win.dataLayer ??= []
@@ -83,6 +113,10 @@ function pushDataLayerObject(payload: Record<string, unknown>): void {
 function injectScriptOnce(src: string): void {
   if (typeof document === "undefined" || injectedScripts.has(src)) return
   injectedScripts.add(src)
+  if (googleTagTransport) {
+    googleTagTransport({ type: "loadScript", src })
+    return
+  }
   if (document.querySelector(`script[src="${src}"]`)) return
   const script = document.createElement("script")
   script.async = true
@@ -127,9 +161,11 @@ function isCustomSchemeEnvironment(): boolean {
 export function initializeGoogleConsentMode(): void {
   const win = getWindow()
   if (!win || defaultConsentPushed) return
-  win.dataLayer ??= []
-  win.gtag ??= function gtag(...args: unknown[]) {
-    win.dataLayer!.push(args)
+  if (!googleTagTransport) {
+    win.dataLayer ??= []
+    win.gtag ??= function gtag(..._args: unknown[]) {
+      win.dataLayer!.push(arguments)
+    }
   }
   defaultConsentPushed = true
   pushGtag("consent", "default", { ...CONSENT_DENIED, wait_for_update: 500 })
@@ -158,6 +194,7 @@ export function configureGoogleTag(
       pushGtag("consent", "update", { ...CONSENT_DENIED })
     }
     activeConsent = Boolean(consented && nativeTelemetrySink)
+    resetGoogleTagTransport()
     return
   }
 
@@ -168,21 +205,35 @@ export function configureGoogleTag(
       pushGtag("consent", "update", { ...CONSENT_DENIED })
       activeConsent = false
     }
+    resetGoogleTagTransport()
     return
   }
 
   const wasActive = activeConsent
   activeConsent = true
-  if (!wasActive) {
-    pushGtag("js", new Date())
-    pushGtag("consent", "update", { ...CONSENT_GRANTED })
-  }
 
   const clientId = readOrCreateGaClientId(true)
   const customScheme = isCustomSchemeEnvironment()
   const gtmId = currentConfig?.gtmId
   const gaId = currentConfig?.gaMeasurementId
   const adsId = currentConfig?.googleAdsId
+
+  if (googleTagTransport && !wasActive) {
+    // Google can initialize configured destinations before processing their
+    // config commands. Automatic hits must use the owner page and stable ID.
+    pushGtag("set", {
+      send_page_view: false,
+      ...(clientId ? { client_id: clientId } : {}),
+      ...(currentUserId ? { user_id: currentUserId } : {}),
+      ...(currentConfig?.platform ? { app_platform: currentConfig.platform } : {}),
+      page_location: normalizeGooglePageLocation(),
+    })
+  }
+
+  if (!wasActive) {
+    pushGtag("consent", "update", { ...CONSENT_GRANTED })
+    pushGtag("js", new Date())
+  }
 
   if (gtmId) {
     pushDataLayerObject({
@@ -191,12 +242,6 @@ export function configureGoogleTag(
       ...(clientId ? { ga_client_id: clientId } : {}),
       ...(currentConfig?.platform ? { app_platform: currentConfig.platform } : {}),
     })
-    injectScriptOnce(`https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`)
-  }
-
-  const gtagBootstrapId = gaId ?? adsId
-  if (gtagBootstrapId) {
-    injectScriptOnce(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gtagBootstrapId)}`)
   }
 
   if (gaId && !wasActive) {
@@ -214,6 +259,16 @@ export function configureGoogleTag(
     pushGtag("config", adsId, {
       ...(customScheme ? { client_storage: "none" } : {}),
     })
+  }
+
+  // Queue identity and page settings before any script can process commands.
+  // Desktop commands cross IPC asynchronously, unlike a browser's synchronous queue.
+  if (gtmId) {
+    injectScriptOnce(`https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`)
+  }
+  const gtagBootstrapId = gaId ?? adsId
+  if (gtagBootstrapId) {
+    injectScriptOnce(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gtagBootstrapId)}`)
   }
 }
 
@@ -269,7 +324,9 @@ export function trackGoogleEvent(
   }
 }
 
-export function resetGoogleTagForTests(): void {
+/** Stop this document's analytics while retaining its desktop transport for remounts. */
+export function shutdownGoogleTag(): void {
+  resetGoogleTagTransport()
   currentConfig = undefined
   activeConsent = false
   currentUserId = undefined
@@ -281,4 +338,9 @@ export function resetGoogleTagForTests(): void {
     delete win.dataLayer
     delete win.gtag
   }
+}
+
+export function resetGoogleTagForTests(): void {
+  shutdownGoogleTag()
+  googleTagTransport = undefined
 }

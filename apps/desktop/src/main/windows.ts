@@ -1,10 +1,11 @@
-import { app, BrowserWindow, type WebPreferences } from "electron"
+import { app, BrowserWindow, type BrowserWindowConstructorOptions, type WebPreferences } from "electron"
 import { join } from "node:path"
 import { LOCALE_ARGUMENT_PREFIX, resolveAppLocale } from "../../../../packages/client/src/i18n.ts"
+import { sessionWindowKey } from "@deskfleet/client/session-window"
 import { resolveRendererEntrypoint } from "../shared/renderer-security.ts"
 import { attachDesktopMedia } from "./desktop-media.ts"
 import { attachSettings } from "./settings.ts"
-import { attachExternalLinks, isAuxiliaryRendererUrl } from "./external-links.ts"
+import { attachExternalLinks, isAuxiliaryRendererUrl, parseSessionWindowUrl } from "./external-links.ts"
 import { attachAppearance } from "./appearance.ts"
 import { attachUpdates } from "./updates.ts"
 import { attachWindowsDesktopService } from "./windows-desktop-service.ts"
@@ -12,8 +13,10 @@ import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
 import { attachApplication } from "./application.ts"
+import { attachGoogleTag } from "./google-tag.ts"
 
 let mainWindow: BrowserWindow | null = null
+const sessionWindows = new Map<string, BrowserWindow>()
 
 export function secureWebPreferences(): WebPreferences {
   return {
@@ -31,8 +34,71 @@ export function secureWebPreferences(): WebPreferences {
   }
 }
 
+function auxiliaryWindowOptions(url: string): BrowserWindowConstructorOptions | null {
+  const sessionTarget = parseSessionWindowUrl(url)
+  if (sessionTarget) {
+    const existing = sessionWindows.get(sessionWindowKey(sessionTarget))
+    if (existing && !existing.isDestroyed()) {
+      if (existing.isMinimized()) existing.restore()
+      existing.show()
+      existing.focus()
+      return null
+    }
+  }
+  return {
+    title: "DeskFleet",
+    ...(sessionTarget
+      ? { width: 1120, height: 780, minWidth: 720, minHeight: 520 }
+      : { width: 960, height: 680, minWidth: 480, minHeight: 360 }),
+    ...(process.platform === "darwin" ? {} : { icon: buildResourcePath("icon.png") }),
+    ...windowChromeOptions(process.platform),
+    webPreferences: secureWebPreferences(),
+  }
+}
+
+function attachRendererWindow(window: BrowserWindow): void {
+  attachApplication(window)
+  attachGoogleTag(window)
+  attachDesktopMedia(window)
+  attachSettings(window)
+  attachAppearance(window)
+  attachUpdates(window)
+  attachWindowsDesktopService(window)
+  followSystemTheme(window, process.platform)
+
+  // The renderer is a single hash-routed document; standalone previews and Session views open in auxiliary windows.
+  attachExternalLinks(window.webContents, auxiliaryWindowOptions)
+  window.webContents.on("did-create-window", (child, details) => {
+    const sessionTarget = parseSessionWindowUrl(details.url)
+    if (sessionTarget) {
+      const key = sessionWindowKey(sessionTarget)
+      sessionWindows.set(key, child)
+      child.once("closed", () => {
+        if (sessionWindows.get(key) === child) sessionWindows.delete(key)
+      })
+      attachRendererWindow(child)
+      return
+    }
+    attachAppearance(child)
+    followSystemTheme(child, process.platform)
+    attachExternalLinks(child.webContents)
+    child.webContents.on("will-navigate", (event, url) => {
+      if (event.frame === child.webContents.mainFrame && !isAuxiliaryRendererUrl(url)) event.preventDefault()
+    })
+  })
+  window.webContents.on("will-navigate", (event, url) => {
+    if (event.frame === window.webContents.mainFrame && !isAuxiliaryRendererUrl(url)) event.preventDefault()
+  })
+  window.webContents.on("render-process-gone", (_event, details) => {
+    console.error("DeskFleet renderer process exited", details)
+  })
+  window.webContents.on("did-fail-load", (_event, code, description) => {
+    console.error("DeskFleet renderer failed to load", { code, description })
+  })
+}
+
 export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""): Promise<void> {
-  // The Dock icon is visible only while the window is.
+  // The Dock icon is visible only while a window is.
   await app.dock?.show()
   const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -58,13 +124,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
     webPreferences: secureWebPreferences(),
   })
   mainWindow = window
-  attachApplication(window)
-  attachDesktopMedia(window)
-  attachSettings(window)
-  attachAppearance(window)
-  attachUpdates(window)
-  attachWindowsDesktopService(window)
-  followSystemTheme(window, process.platform)
+  attachRendererWindow(window)
   window.once("closed", () => {
     if (mainWindow === window) mainWindow = null
   })
@@ -76,35 +136,6 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
   })
   // Windows ends the session through window messages rather than a quit request.
   window.on("session-end", () => lifecycle.quit())
-
-  // The renderer is a single hash-routed document; standalone previews open in auxiliary windows.
-  attachExternalLinks(window.webContents, () => ({
-    title: "DeskFleet",
-    width: 960,
-    height: 680,
-    minWidth: 480,
-    minHeight: 360,
-    ...(process.platform === "darwin" ? {} : { icon: buildResourcePath("icon.png") }),
-    ...windowChromeOptions(process.platform),
-    webPreferences: secureWebPreferences(),
-  }))
-  window.webContents.on("did-create-window", (child) => {
-    attachAppearance(child)
-    followSystemTheme(child, process.platform)
-    attachExternalLinks(child.webContents)
-    child.webContents.on("will-navigate", (event, url) => {
-      if (event.frame === child.webContents.mainFrame && !isAuxiliaryRendererUrl(url)) event.preventDefault()
-    })
-  })
-  window.webContents.on("will-navigate", (event) => {
-    if (event.frame === window.webContents.mainFrame) event.preventDefault()
-  })
-  window.webContents.on("render-process-gone", (_event, details) => {
-    console.error("DeskFleet renderer process exited", details)
-  })
-  window.webContents.on("did-fail-load", (_event, code, description) => {
-    console.error("DeskFleet renderer failed to load", { code, description })
-  })
 
   void window.loadURL(`${entrypoint.url}${hash}`)
 }

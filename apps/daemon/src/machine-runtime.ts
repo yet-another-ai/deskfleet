@@ -29,6 +29,7 @@ interface MachineOptions {
   agentProvider?: AgentProvider
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
+  workspaceDirectory?: string
   terminals?: TerminalSessions
   allowLocalControlForTests?: boolean
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
@@ -38,7 +39,7 @@ interface MachineOptions {
 
 async function openMachine(directory: string, hostDirectory: string, options: MachineOptions) {
   await mkdir(directory, { recursive: true, mode: 0o700 })
-  const catalog = new DaemonCatalog(directory, hostDirectory)
+  const catalog = new DaemonCatalog(directory, hostDirectory, options.workspaceDirectory)
   const providers = new AgentProviders(directory, options.agentProvider, options.auvPath ? dirname(options.auvPath) : undefined)
   const mcpServers = new McpServers(directory, options.auvPath)
   const terminals = options.terminals ?? new TerminalSessions({ directory: join(directory, "terminals") })

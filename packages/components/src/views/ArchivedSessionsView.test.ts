@@ -221,7 +221,7 @@ test("offline archived history can be opened without pin actions while restore a
   const link = wrapper!.get('a[aria-label="Open Ship archive UI"]')
   await link.trigger("contextmenu", { button: 2 }); await flushPromises()
   const items = page().findAll('[role="menuitem"]')
-  expect(items.map(item => item.text())).toEqual(["Rename session", "Restore session"])
+  expect(items.map(item => item.text())).toEqual(["Open in new window", "Rename session", "Restore session"])
   expect(items.find(item => item.text() === "Rename session")!.attributes("data-disabled")).toBeDefined()
   expect(items.find(item => item.text() === "Restore session")!.attributes("data-disabled")).toBeDefined()
   await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()

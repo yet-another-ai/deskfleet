@@ -69,6 +69,12 @@ selection and `--user-data-dir` override. Electron ignores
 reuse a standalone daemon only when that daemon is explicitly configured to use
 the same `<userData>/daemon` directory.
 
+On Linux and Windows default Electron profiles, the desktop host places Session
+attachments and default Session worktrees under
+`$XDG_DATA_HOME/deskfleet/daemon` (or `~/.local/share/deskfleet/daemon`) and
+`%LOCALAPPDATA%\deskfleet\daemon`. Profiles started with `--user-data-dir` keep
+all files inside `<userData>/daemon`.
+
 The first production Team catalog uses `<daemon directory>/machine/`; additional
 Teams use `machines/<uuid>/`. The host's `machine-registrations.json` maps backend
 and Team to each directory. `machine-identity.json` stores the host's private
@@ -81,7 +87,7 @@ Machine ID, catalog origin, and history. Every Team directory contains:
 - `agent-providers.json`: machine-local provider launch settings and environment.
 - `mcp-servers.json`: additional MCP servers and their private environment/header settings.
 - `scheduled-tasks.json`: task configuration, delegated user identity, and recent run records.
-- `session-worktrees/`: ownership manifests and, by default, generated Session checkouts.
+- `session-worktrees/`: ownership manifests and default generated Session checkouts on macOS, headless daemons, and custom Electron profiles.
 - `terminals/`: terminal metadata and full output transcripts.
 
 Earlier unauthenticated development data outside this namespace is not imported.

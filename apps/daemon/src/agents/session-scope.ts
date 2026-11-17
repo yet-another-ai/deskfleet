@@ -18,6 +18,10 @@ export class AcpSessionScope {
     replayedChildren: Map<string, SubagentUpdate[]>
   }
 
+  get active(): string | undefined {
+    return this.#active
+  }
+
   begin(expectedId?: string): void {
     if (this.#opening) throw new Error("An ACP session is already opening")
     if (expectedId !== undefined) requireSessionId(expectedId)

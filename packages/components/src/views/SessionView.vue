@@ -37,7 +37,9 @@ import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type Mer
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+import { openSessionInNewWindow } from "@deskfleet/client/session-window"
 import { useConnectionResume } from "../composables/useConnectionResume.ts"
+import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useSessionLabel } from "../composables/useSessionLabel.ts"
 import { useSessionRead } from "../composables/useSessionRead.ts"
@@ -68,10 +70,12 @@ const windowedMainWindow = !!inject(windowHeaderActionsTargetKey)
 let disposed = false
 onScopeDispose(() => { disposed = true })
 const sessionLabel = useSessionLabel()
+const account = useAccountSession()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const terminals = useTerminalsStore()
-const { compact, sidebarOpen, terminalPanelOpen } = storeToRefs(useLayoutStore())
+const { compact, sidebarOpen, standaloneSession, terminalPanelOpen } = storeToRefs(useLayoutStore())
+const canOpenInNewWindow = computed(() => client.platform !== "web" && !client.mobile && !standaloneSession.value)
 const focusedMermaid = computed(() => typeof route.query.mermaid === "string" && route.query.mermaid ? route.query.mermaid : undefined)
 const focusedMermaidSource = computed<MermaidSource>(() => ({
   sessionId: props.sessionId,
@@ -350,6 +354,14 @@ async function checkOperation(operationId: string): Promise<void> {
   const result = await agents.checkOperation(operationId)
   if (operation?.method === "_deskfleet/session/fork" && result) await showFork(result as AgentSnapshot, operation.sessionId!)
 }
+function openInNewWindow(): void {
+  const machineId = location.value?.machine.id ?? account?.machineId.value ?? fleet.targetId
+  openSessionInNewWindow({
+    sessionId: props.sessionId,
+    ...(account?.teamId.value ? { teamId: account.teamId.value } : {}),
+    ...(machineId ? { machineId } : {}),
+  })
+}
 </script>
 
 <template>
@@ -361,7 +373,7 @@ async function checkOperation(operationId: string): Promise<void> {
           <OpenWithMenu v-if="applicationTarget" ref="openWithMenu" :key="applicationTarget.worktreeId" v-bind="applicationTarget" :disabled="!location?.machine.online" split hide-error />
           <UiButton v-if="newTerminalWindow && !compact" variant="ghost" size="icon" :label="t('terminal.new')" :disabled="!location?.worktree" :class="applicationTarget && 'ml-0.5'" data-new-terminal-window @click="newTerminalWindow"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton v-if="compact && !windowedMainWindow && terminalWorktree" variant="ghost" size="icon" :label="t(terminalPanelOpen ? 'terminal.hidePanel' : 'terminal.showPanel')" @click="terminalPanelOpen = !terminalPanelOpen"><SquareTerminal :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
-          <AgentSessionMenu :can-stop="canStop" :can-fork="canFork" :fork-disabled="forkDisabled" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" />
+          <AgentSessionMenu :can-stop="canStop" :can-fork="canFork" :fork-disabled="forkDisabled" :can-open-in-new-window="canOpenInNewWindow" :disabled="!location?.machine.online || busy || !!pendingFork" :context="snapshot.session.context" :archive-state="snapshot.session.archiveState" @stop="action(() => agents.stop(sessionId))" @archive="action(() => agents.archive(sessionId))" @restore="action(() => agents.restore(sessionId))" @fork="forkOpen = true" @rename="renameOpen = true" @open-in-new-window="openInNewWindow" />
         </template>
         <UserAvatarStack v-if="faces.length" :people="faces" :size="22" :limit="5" :class="snapshot && 'ml-1'" />
       </div>

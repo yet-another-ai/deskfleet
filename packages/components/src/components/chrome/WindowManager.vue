@@ -461,7 +461,7 @@ onScopeDispose(() => {
       </template>
       <template #prefixHeaderActions="{ group }">
         <div
-          v-if="group.id === topLeftGroupId"
+          v-if="group.id === topLeftGroupId && (!layout.standaloneSession || toolbarNeedsTrafficLightInset)"
           class="ml-1 flex h-full items-center pr-[3px]"
           :class="{ 'pl-20': toolbarNeedsTrafficLightInset }"
           :data-window-toolbar-group="group.id"

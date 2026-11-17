@@ -56,7 +56,7 @@ DeskFleet 支持 **Codex CLI**、**Claude Code**、**Cursor CLI**、**Grok CLI**
 除对话外，DeskFleet 还通过 WebRTC 为你提供对执行机器工作环境的直接访问：
 
 - **变更面板（Changes）**：在 Agent 修改代码的同时，实时检查会话仓库中已暂存和未暂存的文件 diff。
-- **会话与机器终端（Terminal）**：在会话 worktree、工作区或机器级别打开持久化的原生 PTY 终端。终端支持 WebGL 渲染、缓冲区搜索（`Ctrl/Cmd+F`）、多种配色主题（DeskFleet、Dracula、One Dark、Nord、Solarized Light）以及 ANSI/HTML 导出。关闭客户端窗口不会终止正在运行的 shell。
+- **会话与机器终端（Terminal）**：在会话 worktree、工作区或机器级别打开持久化的原生 PTY 终端。终端支持 WebGL 渲染、缓冲区搜索（`Ctrl/Cmd+F`）、多种配色主题（DeskFleet、Dracula、One Dark、Nord、Solarized Light、Catppuccin Latte / Frappé / Macchiato / Mocha，并支持分别为浅色与深色外观切换配置）以及 ANSI/HTML 导出。关闭客户端窗口不会终止正在运行的 shell。
 - **文件传输（`远程控制 → 文件` / `Remote control → Files`）**：通过双栏文件浏览器在本地电脑与已注册机器之间经由 WebRTC 直接上传、下载和管理文件，覆盖现有文件前会进行安全确认。
 - **远程桌面（`远程控制 → 桌面` / `Remote control → Desktop`）**：连接目标机器的实时桌面流，处理浏览器登录、界面验证或 GUI 工具操作，完成后再让 Agent 接着执行。
 

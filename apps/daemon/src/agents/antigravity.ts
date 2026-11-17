@@ -1,34 +1,8 @@
-import { readFile } from "node:fs/promises"
-import { homedir } from "node:os"
-import { join } from "node:path"
-import { DatabaseSync } from "node:sqlite"
-import { setTimeout as delay } from "node:timers/promises"
 import type { PromptResponse, Usage } from "@agentclientprotocol/sdk/unstable"
 import type { AgentQuotaItem } from "../agent-configuration-protocol.ts"
 import { clampQuota, runUsageJsonCommand } from "../agent-usage.ts"
-import { connectAcpProcess, type AgentClient, type AgentConnection, type AgentProvider } from "./acp.ts"
+import { connectAcpProcess, type AgentConnection, type AgentProvider } from "./acp.ts"
 import { launchProviderCommand } from "../provider-setup-process.ts"
-
-const CONTINUATION_PROMPT =
-  "Background command notification received. Continue the current task from the latest background command output without repeating already completed steps."
-
-interface TranscriptStep {
-  step_index?: number
-  type?: string
-  status?: string
-  content?: string
-  tool_calls?: { args?: Record<string, unknown> }[]
-}
-
-export type AntigravityTranscriptStatus = {
-  state: "idle" | "running" | "settled_response"
-  lastStepIndex: number
-}
-
-const isDaemon = (input: unknown): boolean =>
-  typeof input === "object" && input !== null && [true, "true"].includes((input as { IsDaemon?: unknown }).IsDaemon as boolean)
-
-const cleanId = (id: string): string => id.replace(/[.,;:]+$/, "")
 
 function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
   if (!a || !b) return a ?? b ?? undefined
@@ -43,218 +17,83 @@ function mergeUsage(a?: Usage | null, b?: Usage | null): Usage | undefined {
   }
 }
 
-/** Checks whether the session SQLite DB has an active `WAITING` step (`status = 9`, which `transcript.jsonl` omits). */
-function hasWaitingStep(dbPath: string): boolean {
-  let db: DatabaseSync | undefined
-  try {
-    db = new DatabaseSync(dbPath, { readOnly: true, timeout: 2000 })
-    return Boolean(db.prepare("SELECT 1 FROM steps WHERE status = 9 LIMIT 1").get())
-  } catch {
-    return false
-  } finally {
-    db?.close()
-  }
-}
-
-/** Inspects `transcript.jsonl` steps after `turnStartStepIndex` for active or settled background tasks. */
-export function inspectAntigravityTranscript(raw: string, turnStartStepIndex: number): AntigravityTranscriptStatus {
-  const running = new Set<string>()
-  let plannerDaemon = false
-  let lastRunning = -1
-  let lastWakeup = -1
-  let lastStep: TranscriptStep | undefined
-
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue
-    let step: TranscriptStep
-    try { step = JSON.parse(line) as TranscriptStep } catch { continue }
-    const idx = typeof step.step_index === "number" ? step.step_index : -1
-    if (idx < 0) continue
-
-    if (step.type === "PLANNER_RESPONSE") plannerDaemon = !!step.tool_calls?.some(c => isDaemon(c.args))
-    if (idx > turnStartStepIndex) {
-      const text = typeof step.content === "string" ? step.content : ""
-      if (step.status === "RUNNING" && !plannerDaemon) {
-        const id = text.match(/Tool is running as a background task with task id:\s*(\S+)/)?.[1]
-        running.add(id ? cleanId(id) : `step-${idx}`)
-        lastRunning = idx
-      } else if (step.type === "SYSTEM_MESSAGE") {
-        for (const id of [text.match(/sender=(\S+)/)?.[1], text.match(/Task id "([^"]+)"/)?.[1]]) {
-          if (id) running.delete(cleanId(id))
-        }
-        lastWakeup = idx
-      } else if (step.type === "GENERIC") {
-        for (const m of text.matchAll(/Task "([^"]+)" cancelled\./g)) if (m[1]) running.delete(cleanId(m[1]))
-        if (text.includes("No background tasks are currently running.")) running.clear()
-      }
-    }
-    lastStep = step
-  }
-
-  const lastStepIndex = typeof lastStep?.step_index === "number" ? lastStep.step_index : -1
-  if (!lastStep || lastStepIndex <= turnStartStepIndex) return { state: "idle", lastStepIndex }
-  if (
-    running.size === 0
-    && lastWakeup > lastRunning
-    && lastStepIndex > lastWakeup
-    && lastStep.type === "PLANNER_RESPONSE"
-    && lastStep.status === "DONE"
-    && !lastStep.tool_calls?.length
-  ) {
-    return { state: "settled_response", lastStepIndex }
-  }
-  return { state: "running", lastStepIndex }
-}
-
-/** Wraps an Antigravity ACP client + connection to await backgrounded commands and bridge turn steering. */
-export function createAntigravityClientWrapper(
-  client: AgentClient,
-  options: { dataDir?: string; pollIntervalMs?: number } = {},
-) {
-  const dataDir = options.dataDir ?? process.env.ANTIGRAVITY_CLI_DIR
-    ?? join(process.env.GEMINI_HOME ?? join(homedir(), ".gemini"), "antigravity-cli")
-  const pollMs = options.pollIntervalMs ?? 250
-  const trackers = new Map<string, { pending: Set<string>; suppress: boolean; onFlush?: () => void }>()
-  const aborts = new Map<string, AbortController>()
-  const turns = new Map<string, { steered: Promise<PromptResponse>[]; wake?: () => void }>()
-
-  const getTracker = (id: string) => {
-    let t = trackers.get(id)
-    if (!t) trackers.set(id, (t = { pending: new Set(), suppress: false }))
-    return t
-  }
-  const readTranscript = (id: string) =>
-    readFile(join(dataDir, "brain", id, ".system_generated", "logs", "transcript.jsonl"), "utf8").catch(() => null)
-
-  const wrappedClient: AgentClient = {
-    ...client,
-    async onUpdate(notification) {
-      const t = getTracker(notification.sessionId)
-      const u = notification.update
-      if (u.sessionUpdate === "tool_call" && typeof u.toolCallId === "string" && !isDaemon(u.rawInput)) {
-        if (u.status === "completed" || u.status === "failed") t.pending.delete(u.toolCallId)
-        else t.pending.add(u.toolCallId)
-      } else if (u.sessionUpdate === "tool_call_update" && typeof u.toolCallId === "string" && (u.status === "completed" || u.status === "failed")) {
-        t.pending.delete(u.toolCallId)
-      }
-      if (t.suppress) return
-      await client.onUpdate(notification)
-      t.onFlush?.()
+/** Bridges turn steering for `agy acp` by chaining active `session/prompt` legs and merging usage. */
+export function wrapAntigravityConnection(
+  connection: AgentConnection,
+  signal?: AbortSignal,
+): AgentConnection {
+  const turns = new Map<string, { steered: Promise<PromptResponse>[]; cancelled: boolean }>()
+  const initialization = {
+    ...connection.initialization,
+    _meta: {
+      ...connection.initialization._meta,
+      steering: { supported: true, supportsPromptRequired: true },
     },
   }
 
-  function wrapConnection(connection: AgentConnection): AgentConnection {
-    const initialization = {
-      ...connection.initialization,
-      _meta: { ...connection.initialization._meta, steering: { supported: true, supportsPromptRequired: true } },
-    }
-    return {
-      ...connection,
-      initialization,
-      async prompt(params) {
-        const { sessionId } = params
-        const t = getTracker(sessionId)
-        t.pending.clear()
-        t.suppress = false
-        const abort = new AbortController()
-        aborts.set(sessionId, abort)
-        const onAbort = () => {
+  return {
+    ...connection,
+    initialization,
+    async prompt(params) {
+      const { sessionId } = params
+      const turn: { steered: Promise<PromptResponse>[]; cancelled: boolean } = {
+        steered: [],
+        cancelled: Boolean(signal?.aborted),
+      }
+      const onAbort = () => {
+        turn.cancelled = true
+        if (turns.get(sessionId) === turn) {
           turns.delete(sessionId)
-          abort.abort()
         }
-        client.signal?.addEventListener("abort", onAbort, { once: true })
-        const turn: { steered: Promise<PromptResponse>[]; wake?: () => void } = { steered: [] }
-        let stopReason: PromptResponse["stopReason"] = "end_turn"
-        let usage: Usage | undefined
-        const runLeg = async (leg: Promise<PromptResponse>) => {
-          for (let next: Promise<PromptResponse> | undefined = leg; next; next = turn.steered.shift()) {
-            const res = await next
-            usage = mergeUsage(usage, res.usage)
-            stopReason = res.stopReason
-          }
+      }
+      signal?.addEventListener("abort", onAbort, { once: true })
+      if (!turn.cancelled) {
+        turns.set(sessionId, turn)
+      }
+
+      let stopReason: PromptResponse["stopReason"] = "end_turn"
+      let usage: Usage | undefined
+      try {
+        for (
+          let next: Promise<PromptResponse> | undefined = connection.prompt(params);
+          next;
+          next = turn.steered.shift()
+        ) {
+          const res = await next
+          usage = mergeUsage(usage, res.usage)
+          stopReason = res.stopReason
         }
-
-        try {
-          const initRaw = await readTranscript(sessionId)
-          const startStep = initRaw ? inspectAntigravityTranscript(initRaw, Number.MAX_SAFE_INTEGER).lastStepIndex : -1
-          if (!abort.signal.aborted) turns.set(sessionId, turn)
-          await runLeg(connection.prompt(params))
-
-          const dbPath = join(dataDir, "conversations", `${sessionId}.db`)
-          while (stopReason === "end_turn" && !abort.signal.aborted && t.pending.size > 0) {
-            const startedAt = Date.now()
-            const wake = new AbortController()
-            turn.wake = () => wake.abort()
-            let state: "waiting" | "settled" | undefined
-            while (!abort.signal.aborted && !turn.steered.length && Date.now() - startedAt < 30 * 60_000) {
-              if (hasWaitingStep(dbPath)) {
-                state = "waiting"
-                break
-              }
-              const raw = await readTranscript(sessionId)
-              const s = raw ? inspectAntigravityTranscript(raw, startStep) : { state: "idle" as const, lastStepIndex: -1 }
-              if (s.state === "idle" && Date.now() - startedAt >= pollMs * 8) break
-              if (s.state === "settled_response") {
-                state = "settled"
-                break
-              }
-              await delay(pollMs, undefined, { signal: AbortSignal.any([abort.signal, wake.signal]) }).catch(() => {})
-            }
-            if (turn.steered.length > 0) {
-              await runLeg(turn.steered.shift()!)
-              continue
-            }
-            if (!state || abort.signal.aborted) break
-
-            const isSettled = state === "settled"
-            if (isSettled) turns.delete(sessionId)
-            let timer: ReturnType<typeof setTimeout> | undefined
-            if (isSettled) {
-              t.onFlush = () => {
-                if (t.pending.size > 0) return
-                clearTimeout(timer)
-                timer = setTimeout(() => {
-                  t.suppress = true
-                  void connection.cancel(sessionId).catch(() => {})
-                }, Math.min(120, pollMs * 2))
-              }
-              t.onFlush()
-            }
-            try {
-              await runLeg(connection.prompt({ sessionId, prompt: [{ type: "text", text: CONTINUATION_PROMPT }] }))
-              if (isSettled) stopReason = "end_turn"
-            } finally {
-              clearTimeout(timer)
-              t.onFlush = undefined
-              t.suppress = false
-            }
-            if (isSettled) break
-          }
-        } finally {
-          client.signal?.removeEventListener("abort", onAbort)
+      } finally {
+        signal?.removeEventListener("abort", onAbort)
+        if (turns.get(sessionId) === turn) {
           turns.delete(sessionId)
-          if (aborts.get(sessionId) === abort) aborts.delete(sessionId)
         }
-        return { stopReason: abort.signal.aborted ? "cancelled" : stopReason, ...(usage ? { usage } : {}) }
-      },
-      async steer(params) {
-        const turn = turns.get(params.sessionId)
-        if (!turn) return { outcome: "inactive" }
-        const next = connection.prompt(params)
-        next.catch(() => {})
-        turn.steered.push(next)
-        turn.wake?.()
-        return { outcome: "injected" }
-      },
-      async cancel(sessionId) {
+      }
+
+      return {
+        stopReason: turn.cancelled ? "cancelled" : stopReason,
+        ...(usage ? { usage } : {}),
+      }
+    },
+    async steer(params) {
+      const turn = turns.get(params.sessionId)
+      if (!turn) {
+        return { outcome: "inactive" }
+      }
+      const next = connection.prompt(params)
+      next.catch(() => {})
+      turn.steered.push(next)
+      return { outcome: "injected" }
+    },
+    async cancel(sessionId) {
+      const turn = turns.get(sessionId)
+      if (turn) {
+        turn.cancelled = true
         turns.delete(sessionId)
-        aborts.get(sessionId)?.abort()
-        await connection.cancel(sessionId)
-      },
-    }
+      }
+      await connection.cancel(sessionId)
+    },
   }
-
-  return { wrappedClient, wrapConnection }
 }
 
 /** Parses `agy -p "/usage" --output-format json` output into quota buckets. */
@@ -288,10 +127,12 @@ export const antigravityProvider: AgentProvider = {
   id: "antigravity",
   async connect(config, client) {
     const geminiDir = config.env?.GEMINI_HOME ?? process.env.GEMINI_HOME
-    const dataDir = config.env?.ANTIGRAVITY_CLI_DIR ?? (geminiDir ? join(geminiDir, "antigravity-cli") : undefined)
     const args = geminiDir ? ["acp", "--gemini-dir", geminiDir] : ["acp"]
-    const { wrappedClient, wrapConnection } = createAntigravityClientWrapper(client, { dataDir })
-    return wrapConnection(await connectAcpProcess(launchProviderCommand(config.binaryPath || "agy", args, config.env), wrappedClient))
+    const connection = await connectAcpProcess(
+      launchProviderCommand(config.binaryPath || "agy", args, config.env),
+      client,
+    )
+    return wrapAntigravityConnection(connection, client.signal)
   },
   async readUsage(config, signal) {
     return parseAntigravityUsage(await runUsageJsonCommand(config.binaryPath || "agy", ["-p", "/usage", "--output-format", "json"], config.env, signal))

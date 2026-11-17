@@ -43,7 +43,7 @@ test.each([false, true])("right-click opens a session menu without navigating (s
   const { router, row } = await render(selected)
   await row.trigger("contextmenu", { button: 2, clientX: 30, clientY: 40 }); await flushPromises()
   expect(page().get('[role="menu"]').attributes("aria-label")).toBe("Session actions")
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Pin session", "Rename session", "Archive session"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Open in new window", "Pin session", "Rename session", "Archive session"])
   expect(router.currentRoute.value.params.sessionId).toBe(selected ? "30" : "31")
   await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(page().find('[role="menu"]').exists()).toBe(false)
@@ -103,7 +103,7 @@ test("marking a read session unread sends the shared rewind without navigating",
   agents.sessions["30"] = { ...agentSnapshot().session, title: "Investigate failing checks", lastCompletedSeq: "6", lastReadSeq: "8" }
   const markUnread = vi.spyOn(agents, "markUnread").mockResolvedValue()
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Pin session", "Mark as unread", "Rename session", "Archive session"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Open in new window", "Pin session", "Mark as unread", "Rename session", "Archive session"])
   await item("Mark as unread").trigger("click"); await flushPromises()
   expect(markUnread).toHaveBeenCalledExactlyOnceWith("30")
   expect(page().find('[role="menu"]').exists()).toBe(false)
@@ -129,7 +129,7 @@ test("archived read sessions can be marked unread and offline sessions keep the 
   agents.sessions["30"] = { ...agentSnapshot().session, archiveState: "archived", lastCompletedSeq: "4", lastReadSeq: "4" }
   const markUnread = vi.spyOn(agents, "markUnread").mockResolvedValue()
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Mark as unread", "Rename session", "Restore session"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Open in new window", "Mark as unread", "Rename session", "Restore session"])
   const action = item("Mark as unread")
   expect(action.attributes("data-disabled")).toBeDefined()
   await action.trigger("click"); await flushPromises()
@@ -162,7 +162,7 @@ test.each([false, true])("archiving removes the pin action from an open menu (pi
   expect(page().findAll('[role="menuitem"]').map(item => item.text())).toContain(pinned ? "Unpin session" : "Pin session")
 
   await wrapper!.setProps({ archiveState: "archived" }); await flushPromises()
-  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Restore session"])
+  expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Open in new window", "Rename session", "Restore session"])
 })
 
 test.each([{ key: "F10", shiftKey: true }, { key: "ContextMenu" }])("keyboard context menu supports $key and Escape returns focus", async keys => {
@@ -206,7 +206,7 @@ test.each([
   await wrapper!.setProps({ context })
   const action = archiveState === "archived" ? "Restore session" : "Archive session"
   await row.trigger("contextmenu", { button: 2 }); await flushPromises()
-  if (archiveState === "archived") expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Rename session", "Restore session"])
+  if (archiveState === "archived") expect(page().findAll('[role="menuitem"]').map(item => item.text())).toEqual(["Open in new window", "Rename session", "Restore session"])
   await item(action).trigger("click"); await flushPromises()
   expect(archive).not.toHaveBeenCalled()
   expect(restore).not.toHaveBeenCalled()

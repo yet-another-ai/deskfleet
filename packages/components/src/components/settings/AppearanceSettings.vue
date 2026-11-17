@@ -104,8 +104,8 @@ onMounted(() => { void appearance.initialize() })
         </div>
         <UiSwitch :model-value="appearance.settings.terminalLigatures" :disabled="busy" aria-labelledby="appearance-terminal-ligatures-label" aria-describedby="appearance-terminal-ligatures-description" @update:model-value="appearance.set({ terminalLigatures: $event })" />
       </div>
-      <AppearanceTerminalColors :disabled="busy">
-        <AppearanceTerminalPreview :font-family="terminalFont.trim() || DEFAULT_TERMINAL_FONT" :ligatures="appearance.settings.terminalLigatures" />
+      <AppearanceTerminalColors v-slot="{ theme }" :disabled="busy">
+        <AppearanceTerminalPreview :font-family="terminalFont.trim() || DEFAULT_TERMINAL_FONT" :ligatures="appearance.settings.terminalLigatures" :theme="theme" />
       </AppearanceTerminalColors>
     </div>
 

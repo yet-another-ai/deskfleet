@@ -10,8 +10,9 @@ import { bundledDshRuntime, configureDshRuntime, electronDshHost, sourceDshRunti
 import { app, powerMonitor, powerSaveBlocker } from "electron"
 import { openLocalNetworkSettings, requestLocalNetworkAccess } from "@deskfleet/native"
 import { join } from "node:path"
-import { resolveAuvPath } from "./auv.ts"
-import { desktopDaemonDirectory } from "./daemon-directory.ts"
+import { prepareAuv } from "./auv.ts"
+import { AuvPermissionsController } from "./auv-permissions-controller.ts"
+import { desktopDaemonDirectory, desktopWorkspaceDirectory } from "./daemon-directory.ts"
 import { AppearanceSettingsController } from "./appearance-settings.ts"
 import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
@@ -42,6 +43,7 @@ import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
 import { hideMainWindow, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
+import { installGoogleTag } from "./google-tag.ts"
 
 function start(): void {
   const dshHost = electronDshHost(process.execPath)
@@ -60,8 +62,12 @@ function start(): void {
     try { refreshLaunchAtStartup() } catch (error) { console.error("Could not refresh launch at startup", error) }
     installAppearance(new AppearanceSettingsController(join(app.getPath("userData"), "appearance.json")))
     installRendererProtocol()
+    installGoogleTag()
     installRendererDownloadGuard()
     installDesktopMediaIpc()
+    // AUV registers its Linux desktop identity in parallel with account and IPC
+    // setup; the bundled binary needs that identity before agents can use it.
+    const auvPath = prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
     const windowsDesktopService = installWindowsDesktopService()
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
@@ -81,19 +87,25 @@ function start(): void {
     process.once("SIGTERM", () => lifecycle.quit())
     // Logging out or shutting down must not wait on a client hidden in the tray.
     powerMonitor.on("shutdown", () => lifecycle.quit())
+    const daemonDirectory = desktopDaemonDirectory()
+    const workspaceDirectory = desktopWorkspaceDirectory()
+    const auvBinary = await auvPath
     const localAgent = new LocalAgentController(
       join(app.getPath("userData"), "settings.json"),
       createLocalAgentRuntime({
-        directory: desktopDaemonDirectory(),
-        auvPath: resolveAuvPath({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath }),
+        directory: daemonDirectory,
+        workspaceDirectory,
+        auvPath: auvBinary,
       }),
       publishLocalAgentState,
     )
+    // AUV's Portal identity and consent are a Linux desktop concern.
+    const auv = process.platform === "linux" ? new AuvPermissionsController(auvBinary) : undefined
     const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
     const userData = app.getPath("userData")
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
-      windowsDesktopService,
+      windowsDesktopService, auv,
       localNetwork: { request: requestLocalNetworkAccess, openSettings: openLocalNetworkSettings },
       established: () => establishedDesktopProfile(userData),
     })
@@ -108,6 +120,7 @@ function start(): void {
     let closing: Promise<void> | undefined
     let servicesClosed = false
     const closeServices = (): Promise<void> => {
+      auv?.close()
       notificationMonitor.close()
       notifications.close()
       closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close(), speech.close()]).then(results => {
@@ -123,7 +136,14 @@ function start(): void {
       state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
       resolveDesktopInstallSource(),
     )
-    installSettings(localAgent, keepAwake, notificationSettings, new WorktreeRootSettingsController(desktopDaemonDirectory()), updateSettings, new RemoteAgentSettingsController(desktopDaemonDirectory()))
+    installSettings(
+      localAgent,
+      keepAwake,
+      notificationSettings,
+      new WorktreeRootSettingsController(daemonDirectory, workspaceDirectory === daemonDirectory ? daemonDirectory : join(workspaceDirectory, "worktrees")),
+      updateSettings,
+      new RemoteAgentSettingsController(daemonDirectory),
+    )
     app.on("will-quit", (event) => {
       updates.close()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier

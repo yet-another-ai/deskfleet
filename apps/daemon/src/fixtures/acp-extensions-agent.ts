@@ -1,9 +1,11 @@
+import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
 
 const mode = process.env.DESKFLEET_TEST_EXTENSIONS_MODE
 let forkCalls = 0
+let lastCwd: string | undefined
 
 async function announceChild(client: acp.AgentContext, sessionId: string, cwd: string): Promise<void> {
   const child = `${sessionId}-child`
@@ -26,16 +28,24 @@ async function openingFile(client: acp.AgentContext, sessionId: string, cwd: str
 const connection = acp.agent({ name: "deskfleet-extensions-fixture" })
   .onRequest(acp.methods.agent.initialize, ({ params }) => ({
     protocolVersion: acp.PROTOCOL_VERSION,
-    agentCapabilities: { loadSession: true, sessionCapabilities: mode === "unsupported-fork" ? {} : { fork: {} } },
+    agentCapabilities: {
+      loadSession: true,
+      sessionCapabilities: {
+        ...(mode === "unsupported-fork" ? {} : { fork: {} }),
+        ...(mode === "close-session" ? { close: {} } : {}),
+      },
+    },
     _meta: { clientCapabilities: params.clientCapabilities },
   }))
   .onRequest(acp.methods.agent.session.new, async ({ params, client }) => {
+    lastCwd = params.cwd
     const sessionId = "extension-source"
     const content = await openingFile(client, sessionId, params.cwd)
     if (mode === "children") await announceChild(client, sessionId, params.cwd)
     return { sessionId, _meta: { content } }
   })
   .onRequest(acp.methods.agent.session.fork, async ({ params, client }) => {
+    lastCwd = params.cwd
     forkCalls++
     const sessionId = mode === "same-id" ? params.sessionId : `extension-fork-${forkCalls}`
     const content = await openingFile(client, sessionId, params.cwd)
@@ -43,6 +53,7 @@ const connection = acp.agent({ name: "deskfleet-extensions-fixture" })
     return { sessionId: mode === "mismatched-id" ? "different-id" : sessionId, _meta: { request: params, content } }
   })
   .onRequest(acp.methods.agent.session.load, async ({ params, client }) => {
+    lastCwd = params.cwd
     if (mode === "replay-children") {
       const childId = `${params.sessionId}-child`
       const grandchildId = `${params.sessionId}-grandchild`
@@ -65,6 +76,10 @@ const connection = acp.agent({ name: "deskfleet-extensions-fixture" })
       return {}
     }
     await announceChild(client, params.sessionId, params.cwd)
+    return {}
+  })
+  .onRequest(acp.methods.agent.session.close, async ({ params }) => {
+    if (lastCwd) await writeFile(join(lastCwd, "closed.txt"), params.sessionId, "utf8")
     return {}
   })
   .onRequest(acp.methods.agent.session.prompt, async ({ params, client }) => {

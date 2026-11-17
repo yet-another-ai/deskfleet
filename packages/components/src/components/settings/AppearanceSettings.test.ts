@@ -20,7 +20,7 @@ const get = vi.fn(async (): Promise<AppearanceSettings> => ({ ...DEFAULT_APPEARA
 const set = vi.fn(async (value: AppearanceSettings): Promise<AppearanceSettings> => ({ ...value }))
 const TerminalSurfaceStub = defineComponent({
   name: "TerminalSurface",
-  props: { fontFamily: String, ligatures: Boolean, banner: String, scrollback: Number },
+  props: { fontFamily: String, ligatures: Boolean, theme: Object, banner: String, scrollback: Number },
   template: '<div data-terminal-surface-stub />',
 })
 const stubs = { TerminalSurface: TerminalSurfaceStub }
@@ -219,6 +219,42 @@ test("keeps a failed font edit available to retry", async () => {
   await flushPromises()
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   expect(useAppearanceStore(pinia).settings.terminalFont).toBe('"JetBrains Mono", monospace')
+})
+
+test("configures separate light and dark terminal presets and color overrides with live tab preview", async () => {
+  const wrapper = await render()
+  const appearance = useAppearanceStore(pinia)
+  await wrapper.get('[data-appearance-theme="dark"]').trigger("click")
+  await wrapper.get('[data-terminal-theme="catppuccin-mocha"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[data-terminal-theme-mode="light"]').exists()).toBe(false)
+
+  await wrapper.get('[role="switch"][aria-labelledby="appearance-terminal-separate-themes-label"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.get('[data-terminal-theme-mode="dark"]').attributes("aria-checked")).toBe("true")
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("theme")).toEqual(resolveTerminalTheme("catppuccin-mocha"))
+
+  await wrapper.get('[data-terminal-theme-mode="light"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.getComponent(TerminalSurfaceStub).props("theme")).toEqual(resolveTerminalTheme("catppuccin-latte"))
+  expect(appearance.terminalTheme).toEqual(resolveTerminalTheme("catppuccin-mocha"))
+
+  await wrapper.get<HTMLInputElement>("#appearance-terminal-color-background-hex").setValue("#f5f5f5")
+  await flushPromises()
+  expect(appearance.settings.terminalLightColors).toEqual({ background: "#f5f5f5" })
+  expect(appearance.settings.terminalColors).toEqual({})
+
+  await wrapper.get<HTMLInputElement>("#appearance-terminal-color-foreground-hex").setValue("#broken")
+  expect(wrapper.get('[role="alert"]').text()).toContain("6-digit hex")
+  await wrapper.get('[data-terminal-theme-mode="dark"]').trigger("click")
+  await flushPromises()
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+  await wrapper.get('[data-terminal-theme-mode="light"]').trigger("click")
+  await wrapper.get("[data-terminal-colors-reset]").trigger("click")
+  await flushPromises()
+  expect(appearance.settings.terminalLightColors).toEqual({})
+  expect(appearance.settings.terminalTheme).toBe("catppuccin-mocha")
 })
 
 test("selects a terminal preset, customizes its colors, and resets to that preset", async () => {

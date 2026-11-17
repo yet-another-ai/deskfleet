@@ -487,6 +487,18 @@ approval to install or start the desktop service. Users can skip it and enable
 it later in Settings → Permissions. An already running service needs no further
 approval.
 
+Linux also offers a separate **AI computer access** step for AUV screenshots and
+mouse/keyboard input, on Wayland and X11. **Authorize AUV** opens AUV's own
+desktop authorization dialogs before an Agent needs those capabilities.
+Settings → Permissions keeps the same controls available after setup, including
+reauthorization. Opening either page, refreshing, or returning focus only checks
+status. AUV authorization is independent of DeskFleet's native remote-desktop
+permissions. The status **AUV authorization saved** means AUV's desktop identity
+and both restore records exist; it is not a live permission check. A desktop that
+cannot save consent reports that limitation, and revoked or expired access can
+require authorization again. macOS and Windows need no AUV step because their
+AUV backends use the executable's existing OS grants.
+
 The desktop host saves the current step in `onboarding.json` under `userData`;
 closing the window or restarting the app resumes the unfinished step. Existing
 unfinished permission-first setups migrate to sign-in and the machine-control
@@ -496,6 +508,8 @@ previously disabled control offers the newly applicable daemon permissions.
 Completed installs retain their saved preference and start or reuse the local
 Agent according to that preference. macOS checks permissions silently;
 Wayland may request its combined desktop authorization when the daemon starts.
+Linux keeps the AUV step when a late hello reports X11 and drops only the Portal
+steps.
 
 Each permission page explains the capability and provides an explicit request,
 a way to continue without it, and a status refresh where the OS supports checking.
@@ -542,6 +556,10 @@ discovery, SQLite data, provider settings, and terminal history live under
 including a `--user-data-dir` override, and ignores `DESKFLEET_DAEMON_DIRECTORY`.
 Headless daemons still default to `~/.deskfleet` and support that environment
 override. The desktop app does not import data from the headless directory.
+On Linux and Windows default profiles, Session attachments and default Session
+worktrees live under `$XDG_DATA_HOME/deskfleet/daemon` (or
+`~/.local/share/deskfleet/daemon`) and `%LOCALAPPDATA%\deskfleet\daemon`.
+Profiles started with `--user-data-dir` keep all files inside `<userData>/daemon`.
 
 ## Localization
 

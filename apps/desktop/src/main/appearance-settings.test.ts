@@ -23,6 +23,7 @@ test.each(["zh-cmn-Hans-CN", "ja-JP"] as const)("appearance defaults follow the 
     language, theme: "dark", interfaceFont: '"Segoe UI", sans-serif',
     terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace',
     terminalLigatures: true, terminalTheme: "dracula", terminalColors: { background: "#123456" },
+    terminalSeparateThemes: true, terminalLightTheme: "catppuccin-latte", terminalLightColors: { background: "#eff0f4" },
   }
   expect(controller.set(selected)).toEqual(selected)
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(selected)
@@ -31,9 +32,12 @@ test.each(["zh-cmn-Hans-CN", "ja-JP"] as const)("appearance defaults follow the 
   const copy = controller.get()
   copy.theme = "light"
   copy.terminalColors.background = "#ffffff"
+  copy.terminalLightColors.background = "#ffffff"
   selected.terminalColors.background = "#000000"
+  selected.terminalLightColors.background = "#000000"
   expect(controller.get()).toMatchObject({ theme: "dark", terminalFont: '"Cascadia Code", "Noto Sans Mono CJK SC", monospace' })
   expect(controller.get().terminalColors.background).toBe("#123456")
+  expect(controller.get().terminalLightColors.background).toBe("#eff0f4")
   controller.set({ ...DEFAULT_APPEARANCE_SETTINGS })
   expect(new AppearanceSettingsController(path).get()).toEqual(DEFAULT_APPEARANCE_SETTINGS)
 })

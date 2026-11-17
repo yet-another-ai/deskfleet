@@ -1,6 +1,7 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue"
 import type { RouteLocationRaw } from "vue-router"
 import type { AccountState, CentralApi, LocalEnrollment, LocalMachineStatus, Machine, SiteSettings, Team, TeamMember } from "@deskfleet/client/central"
+import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { router } from "../router/index.ts"
 import { captureAnalyticsContext, identifyAnalytics, trackEvent } from "../services/analytics.ts"
@@ -72,17 +73,23 @@ export interface AccountSession {
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 
 export function createAccountSession(central: CentralApi, initialNotice?: string): AccountSession {
+  const hashTarget = typeof window !== "undefined" ? parseSessionWindowHash(window.location.hash) : undefined
+  const route = router.currentRoute.value
+  const queryTarget = route.name === "session" && route.query.window === "session"
+    ? { teamId: typeof route.query.teamId === "string" ? route.query.teamId : undefined, machineId: typeof route.query.machineId === "string" ? route.query.machineId : undefined }
+    : undefined
+  const initialTarget = hashTarget ?? queryTarget
   const automatic = withCentralRequestTrigger(central, "background")
   const user = withCentralRequestTrigger(central, "user")
   const ready = ref(false)
   const account = ref<AccountState>({ serverUrl: "", siteAdmin: false })
   const site = ref<SiteSettings>()
   const teams = ref<Team[]>([])
-  const teamId = ref<string>()
+  const teamId = ref<string | undefined>(initialTarget?.teamId || undefined)
   const members = ref<TeamMember[]>([])
   const machines = ref<Machine[]>([])
   const machineRosterVersion = ref<number>()
-  const machineId = ref<string>()
+  const machineId = ref<string | undefined>(initialTarget?.machineId || undefined)
   const searchPath = ref("/search")
   const localStatus = ref<LocalMachineStatus>()
   const enrollment = computed(() => localStatus.value?.registrations.find(value => value.serverUrl === account.value.serverUrl && value.teamId === teamId.value))

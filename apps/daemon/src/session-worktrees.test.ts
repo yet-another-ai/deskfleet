@@ -506,6 +506,40 @@ test("real catalogs read host preferences live and keep separate origins in the 
   }
 })
 
+test("DaemonCatalog uses hostWorkspaceDirectory for attachments and default worktrees", async context => {
+  const { DaemonCatalog } = await import("./catalog.ts")
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "df-workspace-catalog-")))
+  const host = join(directory, "daemon")
+  const workspaceHost = join(directory, "workspace-daemon")
+  const machine = join(host, "machine")
+  const catalog = new DaemonCatalog(machine, host, workspaceHost)
+  context.after(async () => {
+    await catalog.close()
+    await rm(directory, { recursive: true, force: true })
+  })
+  await mkdir(machine, { recursive: true })
+  await catalog.init((_path, name) => openInMemoryCatalog(name))
+  const originId = JSON.parse(await catalog.native.agentIdentity()).originId as string
+  const source = join(directory, "source")
+  await repository(source)
+  const workspace = await catalog.native.createWorkspace("ws", [{ path: source }])
+
+  const session = await catalog.handle({ method: "workspaceSessionCreate", params: { workspaceId: workspace.id } }) as ManagedWorkspaceSession
+  assert.equal(session.worktree.directories[0]!.path, join(workspaceHost, "worktrees", originId, session.id, "repo-0"))
+  await access(join(machine, "session-worktrees", session.id, "manifest.json"))
+
+  const savedAttachment = await catalog.attachments.write(session.id, "notes.txt", Buffer.from("hello"))
+  assert.equal(savedAttachment.path, join(workspaceHost, "machine", "session-attachments", session.id, "notes.txt"))
+  const legacyDir = join(machine, "session-attachments", session.id)
+  await mkdir(legacyDir, { recursive: true })
+  await writeFile(join(legacyDir, "old.txt"), "legacy")
+
+  await catalog.handle({ method: "workspaceSessionDestroy", params: { sessionId: session.id } })
+  await assert.rejects(access(session.worktree.directories[0]!.path))
+  await assert.rejects(access(savedAttachment.path))
+  await assert.rejects(access(legacyDir))
+})
+
 test("failed provisioning rolls back custom checkouts and stable ownership records", async context => {
   const directory = await fixture(context)
   const source = join(directory, "source")

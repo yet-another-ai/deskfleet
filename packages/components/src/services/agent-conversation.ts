@@ -179,8 +179,28 @@ export function snapshotIsWorking(snapshot: Partial<Pick<AgentSnapshot, "turns" 
   return false
 }
 
+function stepIsLive(step: ConversationStep): boolean {
+  if (step.kind === "tool") {
+    return step.tool.status === "pending" || step.tool.status === "in_progress"
+      || step.permission?.state === "pending"
+      || Object.values(step.tool.terminals ?? {}).some(terminal => terminal.status === "running")
+  }
+  if (step.kind === "elicitation") return step.elicitation.state === "pending"
+  if (step.kind === "compaction") return step.compaction.status === "in_progress"
+  if (step.kind === "subagent") {
+    return step.session.state?.state === "running" || step.session.state?.state === "requires_action"
+      || step.steps.some(stepIsLive)
+  }
+  return false
+}
+
 /** Groups projected entries into user messages and the agent responses that follow them. */
-export function groupTranscript(entries: ConversationEntry[], snapshot: AgentSnapshot, previous: readonly TranscriptEntry[] = []): TranscriptEntry[] {
+export function groupTranscript(
+  entries: ConversationEntry[],
+  snapshot: AgentSnapshot,
+  previous: readonly TranscriptEntry[] = [],
+  options?: { previewing?: boolean },
+): TranscriptEntry[] {
   const turns = new Map(snapshot.turns.map(turn => [turn.id, turn]))
   const transcript: TranscriptEntry[] = []
   const turnOf = (id: string | undefined, fallback?: AgentTurn) => id ? turns.get(id) ?? fallback : fallback
@@ -205,10 +225,14 @@ export function groupTranscript(entries: ConversationEntry[], snapshot: AgentSna
     entry.endedAt = sameTurn(after)?.deliveredAt ?? entry.turn.endedAt
     lastResponse.set(entry.turn.id, entry)
   })
+  const runRunning = snapshot.session.archiveState === "active" && snapshot.runs.at(-1)?.state === "running"
+  const trailing = transcript.at(-1)
   for (const entry of transcript) {
     if (entry.kind !== "response") continue
     entry.last = !entry.turn || lastResponse.get(entry.turn.id) === entry
-    entry.live = entry.last && !!entry.turn && liveTurnStates.includes(entry.turn.state)
+    entry.live = entry.turn
+      ? entry.last && liveTurnStates.includes(entry.turn.state)
+      : runRunning && entry === trailing && (!!options?.previewing || entry.steps.some(stepIsLive))
     if (entry.live) entry.endedAt = undefined
   }
   const retained = new Map(previous.map(entry => [entry.id, entry]))

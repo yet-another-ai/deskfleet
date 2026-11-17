@@ -281,19 +281,38 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     connection.close(new Error(`ACP process exited (${signal ?? code})`))
   })
 
+  let canCloseSession = false
   let closing: Promise<void> | undefined
   function close(): Promise<void> {
     if (closing) return closing
-    client.signal?.removeEventListener("abort", abort)
-    child.stdin!.end()
-    connection.close()
-    // Give adapters time to stop their own agent subprocesses after stdin EOF.
-    const timeout = setTimeout(() => forceKillProcess(child), 10_000)
-    timeout.unref()
-    closing = Promise.allSettled([exited.finally(() => clearTimeout(timeout)), terminals?.close()]).then(results => {
+    const activeSessionId = sessionScope.active
+    closing = (async () => {
+      if (canCloseSession && activeSessionId && !connection.signal.aborted && !client.signal?.aborted && child.exitCode === null) {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          await Promise.race([
+            connection.agent.request(acp.methods.agent.session.close, { sessionId: activeSessionId }),
+            new Promise<void>(resolve => {
+              timer = setTimeout(resolve, 2_000)
+              timer.unref()
+            }),
+          ])
+        } catch {
+          // Proceed with process teardown if session/close fails or aborts.
+        } finally {
+          clearTimeout(timer)
+        }
+      }
+      client.signal?.removeEventListener("abort", abort)
+      child.stdin!.end()
+      connection.close()
+      sessionScope.clear()
+      // Give adapters time to stop their own agent subprocesses after stdin EOF.
+      const timeout = setTimeout(() => forceKillProcess(child), 10_000)
+      timeout.unref()
+      const results = await Promise.allSettled([exited.finally(() => clearTimeout(timeout)), terminals?.close()])
       for (const result of results) if (result.status === "rejected") throw result.reason
-    })
-    sessionScope.clear()
+    })()
     return closing
   }
   const abort = () => {
@@ -337,6 +356,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
     if (initialization.protocolVersion !== acp.PROTOCOL_VERSION) {
       throw new Error(`${launch.command} uses unsupported ACP protocol version ${initialization.protocolVersion}`)
     }
+    canCloseSession = !!initialization.agentCapabilities?.sessionCapabilities?.close
     await options.afterInitialize?.(initialization, connection.agent)
     const present = <T extends acp.NewSessionResponse | acp.LoadSessionResponse | acp.SetSessionConfigOptionResponse>(
       sessionId: string, response: T,

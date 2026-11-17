@@ -26,7 +26,7 @@ onMounted(async () => {
     // Cross-machine results and desktop previews keep their overview in history for Back.
     if (route.name === "search" || route.name === "remote-desktops") await router.push(destination)
     else await router.replace(destination)
-  } else if (!route.meta.fullWindow) {
+  } else if (!route.meta.fullWindow && !(route.name === "session" && route.query.window === "session")) {
     const path = route.name === "search" ? props.session.searchPath.value : route.name === "remote-desktops" ? "/desktops" : route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
     await router.replace(path)
   }
