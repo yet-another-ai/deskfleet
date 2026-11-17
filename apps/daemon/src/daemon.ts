@@ -29,6 +29,7 @@ export async function startDaemon(port = 0, options: {
   agentProvider?: AgentProvider
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
+  workspaceDirectory?: string
   openCatalog?: Parameters<DaemonCatalog["init"]>[0]
   /** The embedding desktop host supplies its system-proxy-aware backend transport. */
   centralTransport?: CentralTransport
@@ -91,6 +92,7 @@ export async function startDaemon(port = 0, options: {
       allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas,
       centralTransport: options.centralTransport,
       ...(options.auvPath ? { auvPath: options.auvPath } : {}),
+      ...(options.workspaceDirectory ? { workspaceDirectory: options.workspaceDirectory } : {}),
     })
   } catch (error) {
     const cleanup = await Promise.allSettled([peers.closeAll(), server[Symbol.asyncDispose]()])

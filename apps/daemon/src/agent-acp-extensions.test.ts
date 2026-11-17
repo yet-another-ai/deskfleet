@@ -225,3 +225,10 @@ test("Cursor notifications reach the active session as structured events", { tim
   assert.equal(updates[1]!.update.sessionUpdate === "tool_call" && updates[1]!.update.toolCallId, "task-call-1")
   assert.equal(updates[2]!.update.sessionUpdate === "tool_call" && updates[2]!.update.toolCallId, "image-1")
 })
+
+test("ACP sends session/close before ending stdin when close capability is advertised", { timeout: 15_000 }, async context => {
+  const { connection, cwd } = await connect(context, { onUpdate() {} }, "close-session")
+  const { sessionId } = await connection.newSession({ cwd, mcpServers: [] })
+  await connection.close()
+  assert.equal(await readFile(join(cwd, "closed.txt"), "utf8"), sessionId)
+})

@@ -933,6 +933,13 @@ daemon consumers use that directory. Standalone headless daemons default to
 ignores that environment variable and does not import data from the headless
 directory.
 
+On Linux and Windows default profiles, the desktop host stores Session
+attachments and default Session worktrees under
+`$XDG_DATA_HOME/deskfleet/daemon` (or `~/.local/share/deskfleet/daemon`) and
+`%LOCALAPPDATA%\deskfleet\daemon`. This layout keeps agent files outside
+configuration directories that terminal sandboxes block. Profiles started with
+`--user-data-dir` keep all files inside `<userData>/daemon`.
+
 Desktop first-run setup uses a welcome page: account sign-in, a choice to allow
 control of this machine, then permissions for the selected capabilities. The
 choice uses the same setting as Preferences. Declining stops the local daemon

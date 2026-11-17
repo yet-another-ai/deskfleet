@@ -101,3 +101,40 @@ test("live notices and authentication status stay outside replayed conversation 
   expect(wrapper.find("[data-live-notices]").exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Historical notice")
 })
+
+test("out-of-turn wakeups render as live during active tools or uncommitted previews and settle once committed", async () => {
+  const snapshot = agentSnapshot()
+  const input = agentInput({ state: "delivered", turnId: "70", actualDelivery: "turn_start" })
+  const turn = { id: "70", sessionId: "30", initialInputId: input.id, dispatchCommandId: "50", runGeneration: 1, state: "completed" as const, startedAt: "now", endedAt: "now" }
+  snapshot.inputs = [input]
+  snapshot.turns = [turn]
+  snapshot.runs = [{ sessionId: "30", generation: 1, state: "running", startedAt: "now" }]
+  const wakeup = (seq: number, update: Record<string, unknown>) => ({
+    ...agentEvent(seq, "acp", { sessionId: "provider-session", update } as never),
+    turnId: undefined,
+  })
+  const base = [agentEvent(1, "input", input), agentEvent(2, "turn", turn)]
+  wrapper = mount(AgentConversation, {
+    props: {
+      snapshot: { ...snapshot, session: { ...snapshot.session, lastEventSeq: "3" } },
+      canFork: true,
+      events: [...base, wakeup(3, { sessionUpdate: "tool_call", toolCallId: "bg", title: "Check", status: "in_progress" })],
+    },
+    global: { plugins: [i18n] },
+  })
+  expect(wrapper.find('[aria-label="Running"]').exists()).toBe(true)
+  expect(wrapper.find('[aria-label="Fork session"]').exists()).toBe(false)
+
+  // Tool finishes and streams an uncommitted text preview (seq 4 > lastEventSeq 3): still live.
+  const streamed = [
+    ...base,
+    wakeup(3, { sessionUpdate: "tool_call", toolCallId: "bg", title: "Check", status: "completed" }),
+    wakeup(4, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Done." } }),
+  ]
+  await wrapper.setProps({ events: streamed })
+  expect(wrapper.find('[aria-label="Fork session"]').exists()).toBe(false)
+
+  // Once the stream flushes (lastEventSeq catches up to 4), the wakeup settles to idle even while run is running.
+  await wrapper.setProps({ snapshot: { ...snapshot, session: { ...snapshot.session, lastEventSeq: "4" } } })
+  expect(wrapper.find('[aria-label="Fork session"]').exists()).toBe(true)
+})

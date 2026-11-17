@@ -1,6 +1,6 @@
-import { stat } from "node:fs/promises"
+import { mkdir, stat } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
-import { isAbsolute, join } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import { openCatalog, type NativeCatalog } from "@deskfleet/native"
 import type { AgentSessionContext, AgentSessionRecord } from "./agent-protocol.ts"
 import type { CatalogDirectory, CatalogEvent, CatalogMethods, CatalogRequest, CatalogSnapshot } from "./catalog-protocol.ts"
@@ -16,24 +16,38 @@ export class DaemonCatalog {
   readonly attachments: SessionAttachments
   readonly #directory: string
   readonly #hostDirectory: string
+  readonly #hostWorkspaceDirectory: string
   readonly #listeners = new Set<(event: CatalogEvent) => void>()
   readonly #releasing = new Set<(worktreeId: string) => Promise<void>>()
   readonly #github = new GitHubBranches(() => this.changed())
   #catalog: NativeCatalog | undefined
   #sessions: ManagedSessionWorktrees | undefined
 
-  constructor(directory: string, hostDirectory = directory) {
+  constructor(directory: string, hostDirectory = directory, hostWorkspaceDirectory = hostDirectory) {
     this.#directory = directory
     this.#hostDirectory = hostDirectory
-    this.attachments = new SessionAttachments(directory)
+    this.#hostWorkspaceDirectory = hostWorkspaceDirectory
+    const attachmentDirectory = hostWorkspaceDirectory === hostDirectory
+      ? directory
+      : resolve(hostWorkspaceDirectory, relative(hostDirectory, directory))
+    this.attachments = new SessionAttachments(attachmentDirectory, attachmentDirectory === directory ? undefined : directory)
   }
 
   // Called only after this daemon has acquired its discovery record.
   async init(open: typeof openCatalog = openCatalog): Promise<void> {
     this.#catalog = await open(join(this.#directory, "catalog.db"), hostname())
     const { originId } = JSON.parse(await this.#catalog.agentIdentity()) as { originId: string }
+    const defaultRoot = this.#hostWorkspaceDirectory === this.#hostDirectory
+      ? null
+      : join(this.#hostWorkspaceDirectory, "worktrees")
     this.#sessions = new ManagedSessionWorktrees(this.#catalog, this.#directory, {
-      originId, root: () => readWorktreeRoot(this.#hostDirectory),
+      originId,
+      root: async () => {
+        const configured = await readWorktreeRoot(this.#hostDirectory)
+        if (configured !== null || !defaultRoot) return configured
+        await mkdir(defaultRoot, { recursive: true, mode: 0o700 })
+        return defaultRoot
+      },
     })
   }
 

@@ -542,6 +542,10 @@ discovery, SQLite data, provider settings, and terminal history live under
 including a `--user-data-dir` override, and ignores `DESKFLEET_DAEMON_DIRECTORY`.
 Headless daemons still default to `~/.deskfleet` and support that environment
 override. The desktop app does not import data from the headless directory.
+On Linux and Windows default profiles, Session attachments and default Session
+worktrees live under `$XDG_DATA_HOME/deskfleet/daemon` (or
+`~/.local/share/deskfleet/daemon`) and `%LOCALAPPDATA%\deskfleet\daemon`.
+Profiles started with `--user-data-dir` keep all files inside `<userData>/daemon`.
 
 ## Localization
 
