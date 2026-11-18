@@ -115,9 +115,11 @@ export const useFleetStore = defineStore("fleet", () => {
     return groups
   })
   const providersById = computed(() => new Map(providers.providers.map(provider => [provider.id, provider])))
+  const githubRepositories = computed(() => new Map(catalog.value?.workspaceGithubRepositories?.map(entry => [entry.workspaceId, entry.repositories])))
   // Build the resource tree from its owning stores instead of synchronizing copies.
   const workspaces = computed(() => (catalog.value?.workspaces ?? []).map(value => {
     const workspace = workspaceSummary(value)
+    workspace.githubRepositories = githubRepositories.value.get(value.id)
     const summaries = new Map(workspace.sessions.map(session => [session.id, session]))
     for (const metadata of sessionsByWorkspace.value.get(workspace.id) ?? []) {
       const provider = providersById.value.get(metadata.provider)

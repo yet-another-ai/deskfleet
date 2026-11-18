@@ -1,6 +1,8 @@
 //! Optional GitHub App integration; this never logs a user into DeskFleet.
 mod config;
 mod pull_requests;
+mod repository;
+mod repository_items;
 pub use config::GithubAppConfig;
 
 use crate::{
@@ -23,6 +25,10 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
         .route(
             "/integrations/github/pull-request",
             web::get().to(pull_requests::lookup),
+        )
+        .route(
+            "/integrations/github/repository-items",
+            web::get().to(repository_items::list),
         )
         .route(
             "/daemon/github/pull-request",

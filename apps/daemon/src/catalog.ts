@@ -79,7 +79,7 @@ export class DaemonCatalog {
     const sessions = JSON.parse(records) as AgentSessionRecord[]
     const inactive = new Set(sessions
       .filter(session => session.archiveState !== "active" || session.lifecycle !== "ready").map(session => session.id))
-    return { ...snapshot, sessionIds: sessions.map(session => session.id), githubBranches: await this.#github.snapshot(snapshot, inactive) }
+    return { ...snapshot, sessionIds: sessions.map(session => session.id), ...await this.#github.snapshot(snapshot, inactive) }
   }
 
   async provisionSession(id: string, workspaceId: string | undefined, context: AgentSessionContext, baseBranch?: string, baseRevisions?: GitPreparedRevision[], cwd?: string): Promise<void> {

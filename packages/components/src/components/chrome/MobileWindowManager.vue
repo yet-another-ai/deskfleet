@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Grid3x3, MonitorPlay, Plus, SquareTerminal, X } from "@lucide/vue"
-import { useElementSize, usePreferredReducedMotion } from "@vueuse/core"
+import { useElementSize, useLocalStorage, usePreferredReducedMotion } from "@vueuse/core"
 import { computed, defineAsyncComponent, nextTick, provide, reactive, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { truncateGeneratedTitle } from "../../../../../apps/daemon/src/titles.ts"
@@ -14,6 +14,8 @@ import { useTerminalsStore } from "../../stores/terminals.ts"
 import ErrorNotice from "../common/ErrorNotice.vue"
 import UiButton from "../common/UiButton.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
+import GithubPanel from "../details/GithubPanel.vue"
+import GithubIcon from "../common/GithubIcon.vue"
 import SessionDesktopPanel from "../desktop/SessionDesktopPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import WindowToolbar from "./WindowToolbar.vue"
@@ -21,7 +23,7 @@ import MobileViewFrame from "./MobileViewFrame.vue"
 import { windowHeaderActionsId, windowHeaderActionsTarget, windowHeaderActionsTargetKey } from "./windowHeaderActions.ts"
 
 type MobileView =
-  | { id: string; title: string; kind: "chat" | "changes" | "desktops" }
+  | { id: string; title: string; kind: "chat" | "changes" | "desktops" | "github" }
   | { id: string; title: string; kind: "terminal"; terminalId: string }
   | { id: string; title: string; kind: "preview"; request: SessionWindowRequest }
 
@@ -36,6 +38,8 @@ const SessionView = defineAsyncComponent(() => import("../../views/SessionView.v
 const TerminalShellWindow = defineAsyncComponent(() => import("../terminal/TerminalShellWindow.vue"))
 const location = computed(() => fleet.findSession(props.sessionId))
 const worktree = computed(() => location.value?.worktree)
+const hasGithub = computed(() => !!location.value?.workspace?.githubRepositories?.length)
+const githubOpen = useLocalStorage(() => `deskfleet.mobile-github-tab:${props.sessionId}`, false)
 const previews = ref<Extract<MobileView, { kind: "preview" }>[]>([])
 const activeId = ref("chat")
 const visited = ref(new Set(["chat"]))
@@ -49,6 +53,7 @@ const views = computed<MobileView[]>(() => [
   { id: "chat", kind: "chat", title: location.value ? sessionLabel(location.value.session) : t("panel.chat") },
   { id: "changes", kind: "changes", title: t("panel.changes") },
   { id: "desktops", kind: "desktops", title: t("desktopOverview.title") },
+  ...(hasGithub.value && githubOpen.value ? [{ id: "github", kind: "github" as const, title: t("githubSettings.title") }] : []),
   ...terminals.sessions.filter(shell => worktree.value && shell.worktreeId === worktree.value.id && shell.kind !== "acp").map((shell, index) => ({
     id: `terminal:${shell.id}`, kind: "terminal" as const, terminalId: shell.id,
     title: terminals.titles[shell.id]?.trim() || shell.title.trim() || t("terminal.tab", { number: index + 1 }),
@@ -71,6 +76,10 @@ function select(index: number): void {
   else activeId.value = view.id
 }
 function selectId(id: string): void { select(views.value.findIndex(view => view.id === id)) }
+function openGithub(): void {
+  githubOpen.value = true
+  selectId("github")
+}
 
 watch(views, next => {
   if (!next.some(view => view.id === activeId.value)) { activeId.value = "chat"; reveal(0) }
@@ -109,6 +118,7 @@ async function closeView(view: MobileView): Promise<void> {
   error.value = undefined
   try {
     if (view.kind === "terminal") await terminals.hangup(view.terminalId)
+    else if (view.kind === "github") githubOpen.value = false
     else if (view.kind === "preview") previews.value = previews.value.filter(preview => preview.id !== view.id)
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { busy.value = false }
@@ -178,11 +188,12 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
     <ErrorNotice v-if="error" :error="error" />
     <div ref="viewport" data-mobile-viewport class="relative min-h-0 flex-1 overflow-hidden" :class="{ dragging: dragging || settling, zooming }">
       <div ref="scroller" class="absolute inset-0 overscroll-contain" :class="overviewOpen ? 'overflow-x-hidden overflow-y-auto' : 'overflow-clip'" :data-view-overview="overviewOpen ? '' : undefined">
-        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
-          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview'" :busy="busy" :direct="!overviewOpen && !zooming && (dragging || settling)" :scroll-origin="scrollOrigin" @motion="surfaceMotion[view.id] = $event" @select="select(index)" @close="closeView(view)">
+        <div ref="stage" class="relative w-full" :style="{ height: `${overviewOpen ? gridHeight + (worktree || hasGithub ? 64 : 0) : viewportHeight}px`, transform: `translate3d(${offset}px, 0, 0)` }">
+          <MobileViewFrame v-for="(view, index) in views" :key="view.id" :data-mobile-view="view.id" :aria-hidden="!overviewOpen && view.id !== activeId" :title="view.title" :active="view.id === activeId" :preview="overviewOpen" :source-width="viewportWidth" :source-height="viewportHeight" :x="overviewOpen ? 16 + (index % 3) * (cardWidth + 12) : (index - activeIndex) * viewportWidth" :y="overviewOpen ? 48 + Math.floor(index / 3) * rowHeight : 0" :scale="overviewOpen ? cardScale : 1" :closable="view.kind === 'terminal' || view.kind === 'preview' || view.kind === 'github'" :busy="busy" :direct="!overviewOpen && !zooming && (dragging || settling)" :scroll-origin="scrollOrigin" @motion="surfaceMotion[view.id] = $event" @select="select(index)" @close="closeView(view)">
             <template v-if="visited.has(view.id)">
               <SessionView v-if="view.kind === 'chat'" :session-id="sessionId" />
               <ChangesPanel v-else-if="view.kind === 'changes'" windowed standalone />
+              <GithubPanel v-else-if="view.kind === 'github'" :session-id="sessionId" @insert="selectId('chat')" />
               <SessionDesktopPanel v-else-if="view.kind === 'desktops'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" class="h-full" />
               <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = truncateGeneratedTitle($event)" />
               <SessionPreviewWindow v-else-if="view.kind === 'preview'" :request="view.request" />
@@ -196,9 +207,10 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
               <span class="text-4xl">{{ t('desktopOverview.title') }}</span>
             </div>
           </MobileViewFrame>
-          <button v-if="overviewOpen && worktree" type="button" :disabled="busy" class="absolute inset-x-4 flex h-11 items-center justify-center gap-2 rounded-xl border border-ui-border text-sm text-ui-text-muted ui-motion hover:bg-ui-hover disabled:op-40" :style="{ top: `${gridHeight}px` }" @click="newTerminal">
-            <Plus :size="18" aria-hidden="true" />{{ t('terminal.new') }}
-          </button>
+          <div v-if="overviewOpen" class="absolute inset-x-4 flex gap-2" :style="{ top: `${gridHeight}px` }">
+            <button v-if="hasGithub && !githubOpen" type="button" class="ui-button h-11 flex-1" @click="openGithub"><GithubIcon :size="16" />{{ t('githubPanel.addTab') }}</button>
+            <button v-if="worktree" type="button" :disabled="busy" class="ui-button h-11 flex-1 disabled:op-40" @click="newTerminal"><Plus :size="18" aria-hidden="true" />{{ t('terminal.new') }}</button>
+          </div>
         </div>
       </div>
     </div>

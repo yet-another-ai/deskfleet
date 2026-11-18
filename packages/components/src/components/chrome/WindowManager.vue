@@ -29,7 +29,9 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import UiButton from "../common/UiButton.vue"
+import GithubIcon from "../common/GithubIcon.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
+import GithubPanel from "../details/GithubPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
 import SessionDesktopWindow from "./SessionDesktopWindow.vue"
@@ -37,7 +39,7 @@ import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
 import { newTerminalWindowKey, windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
 
-type WorkspaceWindowId = "changes" | "desktops" | "terminal"
+type WorkspaceWindowId = "changes" | "desktops" | "terminal" | "github"
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
@@ -54,6 +56,7 @@ const topLeftGroupId = shallowRef<string>()
 const topRightGroupId = shallowRef<string>()
 const changesOpen = shallowRef(false)
 const desktopsOpen = shallowRef(false)
+const githubOpen = shallowRef(false)
 const closingTerminals = new Set<string>()
 let syncing = false
 const disposables: { dispose(): void }[] = []
@@ -304,6 +307,7 @@ function onReady(event: DockviewReadyEvent): void {
   const changes = event.api.getPanel("changes")
   changesOpen.value = !!changes?.api.group.api.isVisible
   desktopsOpen.value = !!event.api.getPanel("desktops")?.api.group.api.isVisible
+  githubOpen.value = !!event.api.getPanel("github")
   updateTitlebarGroups()
   disposables.push(
     // Only individual tabs move between groups; header space moves the app window.
@@ -319,6 +323,7 @@ function onReady(event: DockviewReadyEvent): void {
       })
       if (panel.id === "changes") changesOpen.value = false
       if (panel.id === "desktops") desktopsOpen.value = false
+      if (panel.id === "github") githubOpen.value = false
     }),
   )
   scheduleTerminalReconcile()
@@ -386,6 +391,24 @@ async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | 
 }
 
 function openWindowTab(id: WorkspaceWindowId, group: DockviewGroupPanel): void {
+  if (id === "github") {
+    const current = api.value
+    if (githubOpen.value || !sessionLocation.value?.workspace?.githubRepositories?.length || !current) return
+    const chat = current.getPanel("chat")
+    const target = group === chat?.api.group
+      ? current.groups.find(candidate => candidate !== group && candidate.api.isVisible)
+      : group
+    current.addPanel({
+      id, component: id, title: t("githubSettings.title"), minimumWidth: 220,
+      position: target ? { referenceGroup: target, direction: "within" } : { referenceGroup: group, direction: "right" },
+      initialWidth: target ? undefined : 336,
+    })
+    chat?.api.setActive()
+    current.getPanel("github")?.api.setActive()
+    githubOpen.value = true
+    saveLayout()
+    return
+  }
   if (id === "terminal") {
     void openTerminalTab(group)
     return
@@ -439,6 +462,9 @@ onScopeDispose(() => {
       <template #panel-changes>
         <ChangesPanel windowed class="h-full" />
       </template>
+      <template #panel-github>
+        <GithubPanel :session-id="sessionId" @insert="api?.getPanel('chat')?.api.setActive()" />
+      </template>
       <template #panel-desktops="{ api: panelApi }">
         <SessionDesktopWindow :session-id="sessionId" :panel-api="panelApi" />
       </template>
@@ -476,6 +502,9 @@ onScopeDispose(() => {
             <DropdownMenuContent :as="SpringSurface" align="start" :side-offset="4" :collision-padding="8" :aria-label="t('toolbar.addWindow')" class="app-no-drag ui-menu z-50 flex w-44 flex-col" loop>
               <DropdownMenuItem as="button" type="button" data-window-type="changes" class="ui-menu-item" :disabled="changesOpen" @select="openWindowTab('changes', group)">
                 <span class="text-xs font-semibold" aria-hidden="true">±</span>{{ t("panel.changes") }}
+              </DropdownMenuItem>
+              <DropdownMenuItem v-if="sessionLocation?.workspace?.githubRepositories?.length" as="button" type="button" data-window-type="github" class="ui-menu-item" :disabled="githubOpen" @select="openWindowTab('github', group)">
+                <GithubIcon :size="14" />{{ t("githubSettings.title") }}
               </DropdownMenuItem>
               <DropdownMenuItem as="button" type="button" data-window-type="desktops" class="ui-menu-item" :disabled="desktopsOpen" @select="openWindowTab('desktops', group)">
                 <MonitorPlay :size="14" aria-hidden="true" />{{ t("desktopOverview.title") }}

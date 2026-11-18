@@ -1,12 +1,15 @@
 import { reactive } from "vue"
+import type { GithubRepositoryItem } from "@deskfleet/client/central"
 import type { AgentInput } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { truncateGeneratedTitle } from "../../../../apps/daemon/src/titles.ts"
 import { filePathToUri, type FileEntry, type FilesApi, type FileTarget } from "../../../client/src/files.ts"
+import { githubReferenceLabel } from "./github-composer-reference.ts"
 
 export const PASTED_TEXT_LINE_THRESHOLD = 25
 export const PASTED_TEXT_CHAR_THRESHOLD = 1500
 
 export type ComposerAttachment =
+  | { id: string; kind: "github"; item: GithubRepositoryItem }
   | { id: string; kind: "image"; name: string; mimeType: string; data: string; size: number }
   | { id: string; kind: "pasted_text"; text: string; lines: number; label?: string; uri?: string; diff?: { key: string; startIndex: number; endIndex: number } }
   | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string }
@@ -195,17 +198,26 @@ export async function attachmentsFromFiles(files: Iterable<File>): Promise<Compo
 }
 
 export function hasSubmittableText(draft: string, attachments: readonly ComposerAttachment[]): boolean {
-  return Boolean(draft.trim()) || attachments.some(item => item.kind === "pasted_text" && Boolean(item.text.trim()))
+  return Boolean(draft.trim()) || attachments.some(item => item.kind === "github" || item.kind === "pasted_text" && Boolean(item.text.trim()))
 }
 
 export function sessionTitleFromDraft(draft: string, attachments: readonly ComposerAttachment[]): string {
   const trimmed = draft.trim()
   if (trimmed) return truncateGeneratedTitle(trimmed.split(/\r\n|\r|\n/u)[0]!)
-  const pasted = attachments.find((item): item is Extract<ComposerAttachment, { kind: "pasted_text" }> => item.kind === "pasted_text" && Boolean(item.text.trim()))
-  return truncateGeneratedTitle(pasted?.text.trim().split(/\r\n|\r|\n/u)[0] ?? "Session")
+  for (const attachment of attachments) {
+    if (attachment.kind === "github") return truncateGeneratedTitle(githubReferenceLabel(attachment.item))
+    if (attachment.kind === "pasted_text" && attachment.text.trim()) return truncateGeneratedTitle(attachment.text.trim().split(/\r\n|\r|\n/u)[0]!)
+  }
+  return "Session"
 }
 
 function attachmentToBlock(item: ComposerAttachment, uri?: string): AgentInput["content"][number] {
+  if (item.kind === "github") {
+    const reference = item.item
+    const type = reference.kind === "issue" ? "GitHub Issue" : "GitHub Pull Request"
+    const text = [`${type} ${githubReferenceLabel(reference)}`, reference.url, "", reference.body].join("\n")
+    return { type: "resource", resource: { uri: reference.url, mimeType: "text/markdown", text } }
+  }
   if (item.kind === "image") return { type: "image", mimeType: item.mimeType, data: item.data }
   if (item.kind === "pasted_text") return { type: "resource", resource: { uri: item.uri ?? `deskfleet://pasted-text/${item.id}.txt`, mimeType: "text/plain", text: item.text } }
   if (item.kind === "machine_file") return { type: "resource_link", uri: item.uri, name: item.name, ...(item.size !== undefined ? { size: item.size } : {}) }

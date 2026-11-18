@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronUp, FileText } from "@lucide/vue"
+import { ChevronDown, ChevronUp, ExternalLink, FileText } from "@lucide/vue"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -20,7 +20,12 @@ function toggleResource(index: number): void {
   expanded.value = next
 }
 
-function resourceLabel(uri: string): string {
+function githubResource(uri: string): boolean {
+  return /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\/[1-9]\d*$/iu.test(uri)
+}
+
+function resourceLabel(uri: string, text: string): string {
+  if (githubResource(uri)) return text.split(/\r?\n/u, 1)[0] || uri
   if (!uri || uri.startsWith("deskfleet://pasted-text")) return t("agent.pastedText")
   const name = uri.split(/[\\/]/u).filter(Boolean).at(-1)
   return name ? decodeURIComponent(name) : t("agent.pastedText")
@@ -59,15 +64,18 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
         mode="inline"
       />
       <div v-else-if="block.type === 'resource' && 'text' in block.resource" class="overflow-hidden rounded-lg border border-ui-border bg-ui-surface/80" data-pasted-resource>
-        <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs ui-motion hover:bg-ui-hover" :aria-expanded="expanded.has(index)" @click="toggleResource(index)">
-          <FileText :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-          <span class="min-w-0 flex-1 truncate font-medium text-ui-text">{{ resourceLabel(block.resource.uri) }}</span>
-          <span class="shrink-0 text-ui-text-muted">{{ t("agent.pastedTextLines", lineCount(block.resource.text)) }}</span>
-          <span class="inline-flex shrink-0 items-center gap-1 text-ui-accent">
-            <span>{{ t(expanded.has(index) ? "agent.collapseText" : "agent.expandText") }}</span>
-            <component :is="expanded.has(index) ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
-          </span>
-        </button>
+        <div class="flex items-center">
+          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs ui-motion hover:bg-ui-hover" :aria-expanded="expanded.has(index)" @click="toggleResource(index)">
+            <FileText :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate font-medium text-ui-text">{{ resourceLabel(block.resource.uri, block.resource.text) }}</span>
+            <span class="shrink-0 text-ui-text-muted">{{ t("agent.pastedTextLines", lineCount(block.resource.text)) }}</span>
+            <span class="inline-flex shrink-0 items-center gap-1 text-ui-accent">
+              <span>{{ t(expanded.has(index) ? "agent.collapseText" : "agent.expandText") }}</span>
+              <component :is="expanded.has(index) ? ChevronUp : ChevronDown" :size="14" aria-hidden="true" />
+            </span>
+          </button>
+          <a v-if="githubResource(block.resource.uri)" :href="block.resource.uri" target="_blank" rel="noopener noreferrer" :aria-label="block.resource.uri" :title="block.resource.uri" class="mr-1 inline-flex rounded p-1.5 text-ui-accent hover:bg-ui-hover"><ExternalLink :size="14" aria-hidden="true" /></a>
+        </div>
         <UiScrollArea v-if="expanded.has(index)" orientation="both" fade-size="sm" class="max-h-80 border-t border-ui-border bg-ui-badge/50">
           <pre class="m-0 p-3 font-mono text-xs whitespace-pre-wrap">{{ block.resource.text }}</pre>
         </UiScrollArea>

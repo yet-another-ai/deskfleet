@@ -6,7 +6,7 @@ import { router } from "../../router/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import { catalogFixture, sessionId } from "../../test/catalog.ts"
+import { catalogFixture, sessionId, workspaceId } from "../../test/catalog.ts"
 import MobileWindowManager from "./MobileWindowManager.vue"
 
 let wrapper: VueWrapper | undefined
@@ -18,6 +18,7 @@ beforeEach(() => {
 afterEach(async () => {
   wrapper?.unmount(); wrapper = undefined
   disposePinia(pinia)
+  window.localStorage.clear()
   await router.replace("/")
 })
 
@@ -29,6 +30,7 @@ async function setup() {
     props: { sessionId }, attachTo: document.body,
     global: { plugins: [pinia, router, i18n], stubs: {
       SessionView: true, ChangesPanel: true, WindowToolbar: true,
+      GithubPanel: { emits: ["insert"], template: '<button data-insert-github @click="$emit(\'insert\')">Insert</button>' },
       SessionDesktopPanel: { props: ["sessionId", "active"], template: '<div data-session-desktops :data-session-id="sessionId" :data-active="String(active)" />' },
     } },
   })
@@ -47,6 +49,20 @@ test("mobile overview does not mount desktop previews until explicitly selected"
   await flushPromises()
   expect(view.get("[data-session-desktops]").attributes("data-session-id")).toBe(sessionId)
   expect(view.get("[data-session-desktops]").attributes("data-active")).toBe("true")
+})
+
+test("mobile overview adds a GitHub tab and returns to chat after inserting a reference", async () => {
+  const view = await setup()
+  useFleetStore(pinia).catalog!.workspaceGithubRepositories = [{ workspaceId, repositories: ["org/site"] }]
+  await view.get("[data-open-overview]").trigger("click")
+  await flushPromises()
+  const add = view.findAll("button").find(button => button.text() === "Add GitHub tab")!
+  await add.trigger("click")
+  await flushPromises()
+  expect(view.get('[data-mobile-view="github"]').attributes("aria-hidden")).toBe("false")
+  await view.get("[data-insert-github]").trigger("click")
+  await flushPromises()
+  expect(view.get('[data-mobile-view="chat"]').attributes("aria-hidden")).toBe("false")
 })
 
 test("mobile previews pause in overview, behind the sidebar and when another view is selected", async () => {

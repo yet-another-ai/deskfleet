@@ -9,7 +9,7 @@ import ConfirmDialog from "../common/ConfirmDialog.vue"
 import FilePickerDialog from "../common/FilePickerDialog.vue"
 import FolderPickerDialog from "../common/FolderPickerDialog.vue"
 import UiCheckbox from "../common/UiCheckbox.vue"
-import { ArrowUp, Check, ChevronDown, CircleAlert, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, RotateCw, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
+import { ArrowUp, Check, ChevronDown, CircleAlert, CircleDot, CornerDownRight, File, FileText, Folder, FolderOpen, GitBranch, GitPullRequest, HardDrive, Laptop, MessageCircle, MessageSquare, Mic, Monitor, Plus, RotateCw, Sparkles, Square, Unplug, Upload, X, Zap } from "@lucide/vue"
 import { useConfirmDialog, useEventListener, useTextareaAutosize } from "@vueuse/core"
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuRoot, DropdownMenuTrigger } from "reka-ui"
 import { computed, onBeforeUnmount, reactive, ref, useId, useTemplateRef, watch } from "vue"
@@ -35,6 +35,7 @@ import {
   type ComposerAttachment,
 } from "../../services/composer-attachments.ts"
 import { fileSize } from "../../services/file-format.ts"
+import { githubItemDragType, githubReferenceLabel, readGithubItemDrag, withGithubReference } from "../../services/github-composer-reference.ts"
 import { commandDraft, type ComposerMention } from "../../services/composer-mentions.ts"
 import { previewKindFromMime, previewKindFromUri, type PreviewDescriptor } from "../../services/preview.ts"
 import type { AgentConfiguration } from "../../../../client/src/agent-configuration.ts"
@@ -261,21 +262,29 @@ watch([
     baseBranch.value = undefined
   }
 }, { immediate: true })
-const fileDragDepth = ref(0)
-const isOverDropZone = computed(() => fileDragDepth.value > 0)
+const dragDepth = ref(0)
+const isOverDropZone = computed(() => dragDepth.value > 0)
 useEventListener(dropZoneRef, ["dragenter", "dragover", "dragleave", "drop"], event => {
-  // Non-file drags belong to the window manager. Changing their dropEffect
-  // (even to "none") prevents Dockview's move-only tab drops from completing.
+  // Leave Dockview's move-only tab drags to the window manager.
   const transfer = event.dataTransfer
-  if (!transfer?.types.includes("Files")) return
+  if (!transfer) return
+  const github = transfer.types.includes(githubItemDragType)
+  if (!github && !transfer.types.includes("Files")) return
 
   event.preventDefault()
   transfer.dropEffect = "copy"
-  if (event.type === "dragenter") fileDragDepth.value += 1
-  else if (event.type === "dragleave") fileDragDepth.value = Math.max(0, fileDragDepth.value - 1)
+  if (event.type === "dragenter") dragDepth.value += 1
+  else if (event.type === "dragleave") dragDepth.value = Math.max(0, dragDepth.value - 1)
   else if (event.type === "drop") {
-    fileDragDepth.value = 0
-    if (transfer.files.length && !props.disabled && !props.submitting) void addFiles(transfer.files)
+    dragDepth.value = 0
+    if (props.disabled || props.submitting) return
+    if (github) {
+      const identity = fleet.catalogIdentity
+      const workspaceId = props.location?.workspace?.id
+      if (!identity || !workspaceId) return
+      const item = readGithubItemDrag(transfer, { ...identity, workspaceId })
+      if (item) attachments.value = withGithubReference(attachments.value, item)
+    } else if (transfer.files.length) void addFiles(transfer.files)
   }
 })
 
@@ -305,7 +314,7 @@ watch(attachments, items => {
 }, { immediate: true })
 
 function itemPreview(item: ComposerAttachment): PreviewDescriptor | undefined {
-  if (item.kind === "pasted_text") return undefined
+  if (item.kind === "pasted_text" || item.kind === "github") return undefined
   const content = item.kind === "image"
     ? `data:${item.mimeType};base64,${item.data}`
     : attachmentPreviewUrls.get(item.id) ?? (item.kind === "machine_file" ? item.uri : undefined)
@@ -370,6 +379,7 @@ function removeAttachment(id: string): void {
   attachments.value = attachments.value.filter(item => item.id !== id)
 }
 function attachmentLabel(item: ComposerAttachment): string {
+  if (item.kind === "github") return githubReferenceLabel(item.item)
   return item.kind === "pasted_text" ? (item.label ?? t("composer.pastedText")) : item.name
 }
 function previewAttachment(item: ComposerAttachment): void {
@@ -578,6 +588,7 @@ onBeforeUnmount(() => {
             class="h-6 w-6 shrink-0 cursor-zoom-in rounded object-cover"
             @click="previewAttachment(item)"
           />
+          <component :is="item.item.kind === 'issue' ? CircleDot : GitPullRequest" v-else-if="item.kind === 'github'" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <FileText v-else-if="item.kind === 'pasted_text'" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <File v-else :size="14" class="shrink-0 text-ui-text-muted" :class="itemPreview(item) && 'cursor-zoom-in'" aria-hidden="true" @click="previewAttachment(item)" />
           <span
@@ -587,7 +598,7 @@ onBeforeUnmount(() => {
             @click="previewAttachment(item)"
           >{{ attachmentLabel(item) }}</span>
           <span v-if="item.kind === 'pasted_text'" class="shrink-0 rounded bg-ui-badge px-1.5 py-0.5 text-[11px] text-ui-text-muted">{{ t("composer.pastedTextLines", item.lines) }}</span>
-          <span v-else-if="item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
+          <span v-else-if="item.kind !== 'github' && item.size !== undefined" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(item.size) }}</span>
           <button
             v-if="attachmentUpload(item)?.status === 'error'"
             type="button"

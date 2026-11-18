@@ -308,11 +308,13 @@ optional GitHub and Google OAuth login.
 GitHub App integration is separate from login: central PostgreSQL stores each
 user's App authorization and their opt-in to act as that GitHub user. App grants
 belong to the account, not to a Team or Machine, and do not grant DeskFleet
-resource access. The server retains App credentials and user tokens; clients
-receive only connection settings and PR summaries. With Act as you enabled, the
-server reads branch PR status using the user's App grant, refreshing expired
-access tokens under a database lock before use. Installation management and user
-authorization remain separate from login; no PR writes are performed.
+resource access. The daemon projects GitHub repository names from each Workspace's
+configured directories into its registration's catalog. The server retains App
+credentials and user tokens. With Act as you enabled, it uses the viewer's grant
+to list open issues and pull requests in a selected repository. Branch PR status
+lookups share this grant handling, which refreshes expired access tokens under
+a database lock. Selecting an item for a conversation includes its title, URL and
+description in the submitted prompt.
 [Identity and billing requirements](identity-billing.md) define the accepted
 plan model, account flows, and enforcement boundaries. Web sessions use HttpOnly
 cookies; Electron exchanges a browser authorization for a secure main-process

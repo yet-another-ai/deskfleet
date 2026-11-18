@@ -522,6 +522,21 @@
     "outlineAudioDecayMs": "減衰時間",
     "outlineAudioDecayMsHint": "バーが元の長さに戻るまでの時間。"
   },
+  "githubPanel": {
+    "addTab": "GitHub タブを追加",
+    "repository": "リポジトリ",
+    "refresh": "GitHub の一覧を更新",
+    "noRepository": "このワークスペースに GitHub リポジトリが見つかりません。",
+    "connect": "このリポジトリを表示するには、GitHub を認可して「Act as you」をオンにしてください。",
+    "issue": "Issue",
+    "pullRequest": "プルリクエスト",
+    "loading": "リポジトリのデータを読み込み中…",
+    "insert": "会話に #{number} を追加",
+    "emptyIssues": "このページにオープンな Issue はありません。",
+    "emptyPullRequests": "このページにオープンなプルリクエストはありません。",
+    "previous": "前へ",
+    "next": "次へ"
+  },
   "githubSettings": {
     "title": "GitHub",
     "description": "GitHub App をリポジトリに接続し、DeskFleet があなたに代わって操作できるかを設定します。",
@@ -529,7 +544,7 @@
     "manageDescription": "GitHub App がアクセスできるアカウントとリポジトリを管理します。",
     "manage": "Manage GitHub",
     "actAsYou": "Act as you",
-    "actAsYouDescription": "あなたの GitHub ID でプルリクエストの状態を読み取ります。オフにしても認可は保持されます。",
+    "actAsYouDescription": "あなたの GitHub ID で Issue、プルリクエストとその状態を読み取ります。オフにしても認可は保持されます。",
     "authorize": "Authorize",
     "reauthorize": "再認可",
     "authorizedAs": "{login} として認可済み",

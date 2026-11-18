@@ -36,6 +36,12 @@ fn daemon_request(token: &str, user_id: &str) -> test::TestRequest {
         }}))
 }
 
+fn list_request(token: &str, kind: &str, page: u32) -> test::TestRequest {
+    test::TestRequest::get()
+        .uri(&format!("/api/integrations/github/repository-items?owner=upstream&repo=project&kind={kind}&page={page}"))
+        .insert_header(("Authorization", format!("Bearer {token}")))
+}
+
 fn grant(expired: bool) -> GithubAppGrant {
     GithubAppGrant {
         subject: "1234".into(),
@@ -89,6 +95,12 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
                     assert!(auth == "Bearer ghu_fixture" || auth == "Bearer ghu_rotated");
                     assert_eq!(query.get("sort").unwrap(), "updated");
                     assert_eq!(query.get("direction").unwrap(), "desc");
+                    if !query.contains_key("head") {
+                        assert_eq!(query["state"], "open");
+                        assert_eq!(query["page"], "1");
+                        assert_eq!(query["per_page"], "30");
+                        return HttpResponse::Ok().json(json!([{"number":78,"title":"Draft PR","body":null}]));
+                    }
                     assert_eq!(query.get("per_page").unwrap(), "1");
                     let head = query.get("head").unwrap().strip_prefix("octocat:").unwrap();
                     if head == "failure" {
@@ -106,6 +118,16 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
                         "html_url":"javascript:untrusted-provider-url"
                     }]))
                 }
+            }))
+            .route("/repos/upstream/project/issues", web::get().to(|req: HttpRequest, query: web::Query<HashMap<String,String>>| async move {
+                assert_eq!(req.headers().get("authorization").unwrap(), "Bearer ghu_fixture");
+                assert_eq!(query["state"], "open");
+                if query["page"] == "1" {
+                    return HttpResponse::Ok().insert_header(("Link", "<https://api.github.com/repos/upstream/project/issues?page=2>; rel=\"next\""))
+                        .json(json!([{"number":78,"title":"Draft PR","body":null,"pull_request":{}}]));
+                }
+                assert_eq!(query["page"], "2");
+                HttpResponse::Ok().json(json!([{"number":77,"title":"An issue","body":"**Markdown**","html_url":"untrusted"}]))
             }))
     }).listen(listener).unwrap().run();
     let mock_handle = mock.handle();
@@ -186,6 +208,8 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     let response = test::call_service(&app, request(token, "open").to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(pull_calls.load(Ordering::SeqCst), 0);
+    let response = test::call_service(&app, list_request(token, "issue", 1).to_request()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response =
         test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -201,6 +225,27 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    for (kind, page, expected) in [
+        ("issue", 1, json!({"items":[],"nextPage":2})),
+        (
+            "issue",
+            2,
+            json!({"items":[{"kind":"issue","repository":"upstream/project","number":77,
+            "title":"An issue","url":"https://github.com/upstream/project/issues/77","body":"**Markdown**"}],"nextPage":null}),
+        ),
+        (
+            "pullRequest",
+            1,
+            json!({"items":[{"kind":"pullRequest","repository":"upstream/project","number":78,
+            "title":"Draft PR","url":"https://github.com/upstream/project/pull/78","body":""}],"nextPage":null}),
+        ),
+    ] {
+        let response = test::call_service(&app, list_request(token, kind, page).to_request()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+        assert_eq!(test::read_body_json::<Value, _>(response).await, expected);
+    }
 
     let response = test::call_service(&app, daemon_request(token, &user.id).to_request()).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);

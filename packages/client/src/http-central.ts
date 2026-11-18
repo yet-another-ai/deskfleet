@@ -1,5 +1,5 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { PeerStartOptions } from "./central.ts"
+import type { GithubRepositoryItemsPage, GithubRepositoryItemsQuery, PeerStartOptions } from "./central.ts"
 import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, PushSubscriptionInput, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
@@ -224,6 +224,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     const params = new URLSearchParams({ owner: query.owner, repo: query.repo, branch: query.branch })
     if (query.headOwner) params.set("headOwner", query.headOwner)
     return this.request<{ pullRequest: GithubPullRequest | null }>("GET", `/api/integrations/github/pull-request?${params}`)
+  }
+  githubRepositoryItems(query: GithubRepositoryItemsQuery) {
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo, kind: query.kind, page: String(query.page) })
+    return this.request<GithubRepositoryItemsPage>("GET", `/api/integrations/github/repository-items?${params}`)
   }
   billing(teamId: string) { return this.request<TeamBilling>("GET", `/api/teams/${encodeURIComponent(teamId)}/billing`) }
   async checkout(teamId: string, plan: "go" | "pro", requestId: string, interval: BillingInterval = "month") {

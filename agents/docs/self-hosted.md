@@ -280,8 +280,10 @@ for login. Configure all three `DESKFLEET_GITHUB_APP_*` variables and register
 `<DESKFLEET_PUBLIC_URL>/api/integrations/github/callback` as the App's user
 authorization callback. The slug is the name in `https://github.com/apps/<slug>`;
 the client ID is distinct from the numeric App ID. No private key is needed for
-the user-token integration. Grant the App **Pull requests: Read-only** repository
-permission and install it on the repositories whose PR status should be shown.
+the user-token integration. Grant the App **Pull requests: Read-only** and
+**Issues: Read-only** repository permissions and install it on the repositories
+that users should be able to browse. Existing installations must approve the new
+Issues permission to browse private repository issues.
 
 Manage GitHub opens the App's installation page, where users choose their account
 or organization and repository access. Authorize opens a browser confirmation
@@ -294,7 +296,8 @@ Act as you is off after authorization and must be enabled explicitly. Turning it
 off retains the authorization and does not uninstall the App or revoke the grant
 on GitHub. Settings report authorization while an access token or refresh token
 is usable; an expired grant requires reauthorization. When enabled, the sidebar
-reads the current branch's PR status using this authorization. The server refreshes
+reads the current branch's PR status and the GitHub tab can list open issues and
+pull requests using this authorization. The server refreshes
 expired access tokens when needed and retains the rotated credentials. Turning the
 switch off stops these reads. App permissions and the user's repository permissions
 both bound user-token access. No PR write operations are performed.

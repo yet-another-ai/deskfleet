@@ -1,11 +1,11 @@
 //! Read branch pull-request state using the account's explicitly enabled App grant.
-use super::{GithubAppConfig, Token};
+use super::repository::{RepositoryClient, upstream_error, valid_owner, valid_repository};
 use crate::{
     AppState, auth,
     error::{ApiError, Result},
 };
-use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
-use deskfleet_control_store::{now_ms, policies::MachineAction};
+use actix_web::{HttpRequest, HttpResponse, web};
+use deskfleet_control_store::policies::MachineAction;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -20,27 +20,11 @@ pub(super) struct Lookup {
 
 impl Lookup {
     fn validate(&self) -> Result<()> {
-        let owner = |value: &str| {
-            !value.is_empty()
-                && value.len() <= 100
-                && value
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-')
-        };
-        let repo = !self.repo.is_empty()
-            && self.repo.len() <= 100
-            && self.repo != "."
-            && self.repo != ".."
-            && self
-                .repo
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c));
-        if !owner(&self.owner)
-            || !repo
+        if !valid_repository(&self.owner, &self.repo)
             || self
                 .head_owner
                 .as_deref()
-                .is_some_and(|value| !owner(value))
+                .is_some_and(|value| !valid_owner(value))
             || self.branch.is_empty()
             || self.branch.len() > 1024
             || self.branch.chars().any(char::is_control)
@@ -50,11 +34,8 @@ impl Lookup {
         Ok(())
     }
 
-    fn url(&self, config: &GithubAppConfig, state: &str) -> Result<url::Url> {
-        let mut url = url::Url::parse(&config.api_url).map_err(|_| ApiError::internal())?;
-        url.path_segments_mut()
-            .map_err(|_| ApiError::internal())?
-            .extend(["repos", &self.owner, &self.repo, "pulls"]);
+    fn url(&self, client: &RepositoryClient, state: &str) -> Result<url::Url> {
+        let mut url = client.url(&self.owner, &self.repo, "pulls")?;
         let head = format!(
             "{}:{}",
             self.head_owner.as_deref().unwrap_or(&self.owner),
@@ -126,66 +107,6 @@ impl PullRequest {
     }
 }
 
-fn upstream_error() -> ApiError {
-    ApiError::new(
-        StatusCode::BAD_GATEWAY,
-        "github_unavailable",
-        "GitHub pull request status is unavailable",
-    )
-}
-
-async fn access_token(
-    state: &AppState,
-    user_id: &str,
-    config: &GithubAppConfig,
-    client: &reqwest::Client,
-) -> Result<String> {
-    let access = state
-        .store
-        .github_app_access(user_id, &config.client_id)
-        .await?
-        .ok_or_else(ApiError::forbidden)?;
-    if access
-        .tokens
-        .expires_at
-        .is_none_or(|expires| expires > now_ms())
-    {
-        return Ok(access.finish(None).await?);
-    }
-    let refresh_token = access
-        .tokens
-        .refresh_token
-        .as_deref()
-        .filter(|_| {
-            access
-                .tokens
-                .refresh_expires_at
-                .is_some_and(|expires| expires > now_ms())
-        })
-        .ok_or_else(ApiError::forbidden)?;
-    // Keep the database row locked through this bounded request: GitHub invalidates
-    // a refresh token on use, so replicas must never refresh it concurrently.
-    let token: Token = client
-        .post(&config.token_url)
-        .header("Accept", "application/json")
-        .form(&[
-            ("client_id", config.client_id.as_str()),
-            ("client_secret", config.client_secret.as_str()),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-        ])
-        .send()
-        .await
-        .map_err(|_| upstream_error())?
-        .error_for_status()
-        .map_err(|_| upstream_error())?
-        .json()
-        .await
-        .map_err(|_| upstream_error())?;
-    let token = token.into_tokens().map_err(|_| upstream_error())?;
-    Ok(access.finish(Some(token)).await?)
-}
-
 pub(super) async fn lookup(
     req: HttpRequest,
     state: web::Data<AppState>,
@@ -219,30 +140,12 @@ pub(super) async fn daemon_lookup(
 
 async fn lookup_for_user(state: &AppState, user_id: &str, query: &Lookup) -> Result<HttpResponse> {
     query.validate()?;
-    let config = state
-        .config
-        .github_app
-        .as_ref()
-        .ok_or_else(ApiError::forbidden)?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| ApiError::internal())?;
-    let token = access_token(state, user_id, config, &client).await?;
+    let client = RepositoryClient::for_user(state, user_id).await?;
     let mut pull_request = None;
     // Query open first so a reused branch's active PR wins over older PR activity,
     // without requiring pagination through all of its historical pull requests.
     for state in ["open", "closed"] {
-        let response = client
-            .get(query.url(config, state)?)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "DeskFleet")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .bearer_auth(&token)
-            .send()
-            .await
-            .map_err(|_| upstream_error())?;
+        let response = client.get(query.url(&client, state)?).await?;
         if !response.status().is_success() {
             return Err(upstream_error());
         }

@@ -61,6 +61,7 @@ export interface WorktreeSummary {
 export interface WorkspaceSummary {
   id: string
   name: string
+  githubRepositories?: string[]
   directories: DirectoryBinding[]
   sessions: AgentSessionSummary[]
   terminals: TerminalSessionSummary[]

@@ -817,6 +817,12 @@ Credentials stay on the executing machine and are not stored in audit records.
 
 ### Composer references and commands
 
+In a Session whose Workspace has a GitHub remote, the GitHub panel lists open
+issues and pull requests from the selected repository. Dragging an item into the
+composer adds a removable reference to that draft. Submitting embeds its repository,
+number, title, canonical URL, and Markdown description in the Session input so
+the provider can read the selected snapshot using the ordinary prompt path.
+
 The textarea offers completions at the cursor for `@` files and Sessions, `$`
 skills, and `/` commands at the start of a message. Selected file, Session, and
 skill identities remain associated with their text and appear as removable

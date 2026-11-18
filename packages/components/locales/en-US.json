@@ -632,6 +632,21 @@
     "outlineAudioDecayMs": "Release time",
     "outlineAudioDecayMsHint": "Time for bars to settle."
   },
+  "githubPanel": {
+    "addTab": "Add GitHub tab",
+    "repository": "Repository",
+    "refresh": "Refresh GitHub items",
+    "noRepository": "No GitHub repository was found in this workspace.",
+    "connect": "Authorize GitHub and turn on Act as you to browse this repository.",
+    "issue": "Issues",
+    "pullRequest": "Pull requests",
+    "loading": "Loading repository data…",
+    "insert": "Add #{number} to the conversation",
+    "emptyIssues": "No open issues on this page.",
+    "emptyPullRequests": "No open pull requests on this page.",
+    "previous": "Previous",
+    "next": "Next"
+  },
   "githubSettings": {
     "title": "GitHub",
     "description": "Connect the GitHub App to your repositories and choose whether DeskFleet can act on your behalf.",
@@ -639,7 +654,7 @@
     "manageDescription": "Manage the accounts and repositories available to the GitHub App.",
     "manage": "Manage GitHub",
     "actAsYou": "Act as you",
-    "actAsYouDescription": "Read pull request status using your GitHub identity. Turning this off keeps your authorization.",
+    "actAsYouDescription": "Use your GitHub identity to read issues, pull requests, and pull request status. Turning this off keeps your authorization.",
     "authorize": "Authorize",
     "reauthorize": "Reauthorize",
     "authorizedAs": "Authorized as {login}",
