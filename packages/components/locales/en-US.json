@@ -1044,6 +1044,7 @@
   },
   "desktop": {
     "windowTitle": "Remote desktop",
+    "nativeReady": "Connect to open the remote desktop in a native window.",
     "nativeOpening": "Opening native desktop window…",
     "nativeFailed": "Could not open the desktop window",
     "notFound": "This machine does not exist.",

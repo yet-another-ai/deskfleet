@@ -642,8 +642,12 @@ cannot inject input.
 The Linux, Windows, and macOS Electron clients and native Android/iOS clients
 use the native viewer by default when connecting to a desktop, including from
 a display preview. The host's native viewer capability selects this path without
-a rollout gate or a separate launch button. Browser and PWA clients keep the
-embedded viewer. Team authorization applies to both paths.
+a rollout gate or a separate launch button. Clicking a preview opens its scoped
+native viewer directly, leaving the current machine and Session view in place;
+it does not navigate through the embedded desktop page. Preview cards display
+native startup progress and retryable launch errors independently of preview
+stream errors. Browser and PWA clients keep the embedded viewer. Team
+authorization applies to both paths.
 Electron opens `deskfleet-viewer`, a Rust executable whose thin entry
 point calls the reusable `deskfleet-desktop-viewer` library. The desktop UI uses
 a GPUI Fast window with a pure-Rust NSH floating toolbar.
@@ -651,8 +655,11 @@ The viewer owns its window, receive-only WebRTC peer, decoder, and GPU
 presentation. The current native receive path supports AV1 Main, HEVC Main,
 H.264 constrained baseline,
 and optional mouse/keyboard control;
-it does not negotiate system audio. Native launch settings expose display and
-control selection; browser-only codec, audio, and reverse-scroll options are hidden.
+it does not negotiate system audio. Electron's embedded launch page omits its
+floating controls; display and control settings belong to the native window.
+Android/iOS retain display and control selection on their explicit launch page
+because their native surface does not yet expose those settings. Browser-only
+codec, audio, and reverse-scroll options remain hidden for native launch paths.
 
 The toolbar follows the embedded desktop viewer's layout, color tokens, and
 English, Chinese, and Japanese translations. Electron supplies the selected

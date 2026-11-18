@@ -133,10 +133,11 @@ test.each(["darwin", "win32", "linux", "web"] as const)("Connect opens the selec
   platformClient.platform = platform
   const openNative = vi.fn(async () => {})
   platformClient.desktop.openNative = openNative
-  const wrapper = await mountDesktop()
+  const wrapper = await mountDesktop("local-daemon", undefined, { initialDisplayId: 2 })
   expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
-  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
-  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(platform === "web")
+  expect(wrapper.find("[data-move-controls]").exists()).toBe(platform === "web")
+  if (platform === "web") await wrapper.get('[aria-label="Stream settings"]').trigger("click")
   expect(wrapper.find("[data-desktop-codec]").exists()).toBe(false)
   expect(wrapper.find("[data-desktop-audio]").exists()).toBe(false)
   expect(wrapper.find("[data-desktop-reverse-scroll]").exists()).toBe(false)
@@ -146,6 +147,43 @@ test.each(["darwin", "win32", "linux", "web"] as const)("Connect opens the selec
   expect(TestPeer.instances).toHaveLength(0)
   expect(mock.api.offer).not.toHaveBeenCalled()
   expect(mock.api.start).not.toHaveBeenCalled()
+})
+
+test("native desktop launch chooses an available display without a web settings toolbar", async () => {
+  platformClient.platform = "darwin"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const capabilities = await mock.api.capabilities()
+  capabilities.displays[0]!.codecs = []
+  mock.api.capabilities.mockResolvedValue(capabilities)
+  const wrapper = await mountDesktop()
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(false)
+  await button(wrapper, "Connect").trigger("click")
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+})
+
+test("native mobile retains display and control selection before launching its surface", async () => {
+  platformClient.platform = "web"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  await wrapper.get("[data-desktop-control]").trigger("click")
+  await button(wrapper, "Connect").trigger("click")
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: false, locale: "en-US", theme: "light" })
+})
+
+test("native desktop opens an explicitly selected unsupported display so its window can handle recovery", async () => {
+  platformClient.platform = "darwin"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const capabilities = await mock.api.capabilities()
+  capabilities.displays[0]!.codecs = []
+  mock.api.capabilities.mockResolvedValue(capabilities)
+  const wrapper = await mountDesktop("local-daemon", undefined, { initialDisplayId: 1, autoConnect: true })
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(false)
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
 })
 
 test.each(["av1", "h265"] as const)("native window remains available for a %s-only display", async codec => {

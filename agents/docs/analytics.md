@@ -353,8 +353,10 @@ Search requests require a selected Team and retain server-side Team authorizatio
 Native desktop viewing is fully released and no longer uses the
 `native_presentor` gate. Hosts with a native viewer use it for the standard
 Connect action and connections opened from display previews, independently of
-Statsig configuration or evaluation. Browser and PWA clients keep the embedded viewer. Existing Team
-peer grants and desktop control authorization apply to both paths.
+Statsig configuration or evaluation. Preview clicks open the native viewer
+directly without switching the selected machine or opening an embedded launch
+page. Browser and PWA clients keep the embedded viewer. Existing Team peer
+grants and desktop control authorization apply to both paths.
 
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"

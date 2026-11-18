@@ -1044,6 +1044,7 @@
   },
   "desktop": {
     "windowTitle": "远程桌面",
+    "nativeReady": "连接以在原生窗口中打开远程桌面。",
     "nativeOpening": "正在打开原生桌面窗口…",
     "nativeFailed": "无法打开桌面窗口",
     "notFound": "该机器不存在。",
