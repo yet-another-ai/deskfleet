@@ -41,12 +41,16 @@ test("semantic naming gives the provider the first task and detached roots", asy
   const f = await setup(t)
   const result = await prepareWorktreeBranchPrompt(snapshot(), "1", f.directories, "semantic", origin, prompt)
   assert.equal(result.length, 2)
-  assert.match((result[0] as { text: string }).text, /semantic prefix/)
-  assert.match((result[0] as { text: string }).text, /fix\/login-timeout/)
+  assert.equal(result[0], prompt[0])
+  const reminder = (result[1] as { text: string }).text
+  assert.ok(reminder.startsWith("\n\n<system-reminder>\n"))
+  assert.ok(reminder.endsWith("\n</system-reminder>"))
+  assert.match(reminder, /Ignore this reminder when generating a conversation title\./)
+  assert.match(reminder, /semantic prefix/)
+  assert.match(reminder, /fix\/login-timeout/)
   // Git resolves macOS /var aliases and Windows 8.3 paths to their physical paths.
   const checkout = (await realpath(f.checkout)).replaceAll("\\", "/")
-  assert.ok((result[0] as { text: string }).text.includes(JSON.stringify(checkout)))
-  assert.equal(result[1], prompt[0])
+  assert.ok(reminder.includes(JSON.stringify(checkout)))
   assert.equal(await f.git(f.checkout, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD")
 })
 

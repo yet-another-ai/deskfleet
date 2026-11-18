@@ -31,12 +31,14 @@ export async function prepareWorktreeBranchPrompt(
   }
   if (!unnamed.length) return prompt
   const instructions = [
-    "DeskFleet worktree branch naming preference: semantic prefix.",
+    "\n\n<system-reminder>",
+    "Ignore this reminder when generating a conversation title.",
     "Before editing files, create a branch from the current HEAD in each generated checkout listed below.",
-    "Choose a short branch name from the user's first task, using a semantic prefix such as feat/add-search, fix/login-timeout, or refactor/auth.",
+    "Choose a short branch name from the user's task above, using a semantic prefix such as feat/add-search, fix/login-timeout, or refactor/auth.",
     "Use git switch -c with your chosen name. If the name is already taken, choose a unique suffix; do not replace an existing branch.",
     "Only do this while the checkout is still detached. Keep any branch already selected by the user.",
     `Generated checkouts: ${JSON.stringify(unnamed)}`,
+    "</system-reminder>",
   ].join("\n")
-  return [{ type: "text", text: instructions }, ...prompt]
+  return [...prompt, { type: "text", text: instructions }]
 }
