@@ -82,13 +82,7 @@ afterEach(() => {
 })
 
 test("Vapor creates the preview video in the live document and retains its media binding across updates", async () => {
-  const createdVideos = new Set<HTMLVideoElement>()
-  const createElement = document.createElement.bind(document)
-  vi.spyOn(document, "createElement").mockImplementation((tag, options) => {
-    const element = createElement(tag, options)
-    if (tag === "video") createdVideos.add(element as HTMLVideoElement)
-    return element
-  })
+  const createElement = vi.spyOn(document, "createElement")
   const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
   host = document.createElement("div")
   document.body.appendChild(host)
@@ -96,7 +90,7 @@ test("Vapor creates the preview video in the live document and retains its media
   await harness.flush()
   const video = host.querySelector("video")!
   expect(video).not.toBeNull()
-  expect(createdVideos.has(video)).toBe(true)
+  expect(createElement.mock.results.map(result => result.value)).toContain(video)
   expect(video.ownerDocument).toBe(document)
   expect(video.muted).toBe(true)
   expect(video.autoplay).toBe(true)
