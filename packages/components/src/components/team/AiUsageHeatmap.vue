@@ -93,5 +93,6 @@ onMounted(() => {
 .day[data-level="4"] { background: var(--ui-color-accent); }
 .day.outside { opacity: 0.3; }
 .day.unreported { box-shadow: inset 0 0 0 1px var(--ui-color-text-muted); }
-.day:hover, .day.selected { opacity: 1; outline: 2px solid var(--ui-color-text-muted); outline-offset: 2px; }
+.day:hover { opacity: 1; outline: 2px solid var(--ui-color-text-muted); outline-offset: 2px; }
+.day.selected, .day.selected:hover { opacity: 1; outline: 2px solid var(--ui-color-accent); outline-offset: 2px; }
 </style>

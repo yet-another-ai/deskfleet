@@ -113,8 +113,8 @@ defineExpose({
     <button
       v-if="interactive"
       type="button"
-      class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover hover:text-ui-text"
-      :class="showKeypad && 'bg-ui-active text-ui-text'"
+      class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion"
+      :class="showKeypad ? 'ui-nav-active' : 'hover:bg-ui-hover hover:text-ui-text'"
       :aria-label="t('terminal.keypadToggle')"
       :title="t('terminal.keypadToggle')"
       :aria-pressed="showKeypad"

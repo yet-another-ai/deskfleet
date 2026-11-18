@@ -70,12 +70,6 @@ body {
   user-select: none;
 }
 
-/* Sidebar interactive items tint their hover and active states with the theme hue. */
-.bg-ui-sidebar {
-  --ui-color-hover: color-mix(in srgb, var(--ui-color-accent) 10%, transparent);
-  --ui-color-active: color-mix(in srgb, var(--ui-color-accent) 14%, transparent);
-}
-
 button,
 input,
 select,
@@ -363,6 +357,17 @@ textarea {
 /* A selected navigation item or segment settles into place. */
 .ui-nav-active,
 .ui-segment-active { animation: ui-nav-select var(--ui-duration-base) var(--ui-ease-out); }
+.ui-nav-active:is(.ui-button-ghost, .ui-text-button) {
+  color: var(--ui-color-accent);
+  background-color: color-mix(in srgb, var(--ui-color-accent) 12%, transparent);
+}
+.ui-nav-active:is(.ui-button-ghost, .ui-text-button):hover:not(:disabled, [aria-disabled="true"]) {
+  color: var(--ui-color-accent);
+  background-color: color-mix(in srgb, var(--ui-color-accent) 20%, transparent);
+}
+.ui-nav-active:is(.ui-button-ghost, .ui-text-button):active:not(:disabled, [aria-disabled="true"]) {
+  background-color: color-mix(in srgb, var(--ui-color-accent) 25%, transparent);
+}
 @keyframes ui-nav-select {
   from { background-color: transparent; scale: 0.97; }
 }

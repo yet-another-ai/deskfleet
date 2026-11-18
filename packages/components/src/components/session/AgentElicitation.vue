@@ -126,13 +126,13 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
             </RadioGroupItem>
           </RadioGroupRoot>
           <div v-else-if="field.type === 'array' && field.choices.length && !field.secret" class="flex flex-col gap-2">
-            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 ui-motion" :class="selected(field.id, choice.value) ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 ui-motion" :class="selected(field.id, choice.value) ? 'border-ui-accent/60 bg-ui-accent/6 hover:bg-ui-accent/12' : 'border-ui-border hover:border-ui-border-strong hover:bg-ui-hover'">
               <UiCheckbox :name="field.id" :value="choice.value" :model-value="selected(field.id, choice.value)" :disabled="disabled" class="mt-1" @update:model-value="selectMany(field.id, choice.value, $event)" />
               <span class="min-w-0"><span class="block break-words">{{ choice.title }}</span><span v-if="choice.description" class="mt-0.5 block whitespace-pre-wrap text-xs text-ui-text-muted">{{ choice.description }}</span></span>
             </label>
           </div>
           <RadioGroupRoot v-else-if="field.choices.length && !field.secret" :model-value="String(draft[field.id] ?? '')" :name="field.id" :aria-label="field.title" :required="field.required" :disabled="disabled" class="flex flex-col gap-2" @update:model-value="setValue(field.id, String($event))">
-            <RadioGroupItem v-for="choice in field.choices" :key="choice.value" :value="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-left ui-motion disabled:cursor-default disabled:op-50" :class="draft[field.id] === choice.value ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+            <RadioGroupItem v-for="choice in field.choices" :key="choice.value" :value="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-left ui-motion disabled:cursor-default disabled:op-50" :class="draft[field.id] === choice.value ? 'border-ui-accent/60 bg-ui-accent/6 hover:bg-ui-accent/12' : 'border-ui-border hover:border-ui-border-strong hover:bg-ui-hover'">
               <span class="ui-radio mt-1"><RadioGroupIndicator class="ui-radio-dot" /></span>
               <span class="min-w-0"><span class="block break-words">{{ choice.title }}</span><span v-if="choice.description" class="mt-0.5 block whitespace-pre-wrap text-xs text-ui-text-muted">{{ choice.description }}</span></span>
             </RadioGroupItem>

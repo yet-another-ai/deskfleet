@@ -641,7 +641,8 @@ onBeforeUnmount(() => {
         <button
           v-if="location"
           type="button"
-          class="ui-text-button shrink-0 cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          class="ui-text-button shrink-0 cursor-pointer leading-5 disabled:cursor-default disabled:opacity-50"
+          :class="yoloEnabled && 'ui-nav-active'"
           :aria-pressed="yoloEnabled"
           :aria-label="t('composer.yoloHint')"
           :title="t('composer.yoloHint')"
@@ -649,11 +650,11 @@ onBeforeUnmount(() => {
           data-composer-yolo
           @click="toggleYolo"
         >
-          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
+          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" aria-hidden="true" />
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'bg-ui-accent/10 text-ui-accent' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'ui-nav-active' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>

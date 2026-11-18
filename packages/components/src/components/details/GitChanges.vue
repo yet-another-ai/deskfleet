@@ -81,7 +81,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
       <div class="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 pt-2">
         <span class="text-xs text-ui-text-muted" role="status">{{ t(connected && !error ? 'panel.gitLive' : 'panel.gitPaused') }}</span>
         <div class="flex shrink-0">
-          <UiButton variant="ghost" size="icon" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton variant="ghost" size="icon" :class="treeOpen && 'ui-nav-active'" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton variant="ghost" size="icon" :label="t('panel.refreshGit')" :disabled="loading" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>

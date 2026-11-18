@@ -100,8 +100,8 @@ export default defineConfig({
     // A segmented control: the active segment is a raised pill that settles in (styles.css).
     "ui-segmented": "flex rounded-lg border border-ui-border bg-ui-hover p-1",
     "ui-segment":
-      "cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs text-ui-text-muted ui-motion hover:text-ui-text enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-ui-accent",
-    "ui-segment-active": "bg-ui-surface text-ui-text shadow-ui-card",
+      "cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs text-ui-text-muted ui-motion [&:not(.ui-segment-active):hover]:bg-ui-hover hover:text-ui-text enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-ui-accent",
+    "ui-segment-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/20 hover:text-ui-accent",
 
     // Status and progress. A status dot takes its color from `text-*`; add `ui-status-live` for running states.
     "ui-status-dot": "relative inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current",
