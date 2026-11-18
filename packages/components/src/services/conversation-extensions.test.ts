@@ -14,7 +14,7 @@ const text = (text: string) => ({ type: "text" as const, text })
 test("ID-addressed plans replace content in place, remove only their ID, and keep legacy plans", () => {
   const source = [
     update(1, { sessionUpdate: "plan_update", plan: { type: "items", planId: "a", entries: [{ content: "Inspect", status: "pending", priority: "high" }] } }),
-    update(2, { sessionUpdate: "plan_update", plan: { type: "file", planId: "b", uri: "file:///workspace/PLAN.md" } }),
+    update(2, { sessionUpdate: "plan_update", plan: { type: "markdown", planId: "b", content: "## External plan" } }),
     update(3, { sessionUpdate: "plan", entries: [{ content: "Legacy task", status: "pending", priority: "medium" }] }),
     update(4, { sessionUpdate: "plan_update", plan: { type: "markdown", planId: "a", content: "## Updated plan" } }),
     update(5, { sessionUpdate: "plan_removed", planId: "b" }),
@@ -24,7 +24,7 @@ test("ID-addressed plans replace content in place, remove only their ID, and kee
     { id: "plan-1", kind: "structured_plan", plan: { planId: "a", type: "markdown", content: "## Updated plan" } },
     { kind: "plan", entries: [{ content: "Legacy task" }] },
   ])
-  source.push(update(6, { sessionUpdate: "plan_update", plan: { type: "file", planId: "b", uri: "file:///workspace/NEW-PLAN.md" } }))
+  source.push(update(6, { sessionUpdate: "plan_update", plan: { type: "markdown", planId: "b", content: "## Restored plan" } }))
   expect(projectConversation(source, agentSnapshot()).at(-1)).toMatchObject({ id: "plan-6", kind: "structured_plan", plan: { planId: "b" } })
 })
 

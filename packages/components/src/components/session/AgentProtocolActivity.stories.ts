@@ -24,8 +24,22 @@ export const CompactionFailed: Story = {
 export const StructuredPlanMarkdown: Story = {
   args: { step: { id: "plan", kind: "structured_plan", plan: { type: "markdown", planId: "implementation", content: "## Implement session extensions\n\n1. Preserve provider session IDs.\n2. Render plans and child sessions.\n3. Verify replay and reconnection." } } },
 }
-export const StructuredPlanFile: Story = {
-  args: { step: { id: "plan-file", kind: "structured_plan", plan: { type: "file", planId: "implementation", uri: "file:///workspace/deskfleet/PLAN.md" } } },
+export const StructuredPlanItems: Story = {
+  args: {
+    step: {
+      id: "plan-items",
+      kind: "structured_plan",
+      plan: {
+        type: "items",
+        planId: "implementation",
+        entries: [
+          { content: "Preserve provider session IDs", status: "completed", priority: "high" },
+          { content: "Render plans and child sessions", status: "in_progress", priority: "medium" },
+          { content: "Verify replay and reconnection", status: "pending", priority: "medium" },
+        ],
+      },
+    },
+  },
 }
 export const ChildSession: Story = {
   args: {
