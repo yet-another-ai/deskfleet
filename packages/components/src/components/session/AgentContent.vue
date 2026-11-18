@@ -59,7 +59,7 @@ function resourcePreviewKind(block: Extract<AgentInput["content"][number], { typ
         mode="inline"
       />
       <div v-else-if="block.type === 'resource' && 'text' in block.resource" class="overflow-hidden rounded-lg border border-ui-border bg-ui-surface/80" data-pasted-resource>
-        <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs hover:bg-ui-hover" :aria-expanded="expanded.has(index)" @click="toggleResource(index)">
+        <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs ui-motion hover:bg-ui-hover" :aria-expanded="expanded.has(index)" @click="toggleResource(index)">
           <FileText :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="min-w-0 flex-1 truncate font-medium text-ui-text">{{ resourceLabel(block.resource.uri) }}</span>
           <span class="shrink-0 text-ui-text-muted">{{ t("agent.pastedTextLines", lineCount(block.resource.text)) }}</span>

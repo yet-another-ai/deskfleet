@@ -89,7 +89,7 @@ async function oauth(provider: OAuthProvider): Promise<void> {
         <input ref="email" v-model="email" class="ui-input" type="email" name="email" autocomplete="username webauthn" required maxlength="254" :disabled="!!pending" autofocus />
       </label>
       <UiField v-model="password" :label="t('auth.password')" type="password" name="password" autocomplete="current-password" required maxlength="128" :disabled="!!pending">
-        <template #aside><a href="/auth/recovery" :target="target" rel="noopener" class="text-[13px] text-ui-text-muted hover:text-ui-text">{{ t("auth.forgot") }}</a></template>
+        <template #aside><a href="/auth/recovery" :target="target" rel="noopener" class="text-[13px] text-ui-text-muted ui-motion hover:text-ui-text">{{ t("auth.forgot") }}</a></template>
       </UiField>
       <label v-if="config.telemetryEnabled" class="flex cursor-pointer items-start gap-3 rounded-lg border border-ui-border bg-ui-sidebar p-3 text-sm">
         <input

@@ -125,7 +125,7 @@ async function remove(): Promise<void> {
     <template v-if="snapshot">
       <div v-if="snapshot.providers.length" class="ui-card">
         <div v-for="(provider, index) in snapshot.providers" :key="provider.id" class="flex items-center gap-2 py-1.5 pr-3 pl-1.5" :class="index > 0 && 'border-t border-ui-border-strong'" :data-provider-id="provider.id">
-          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 rounded-lg px-3 py-2.5 text-left hover:bg-ui-hover" :aria-label="t('providers.editNamed', { name: provider.name })" data-provider-open @click="edit(provider)">
+          <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 rounded-lg px-3 py-2.5 text-left ui-motion hover:bg-ui-hover" :aria-label="t('providers.editNamed', { name: provider.name })" data-provider-open @click="edit(provider)">
             <ProviderIcon :icon="provider.icon" :template="provider.template" :size="20" class="shrink-0" />
             <span class="min-w-0 truncate text-sm font-medium">{{ provider.name }}</span>
             <span v-if="templateName(provider) !== provider.name" class="ui-badge shrink-0" data-provider-row-template>{{ templateName(provider) }}</span>

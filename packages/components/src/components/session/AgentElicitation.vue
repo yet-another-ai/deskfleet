@@ -126,7 +126,7 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
             </RadioGroupItem>
           </RadioGroupRoot>
           <div v-else-if="field.type === 'array' && field.choices.length && !field.secret" class="flex flex-col gap-2">
-            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2" :class="selected(field.id, choice.value) ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+            <label v-for="choice in field.choices" :key="choice.value" class="flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 ui-motion" :class="selected(field.id, choice.value) ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
               <UiCheckbox :name="field.id" :value="choice.value" :model-value="selected(field.id, choice.value)" :disabled="disabled" class="mt-1" @update:model-value="selectMany(field.id, choice.value, $event)" />
               <span class="min-w-0"><span class="block break-words">{{ choice.title }}</span><span v-if="choice.description" class="mt-0.5 block whitespace-pre-wrap text-xs text-ui-text-muted">{{ choice.description }}</span></span>
             </label>
@@ -139,7 +139,7 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
           </RadioGroupRoot>
           <input v-else-if="['string', 'number', 'integer'].includes(field.type)" :type="elicitationInputType(field)" :name="field.id" :aria-label="field.title" :value="draft[field.id] ?? ''" :required="field.required" :min="field.minimum" :max="field.maximum" :minlength="field.minLength" :maxlength="field.maxLength" :pattern="field.pattern" :step="field.type === 'integer' ? 1 : 'any'" :autocomplete="field.secret ? 'off' : undefined" class="ui-input text-sm" @input="setValue(field.id, ($event.target as HTMLInputElement).value)" />
           <p v-else class="m-0 text-ui-text-muted">{{ t('agent.questions.unsupported') }}</p>
-          <button v-if="!field.required && draft[field.id] !== undefined" type="button" class="mt-1 cursor-pointer text-xs text-ui-text-muted hover:text-ui-text disabled:cursor-default" @click="clearValue(field.id)">{{ t('agent.questions.clear') }}</button>
+          <button v-if="!field.required && draft[field.id] !== undefined" type="button" class="mt-1 cursor-pointer text-xs text-ui-text-muted ui-motion hover:text-ui-text disabled:cursor-default" @click="clearValue(field.id)">{{ t('agent.questions.clear') }}</button>
         </fieldset>
       </template>
       <p v-if="!supported" class="m-0 text-ui-text-muted">{{ t(elicitation.request.mode === 'url' ? 'agent.questions.unsupportedUrl' : 'agent.questions.unsupported') }}</p>

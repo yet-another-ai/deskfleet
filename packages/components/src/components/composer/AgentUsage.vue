@@ -31,7 +31,7 @@ const cost = computed(() => {
 
 <template>
   <PopoverRoot>
-    <PopoverTrigger type="button" data-agent-usage class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs tabular-nums hover:bg-ui-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent" :class="tone" :aria-label="summary" :title="summary">
+    <PopoverTrigger type="button" data-agent-usage class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-xs tabular-nums ui-motion hover:bg-ui-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-ui-accent" :class="tone" :aria-label="summary" :title="summary">
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
         <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" opacity="0.2" />
         <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" pathLength="100" :stroke-dasharray="`${fill} 100`" transform="rotate(-90 10 10)" />

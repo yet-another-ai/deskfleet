@@ -38,7 +38,7 @@ const statusColor: Record<GitFileStatus, string> = {
 <template>
   <button
     type="button"
-    class="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md py-1 pr-1.5 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default"
+    class="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md py-1 pr-1.5 text-left text-[13px] ui-motion hover:bg-ui-hover disabled:cursor-default"
     :class="selected && 'bg-ui-active'"
     :style="{ paddingLeft: `${6 + depth * 12}px` }"
     :aria-label="disclosure ? t(expanded ? 'panel.collapseFileDiff' : 'panel.expandFileDiff', { path: change.path }) : t('panel.openDiff', { path: change.path, kind: t(`panel.changeKind.${change.kind}`) })"

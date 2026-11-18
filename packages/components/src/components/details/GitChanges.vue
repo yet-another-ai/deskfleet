@@ -116,7 +116,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
                   <button
                     v-if="row.type === 'directory'"
                     type="button"
-                    class="flex min-h-7 w-full cursor-pointer items-center gap-1 rounded-md py-0.5 pr-1.5 text-left text-[13px] text-ui-text-muted hover:bg-ui-hover"
+                    class="flex min-h-7 w-full cursor-pointer items-center gap-1 rounded-md py-0.5 pr-1.5 text-left text-[13px] text-ui-text-muted ui-motion hover:bg-ui-hover"
                     :style="{ paddingLeft: `${6 + row.depth * 12}px` }"
                     :aria-expanded="!row.collapsed"
                     :aria-label="t(row.collapsed ? 'panel.expandDirectory' : 'panel.collapseDirectory', { path: row.path })"

@@ -85,7 +85,7 @@ function saveProtection(value: string): void {
       <h2 id="worktree-cleanup-heading" class="ui-section-title mb-2">{{ t("worktreeSettings.cleanup") }}</h2>
       <div class="ui-card overflow-hidden">
         <template v-for="option in cleanupOptions" :key="option.key">
-          <button v-if="option.key === 'settled'" type="button" class="ui-setting flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-[13px] text-ui-text-muted hover:bg-ui-hover" :aria-expanded="advanced" aria-controls="worktree-settled-row worktree-unchanged-row worktree-protection-row" @click="advanced = !advanced">
+          <button v-if="option.key === 'settled'" type="button" class="ui-setting flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left text-[13px] text-ui-text-muted ui-motion hover:bg-ui-hover" :aria-expanded="advanced" aria-controls="worktree-settled-row worktree-unchanged-row worktree-protection-row" @click="advanced = !advanced">
             <ChevronDown :size="15" :class="advanced ? '' : '-rotate-90'" aria-hidden="true" />
             {{ t("worktreeSettings.advanced") }}
           </button>

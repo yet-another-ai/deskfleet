@@ -586,6 +586,9 @@ onScopeDispose(() => {
   border-bottom: 0;
   background: transparent;
 }
+.deskfleet-windows :deep(.dv-tabs-overflow-container .dv-active-tab .ui-menu-item) {
+  @apply ui-nav-active focus:bg-ui-accent/20 data-[highlighted]:bg-ui-accent/20;
+}
 .deskfleet-windows :deep(.dv-drop-target),
 .deskfleet-windows :deep(.dv-drop-target-container) {
   --dv-transition-duration: 300ms;

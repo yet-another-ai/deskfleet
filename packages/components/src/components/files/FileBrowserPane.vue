@@ -89,7 +89,7 @@ onBeforeUnmount(() => { disposed = true; ++generation })
       <p v-else class="m-0 p-3 text-sm text-ui-text-muted">{{ t('files.empty') }}</p>
     </UiScrollArea>
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
-      <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
+      <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 ui-motion hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       <label class="ml-auto flex items-center gap-1.5"><UiCheckbox v-model="hidden" />{{ t('files.showHidden') }}</label>
     </div>
   </section>

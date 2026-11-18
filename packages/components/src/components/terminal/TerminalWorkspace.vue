@@ -106,7 +106,7 @@ onMounted(() => {
           <button
             v-if="activeId === terminal.id"
             type="button"
-            class="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded"
+            class="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded ui-motion"
             :class="broken() ? 'cursor-pointer hover:bg-ui-hover' : 'cursor-default'"
             :title="broken() ? `${connection.label} · ${t('terminal.reconnect')}` : connection.label"
             :aria-label="broken() ? `${connection.label} · ${t('terminal.reconnect')}` : connection.label"
@@ -144,7 +144,7 @@ onMounted(() => {
         :aria-label="t('terminal.newTab')"
         :title="t('terminal.newTab')"
         :disabled="readOnly || creating"
-        class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:op-40"
+        class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text disabled:op-40"
         @click="create()"
       ><Plus :size="15" aria-hidden="true" /></button>
       <slot name="actions" />

@@ -95,7 +95,7 @@ export default defineConfig({
     "ui-dialog-actions": "mt-6 flex justify-end gap-2",
     "ui-menu": "rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover",
     "ui-menu-item":
-      "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
+      "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none ui-motion hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
     "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
     // A segmented control: the active segment is a raised pill that settles in (styles.css).
     "ui-segmented": "flex rounded-lg border border-ui-border bg-ui-hover p-1",

@@ -51,7 +51,7 @@ const detailsOpen = useConversationDisclosure(() => `remote:${props.disclosureId
       <PreviewViewer v-for="(image, index) in remote.images" :key="index" class="remote-mcp-preview" :data-preview="`remote-image-${index}`" kind="image" :content="`data:${image.mimeType};base64,${image.data}`" :mime-type="image.mimeType" :title="t('agent.remoteMcp.screenshot', { machine: machineName, action })" mode="inline" />
     </div>
     <CollapsibleRoot :open="detailsOpen ?? false" @update:open="detailsOpen = $event" class="border-t border-ui-border">
-      <CollapsibleTrigger type="button" data-remote-mcp-details class="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-xs text-ui-text-muted hover:bg-ui-hover hover:text-ui-text">
+      <CollapsibleTrigger type="button" data-remote-mcp-details class="flex w-full cursor-pointer items-center gap-1.5 px-4 py-2 text-left text-xs text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text">
         <ChevronRight :size="13" class="shrink-0 ui-motion" :class="detailsOpen && 'rotate-90'" aria-hidden="true" />{{ t('agent.remoteMcp.details') }}
       </CollapsibleTrigger>
       <!-- Remote resource paths must not resolve against the source Agent's machine. -->

@@ -221,7 +221,7 @@ onBeforeUnmount(() => { finished = true })
             <span class="block truncate text-sm font-medium leading-5 sm:shrink-0">{{ item.name }}</span>
             <span class="block truncate text-xs leading-4 text-ui-text-muted sm:leading-5" :title="t(`providers.templateDescription.${item.id}`)">{{ t(`providers.templateDescription.${item.id}`) }}</span>
           </span>
-          <ChevronRight :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-faint group-hover:text-ui-text-muted" aria-hidden="true" />
+          <ChevronRight :size="14" :stroke-width="1.75" class="shrink-0 text-ui-text-faint ui-motion group-hover:text-ui-text-muted" aria-hidden="true" />
         </button>
       </UiScrollArea>
       <div class="ui-dialog-actions mt-4">
@@ -256,7 +256,7 @@ onBeforeUnmount(() => { finished = true })
       />
 
       <CollapsibleRoot v-if="!setupExpanded" v-model:open="advanced" :unmount-on-hide="false" class="text-sm" data-provider-advanced>
-        <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md outline-offset-2 text-[13px] text-ui-text-muted hover:text-ui-text">
+        <CollapsibleTrigger class="flex w-fit cursor-pointer items-center gap-1.5 rounded-md outline-offset-2 text-[13px] text-ui-text-muted ui-motion hover:text-ui-text">
           <ChevronRight :size="14" :stroke-width="1.75" class="ui-motion" :class="advanced && 'rotate-90'" aria-hidden="true" />
           {{ t("providers.advanced") }}
           <span v-if="!advanced && advancedSummary" class="text-ui-text-faint">· {{ advancedSummary }}</span>

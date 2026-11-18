@@ -35,12 +35,12 @@ function open(event: MouseEvent, navigate: (event?: MouseEvent) => unknown): voi
       <a :href="href" class="ui-nav-item pr-2.5" :class="[indent[depth], selected && isActive && 'ui-nav-active']" :aria-current="selected && isExactActive ? 'page' : undefined" @click="open($event, navigate)">
         <slot name="icon"><component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
         <span class="min-w-0 flex-1 truncate">{{ label }}</span>
-        <span v-if="$slots.trailing || $slots.actions" class="inline-flex min-w-3.5 shrink-0 items-center justify-center gap-1.5" :class="$slots.actions && 'group-hover:op-0 group-focus-within:op-0'">
+        <span v-if="$slots.trailing || $slots.actions" class="inline-flex min-w-3.5 shrink-0 items-center justify-center gap-1.5 ui-motion" :class="$slots.actions && 'group-hover:op-0 group-focus-within:op-0'">
           <slot name="trailing" />
         </span>
       </a>
     </RouterLink>
-    <div v-if="$slots.actions" class="absolute inset-y-0 right-1 flex items-center op-0 group-hover:op-100 group-focus-within:op-100">
+    <div v-if="$slots.actions" class="absolute inset-y-0 right-1 flex items-center op-0 ui-motion group-hover:op-100 group-focus-within:op-100">
       <slot name="actions" />
     </div>
   </div>

@@ -25,7 +25,7 @@ function openDialog(show: () => void): void {
 <template>
   <div class="app-no-drag min-w-0">
     <DropdownMenuRoot :open="open" :modal="false" @update:open="changeOpen">
-      <DropdownMenuTrigger ref="trigger" class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default disabled:op-50" :aria-label="label" :disabled="disabled">
+      <DropdownMenuTrigger ref="trigger" class="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] ui-motion hover:bg-ui-hover disabled:cursor-default disabled:op-50" :aria-label="label" :disabled="disabled">
         <slot name="trigger" />
       </DropdownMenuTrigger>
       <DropdownMenuPortal>

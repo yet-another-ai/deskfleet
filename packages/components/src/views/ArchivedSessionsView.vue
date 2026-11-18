@@ -103,7 +103,7 @@ async function confirmAction(): Promise<void> {
         <li v-for="(item, index) in archived" :key="item.session.id" class="px-4 py-3" :class="index > 0 && 'border-t border-ui-border'" :data-archived-session="item.session.id">
           <SessionContextMenu :machine-id="item.machine?.id" :session-id="item.session.id" :title="item.session.title" :context="item.session.context" :archive-state="item.session.archiveState" :disabled="!item.online || busy">
             <div class="flex items-center gap-3">
-              <RouterLink :to="{ name: 'session', params: { sessionId: item.session.id } }" class="min-w-0 flex-1 rounded-md text-inherit no-underline hover:text-ui-accent" :aria-label="t('archivedSessions.openLabel', { title: item.title })">
+              <RouterLink :to="{ name: 'session', params: { sessionId: item.session.id } }" class="min-w-0 flex-1 rounded-md text-inherit no-underline ui-motion hover:text-ui-accent" :aria-label="t('archivedSessions.openLabel', { title: item.title })">
                 <span class="block truncate text-sm">{{ item.title }}</span>
                 <span v-if="item.machine" class="block truncate text-[13px] text-ui-text-muted">{{ item.workspace ? t('archivedSessions.location', { machine: item.machine.name, workspace: item.workspace.name }) : item.machine.name }}</span>
               </RouterLink>

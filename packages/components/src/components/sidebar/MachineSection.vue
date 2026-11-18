@@ -138,7 +138,7 @@ const machineIndicator = computed(() => {
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
       <CollapsibleTrigger
         type="button"
-        class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted hover:text-ui-text"
+        class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted ui-motion hover:text-ui-text"
       >
         <span class="truncate">{{ machine.name }}</span>
         <span v-if="machine.local" class="inline-flex shrink-0 items-center text-ui-text-muted" :title="t('machine.local')">
@@ -156,7 +156,7 @@ const machineIndicator = computed(() => {
         <SessionWorkingIndicator v-if="machineIndicator" :state="machineIndicator" />
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>
-      <div v-if="machine.online" class="flex op-0 group-hover:op-100 group-focus-within:op-100">
+      <div v-if="machine.online" class="flex op-0 ui-motion group-hover:op-100 group-focus-within:op-100">
         <UiButton variant="ghost" size="icon" :label="t('machine.addWorkspace')" :placeholder="false" :disabled="unopened || !fleet.canManageCatalog" @click="addingWorkspace = true"><FolderPlus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
       </div>
     </div>

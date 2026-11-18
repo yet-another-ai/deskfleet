@@ -88,7 +88,7 @@ defineExpose({
     <span class="shrink-0">{{ t('terminal.clipboardRequest') }}</span>
     <span class="min-w-0 flex-1 truncate font-mono" :title="pendingClipboard">{{ pendingClipboard }}</span>
     <button type="button" class="ui-button h-6 shrink-0 px-2 text-xs" :disabled="!isSupported" @click="copyText(pendingClipboard!, true)">{{ t('terminal.copyRequested') }}</button>
-    <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-ui-hover" :aria-label="t('terminal.dismissClipboard')" @click="pendingClipboard = null"><X :size="13" aria-hidden="true" /></button>
+    <button type="button" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover" :aria-label="t('terminal.dismissClipboard')" @click="pendingClipboard = null"><X :size="13" aria-hidden="true" /></button>
   </div>
   <TerminalKeypad v-if="showKeypad" ref="keypad" :terminal="terminal" />
   <div class="flex h-7 min-w-0 shrink-0 items-center gap-1 border-t border-ui-border bg-ui-surface px-1.5 text-ui-text-muted" data-terminal-toolbar>
@@ -113,7 +113,7 @@ defineExpose({
     <button
       v-if="interactive"
       type="button"
-      class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text"
+      class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover hover:text-ui-text"
       :class="showKeypad && 'bg-ui-active text-ui-text'"
       :aria-label="t('terminal.keypadToggle')"
       :title="t('terminal.keypadToggle')"
@@ -123,10 +123,10 @@ defineExpose({
       @mousedown.prevent
       @click="keypadOpen = !showKeypad; props.terminal.focus?.()"
     ><Keyboard :size="14" aria-hidden="true" /></button>
-    <button type="button" class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.searchLabel')" :title="t('terminal.searchShortcut')" @click="search?.open()"><Search :size="14" aria-hidden="true" /></button>
-    <button type="button" class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text disabled:opacity-40" :aria-label="t('terminal.copySelection')" :title="t('terminal.copySelection')" :disabled="!hasSelection || !isSupported" @click="copyText(terminal.getSelection())"><component :is="copied ? Check : Copy" :size="14" aria-hidden="true" /></button>
+    <button type="button" class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.searchLabel')" :title="t('terminal.searchShortcut')" @click="search?.open()"><Search :size="14" aria-hidden="true" /></button>
+    <button type="button" class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover hover:text-ui-text disabled:opacity-40" :aria-label="t('terminal.copySelection')" :title="t('terminal.copySelection')" :disabled="!hasSelection || !isSupported" @click="copyText(terminal.getSelection())"><component :is="copied ? Check : Copy" :size="14" aria-hidden="true" /></button>
     <DropdownMenuRoot :open="menuOpen" :modal="false" @update:open="menuOpen = $event">
-      <DropdownMenuTrigger class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.exportBuffer')" :title="t('terminal.exportBuffer')"><Download :size="14" aria-hidden="true" /></DropdownMenuTrigger>
+      <DropdownMenuTrigger class="inline-flex h-6 w-7 shrink-0 items-center justify-center rounded ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('terminal.exportBuffer')" :title="t('terminal.exportBuffer')"><Download :size="14" aria-hidden="true" /></DropdownMenuTrigger>
       <DropdownMenuPortal>
         <DropdownMenuContent :as="SpringSurface" align="end" side="top" :side-offset="4" class="ui-menu z-50 min-w-48">
           <DropdownMenuItem as="button" type="button" class="ui-menu-item" @select="download('ansi')">{{ t('terminal.exportAnsi') }}</DropdownMenuItem>

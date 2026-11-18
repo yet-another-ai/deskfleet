@@ -24,7 +24,7 @@ const developerMode = useLocalStorage("deskfleet.developer-mode", false)
       />
     </SettingsRow>
   </div>
-  <RouterLink :to="{ name: 'settings-developer-nat' }" replace class="ui-card flex items-center gap-3 p-4 text-ui-text no-underline hover:bg-ui-hover">
+  <RouterLink :to="{ name: 'settings-developer-nat' }" replace class="ui-card flex items-center gap-3 p-4 text-ui-text no-underline ui-motion hover:bg-ui-hover">
     <Network :size="18" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
     <div class="min-w-0 flex-1">
       <h2 class="m-0 text-sm font-medium">{{ t("developerSettings.natTitle") }}</h2>

@@ -26,7 +26,7 @@ const awaitingApproval = computed(() => tools.value.some(step => step.permission
 
 <template>
   <CollapsibleRoot v-model:open="open" :data-activity-group="steps[0]?.id" class="text-sm text-ui-text-muted">
-    <CollapsibleTrigger type="button" data-activity-trigger class="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2 py-1 text-left hover:bg-ui-hover hover:text-ui-text">
+    <CollapsibleTrigger type="button" data-activity-trigger class="-mx-2 flex w-[calc(100%+1rem)] cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2 py-1 text-left ui-motion hover:bg-ui-hover hover:text-ui-text">
       <Layers :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       <span>{{ summary }}</span>
       <LoaderCircle v-if="running" :size="14" :stroke-width="2" class="shrink-0 animate-spin" :aria-label="t('agent.toolStatus.in_progress')" />

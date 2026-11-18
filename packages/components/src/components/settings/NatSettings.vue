@@ -37,7 +37,7 @@ function testNat(): void {
 </script>
 
 <template>
-  <RouterLink :to="{ name: 'settings-developer' }" replace class="mb-4 inline-flex items-center gap-1.5 text-[13px] text-ui-text-muted no-underline hover:text-ui-text">
+  <RouterLink :to="{ name: 'settings-developer' }" replace class="mb-4 inline-flex items-center gap-1.5 text-[13px] text-ui-text-muted no-underline ui-motion hover:text-ui-text">
     <ArrowLeft :size="14" :stroke-width="1.75" aria-hidden="true" />
     {{ t("developerSettings.title") }}
   </RouterLink>

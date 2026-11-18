@@ -30,7 +30,7 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
 <template>
   <AgentRemoteMcpCall v-if="remote" :tool="tool" :disclosure-id="disclosureId" :remote="remote" :permission="permission" :live="live" />
   <CollapsibleRoot v-else :open="open" :disabled="!hasDetails" class="text-sm" :data-permission-id="permission?.id" @update:open="toggled = $event">
-    <CollapsibleTrigger type="button" class="group/tool -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui-text-muted" :class="hasDetails ? 'cursor-pointer hover:bg-ui-hover hover:text-ui-text' : 'cursor-default'">
+    <CollapsibleTrigger type="button" class="group/tool -mx-2 flex w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-ui-text-muted ui-motion" :class="hasDetails ? 'cursor-pointer hover:bg-ui-hover hover:text-ui-text' : 'cursor-default'">
       <component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
       <span class="min-w-0 flex-1 truncate" :title="label">{{ label }}</span>
       <span v-if="permission?.state === 'pending'" class="ui-badge shrink-0 text-ui-warning">{{ t('agent.awaitingApproval') }}</span>

@@ -143,7 +143,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
           <nav class="flex min-w-0 flex-1 flex-wrap items-center gap-1" :aria-label="t('folderPicker.location')">
             <template v-for="(item, index) in trail" :key="item.path">
               <ChevronRight v-if="index > 0" :size="12" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-              <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
+              <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono ui-motion hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
             </template>
           </nav>
           <UiButton variant="ghost" size="icon" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
@@ -156,7 +156,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
         </ErrorNotice>
         <ul v-else-if="visibleDirectories.length" :aria-label="t('folderPicker.folders')">
           <li v-for="directory in visibleDirectories" :key="directory.path">
-            <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ui-hover" :aria-label="t('folderPicker.openFolder', { name: directory.name })" :data-path="directory.path" @click="navigate(directory.path, directory.name)">
+            <button type="button" class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm ui-motion hover:bg-ui-hover" :aria-label="t('folderPicker.openFolder', { name: directory.name })" :data-path="directory.path" @click="navigate(directory.path, directory.name)">
               <Folder :size="16" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate">{{ directory.name }}</span>
               <ChevronRight :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />

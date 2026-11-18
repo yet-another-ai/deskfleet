@@ -113,7 +113,7 @@ function refresh(): void {
       <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">
         <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
         <div class="-mr-1.5 flex items-center">
-          <button type="button" class="cursor-pointer rounded px-1 py-1 hover:bg-ui-hover disabled:op-40" :disabled="catalogLoading" @click="refresh">{{ t("catalog.refresh") }}</button>
+          <button type="button" class="cursor-pointer rounded px-1 py-1 ui-motion hover:bg-ui-hover disabled:op-40" :disabled="catalogLoading" @click="refresh">{{ t("catalog.refresh") }}</button>
           <UiButton v-if="account" variant="ghost" size="icon" :label="t('account.addMachine')" @click="account.dialog.value = 'add-machine'"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>
