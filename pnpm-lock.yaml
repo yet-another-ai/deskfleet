@@ -180,6 +180,9 @@ importers:
       '@capacitor/ios':
         specifier: 8.6.2
         version: 8.6.2(@capacitor/core@8.6.2)
+      '@capacitor/push-notifications':
+        specifier: 8.0.2
+        version: 8.0.2(@capacitor/core@8.6.2)
       '@capawesome/capacitor-app-update':
         specifier: 8.1.1
         version: 8.1.1(@capacitor/core@8.6.2)
@@ -308,6 +311,9 @@ importers:
       '@capacitor/core':
         specifier: 8.6.2
         version: 8.6.2
+      '@capacitor/push-notifications':
+        specifier: 8.0.2
+        version: 8.0.2(@capacitor/core@8.6.2)
       '@capawesome/capacitor-app-update':
         specifier: 8.1.1
         version: 8.1.1(@capacitor/core@8.6.2)
@@ -811,6 +817,11 @@ packages:
     resolution: {integrity: sha512-YnVm0lRA1mQWK0SKd2bdJIOG+PXRRDDdndZ1+nGqeiob+QmHZmb4wWo5gVpWhoHO37pGi2qzH5w5WGvfKrs+Gg==}
     peerDependencies:
       '@capacitor/core': ^8.6.0
+
+  '@capacitor/push-notifications@8.0.2':
+    resolution: {integrity: sha512-mej8Eh4EU4JXbaeyMX2l+4NNK6IdY5iRsEXpBOTHLD29fuCACBP7kOJTiJv6piw134zdlbFH0rR+sDKHIiFOFg==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capawesome/capacitor-app-update@8.1.1':
     resolution: {integrity: sha512-1TzM4hMN4wgCDu3O0UhaIIoVspUFNfNJ+q+K/EKSQRKkfCbG79S1Fn/sXwMdtMO1Me55LQxdjw1I9rctFtKBOQ==}
@@ -10644,6 +10655,10 @@ snapshots:
       tslib: 2.9.1
 
   '@capacitor/ios@8.6.2(@capacitor/core@8.6.2)':
+    dependencies:
+      '@capacitor/core': 8.6.2
+
+  '@capacitor/push-notifications@8.0.2(@capacitor/core@8.6.2)':
     dependencies:
       '@capacitor/core': 8.6.2
 

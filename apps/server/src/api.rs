@@ -560,9 +560,9 @@ pub async fn sync_history(
 ) -> Result<web::Json<Value>> {
     let m = auth::machine(&req, &s).await?;
     let b = b.into_inner();
-    let seq = s
+    let (seq, notifications) = s
         .store
-        .sync_history_batch(
+        .sync_history_batch_with_notifications(
             &m.machine.id,
             &b.session_id,
             b.snapshot,
@@ -571,15 +571,25 @@ pub async fn sync_history(
             b.commands,
         )
         .await?;
+    let team_id = m.machine.team_id;
+    let machine_id = m.machine.machine_id;
     s.notify_team(
-        &m.machine.team_id,
+        &team_id,
         ControlMessage::CatalogChanged {
-            team_id: m.machine.team_id.clone(),
-            machine_id: m.machine.machine_id,
+            team_id: team_id.clone(),
+            machine_id: machine_id.clone(),
             session_id: Some(b.session_id),
         },
     )
     .await?;
+    if !notifications.is_empty() && s.push.is_enabled() {
+        let store = s.store.clone();
+        let push = s.push.clone();
+        tokio::spawn(async move {
+            push.notify_session_events(&store, &team_id, &machine_id, notifications)
+                .await;
+        });
+    }
     Ok(web::Json(json!({"lastEventSeq":seq})))
 }
 

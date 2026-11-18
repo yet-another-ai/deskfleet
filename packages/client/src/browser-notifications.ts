@@ -19,6 +19,7 @@ export class BrowserNotifications {
   readonly #settings: Pick<SettingsApi, "getNotifications">
   readonly #title: (kind: TaskNotification["kind"]) => string
   readonly #onError: (error: unknown) => void
+  readonly #onSelect: ((event: TaskNotification) => void) | undefined
   readonly #notifications = new Set<Notification>()
   #epoch = 0
   #closed = false
@@ -27,10 +28,12 @@ export class BrowserNotifications {
     settings: Pick<SettingsApi, "getNotifications">,
     title: (kind: TaskNotification["kind"]) => string,
     onError: (error: unknown) => void = error => console.error("Could not show browser notification", error),
+    onSelect?: (event: TaskNotification) => void,
   ) {
     this.#settings = settings
     this.#title = title
     this.#onError = onError
+    this.#onSelect = onSelect
   }
 
   async notify(event: TaskNotification): Promise<void> {
@@ -40,11 +43,15 @@ export class BrowserNotifications {
       const settings = await this.#settings.getNotifications()
       if (this.#closed || epoch !== this.#epoch || !settings.enabled || !settings[event.kind]
         || getBrowserNotificationPermission() !== "granted") return
-      const notification = new Notification(this.#title(event.kind), { body: event.title })
+      const body = event.detail && event.title ? `${event.title}\n${event.detail}` : (event.detail ?? event.title)
+      const notification = new Notification(this.#title(event.kind), { body })
       this.#notifications.add(notification)
       notification.onclick = () => {
         this.#dismiss(notification)
-        try { window.focus() } catch (error) { this.#onError(error) }
+        try {
+          window.focus()
+          this.#onSelect?.(event)
+        } catch (error) { this.#onError(error) }
       }
       notification.onclose = () => { this.#release(notification) }
       notification.onerror = error => { this.#release(notification); this.#onError(error) }

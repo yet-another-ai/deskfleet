@@ -41,7 +41,7 @@ import { createTray } from "./tray.ts"
 import { UpdateSettingsController } from "./update-settings.ts"
 import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
-import { hideMainWindow, showMainWindow } from "./windows.ts"
+import { hideMainWindow, openMainWindowNotificationSession, showMainWindow } from "./windows.ts"
 import { installApplication } from "./application.ts"
 import { installGoogleTag } from "./google-tag.ts"
 
@@ -111,7 +111,7 @@ function start(): void {
     })
     installOnboarding(onboarding)
     const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
-    const notifications = new DesktopNotifications(notificationSettings, show)
+    const notifications = new DesktopNotifications(notificationSettings, event => void openMainWindowNotificationSession(lifecycle, event))
     const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
     if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
     void notificationMonitor.start().catch(console.error)

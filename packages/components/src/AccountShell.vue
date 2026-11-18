@@ -24,7 +24,7 @@ import { accountSessionKey, createAccountSession } from "./composables/useAccoun
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
 import { useAccountAnalytics } from "./composables/useAccountAnalytics.ts"
 import { useErrorReportingUser } from "./composables/useErrorReportingUser.ts"
-import { trackEvent } from "./services/analytics.ts"
+import { trackEvent, useFeatureGate } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
@@ -37,11 +37,36 @@ const MachineSurface = defineAsyncComponent(loadMachineSurface)
 void loadMachineSurface()
 
 const props = defineProps<{ host: DeskfleetDesktopApi }>()
-if (props.host.platform === "web") useBrowserNotifications(props.host)
+const pushNotificationsEnabled = useFeatureGate("mobile_push_notifications")
+const notificationsEnabled = computed(() => !props.host.mobile || pushNotificationsEnabled.value)
+if (props.host.platform === "web") {
+  useBrowserNotifications(props.host, target => {
+    pendingNotificationTarget = target
+    void navigateToNotificationSession()
+  })
+}
 const browserNotificationOnboardingComplete = props.host.platform === "web"
   ? useStorage("deskfleet.notifications-onboarding-complete", false, undefined, { writeDefaults: false })
   : ref(true)
-const browserNotificationPermission = ref(props.host.platform === "web" ? getBrowserNotificationPermission() : undefined)
+const browserNotificationPermission = ref(
+  props.host.platform === "web" && !props.host.mobile && !props.host.settings.getNotificationPermission
+    ? getBrowserNotificationPermission()
+    : undefined,
+)
+async function refreshNotificationPermission(): Promise<void> {
+  if (props.host.platform !== "web" || !notificationsEnabled.value) {
+    browserNotificationPermission.value = undefined
+    return
+  }
+  try {
+    browserNotificationPermission.value = props.host.settings.getNotificationPermission
+      ? await props.host.settings.getNotificationPermission()
+      : getBrowserNotificationPermission()
+  } catch {
+    browserNotificationPermission.value = "unsupported"
+  }
+}
+watch(notificationsEnabled, () => { void refreshNotificationPermission() }, { immediate: true })
 const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
 useErrorReportingUser(() => session.account.value.user)
@@ -59,6 +84,28 @@ const stopLocalAgentUpdates = props.host.platform !== "web" ? props.host.setting
   if (account.value.user) void session.refreshMachines()
 }) : undefined
 onBeforeUnmount(() => { stopLocalAgentUpdates?.() })
+let pendingNotificationTarget: { teamId: string; machineId: string; sessionId: string } | undefined
+async function navigateToNotificationSession(): Promise<void> {
+  if (!pendingNotificationTarget || !notificationsEnabled.value || !ready.value || !account.value.user) return
+  const target = pendingNotificationTarget
+  if (!teams.value.some(value => value.id === target.teamId)) {
+    pendingNotificationTarget = undefined
+    return
+  }
+  pendingNotificationTarget = undefined
+  if (session.teamId.value !== target.teamId) {
+    await session.selectTeam(target.teamId)
+  }
+  session.openSession(target.machineId, target.sessionId)
+}
+if (props.host.onOpenNotificationSession) {
+  const stopNotificationNavigation = props.host.onOpenNotificationSession(target => {
+    pendingNotificationTarget = target
+    void navigateToNotificationSession()
+  })
+  onBeforeUnmount(stopNotificationNavigation)
+  watch([ready, account, teams, notificationsEnabled], () => { void navigateToNotificationSession() }, { immediate: true })
+}
 const machineScopeKey = computed(() => JSON.stringify([account.value.serverUrl, account.value.user?.id, session.teamId.value, machine.value?.id]))
 const route = router.currentRoute
 const returnParams = new URLSearchParams(location.search)
@@ -86,7 +133,7 @@ watch([ready, account], async () => {
 }, { immediate: true })
 useTitle(() => machine.value && route.value.name === "session" ? undefined : (site.value?.siteName ?? "DeskFleet"))
 useEventListener(window, "focus", () => {
-  if (props.host.platform === "web") browserNotificationPermission.value = getBrowserNotificationPermission()
+  void refreshNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
 })
 provide(accountSessionKey, session)

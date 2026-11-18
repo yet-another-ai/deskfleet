@@ -168,3 +168,52 @@ test("browser permission request failures can be retried", async () => {
   expect(view.find('[role="alert"]').exists()).toBe(false)
   expect(view.get('[role="status"]').text()).toBe("Notifications are allowed in this browser.")
 })
+
+test("desktop settings show device notification permission and request access on click", async () => {
+  const getNotificationPermission = vi.fn<() => Promise<"default" | "granted" | "denied">>(async () => "default")
+  const requestNotificationPermission = vi.fn<() => Promise<"default" | "granted" | "denied">>(async () => "denied")
+  configureClient({
+    ...host,
+    platform: "darwin",
+    settings: {
+      ...host.settings,
+      getNotificationPermission,
+      requestNotificationPermission,
+    },
+  })
+  const view = render()
+  await flushPromises()
+  expect(getNotificationPermission).toHaveBeenCalledOnce()
+  expect(view.text()).toContain("Device permission")
+  expect(view.get('[role="status"]').text()).toBe("Allow notifications on this device to receive task updates.")
+  await view.findAll("button").find(button => button.text() === "Enable notifications")!.trigger("click")
+  await flushPromises()
+  expect(requestNotificationPermission).toHaveBeenCalledOnce()
+  expect(view.get('[role="status"]').text()).toBe("Notifications are blocked. Allow them in system settings to receive task updates.")
+  await view.findAll("button").find(button => button.text() === "Open System Settings")!.trigger("click")
+  await flushPromises()
+  expect(requestNotificationPermission).toHaveBeenCalledTimes(2)
+  getNotificationPermission.mockResolvedValueOnce("granted")
+  await view.findAll("button").find(button => button.text() === "Check permissions")!.trigger("click")
+  await flushPromises()
+  expect(getNotificationPermission).toHaveBeenCalledTimes(2)
+  expect(view.get('[role="status"]').text()).toBe("Notifications are allowed on this device.")
+})
+
+test("mobile push settings stay hidden while the mobile_push_notifications gate is off", async () => {
+  const getNotificationPermission = vi.fn(async () => "default" as const)
+  configureClient({
+    ...host,
+    platform: "web",
+    mobile: true,
+    settings: {
+      ...host.settings,
+      getNotificationPermission,
+    },
+  })
+  const view = render()
+  await flushPromises()
+  expect(client.settings.getNotifications).not.toHaveBeenCalled()
+  expect(getNotificationPermission).not.toHaveBeenCalled()
+  expect(view.findAll('[role="switch"]')).toHaveLength(0)
+})

@@ -25,6 +25,7 @@ impl ServerConfig {
         let auth = crate::auth::config::AuthConfig::from_env(&public_url, &web_origins)?;
         let billing = crate::billing::BillingConfig::from_env()?;
         let github_app = crate::github_app::GithubAppConfig::from_env(&public_url)?;
+        let _push = crate::push::PushConfig::from_env()?;
         let stun_urls = ice_urls("DESKFLEET_STUN_URLS", &["stun", "stuns"])?;
         let turn_urls = ice_urls("DESKFLEET_TURN_URLS", &["turn", "turns"])?;
         let turn_secret = env::var("DESKFLEET_TURN_SECRET")

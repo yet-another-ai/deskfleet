@@ -5,11 +5,11 @@ import type { TaskNotification } from "@deskfleet/client/task-notification-monit
 
 export class DesktopNotifications {
   readonly #settings: { get(): NotificationSettings }
-  readonly #onClick: () => void
+  readonly #onClick: (event: TaskNotification) => void
   readonly #notifications = new Set<Notification>()
   #closed = false
 
-  constructor(settings: { get(): NotificationSettings }, onClick: () => void) {
+  constructor(settings: { get(): NotificationSettings }, onClick: (event: TaskNotification) => void) {
     this.#settings = settings
     this.#onClick = onClick
   }
@@ -20,12 +20,13 @@ export class DesktopNotifications {
     try {
       const settings = this.#settings.get()
       if (!settings.enabled || !settings[event.kind] || !Notification.isSupported()) return
-      notification = new Notification({ title: t(`notification.${event.kind}`), body: event.title })
+      const body = event.detail && event.title ? `${event.title}\n${event.detail}` : (event.detail ?? event.title)
+      notification = new Notification({ title: t(`notification.${event.kind}`), body })
       const current = notification
       this.#notifications.add(current)
       current.once("click", () => {
         this.#release(current)
-        try { this.#onClick() } catch (error) { console.error("Could not open desktop notification", error) }
+        try { this.#onClick(event) } catch (error) { console.error("Could not open desktop notification", error) }
       })
       current.on("close", (details) => {
         // Windows keeps timed-out notifications clickable in Action Center.

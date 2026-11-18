@@ -1148,7 +1148,23 @@ Notifications settings, requests browser permission. Denial, dismissal, and
 skipping do not block setup. The onboarding decision and notification preferences
 are stored per browser origin; the master and event switches remain independent
 of the browser's permission. Settings reports denied or unavailable permission.
-There is no push delivery after the page closes.
+There is no browser push delivery after a regular browser tab closes.
+
+Native mobile clients (Capacitor iOS and Android) use OS push notifications
+through `@capacitor/push-notifications` rather than the in-page browser
+notification monitor. When device notification permission is granted and the
+account is signed in, the client registers its APNs or FCM device token, UI
+locale, and notification preferences (`enabled`, `taskCompleted`,
+`taskNeedsInput`) with the central server at `PUT /api/push/subscription`. The
+registration is bound to the current `cp_login_sessions` row and cascades on
+logout or session revocation. During `POST /api/daemon/history`, newly inserted
+completed turns and pending permission or elicitation events for an active,
+ready Session dispatch localized push notifications (including the Session
+title and tool name, prompt, or assistant reply snippet) to participating Team
+members' registered devices via `armature-push` (APNs HTTP/2 token
+authentication and FCM HTTP v1). Unregistered or invalid device tokens reported
+by APNs or FCM are deleted automatically. Tapping a notification opens
+DeskFleet and selects the target Team, Machine, and Session.
 
 The daemon is the ACP client and owns local agent processes or adapter
 connections. Each AgentSession belongs to a Workspace and captures its Worktree execution

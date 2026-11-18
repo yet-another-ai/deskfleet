@@ -6,6 +6,7 @@ import {
   createCapacitorNativeDesktopApi,
   createCapacitorNetworkDiagnosticsApi,
   createCapacitorOutlineAudioApi,
+  createCapacitorPushNotifications,
   createCapacitorSpeechApi,
   createCapacitorTelemetrySink,
 } from "@deskfleet/capacitor-bridge"
@@ -14,6 +15,7 @@ import { setNativeTelemetrySink } from "@deskfleet/client/google-tag"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
+import { useFeatureGate } from "@deskfleet/components/services/analytics.ts"
 import { captureCentralRequestError, initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
 import { watch } from "vue"
 import { capacitorClientOptions } from "./capacitor-auth.ts"
@@ -45,6 +47,23 @@ if (Capacitor.isNativePlatform() && adapter.central) {
       return i18n.global.t("developerSettings.noStunServer")
     },
   )
+  const platform = Capacitor.getPlatform()
+  if (platform === "ios" || platform === "android") {
+    const pushNotificationsEnabled = useFeatureGate("mobile_push_notifications")
+    const pushNotifications = createCapacitorPushNotifications({
+      platform,
+      central: adapter.central,
+      settings: adapter.settings,
+      locale: () => adapter.locale,
+      enabled: () => pushNotificationsEnabled.value,
+    })
+    adapter.settings = { ...adapter.settings, ...pushNotifications.settings }
+    adapter.onOpenNotificationSession = pushNotifications.onOpenSession
+    watch(pushNotificationsEnabled, enabled => {
+      if (enabled) void pushNotifications.sync().catch(() => {})
+    })
+    void CapApp.addListener("resume", () => { void pushNotifications.sync().catch(() => {}) })
+  }
 }
 if (Capacitor.getPlatform() === "android") {
   adapter.outlineAudio = createCapacitorOutlineAudioApi()

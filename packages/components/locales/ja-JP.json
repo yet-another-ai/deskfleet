@@ -552,11 +552,16 @@
     "appearance": "外観",
     "notifications": "通知", "notificationsEnabled": "デスクトップ通知",
     "notificationsDescription": "このコンピューターで DeskFleet からの通知を許可します。", "browserNotificationsEnabled": "ブラウザー通知",
-    "browserNotificationsDescription": "このページが開いている間、DeskFleet からの通知を許可します。", "notificationPermission": "ブラウザーの権限",
-    "enableBrowserNotifications": "通知を有効にする",
+    "browserNotificationsDescription": "このページが開いている間、DeskFleet からの通知を許可します。", "mobileNotificationsEnabled": "プッシュ通知",
+    "mobileNotificationsDescription": "このデバイスで DeskFleet からのプッシュ通知を許可します。", "notificationPermission": "ブラウザーの権限",
+    "mobileNotificationPermission": "デバイスの権限", "enableBrowserNotifications": "通知を有効にする",
     "notificationPermissionStatus": {
       "default": "タスクの更新通知を受け取るには、ブラウザーで通知を許可してください。", "granted": "このブラウザーでは通知が許可されています。",
       "denied": "通知がブロックされています。タスクの更新通知を受け取るには、ブラウザーのサイト設定で通知を許可してください。", "unsupported": "このブラウザーまたは接続では通知を利用できません。対応ブラウザーで HTTPS 接続を使用してください。"
+    },
+    "mobileNotificationPermissionStatus": {
+      "default": "タスクの更新通知を受け取るには、このデバイスで通知を許可してください。", "granted": "このデバイスでは通知が許可されています。",
+      "denied": "通知がブロックされています。タスクの更新通知を受け取るには、システム設定で通知を許可してください。", "unsupported": "このデバイスではプッシュ通知を利用できません。"
     },
     "notificationTaskCompleted": "タスク完了", "notificationTaskCompletedDescription": "エージェントがタスクを完了したときに通知します。",
     "notificationTaskNeedsInput": "入力が必要なタスク", "notificationTaskNeedsInputDescription": "エージェントが質問や承認を待っているときに通知します。",
@@ -1230,7 +1235,7 @@
     "telemetryConsent": "利用状況とアトリビューションの分析で DeskFleet の改善に協力する",
     "telemetryConsentDescription": "任意。有効にすると匿名の製品イベントとキャンペーンアトリビューションを共有します。プロンプト、コード、ファイルは収集されません。",
     "notificationsTitle": "タスクの状況を通知で確認", "notificationsDescription": "エージェントがタスクを完了したときや、入力が必要なときに通知を受け取れます。",
-    "notificationsDetails": "ブラウザー通知を許可すると、DeskFleet を開いている間は別のタブを使用中でも通知を受け取れます。後で設定から変更できます。", "progress": "セットアップの進行状況",
+    "notificationsDetails": "ブラウザー通知を許可すると、DeskFleet を開いている間は別のタブを使用中でも通知を受け取れます。後で設定から変更できます。", "mobileNotificationsDetails": "プッシュ通知を許可すると、DeskFleet がバックグラウンドにある間も通知を受け取れます。後で設定から変更できます。", "progress": "セットアップの進行状況",
     "steps": {
       "machineControl": "このマシン",
       "localNetwork": "ローカルネットワーク",

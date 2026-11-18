@@ -92,6 +92,8 @@ mise run android:build
 
 On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`ai.yetanother.deskfleet.BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.ai.yetanother.deskfleet` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
 
+Mobile push notifications use `@capacitor/push-notifications` with Apple Push Notification service (APNs) on iOS and Firebase Cloud Messaging (FCM) on Android. When device notification permission is granted and the user is signed in, the client registers its push token, locale, and notification preferences (`enabled`, `taskCompleted`, `taskNeedsInput`) with `PUT /api/push/subscription`. Tapping a notification navigates to the target Session's Team, Machine, and Session route. On Android, place `google-services.json` in `apps/web/android/app/` when building with FCM configured; builds without `google-services.json` skip the Google Services Gradle plugin so local and CI checks remain self-contained.
+
 ## Backend and integrations
 
 The welcome page signs in to this compiled backend and has no address setting.

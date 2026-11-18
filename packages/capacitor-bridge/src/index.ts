@@ -18,6 +18,15 @@ import type { OutlineAudioApi, OutlineAudioStatus } from "@deskfleet/client/outl
 import { createBrowserFiles } from "@deskfleet/client/browser-files"
 import { CapacitorFilesEndpoint, type FilesBridgePlugin } from "./files.ts"
 import { createCapacitorSpeechApi as speechApi, type SpeechBridgePlugin } from "./speech.ts"
+export {
+  ANDROID_TASK_NOTIFICATION_CHANNEL_ID,
+  createCapacitorPushNotifications,
+  mapCapacitorPushPermission,
+  parseNotificationTarget,
+  type CapacitorPushNotifications,
+  type CapacitorPushNotificationsOptions,
+  type PushNotificationTarget,
+} from "./push-notifications.ts"
 
 export interface TelemetryBridgePlugin {
   setTelemetryConsent(options: { enabled: boolean }): Promise<{ configured: boolean }>

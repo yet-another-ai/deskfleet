@@ -28,6 +28,7 @@ webauthn-rs = { version = "0.6", features = ["danger-allow-state-serialisation",
 # WebAuthn uses OpenSSL; build its crypto library without a host installation.
 openssl = { version = "0.10", features = ["vendored"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+armature-push = { version = "0.3.0", default-features = false, features = ["apns", "fcm"] }
 reqwest = { version = "0.13.0", default-features = false, features = ["json", "form", "query", "rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 uuid = { version = "1", features = ["v4", "v7"] }

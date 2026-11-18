@@ -42,6 +42,7 @@ export interface DeskfleetDesktopApi {
   application?: ApplicationApi
   speech?: SpeechApi
   haptic?: (kind: "activate" | "tick") => void
+  onOpenNotificationSession?: (listener: (target: { teamId: string; machineId: string; sessionId: string }) => void) => () => void
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi

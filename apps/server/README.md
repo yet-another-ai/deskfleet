@@ -74,6 +74,8 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs used to initialize the persisted TURN list on first startup. Manage the list online in Site administration afterward. |
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
+| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` (or `DESKFLEET_APNS_PRIVATE_KEY`), `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_PRODUCTION` | Optional Apple Push Notification service (APNs) token credentials for iOS mobile push notifications. Set all required fields together (`DESKFLEET_APNS_PRODUCTION` defaults to `false`). |
+| `DESKFLEET_FCM_PROJECT_ID`, `DESKFLEET_FCM_CREDENTIALS_PATH` (or `DESKFLEET_FCM_CREDENTIALS_JSON`) | Optional Firebase Cloud Messaging (FCM) HTTP v1 service account credentials for Android mobile push notifications. Set project ID and one credentials source together. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
 
 To listen explicitly on both IPv4 and IPv6, set:
@@ -418,6 +420,7 @@ The `/api` routes cover:
   with machine credentials.
 - `/peers` creation, immutable offer/answer exchange, ICE candidate forwarding,
   desktop stream start, and revocation.
+- `/push/subscription` (`PUT` and `DELETE`) for mobile APNs and FCM push notification registration bound to the caller's login session.
 
 Each Team has one owner, initially the creator. Owners alone manage billing,
 delete the Team, and transfer ownership. Owners and admins manage members/roles

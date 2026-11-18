@@ -38,7 +38,7 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   return result.value
 }
 
-async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "setPauseUpdatesOnMetered" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getWorktreePreferences" | "setWorktreePreferences" | "getNotifications" | "setNotifications" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
+async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "setPauseUpdatesOnMetered" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getWorktreePreferences" | "setWorktreePreferences" | "getNotifications" | "setNotifications" | "getNotificationPermission" | "requestNotificationPermission" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, value) as SettingsResult<T>
   if (!result.ok) throw new Error(result.error)
   return result.value
@@ -57,6 +57,11 @@ const peerSignaling = {
 export function desktopApi(central?: CentralBridge): DesktopPreloadApi {
 return {
   ...(central ? { centralBridge: central, onboarding: onboardingApi() } : {}),
+  onOpenNotificationSession: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, target: { teamId: string; machineId: string; sessionId: string }) => listener(target)
+    ipcRenderer.on("deskfleet:open-notification-session", handler)
+    return () => ipcRenderer.removeListener("deskfleet:open-notification-session", handler)
+  },
   platform: process.platform as DeskfleetDesktopApi["platform"],
   locale: isAppLocale(locale) ? locale : DEFAULT_LOCALE,
   application: { restart: () => ipcRenderer.invoke(APPLICATION_RESTART_CHANNEL) as Promise<void> },
@@ -91,6 +96,8 @@ return {
     chooseWorktreeRoot: () => invokeSettings("chooseWorktreeRoot"),
     getNotifications: () => invokeSettings("getNotifications"),
     setNotifications: (settings) => invokeSettings("setNotifications", settings),
+    getNotificationPermission: () => invokeSettings("getNotificationPermission"),
+    requestNotificationPermission: () => invokeSettings("requestNotificationPermission"),
     onChanged: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, state: LocalAgentState) => listener(state)
       ipcRenderer.on(SETTINGS_CHANGED_EVENT, handler)

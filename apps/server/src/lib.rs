@@ -11,6 +11,7 @@ mod hub;
 mod maintenance;
 mod network_configuration;
 mod peers;
+pub mod push;
 mod remote_mcp;
 mod search;
 mod site;
@@ -38,6 +39,7 @@ pub struct AppState {
     pub config: ServerConfig,
     pub auth: auth::AuthService,
     pub billing: billing::BillingService,
+    pub push: push::PushService,
     hub: hub::Hub,
     _routing: hub::Router,
     _maintenance: maintenance::Maintenance,
@@ -63,6 +65,9 @@ impl AppState {
         let auth = auth::AuthService::new(config.auth.clone())?;
         let billing =
             billing::BillingService::new(config.billing.clone(), config.auth.web_url.clone())?;
+        let push_config = push::PushConfig::from_env()
+            .map_err(|error| error::ApiError::bad(error.to_string()))?;
+        let push = push::PushService::new(push_config).await?;
         let billing_worker = billing.start_worker(store.clone());
         let turn_usage = config
             .turn_usage_redis_url
@@ -77,6 +82,7 @@ impl AppState {
             config,
             auth,
             billing,
+            push,
             hub,
             _routing: routing,
             _maintenance: maintenance,
@@ -106,6 +112,7 @@ pub fn configure(config: &mut ServiceConfig) {
             .configure(auth::configure)
             .configure(billing::configure)
             .configure(github_app::configure)
+            .configure(push::configure)
             .route("/site", web::get().to(site::public_settings))
             .route(
                 "/network-configuration",
