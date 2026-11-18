@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { usePlatformClient } from "./composables/usePlatformClient.ts"
 import { provideNavigationMotion } from "./composables/useNavigationMotion.ts"
+import { useAccountSession } from "./composables/useAccountSession.ts"
+import { useSessionLabel } from "./composables/useSessionLabel.ts"
 
 import { storeToRefs } from "pinia"
-import { useEventListener, whenever } from "@vueuse/core"
+import { useEventListener, useTitle, whenever } from "@vueuse/core"
 import { onBeforeUnmount, onMounted } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
@@ -30,6 +32,17 @@ const fleet = useFleetStore()
 const terminals = useTerminalsStore()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
+const account = useAccountSession()
+const sessionLabel = useSessionLabel()
+const defaultTitle = () => account?.site.value?.siteName ?? "DeskFleet"
+useTitle(() => {
+  if (route.name !== "session") return defaultTitle()
+  const sessionId = String(route.params.sessionId)
+  const title = agents.views[sessionId]?.snapshot?.session.title
+    || agents.sessions[sessionId]?.title
+    || fleet.findSession(sessionId)?.session.title
+  return sessionLabel({ id: sessionId, title })
+}, { restoreOnUnmount: defaultTitle })
 whenever(() => fleet.localDesktopTarget.online, () => { void terminals.refresh() })
 const refresh = () => { void fleet.refreshLocal().then(() => {
   if (fleet.localDesktopTarget.online || platformClient.agent.history) void agents.refresh()

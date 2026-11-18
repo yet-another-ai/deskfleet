@@ -84,7 +84,7 @@ watch([ready, account], async () => {
   // A Machine surface initializes its own route before it signals readiness.
   if (!machine.value) finishBillingReturn()
 }, { immediate: true })
-useTitle(() => site.value?.siteName ?? "DeskFleet")
+useTitle(() => machine.value && route.value.name === "session" ? undefined : (site.value?.siteName ?? "DeskFleet"))
 useEventListener(window, "focus", () => {
   if (props.host.platform === "web") browserNotificationPermission.value = getBrowserNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
