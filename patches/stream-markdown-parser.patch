@@ -1,7 +1,7 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -24602,4 +24602,5 @@
+@@ -24937,4 +24937,5 @@
  exports.toSafeMermaidSvgMarkup = toSafeMermaidSvgMarkup;
  exports.toSafeSvgElement = toSafeSvgElement;
  exports.tokenAttrsToRecord = tokenAttrsToRecord;
@@ -9,6 +9,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
 \ No newline at end of file
 +exports.tokenizeHtml = tokenizeHtml;
 +exports.registerCacheStableLinkValidator = registerCacheStableLinkValidator;
+\ No newline at end of file
 diff --git a/dist/index.d.cts b/dist/index.d.cts
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
@@ -44,7 +45,7 @@ diff --git a/dist/index.d.ts b/dist/index.d.ts
 diff --git a/dist/index.js b/dist/index.js
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -24541,4 +24541,5 @@
+@@ -24876,4 +24876,5 @@
  
  //#endregion
  export { BLOCKED_HTML_TAGS, BLOCKED_HTML_TAG_NAMES, BLOCK_HTML_TAG_NAMES, DANGEROUS_HTML_ATTRS, DANGEROUS_HTML_ATTR_NAMES, ESCAPED_TEX_BRACE_COMMANDS, EXTENDED_STANDARD_HTML_TAGS, EXTENDED_STANDARD_HTML_TAG_NAMES, INLINE_HTML_TAG_NAMES, KATEX_COMMANDS, NON_STRUCTURING_HTML_TAGS, NON_STRUCTURING_HTML_TAG_NAMES, SAFE_ALLOWED_HTML_TAGS, STANDARD_BLOCK_HTML_TAGS, STANDARD_HTML_TAGS, SVG_HTML_TAG_NAMES, TEX_BRACE_COMMANDS, URL_HTML_ATTRS, URL_HTML_ATTR_NAMES, VOID_HTML_TAGS, VOID_HTML_TAG_NAMES, applyContainers, applyMath, clearRegisteredMarkdownPlugins, convertHtmlAttrsToProps, convertHtmlPropValue, findMatchingClose, getHtmlTagFromContent, getMarkdown, hasCompleteHtmlTagContent, hasCustomHtmlComponents, isBrokenMermaidSvg, isCustomHtmlComponentTag, isHtmlLikeTagName, isHtmlTagBlocked, isHtmlTagHardBlocked, isMathLike, isUnsafeHtmlUrl, mergeCustomHtmlTags, normalizeCustomHtmlTagName, normalizeCustomHtmlTags, normalizeStandaloneBackslashT, parseFenceToken, parseInlineTokens, parseMarkdownToStructure, processTokens, registerMarkdownPlugin, resolveCustomHtmlTags, sanitizeHtmlAttrs, sanitizeHtmlContent, sanitizeHtmlTokenAttrs, sanitizeImageSrc, sanitizeMermaidSvg, setDefaultMathOptions, shouldOpenLinkInNewTab, shouldRenderUnknownHtmlTagAsText, stripCustomHtmlWrapper, stripHtmlControlAndWhitespace, toSafeMermaidSvgMarkup, toSafeSvgElement, tokenAttrsToRecord, tokenizeHtml };

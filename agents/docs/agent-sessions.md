@@ -899,7 +899,7 @@ input available for explicit retry.
 ### Strict steering boundary
 
 The pinned `@agentclientprotocol/codex-acp` 2.3.0 package has a repository patch
-for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.106.0
+for strict steering. The bundled `@agentclientprotocol/claude-agent-acp` 0.107.0
 already implements the same idle behavior; its patch advertises that support.
 Both advertise `_meta.steering.supported` and
 `_meta.steering.supportsPromptRequired`. The request is `_session/steering` with
