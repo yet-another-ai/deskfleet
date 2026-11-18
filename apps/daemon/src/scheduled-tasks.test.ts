@@ -44,8 +44,20 @@ async function fixture(t: { after(action: () => unknown): void }) {
         calls.push({ method, params, actor })
         if (method === "_deskfleet/session/create") {
           const result = snapshot(String(nextSessionId++), params.workspaceId as string)
+          if (params.yolo === true) {
+            result.session.yolo = true
+            result.session.yoloActor = actor
+          }
           snapshots.set(result.session.id, result)
           return result
+        }
+        if (method === "_deskfleet/session/yolo") {
+          const value = snapshots.get(params.sessionId as string)
+          assert.ok(value, "YOLO target Session must exist")
+          value.session = params.enabled
+            ? { ...value.session, yolo: true, yoloActor: actor }
+            : { ...value.session, yolo: false, yoloActor: undefined }
+          return structuredClone(value)
         }
         assert.equal(method, "_deskfleet/input/submit")
         const value = snapshots.get(params.sessionId as string)!
@@ -421,4 +433,76 @@ test("pause persists and manual runs use the requesting actor", async t => {
   await f.scheduler.handle("scheduleDelete", { scheduleId: task.id }, actor)
   assert.deepEqual(await f.list(), [])
   assert.equal(f.snapshots.size, 3, "Deleting a schedule preserves its Sessions")
+})
+
+test("YOLO schedules create Sessions with auto-approve and clear via explicit false", async t => {
+  const f = await fixture(t)
+  const task = await f.create({ yolo: true, trigger: { kind: "manual" } })
+  assert.equal(task.yolo, true)
+  const run = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(run.state, "running")
+  assert.equal(f.calls[0]!.method, "_deskfleet/session/create")
+  assert.equal(f.calls[0]!.params.yolo, true)
+  assert.equal(f.snapshots.get(run.sessionId!)!.session.yolo, true)
+  const cleared = await f.scheduler.handle("scheduleUpdate", { scheduleId: task.id, changes: { yolo: false } }, actor) as ScheduledTask
+  assert.equal(cleared.yolo, undefined)
+  const paused = await f.scheduler.handle("scheduleUpdate", { scheduleId: task.id, changes: { enabled: false } }, actor) as ScheduledTask
+  assert.equal(paused.yolo, undefined, "Partial updates without yolo keep the cleared state")
+})
+
+test("YOLO on an existing Session target enables Session YOLO before submit", async t => {
+  const f = await fixture(t)
+  const task = await f.create({ yolo: true, target: { kind: "existing", sessionId: "1" }, trigger: { kind: "manual" } })
+  const run = await f.scheduler.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(run.state, "running")
+  assert.equal(f.calls[0]!.method, "_deskfleet/session/yolo")
+  assert.equal(f.calls[0]!.params.sessionId, "1")
+  assert.equal(f.calls[0]!.params.enabled, true)
+  assert.equal(f.calls[1]!.method, "_deskfleet/input/submit")
+  assert.equal(f.snapshots.get("1")!.session.yolo, true)
+})
+
+test("legacy scheduled-tasks.json without yolo keeps manual approval on dispatch", async t => {
+  const f = await fixture(t)
+  const legacy = {
+    tasks: [{
+      id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      title: "Legacy review",
+      prompt: "Review without YOLO",
+      workspaceId: "1",
+      enabled: true,
+      target: { kind: "new", provider: "codex", context: "directory" },
+      trigger: { kind: "manual" },
+      actor,
+      createdAt: "2026-10-26T00:00:00.000Z",
+      updatedAt: "2026-10-26T00:00:00.000Z",
+      runs: [],
+    }],
+  }
+  await writeFile(join(f.directory, "scheduled-tasks.json"), JSON.stringify(legacy))
+  const reopened = new ScheduledTasks(f.directory, f.dependencies)
+  t.after(() => reopened.close())
+  await reopened.init()
+  const listed = await reopened.handle("scheduleList", {}, actor) as ScheduledTask[]
+  assert.equal(listed.length, 1)
+  assert.equal(listed[0]!.yolo, undefined)
+  const run = await reopened.handle("scheduleRun", { scheduleId: listed[0]!.id }, actor) as ScheduleRun
+  assert.equal(run.state, "running")
+  assert.equal(f.calls[0]!.method, "_deskfleet/session/create")
+  assert.equal("yolo" in f.calls[0]!.params, false)
+  assert.equal(f.snapshots.get(run.sessionId!)!.session.yolo, undefined)
+  const saved = JSON.parse(await readFile(join(f.directory, "scheduled-tasks.json"), "utf8")) as { tasks: ScheduledTask[] }
+  assert.equal("yolo" in saved.tasks[0]!, false)
+})
+
+test("create omits YOLO by default and unknown clients can still send the optional flag", async t => {
+  const f = await fixture(t)
+  const plain = await f.create({ trigger: { kind: "manual" } })
+  assert.equal(plain.yolo, undefined)
+  const raw = JSON.parse(await readFile(join(f.directory, "scheduled-tasks.json"), "utf8")) as { tasks: Array<Record<string, unknown>> }
+  assert.equal("yolo" in raw.tasks[0]!, false)
+  const accepted = await f.scheduler.handle("scheduleCreate", {
+    schedule: { ...input, yolo: true, trigger: { kind: "manual" }, title: "YOLO from newer client" },
+  }, actor) as ScheduledTask
+  assert.equal(accepted.yolo, true)
 })

@@ -174,7 +174,7 @@ test("opening and editing a scheduled task keeps composer defaults unchanged and
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
-    scheduleId: "schedule-1", changes: { ...input, target: { kind: "new", provider: "codex", context: "worktree", configuration: { model: "schedule-model", reasoningEffort: "high", mode: "plan", configValues: { fast: false, agent: "reviewer" } } } },
+    scheduleId: "schedule-1", changes: { ...input, yolo: false, target: { kind: "new", provider: "codex", context: "worktree", configuration: { model: "schedule-model", reasoningEffort: "high", mode: "plan", configValues: { fast: false, agent: "reviewer" } } } },
   })
   expect(agents.draftConfiguration).toEqual(defaults)
   expect(localStorage.getItem("deskfleet.agent-configuration")).toBe(persisted)
@@ -191,9 +191,47 @@ test("editing an existing-session task keeps workspace ownership and never confi
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
-    scheduleId: "schedule-1", changes: { ...input, prompt: "Continue the current review", target: { kind: "existing", sessionId: "20" } },
+    scheduleId: "schedule-1", changes: { ...input, yolo: false, prompt: "Continue the current review", target: { kind: "existing", sessionId: "20" } },
   })
   expect(rpc.mock.calls.every(([, , method]) => method.startsWith("schedule"))).toBe(true)
+})
+
+test("enabling YOLO on create requires confirmation and is omitted when left off", async () => {
+  const { wrapper, rpc } = await setup()
+  const page = new DOMWrapper(document.body)
+  await wrapper.get("[data-schedule-new]").trigger("click")
+  await flushPromises()
+  await wrapper.get('[name="schedule-title"]').setValue("Unattended review")
+  await wrapper.get('[name="schedule-prompt"]').setValue("Review without waiting")
+  await choose(wrapper, "schedule-repeat", "manual")
+  expect(wrapper.text()).toContain("Agent permission requests still need approval")
+  await wrapper.get("[data-schedule-yolo]").trigger("click")
+  await flushPromises()
+  const dialog = page.get('[role="dialog"]')
+  expect(dialog.text()).toContain(i18n.global.t("schedules.yoloConfirmation.title"))
+  await dialog.findAll("button").find(button => button.text() === i18n.global.t("schedules.yoloConfirmation.confirm"))!.trigger("click")
+  await flushPromises()
+  expect(wrapper.get("[data-schedule-yolo]").attributes("aria-pressed")).toBe("true")
+  expect(wrapper.text()).toContain("YOLO auto-approves permission requests")
+  await wrapper.get("form").trigger("submit")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleCreate", { schedule: expect.objectContaining({
+    title: "Unattended review", yolo: true, trigger: { kind: "manual" },
+  }) })
+})
+
+test("editing a YOLO task can clear the flag with an explicit false", async () => {
+  const { wrapper, rpc } = await setup([task({ yolo: true })])
+  await open(wrapper)
+  expect(wrapper.get("[data-schedule-yolo]").attributes("aria-pressed")).toBe("true")
+  await wrapper.get("[data-schedule-yolo]").trigger("click")
+  await flushPromises()
+  expect(wrapper.get("[data-schedule-yolo]").attributes("aria-pressed")).toBe("false")
+  await wrapper.get("form").trigger("submit")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledWith("team-1", "machine-1", "scheduleUpdate", {
+    scheduleId: "schedule-1", changes: expect.objectContaining({ yolo: false }),
+  })
 })
 
 test("pausing retains the editor draft, and a later save keeps the task paused", async () => {

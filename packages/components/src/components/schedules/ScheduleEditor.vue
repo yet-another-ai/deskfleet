@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import UiButton from "../common/UiButton.vue"
 import UiSelect from "../common/UiSelect.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 import { RadioGroupItem, RadioGroupRoot } from "reka-ui"
-import { Folder, GitBranch, MessagesSquare } from "@lucide/vue"
+import { Folder, GitBranch, MessagesSquare, Zap } from "@lucide/vue"
+import { useConfirmDialog } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { ScheduleInput, ScheduledTask } from "@deskfleet/client/schedules"
@@ -41,9 +43,12 @@ const selection = ref<AgentSelection>(props.initial?.target.kind === "new"
   ? { provider: props.initial.target.provider, ...props.initial.target.configuration }
   : { ...agents.draftConfiguration })
 const trigger = ref<ScheduleInput["trigger"]>(JSON.parse(JSON.stringify(props.initial?.trigger ?? { kind: "daily", time: "09:00", timeZone: localTimeZone() })))
+const yolo = ref(props.initial?.yolo === true)
 const saving = ref(false)
 const configurationLoading = ref(false)
 const error = ref<string>()
+const yoloConfirmation = useConfirmDialog()
+const { isRevealed: confirmingYolo } = yoloConfirmation
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 const workspaces = computed(() => fleet.machines[0]?.workspaces ?? [])
@@ -59,6 +64,13 @@ const canSave = computed(() => !blocked.value && !!title.value.trim() && !!promp
   && (destination.value === "existing" ? !!selectedSession.value : providers.ready && !!selectedProvider.value && !configurationLoading.value))
 watch(workspaceId, () => { sessionId.value = "" })
 watch(() => providers.selectedId, value => { if (!providerId.value) providerId.value = value })
+watch(() => props.disabled, value => { if (value) yoloConfirmation.cancel() })
+
+async function toggleYolo(): Promise<void> {
+  if (blocked.value || confirmingYolo.value) return
+  if (!yolo.value && (await yoloConfirmation.reveal()).isCanceled) return
+  yolo.value = !yolo.value
+}
 
 async function submit(): Promise<void> {
   if (!canSave.value) return
@@ -70,6 +82,8 @@ async function submit(): Promise<void> {
   const schedule: ScheduleInput = {
     // Pause and Resume own the enabled state; saving the form keeps whatever it currently is.
     title: title.value.trim(), prompt: prompt.value.trim(), workspaceId: workspaceId.value, enabled: props.initial?.enabled ?? true,
+    // Creates omit false for older daemons; edits always send the flag so clearing YOLO sticks.
+    ...(props.initial || yolo.value ? { yolo: yolo.value } : {}),
     target: destination.value === "existing" ? { kind: "existing", sessionId: sessionId.value }
       : { kind: "new", provider: providerId.value, context: destination.value, ...(configuration && { configuration }) },
     trigger: JSON.parse(JSON.stringify(trigger.value)) as ScheduleInput["trigger"],
@@ -123,15 +137,43 @@ async function submit(): Promise<void> {
       <ScheduleTiming v-model="trigger" :disabled="blocked" />
     </section>
 
+    <section class="flex flex-col gap-3" aria-labelledby="schedule-approvals">
+      <h2 id="schedule-approvals" class="ui-section-title">{{ t('schedules.approvals') }}</h2>
+      <button
+        type="button"
+        class="flex max-w-xl cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-left ui-motion disabled:cursor-default disabled:opacity-60"
+        :class="yolo ? 'border-ui-accent/60 bg-ui-accent/6 hover:bg-ui-accent/12' : 'border-ui-border bg-ui-surface hover:border-ui-border-strong hover:bg-ui-hover'"
+        :aria-pressed="yolo"
+        :aria-label="t('schedules.yoloHint')"
+        data-schedule-yolo
+        :disabled="blocked"
+        @click="toggleYolo"
+      >
+        <Zap :size="16" :stroke-width="1.75" :fill="yolo ? 'currentColor' : 'none'" class="mt-0.5 shrink-0" :class="yolo ? 'text-ui-accent' : 'text-ui-text-muted'" aria-hidden="true" />
+        <span class="min-w-0">
+          <span class="block text-sm font-medium">{{ t('schedules.yolo') }}</span>
+          <span class="mt-0.5 block text-xs leading-4.5 text-ui-text-muted">{{ t('schedules.yoloHint') }}</span>
+        </span>
+      </button>
+    </section>
+
     <div class="flex flex-col gap-4 border-t border-ui-border pt-5">
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <div class="flex flex-wrap items-center justify-between gap-4">
-        <p class="m-0 max-w-md text-xs leading-5 text-ui-text-muted">{{ t('schedules.executionHint') }}</p>
+        <p class="m-0 max-w-md text-xs leading-5 text-ui-text-muted">{{ t(yolo ? 'schedules.executionHintYolo' : 'schedules.executionHint') }}</p>
         <div class="ml-auto flex gap-2">
           <UiButton v-if="!initial" type="button" :disabled="saving" @click="emit('cancel')">{{ t('schedules.cancel') }}</UiButton>
           <UiButton variant="primary" type="submit" :loading="saving" data-schedule-save  :disabled="!canSave">{{ t(saving ? 'catalog.saving' : initial ? 'schedules.save' : 'schedules.createAction') }}</UiButton>
         </div>
       </div>
     </div>
+    <ConfirmDialog
+      v-if="confirmingYolo"
+      :title="t('schedules.yoloConfirmation.title')"
+      :description="t('schedules.yoloConfirmation.description')"
+      :confirm-label="t('schedules.yoloConfirmation.confirm')"
+      :confirm="async () => { yoloConfirmation.confirm() }"
+      @close="yoloConfirmation.cancel()"
+    />
   </form>
 </template>

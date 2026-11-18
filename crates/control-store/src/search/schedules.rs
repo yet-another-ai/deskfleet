@@ -225,6 +225,12 @@ fn public_task(task: &Value) -> Result<Value> {
     {
         return Err(Error::Invalid("invalid public schedule"));
     }
+    // Optional YOLO flag; absent means the pre-YOLO schedule shape (manual approvals).
+    if let Some(yolo) = task.get("yolo") {
+        if !yolo.is_boolean() {
+            return Err(Error::Invalid("invalid public schedule"));
+        }
+    }
     let mut public = Map::new();
     for key in [
         "id",
@@ -232,6 +238,7 @@ fn public_task(task: &Value) -> Result<Value> {
         "prompt",
         "workspaceId",
         "enabled",
+        "yolo",
         "target",
         "trigger",
         "createdAt",
@@ -245,4 +252,46 @@ fn public_task(task: &Value) -> Result<Value> {
         }
     }
     Ok(Value::Object(public))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::public_task;
+    use serde_json::json;
+
+    fn legacy_task() -> serde_json::Value {
+        json!({
+            "id": "task",
+            "title": "needle task",
+            "prompt": "schedule body",
+            "workspaceId": "1",
+            "enabled": false,
+            "target": { "kind": "existing", "sessionId": "3" },
+            "trigger": { "kind": "manual" },
+            "createdAt": "2026-10-31T00:00:00.000Z",
+            "updatedAt": "2026-10-31T00:00:00.000Z",
+            "runs": [],
+            "actor": { "secret": "must not persist" }
+        })
+    }
+
+    #[test]
+    fn public_task_keeps_legacy_shape_without_yolo() {
+        let public = public_task(&legacy_task()).unwrap();
+        assert!(public.get("actor").is_none());
+        assert!(public.get("yolo").is_none());
+        assert_eq!(public["id"], "task");
+    }
+
+    #[test]
+    fn public_task_preserves_optional_yolo_and_rejects_invalid_values() {
+        let mut with_yolo = legacy_task();
+        with_yolo["yolo"] = json!(true);
+        let public = public_task(&with_yolo).unwrap();
+        assert_eq!(public["yolo"], true);
+
+        let mut invalid = legacy_task();
+        invalid["yolo"] = json!("yes");
+        assert!(public_task(&invalid).is_err());
+    }
 }
