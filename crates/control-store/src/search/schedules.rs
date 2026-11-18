@@ -226,10 +226,10 @@ fn public_task(task: &Value) -> Result<Value> {
         return Err(Error::Invalid("invalid public schedule"));
     }
     // Optional YOLO flag; absent means the pre-YOLO schedule shape (manual approvals).
-    if let Some(yolo) = task.get("yolo") {
-        if !yolo.is_boolean() {
-            return Err(Error::Invalid("invalid public schedule"));
-        }
+    if let Some(yolo) = task.get("yolo")
+        && !yolo.is_boolean()
+    {
+        return Err(Error::Invalid("invalid public schedule"));
     }
     let mut public = Map::new();
     for key in [
