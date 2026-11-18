@@ -602,6 +602,11 @@ after it, and attempted dispatch.
 against the real HTTP client with controlled sockets and fetch completion.
 Handler tests distinguish initial `pageshow` from a persisted back/forward-cache
 restore: only the latter maps to the model's `resume` action.
+A resume fences admission without reporting the signaling link as down; only a
+close or a missed probe (the model's `route_lost` and `probe_miss`) reports it.
+Handler tests cover both: a resume on a live link sends its probe without a
+disconnect notice, and a resume past the idle deadline reports the link down
+before replacing the socket.
 The tests also resume during CSRF acquisition and HTTP library preparation, checking
 admission at the host fetch rather than only before asynchronous preparation.
 `apps/desktop/src/main/central-account.test.ts` checks the main-process resume

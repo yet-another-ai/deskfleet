@@ -218,8 +218,11 @@ machine is offline; unchanged online machines still refresh after reconciliation
 Roster reads started before a signaling connection change are discarded. This
 reconciliation preserves already authorized peers and their live streams.
 
-A known signaling recovery immediately marks the client connection untrusted,
-including while a resume ping is pending. New machine RPCs and local or WebRTC
+A known signaling recovery immediately fences new machine work, including while
+a resume ping is pending. It does not report the signaling link as down: consumers
+keep the last known connection state and their authorized peers until the socket
+closes or the probe misses. An unfocused window keeps the same socket, so a focus
+change alone is not evidence of an outage. New machine RPCs and local or WebRTC
 peer creation require a live signaling connection and a fresh online machine
 roster from the current account/recovery generation. Concurrent operations share
 one roster read per Team; another recovery, account replacement, disposal, or a
@@ -243,8 +246,9 @@ recovery; the initial page load must not invalidate startup admission or roster
 reads. Electron's main-process client takes the same recovery path on
 power resume and a window focus following blur; it does not depend on renderer
 DOM events. Initial focus and repeated focus without an intervening blur leave
-admission unchanged. An actual blur/focus transition between app windows still
-conservatively triggers recovery.
+admission unchanged. A blur/focus transition between app windows fences new work
+and probes the live socket without an outage notice; the notice appears only
+when the socket closes or the probe misses.
 
 Each daemon signaling socket also reconciles its peer grants from PostgreSQL at
 its 20-second heartbeat. If a revocation commits but its broadcast is lost, the
