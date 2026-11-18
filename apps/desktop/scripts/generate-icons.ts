@@ -53,6 +53,8 @@ await Promise.all(publicDirectories.map(directory => mkdir(directory, { recursiv
 
 // electron-builder derives the macOS .icns and Windows .ico from this image.
 await resize(resolve(desktopBuild, "icon.png"), 1024)
+// The native viewer embeds this size for window/task-switcher icons on every OS.
+await resize(resolve(desktopBuild, "viewer-icon.png"), 256)
 for (const [suffix, size] of [["", 16], ["@2x", 32]] as const) {
   await resize(resolve(desktopBuild, `tray${suffix}.png`), size)
   await template(resolve(desktopBuild, `trayTemplate${suffix}.png`), size)

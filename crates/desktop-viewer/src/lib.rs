@@ -51,6 +51,8 @@ mod renderer;
 mod rtp_video;
 mod session;
 mod session_manager;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod window_branding;
 #[cfg(target_os = "windows")]
 mod windows_decoder;
 

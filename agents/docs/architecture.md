@@ -27,8 +27,10 @@ variables. Account and machine authentication remain bearer-based in the main
 process; these connections do not use the renderer's session cookies. Web clients
 use browser networking, and the standalone daemon uses Node's networking stack.
 
-The Linux, Windows, and macOS desktop clients can also open a remote desktop in a separate native
-viewer process. Electron retains authentication, peer grants, and signaling;
+The Linux, Windows, and macOS desktop clients open remote desktops in a separate
+native viewer process by default. Native Android/iOS clients use their native
+viewer, while browser and PWA clients use the embedded viewer. Electron retains
+authentication, peer grants, and signaling;
 the viewer owns only its window, receiving media peer, decoder, input forwarding,
 and GPU presentation. The machine daemon continues running inside Electron's
 main process. Native viewer closure releases that viewing session without
@@ -68,7 +70,7 @@ flowchart LR
 | Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
-| Native desktop viewer | Optional independent remote desktop window, receiving media, input forwarding, and bounded decoded-frame queue | Rust / NSH / GPUI; platform H.264, HEVC, and AV1 decoding |
+| Native desktop viewer | Default independent remote desktop window for desktop clients, receiving media, input forwarding, and bounded decoded-frame queue | Rust / NSH / GPUI; platform H.264, HEVC, and AV1 decoding |
 | Web application | Frontend for catalog, history, and browser-supported remote access, served by the central server or an independent static host | Vue / TypeScript |
 | MCP facade | Let agents discover resources and operate on explicit remote targets | TypeScript, sharing DeskFleet client operations |
 

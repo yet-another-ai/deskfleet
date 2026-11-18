@@ -1043,10 +1043,9 @@
     "connecting": "Connecting preview…"
   },
   "desktop": {
-    "openNative": "Open in native window",
+    "windowTitle": "Remote desktop",
     "nativeOpening": "Opening native desktop window…",
     "nativeFailed": "Could not open the desktop window",
-    "nativeHint": "Opens video and optional mouse and keyboard control in a separate window. System audio is unavailable.",
     "notFound": "This machine does not exist.",
     "unavailable": "Remote desktop is not available yet.",
     "offline": "{machine} is offline.",

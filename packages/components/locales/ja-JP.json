@@ -815,10 +815,9 @@
     "connecting": "プレビューに接続中…"
   },
   "desktop": {
-    "openNative": "ネイティブウィンドウで開く",
+    "windowTitle": "リモートデスクトップ",
     "nativeOpening": "ネイティブデスクトップウィンドウを開いています…",
     "nativeFailed": "デスクトップウィンドウを開けませんでした",
-    "nativeHint": "映像と任意のマウス・キーボード操作を別ウィンドウで開きます。システム音声は利用できません。",
     "notFound": "このマシンは存在しません。", "unavailable": "リモートデスクトップはまだ利用できません。",
     "offline": "{machine} はオフラインです。", "noDisplay": "{machine} には共有できるディスプレイがありません。",
     "connect": "接続", "disconnect": "切断",

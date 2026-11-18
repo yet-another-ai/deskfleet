@@ -46,7 +46,7 @@ drives live hardware-encoder retargeting, clamped to the stream's configured
 ceiling (default 8 Mbps). Windows NVENC uses live session reconfiguration when the device supports it.
 An unsupported device recreates once at the requested target, with capture
 backpressure preventing a growing send queue. The browser WebRTC stack owns receive-side decoding and
-playback for the embedded viewer. The optional
+playback for the embedded viewer. The
 [native desktop window](#native-desktop-window) uses the Rust receive path.
 
 `Peer::new_video_receiver()` creates a receive-only video transceiver without
@@ -639,25 +639,28 @@ cannot inject input.
 
 ## Native desktop window
 
-The Linux, Windows, and macOS Electron clients offer **Open in native window**
-when the `native_presentor` Statsig gate passes and the display advertises a
-supported video codec.
-The gate defaults off and remains in place for testing across several future
-versions; see [analytics rollout](analytics.md#feature-gates-and-experiments).
-Closing the gate blocks new launches while existing native windows retain their
-normal session lifecycle. Team authorization remains independent of the gate.
-It opens `deskfleet-viewer`, a Rust executable whose thin entry
+The Linux, Windows, and macOS Electron clients and native Android/iOS clients
+use the native viewer by default when connecting to a desktop, including from
+a display preview. The host's native viewer capability selects this path without
+a rollout gate or a separate launch button. Browser and PWA clients keep the
+embedded viewer. Team authorization applies to both paths.
+Electron opens `deskfleet-viewer`, a Rust executable whose thin entry
 point calls the reusable `deskfleet-desktop-viewer` library. The desktop UI uses
 a GPUI Fast window with a pure-Rust NSH floating toolbar.
 The viewer owns its window, receive-only WebRTC peer, decoder, and GPU
 presentation. The current native receive path supports AV1 Main, HEVC Main,
 H.264 constrained baseline,
 and optional mouse/keyboard control;
-it does not negotiate system audio. The embedded browser viewer remains available.
+it does not negotiate system audio. Native launch settings expose display and
+control selection; browser-only codec, audio, and reverse-scroll options are hidden.
 
 The toolbar follows the embedded desktop viewer's layout, color tokens, and
 English, Chinese, and Japanese translations. Electron supplies the selected
-locale and theme when opening the window. The toolbar shows connection and
+locale and theme when opening the window. The title combines the machine name,
+localized remote desktop label, and DeskFleet name. The compiled viewer embeds
+the DeskFleet icon for X11 windows, Windows title bars/task switching, and the
+macOS Dock; Wayland uses the installed DeskFleet desktop entry through its app ID.
+The toolbar shows connection and
 codec status, can be dragged within the window, enters or leaves full screen,
 pauses or resumes remote input, and disconnects. Settings select a display and
 enable or disable remote control. Display changes replace the receiving peer
