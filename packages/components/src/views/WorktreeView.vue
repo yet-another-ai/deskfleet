@@ -46,7 +46,7 @@ const archived = computed(() => archiveState.value === "archiving" || archiveSta
         <h2 class="ui-section-title mb-2">{{ t("worktree.session") }}</h2>
         <ul class="ui-card">
           <li>
-            <RouterLink :to="{ name: 'session', params: { sessionId: location.session.id } }" class="ui-card-row hover:bg-ui-hover">{{ sessionLabel(location.session) }}</RouterLink>
+            <RouterLink :to="{ name: 'session', params: { sessionId: location.session.id } }" class="ui-card-row ui-motion hover:bg-ui-hover">{{ sessionLabel(location.session) }}</RouterLink>
           </li>
         </ul>
       </section>

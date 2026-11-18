@@ -63,7 +63,7 @@ async function submit(): Promise<void> {
       <div class="flex flex-col gap-2">
         <span class="mb-1.5 text-sm">{{ t("team.role") }}</span>
         <RadioGroupRoot v-model="role" name="invite-role" :aria-label="t('team.role')" :disabled="pending" class="flex flex-col gap-2">
-        <RadioGroupItem v-for="value in (['member', 'admin'] as const)" :key="value" :value="value" class="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left ui-motion disabled:cursor-default disabled:op-50" :class="role === value ? 'border-ui-accent bg-ui-accent/6' : 'border-ui-border hover:border-ui-border-strong'">
+        <RadioGroupItem v-for="value in (['member', 'admin'] as const)" :key="value" :value="value" class="flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left ui-motion disabled:cursor-default disabled:op-50" :class="role === value ? 'border-ui-accent/60 bg-ui-accent/6 hover:bg-ui-accent/12' : 'border-ui-border hover:border-ui-border-strong hover:bg-ui-hover'">
           <span class="ui-radio mt-0.5"><RadioGroupIndicator class="ui-radio-dot" /></span>
           <span class="flex flex-col gap-0.5">
             <span class="text-sm">{{ t(value === "admin" ? "team.admin" : "team.member") }}</span>

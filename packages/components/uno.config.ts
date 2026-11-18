@@ -95,13 +95,13 @@ export default defineConfig({
     "ui-dialog-actions": "mt-6 flex justify-end gap-2",
     "ui-menu": "rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover",
     "ui-menu-item":
-      "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
+      "flex min-h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-ui-text outline-none ui-motion hover:bg-ui-hover focus:bg-ui-hover data-[highlighted]:bg-ui-hover disabled:cursor-default disabled:op-50 data-[disabled]:pointer-events-none data-[disabled]:cursor-default data-[disabled]:op-50",
     "ui-notice": "flex items-center gap-2 rounded-xl border px-3 py-2 text-[13px]",
     // A segmented control: the active segment is a raised pill that settles in (styles.css).
     "ui-segmented": "flex rounded-lg border border-ui-border bg-ui-hover p-1",
     "ui-segment":
-      "cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs text-ui-text-muted ui-motion hover:text-ui-text enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-ui-accent",
-    "ui-segment-active": "bg-ui-surface text-ui-text shadow-ui-card",
+      "cursor-pointer whitespace-nowrap rounded-md px-3 py-1.5 text-xs text-ui-text-muted ui-motion [&:not(.ui-segment-active):hover]:bg-ui-hover hover:text-ui-text enabled:active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-ui-accent",
+    "ui-segment-active": "bg-ui-accent/12 text-ui-accent hover:bg-ui-accent/20 hover:text-ui-accent",
 
     // Status and progress. A status dot takes its color from `text-*`; add `ui-status-live` for running states.
     "ui-status-dot": "relative inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current",

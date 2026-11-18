@@ -61,7 +61,7 @@ function keyResize(event: KeyboardEvent): void {
       :aria-label="t('terminal.resizePanel')"
       :aria-valuenow="height"
       :aria-valuemin="minimum"
-      class="absolute inset-x-0 -top-1 h-2 cursor-row-resize hover:bg-ui-focus/40 focus-visible:bg-ui-focus/40"
+      class="absolute inset-x-0 -top-1 h-2 cursor-row-resize ui-motion hover:bg-ui-focus/40 focus-visible:bg-ui-focus/40"
       :class="resizing && 'bg-ui-focus/40'"
       @pointerdown="startResize"
       @keydown="keyResize"

@@ -47,7 +47,7 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
 <template>
   <AuthLayout v-if="purpose === 'register' && !config.registrationEnabled" :title="t('auth.registerTitle')">
     <p role="status" class="m-0 text-sm leading-relaxed text-ui-text-muted">{{ t("auth.registrationClosed") }}</p>
-    <template #footer><a href="/auth/login" class="hover:text-ui-text">{{ t("auth.backToSignIn") }}</a></template>
+    <template #footer><a href="/auth/login" class="ui-motion hover:text-ui-text">{{ t("auth.backToSignIn") }}</a></template>
   </AuthLayout>
   <AuthLayout v-else-if="sentTo" :icon="MailCheck" :title="t('auth.checkInbox')" :description="t(copy.sent, { email: sentTo })">
     <div class="flex flex-col gap-3">
@@ -56,7 +56,7 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
       <UiButton class="h-9 text-sm" :loading="pending" :disabled="cooling" @click="send(true)">{{ t("auth.resend") }}</UiButton>
       <UiButton variant="ghost" class="h-9 text-sm" :disabled="pending" @click="restart">{{ t("auth.differentEmail") }}</UiButton>
     </div>
-    <template #footer><a href="/auth/login" class="hover:text-ui-text">{{ t("auth.backToSignIn") }}</a></template>
+    <template #footer><a href="/auth/login" class="ui-motion hover:text-ui-text">{{ t("auth.backToSignIn") }}</a></template>
   </AuthLayout>
   <AuthLayout v-else :title="t(copy.title)" :description="t(copy.description)">
     <form class="flex flex-col gap-4" @submit.prevent="send()">
@@ -92,7 +92,7 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
     </form>
     <template #footer>
       <span v-if="purpose === 'register'">{{ t("auth.haveAccount") }} <a href="/auth/login" class="text-ui-accent hover:underline">{{ t("auth.signIn") }}</a></span>
-      <a v-else href="/auth/login" class="hover:text-ui-text">{{ t("auth.backToSignIn") }}</a>
+      <a v-else href="/auth/login" class="ui-motion hover:text-ui-text">{{ t("auth.backToSignIn") }}</a>
     </template>
   </AuthLayout>
 </template>

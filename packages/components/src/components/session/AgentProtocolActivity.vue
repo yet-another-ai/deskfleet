@@ -41,7 +41,7 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
     </template>
   </div>
   <CollapsibleRoot v-else-if="step.kind === 'compaction'" :open="open" data-compaction :data-compaction-id="step.compaction.compactionId" class="rounded-lg border border-ui-border bg-ui-surface/50 text-sm" @update:open="toggled = $event">
-    <CollapsibleTrigger type="button" class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-ui-text-muted hover:bg-ui-hover">
+    <CollapsibleTrigger type="button" class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-ui-text-muted ui-motion hover:bg-ui-hover">
       <LoaderCircle v-if="step.compaction.status === 'in_progress' && live" :size="15" class="shrink-0 animate-spin" aria-hidden="true" />
       <CircleAlert v-else-if="step.compaction.status === 'failed'" :size="15" class="shrink-0 text-ui-danger" aria-hidden="true" />
       <Layers v-else :size="15" class="shrink-0" aria-hidden="true" />
@@ -57,7 +57,7 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
     </CollapsibleContent>
   </CollapsibleRoot>
   <CollapsibleRoot v-else-if="step.kind === 'subagent'" :open="open" data-subagent :data-provider-session="step.session.sessionId" class="rounded-lg border border-ui-border text-sm" @update:open="toggled = $event">
-    <CollapsibleTrigger type="button" class="flex w-full cursor-pointer items-start gap-2 rounded-lg bg-ui-surface/50 px-3 py-2.5 text-left hover:bg-ui-hover">
+    <CollapsibleTrigger type="button" class="flex w-full cursor-pointer items-start gap-2 rounded-lg bg-ui-surface/50 px-3 py-2.5 text-left ui-motion hover:bg-ui-hover">
       <Bot :size="17" class="mt-0.5 shrink-0 text-ui-accent" aria-hidden="true" />
       <span class="min-w-0 flex-1">
         <span class="block font-medium text-ui-text">{{ step.session.title || t('agent.protocol.subagent') }}</span>

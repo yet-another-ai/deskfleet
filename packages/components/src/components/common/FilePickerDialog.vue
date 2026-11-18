@@ -149,7 +149,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
         <nav class="flex min-w-0 flex-1 flex-wrap items-center gap-1" :aria-label="t('folderPicker.location')">
           <template v-for="(item, index) in trail" :key="item.path">
             <ChevronRight v-if="index > 0" :size="12" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
-            <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
+            <button type="button" class="max-w-full cursor-pointer break-all rounded-md px-1.5 py-1 text-left font-mono ui-motion hover:bg-ui-hover [&[aria-current]]:font-semibold" :aria-current="index === trail.length - 1 ? 'location' : undefined" @click="navigate(item.path)">{{ item.name }}</button>
           </template>
         </nav>
         <UiButton variant="ghost" size="icon" :label="t('folderPicker.editPath')" data-edit-path @click="startEditingPath"><Pencil :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
@@ -161,7 +161,7 @@ onBeforeUnmount(() => { finished = true; requestId++ })
         <UiButton type="button" @click="navigate(requestedPath)">{{ t("folderPicker.retry") }}</UiButton>
       </ErrorNotice>
       <ul v-else-if="visibleEntries.length" class="m-0 list-none p-0" :aria-label="t('filePicker.title')">
-        <li v-for="entry in visibleEntries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-sm hover:bg-ui-hover" :class="selectedPaths.has(entry.path) && 'bg-ui-hover'">
+        <li v-for="entry in visibleEntries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-sm ui-motion hover:bg-ui-hover" :class="selectedPaths.has(entry.path) && 'bg-ui-hover'">
           <UiCheckbox v-if="entry.kind === 'file'" :model-value="selectedPaths.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="toggleFile(entry)" />
           <span v-else class="w-4 shrink-0" aria-hidden="true" />
           <button

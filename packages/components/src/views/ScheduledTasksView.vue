@@ -51,7 +51,7 @@ async function remove(): Promise<void> {
 <template>
   <PaneHeader>
     <template v-if="scheduleId">
-      <RouterLink :to="{ name: 'schedules' }" class="app-no-drag text-ui-text-muted no-underline hover:text-ui-text">{{ t('schedules.title') }}</RouterLink>
+      <RouterLink :to="{ name: 'schedules' }" class="app-no-drag text-ui-text-muted no-underline ui-motion hover:text-ui-text">{{ t('schedules.title') }}</RouterLink>
       <span class="mx-1.5 text-ui-text-faint" aria-hidden="true">/</span>{{ creating ? t('schedules.createTitle') : selected?.title }}
     </template>
     <template v-else>{{ t('schedules.title') }}</template>

@@ -17,7 +17,7 @@ const options = [
 
 <template>
   <RadioGroupRoot :model-value="modelValue" :disabled="disabled" :aria-label="t('appearance.theme')" class="grid grid-cols-3 gap-3" @update:model-value="emit('update:modelValue', $event as AppearanceSettings['theme'])">
-    <RadioGroupItem v-for="option in options" :key="option.value" :value="option.value" :data-appearance-theme="option.value" :aria-label="t(option.label)" class="theme-option group min-w-0 cursor-pointer rounded-xl border-2 border-transparent p-1 text-left ui-motion duration-[var(--ui-duration-base)] hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/5 disabled:cursor-default disabled:op-50">
+    <RadioGroupItem v-for="option in options" :key="option.value" :value="option.value" :data-appearance-theme="option.value" :aria-label="t(option.label)" class="theme-option group min-w-0 cursor-pointer rounded-xl border-2 border-transparent p-1 text-left ui-motion duration-[var(--ui-duration-base)] hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/6 data-[state=checked]:hover:bg-ui-accent/12 disabled:cursor-default disabled:op-50">
       <div v-spring-hover="-2" class="theme-picture" :data-mode="option.value" aria-hidden="true">
         <div v-for="palette in option.value === 'system' ? ['light', 'dark'] : [option.value]" :key="palette" class="mini-app" :data-palette="palette">
           <div class="mini-titlebar"><i /><i /><i /><span /></div>

@@ -307,7 +307,7 @@ const errorDescription = computed(() => {
       >
         <button
           type="button"
-          class="inline-flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded-md text-ui-text-faint hover:bg-ui-hover hover:text-ui-text-muted active:cursor-grabbing"
+          class="inline-flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded-md text-ui-text-faint ui-motion hover:bg-ui-hover hover:text-ui-text-muted active:cursor-grabbing"
           style="touch-action: none"
           data-move-controls
           :aria-label="t('desktop.moveControls')"

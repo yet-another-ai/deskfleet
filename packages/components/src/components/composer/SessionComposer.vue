@@ -412,7 +412,7 @@ onBeforeUnmount(() => {
   <div class="session-composer mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 px-6 pb-[calc(1.25rem+var(--safe-area-bottom,0px))]">
     <div v-if="location" class="composer-context flex h-9 min-w-0 items-center gap-2.5 rounded-xl border border-ui-border bg-ui-surface px-3 text-[13px] text-ui-text-muted" role="group" :aria-label="t('composer.context')">
       <DropdownMenuRoot v-if="showTarget" :modal="false">
-        <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :title="location.machine.local ? t('machine.local') : undefined" :aria-label="t('composer.machineChoice', { machine: location.machine.name })" data-composer-context data-composer-machine>
+        <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text ui-motion hover:bg-ui-hover" :disabled="preparing || submitting" :title="location.machine.local ? t('machine.local') : undefined" :aria-label="t('composer.machineChoice', { machine: location.machine.name })" data-composer-context data-composer-machine>
           <component :is="location.machine.local ? Laptop : Monitor" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.machine.name }}</span><span v-if="location.machine.local" class="sr-only">{{ t("machine.local") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
       <template v-if="showTarget ? location.workspace || availableWorkspaces.length : location.workspace">
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <DropdownMenuRoot v-if="showTarget" :modal="false">
-          <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.workspaceChoice', { workspace: location.workspace?.name ?? t('composer.noWorkspace') })" data-composer-context data-composer-workspace>
+          <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text ui-motion hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.workspaceChoice', { workspace: location.workspace?.name ?? t('composer.noWorkspace') })" data-composer-context data-composer-workspace>
             <component :is="location.workspace ? Folder : MessageCircle" :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ location.workspace?.name ?? t("composer.noWorkspace") }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
@@ -468,7 +468,7 @@ onBeforeUnmount(() => {
         <template v-if="context === 'worktree' && branchLabel && (availableBranches.length || preparedBranches.length)">
           <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
           <DropdownMenuRoot :modal="false">
-            <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.baseBranchChoice', { branch: branchLabel })" data-composer-branch>
+            <DropdownMenuTrigger class="-mx-1 inline-flex h-7 min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text ui-motion hover:bg-ui-hover" :disabled="preparing || submitting" :aria-label="t('composer.baseBranchChoice', { branch: branchLabel })" data-composer-branch>
               <GitBranch :size="15" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate">{{ branchLabel }}</span><ChevronDown :size="14" :stroke-width="2" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
@@ -491,7 +491,7 @@ onBeforeUnmount(() => {
         <span class="h-4 w-px shrink-0 bg-ui-border" aria-hidden="true" />
         <button
           type="button"
-          class="-mx-1 inline-flex h-7 min-w-0 max-w-[12rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text hover:bg-ui-hover disabled:cursor-default disabled:opacity-50"
+          class="-mx-1 inline-flex h-7 min-w-0 max-w-[12rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-ui-text ui-motion hover:bg-ui-hover disabled:cursor-default disabled:opacity-50"
           :disabled="preparing || submitting || disabled"
           :title="workingDirectoryTitle"
           :aria-label="t('composer.workingDirectoryChoice', { path: workingDirectoryTitle })"
@@ -505,7 +505,7 @@ onBeforeUnmount(() => {
         <button
           v-if="cwd"
           type="button"
-          class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
           :disabled="preparing || submitting || disabled"
           :aria-label="t('composer.workingDirectoryClear')"
           data-composer-cwd-clear
@@ -592,7 +592,7 @@ onBeforeUnmount(() => {
             v-if="attachmentUpload(item)?.status === 'error'"
             type="button"
             data-attachment-retry
-            class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-danger hover:bg-ui-hover"
+            class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-danger ui-motion hover:bg-ui-hover"
             :title="attachmentUpload(item)?.error || t('composer.uploadFailed')"
             :aria-label="t('composer.retryUpload', { name: attachmentLabel(item) })"
             :disabled="disabled || submitting"
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
           >
             <RotateCw :size="12" aria-hidden="true" />
           </button>
-          <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.removeAttachment', { name: attachmentLabel(item) })" :disabled="disabled || submitting" @click="removeAttachment(item.id)">
+          <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.removeAttachment', { name: attachmentLabel(item) })" :disabled="disabled || submitting" @click="removeAttachment(item.id)">
             <X :size="12" aria-hidden="true" />
           </button>
         </li>
@@ -609,7 +609,7 @@ onBeforeUnmount(() => {
         <li v-for="mention in mentions" :key="mention.id" class="ui-pop-in inline-flex max-w-full items-center gap-1.5 rounded-lg border border-ui-border bg-ui-canvas px-2.5 py-1.5 text-xs" :data-mention-kind="mention.reference.kind">
           <component :is="mention.reference.kind === 'file' ? File : mention.reference.kind === 'session' ? MessageSquare : Sparkles" :size="14" class="shrink-0 text-ui-text-muted" aria-hidden="true" />
           <span class="truncate text-ui-text" :title="mention.token">{{ mention.token }}</span>
-          <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
+          <button type="button" class="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('composer.completions.remove', { name: mention.token })" :disabled="disabled || submitting" @click="completion.remove(mention.id)"><X :size="12" aria-hidden="true" /></button>
         </li>
       </ul>
       <textarea ref="textarea" data-composer-input :value="draft" rows="2" role="combobox" aria-autocomplete="list" :aria-expanded="!!completion.trigger" :aria-controls="completion.trigger ? completionId : undefined" :aria-activedescendant="completion.trigger && completion.candidates.length ? `${completionId}-${completion.selected}` : undefined" :style="textareaFadeStyle" class="ui-scroll-mask block max-h-60 min-h-14 w-full resize-none bg-transparent px-4 pt-3 text-[15px] leading-6 outline-none select-text placeholder:text-ui-text-faint" :aria-label="t('composer.label')" :placeholder="placeholder" @input="completion.input" @focus="completion.focused = true; completion.cursor()" @blur="completion.focused = false" @click="completion.cursor" @select="completion.cursor" @keyup="completion.cursor" @compositionstart="completion.composing = true" @compositionend="completion.composing = false; completion.input($event)" @keydown="keydown" @paste="onPaste" />
@@ -641,7 +641,8 @@ onBeforeUnmount(() => {
         <button
           v-if="location"
           type="button"
-          class="ui-text-button shrink-0 cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:opacity-50"
+          class="ui-text-button shrink-0 cursor-pointer leading-5 disabled:cursor-default disabled:opacity-50"
+          :class="yoloEnabled && 'ui-nav-active'"
           :aria-pressed="yoloEnabled"
           :aria-label="t('composer.yoloHint')"
           :title="t('composer.yoloHint')"
@@ -649,11 +650,11 @@ onBeforeUnmount(() => {
           data-composer-yolo
           @click="toggleYolo"
         >
-          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" :class="yoloEnabled && 'text-ui-accent'" aria-hidden="true" />
+          <Zap :size="14" :stroke-width="1.85" :fill="yoloEnabled ? 'currentColor' : 'none'" class="shrink-0" aria-hidden="true" />
         </button>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <AgentUsage v-if="usage" :key="location?.session?.id" :usage="usage" />
-          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'bg-ui-accent/10 text-ui-accent' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
+          <UiButton v-if="dictation.visible" variant="ghost" size="icon" type="button" class="h-8 w-8 rounded-full" :class="dictation.active ? 'ui-nav-active' : dictation.error ? 'text-ui-danger' : undefined" :aria-pressed="dictation.active" :title="dictationLabel" :aria-label="dictationLabel" :disabled="disabled || submitting || !location || dictation.state === 'starting' || dictation.state === 'stopping'" data-composer-dictation @mousedown.prevent @click="dictation.toggle">
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>

@@ -44,7 +44,7 @@ function open(machineId: string, displayId: number): void {
       <div class="flex gap-1" role="group" :aria-label="t('desktopOverview.scope')">
         <button v-for="all in [false, true]" :key="String(all)" type="button"
           class="cursor-pointer rounded-md px-2 py-1.5 text-xs ui-motion active:scale-[0.97]"
-          :class="showAll === all ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover'"
+          :class="showAll === all ? 'ui-nav-active' : 'text-ui-text-muted hover:bg-ui-hover hover:text-ui-text'"
           :aria-pressed="showAll === all" @click="showAll = all"
         >{{ t(all ? 'desktopOverview.allMachines' : 'desktopOverview.sessionMachine') }}</button>
       </div>

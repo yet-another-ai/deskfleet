@@ -56,7 +56,7 @@ function saveColor(key: TerminalColorKey, value: string): void {
     <RadioGroupRoot :model-value="activePresetId" :disabled="disabled" :aria-label="t('appearance.terminalPreset')" class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3" @update:model-value="selectPreset($event as TerminalThemeId)">
       <RadioGroupItem
         v-for="preset in TERMINAL_THEME_PRESETS" :key="preset.id" :value="preset.id" :data-terminal-theme="preset.id" :aria-label="preset.label"
-        class="min-w-0 cursor-pointer rounded-lg border-2 border-transparent p-1 text-left hover:bg-ui-hover data-[state=checked]:border-ui-accent disabled:cursor-default disabled:op-50"
+        class="min-w-0 cursor-pointer rounded-lg border-2 border-transparent p-1 text-left ui-motion hover:bg-ui-hover data-[state=checked]:border-ui-accent data-[state=checked]:bg-ui-accent/6 data-[state=checked]:hover:bg-ui-accent/12 disabled:cursor-default disabled:op-50"
       >
         <div class="rounded-md border border-ui-border/40 px-2.5 py-2" :style="{ backgroundColor: preset.colors.background, color: preset.colors.foreground }" aria-hidden="true">
           <div class="truncate font-mono text-[11px]"><span :style="{ color: preset.colors.green }">❯</span> echo hello</div>

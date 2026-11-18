@@ -118,7 +118,7 @@ const items = computed<OutlineItem[]>(previous => {
 const currentActive = computed(() => props.active || (!props.events ? selectedPreview.value : undefined))
 const pointedId = computed(() => scrub.value?.item.id ?? hovered.value)
 const pointedIndex = computed(() => items.value.findIndex(item => item.id === pointedId.value))
-const highlighted = computed(() => pointedId.value ?? currentActive.value)
+const activeId = computed(() => scrub.value?.item.id ?? currentActive.value)
 
 function tickWidth(index: number, label: string): number {
   const baseline = OUTLINE_MIN_WIDTH + (22 * label.length) / (label.length + 10)
@@ -268,12 +268,12 @@ watch(currentActive, id => {
               <span
                 aria-hidden="true"
                 v-spring="{ width: `${tickWidth(index, item.label)}px` }"
-                :style="{ backgroundColor: rgb ? audio.color(index, highlighted === item.id) : undefined }"
+                :style="{ backgroundColor: rgb ? audio.color(index, activeId === item.id) : undefined }"
                 class="pointer-events-none shrink-0 rounded-full duration-150 ease-out"
                 :class="[
                   'transition-[height,background-color]',
-                  scrub && highlighted === item.id ? 'h-[3px]' : 'h-0.5',
-                  highlighted === item.id ? 'bg-ui-accent' : 'bg-ui-text-muted/45 group-focus-visible:bg-ui-text-muted',
+                  scrub && activeId === item.id ? 'h-[3px]' : 'h-0.5',
+                  activeId === item.id ? 'bg-ui-accent' : 'bg-ui-text-muted/45 group-hover:bg-ui-text-muted group-focus-visible:bg-ui-text-muted',
                 ]"
               />
             </TooltipTrigger>

@@ -51,7 +51,7 @@ watch(moving, active => emit("motion", active), { flush: "sync" })
   <section class="mobile-view-frame" :class="{ 'is-preview': preview, 'is-active': active }" :style="{ width: `${sourceWidth}px`, height: `${sourceHeight}px` }">
     <header class="mobile-view-label flex h-8 items-center gap-1" :inert="!preview" :aria-hidden="!preview" :style="{ width: `${sourceWidth * scale}px`, transform: `translate3d(${x}px, ${y - 32}px, 0)` }">
       <span class="min-w-0 flex-1 truncate text-xs font-medium">{{ title }}</span>
-      <button v-if="closable" type="button" :aria-label="t('mobileViews.close', { title })" :disabled="busy" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ui-text-muted hover:bg-ui-hover" @click="emit('close')"><X :size="14" aria-hidden="true" /></button>
+      <button v-if="closable" type="button" :aria-label="t('mobileViews.close', { title })" :disabled="busy" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ui-text-muted ui-motion hover:bg-ui-hover" @click="emit('close')"><X :size="14" aria-hidden="true" /></button>
     </header>
     <div data-view-surface class="mobile-view-surface" :style="{ transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`, borderRadius: preview && scale > 0 ? `${12 / scale}px` : '0px' }">
       <div class="mobile-view-content" :inert="preview || !active" :aria-hidden="preview || !active">

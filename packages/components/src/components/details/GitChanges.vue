@@ -81,7 +81,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
       <div class="flex shrink-0 items-center justify-between gap-2 px-3 pb-1 pt-2">
         <span class="text-xs text-ui-text-muted" role="status">{{ t(connected && !error ? 'panel.gitLive' : 'panel.gitPaused') }}</span>
         <div class="flex shrink-0">
-          <UiButton variant="ghost" size="icon" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
+          <UiButton variant="ghost" size="icon" :class="treeOpen && 'ui-nav-active'" :label="t(treeOpen ? 'panel.hideFileTree' : 'panel.showFileTree')" :aria-pressed="treeOpen" aria-controls="git-file-tree" data-git-tree-toggle @click="treeOpen = !treeOpen"><ListTree :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
           <UiButton variant="ghost" size="icon" :label="t('panel.refreshGit')" :disabled="loading" @click="refresh"><RefreshCw :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>
         </div>
       </div>
@@ -116,7 +116,7 @@ function reveal(repositoryId: string, change: GitFileChange): void {
                   <button
                     v-if="row.type === 'directory'"
                     type="button"
-                    class="flex min-h-7 w-full cursor-pointer items-center gap-1 rounded-md py-0.5 pr-1.5 text-left text-[13px] text-ui-text-muted hover:bg-ui-hover"
+                    class="flex min-h-7 w-full cursor-pointer items-center gap-1 rounded-md py-0.5 pr-1.5 text-left text-[13px] text-ui-text-muted ui-motion hover:bg-ui-hover"
                     :style="{ paddingLeft: `${6 + row.depth * 12}px` }"
                     :aria-expanded="!row.collapsed"
                     :aria-label="t(row.collapsed ? 'panel.expandDirectory' : 'panel.collapseDirectory', { path: row.path })"

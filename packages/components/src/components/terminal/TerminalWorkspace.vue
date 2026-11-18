@@ -101,13 +101,13 @@ onMounted(() => {
           :key="terminal.id"
           role="presentation"
           class="ui-tab-size group flex h-full shrink-0 items-center border-r border-ui-border ui-motion"
-          :class="activeId === terminal.id ? 'bg-ui-active text-ui-text' : 'text-ui-text-muted hover:bg-ui-hover hover:text-ui-text'"
+          :class="activeId === terminal.id ? 'ui-nav-active' : 'text-ui-text-muted hover:bg-ui-hover hover:text-ui-text'"
         >
           <button
             v-if="activeId === terminal.id"
             type="button"
-            class="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded"
-            :class="broken() ? 'cursor-pointer hover:bg-ui-hover' : 'cursor-default'"
+            class="ml-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded ui-motion"
+            :class="broken() ? 'cursor-pointer hover:bg-current/15' : 'cursor-default'"
             :title="broken() ? `${connection.label} · ${t('terminal.reconnect')}` : connection.label"
             :aria-label="broken() ? `${connection.label} · ${t('terminal.reconnect')}` : connection.label"
             role="status"
@@ -124,7 +124,7 @@ onMounted(() => {
           >
             <component :is="terminal.kind === 'acp' ? Bot : SquareTerminal" :size="13" class="shrink-0" aria-hidden="true" />
             <UiTabTitle>{{ tabName(terminal.id, index) }}</UiTabTitle>
-            <span v-if="terminal.kind === 'acp'" class="shrink-0 text-[10px] text-ui-text-muted">{{ t('terminal.readOnly') }}</span>
+            <span v-if="terminal.kind === 'acp'" class="shrink-0 text-[10px] text-current op-75">{{ t('terminal.readOnly') }}</span>
           </TabsTrigger>
           <button
             v-if="terminal.kind !== 'acp'"
@@ -132,7 +132,7 @@ onMounted(() => {
             :aria-label="t('terminal.hangupTab', { name: tabName(terminal.id, index) })"
             :title="t('terminal.hangupHint')"
             :disabled="readOnly || closing.has(terminal.id)"
-            class="mr-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded opacity-0 ui-motion hover:bg-ui-hover enabled:active:scale-90 group-hover:opacity-100 focus-visible:opacity-100 disabled:op-40"
+            class="mr-1 inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-current opacity-0 ui-motion enabled:hover:bg-current/15 enabled:active:scale-90 group-hover:opacity-100 focus-visible:opacity-100 disabled:op-40"
             :class="activeId === terminal.id && 'opacity-100'"
             @click="hangup(terminal.id)"
           ><X :size="13" aria-hidden="true" /></button>
@@ -144,7 +144,7 @@ onMounted(() => {
         :aria-label="t('terminal.newTab')"
         :title="t('terminal.newTab')"
         :disabled="readOnly || creating"
-        class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted hover:bg-ui-hover hover:text-ui-text disabled:op-40"
+        class="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text disabled:op-40"
         @click="create()"
       ><Plus :size="15" aria-hidden="true" /></button>
       <slot name="actions" />

@@ -78,18 +78,18 @@ onBeforeUnmount(() => { disposed = true; ++generation })
         <UiButton v-else type="button" @click="navigate(requestedPath)">{{ t('folderPicker.retry') }}</UiButton>
       </ErrorNotice>
       <ul v-else-if="entries.length" class="m-0 list-none p-0">
-        <li v-for="entry in entries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-[13px]" :class="selected.has(entry.path) && 'bg-ui-hover'">
+        <li v-for="entry in entries" :key="entry.path" class="flex min-w-0 items-center gap-2 px-3 py-2 text-[13px] ui-motion" :class="selected.has(entry.path) ? 'ui-nav-active' : 'hover:bg-ui-hover'">
           <UiCheckbox v-if="selectable !== false" :model-value="selected.has(entry.path)" :aria-label="t('files.select', { name: entry.name })" @update:model-value="select(entry)" />
           <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left" :aria-label="entry.kind === 'directory' ? t('folderPicker.openFolder', { name: entry.name }) : t('files.select', { name: entry.name })" :disabled="selectable === false && entry.kind === 'file'" @click="entry.kind === 'directory' ? navigate(entry.path) : select(entry)">
-            <component :is="entry.kind === 'directory' ? Folder : File" :size="15" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span class="truncate" :title="entry.name">{{ entry.name }}</span>
+            <component :is="entry.kind === 'directory' ? Folder : File" :size="15" class="shrink-0 text-ui-text-muted [.ui-nav-active_&]:text-current" aria-hidden="true" /><span class="truncate" :title="entry.name">{{ entry.name }}</span>
           </button>
-          <span v-if="entry.kind === 'file'" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted">{{ fileSize(entry.size) }}</span>
+          <span v-if="entry.kind === 'file'" class="shrink-0 text-[11px] tabular-nums text-ui-text-muted [.ui-nav-active_&]:text-current">{{ fileSize(entry.size) }}</span>
         </li>
       </ul>
       <p v-else class="m-0 p-3 text-sm text-ui-text-muted">{{ t('files.empty') }}</p>
     </UiScrollArea>
     <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-ui-border px-3 py-1.5 text-xs text-ui-text-muted">
-      <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
+      <button v-for="root in listing?.roots" :key="root.path" type="button" class="cursor-pointer rounded px-1 ui-motion hover:bg-ui-hover" :title="root.path" @click="navigate(root.path)">{{ root.name }}</button>
       <label class="ml-auto flex items-center gap-1.5"><UiCheckbox v-model="hidden" />{{ t('files.showHidden') }}</label>
     </div>
   </section>

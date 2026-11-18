@@ -234,7 +234,7 @@ defineExpose({ transformInput, reset })
           type="button"
           :data-key="key.id"
           :aria-label="key.ariaKey ? t(key.ariaKey) : key.label"
-          class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] text-ui-text hover:bg-ui-hover active:bg-ui-active"
+          class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] text-ui-text ui-motion hover:bg-ui-hover active:bg-ui-active"
           @pointerdown="onKeyPointerDown(key, $event)"
           @pointerup="stopRepeat"
           @pointercancel="stopRepeat"
@@ -250,7 +250,7 @@ defineExpose({ transformInput, reset })
           type="button"
           :data-key="key.id"
           :aria-label="key.label"
-          class="inline-flex h-6 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] text-ui-text-muted hover:bg-ui-hover hover:text-ui-text active:bg-ui-active"
+          class="inline-flex h-6 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text active:bg-ui-active"
           @pointerdown="onKeyPointerDown(key, $event)"
           @mousedown.prevent
           @click="onKeyClick(key)"
@@ -265,7 +265,7 @@ defineExpose({ transformInput, reset })
         type="button"
         :data-key="key.id"
         :aria-label="key.ariaKey ? t(key.ariaKey) : key.label"
-        class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] font-medium text-ui-text hover:bg-ui-hover active:bg-ui-active"
+        class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-[11px] font-medium text-ui-text ui-motion hover:bg-ui-hover active:bg-ui-active"
         @pointerdown="onKeyPointerDown(key, $event)"
         @mousedown.prevent
         @click="onKeyClick(key)"
@@ -279,11 +279,11 @@ defineExpose({ transformInput, reset })
         :data-modifier-state="mod[2]"
         :aria-label="t(mod[3])"
         :aria-pressed="mod[2] !== 'off'"
-        class="relative inline-flex h-7 items-center justify-center rounded border px-1 font-mono text-[11px] font-medium transition-colors"
+        class="relative inline-flex h-7 items-center justify-center rounded border px-1 font-mono text-[11px] font-medium ui-motion"
         :class="mod[2] === 'locked'
           ? 'border-ui-accent bg-ui-accent text-white'
           : mod[2] === 'armed'
-            ? 'border-ui-accent bg-ui-accent/15 text-ui-accent'
+            ? 'border-ui-accent bg-ui-accent/15 text-ui-accent hover:bg-ui-accent/25'
             : 'border-ui-border bg-ui-canvas text-ui-text hover:bg-ui-hover active:bg-ui-active'"
         @pointerdown.prevent
         @mousedown.prevent
@@ -304,7 +304,7 @@ defineExpose({ transformInput, reset })
         type="button"
         :data-key="key.id"
         :aria-label="key.ariaKey ? t(key.ariaKey) : key.label"
-        class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-xs font-medium text-ui-text hover:bg-ui-hover active:bg-ui-active"
+        class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas px-1 font-mono text-xs font-medium text-ui-text ui-motion hover:bg-ui-hover active:bg-ui-active"
         @pointerdown="onKeyPointerDown(key, $event)"
         @pointerup="stopRepeat"
         @pointercancel="stopRepeat"
@@ -319,8 +319,8 @@ defineExpose({ transformInput, reset })
         :aria-expanded="expanded"
         :aria-label="t(expanded ? 'terminal.keypadCollapse' : 'terminal.keypadExpand')"
         :title="t(expanded ? 'terminal.keypadCollapse' : 'terminal.keypadExpand')"
-        class="inline-flex h-7 items-center justify-center rounded border border-ui-border bg-ui-canvas text-ui-text-muted hover:bg-ui-hover hover:text-ui-text active:bg-ui-active"
-        :class="expanded && 'bg-ui-active text-ui-text'"
+        class="inline-flex h-7 items-center justify-center rounded border ui-motion"
+        :class="expanded ? 'border-ui-accent/60 ui-nav-active' : 'border-ui-border bg-ui-canvas text-ui-text-muted hover:bg-ui-hover hover:text-ui-text active:bg-ui-active'"
         @pointerdown.prevent
         @mousedown.prevent
         @click="expanded = !expanded; props.terminal.focus?.()"

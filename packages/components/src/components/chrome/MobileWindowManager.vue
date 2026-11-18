@@ -196,7 +196,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
               <span class="text-4xl">{{ t('desktopOverview.title') }}</span>
             </div>
           </MobileViewFrame>
-          <button v-if="overviewOpen && worktree" type="button" :disabled="busy" class="absolute inset-x-4 flex h-11 items-center justify-center gap-2 rounded-xl border border-ui-border text-sm text-ui-text-muted hover:bg-ui-hover disabled:op-40" :style="{ top: `${gridHeight}px` }" @click="newTerminal">
+          <button v-if="overviewOpen && worktree" type="button" :disabled="busy" class="absolute inset-x-4 flex h-11 items-center justify-center gap-2 rounded-xl border border-ui-border text-sm text-ui-text-muted ui-motion hover:bg-ui-hover disabled:op-40" :style="{ top: `${gridHeight}px` }" @click="newTerminal">
             <Plus :size="18" aria-hidden="true" />{{ t('terminal.new') }}
           </button>
         </div>

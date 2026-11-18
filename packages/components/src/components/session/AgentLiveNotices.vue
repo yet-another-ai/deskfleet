@@ -17,7 +17,7 @@ const { t } = useI18n()
         <p class="m-0 font-medium">{{ notice.title }}</p>
         <p v-if="notice.description" class="m-0 mt-1 whitespace-pre-wrap text-ui-text-muted">{{ notice.description }}</p>
       </div>
-      <button type="button" class="shrink-0 cursor-pointer rounded p-1 text-ui-text-muted hover:bg-ui-hover hover:text-ui-text" :aria-label="t('common.close')" @click="emit('dismiss', notice.id)"><X :size="14" aria-hidden="true" /></button>
+      <button type="button" class="shrink-0 cursor-pointer rounded p-1 text-ui-text-muted ui-motion hover:bg-ui-hover hover:text-ui-text" :aria-label="t('common.close')" @click="emit('dismiss', notice.id)"><X :size="14" aria-hidden="true" /></button>
     </div>
   </div>
 </template>

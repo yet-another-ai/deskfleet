@@ -66,7 +66,7 @@ defineExpose({ focus: () => control.value?.focus() })
           <button
             v-if="type === 'password'"
             type="button"
-            class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-ui-text-muted hover:text-ui-text disabled:cursor-default disabled:op-50"
+            class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-ui-text-muted ui-motion hover:text-ui-text disabled:cursor-default disabled:op-50"
             :aria-label="t(visible ? 'common.hidePassword' : 'common.showPassword')"
             :aria-pressed="visible"
             :disabled="disabled"

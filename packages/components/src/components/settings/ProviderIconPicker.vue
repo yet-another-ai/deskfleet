@@ -64,15 +64,15 @@ function select(value?: string): void {
         <Search :size="15" :stroke-width="1.75" class="pointer-events-none absolute left-2.5 top-2.5 text-ui-text-muted" aria-hidden="true" />
         <input v-model="query" type="search" name="provider-icon-search" class="ui-input pl-8 text-[13px]" :aria-label="t('providers.iconSearch')" :placeholder="t('providers.iconSearch')" :disabled="disabled" autocomplete="off" :spellcheck="false" @keydown.enter.prevent />
       </div>
-      <button type="button" class="mb-1 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] hover:bg-ui-hover disabled:cursor-default" :aria-pressed="!icon" :disabled="disabled" data-default-icon @click="select()">
+      <button type="button" class="mb-1 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] ui-motion disabled:cursor-default" :class="!icon ? 'ui-nav-active' : 'hover:bg-ui-hover'" :aria-pressed="!icon" :disabled="disabled" data-default-icon @click="select()">
         <ProviderIcon :template="template" :size="18" />
         <span class="flex-1">{{ t("providers.iconReset") }}</span>
         <Check v-if="!icon" :size="14" :stroke-width="1.75" aria-hidden="true" />
       </button>
       <UiScrollArea fade-size="sm" class="max-h-52" content-class="grid grid-cols-5 gap-1" role="group" :aria-label="t('providers.iconChoices')">
-        <button v-for="item in icons" :key="item.id" type="button" class="flex min-w-0 cursor-pointer flex-col items-center gap-1.5 rounded-md border px-1 py-2.5 hover:bg-ui-hover disabled:cursor-default" :class="icon === item.id ? 'border-ui-text-muted bg-ui-hover' : 'border-transparent'" :disabled="disabled" :aria-label="item.name" :aria-pressed="icon === item.id" :title="item.name" :data-provider-icon-choice="item.id" @click="select(item.id)">
+        <button v-for="item in icons" :key="item.id" type="button" class="flex min-w-0 cursor-pointer flex-col items-center gap-1.5 rounded-md border px-1 py-2.5 ui-motion disabled:cursor-default" :class="icon === item.id ? 'border-ui-accent/60 ui-nav-active' : 'border-transparent hover:bg-ui-hover'" :disabled="disabled" :aria-label="item.name" :aria-pressed="icon === item.id" :title="item.name" :data-provider-icon-choice="item.id" @click="select(item.id)">
           <ProviderIcon :icon="item.id" :size="24" />
-          <span class="w-full truncate text-center text-[10px] text-ui-text-muted">{{ item.name }}</span>
+          <span class="w-full truncate text-center text-[10px] text-ui-text-muted [.ui-nav-active_&]:text-current">{{ item.name }}</span>
         </button>
       </UiScrollArea>
       <p v-if="ready && !icons.length" role="status" class="m-0 px-2 py-4 text-center text-[13px] text-ui-text-muted">{{ t("providers.iconNoResults") }}</p>
