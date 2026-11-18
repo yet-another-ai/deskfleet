@@ -167,9 +167,9 @@ test("ACP creation and resume get fresh grants and stop or connection loss revok
 
 test("local and remote MCP session tools create Workspace or machine-scoped Sessions and submit prompts", async t => {
   const directory = await mkdtemp(join(tmpdir(), "deskfleet-mcp-sessions-"))
-  const workspaceDir = join(directory, "workspace"), remoteSettingsDir = join(directory, "remote-settings")
-  await Promise.all([mkdir(workspaceDir), mkdir(remoteSettingsDir)])
-  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: true, allowOperate: false, allowSessions: true })
+  const workspaceDir = join(directory, "workspace"), newLocalDir = join(directory, "new-local"), newRemoteDir = join(directory, "new-remote"), remoteSettingsDir = join(directory, "remote-settings")
+  await Promise.all([mkdir(workspaceDir), mkdir(newLocalDir), mkdir(newRemoteDir), mkdir(remoteSettingsDir)])
+  await writeRemoteAgentSettings(remoteSettingsDir, { allowRead: true, allowOperate: false, allowSessions: true, allowWorkspaces: true })
 
   const localCatalog = new DaemonCatalog(join(directory, "local-daemon")), remoteCatalog = new DaemonCatalog(join(directory, "remote-daemon"))
   await Promise.all([localCatalog.init((_, name) => openInMemoryCatalog(name)), remoteCatalog.init((_, name) => openInMemoryCatalog(name))])
@@ -228,4 +228,16 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   assert.equal(remoteSent.sessionId, remoteHomeCreated.session.id)
   assert.ok(remoteSent.inputId)
   assert.notEqual(parent.session.id, localCreated.session.id)
+
+  await assert.rejects(call("deskfleet_workspace_create", { name: "Blocked from workspace", directories: [{ path: newLocalDir }] }), /outside/)
+  const remoteNewWorkspace = await call("deskfleet_remote_workspace_create", { machineId: "2", name: "Remote Created Workspace", directories: [{ path: newRemoteDir }] }) as { id: string; name: string }
+  assert.equal(remoteNewWorkspace.name, "Remote Created Workspace")
+
+  const machineSession = await localSessions.handle("_deskfleet/session/create", { operationId: randomUUID(), provider: "codex", context: "directory" }, actor) as AgentSnapshot
+  const machineCall = invoke({ servers: localProvider.servers.at(-1)!, close() {} })
+  const localNewWorkspace = await machineCall("deskfleet_workspace_create", { name: "Local Created Workspace", directories: [{ path: newLocalDir }] }) as { id: string; name: string }
+  assert.equal(localNewWorkspace.name, "Local Created Workspace")
+  const delegatedIntoCreated = await machineCall("deskfleet_session_create", { workspaceId: localNewWorkspace.id, provider: "codex", title: "Created workspace task" }) as AgentSnapshot
+  assert.equal(delegatedIntoCreated.session.workspaceId, localNewWorkspace.id)
+  assert.notEqual(machineSession.session.id, delegatedIntoCreated.session.id)
 })

@@ -98,6 +98,8 @@ test("remote tools are discoverable and retain the remote MCP result, including 
   assert.ok(tools.includes("deskfleet_remote_session_history"))
   assert.ok(tools.includes("deskfleet_remote_session_create"))
   assert.ok(tools.includes("deskfleet_remote_session_send"))
+  assert.ok(tools.includes("deskfleet_remote_workspace_create"))
+  assert.ok(tools.includes("deskfleet_workspace_create"))
   assert.ok(tools.includes("deskfleet_session_create"))
   assert.ok(tools.includes("deskfleet_session_send"))
   assert.ok(tools.includes("deskfleet_remote_files"))

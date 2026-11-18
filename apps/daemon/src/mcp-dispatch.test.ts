@@ -43,6 +43,10 @@ function fixture() {
           ],
         }),
       },
+      handle: async (request: unknown) => {
+        calls.push(["catalog", request])
+        return { id: "30", ...(request as { params: Record<string, unknown> }).params }
+      },
     },
     providers: { metadata: () => ({ providers: [{ id: "codex", name: "Codex" }] }) },
     handle: async (method: string, ...args: unknown[]) => {
@@ -64,17 +68,63 @@ test("MCP discovery filters Workspace resources and never exposes provider launc
   assert.deepEqual(await dispatchMcp(operations, "providerList", {}, actor, scope), { providers: [{ id: "codex", name: "Codex" }] })
 })
 
-test("machine-scoped MCP isolation stays on the issuing Session", async () => {
+test("machine-scoped MCP sees and delegates into Workspaces while isolating other machine-scoped Sessions", async () => {
   const { operations, calls } = fixture()
   assert.deepEqual(await dispatchMcp(operations, "catalogList", {}, actor, machineScope), {
     teamId: "1", machineId: "1", machineName: "host", sessionId: "40",
-    workspaces: [],
+    workspaces: [{ id: "10" }, { id: "20" }],
     sessions: [{ id: "100", sessionId: "40", directories: [{ path: "/home/a" }] }],
   })
-  assert.deepEqual(await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, machineScope), [{ id: "40" }])
-  await assert.rejects(dispatchMcp(operations, "_deskfleet/session/history", { sessionId: "41", afterSeq: "0" }, actor, machineScope), /outside/)
+  assert.deepEqual(await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, machineScope), [
+    { id: "1", workspaceId: "10" },
+    { id: "2", workspaceId: "20" },
+    { id: "40" },
+  ])
+  for (const [method, params] of [
+    ["_deskfleet/session/subscribe", { sessionId: "41" }],
+    ["_deskfleet/session/history", { sessionId: "41", afterSeq: "0" }],
+    ["_deskfleet/input/submit", { sessionId: "41", prompt: "intrude" }],
+  ] as const) await assert.rejects(dispatchMcp(operations, method, params, actor, machineScope), /outside/)
   assert.equal(await dispatchMcp(operations, "_deskfleet/session/history", { sessionId: "40", afterSeq: "0" }, actor, machineScope), "history")
-  assert.deepEqual(calls, [["_deskfleet/session/history", { sessionId: "40", afterSeq: "0" }, actor]])
+  assert.equal(await dispatchMcp(operations, "_deskfleet/session/history", { sessionId: "2", afterSeq: "0" }, actor, machineScope), "history")
+  assert.equal(await dispatchMcp(operations, "_deskfleet/session/subscribe", { sessionId: "1" }, actor, machineScope), "history")
+  await dispatchMcp(operations, "_deskfleet/input/submit", { sessionId: "2", prompt: "Delegate into workspace" }, actor, machineScope)
+  assert.deepEqual(calls.slice(0, 3), [
+    ["_deskfleet/session/history", { sessionId: "40", afterSeq: "0" }, actor],
+    ["_deskfleet/session/history", { sessionId: "2", afterSeq: "0" }, actor],
+    ["_deskfleet/session/subscribe", { sessionId: "1" }, actor],
+  ])
+  assert.deepEqual({ ...(calls[3] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    sessionId: "2", operationId: "op", content: [{ type: "text", text: "Delegate into workspace" }], delivery: "backlog",
+  })
+
+  const createdWorkspace = await dispatchMcp(operations, "workspaceCreate", {
+    name: "New Workspace", directories: [{ path: "/srv/app" }, { path: "/srv/shared" }],
+  }, actor, machineScope)
+  assert.deepEqual(createdWorkspace, { id: "30", name: "New Workspace", directories: [{ path: "/srv/app" }, { path: "/srv/shared" }] })
+  assert.deepEqual(calls[4], ["catalog", { method: "workspaceCreate", params: { name: "New Workspace", directories: [{ path: "/srv/app" }, { path: "/srv/shared" }] } }])
+
+  for (const invalid of [
+    { name: "   ", directories: [{ path: "/srv/app" }] },
+    { name: "x".repeat(257), directories: [{ path: "/srv/app" }] },
+    { name: "bad\0name", directories: [{ path: "/srv/app" }] },
+    { name: "Empty dirs", directories: [] },
+    { name: "Alias", directories: [{ path: "/srv/app", name: "root" }] },
+    { name: "Dupes", directories: [{ path: "/srv/app" }, { path: "/srv/app" }] },
+    { name: "Null path", directories: [{ path: "/srv/\0app" }] },
+    { name: "Long path", directories: [{ path: "/" + "a".repeat(4096) }] },
+    { name: "Extra", directories: [{ path: "/srv/app" }], extra: true },
+  ]) await assert.rejects(dispatchMcp(operations, "workspaceCreate", invalid, actor, machineScope))
+
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "999", provider: "codex" }, actor, machineScope), /Unknown Workspace: 999/)
+  await dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "20", provider: "codex", context: "worktree", title: "Scoped child" }, actor, machineScope)
+  assert.deepEqual({ ...(calls[5] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    workspaceId: "20", operationId: "op", title: "Scoped child", provider: "codex", context: "worktree",
+  })
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", title: "Home helper" }, actor, machineScope)
+  assert.deepEqual({ ...(calls[6] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    operationId: "op", title: "Home helper", provider: "codex", context: "directory",
+  })
   await assert.rejects(dispatchMcp(operations, "scheduleCreate", { schedule: { title: "Task" } }, actor, machineScope), /Workspace/)
 })
 
@@ -82,9 +132,11 @@ test("MCP rejects resource IDs and updates outside its issuing Workspace", async
   const { operations, calls } = fixture()
   for (const [method, params] of [
     ["_deskfleet/session/subscribe", { sessionId: "2" }],
+    ["_deskfleet/session/subscribe", { sessionId: "40" }],
     ["_deskfleet/session/history", { sessionId: "2", afterSeq: "0" }],
     ["_deskfleet/session/create", { workspaceId: "20", provider: "codex" }],
     ["_deskfleet/input/submit", { sessionId: "2", prompt: "outside" }],
+    ["workspaceCreate", { name: "Escape", directories: [{ path: "/srv/escape" }] }],
     ["scheduleCreate", { schedule: { workspaceId: "20" } }],
     ["scheduleDelete", { scheduleId: "b" }],
     ["scheduleRun", { scheduleId: "b" }],
@@ -124,11 +176,16 @@ test("cross-machine tools bind the initiating Session and actor while the target
   const requests: unknown[] = []
   const remote = async (request: unknown) => { requests.push(request); return "remote" }
   assert.equal(await dispatchMcp(operations, "remoteMcp/session", { machineId: "target", sessionId: "remote-session" }, actor, scope, remote), "remote")
-  assert.deepEqual(requests, [{ userId: "creator", deviceId: "login", sessionId: "1", operation: "session", machineId: "target", arguments: { sessionId: "remote-session" } }])
+  assert.equal(await dispatchMcp(operations, "remoteMcp/workspaceCreate", { machineId: "target", name: "Remote repo", directories: [{ path: "/srv/repo" }] }, actor, scope, remote), "remote")
+  assert.deepEqual(requests, [
+    { userId: "creator", deviceId: "login", sessionId: "1", operation: "session", machineId: "target", arguments: { sessionId: "remote-session" } },
+    { userId: "creator", deviceId: "login", sessionId: "1", operation: "workspaceCreate", machineId: "target", arguments: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } },
+  ])
+  await assert.rejects(dispatchMcp(operations, "remoteMcp/workspaceCreate", { machineId: "target", name: "Dupes", directories: [{ path: "/a" }, { path: "/a" }] }, actor, scope, remote), /unique/)
   await assert.rejects(dispatchMcp(operations, "remoteMcp/session", { sessionId: "remote-session" }, actor, scope, remote), /target machine/)
   operations.agents.requireActive = async () => { throw new Error("Session is archived") }
   await assert.rejects(dispatchMcp(operations, "remoteMcp/machines", {}, actor, scope, remote), /archived/)
-  assert.equal(requests.length, 1)
+  assert.equal(requests.length, 2)
 })
 
 test("cross-machine file tools reuse FilesService and FileTransferManager with live read/operate authorization", async t => {

@@ -23,7 +23,13 @@ async function fixture(t: TestContext) {
   const calls: unknown[] = []
   const operations = {
     mcpServers: servers,
-    catalog: { native: { snapshot: async () => ({ machineId: "local-target", workspaces: [{ id: "workspace" }] }) } },
+    catalog: {
+      native: { snapshot: async () => ({ machineId: "local-target", workspaces: [{ id: "workspace" }] }) },
+      handle: async (request: unknown) => {
+        calls.push(["catalog", request])
+        return { id: "created-workspace", ...(request as { params: Record<string, unknown> }).params }
+      },
+    },
     providers: { metadata: () => ({ providers: [{ id: "agent", name: "Agent" }] }) },
     agents: {
       journal: { list: async () => [{ id: "session", workspaceId: "workspace" }, { id: "standalone" }] },
@@ -43,12 +49,13 @@ async function fixture(t: TestContext) {
 
 test("remote access defaults off, persists across readers, and disabling immediately blocks requests", async t => {
   const f = await fixture(t)
-  assert.deepEqual(await readRemoteAgentSettings(f.directory), { allowRead: false, allowOperate: false, allowSessions: false })
-  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), { allowRead: false, allowOperate: false, allowSessions: false })
-  for (const method of ["machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false })
+  for (const method of ["machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
   await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: false })
   await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
   await assert.rejects(f.call("sessionSend", { sessionId: "session", prompt: "hello" }), /start or message Sessions/)
+  await assert.rejects(f.call("workspaceCreate", { name: "Repo", directories: [{ path: "/srv/repo" }] }), /create Workspaces/)
   assert.deepEqual(await f.call("sessions", { workspaceId: "workspace" }), [{ id: "session", workspaceId: "workspace" }])
   assert.deepEqual(await f.call("session", { sessionId: "session" }), { conversation: "hello" })
   await f.call("history", { sessionId: "session", afterSeq: "17", limit: 10 })
@@ -103,6 +110,21 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   assert.equal(sent.inputId, "in-1")
   await assert.rejects(f.call("sessionCreate", { provider: "agent", context: "worktree" }), /home directory/)
   await assert.rejects(f.call("sessionSend", { sessionId: "created-session", prompt: "Steer", turnId: "t1" }), /steer/)
+  await assert.rejects(f.call("workspaceCreate", { name: "Repo", directories: [{ path: "/srv/repo" }] }), /create Workspaces/)
+
+  await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: true })
+  assert.deepEqual(await f.call("machine"), {
+    catalog: { machineId: "local-target", workspaces: [{ id: "workspace" }] },
+    providers: { providers: [{ id: "agent", name: "Agent" }] },
+    access: { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: true },
+  })
+  await assert.rejects(f.call("sessions"), /read it/)
+  await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
+  assert.deepEqual(await f.call("workspaceCreate", { name: "Remote repo", directories: [{ path: "/srv/repo" }] }), {
+    id: "created-workspace", name: "Remote repo", directories: [{ path: "/srv/repo" }],
+  })
+  assert.deepEqual(f.calls[5], ["catalog", { method: "workspaceCreate", params: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } }])
+  await assert.rejects(f.call("workspaceCreate", { name: "Dupes", directories: [{ path: "/srv/repo" }, { path: "/srv/repo" }] }), /unique/)
 })
 
 test("a permission change during MCP startup prevents tool dispatch", async t => {

@@ -32,6 +32,7 @@ async fn enroll(
 async fn responder(
     state: &AppState,
     machine: &MachineRegistration,
+    permission: &'static str,
     allowed: Arc<AtomicBool>,
 ) -> tokio::task::JoinHandle<()> {
     let (send, mut receive) = crate::hub::outbox::testing::channel(32);
@@ -60,9 +61,11 @@ async fn responder(
             } = message
             {
                 let result = match method.as_str() {
-                    "remoteMcpDiscover" => Ok(
-                        json!({"allowRead": allowed.load(Ordering::SeqCst), "allowOperate": false}),
-                    ),
+                    "remoteMcpDiscover" => {
+                        let mut access = json!({"allowRead": false, "allowOperate": false});
+                        access[permission] = json!(allowed.load(Ordering::SeqCst));
+                        Ok(access)
+                    }
                     "remoteMcp" if allowed.load(Ordering::SeqCst) => {
                         Ok(json!({"registrationId": machine.id, "params": params, "actor": actor}))
                     }
@@ -119,6 +122,7 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
     let (target_b, _) = enroll(&state, &owner.id, &b.id, &identity).await;
     let (only_b, _) = enroll(&state, &owner.id, &b.id, &secret()).await;
     let (denied, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
+    let (workspace_only, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (offline, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (stalled, _) = enroll(&state, &owner.id, &a.id, &secret()).await;
     let (send, mut stalled_requests) = crate::hub::outbox::testing::channel(8);
@@ -137,9 +141,28 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
         .unwrap();
     assert_eq!(target_a.machine_id, target_b.machine_id);
     let consent = Arc::new(AtomicBool::new(true));
-    let worker_a = responder(&state, &target_a, consent.clone()).await;
-    let worker_b = responder(&state, &target_b, Arc::new(AtomicBool::new(true))).await;
-    let worker_denied = responder(&state, &denied, Arc::new(AtomicBool::new(false))).await;
+    let worker_a = responder(&state, &target_a, "allowRead", consent.clone()).await;
+    let worker_b = responder(
+        &state,
+        &target_b,
+        "allowRead",
+        Arc::new(AtomicBool::new(true)),
+    )
+    .await;
+    let worker_denied = responder(
+        &state,
+        &denied,
+        "allowRead",
+        Arc::new(AtomicBool::new(false)),
+    )
+    .await;
+    let worker_workspace = responder(
+        &state,
+        &workspace_only,
+        "allowWorkspaces",
+        Arc::new(AtomicBool::new(true)),
+    )
+    .await;
     let app = test::init_service(App::new().app_data(state.clone()).configure(configure)).await;
     macro_rules! call {
         ($token:expr, $body:expr) => {
@@ -169,8 +192,20 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
     assert_eq!(response.status(), StatusCode::OK);
     let listed: Value = test::read_body_json(response).await;
     assert_eq!(listed["teamId"], a.id);
-    assert_eq!(listed["machines"].as_array().unwrap().len(), 1);
-    assert_eq!(listed["machines"][0]["machine"]["id"], target_a.machine_id);
+    let mut expected_machines = vec![
+        target_a.machine_id.clone(),
+        workspace_only.machine_id.clone(),
+    ];
+    expected_machines.sort();
+    assert_eq!(
+        listed["machines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["machine"]["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        expected_machines
+    );
     assert!(
         matches!(stalled_requests.try_recv(), Ok(ControlMessage::Request { method, .. }) if method == "remoteMcpDiscover")
     );
@@ -245,6 +280,10 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
             "sessionSend",
             json!({"sessionId": "remote-session", "prompt": "Continue"}),
         ),
+        (
+            "workspaceCreate",
+            json!({"name": "Remote repo", "directories": [{"path": "/srv/repo"}]}),
+        ),
     ] {
         request["operation"] = json!(operation);
         request["arguments"] = arguments.clone();
@@ -291,7 +330,7 @@ async fn postgres_remote_mcp_uses_source_team_and_live_consent() {
         call!(&credential, &request).status(),
         StatusCode::UNAUTHORIZED
     );
-    for worker in [worker_a, worker_b, worker_denied] {
+    for worker in [worker_a, worker_b, worker_denied, worker_workspace] {
         worker.abort();
     }
 }

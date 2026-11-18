@@ -4,7 +4,7 @@ import type { RemoteMcpOperation } from "../../../crates/protocol/control.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import { FilesService } from "./files-service.ts"
 import type { MachineOperations } from "./machine-operations.ts"
-import { createMcpSession, sendMcpSession } from "./mcp-dispatch.ts"
+import { createMcpSession, createMcpWorkspace, sendMcpSession } from "./mcp-dispatch.ts"
 import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
@@ -51,12 +51,14 @@ export class RemoteMcp {
       const current = await readRemoteAgentSettings(this.#directory)
       if (operation === "sessionCreate" || operation === "sessionSend") {
         if (!current.allowSessions) throw new Error("This machine does not allow other machines' Agents to start or message Sessions on it")
+      } else if (operation === "workspaceCreate") {
+        if (!current.allowWorkspaces) throw new Error("This machine does not allow other machines' Agents to create Workspaces on it")
       } else if (operation === "mcpCall" || operation === "filesWrite") {
         if (!current.allowOperate) throw new Error("This machine does not allow other machines' Agents to operate it")
       } else if (operation === "mcpServers" || operation === "mcpTools" || operation === "filesRead") {
         if (!current.allowRead && !current.allowOperate) throw new Error("This machine does not allow remote Agent access")
       } else if (operation === "machine") {
-        if (!current.allowRead && !current.allowSessions) throw new Error("This machine does not allow other machines' Agents to read it")
+        if (!current.allowRead && !current.allowSessions && !current.allowWorkspaces) throw new Error("This machine does not allow other machines' Agents to read it")
       } else if (!current.allowRead) throw new Error("This machine does not allow other machines' Agents to read it")
     }
     if (!isFileCleanup) await authorize()
@@ -80,6 +82,8 @@ export class RemoteMcp {
         return createMcpSession(this.#operations.agents, params, actor)
       case "sessionSend":
         return sendMcpSession(this.#operations.agents, params, actor)
+      case "workspaceCreate":
+        return createMcpWorkspace(this.#operations.catalog, params)
       case "mcpServers":
         z.strictObject({}).parse(params)
         return this.#operations.mcpServers?.snapshot().servers.filter(server => server.enabled).map(({ id, name, transport }) => ({ id, name, transport })) ?? []
