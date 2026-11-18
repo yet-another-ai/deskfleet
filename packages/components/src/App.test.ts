@@ -662,6 +662,25 @@ test("the Chat window tab uses the Session title and exposes its location as a t
   expect(chatTab().text()).toContain("Renamed title")
 })
 
+test("updates the document title to the active Session title and restores it on other routes", async () => {
+  const pinia = createPinia()
+  hydrateSession(pinia, "")
+  await mountApp("/", pinia)
+  expect(document.title).toBe("DeskFleet")
+
+  await router.push(`/sessions/${sessionId}`)
+  await flushPromises()
+  expect(document.title).toBe(`Session ${sessionId}`)
+
+  useAgentSessionsStore(pinia).sessions[sessionId]!.title = "Investigate timeout"
+  await flushPromises()
+  expect(document.title).toBe("Investigate timeout")
+
+  await router.push("/sessions/archived")
+  await flushPromises()
+  expect(document.title).toBe("DeskFleet")
+})
+
 test.each(["/details", `/workspaces/${workspaceId}`])("removed page %s falls back to the composer and Settings returns there", async path => {
   const wrapper = await mountApp(path)
   expect(router.currentRoute.value.name).toBe("new-session")

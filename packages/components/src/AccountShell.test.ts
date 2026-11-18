@@ -87,9 +87,11 @@ test("browses synchronized history with the machine offline and isolates equal l
   } as unknown as CentralApi
   view = mount(AccountShell, { props: { host: { ...host, platform: "web", central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
   await settled(() => expect(view!.text()).toContain("Workspace 101"))
+  expect(document.title).toBe("DeskFleet")
   expect(view.text()).toContain("Conversation 101")
   await router.push("/sessions/30")
   await settled(() => expect(view!.text()).toContain("Message from 101"))
+  expect(document.title).toBe("Conversation 101")
   expect(central.createPeer).not.toHaveBeenCalled()
   const sessionScroll = page().get<HTMLElement>("[data-session-scroll-viewport]")
   let conversationTop = 320
@@ -115,6 +117,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(page().get("aside").text()).toContain("Conversation 101")
   await page().get('aside section[data-machine-id="102"] a[href="#/sessions/30"]').trigger("click")
   await settled(() => expect(view!.text()).toContain("Message from 102"))
+  expect(document.title).toBe("Conversation 102")
   expect(view.text()).not.toContain("Message from 101")
   expect(central.createPeer).not.toHaveBeenCalled()
   const switchedSidebarScroll = page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element
@@ -144,6 +147,7 @@ test("browses synchronized history with the machine offline and isolates equal l
   await page().get('button[aria-label="Ada"]').trigger("click")
   await page().findAll('button[role="menuitem"]').find(button => button.text() === "Sign out")!.trigger("click")
   await flushPromises()
+  expect(document.title).toBe("DeskFleet")
   expect(view.text()).toContain("Sign in to DeskFleet")
   expect(view.text()).not.toContain("Workspace 102")
   await page().get("form").trigger("submit")
