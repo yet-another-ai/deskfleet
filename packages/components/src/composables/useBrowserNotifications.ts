@@ -6,15 +6,18 @@ import { BrowserNotifications, getBrowserNotificationPermission } from "@deskfle
 import { TaskNotificationMonitor } from "@deskfleet/client/task-notification-monitor"
 
 /** The Web page observes all authorized machines, independently of the selected route. */
-export function useBrowserNotifications(host: DeskfleetDesktopApi): void {
+export function useBrowserNotifications(
+  host: DeskfleetDesktopApi,
+  onSelect?: (target: { teamId: string; machineId: string; sessionId: string }) => void,
+): void {
   const { t } = useI18n()
   const central = host.central
-  if (host.platform !== "web" || !central || getBrowserNotificationPermission() === "unsupported") return
+  if (host.platform !== "web" || host.mobile || !central || getBrowserNotificationPermission() === "unsupported") return
   let stop: (() => void) | undefined
 
   function start(): void {
     if (stop || !central) return
-    const notifications = new BrowserNotifications(host.settings, kind => t(`notification.${kind}`))
+    const notifications = new BrowserNotifications(host.settings, kind => t(`notification.${kind}`), undefined, onSelect)
     const monitor = new TaskNotificationMonitor(central, event => { void notifications.notify(event) }, console.error)
     const unsubscribe = central.onEvent(event => {
       if (event.type === "accountChanged") notifications.clear()

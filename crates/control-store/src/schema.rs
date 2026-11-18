@@ -1,9 +1,12 @@
 //! Historical DDL remains static SQL: migrations include PostgreSQL functions,
 //! triggers, generated columns, and ordered data backfills. Runtime queries and
 //! the migration ledger use typed schema identifiers.
-use crate::{Result, entities::cp_migrations as migrations};
+use crate::{
+    Result,
+    entities::{cp_migrations as migrations, cp_push_subscriptions as push_subscriptions},
+};
 use sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Func, Order, Query, Table};
-use sea_orm::{ConnectionTrait, DatabaseConnection, EntityName, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseConnection, EntityName, Schema, TransactionTrait};
 
 pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
     let tx = db.begin().await?;
@@ -206,6 +209,15 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 35).await?;
     }
+    if !version_present(&tx, 36).await? {
+        let schema = Schema::new(db.get_database_backend());
+        tx.execute(&schema.create_table_from_entity(push_subscriptions::Entity))
+            .await?;
+        for index in schema.create_index_from_entity(push_subscriptions::Entity) {
+            tx.execute(&index).await?;
+        }
+        record_version(&tx, 36).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -218,6 +230,11 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 36).await? {
+        tx.execute(Table::drop().table(push_subscriptions::Entity))
+            .await?;
+        remove_version(&tx, 36).await?;
+    }
     if version_present(&tx, 35).await? {
         tx.execute_unprepared(include_str!("site_telemetry_down.sql"))
             .await?;

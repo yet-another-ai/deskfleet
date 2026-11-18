@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { getAsset, isSea } from "node:sea"
-import type { DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
+import type { DesktopStreamPool, DisplayInfo, LocalApplication, LocalNetworkAccessRequest, NativeCatalog, NativeInfo, NativePeer, NativeTerminal, NotificationPermission, PeerConfig, SystemStatus, TerminalConfig, LinuxDesktopAccess } from "./bindings.d.ts"
 import type { NatTestResult } from "./bindings.d.ts"
 import type { NativeSpeech, NativeSpeechStatus } from "./bindings.d.ts"
 
-export type { DesktopConfig, DesktopStreamPool, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
+export type { DesktopConfig, DesktopStreamPool, DisplayInfo, IceCandidate, IceServer, MediaFailure, NativeInfo, NativePeer, NativeTerminal, NotificationPermission, PeerConfig, PeerEvent, TerminalConfig, TerminalEvent, VideoCodec, LinuxDesktopAccess } from "./bindings.d.ts"
 export type { CatalogDirectory, CatalogSnapshot, CatalogWorkspace, CatalogWorkspaceSession, CatalogWorktree, NativeCatalog } from "./bindings.d.ts"
 export type { SystemStatus } from "./bindings.d.ts"
 export type { LocalApplication, LocalApplicationKind } from "./bindings.d.ts"
@@ -157,6 +157,16 @@ export function requestLocalNetworkAccess(): Promise<LocalNetworkAccessRequest> 
 /** Open macOS Local Network settings for this desktop app; a no-op elsewhere. */
 export function openLocalNetworkSettings(): Promise<void> {
   return (bindings ??= loadBindings()).openLocalNetworkSettings()
+}
+
+/** Check system notification authorization without prompting; null elsewhere. */
+export function checkNotificationAccess(): Promise<NotificationPermission | null> {
+  return (bindings ??= loadBindings()).checkNotificationAccess()
+}
+
+/** Request system notification authorization in the calling process; null elsewhere. */
+export function requestNotificationAccess(): Promise<NotificationPermission | null> {
+  return (bindings ??= loadBindings()).requestNotificationAccess()
 }
 
 /** The native-selected desktop backend; absent outside an interactive Linux session. */

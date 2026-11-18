@@ -9,7 +9,16 @@ import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { DesktopEvent, DesktopStart, IceCandidate, VideoCodec } from "./desktop-media.ts"
+import type { NotificationSettings } from "./settings.ts"
 import type { User, Team as WireTeam, Machine as WireMachine, PeerAuthorization, ControlMessage, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
+
+export type PushChannel = "apns" | "fcm"
+export interface PushSubscriptionInput {
+  channel: PushChannel
+  token: string
+  locale: string
+  settings: NotificationSettings
+}
 
 export type AccountUser = Omit<User, "email"> & { email?: User["email"] }
 export interface GithubAppSettings { configured: boolean; manageUrl: string | null; authorized: boolean; login: string | null; actAsYou: boolean }
@@ -41,8 +50,8 @@ export interface LocalPeerGrant { peerId: string; authorization: PeerAuthorizati
 export interface AgentSessionSummary {
   session: AgentSnapshot["session"]
   turns: Array<Pick<AgentSnapshot["turns"][number], "id" | "state" | "endedAt">>
-  permissions: Array<Pick<AgentSnapshot["permissions"][number], "id" | "state" | "createdAt">>
-  elicitations: Array<Pick<AgentSnapshot["elicitations"][number], "id" | "state" | "createdAt">>
+  permissions: Array<Pick<AgentSnapshot["permissions"][number], "id" | "state" | "createdAt"> & { request?: AgentSnapshot["permissions"][number]["request"] }>
+  elicitations: Array<Pick<AgentSnapshot["elicitations"][number], "id" | "state" | "createdAt"> & { request?: AgentSnapshot["elicitations"][number]["request"] }>
 }
 export type CentralEvent =
   | { type: "peerTelemetry"; event: PeerTelemetryEvent }
@@ -129,5 +138,7 @@ export interface CentralApi {
   startPeer(peerId: string, options: PeerStartOptions): Promise<void>
   candidatePeer(peerId: string, candidate: IceCandidate): Promise<void>
   closePeer(peerId: string): Promise<void>
+  savePushSubscription?(subscription: PushSubscriptionInput): Promise<void>
+  removePushSubscription?(): Promise<void>
   onEvent(listener: (event: CentralEvent) => void): () => void
 }

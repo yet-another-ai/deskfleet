@@ -1,3 +1,4 @@
+import type { BrowserNotificationPermission } from "./browser-notifications.ts"
 import type { LocalAgentSettingsApi } from "./local-agent.ts"
 import type { RemoteAgentSettings } from "../../../apps/daemon/src/remote-agent-settings.ts"
 import type { WorktreePreferences } from "../../../apps/daemon/src/worktree-preferences.ts"
@@ -70,4 +71,6 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   setWorktreePreferences(settings: WorktreePreferences): Promise<WorktreePreferences>
   getNotifications(): Promise<NotificationSettings>
   setNotifications(settings: NotificationSettings): Promise<NotificationSettings>
+  getNotificationPermission?(): Promise<BrowserNotificationPermission>
+  requestNotificationPermission?(): Promise<BrowserNotificationPermission>
 }

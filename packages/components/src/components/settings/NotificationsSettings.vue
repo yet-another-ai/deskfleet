@@ -1,42 +1,82 @@
 <script setup lang="ts">
+import { RefreshCw } from "@lucide/vue"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
+import { useFeatureGate } from "../../services/analytics.ts"
 import { getBrowserNotificationPermission, requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
 import { useEventListener } from "@vueuse/core"
-import { computed, onMounted, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { NotificationSettings } from "../../../../client/src/settings.ts"
 import SettingsRow from "./SettingsRow.vue"
 
 const client = usePlatformClient()
+const pushNotificationsEnabled = useFeatureGate("mobile_push_notifications")
 
 const { t } = useI18n()
 const settings = ref<NotificationSettings | null>(null)
 const loading = ref(true)
 const saving = ref(false)
+const refreshing = ref(false)
 const requestError = ref<string | null>(null)
 const web = client.platform === "web"
-const permission = ref(web ? getBrowserNotificationPermission() : undefined)
-const busy = computed(() => loading.value || saving.value)
+const mobile = Boolean(client.mobile)
+const browser = web && !mobile
+const available = computed(() => !mobile || pushNotificationsEnabled.value)
+const permission = ref(
+  browser && !client.settings.getNotificationPermission ? getBrowserNotificationPermission() : undefined,
+)
+const busy = computed(() => loading.value || saving.value || refreshing.value)
 const options = [
-  { key: "enabled", label: web ? "settings.browserNotificationsEnabled" : "settings.notificationsEnabled", description: web ? "settings.browserNotificationsDescription" : "settings.notificationsDescription" },
+  {
+    key: "enabled",
+    label: mobile ? "settings.mobileNotificationsEnabled" : web ? "settings.browserNotificationsEnabled" : "settings.notificationsEnabled",
+    description: mobile ? "settings.mobileNotificationsDescription" : web ? "settings.browserNotificationsDescription" : "settings.notificationsDescription",
+  },
   { key: "taskCompleted", label: "settings.notificationTaskCompleted", description: "settings.notificationTaskCompletedDescription" },
   { key: "taskNeedsInput", label: "settings.notificationTaskNeedsInput", description: "settings.notificationTaskNeedsInputDescription" },
 ] as const
 
+async function readPermission(): Promise<void> {
+  if (!available.value) return
+  if (client.settings.getNotificationPermission) {
+    permission.value = await client.settings.getNotificationPermission()
+  } else if (browser) {
+    permission.value = getBrowserNotificationPermission()
+  }
+}
+
+async function refreshPermission(): Promise<void> {
+  if (!available.value || busy.value) return
+  refreshing.value = true
+  requestError.value = null
+  try {
+    await readPermission()
+  } catch (error) {
+    requestError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    refreshing.value = false
+  }
+}
+
 async function load() {
+  if (!available.value) return
   loading.value = true
   requestError.value = null
   try {
-    settings.value = await client.settings.getNotifications()
+    const [loaded] = await Promise.all([
+      client.settings.getNotifications(),
+      readPermission(),
+    ])
+    settings.value = loaded
   } catch (error) {
     requestError.value = error instanceof Error ? error.message : String(error)
   } finally { loading.value = false }
 }
 
 async function toggle(key: keyof NotificationSettings) {
-  if (!settings.value) return
+  if (!available.value || !settings.value) return
   saving.value = true
   requestError.value = null
   try {
@@ -47,25 +87,38 @@ async function toggle(key: keyof NotificationSettings) {
 }
 
 async function enablePermission(): Promise<void> {
-  if (busy.value) return
+  if (!available.value || busy.value) return
   saving.value = true
   requestError.value = null
-  try { permission.value = await requestBrowserNotificationPermission() }
+  try {
+    permission.value = client.settings.requestNotificationPermission
+      ? await client.settings.requestNotificationPermission()
+      : await requestBrowserNotificationPermission()
+  }
   catch (error) { requestError.value = error instanceof Error ? error.message : String(error) }
   finally { saving.value = false }
 }
 
-useEventListener(window, "focus", () => { if (web) permission.value = getBrowserNotificationPermission() })
-onMounted(() => { void load() })
+useEventListener(window, "focus", () => { void readPermission() })
+watch(available, value => { if (value && !settings.value) void load() }, { immediate: true })
 </script>
 
 <template>
   <h1 class="ui-page-title mb-6">{{ t("settings.notifications") }}</h1>
-  <section :aria-label="t('settings.notifications')">
-    <div v-if="web" class="ui-card mb-4 p-4">
-      <p class="m-0 text-sm font-medium">{{ t("settings.notificationPermission") }}</p>
-      <p role="status" class="m-0 mt-2 text-[13px] leading-relaxed text-ui-text-muted">{{ t(`settings.notificationPermissionStatus.${permission}`) }}</p>
-      <UiButton v-if="permission === 'default'" class="mt-3" :disabled="busy" @click="enablePermission">{{ t("settings.enableBrowserNotifications") }}</UiButton>
+  <section v-if="available" :aria-label="t('settings.notifications')">
+    <div v-if="permission" class="ui-card mb-4 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="m-0 text-sm font-medium">{{ t(browser ? "settings.notificationPermission" : "settings.mobileNotificationPermission") }}</p>
+        <div class="flex flex-wrap gap-2">
+          <UiButton v-if="permission === 'default'" type="button" :disabled="busy" @click="enablePermission">{{ t("settings.enableBrowserNotifications") }}</UiButton>
+          <UiButton v-else-if="!web && permission === 'denied'" type="button" :disabled="busy" @click="enablePermission">{{ t("welcome.permissions.localNetwork.openSettings") }}</UiButton>
+          <UiButton type="button" :disabled="busy" @click="refreshPermission">
+            <RefreshCw :size="14" :class="refreshing && 'animate-spin'" aria-hidden="true" />
+            {{ t(refreshing ? "permissionsSettings.refreshing" : "permissionsSettings.refresh") }}
+          </UiButton>
+        </div>
+      </div>
+      <p role="status" class="m-0 mt-2 text-[13px] leading-relaxed" :class="permission === 'granted' ? 'text-ui-success' : 'text-ui-text-muted'">{{ t(`${browser ? "settings.notificationPermissionStatus" : "settings.mobileNotificationPermissionStatus"}.${permission}`) }}</p>
     </div>
     <div class="ui-card">
       <SettingsRow v-for="option in options" :key="option.key" :label="t(option.label)" :label-id="`notifications-${option.key}-label`" :description-id="`notifications-${option.key}-description`">

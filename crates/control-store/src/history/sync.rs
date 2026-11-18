@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::entities::{cp_commands as commands, cp_events as events, cp_sessions as sessions};
+use crate::push::{SessionTaskNotification, extract_session_notifications};
 use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id};
 use sea_orm::{
     ConnectionTrait, EntityTrait, Set, TransactionTrait,
@@ -52,6 +53,28 @@ impl ControlStore {
         events: Vec<Value>,
         commands: Vec<Value>,
     ) -> Result<String> {
+        let (watermark, _) = self
+            .sync_history_batch_with_notifications(
+                machine_id,
+                session_id,
+                snapshot,
+                snapshot_seq,
+                events,
+                commands,
+            )
+            .await?;
+        Ok(watermark)
+    }
+
+    pub async fn sync_history_batch_with_notifications(
+        &self,
+        machine_id: &str,
+        session_id: &str,
+        snapshot: Option<Value>,
+        snapshot_seq: Option<String>,
+        events: Vec<Value>,
+        commands: Vec<Value>,
+    ) -> Result<(String, Vec<SessionTaskNotification>)> {
         resource_id(session_id)?;
         let bound = if let Some(snapshot) = &snapshot {
             if snapshot.pointer("/session/id").and_then(Value::as_str) != Some(session_id) {
@@ -102,7 +125,11 @@ impl ControlStore {
         let row = one_query(
             &tx,
             Query::select()
-                .columns([sessions::Column::EventSeq, sessions::Column::SnapshotSeq])
+                .columns([
+                    sessions::Column::EventSeq,
+                    sessions::Column::SnapshotSeq,
+                    sessions::Column::Snapshot,
+                ])
                 .from(sessions::Entity)
                 .and_where(Expr::col(sessions::Column::RegistrationId).eq(machine))
                 .and_where(Expr::col(sessions::Column::SessionId).eq(session_id))
@@ -112,6 +139,7 @@ impl ControlStore {
         .await?;
         let mut watermark = row.try_get::<i64>("", "event_seq")?;
         let current_snapshot_seq = row.try_get::<i64>("", "snapshot_seq")?;
+        let stored_snapshot = row.try_get::<Value>("", "snapshot")?;
         if let Some(snapshot) = &snapshot
             && bound >= current_snapshot_seq
             && let Some(generation) = snapshot["session"]["admissionGeneration"].as_str()
@@ -181,6 +209,14 @@ impl ControlStore {
             watermark = seq;
         }
         let terminal_seq = crate::search::terminal_sequence(&insertions);
+        let notifications = extract_session_notifications(
+            session_id,
+            snapshot
+                .as_ref()
+                .filter(|_| bound >= current_snapshot_seq)
+                .unwrap_or(&stored_snapshot),
+            &insertions,
+        );
         if !insertions.is_empty() {
             let stored: Vec<Value> = insertions.into_iter().map(event_storage::encode).collect();
             let event = Expr::col(Alias::new("event"));
@@ -320,6 +356,6 @@ impl ControlStore {
             .await?;
         }
         tx.commit().await?;
-        Ok(watermark.to_string())
+        Ok((watermark.to_string(), notifications))
     }
 }

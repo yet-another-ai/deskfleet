@@ -1,4 +1,5 @@
-import { BrowserWindow, dialog, ipcMain, type WebContents } from "electron"
+import { BrowserWindow, dialog, ipcMain, Notification, type WebContents } from "electron"
+import { checkNotificationAccess, requestNotificationAccess } from "@deskfleet/native"
 import type { LocalAgentState } from "../../../../packages/client/src/local-agent.ts"
 import { SETTINGS_CHANNEL, SETTINGS_CHANGED_EVENT } from "../../../../packages/client/src/settings.ts"
 import { isDesktopMediaSender } from "./desktop-media.ts"
@@ -91,6 +92,10 @@ export function installSettings(
         case "getNotifications": return { ok: true, value: notifications.get() }
         case "setNotifications":
           return { ok: true, value: notifications.set(validateNotificationSettings(enabled)) }
+        case "getNotificationPermission":
+          return { ok: true, value: Notification.isSupported() ? (await checkNotificationAccess()) ?? "granted" : "unsupported" }
+        case "requestNotificationPermission":
+          return { ok: true, value: Notification.isSupported() ? (await requestNotificationAccess()) ?? "granted" : "unsupported" }
         default: throw new Error("Unknown settings operation")
       }
     } catch (error) {

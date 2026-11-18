@@ -1,6 +1,7 @@
 use crate::entities::{
     cp_identity_challenges as challenges, cp_login_attempts as attempts, cp_login_codes as codes,
-    cp_login_sessions as sessions, cp_peers as peers, cp_users as users,
+    cp_login_sessions as sessions, cp_peers as peers, cp_push_subscriptions as push_subscriptions,
+    cp_users as users,
 };
 use crate::{
     AuthSession, ControlStore, Error, Result, now_ms, one_query, secret, secret_hash, timestamp,
@@ -165,11 +166,17 @@ impl ControlStore {
             .into_iter().map(|row| json!({"current":row.id==current,"id":row.id,"deviceId":row.device_id,"createdAt":timestamp(row.created_at),"expiresAt":timestamp(row.expires_at)})).collect())
     }
     pub async fn logout(&self, id: &str) -> Result<()> {
+        let tx = self.db.begin().await?;
         sessions::Entity::update_many()
             .col_expr(sessions::Column::Revoked, Expr::val(true))
             .filter(sessions::Column::Id.eq(id))
-            .exec(&self.db)
+            .exec(&tx)
             .await?;
+        push_subscriptions::Entity::delete_many()
+            .filter(push_subscriptions::Column::LoginSessionId.eq(id))
+            .exec(&tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
     pub async fn revoke_user_sessions(
@@ -193,10 +200,14 @@ impl ControlStore {
             .col_expr(sessions::Column::Revoked, Expr::val(true))
             .filter(sessions::Column::UserId.eq(user_id))
             .filter(sessions::Column::Revoked.eq(false));
+        let mut delete_push = push_subscriptions::Entity::delete_many()
+            .filter(push_subscriptions::Column::UserId.eq(user_id));
         if let Some(id) = session_id {
             update = update.filter(sessions::Column::Id.eq(id));
+            delete_push = delete_push.filter(push_subscriptions::Column::LoginSessionId.eq(id));
         }
         update.exec(&tx).await?;
+        delete_push.exec(&tx).await?;
         if session_id.is_none() {
             // Outstanding native codes and login ceremonies must not recreate a
             // session after the owner has explicitly revoked every session.

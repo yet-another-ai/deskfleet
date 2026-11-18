@@ -77,7 +77,7 @@ test("initial history is a baseline; subsequent completed turns and pending ques
   await f.refresh()
   expect(f.notify.mock.calls.map(([notice]) => notice)).toEqual([
     { kind: "taskCompleted", teamId: "team", machineId: "local", sessionId: "1", title: "Task 1" },
-    { kind: "taskNeedsInput", teamId: "team", machineId: "local", sessionId: "1", title: "Task 1" },
+    { kind: "taskNeedsInput", teamId: "team", machineId: "local", sessionId: "1", title: "Task 1", detail: "Choose an approach" },
   ])
   await f.refresh()
   updated.session.lastEventSeq = "3"

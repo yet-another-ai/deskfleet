@@ -12,6 +12,7 @@ mod peer_admission;
 mod peer_negotiations;
 mod peers;
 pub mod policies;
+pub mod push;
 mod realtime;
 pub mod schema;
 mod search;
@@ -32,6 +33,10 @@ pub use history::{LegacyHistoryCounts, LegacyHistoryCursor, PurgedHistoryCounts}
 pub use identity::normalize_email;
 pub use machines::MachineRegistration;
 pub use peer_negotiations::{PeerCandidateState, PeerOfferState};
+pub use push::{
+    PushChannel, PushNotificationSettings, PushSubscriptionInput, PushSubscriptionTarget,
+    SessionTaskNotification, TaskNotificationKind,
+};
 pub use realtime::RealtimeRoute;
 pub use team_turn::TeamTurnServer;
 pub use turn_usage::{TurnUsage, TurnUsageSide};

@@ -1,10 +1,55 @@
 //! Thin system permission adapters for the calling daemon or desktop client.
 
-use deskfleet_native::{filesystem_permissions, input, local_network, media};
+use deskfleet_native::{
+    filesystem_permissions, input, local_network, media, notification_permissions,
+};
 use napi::Result;
 use napi_derive::napi;
 
 use crate::rtc::native_error;
+
+#[napi(string_enum = "kebab-case")]
+pub enum NotificationPermission {
+    Default,
+    Granted,
+    Denied,
+    Unsupported,
+}
+
+fn map_notification_permission(
+    permission: notification_permissions::NotificationPermission,
+) -> NotificationPermission {
+    match permission {
+        notification_permissions::NotificationPermission::Default => {
+            NotificationPermission::Default
+        }
+        notification_permissions::NotificationPermission::Granted => {
+            NotificationPermission::Granted
+        }
+        notification_permissions::NotificationPermission::Denied => NotificationPermission::Denied,
+        notification_permissions::NotificationPermission::Unsupported => {
+            NotificationPermission::Unsupported
+        }
+    }
+}
+
+/// Check system notification authorization without prompting; null elsewhere.
+#[napi]
+pub async fn check_notification_access() -> Result<Option<NotificationPermission>> {
+    Ok(notification_permissions::check_notification_access()
+        .await
+        .map_err(native_error)?
+        .map(map_notification_permission))
+}
+
+/// Request system notification authorization in the calling process; null elsewhere.
+#[napi]
+pub async fn request_notification_access() -> Result<Option<NotificationPermission>> {
+    Ok(notification_permissions::request_notification_access()
+        .await
+        .map_err(native_error)?
+        .map(map_notification_permission))
+}
 
 #[napi(string_enum = "kebab-case")]
 pub enum LocalNetworkAccessRequest {

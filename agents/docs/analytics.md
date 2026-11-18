@@ -358,6 +358,10 @@ directly without switching the selected machine or opening an embedded launch
 page. Browser and PWA clients keep the embedded viewer. Existing Team peer
 grants and desktop control authorization apply to both paths.
 
+| Gate | Controls | Default |
+| --- | --- | --- |
+| `mobile_push_notifications` | Mobile APNs/FCM push notification onboarding, settings, and device token registration on iOS and Android | Off |
+
 ```ts
 import { useFeatureGate, useExperimentParameter } from "../services/analytics.ts"
 

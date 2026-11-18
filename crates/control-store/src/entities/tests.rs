@@ -160,6 +160,11 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_peers mapping");
+    cp_push_subscriptions::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_push_subscriptions mapping");
     cp_realtime_messages::Entity::find()
         .limit(0)
         .all(db)

@@ -33,9 +33,9 @@ let view: VueWrapper | undefined
 beforeEach(() => { deliveries.length = 0; monitors.length = 0; permission.mockReturnValue("granted") })
 afterEach(() => { view?.unmount(); view = undefined })
 
-function setup(platform: DeskfleetDesktopApi["platform"] = "web") {
+function setup(platform: DeskfleetDesktopApi["platform"] = "web", mobile = false) {
   const fake = fakeCentral()
-  const host = { ...getClient(), platform, central: fake.central }
+  const host = { ...getClient(), platform, ...(mobile ? { mobile: true } : {}), central: fake.central }
   view = mount(defineComponent({
     setup() { useBrowserNotifications(host); return () => null },
   }), { global: { plugins: [i18n] } })
@@ -65,8 +65,11 @@ test("web account ownership clears alerts on sign-out and restarts observation a
   expect(monitors).toHaveLength(2)
 })
 
-test("desktop hosts and unsupported browsers do not start another notification monitor", () => {
+test("desktop hosts, mobile hosts, and unsupported browsers do not start another notification monitor", () => {
   setup("win32")
+  expect(monitors).toHaveLength(0)
+  view!.unmount()
+  setup("web", true)
   expect(monitors).toHaveLength(0)
   view!.unmount()
   permission.mockReturnValue("unsupported")

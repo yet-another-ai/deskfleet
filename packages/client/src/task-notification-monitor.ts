@@ -6,6 +6,13 @@ export interface TaskNotification {
   machineId: string
   sessionId: string
   title: string
+  detail?: string
+}
+
+function compactSnippet(raw: string | null | undefined): string | undefined {
+  const collapsed = raw?.trim().replace(/\s+/gu, " ")
+  if (!collapsed) return undefined
+  return collapsed.length > 120 ? `${collapsed.slice(0, 120)}…` : collapsed
 }
 
 type NotificationSource = Pick<CentralApi, "status" | "teams" | "machines" | "sessions" | "onEvent">
@@ -34,6 +41,7 @@ export class TaskNotificationMonitor {
   readonly #machines = new Map<string, SeenMachine>()
   readonly #pendingMachines = new Map<string, Set<string> | null>()
   #identity: string | undefined
+  #userId: string | undefined
   #epoch = 0
   #rosterPending = false
   #running: Promise<void> | undefined
@@ -69,6 +77,7 @@ export class TaskNotificationMonitor {
       // Logout/server changes invalidate reads immediately, before their next response arrives.
       this.#epoch++
       this.#identity = undefined
+      this.#userId = undefined
       this.#machines.clear()
       this.#pendingMachines.clear()
       this.#rosterPending = true
@@ -133,6 +142,7 @@ export class TaskNotificationMonitor {
     const identity = account.user ? JSON.stringify([account.serverUrl, account.user.id]) : undefined
     if (identity !== this.#identity) {
       this.#identity = identity
+      this.#userId = account.user?.id
       this.#machines.clear()
       this.#pendingMachines.clear()
     }
@@ -189,25 +199,43 @@ export class TaskNotificationMonitor {
     // Only new sessions need a time boundary; observed sessions use durable IDs.
     const eligible = (timestamp: string | undefined) => previous !== undefined
       || (timestamp !== undefined && Date.parse(timestamp) >= machine.watchStartedAt)
-    const notices: TaskNotification["kind"][] = []
+    const notices: Array<{ kind: TaskNotification["kind"]; detail?: string }> = []
     for (const turn of snapshot.turns) {
       if (turn.state !== "completed") continue
-      if (!seen.completedTurns.has(turn.id) && eligible(turn.endedAt)) notices.push("taskCompleted")
+      if (!seen.completedTurns.has(turn.id) && eligible(turn.endedAt)) notices.push({ kind: "taskCompleted" })
       seen.completedTurns.add(turn.id)
     }
-    for (const [kind, requests] of [["permission", snapshot.permissions], ["elicitation", snapshot.elicitations]] as const) {
-      for (const request of requests) {
-        const id = `${kind}:${request.id}`
-        if (request.state === "pending" && !seen.requests.has(id) && eligible(request.createdAt)) notices.push("taskNeedsInput")
-        // Remember resolved requests too: replay must never make an old question new.
-        seen.requests.add(id)
+    for (const request of snapshot.permissions) {
+      const id = `permission:${request.id}`
+      if (request.state === "pending" && !seen.requests.has(id) && eligible(request.createdAt)) {
+        const detail = compactSnippet(request.request?.toolCall?.title ?? request.request?.toolCall?.name)
+        notices.push({ kind: "taskNeedsInput", ...(detail ? { detail } : {}) })
       }
+      // Remember resolved requests too: replay must never make an old question new.
+      seen.requests.add(id)
+    }
+    for (const request of snapshot.elicitations) {
+      const id = `elicitation:${request.id}`
+      if (request.state === "pending" && !seen.requests.has(id) && eligible(request.createdAt)) {
+        const detail = compactSnippet(request.request?.message)
+        notices.push({ kind: "taskNeedsInput", ...(detail ? { detail } : {}) })
+      }
+      seen.requests.add(id)
     }
     seen.sequence = sequence
     machine.sessions.set(session.id, seen)
     if (silentBaseline || session.archiveState !== "active" || session.lifecycle !== "ready") return
-    for (const kind of notices) {
-      this.#notify({ kind, teamId: machine.teamId, machineId: machine.machineId, sessionId: session.id, title: session.title })
+    const viewers = session.viewers?.map(viewer => viewer.userId).filter(Boolean) ?? []
+    if (this.#userId && viewers.length > 0 && !viewers.includes(this.#userId) && session.yoloActor?.userId !== this.#userId) return
+    for (const notice of notices) {
+      this.#notify({
+        kind: notice.kind,
+        teamId: machine.teamId,
+        machineId: machine.machineId,
+        sessionId: session.id,
+        title: session.title,
+        ...(notice.detail ? { detail: notice.detail } : {}),
+      })
     }
   }
 }

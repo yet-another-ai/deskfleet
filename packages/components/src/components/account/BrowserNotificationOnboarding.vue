@@ -3,12 +3,14 @@ import { Bell } from "@lucide/vue"
 import { ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { requestBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import BrandLogo from "../common/BrandLogo.vue"
 import UiButton from "../common/UiButton.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
 
 defineProps<{ siteName: string }>()
 const emit = defineEmits<{ complete: [] }>()
+const client = usePlatformClient()
 const { t } = useI18n()
 const pending = ref(false)
 const error = ref<string>()
@@ -19,7 +21,11 @@ async function enable(): Promise<void> {
   error.value = undefined
   try {
     // Keep the browser request in the click's user activation, before any other await.
-    await requestBrowserNotificationPermission()
+    if (client.settings.requestNotificationPermission) {
+      await client.settings.requestNotificationPermission()
+    } else {
+      await requestBrowserNotificationPermission()
+    }
     emit("complete")
   } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { pending.value = false }
@@ -42,7 +48,7 @@ async function enable(): Promise<void> {
       <section class="flex min-w-0 flex-col justify-center p-7 md:min-h-110 md:p-9">
         <Bell :size="30" :stroke-width="1.5" class="mb-5 text-ui-text-muted" aria-hidden="true" />
         <h1 class="m-0 text-xl font-semibold">{{ t("welcome.notificationsTitle") }}</h1>
-        <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t("welcome.notificationsDetails") }}</p>
+        <p class="m-0 mt-3 text-sm leading-relaxed text-ui-text-muted">{{ t(client.mobile ? "welcome.mobileNotificationsDetails" : "welcome.notificationsDetails") }}</p>
         <p v-if="error" role="alert" class="m-0 mt-4 break-words text-sm text-ui-danger">{{ error }}</p>
         <div class="mt-6 flex flex-wrap gap-2">
           <UiButton variant="primary" :disabled="pending" @click="enable">{{ t("settings.enableBrowserNotifications") }}</UiButton>

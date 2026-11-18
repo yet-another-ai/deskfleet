@@ -1,6 +1,6 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { PeerStartOptions } from "./central.ts"
-import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
+import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, PushSubscriptionInput, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
@@ -328,6 +328,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   async startPeer(peerId: string, options: PeerStartOptions) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/start`, options) }
   async candidatePeer(peerId: string, candidate: IceCandidate) { await this.request("POST", `/api/peers/${encodeURIComponent(peerId)}/candidate`, { candidate }) }
   async closePeer(peerId: string) { await this.request("DELETE", `/api/peers/${encodeURIComponent(peerId)}`) }
+  async savePushSubscription(subscription: PushSubscriptionInput) { await this.request("PUT", "/api/push/subscription", subscription) }
+  async removePushSubscription() { await this.request("DELETE", "/api/push/subscription") }
   onEvent(listener: (event: CentralEvent) => void): () => void { this.#listeners.add(listener); this.#connect(); return () => this.#listeners.delete(listener) }
   #emit(event: CentralEvent): void { for (const listener of this.#listeners) listener(event) }
   #setConnected(value: boolean, force = false): void {

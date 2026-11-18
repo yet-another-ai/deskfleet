@@ -8,8 +8,16 @@ import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts
 import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
 import { defaultWorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
 
-const { handle, showOpenDialog, fromWebContents } = vi.hoisted(() => ({ handle: vi.fn(), showOpenDialog: vi.fn(), fromWebContents: vi.fn() }))
-vi.mock("electron", () => ({ ipcMain: { handle }, dialog: { showOpenDialog }, BrowserWindow: { fromWebContents } }))
+const { handle, showOpenDialog, fromWebContents, isSupported, checkNotificationAccess, requestNotificationAccess } = vi.hoisted(() => ({
+  handle: vi.fn(),
+  showOpenDialog: vi.fn(),
+  fromWebContents: vi.fn(),
+  isSupported: vi.fn(() => true),
+  checkNotificationAccess: vi.fn<() => Promise<"default" | "granted" | "denied" | "unsupported" | null>>(async () => null),
+  requestNotificationAccess: vi.fn<() => Promise<"default" | "granted" | "denied" | "unsupported" | null>>(async () => null),
+}))
+vi.mock("electron", () => ({ ipcMain: { handle }, dialog: { showOpenDialog }, BrowserWindow: { fromWebContents }, Notification: { isSupported } }))
+vi.mock("@deskfleet/native", () => ({ checkNotificationAccess, requestNotificationAccess }))
 vi.mock("./launch-at-startup.ts", () => ({ getLaunchAtStartup: vi.fn(), setLaunchAtStartup: vi.fn() }))
 import { getLaunchAtStartup, setLaunchAtStartup } from "./launch-at-startup.ts"
 import { attachSettings, installSettings } from "./settings.ts"
@@ -114,6 +122,12 @@ test("notification preferences validate all fields and restrict IPC to the regis
   expect(notifications.set).toHaveBeenCalledExactlyOnceWith(preferences)
   notifications.set.mockImplementationOnce(() => { throw new Error("Could not save notifications") })
   expect(await invoke(event, "setNotifications", preferences)).toEqual({ ok: false, error: "Could not save notifications" })
+  checkNotificationAccess.mockResolvedValueOnce("default")
+  expect(await invoke(event, "getNotificationPermission")).toEqual({ ok: true, value: "default" })
+  requestNotificationAccess.mockResolvedValueOnce("granted")
+  expect(await invoke(event, "requestNotificationPermission")).toEqual({ ok: true, value: "granted" })
+  isSupported.mockReturnValueOnce(false)
+  expect(await invoke(event, "getNotificationPermission")).toEqual({ ok: true, value: "unsupported" })
   sender.emit("destroyed")
   await expect(invoke(event, "getNotifications")).rejects.toThrow("restricted")
 })

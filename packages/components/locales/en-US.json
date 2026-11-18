@@ -665,13 +665,22 @@
     "notificationsDescription": "Allow DeskFleet to send notifications on this computer.",
     "browserNotificationsEnabled": "Browser notifications",
     "browserNotificationsDescription": "Allow DeskFleet to send notifications while this page is open.",
+    "mobileNotificationsEnabled": "Push notifications",
+    "mobileNotificationsDescription": "Allow DeskFleet to send push notifications on this device.",
     "notificationPermission": "Browser permission",
+    "mobileNotificationPermission": "Device permission",
     "enableBrowserNotifications": "Enable notifications",
     "notificationPermissionStatus": {
       "default": "Allow notifications in your browser to receive task updates.",
       "granted": "Notifications are allowed in this browser.",
       "denied": "Notifications are blocked. Allow them in your browser’s site settings to receive task updates.",
       "unsupported": "Notifications are unavailable in this browser or connection. Try a supported browser over HTTPS."
+    },
+    "mobileNotificationPermissionStatus": {
+      "default": "Allow notifications on this device to receive task updates.",
+      "granted": "Notifications are allowed on this device.",
+      "denied": "Notifications are blocked. Allow them in system settings to receive task updates.",
+      "unsupported": "Push notifications are unavailable on this device."
     },
     "notificationTaskCompleted": "Task completed",
     "notificationTaskCompletedDescription": "Notify me when an agent finishes a task.",
@@ -1696,6 +1705,7 @@
     "notificationsTitle": "Stay up to date with your tasks",
     "notificationsDescription": "Get a notification when an agent finishes a task or needs your input.",
     "notificationsDetails": "Allow browser notifications to receive updates while DeskFleet is open, even when you are using another tab. You can change this later in Settings.",
+    "mobileNotificationsDetails": "Allow push notifications to receive updates even when DeskFleet is in the background. You can change this later in Settings.",
     "progress": "Setup progress",
     "steps": {
       "machineControl": "This machine",

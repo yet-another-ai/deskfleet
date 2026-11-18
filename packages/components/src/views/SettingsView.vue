@@ -2,6 +2,7 @@
 import { Bell, Bot, Code, GitBranch, Info, Palette, Plug, ShieldCheck, SlidersHorizontal } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRoute, useRouter } from "vue-router"
+import { useFeatureGate } from "../services/analytics.ts"
 import GithubIcon from "../components/common/GithubIcon.vue"
 import SettingsLayout from "../components/settings/SettingsLayout.vue"
 import SidebarLink from "../components/sidebar/SidebarLink.vue"
@@ -15,6 +16,7 @@ const route = useRoute()
 const account = useAccountSession()
 const client = usePlatformClient()
 const motion = useNavigationMotion()
+const pushNotificationsEnabled = useFeatureGate("mobile_push_notifications")
 
 // Section links replace their history entry, so the previous entry is the page Settings opened from.
 function leave(): void {
@@ -30,7 +32,7 @@ function leave(): void {
       <SidebarLink :to="{ name: 'settings-preferences' }" :icon="SlidersHorizontal" :label="t('settings.preferences')" replace />
       <SidebarLink v-if="client.platform !== 'web'" :to="{ name: 'settings-worktrees' }" :icon="GitBranch" :label="t('worktreeSettings.title')" replace />
       <SidebarLink :to="{ name: 'settings-appearance' }" :icon="Palette" :label="t('settings.appearance')" replace />
-      <SidebarLink :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
+      <SidebarLink v-if="!client.mobile || pushNotificationsEnabled" :to="{ name: 'settings-notifications' }" :icon="Bell" :label="t('settings.notifications')" replace />
       <SidebarLink v-if="account" :to="{ name: 'settings-github' }" :icon="GithubIcon" :label="t('githubSettings.title')" replace />
       <SidebarLink v-if="client.platform !== 'web' && (client.onboarding || (client.platform === 'win32' && client.windowsDesktopService))" :to="{ name: 'settings-permissions' }" :icon="ShieldCheck" :label="t('permissionsSettings.title')" replace />
       <SidebarLink v-if="!account || account.machine.value" :to="{ name: 'settings-agents' }" :icon="Bot" :label="t('settings.agents')" replace />

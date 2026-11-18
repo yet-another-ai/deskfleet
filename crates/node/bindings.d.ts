@@ -121,6 +121,9 @@ export declare function checkFullDiskAccess(): Promise<boolean | null>
 /** Check Linux desktop access without prompting or starting capture. */
 export declare function checkLinuxDesktopAccess(): Promise<LinuxDesktopAccess>
 
+/** Check system notification authorization without prompting; null elsewhere. */
+export declare function checkNotificationAccess(): Promise<NotificationPermission | null>
+
 /**
  * Check screen/system-audio access without prompting or starting capture.
  * Resolves with null on platforms without an upfront permission request.
@@ -242,6 +245,8 @@ export interface NatTestResult {
 
 export type NatTestStatus = 'complete' | 'server-unsupported' | 'inconclusive' | 'udp-unreachable'
 
+export type NotificationPermission = 'default' | 'granted' | 'denied' | 'unsupported'
+
 export declare function openCatalog(databasePath: string, machineName: string): Promise<NativeCatalog>
 
 export declare function openInMemoryCatalog(machineName: string): Promise<NativeCatalog>
@@ -291,6 +296,9 @@ export declare function requestLinuxDesktopAccess(directory: string, reselectSou
 
 /** Try to trigger macOS local-network consent; never reports a permission grant. */
 export declare function requestLocalNetworkAccess(): Promise<LocalNetworkAccessRequest>
+
+/** Request system notification authorization in the calling process; null elsewhere. */
+export declare function requestNotificationAccess(): Promise<NotificationPermission | null>
 
 /**
  * Request this process's screen/system-audio access without starting capture.

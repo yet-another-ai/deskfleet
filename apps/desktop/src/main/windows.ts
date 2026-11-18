@@ -145,3 +145,17 @@ export function hideMainWindow(): void {
   mainWindow?.hide()
   app.dock?.hide()
 }
+
+export async function openMainWindowNotificationSession(
+  lifecycle: BackgroundLifecycle,
+  target: { teamId: string; machineId: string; sessionId: string },
+): Promise<void> {
+  await showMainWindow(lifecycle)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("deskfleet:open-notification-session", {
+      teamId: target.teamId,
+      machineId: target.machineId,
+      sessionId: target.sessionId,
+    })
+  }
+}
