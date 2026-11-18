@@ -108,10 +108,10 @@ test("YOLO schedules create Sessions that auto-approve Agent permissions", async
   assert.equal(run.state, "running")
   assert.ok(run.sessionId)
   const snapshot = await until(() => runtime.current.agents.journal.read(run.sessionId!), state =>
-    state.session.yolo === true && state.permissions.some(value => value.state === "resolved" || value.state === "selected"))
+    state.session.yolo === true && state.permissions.some(value => value.state === "resolved"))
   assert.equal(snapshot.session.yolo, true)
   assert.deepEqual(snapshot.session.yoloActor, actor)
-  assert.ok(snapshot.permissions.every(permission => permission.state !== "pending"), "YOLO schedules auto-approve Agent permissions")
+  assert.ok(snapshot.permissions.every(permission => permission.state === "resolved"), "YOLO schedules auto-approve Agent permissions")
   assert.deepEqual(provider.prompts, ["Review without waiting"])
 })
 
