@@ -196,6 +196,7 @@ const machineIndicator = computed(() => {
               <UiButton
                 variant="ghost"
                 size="icon"
+                class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
                 :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
                 :disabled="!machine.online || pending || !session.context"
                 @click="requestArchive()"
@@ -254,6 +255,7 @@ const machineIndicator = computed(() => {
                   <UiButton
                     variant="ghost"
                     size="icon"
+                    class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
                     :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
                     :disabled="!machine.online || pending || !session.context"
                     @click="requestArchive()"

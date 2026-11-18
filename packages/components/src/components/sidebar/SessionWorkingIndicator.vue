@@ -20,7 +20,7 @@ const label = computed(() => t(
 <template>
   <span
     class="inline-flex shrink-0 items-center"
-    :class="state === 'permission' ? 'text-ui-warning' : 'text-ui-text-muted'"
+    :class="state === 'permission' ? 'text-ui-warning' : 'text-ui-text-muted [.ui-nav-active_&]:text-current'"
     role="status"
     :title="label"
     :data-session-working="state"

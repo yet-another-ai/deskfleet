@@ -7,7 +7,7 @@ import type { GithubPullRequest } from "@deskfleet/client/central"
 const props = defineProps<{ pullRequest: GithubPullRequest }>()
 const { t } = useI18n()
 const icons = { draft: GitPullRequestDraft, open: GitPullRequest, merged: GitMerge, closed: GitPullRequestClosed }
-const colors = { draft: "text-ui-text-muted", open: "text-ui-success", merged: "text-purple-500", closed: "text-ui-danger" }
+const colors = { draft: "text-ui-text-muted [.ui-nav-active_&]:text-current", open: "text-ui-success", merged: "text-purple-500", closed: "text-ui-danger" }
 const label = computed(() => t("pullRequest.indicator", { number: props.pullRequest.number, title: props.pullRequest.title, state: t(`pullRequest.${props.pullRequest.state}`) }))
 </script>
 
