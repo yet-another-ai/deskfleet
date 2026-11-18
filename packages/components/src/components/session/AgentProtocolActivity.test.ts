@@ -11,19 +11,28 @@ function render(step: ConversationStep) {
     props: { step, live: true },
     global: { plugins: [i18n], stubs: {
       AgentContent: { props: ["content"], template: '<div data-content>{{ content.map(block => block.text ?? "").join("") }}</div>' },
-      AgentResourceLink: { props: ["uri", "name"], template: '<button :data-resource-link="uri">{{ name }}</button>' },
     } },
   })
   wrappers.push(view)
   return view
 }
 
-test("structured plans render markdown and use the existing resource flow for file plans", async () => {
+test("structured plans render markdown and items variants from ACP plan updates", async () => {
   const view = render({ id: "plan", kind: "structured_plan", plan: { type: "markdown", planId: "p", content: "Review the diff" } })
   expect(view.get("[data-structured-plan]").attributes("data-plan-id")).toBe("p")
   expect(view.get("[data-content]").text()).toBe("Review the diff")
-  await view.setProps({ step: { id: "plan", kind: "structured_plan", plan: { type: "file", planId: "p", uri: "file:///workspace/PLAN.md" } } })
-  expect(view.get("[data-resource-link]").attributes("data-resource-link")).toBe("file:///workspace/PLAN.md")
+  await view.setProps({
+    step: {
+      id: "plan",
+      kind: "structured_plan",
+      plan: {
+        type: "items",
+        planId: "p",
+        entries: [{ content: "Inspect paths", status: "pending", priority: "high" }],
+      },
+    },
+  })
+  expect(view.get('[data-plan-status="pending"]').text()).toBe("Inspect paths")
 })
 
 test("compaction errors and replacement summaries remain inspectable", async () => {

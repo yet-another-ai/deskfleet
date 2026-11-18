@@ -175,6 +175,9 @@ export interface IceServer {
   credential?: string
 }
 
+/** Read the current connection's OS metered/low-data hint; false if unknown. */
+export declare function isNetworkMetered(): Promise<boolean>
+
 export interface LinuxDesktopAccess {
   screenCapture: boolean
   control: boolean
@@ -307,9 +310,6 @@ export declare function supportedVideoCodecs(displayId: number): Promise<Array<s
 
 /** Read the machine's CPU and memory usage without blocking Node's event loop. */
 export declare function systemStatus(): Promise<SystemStatus>
-
-/** Read the current connection's OS metered/low-data hint; false if unknown. */
-export declare function isNetworkMetered(): Promise<boolean>
 
 /** Transient host metrics; byte counts and Unix milliseconds are JavaScript numbers. */
 export interface SystemStatus {

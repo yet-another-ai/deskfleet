@@ -10,7 +10,6 @@ import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
 import AgentElicitation from "./AgentElicitation.vue"
-import AgentResourceLink from "./AgentResourceLink.vue"
 
 const props = defineProps<{ step: ConversationStep; live?: boolean; disabled?: boolean; sessionLabels?: Record<string, string>; locateEntry?: string }>()
 const { t } = useI18n()
@@ -36,10 +35,9 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
 <template>
   <div v-if="step.kind === 'structured_plan'" data-structured-plan :data-plan-id="step.plan.planId" class="text-sm">
     <AgentPlan v-if="step.plan.type === 'items'" :entries="step.plan.entries" />
-    <template v-else>
+    <template v-else-if="step.plan.type === 'markdown'">
       <p class="m-0 mb-1.5 text-ui-text-muted">{{ t('agent.plan') }}</p>
-      <AgentContent v-if="step.plan.type === 'markdown'" :content="[{ type: 'text', text: step.plan.content }]" markdown :final="!live" />
-      <AgentResourceLink v-else :uri="step.plan.uri" :name="t('agent.plan')" />
+      <AgentContent :content="[{ type: 'text', text: step.plan.content }]" markdown :final="!live" />
     </template>
   </div>
   <CollapsibleRoot v-else-if="step.kind === 'compaction'" :open="open" data-compaction :data-compaction-id="step.compaction.compactionId" class="rounded-lg border border-ui-border bg-ui-surface/50 text-sm" @update:open="toggled = $event">

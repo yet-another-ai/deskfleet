@@ -139,6 +139,10 @@ test("repository patchedDependencies satisfy the Renovate patch contract", () =>
     selectorSurvivesVersionBump(entry.selector),
   ), "claude-agent-acp must carry across Renovate version bumps")
   assert.ok(report.entries.some(entry =>
+    entry.selector.name === "stream-markdown-parser" &&
+    selectorSurvivesVersionBump(entry.selector),
+  ), "stream-markdown-parser must carry across Renovate version bumps")
+  assert.ok(report.entries.some(entry =>
     entry.selector.name === "@agentclientprotocol/codex-acp" &&
     entry.selector.kind === "exact",
   ), "codex-acp stays exact/manual")
