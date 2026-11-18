@@ -68,7 +68,9 @@ watch([video, stream], ([element, media]) => {
 <template>
   <article class="max-w-full overflow-hidden rounded-xl border border-ui-border bg-ui-surface" :class="showMachineName ? 'w-full' : 'w-80'" :data-preview-display="display.id">
     <button type="button" class="group relative block aspect-video w-full cursor-pointer overflow-hidden bg-ui-desktop text-white focus-visible:outline-2 focus-visible:outline-ui-accent disabled:cursor-wait" :disabled="nativeOpening" :aria-busy="nativeOpening" :aria-label="t('desktopOverview.openDisplay', { machine: machineName, display: displayTitle })" @click="open">
-      <video ref="video" v-show="stream && state === 'connected'" class="absolute inset-0 h-full w-full object-contain" :aria-label="t('desktop.video')" width="320" height="180" muted autoplay playsinline />
+      <!-- A dynamic native element makes Vapor use createElement, avoiding iOS 27's
+           template-cloned MediaStream painting bug: https://bugs.webkit.org/show_bug.cgi?id=320979 -->
+      <component :is="'video'" ref="video" v-show="stream && state === 'connected'" class="absolute inset-0 h-full w-full object-contain" :aria-label="t('desktop.video')" width="320" height="180" muted autoplay playsinline />
       <span v-if="!stream || state !== 'connected'" class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-white/60">
         <LoaderCircle v-if="connecting" :size="22" class="animate-spin" aria-hidden="true" />
         <MonitorPlay v-else :size="24" :stroke-width="1.5" aria-hidden="true" />

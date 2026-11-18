@@ -544,6 +544,12 @@ and encoder. A full-resolution viewer or a different codec uses a separate profi
 Preview peers negotiate H.264 only, because HEVC and AV1 receive support varies
 across clients and platforms and a thumbnail must decode everywhere it is shown.
 The full viewer keeps the AV1 → HEVC → H.264 preference.
+Preview video elements use a dynamic native `video` tag so Vapor creates them in
+the active document instead of cloning them from an HTML template. This avoids
+the [iOS 27 WebKit MediaStream painting regression](https://bugs.webkit.org/show_bug.cgi?id=320979)
+where a template-cloned video can play and decode frames while remaining black.
+The production Vapor regression test covers element creation and stream binding;
+VDOM-only component tests do not exercise this creation path.
 It initially shows the Session's owning machine. Users can switch to all
 remote machines in the current Team; narrowing the scope closes the other peers.
 Offline machines, unavailable capture, and individual connection failures remain
