@@ -66,9 +66,8 @@ pub async fn create(
         json!({"peerId":id,"authorization":authorization,"iceServers":ice_servers,"relayAllowed":relay_allowed,"relayDeniedReason":relay_denied_reason}),
     ))
     }.await;
-    if result.is_err() {
-        let peers = s.store.revoke_peer(id).await?;
-        s.hub.revoke(peers, "peer_creation_failed").await?;
+    if let Err(error) = &result {
+        revoke_failed_setup(&s, &authorization, "peer_creation_failed", error).await;
     }
     result
 }
@@ -238,9 +237,34 @@ async fn authorize_webrtc(req: &HttpRequest, s: &AppState, id: &str) -> Result<P
 /// Durably revoke a grant whose setup failed, then always notify its daemon and owner.
 /// A concurrent revocation can reach the daemon before this setup request and close
 /// nothing. The store returns only newly revoked grants, so notify this grant again.
-async fn revoke_failed_setup(s: &AppState, grant: &PeerAuthorization, reason: &str) -> Result<()> {
-    s.store.revoke_peer(&grant.peer_id).await?;
-    s.hub.revoke(vec![grant.clone()], reason).await
+/// Cleanup errors are secondary: callers must retain the original setup failure.
+async fn revoke_failed_setup(
+    s: &AppState,
+    grant: &PeerAuthorization,
+    reason: &'static str,
+    primary: &ApiError,
+) {
+    let cleanup = async {
+        s.store.revoke_peer(&grant.peer_id).await?;
+        s.hub.revoke(vec![grant.clone()], reason).await
+    }
+    .await;
+    if let Err(error) = cleanup {
+        // Error messages and daemon-provided codes can contain private data.
+        let cleanup_code = match error.code.as_ref() {
+            "internal" => "internal",
+            "machine_offline" => "machine_offline",
+            "machine_busy" => "machine_busy",
+            _ => "other",
+        };
+        tracing::warn!(
+            operation = reason,
+            primary_status = primary.status.as_u16(),
+            cleanup_status = error.status.as_u16(),
+            cleanup_code,
+            "peer setup cleanup failed; preserving the original error"
+        );
+    }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

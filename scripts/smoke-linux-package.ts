@@ -155,8 +155,11 @@ async function gui(): Promise<void> {
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "stopped")
   await assert.rejects(stat(join(profile, "daemon", "daemon.json")), { code: "ENOENT" })
   const onboarding = await evaluate<{ step: string; permissionSteps: string[] }>("window.deskfleet.onboarding.setMachineControlEnabled(true)")
-  assert.equal(onboarding.step, "complete", "The X11 package smoke must complete machine-control setup")
-  assert.deepEqual(onboarding.permissionSteps, [])
+  assert.equal(onboarding.step, "auv", "X11 machine control must offer the separate AUV permission step")
+  assert.deepEqual(onboarding.permissionSteps, ["auv"])
+  // Exercise the production skip action; the package smoke must not open a Portal consent dialog.
+  assert.equal((await evaluate<{ step: string }>("window.deskfleet.onboarding.advancePermission('auv')")).step,
+    "complete", "The X11 package smoke must complete machine-control setup")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.settings.get()")).status, "running")
   assert.equal((await evaluate<{ status: string }>("window.deskfleet.updates.get()")).status, "disabled")
   await stat(join(profile, "daemon", "daemon.json"))
