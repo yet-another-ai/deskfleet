@@ -78,11 +78,16 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   #disposed = false
   #csrf: string | undefined
   #recoveryEpoch = 0
+  #recoveryPending = false
   readonly #recoveryRosters = new Map<string, RecoveryRoster>()
   /** Host-only resume hook. It is deliberately absent from the renderer IPC API. */
   readonly wake = (): void => {
     if (this.#disposed || !(this.#account.token || (this.#options.cookieAuth && this.#account.user))) return
-    this.#recover()
+    // A resume fences new work until the link proves itself, but it is not
+    // evidence that the link is down. An unfocused window keeps the same
+    // socket, so reporting an outage before the probe answers flashes a
+    // disconnect notice on every focus change.
+    this.#beginRecovery()
     if (this.#retry) {
       clearTimeout(this.#retry)
       this.#retry = undefined
@@ -343,10 +348,16 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       roster.controller.abort()
     }
   }
-  #recover(): void {
+  /** Fence new machine work until this resume proves the link and a current roster. */
+  #beginRecovery(): void {
     this.#recoveryEpoch++
+    this.#recoveryPending = true
     this.#invalidateRoster()
-    // Also invalidate an in-flight UI roster when a second resume happens
+  }
+  /** The link is known to be down; consumers keep their authorized peers. */
+  #recover(): void {
+    this.#beginRecovery()
+    // Also invalidate an in-flight UI roster when a second disconnect happens
     // before the first probe finishes. Existing peer traffic remains usable.
     this.#setConnected(false, true)
   }
@@ -354,7 +365,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     // Preserve initial API-only clients. Known recovery is the admission boundary;
     // it does not turn every operation into a network health check.
     if (this.#recoveryEpoch === 0) return () => { if (this.#recoveryEpoch !== 0) throw recovering() }
-    if (this.#disposed || !this.#connected) throw recovering()
+    if (this.#disposed || !this.#connected || this.#recoveryPending) throw recovering()
     const epoch = this.#recoveryEpoch
     let roster = this.#recoveryRosters.get(teamId)
     if (!roster) {
@@ -376,7 +387,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     const machines = await roster.promise
     return () => {
       // Check immediately before fetch too: cookie-auth may first await CSRF.
-      if (epoch !== this.#recoveryEpoch || !this.#connected || this.#disposed || this.#recoveryRosters.get(teamId) !== roster) throw recovering()
+      if (epoch !== this.#recoveryEpoch || !this.#connected || this.#recoveryPending || this.#disposed || this.#recoveryRosters.get(teamId) !== roster) throw recovering()
       if (!machines.some(machine => machine.id === machineId && machine.online)) throw new Error("Machine is offline or no longer available. Try again when it reconnects.")
     }
   }
@@ -395,9 +406,9 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
       this.#lastReceived = Date.now()
       const probing = this.#probeTimer !== undefined
       clearTimeout(this.#probeTimer); this.#probeTimer = undefined
-      if (probing && authenticated) this.#setConnected(true)
+      if (probing && authenticated) { this.#recoveryPending = false; this.#setConnected(true) }
       if (event.type === "presence" || event.type === "machinesChanged") this.#invalidateRoster(event.teamId)
-      if (event.type === "ready") { authenticated = true; this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
+      if (event.type === "ready") { authenticated = true; this.#recoveryPending = false; this.#retryDelay = RETRY_MIN_MS; this.#setConnected(true) }
       else if (event.type === "ping") socket.send(JSON.stringify({ type: "pong" }))
       else if (event.type !== "pong") this.#emit(event)
     }
@@ -447,6 +458,7 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   #disconnect(): void {
     this.#recoveryEpoch++
+    this.#recoveryPending = false
     this.#invalidateRoster()
     clearTimeout(this.#retry); this.#retry = undefined
     clearInterval(this.#heartbeat); this.#heartbeat = undefined

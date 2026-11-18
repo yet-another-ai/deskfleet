@@ -13,7 +13,7 @@ class Socket {
   message(type: string) { this.onmessage?.({ data: JSON.stringify({ type }) }) }
 }
 const clients: HttpCentralClient[] = []
-afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { for (const client of clients.splice(0)) client.dispose(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 function setup(cookieAuth = false, signalingReady = true) {
   const window = new EventTarget()
   vi.stubGlobal("window", window)
@@ -63,7 +63,8 @@ test.each([false, true])("initial pageshow preserves startup admission when sign
 test("persisted pageshow requires a probe and current roster before new work", async () => {
   const f = setup()
   window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }))
-  expect(f.events).toHaveBeenLastCalledWith({ type: "connection", connected: false })
+  // Recovery fences new work; it does not claim the signaling link is down.
+  expect(f.events.mock.calls.map(([event]) => event)).toEqual([{ type: "connection", connected: true }])
   expect(f.socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "ping" }))
   await expect(f.client.createPeer("team", "machine", "mux")).rejects.toThrow(/recovering/)
   expect(f.requests).toHaveLength(0)
@@ -81,7 +82,7 @@ test("native foreground while visible blocks new operations until probe and curr
   expect(failures.every(error => error instanceof Error && /recovering/.test(error.message))).toBe(true)
   expect(failures.some(error => error instanceof CentralRequestError)).toBe(false)
   expect(f.requests).toHaveLength(0)
-  expect(f.events).toHaveBeenLastCalledWith({ type: "connection", connected: false })
+  expect(f.events.mock.calls.map(([event]) => event)).toEqual([{ type: "connection", connected: true }])
   f.socket.message("pong")
   const admitted = operations(f.client)
   await vi.waitFor(() => expect(f.pending).toHaveLength(1))
@@ -91,6 +92,35 @@ test("native foreground while visible blocks new operations until probe and curr
   expect(f.requests.filter(request => request.method === "POST")).toHaveLength(3)
   await f.client.rpc("team", "machine", "systemStatus", {})
   expect(f.pending).toHaveLength(1)
+})
+
+test("a resume on a live link probes without reporting a disconnect", async () => {
+  const f = setup()
+  f.events.mockClear()
+  f.resume()
+  expect(f.socket.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "ping" }))
+  expect(f.events).not.toHaveBeenCalled()
+  f.socket.message("pong")
+  const creating = f.client.createPeer("team", "machine", "mux")
+  await f.readyRoster()
+  await expect(creating).resolves.toEqual({})
+  // A focus change keeps the same socket, so it must not flash a notice.
+  expect(f.events).not.toHaveBeenCalled()
+})
+
+test("a resume after the idle deadline reports the link down before replacing it", async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  // The stubbed document is the object the client reads for heartbeat gating.
+  Object.assign(document, { visibilityState: "hidden" })
+  f.events.mockClear()
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(f.socket.close).not.toHaveBeenCalled()
+  f.resume()
+  expect(f.events).toHaveBeenLastCalledWith({ type: "connection", connected: false })
+  expect(f.socket.close).toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(10)
+  expect(f.sockets).toHaveLength(2)
 })
 
 test("pong with an offline roster does not send createPeer, session create, or systemStatus", async () => {
