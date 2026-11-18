@@ -11,27 +11,6 @@ import { selectOption } from "../test/controls.ts"
 import { accountSessionKey } from "../composables/useAccountSession.ts"
 import { relayFailureMessage, type RelayDeniedReason } from "@deskfleet/client/relay"
 import { HttpError } from "@deskfleet/client/http-central"
-import { initializeAnalytics, shutdownAnalytics } from "../services/analytics.ts"
-
-const statsig = vi.hoisted(() => {
-  const sdk = {
-    loadingStatus: "Loading",
-    on: vi.fn(), initializeAsync: vi.fn(), checkGate: vi.fn(() => false),
-    logEvent: vi.fn(), shutdown: vi.fn(async () => {}),
-  }
-  return { sdk, create: vi.fn(function () { return sdk }) }
-})
-vi.mock("@statsig/js-client", () => ({ StatsigClient: statsig.create }))
-
-function valuesUpdated(status = "Ready"): void {
-  statsig.sdk.loadingStatus = status
-  statsig.sdk.on.mock.calls.find(([name]) => name === "values_updated")?.[1]()
-}
-async function enableNativeViewer(): Promise<void> {
-  statsig.sdk.checkGate.mockImplementation((name?: string) => name === "native_presentor")
-  initializeAnalytics({ platform: "macos", environment: "test", clientKey: "client-test" })
-  await flushPromises()
-}
 
 const originalApi = platformClient.desktop
 const originalPlatform = platformClient.platform
@@ -84,10 +63,6 @@ function mockFullscreen(stage: Element) {
   return { request, exit, change }
 }
 beforeEach(() => {
-  statsig.sdk.on.mockReset()
-  statsig.sdk.loadingStatus = "Loading"
-  statsig.sdk.checkGate.mockReset().mockReturnValue(false)
-  statsig.sdk.initializeAsync.mockReset().mockImplementation(async () => { valuesUpdated() })
   stubWebRtc()
   mock = mockDesktopApi()
   platformClient.desktop = mock.api
@@ -101,13 +76,12 @@ beforeEach(() => {
     return sources.get(this) ?? null
   })
 })
-afterEach(async () => {
+afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   for (const cleanup of fullscreenCleanups.splice(0).reverse()) cleanup()
   platformClient.desktop = originalApi
   platformClient.platform = originalPlatform
   vi.unstubAllGlobals()
-  await shutdownAnalytics()
 })
 
 test("opening an overview preview connects the selected display with audio and control by default", async () => {
@@ -121,9 +95,12 @@ test("opening an overview preview connects the selected display with audio and c
   expect(mock.api.start).toHaveBeenCalledExactlyOnceWith({ sessionId: expect.any(String), displayId: 2, control: true, audio: true })
 })
 
-test("does not automatically connect a different display if the overview display disappeared", async () => {
+test.each([false, true])("does not automatically connect a different display if the overview display disappeared (native=%s)", async native => {
+  const openNative = vi.fn(async () => {})
+  if (native) platformClient.desktop.openNative = openNative
   await mountDesktop("local-daemon", undefined, { initialDisplayId: 99, autoConnect: true })
   expect(TestPeer.instances).toHaveLength(0)
+  expect(openNative).not.toHaveBeenCalled()
 })
 
 test.each([[65537, 65539], [3, 4]])("display labels use list numbers while selection keeps capture IDs %s and %s", async (firstId, secondId) => {
@@ -152,95 +129,125 @@ test("display options show the host's number and monitor name", async () => {
   expect(wrapper.get('[role="combobox"][aria-label="Display"]').text()).toContain("Display 2 · Dell U2723QE (DP-1) · 3840 × 2160")
 })
 
-test("opens the selected display in an independent native window without a browser peer", async () => {
-  await enableNativeViewer()
+test.each(["darwin", "win32", "linux", "web"] as const)("Connect opens the selected display in the %s native host without a browser peer", async platform => {
+  platformClient.platform = platform
   const openNative = vi.fn(async () => {})
   platformClient.desktop.openNative = openNative
-  const wrapper = await mountDesktop()
-  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
-  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
-  await wrapper.get('[data-native-desktop]').trigger("click")
+  const wrapper = await mountDesktop("local-daemon", undefined, { initialDisplayId: 2 })
+  expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(platform === "web")
+  expect(wrapper.find("[data-move-controls]").exists()).toBe(platform === "web")
+  if (platform === "web") await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  expect(wrapper.find("[data-desktop-codec]").exists()).toBe(false)
+  expect(wrapper.find("[data-desktop-audio]").exists()).toBe(false)
+  expect(wrapper.find("[data-desktop-reverse-scroll]").exists()).toBe(false)
+  await button(wrapper, "Connect").trigger("click")
   await flushPromises()
-  expect(openNative).toHaveBeenCalledWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
   expect(TestPeer.instances).toHaveLength(0)
   expect(mock.api.offer).not.toHaveBeenCalled()
   expect(mock.api.start).not.toHaveBeenCalled()
 })
 
+test("native desktop launch chooses an available display without a web settings toolbar", async () => {
+  platformClient.platform = "darwin"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const capabilities = await mock.api.capabilities()
+  capabilities.displays[0]!.codecs = []
+  mock.api.capabilities.mockResolvedValue(capabilities)
+  const wrapper = await mountDesktop()
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(false)
+  await button(wrapper, "Connect").trigger("click")
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+})
+
+test("native mobile retains display and control selection before launching its surface", async () => {
+  platformClient.platform = "web"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const wrapper = await mountDesktop()
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  await selectOption(wrapper, '[role="combobox"][aria-label="Display"]', "Display 2 · 2560 × 1440")
+  await wrapper.get("[data-desktop-control]").trigger("click")
+  await button(wrapper, "Connect").trigger("click")
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: false, locale: "en-US", theme: "light" })
+})
+
+test("native desktop opens an explicitly selected unsupported display so its window can handle recovery", async () => {
+  platformClient.platform = "darwin"
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  const capabilities = await mock.api.capabilities()
+  capabilities.displays[0]!.codecs = []
+  mock.api.capabilities.mockResolvedValue(capabilities)
+  const wrapper = await mountDesktop("local-daemon", undefined, { initialDisplayId: 1, autoConnect: true })
+  expect(wrapper.find('[aria-label="Stream settings"]').exists()).toBe(false)
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
+})
+
 test.each(["av1", "h265"] as const)("native window remains available for a %s-only display", async codec => {
-  await enableNativeViewer()
+  vi.stubGlobal("RTCRtpReceiver", { getCapabilities: () => ({ codecs: [] }) })
   const openNative = vi.fn(async () => {})
   platformClient.desktop.openNative = openNative
   mock.api.capabilities.mockResolvedValueOnce({ displays: [{ id: 1, width: 1920, height: 1080, refreshRateHz: 60, codecs: [codec] }], audio: false })
   const wrapper = await mountDesktop()
-  expect(wrapper.get("[data-native-desktop]").attributes("disabled")).toBeUndefined()
-  await wrapper.get("[data-native-desktop]").trigger("click")
+  expect(button(wrapper, "Connect").attributes("disabled")).toBeUndefined()
+  await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(openNative).toHaveBeenCalledWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
 })
 
 test("native startup failures remain visible and allow retry", async () => {
-  await enableNativeViewer()
-  platformClient.desktop.openNative = vi.fn(async () => { throw new Error("No hardware decoder") })
+  const openNative = vi.fn(async () => {}).mockRejectedValueOnce(new Error("No hardware decoder"))
+  platformClient.desktop.openNative = openNative
   const wrapper = await mountDesktop()
-  await wrapper.get('[data-native-desktop]').trigger("click")
+  await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(wrapper.text()).toContain("Could not open the desktop window")
   expect(wrapper.text()).toContain("No hardware decoder")
-  expect(wrapper.get('[data-native-desktop]').attributes("disabled")).toBeUndefined()
+  expect(button(wrapper, "Connect").attributes("disabled")).toBeUndefined()
+  await button(wrapper, "Connect").trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledTimes(2)
+  expect(wrapper.text()).not.toContain("No hardware decoder")
+  expect(mock.api.offer).not.toHaveBeenCalled()
 })
 
-test.each(["missing", "loading", "failed", "off"])("native viewer stays hidden when Statsig is %s while browser viewing remains available", async state => {
-  const openNative = vi.fn(async () => {})
-  platformClient.desktop.openNative = openNative
-  if (state === "loading") statsig.sdk.initializeAsync.mockReturnValue(new Promise(() => {}))
-  if (state === "failed") statsig.sdk.initializeAsync.mockRejectedValue(new Error("Offline"))
-  initializeAnalytics({ platform: "macos", environment: "test", clientKey: state === "missing" ? undefined : "client-test" })
+test("browser and PWA hosts without a native viewer connect through browser WebRTC", async () => {
+  platformClient.platform = "web"
   const wrapper = await mountDesktop()
   expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
   await button(wrapper, "Connect").trigger("click")
   await flushPromises()
   expect(mock.api.offer).toHaveBeenCalledOnce()
-  expect(openNative).not.toHaveBeenCalled()
+  expect(TestPeer.instances).toHaveLength(1)
 })
 
-test("passing native_presentor still requires the host native viewer capability", async () => {
-  await enableNativeViewer()
-  const wrapper = await mountDesktop()
-  expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
-})
-
-test("native_presentor updates hide the action and reject a click before the DOM catches up", async () => {
-  await enableNativeViewer()
-  const openNative = vi.fn(async () => {})
+test("a pending native launch prevents duplicate connections", async () => {
+  const opening = deferred<void>()
+  const openNative = vi.fn(() => opening.promise)
   platformClient.desktop.openNative = openNative
   const wrapper = await mountDesktop()
-  const nativeButton = wrapper.get("[data-native-desktop]")
-  expect(statsig.sdk.checkGate).toHaveBeenLastCalledWith("native_presentor")
-  statsig.sdk.checkGate.mockReturnValue(false)
-  valuesUpdated()
-  await nativeButton.trigger("click")
-  expect(openNative).not.toHaveBeenCalled()
-  expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
-  statsig.sdk.checkGate.mockReturnValue(true)
-  valuesUpdated()
-  await flushPromises()
-  await wrapper.get("[data-native-desktop]").trigger("click")
-  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
-})
-
-test("mobile Connect button directly opens the native desktop activity when native_presentor is enabled", async () => {
-  platformClient.platform = "web"
-  await enableNativeViewer()
-  const openNative = vi.fn(async () => {})
-  platformClient.desktop.openNative = openNative
-  const wrapper = await mountDesktop()
-  expect(wrapper.find("[data-native-desktop]").exists()).toBe(false)
-  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
-  await button(wrapper, "Connect").trigger("click")
-  await flushPromises()
-  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 1, control: true, locale: "en-US", theme: "light" })
+  const connect = button(wrapper, "Connect")
+  await connect.trigger("click")
+  expect(connect.attributes("disabled")).toBeDefined()
+  expect(wrapper.get('[role="status"]').text()).toBe("Opening native desktop window…")
+  await connect.trigger("click")
+  expect(openNative).toHaveBeenCalledOnce()
   expect(mock.api.offer).not.toHaveBeenCalled()
+  opening.resolve()
+  await flushPromises()
+  expect(connect.attributes("disabled")).toBeUndefined()
+})
+
+test("opening an overview preview opens its selected display in the native viewer", async () => {
+  const openNative = vi.fn(async () => {})
+  platformClient.desktop.openNative = openNative
+  await mountDesktop("local-daemon", undefined, { initialDisplayId: 2, autoConnect: true })
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+  expect(mock.api.offer).not.toHaveBeenCalled()
+  expect(TestPeer.instances).toHaveLength(0)
 })
 
 test("discovers displays without capturing, then connects with the automatic codec", async () => {

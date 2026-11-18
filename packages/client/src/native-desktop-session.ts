@@ -62,7 +62,7 @@ export function openNativeDesktopSession(
   let controlError: string | undefined
   let options = { ...request }
   let state: ViewerUiState = {
-    status: "connecting", title: "DeskFleet", displays: [],
+    status: "connecting", title: "", displays: [],
     displayId: request.displayId, control: request.control,
     inputReady: false, secureAttention: false,
     ...(request.locale ? { locale: request.locale } : {}),

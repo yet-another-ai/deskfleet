@@ -19,13 +19,11 @@ import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAppearanceStore } from "../stores/appearance.ts"
 import { errorPresentation } from "../services/error-presentation.ts"
-import { useFeatureGate } from "../services/analytics.ts"
 import { displayOptionLabel } from "../components/desktop/display-label.ts"
 
 const platformClient = usePlatformClient()
-const nativePresenterEnabled = useFeatureGate("native_presentor")
-const showNative = computed(() => !!platformClient.desktop.openNative && nativePresenterEnabled.value)
-const preferNativeOnConnect = computed(() => platformClient.platform === "web" && showNative.value)
+const useNativeViewer = computed(() => !!platformClient.desktop.openNative)
+const useNativeWindow = computed(() => useNativeViewer.value && platformClient.platform !== "web")
 
 const props = withDefaults(defineProps<{ machineId: string; visible?: boolean; initialDisplayId?: number; autoConnect?: boolean }>(), { visible: true, autoConnect: false })
 const { t, locale } = useI18n()
@@ -70,10 +68,11 @@ const codecs = computed(() => commonDesktopCodecs(
 const chosenCodec = computed(() => activeCodec.value ?? codecs.value[0] ?? null)
 const codecLabel = computed(() => chosenCodec.value ? desktopCodecLabel(chosenCodec.value) : "")
 const active = computed(() => ["connecting", "starting", "connected"].includes(state.value))
-const canOpenNative = computed(() => showNative.value && props.visible && local.value
+const canOpenNative = computed(() => useNativeViewer.value && props.visible && local.value
   && !loading.value && !active.value && !nativeOpening.value && fleet.localDesktopTarget.online
-  && Boolean(capabilities.value?.displays.some(display => display.id === displayId.value && display.codecs.some(codec => ["h264", "h265", "av1"].includes(codec)))))
-const canConnect = computed(() => preferNativeOnConnect.value
+  && Boolean(capabilities.value?.displays.some(display => display.id === displayId.value
+    && (useNativeWindow.value || display.codecs.some(codec => ["h264", "h265", "av1"].includes(codec))))))
+const canConnect = computed(() => useNativeViewer.value
   ? canOpenNative.value
   : (props.visible && local.value && !loading.value && !active.value && !nativeOpening.value
     && fleet.localDesktopTarget.online && displayId.value !== null && chosenCodec.value !== null))
@@ -92,7 +91,9 @@ async function refresh(): Promise<void> {
     const available = await platformClient.desktop.capabilities()
     if (generation !== discoveryGeneration || !local.value) return
     capabilities.value = available
-    displayId.value = available.displays.find(display => display.id === props.initialDisplayId)?.id ?? available.displays[0]?.id ?? null
+    displayId.value = available.displays.find(display => display.id === props.initialDisplayId)?.id
+      ?? available.displays.find(display => !useNativeViewer.value || display.codecs.length > 0)?.id
+      ?? available.displays[0]?.id ?? null
   } catch (error) {
     if (generation === discoveryGeneration) {
       discoveryError.value = error
@@ -168,7 +169,7 @@ function applySettings(): void {
 }
 
 function connect(): void {
-  if (preferNativeOnConnect.value) {
+  if (useNativeViewer.value) {
     void openNative()
     return
   }
@@ -245,7 +246,7 @@ const status = computed(() => {
   if (!fleet.localDesktopTarget.desktop) return t("desktop.captureUnavailable")
   if (capabilities.value?.displays.length === 0) return t("desktop.noDisplay", { machine: machine.value.name })
   if (codecs.value.length === 0 && !canOpenNative.value) return t("desktop.noCodec")
-  return t("desktop.ready")
+  return t(useNativeWindow.value ? "desktop.nativeReady" : "desktop.ready")
 })
 const detail = computed(() => local.value ? nativeError.value ?? failure.value?.error ?? failure.value?.detail ?? discoveryError.value
   ?? (!fleet.localDesktopTarget.online ? fleet.localDesktopTarget.error : undefined) : undefined)
@@ -287,7 +288,6 @@ const errorDescription = computed(() => {
           <UiButton v-if="active" type="button" @click="connection.disconnect()">{{ t("desktop.disconnect") }}</UiButton>
           <UiButton variant="primary" v-else type="button" :disabled="!canConnect" @click="connect">{{ t(accessibilityFailure ? "desktop.retryControl" : "desktop.connect") }}</UiButton>
           <UiButton v-if="accessibilityFailure" type="button" :disabled="!canConnect" @click="connectWithoutControl">{{ t("desktop.connectWithoutControl") }}</UiButton>
-          <UiButton v-if="showNative && !preferNativeOnConnect" type="button" data-native-desktop :disabled="!canOpenNative" :title="t('desktop.nativeHint')" @click="openNative">{{ t("desktop.openNative") }}</UiButton>
           <UiButton variant="ghost" size="sm" type="button" class="cursor-pointer hover:bg-ui-hover hover:text-ui-text disabled:cursor-default disabled:op-40" :disabled="loading || active || nativeOpening" @click="refresh">
             <RefreshCw :size="14" :stroke-width="1.75" aria-hidden="true" />{{ t("desktop.retry") }}
           </UiButton>
@@ -298,7 +298,7 @@ const errorDescription = computed(() => {
         <Play :size="14" :stroke-width="2" aria-hidden="true" />{{ t("desktop.play") }}
       </UiButton>
 
-      <PopoverRoot v-if="local" v-model:open="settingsOpen">
+      <PopoverRoot v-if="local && !useNativeWindow" v-model:open="settingsOpen">
       <div
         ref="toolbar"
         class="absolute z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1 rounded-xl border border-ui-border bg-ui-surface p-1 shadow-ui-popover"
@@ -343,8 +343,8 @@ const errorDescription = computed(() => {
             {{ t("desktop.display") }}
             <UiSelect :model-value="String(displayId ?? '')" :options="capabilities.displays.map((display, index) => ({ value: String(display.id), label: displayOptionLabel(display, index, t) }))" :portal-to="stage ?? undefined" :aria-label="t('desktop.display')" @update:model-value="displayId = Number($event)" />
           </label>
-          <p v-if="chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
-          <label v-if="capabilities?.audio" class="flex items-center gap-2 text-[13px]">
+          <p v-if="!useNativeViewer && chosenCodec" class="m-0 text-[13px] text-ui-text-muted" data-desktop-codec>{{ t("desktop.codecStatus", { codec: codecLabel }) }}</p>
+          <label v-if="!useNativeViewer && capabilities?.audio" class="flex items-center gap-2 text-[13px]">
             <UiCheckbox v-model="audio" data-desktop-audio />
             {{ t("desktop.audio") }}
           </label>
@@ -352,7 +352,7 @@ const errorDescription = computed(() => {
             <UiCheckbox v-model="control" data-desktop-control />
             {{ t("desktop.control") }}
           </label>
-          <label class="flex items-center gap-2 text-[13px]">
+          <label v-if="!useNativeViewer" class="flex items-center gap-2 text-[13px]">
             <UiCheckbox v-model="reverseScroll" data-desktop-reverse-scroll />
             {{ t("desktop.reverseScroll") }}
           </label>

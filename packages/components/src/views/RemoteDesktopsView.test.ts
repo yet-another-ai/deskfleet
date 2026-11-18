@@ -74,6 +74,20 @@ test("shows every remote display in the selected Team independently of the selec
   expect(current.open).toHaveBeenCalledWith("other", { name: "machine-control", params: { machineId: "other" }, query: { tab: "desktop", display: "2", connect: "1" } })
 })
 
+test("a native overview preview opens its selected machine without changing the current machine", async () => {
+  const current = await setup()
+  const openNative = vi.fn(async () => {})
+  const remote = current.adapters.find(value => value.machineId === "remote")!
+  Object.assign(remote.api, { openNative })
+  current.account.selectMachine("other")
+  await flushPromises()
+  await wrapper!.get('[data-preview-machine="remote"] [data-preview-display="2"] button').trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+  expect(current.open).not.toHaveBeenCalled()
+  expect(current.account.machineId.value).toBe("other")
+})
+
 test("pause, document visibility, and leaving the overview release its preview streams", async () => {
   const current = await setup()
   const initial = [...TestPeer.instances]

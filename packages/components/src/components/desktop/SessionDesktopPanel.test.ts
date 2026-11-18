@@ -100,6 +100,21 @@ test("previews show monitor metadata and list numbers while routing with opaque 
   expect(current.open).toHaveBeenCalledWith("remote", { name: "machine-control", params: { machineId: "remote" }, query: { tab: "desktop", display: "65539", connect: "1" } })
 })
 
+test("a native Session preview opens its own machine without navigating away from the Session", async () => {
+  const current = await setup([desktopMachine("remote"), desktopMachine("other")])
+  const openNative = vi.fn(async () => {})
+  Object.assign(current.adapters[0]!.api, { openNative })
+  current.account.selectMachine("other")
+  await flushPromises()
+  await wrapper!.get('[data-preview-display="2"] button').trigger("click")
+  await flushPromises()
+  expect(openNative).toHaveBeenCalledExactlyOnceWith({ displayId: 2, control: true, locale: "en-US", theme: "light" })
+  expect(current.open).not.toHaveBeenCalled()
+  expect(current.account.machineId.value).toBe("other")
+  expect(current.adapters).toHaveLength(1)
+  expect(current.adapters[0]!.machineId).toBe("remote")
+})
+
 test("switching to all machines adds previews and switching back releases only the other machines", async () => {
   const current = await setup([desktopMachine("local"), desktopMachine("remote"), desktopMachine("other"), desktopMachine("offline", false)])
   const originalPeers = [...TestPeer.instances]

@@ -23,11 +23,13 @@ use crate::nsh_toolbar::{self, Toolbar, ToolbarAction, ToolbarState};
 use crate::nsh_video::{Video, video_bounds};
 use crate::physical_input::PhysicalInput;
 use crate::protocol::Status;
+use crate::window_branding::{self, WindowIcon};
 use crate::{Error, WindowEvent, WindowNotifier, protocol};
 
 use crate::nsh_layout::{MARGIN, clamp_toolbar, grip_bounds};
 
 pub(crate) fn run() -> Result<(), Error> {
+    let icon = window_branding::icon()?;
     // FrameReady is emitted only when the two-candidate queue becomes nonempty.
     // The channel carries wakeups/control events, never decoded pixels.
     let (sender, events) = async_channel::unbounded();
@@ -39,6 +41,7 @@ pub(crate) fn run() -> Result<(), Error> {
     let window_error = error.clone();
     nsh_platform_gpui::set_ui_sets(vec![nsh_base::registry()]);
     gpui_platform::application().run(move |cx| {
+        cx.set_app_identity(window_branding::APP_ID, "DeskFleet");
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -53,11 +56,12 @@ pub(crate) fn run() -> Result<(), Error> {
                     cx,
                 ))),
                 titlebar: Some(gpui::TitlebarOptions {
-                    title: Some("DeskFleet desktop".into()),
+                    title: Some(window_branding::title("", None).into()),
                     ..Default::default()
                 }),
                 window_decorations: Some(gpui::WindowDecorations::Server),
-                app_id: Some("io.github.yet_another_ai.deskfleet.viewer".into()),
+                app_id: Some(window_branding::APP_ID.into()),
+                icon: Some(icon),
                 window_min_size: Some(size(px(460.), px(200.))),
                 inactive_frame_interval: None,
                 ..Default::default()
@@ -109,6 +113,7 @@ struct Viewer {
     focus: FocusHandle,
     error: Rc<RefCell<Option<String>>>,
     _subscriptions: Vec<Subscription>,
+    _icon: Option<WindowIcon>,
 }
 
 impl Viewer {
@@ -121,6 +126,13 @@ impl Viewer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let icon = match WindowIcon::new(window) {
+            Ok(icon) => Some(icon),
+            Err(error) => {
+                tracing::warn!(%error, "cannot set the native viewer icon");
+                None
+            }
+        };
         let (actions_tx, actions) = async_channel::unbounded();
         let toolbar_state = ToolbarState::default();
         let toolbar = Toolbar::new(window, cx, toolbar_state.clone(), move |action| {
@@ -202,7 +214,7 @@ impl Viewer {
             }),
         ];
         Self {
-            title: "DeskFleet desktop".into(),
+            title: window_branding::title("", None),
             video: Rc::new(RefCell::new(Video::new(frames))),
             input,
             shutdown,
@@ -221,6 +233,7 @@ impl Viewer {
             focus,
             error,
             _subscriptions: subscriptions,
+            _icon: icon,
         }
     }
 
@@ -235,6 +248,7 @@ impl Viewer {
         }
         match event {
             WindowEvent::Start { title, .. } | WindowEvent::Ui(protocol::UiState { title, .. }) => {
+                let title = window_branding::title(&title, self.toolbar_state.ui.locale.as_deref());
                 window.set_window_title(&title);
                 self.title = title;
             }

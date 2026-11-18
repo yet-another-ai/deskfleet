@@ -33,6 +33,7 @@ async function fixture(t: TestContext, permissions = actions) {
   }
   const pending: PeerEvent[] = [], calls: { method: string; actor: AgentActor }[] = []
   const lanes: MuxLane[] = [], signals: unknown[] = [], errors: Error[] = []
+  const blockedSends = new Map<MuxLane, number>()
   const agentListeners = new Set<unknown>(), terminalListeners = new Set<(change: TerminalChange) => void>()
   let waiting: ((event: PeerEvent | null) => void) | undefined
   const push = (event: PeerEvent) => {
@@ -46,8 +47,9 @@ async function fixture(t: TestContext, permissions = actions) {
   const native = {
     answerOffer: async () => sdp,
     sendData: async (label: string, bytes: Buffer) => {
-      if (backpressured) throw new Error("send buffer is full")
       const lane = (Object.keys(MUX_LABELS) as MuxLane[]).find(lane => MUX_LABELS[lane] === label)!
+      if (backpressured) { blockedSends.set(lane, Date.now()); throw new Error("send buffer is full") }
+      blockedSends.delete(lane)
       lanes.push(lane); client.receive(lane, bytes)
     },
     nextEvent: async () => pending.shift() ?? (closed ? null : new Promise<PeerEvent | null>(resolve => { waiting = resolve })),
@@ -101,7 +103,7 @@ async function fixture(t: TestContext, permissions = actions) {
     await stream.send(stream.purpose === "agent" ? Buffer.from(text + "\n") : text)
   }
   return {
-    server, client, open, rpc, grant, calls, lanes, signals, errors, agentListeners, terminalListeners,
+    server, client, open, rpc, grant, calls, lanes, signals, errors, agentListeners, terminalListeners, blockedSends,
     created: () => created, closed: () => closed, expire: () => { now += 60_001 },
     backpressure: (value: boolean) => { backpressured = value },
     append: (text: string) => { transcript = Buffer.concat([transcript, Buffer.from(text)]); for (const listener of terminalListeners) listener("output") },
@@ -116,24 +118,27 @@ test("authorized Mux output recovers past five seconds and retires only a peer t
   await healthy.rpc(sibling.stream, 1, "initialize", { protocolVersion: 1 })
   await until(() => agent.messages.some(value => value.id === 1) && sibling.messages.some(value => value.id === 1))
   t.mock.timers.enable({ apis: ["Date"] })
+  const bothLanesRetried = () => slow.blockedSends.get("agent") === Date.now() && slow.blockedSends.get("control") === Date.now()
   slow.backpressure(true)
   await slow.rpc(agent.stream, 2, "_deskfleet/session/list")
   await until(() => slow.calls.length === 1)
-  await delay(20)
+  await until(bothLanesRetried)
   t.mock.timers.tick(6_000)
-  await delay(20)
+  await until(bothLanesRetried)
   assert.equal(slow.closed(), false)
   slow.backpressure(false)
-  await until(() => agent.messages.some(value => value.id === 2))
+  // Replies and credit frames retry independently. Drain both lanes before
+  // starting a new stall with its own thirty-second deadline.
+  await until(() => agent.messages.some(value => value.id === 2) && slow.blockedSends.size === 0)
   assert.equal(agent.messages.filter(value => value.id === 2).length, 1)
   assert.equal(slow.calls.length, 1)
 
   slow.backpressure(true)
   await slow.rpc(agent.stream, 3, "_deskfleet/session/list")
   await until(() => slow.calls.length === 2)
-  await delay(20)
+  await until(bothLanesRetried)
   t.mock.timers.tick(29_999)
-  await delay(20)
+  await until(bothLanesRetried)
   assert.equal(slow.closed(), false)
   t.mock.timers.tick(1)
   await until(() => slow.closed())
