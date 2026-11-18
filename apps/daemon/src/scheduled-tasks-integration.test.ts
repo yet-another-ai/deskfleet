@@ -51,7 +51,7 @@ test("machine scheduling uses real Session persistence, retains approvals, and r
   assert.equal(first.inputs.length, 1)
   assert.deepEqual(first.inputs[0]!.content, [{ type: "text", text: "Read yesterday's changes" }])
   assert.deepEqual(first.inputs[0]!.author, actor)
-  assert.equal(first.permissions[0]!.state, "pending", "Schedules never answer Agent permissions automatically")
+  assert.equal(first.permissions[0]!.state, "pending", "Without YOLO, schedules leave Agent permissions for interactive approval")
   assert.equal((await runtime.current.agents.journal.list()).length, 1)
   assert.deepEqual(provider.prompts, ["Read yesterday's changes"])
   assert.deepEqual(authorized, [actor])
@@ -81,6 +81,38 @@ test("machine scheduling uses real Session persistence, retains approvals, and r
   assert.equal(history.inputs.length, 1)
   assert.ok(history.permissions.every(permission => permission.state !== "pending"))
   assert.equal(history.session.archiveState, "active")
+})
+
+test("YOLO schedules create Sessions that auto-approve Agent permissions", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-schedule-yolo-"))
+  const working = join(directory, "working")
+  await mkdir(working)
+  const provider = new BackendAgent()
+  const runtime = new MachineRuntime(directory, {
+    agentQuotas: new TestAgentQuotas(), agentProvider: provider,
+    peers: { create: async () => { throw new Error("Unexpected peer creation") }, close: async () => {} },
+    capabilities: async () => ({ displays: [], audio: false }),
+  })
+  t.after(async () => { try { await runtime.close() } finally { await rm(directory, { recursive: true, force: true }) } })
+  await runtime.init()
+  const configured = await runtime.current.providers.create({ template: "codex", name: "Scheduled YOLO fixture", env: {} })
+  const actor: AgentActor = { kind: "user", userId: "schedule-user", deviceId: "schedule-login" }
+  runtime.current.central.authorizeDelegation = async value => value
+  const workspace = await runtime.current.operations.handle("workspaceCreate", { name: "YOLO workspace", directories: [{ path: working }] }, actor) as CatalogWorkspace
+  const task = await runtime.current.operations.handle("scheduleCreate", { schedule: {
+    title: "Unattended review", prompt: "Review without waiting", workspaceId: workspace.id, enabled: true, yolo: true,
+    target: { kind: "new", provider: configured.id, context: "directory" }, trigger: { kind: "manual" },
+  } }, actor) as ScheduledTask
+  assert.equal(task.yolo, true)
+  const run = await runtime.current.operations.handle("scheduleRun", { scheduleId: task.id }, actor) as ScheduleRun
+  assert.equal(run.state, "running")
+  assert.ok(run.sessionId)
+  const snapshot = await until(() => runtime.current.agents.journal.read(run.sessionId!), state =>
+    state.session.yolo === true && state.permissions.some(value => value.state === "resolved" || value.state === "selected"))
+  assert.equal(snapshot.session.yolo, true)
+  assert.deepEqual(snapshot.session.yoloActor, actor)
+  assert.ok(snapshot.permissions.every(permission => permission.state !== "pending"), "YOLO schedules auto-approve Agent permissions")
+  assert.deepEqual(provider.prompts, ["Review without waiting"])
 })
 
 test("Workspace deletion and scheduled task creation cannot leave a dangling target", async t => {
