@@ -162,6 +162,25 @@ test("wrapAntigravityConnection delivers steering while background work holds th
   assert.deepEqual(await turn, { stopReason: "end_turn" })
 })
 
+test("wrapAntigravityConnection releases a silent background hold at its bound", async () => {
+  const sessionId = "session-background-bound"
+  const work = new AntigravityWork()
+  const conn = wrapAntigravityConnection(stubConnection({
+    async prompt() {
+      work.observe({ sessionId, update: {
+        sessionUpdate: "tool_call", toolCallId: "silent", title: "Long build", status: "in_progress",
+      } })
+      return { stopReason: "end_turn" }
+    },
+  }), undefined, work, { workWaitMs: 40 })
+
+  const started = Date.now()
+  assert.deepEqual(await conn.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] }), { stopReason: "end_turn" })
+  const elapsed = Date.now() - started
+  assert.ok(elapsed >= 30, "the hold must survive without further notifications")
+  assert.ok(elapsed < 1_000, "the hold must end at its deadline")
+})
+
 test("wrapAntigravityConnection cancels a turn held for background work", async () => {
   const sessionId = "session-background-cancel"
   const work = new AntigravityWork()

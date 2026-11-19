@@ -120,7 +120,9 @@ export function wrapAntigravityConnection(
   connection: AgentConnection,
   signal?: AbortSignal,
   work?: AntigravityWork,
+  options: { workWaitMs?: number } = {},
 ): AgentConnection {
+  const workWaitMs = options.workWaitMs ?? WORK_WAIT_MS
   const turns = new Map<string, Turn>()
   const initialization = {
     ...connection.initialization,
@@ -161,11 +163,12 @@ export function wrapAntigravityConnection(
         let next: Promise<PromptResponse> | undefined = connection.prompt(params)
         while (next || (stopReason === "end_turn" && !turn.cancelled && work?.live(sessionId))) {
           if (!next) {
-            deadline ??= Date.now() + WORK_WAIT_MS
+            deadline ??= Date.now() + workWaitMs
+            const timeout = AbortSignal.timeout(Math.max(1, deadline - Date.now()))
             while (work!.live(sessionId) && !turn.cancelled && !turn.steered.length && Date.now() < deadline) {
               const wake = new AbortController()
               turn.wake = () => wake.abort()
-              await work!.wait(AbortSignal.any([turn.abort.signal, wake.signal]))
+              await work!.wait(AbortSignal.any([turn.abort.signal, wake.signal, timeout]))
               turn.wake = undefined
             }
             next = turn.cancelled ? undefined : turn.steered.shift()
