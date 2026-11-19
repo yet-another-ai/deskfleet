@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import type { AgentActor, AgentSnapshot } from "./agent-protocol.ts"
+import { validateCatalogParams } from "./catalog-protocol.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 import { dispatchRemoteFiles, dispatchRemoteFileTransfer } from "./mcp-files.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
@@ -17,6 +18,10 @@ const sessionCreateSchema = z.strictObject({
 const sessionSendSchema = z.strictObject({
   sessionId: nonEmpty, prompt: nonEmpty, delivery: z.enum(["backlog", "steer"]).default("backlog"), turnId: nonEmpty.optional(),
 })
+const workspaceCreateSchema = z.strictObject({
+  name: nonEmpty,
+  directories: z.array(z.strictObject({ path: nonEmpty })).min(1),
+})
 
 function validateSessionCreate(params: Record<string, unknown>) {
   const parsed = sessionCreateSchema.parse(params)
@@ -29,6 +34,17 @@ function validateSessionSend(params: Record<string, unknown>) {
   const parsed = sessionSendSchema.parse(params)
   if (parsed.turnId !== undefined && parsed.delivery !== "steer") throw new Error("turnId requires steer delivery")
   return parsed
+}
+
+function validateWorkspaceCreate(params: Record<string, unknown>) {
+  const parsed = workspaceCreateSchema.parse(params)
+  validateCatalogParams("workspaceCreate", parsed)
+  return parsed
+}
+
+export async function createMcpWorkspace(catalog: MachineOperations["catalog"], params: Record<string, unknown>): Promise<unknown> {
+  const validated = validateWorkspaceCreate(params)
+  return catalog.handle({ method: "workspaceCreate", params: validated })
 }
 
 export async function createMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
@@ -53,10 +69,10 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-/** Workspace Sessions share their Workspace; machine-scoped Sessions are isolated to themselves. */
+/** Workspace Sessions share their Workspace; machine-scoped Sessions can delegate into Workspaces without seeing other machine-scoped Sessions. */
 function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope): boolean {
   if (scope.workspaceId !== undefined) return session.workspaceId === scope.workspaceId
-  return session.id === scope.sessionId && session.workspaceId === undefined
+  return session.id === scope.sessionId || session.workspaceId !== undefined
 }
 
 /** Local resources stay within the Session's delegation; remote tools use a separately authorized route. */
@@ -69,13 +85,14 @@ export async function dispatchMcp(
   if (source.session.workspaceId !== scope.workspaceId) throw new Error("MCP delegation scope no longer exists")
   if (method.startsWith("remoteMcp/")) {
     const operation = method.slice("remoteMcp/".length)
-    if (!["machines", "machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
+    if (!["machines", "machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
     if (!remote || actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("Remote Agent delegation is unavailable")
     const { machineId, ...args } = params
     if (operation !== "machines" && (typeof machineId !== "string" || !machineId)) throw new Error("A target machine is required")
     if (operation === "machines" && machineId !== undefined) throw new Error("Machine discovery takes no target")
     if (operation === "sessionCreate") validateSessionCreate(args)
     if (operation === "sessionSend") validateSessionSend(args)
+    if (operation === "workspaceCreate") validateWorkspaceCreate(args)
     const { userId, deviceId } = actor
     const callRemote = (remoteOperation: RemoteMcpOperation, remoteArgs: Record<string, unknown>) =>
       remote({ userId, deviceId, sessionId: scope.sessionId, operation: remoteOperation, ...(typeof machineId === "string" ? { machineId } : {}), arguments: remoteArgs })
@@ -91,10 +108,16 @@ export async function dispatchMcp(
       ...catalog,
       sessionId: scope.sessionId,
       ...(scope.workspaceId === undefined ? {} : { workspaceId: scope.workspaceId }),
-      workspaces: catalog.workspaces.filter(workspace => workspace.id === scope.workspaceId),
+      workspaces: scope.workspaceId === undefined
+        ? catalog.workspaces
+        : catalog.workspaces.filter(workspace => workspace.id === scope.workspaceId),
       // Machine-scoped worktrees live here; never leak other Sessions' checkouts.
       sessions: catalog.sessions.filter(worktree => worktree.sessionId === scope.sessionId),
     }
+  }
+  if (method === "workspaceCreate") {
+    if (scope.workspaceId !== undefined) throw new Error("Workspace is outside this MCP delegation")
+    return createMcpWorkspace(operations.catalog, params)
   }
   if (method === "_deskfleet/session/list") {
     return (await operations.agents.journal.list()).filter(session => sameDelegation(session, scope))
@@ -106,8 +129,18 @@ export async function dispatchMcp(
     return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
-    if (params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) throw new Error("Session is outside this MCP delegation")
-    return createMcpSession(operations.agents, { ...params, ...(scope.workspaceId === undefined ? {} : { workspaceId: scope.workspaceId }) }, actor)
+    if (scope.workspaceId !== undefined) {
+      if (params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) throw new Error("Session is outside this MCP delegation")
+      return createMcpSession(operations.agents, { ...params, workspaceId: scope.workspaceId }, actor)
+    }
+    const parsed = validateSessionCreate(params)
+    if (parsed.workspaceId !== undefined) {
+      const catalog = await operations.catalog.native.snapshot()
+      if (!catalog.workspaces.some(workspace => workspace.id === parsed.workspaceId)) {
+        throw new Error(`Unknown Workspace: ${parsed.workspaceId}`)
+      }
+    }
+    return createMcpSession(operations.agents, params, actor)
   }
   if (method === "providerList") return operations.providers.metadata()
   if (method === "scheduleList") {

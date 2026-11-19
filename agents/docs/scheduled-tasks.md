@@ -107,23 +107,29 @@ stdio MCP support. Configuration probes do not receive execution authority.
 Each built-in grant binds the initiating user, machine, Workspace, and Session.
 Calls recheck current Team membership and the issuing Session's active state.
 Provider shutdown, failed startup, archive, and daemon shutdown retire the
-grant. Tools expose the scoped catalog, public provider identities, Session
-state/history/creation/prompting, and schedule list/create/update/delete/run operations. Generated
-arguments cannot replace the actor, select a different Workspace, or retrieve
-provider launch secrets. The separate remote tools below extend discovery and
-operation to other machines without expanding the local Workspace delegation.
+grant. Tools expose the scoped catalog, Workspace creation (for machine-scoped
+Sessions), public provider identities, Session state/history/creation/prompting,
+and schedule list/create/update/delete/run operations. Workspace Sessions remain
+isolated to their own Workspace; machine-scoped Sessions can inspect all local
+Workspaces, register new Workspaces, and inspect, create, or prompt Workspace
+Sessions without seeing other machine-scoped Sessions. Generated arguments
+cannot replace the actor or retrieve provider launch secrets. The separate
+remote tools below extend discovery and operation to other machines without
+expanding a Workspace Session's local delegation.
 
 ## Cross-machine Agent access
 
-Desktop **Preferences → This computer** has three independent switches, all off
+Desktop **Preferences → This computer** has four independent switches, all off
 by default: allow Agents on other machines to read this computer, allow them to
-operate it, and allow them to start and message Sessions on it. Consent is
-stored in `<host directory>/remote-agent-settings.json` as
-`{"allowRead": false, "allowOperate": false, "allowSessions": false}`. A headless
-operator can set the same file. The preference applies across this host's
-registrations; every call still stays inside the source registration's Team and
-backend. A caller cannot choose another Team. Reading conversations, operating
-MCP tools, and starting or messaging Sessions are separate permissions.
+operate it, allow them to start and message Sessions on it, and allow them to
+create Workspaces on it. Consent is stored in
+`<host directory>/remote-agent-settings.json` as
+`{"allowRead": false, "allowOperate": false, "allowSessions": false, "allowWorkspaces": false}`.
+A headless operator can set the same file. The preference applies across this
+host's registrations; every call still stays inside the source registration's
+Team and backend. A caller cannot choose another Team. Reading conversations,
+operating MCP tools, starting or messaging Sessions, and creating Workspaces are
+separate permissions.
 
 The issuing daemon checks the active Session and its user's current membership,
 then calls `/api/daemon/mcp` with its own machine credential. The backend repeats
@@ -140,13 +146,14 @@ or credential.
 
 | Tool | Target permission | Result |
 | --- | --- | --- |
-| `deskfleet_remote_machines` | Read, operate, or session | Other online machines in the same Team and their current permissions |
-| `deskfleet_remote_machine` | Read or session | Catalog, Workspaces, directories, and public provider identities |
+| `deskfleet_remote_machines` | Read, operate, session, or workspace | Other online machines in the same Team and their current permissions |
+| `deskfleet_remote_machine` | Read, session, or workspace | Catalog, Workspaces, directories, and public provider identities |
 | `deskfleet_remote_sessions` | Read | Sessions, optionally filtered by Workspace |
 | `deskfleet_remote_session` | Read | Session state and conversation snapshot |
 | `deskfleet_remote_session_history` | Read | Recorded event pages, using `afterSeq` and a limit of 1–200 |
 | `deskfleet_remote_session_create` | Session | Create a Session (in a Workspace or the remote home directory) and optionally submit its initial prompt |
 | `deskfleet_remote_session_send` | Session | Submit a backlog or steer prompt to a remote Session |
+| `deskfleet_remote_workspace_create` | Workspace | Register existing remote directories as a new Workspace |
 | `deskfleet_remote_mcp_servers` | Read or operate | Enabled configured server IDs, names, and transports |
 | `deskfleet_remote_mcp_tools` | Read or operate | MCP tool schemas, with cursor pagination |
 | `deskfleet_remote_mcp_call` | Operate | The original MCP tool result, including content, structured content, and errors |

@@ -46,7 +46,7 @@ test("worktree cleanup settings restrict callers and validate destructive prefer
 })
 
 test("remote Agent consent uses main-renderer IPC and rejects malformed permissions", async () => {
-  const value = { allowRead: true, allowOperate: false, allowSessions: false }
+  const value = { allowRead: true, allowOperate: false, allowSessions: false, allowWorkspaces: false }
   const remote = { get: vi.fn(async () => value), set: vi.fn(async () => value) }
   installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController, undefined, remote as unknown as RemoteAgentSettingsController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
@@ -55,7 +55,7 @@ test("remote Agent consent uses main-renderer IPC and rejects malformed permissi
   const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
   await expect(invoke(event, "setRemoteAgentSettings", value)).rejects.toThrow("restricted")
   attachSettings({ webContents: sender } as unknown as BrowserWindow)
-  for (const invalid of [null, true, {}, { allowRead: true }, { ...value, allowOperate: "true" }, { ...value, allowSessions: "true" }, { ...value, teamId: "other" }]) {
+  for (const invalid of [null, true, {}, { allowRead: true }, { ...value, allowOperate: "true" }, { ...value, allowSessions: "true" }, { ...value, allowWorkspaces: "true" }, { ...value, teamId: "other" }]) {
     expect(await invoke(event, "setRemoteAgentSettings", invalid)).toMatchObject({ ok: false })
   }
   expect(remote.set).not.toHaveBeenCalled()

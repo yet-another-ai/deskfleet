@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
-export interface RemoteAgentSettings { allowRead: boolean; allowOperate: boolean; allowSessions?: boolean }
+export interface RemoteAgentSettings { allowRead: boolean; allowOperate: boolean; allowSessions?: boolean; allowWorkspaces?: boolean }
 const FILENAME = "remote-agent-settings.json"
 
 export function remoteAgentSettings(value: unknown): RemoteAgentSettings {
@@ -10,13 +10,15 @@ export function remoteAgentSettings(value: unknown): RemoteAgentSettings {
     || !("allowRead" in value) || typeof value.allowRead !== "boolean"
     || !("allowOperate" in value) || typeof value.allowOperate !== "boolean"
     || ("allowSessions" in value && typeof value.allowSessions !== "boolean")
-    || Object.keys(value).some(key => key !== "allowRead" && key !== "allowOperate" && key !== "allowSessions")) {
-    throw new Error("Remote Agent settings must contain boolean read, operate and session preferences")
+    || ("allowWorkspaces" in value && typeof value.allowWorkspaces !== "boolean")
+    || Object.keys(value).some(key => key !== "allowRead" && key !== "allowOperate" && key !== "allowSessions" && key !== "allowWorkspaces")) {
+    throw new Error("Remote Agent settings must contain boolean read, operate, session and workspace preferences")
   }
   return {
     allowRead: value.allowRead,
     allowOperate: value.allowOperate,
     allowSessions: Boolean((value as { allowSessions?: boolean }).allowSessions),
+    allowWorkspaces: Boolean((value as { allowWorkspaces?: boolean }).allowWorkspaces),
   }
 }
 
@@ -24,7 +26,7 @@ export function remoteAgentSettings(value: unknown): RemoteAgentSettings {
 export async function readRemoteAgentSettings(directory: string): Promise<RemoteAgentSettings> {
   try { return remoteAgentSettings(JSON.parse(await readFile(join(directory, FILENAME), "utf8"))) }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { allowRead: false, allowOperate: false, allowSessions: false }
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false }
     throw error
   }
 }

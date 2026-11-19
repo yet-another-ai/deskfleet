@@ -140,5 +140,17 @@ test("normalizes remote file list, stat, upload, and download tools into remote 
     images: [],
     isError: false,
   })
+  expect(remoteMcpTool({
+    toolCallId: "workspace-create",
+    title: "mcp.deskfleet.deskfleet_remote_workspace_create",
+    rawInput: { machineId: "machine-3", name: "TransportFever3", directories: [{ path: "C:\\Games\\TransportFever3" }] },
+  })).toEqual({
+    machineId: "machine-3",
+    serverId: "deskfleet",
+    toolName: "deskfleet_remote_workspace_create",
+    action: "create workspace TransportFever3",
+    images: [],
+    isError: false,
+  })
 })
 

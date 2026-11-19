@@ -75,6 +75,7 @@ pub async fn call(
                 if access["allowRead"] != true
                     && access["allowOperate"] != true
                     && access["allowSessions"] != true
+                    && access["allowWorkspaces"] != true
                 {
                     return None;
                 }
@@ -108,6 +109,7 @@ pub async fn call(
         body.operation,
         RemoteMcpOperation::SessionCreate
             | RemoteMcpOperation::SessionSend
+            | RemoteMcpOperation::WorkspaceCreate
             | RemoteMcpOperation::McpCall
             | RemoteMcpOperation::FilesWrite
     ) {

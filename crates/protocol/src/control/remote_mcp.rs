@@ -13,6 +13,7 @@ pub enum RemoteMcpOperation {
     History,
     SessionCreate,
     SessionSend,
+    WorkspaceCreate,
     McpServers,
     McpTools,
     McpCall,
@@ -31,4 +32,22 @@ pub struct RemoteMcpRequest {
     pub machine_id: Option<String>,
     #[ts(type = "Record<string, unknown>")]
     pub arguments: Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RemoteMcpOperation;
+    use serde_json::json;
+
+    #[test]
+    fn workspace_create_operation_round_trips_camel_case() {
+        assert_eq!(
+            serde_json::to_value(RemoteMcpOperation::WorkspaceCreate).unwrap(),
+            json!("workspaceCreate")
+        );
+        assert_eq!(
+            serde_json::from_value::<RemoteMcpOperation>(json!("workspaceCreate")).unwrap(),
+            RemoteMcpOperation::WorkspaceCreate
+        );
+    }
 }
