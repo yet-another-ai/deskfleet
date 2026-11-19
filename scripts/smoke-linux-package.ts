@@ -39,6 +39,9 @@ const codexManifest = JSON.parse(await readFile(new URL("../packages/agents/code
 const claudeManifest = JSON.parse(await readFile(new URL("../packages/agents/claude-code/package.json", import.meta.url), "utf8")) as {
   dependencies: Record<string, string>
 }
+const piManifest = JSON.parse(await readFile(new URL("../packages/agents/pi/package.json", import.meta.url), "utf8")) as {
+  dependencies: Record<string, string>
+}
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-package-smoke-")))
 const profile = join(directory, "profile")
 const configHome = join(directory, "config")
@@ -223,7 +226,7 @@ try {
   for (const [argument, version, prefix] of [
     ["--codex-acp", codexManifest.dependencies["@agentclientprotocol/codex-acp"], "@agentclientprotocol/codex-acp "],
     ["--claude-agent-acp", claudeManifest.dependencies["@agentclientprotocol/claude-agent-acp"], ""],
-    ["--pi-acp", manifest.dependencies["pi-acp"], ""],
+    ["--pi-acp", piManifest.dependencies["pi-acp"], ""],
   ]) {
     assert.equal(await node([entry, argument, "--version"]), `${prefix}${version}`)
   }

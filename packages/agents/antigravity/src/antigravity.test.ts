@@ -2,8 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
 import type { PromptRequest, PromptResponse } from "@agentclientprotocol/sdk/unstable"
-import { supportsSteering, type AgentConnection } from "./agents/acp.ts"
-import { wrapAntigravityConnection } from "./agents/antigravity.ts"
+import { supportsSteering, type AgentConnection } from "@deskfleet/agent-core"
+import { wrapAntigravityConnection } from "./index.ts"
 
 function stubConnection(
   overrides: Partial<AgentConnection> & Pick<AgentConnection, "prompt">,

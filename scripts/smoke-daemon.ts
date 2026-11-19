@@ -34,6 +34,9 @@ try {
   const claudeManifest = JSON.parse(readFileSync(join(root, "packages/agents/claude-code/package.json"), "utf8")) as {
     dependencies: Record<string, string>
   }
+  const piManifest = JSON.parse(readFileSync(join(root, "packages/agents/pi/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
   const expectedNative = {
     version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
@@ -67,12 +70,12 @@ try {
   const piAdapterVersion = execFileSync(command, ["--pi-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(piAdapterVersion, manifest.dependencies["pi-acp"])
+  assert.equal(piAdapterVersion, piManifest.dependencies["pi-acp"])
   const piInitialization = JSON.parse(execFileSync(command, ["agent", "pi", "--check"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   })) as { agentInfo: { name: string; version: string } }
   assert.equal(piInitialization.agentInfo.name, "pi-acp")
-  assert.equal(piInitialization.agentInfo.version, manifest.dependencies["pi-acp"])
+  assert.equal(piInitialization.agentInfo.version, piManifest.dependencies["pi-acp"])
 
   const deepseek = JSON.parse(execFileSync(command, ["agent", "deepseek-harness", "--check"], {
     cwd: directory, env: { ...environment, HOME: directory, USERPROFILE: directory,

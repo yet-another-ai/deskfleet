@@ -42,9 +42,15 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 2.7.0
         version: 2.7.0(zod@4.6.7)
+      '@deskfleet/agent-antigravity':
+        specifier: workspace:*
+        version: link:../../packages/agents/antigravity
       '@deskfleet/agent-claude-code':
         specifier: workspace:*
         version: link:../../packages/agents/claude-code
+      '@deskfleet/agent-codebuddy':
+        specifier: workspace:*
+        version: link:../../packages/agents/codebuddy
       '@deskfleet/agent-codex':
         specifier: workspace:*
         version: link:../../packages/agents/codex
@@ -54,9 +60,18 @@ importers:
       '@deskfleet/agent-cursor':
         specifier: workspace:*
         version: link:../../packages/agents/cursor
+      '@deskfleet/agent-deepseek-harness':
+        specifier: workspace:*
+        version: link:../../packages/agents/deepseek-harness
       '@deskfleet/agent-grok':
         specifier: workspace:*
         version: link:../../packages/agents/grok
+      '@deskfleet/agent-omp':
+        specifier: workspace:*
+        version: link:../../packages/agents/omp
+      '@deskfleet/agent-pi':
+        specifier: workspace:*
+        version: link:../../packages/agents/pi
       '@deskfleet/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -69,9 +84,6 @@ importers:
       '@deskfleet/native':
         specifier: workspace:*
         version: link:../../crates/node
-      pi-acp:
-        specifier: 0.0.34
-        version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -312,11 +324,26 @@ importers:
         specifier: 3.3.14
         version: 3.3.14(@typescript/typescript6@6.0.2)
 
+  packages/agents/antigravity:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 2.7.0
+        version: 2.7.0(zod@4.6.7)
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/agents/claude-code:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
         specifier: 0.107.0
         version: 0.107.0(patch_hash=82e29ca94eb7e2e7eb80f7c1ad26b577fa3562e6aab3e174277d91295c16c01b)(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/agents/codebuddy:
+    dependencies:
       '@deskfleet/agent-core':
         specifier: workspace:*
         version: link:../core
@@ -348,6 +375,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/agents/deepseek-harness:
+    dependencies:
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+      '@deskfleet/dsh-runtime':
+        specifier: workspace:*
+        version: link:../../dsh-runtime
+
   packages/agents/grok:
     dependencies:
       '@agentclientprotocol/sdk':
@@ -356,6 +392,21 @@ importers:
       '@deskfleet/agent-core':
         specifier: workspace:*
         version: link:../core
+
+  packages/agents/omp:
+    dependencies:
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/agents/pi:
+    dependencies:
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+      pi-acp:
+        specifier: 0.0.34
+        version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
 
   packages/capacitor-bridge:
     dependencies:

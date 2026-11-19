@@ -1,0 +1,14 @@
+{
+  "name": "@deskfleet/agent-omp",
+  "version": "0.19.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "dependencies": {
+    "@deskfleet/agent-core": "workspace:*"
+  }
+}
