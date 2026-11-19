@@ -12,6 +12,7 @@ import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearanc
 import { outlineAudioStoreKey, type useOutlineAudioStore } from "../stores/outline-audio.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
+import { machineBatteriesKey, type MachineBatteriesStore } from "../stores/machine-batteries.ts"
 import { installErrorReporting } from "../services/error-reporting.ts"
 
 export interface MachineRuntime {
@@ -37,6 +38,7 @@ export function createMachineRuntimes(
   session: AccountSession,
   appearance: ReturnType<typeof useAppearanceStore>,
   outlineAudio: ReturnType<typeof useOutlineAudioStore>,
+  batteries: MachineBatteriesStore,
 ): MachineRuntimes {
   const opened = shallowReactive(new Map<string, MachineRuntime>())
   function release(id: string): void {
@@ -106,6 +108,7 @@ export function createMachineRuntimes(
             .provide(outlineAudioStoreKey, outlineAudio)
             .provide(platformClientKey, remote.api)
             .provide(machineRuntimesKey, runtimes)
+            .provide(machineBatteriesKey, batteries)
             .use(state).use(router).use(i18n)
           app.config.idPrefix = `machine-${machine.id}-${++viewId}`
           installErrorReporting(app)

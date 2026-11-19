@@ -35,6 +35,7 @@ import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 import SessionPresenceIcon from "./SessionPresenceIcon.vue"
+import MachineBatteryIndicator from "./MachineBatteryIndicator.vue"
 import TreeLink from "./TreeLink.vue"
 
 type SessionIndicatorState = SessionActivity | "archiving"
@@ -153,6 +154,7 @@ const machineIndicator = computed(() => {
           <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
           <span class="sr-only">{{ t("machine.offline") }}</span>
         </span>
+        <MachineBatteryIndicator :machine-id="machine.id" :online="machine.online" />
         <SessionWorkingIndicator v-if="machineIndicator" :state="machineIndicator" />
         <ChevronRight v-if="collapsed" :size="14" class="shrink-0" aria-hidden="true" />
       </CollapsibleTrigger>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineProps<{
-  metric: "cpu" | "memory" | "swap"
+  metric: "cpu" | "memory" | "swap" | "battery"
   label: string
   value: string
   unit: string

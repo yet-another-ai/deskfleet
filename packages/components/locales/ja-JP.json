@@ -648,6 +648,7 @@
   "machine": {
     "offline": "オフライン", "lastSeen": "最終接続: {time}",
     "local": "このマシン", "addWorkspace": "ワークスペースを追加",
+    "batteryLabel": "バッテリー {percent}%、{state}",
     "noWorkspaces": "ワークスペースはありません", "remoteControl": "リモート操作",
     "localControl": "ローカル操作", "online": "オンライン"
   },
@@ -840,6 +841,12 @@
     "failed": "システムの状態を更新できませんでした", "stale": "最終更新: {time}",
     "cpu": "CPU", "memory": "メモリ",
     "swap": "スワップ", "noSwap": "未割り当て",
+    "battery": "バッテリー",
+    "batteryState": {
+      "charging": "充電中", "discharging": "バッテリー駆動",
+      "full": "満充電", "paused": "充電停止中",
+      "empty": "空", "unknown": "不明"
+    },
     "highUsage": "使用率が高くなっています", "cores": "{count} 論理コア",
     "usedOf": "{used} / {total}", "total": "合計 {total}",
     "trendTitle": "リソース使用状況", "chartLabel": "CPU とメモリの使用状況",

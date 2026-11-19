@@ -129,6 +129,7 @@ export const storybookSystemStatus: SystemStatus = {
   os: "macOS 15.2",
   arch: "arm64",
   uptimeSeconds: 345_600,
+  battery: { percent: 68.4, state: "charging" },
   daemonVersion: "0.4.2",
 }
 

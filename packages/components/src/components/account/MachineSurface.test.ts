@@ -8,6 +8,7 @@ import { createAccountSession } from "../../composables/useAccountSession.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "../../composables/useMachineRuntimes.ts"
 import { router } from "../../router/index.ts"
 import { useAppearanceStore } from "../../stores/appearance.ts"
+import { useMachineBatteriesStore } from "../../stores/machine-batteries.ts"
 import { useOutlineAudioStore } from "../../stores/outline-audio.ts"
 import { fakeCentral, machineFixture } from "../../test/central.ts"
 import MachineSurface from "./MachineSurface.vue"
@@ -36,7 +37,9 @@ async function fixture(destination?: string, searchPath?: string) {
   await flushPromises()
   const state = createPinia()
   const scope = effectScope()
-  const runtimes = scope.run(() => createMachineRuntimes(getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state)))!
+  const runtimes = scope.run(() => createMachineRuntimes(
+    getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state), useMachineBatteriesStore(state),
+  ))!
   cleanups.push(() => { scope.stop(); session.dispose(); disposePinia(state) })
   const runtime = runtimes.open(first)
   const unmount = vi.fn()

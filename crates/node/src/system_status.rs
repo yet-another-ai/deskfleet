@@ -7,6 +7,24 @@ use napi_derive::napi;
 
 use crate::rtc::native_error;
 
+/// Power direction reported by a battery controller.
+#[napi(string_enum = "lowercase")]
+pub enum BatteryState {
+    Unknown,
+    Charging,
+    Discharging,
+    Empty,
+    Full,
+    Paused,
+}
+
+/// Aggregated battery charge and state for the machine.
+#[napi(object)]
+pub struct BatteryStatus {
+    pub percent: f64,
+    pub state: BatteryState,
+}
+
 /// Transient host metrics; byte counts and Unix milliseconds are JavaScript numbers.
 #[napi(object)]
 pub struct SystemStatus {
@@ -21,6 +39,7 @@ pub struct SystemStatus {
     pub os: String,
     pub arch: String,
     pub uptime_seconds: f64,
+    pub battery: Option<BatteryStatus>,
 }
 
 /// Read the machine's CPU and memory usage without blocking Node's event loop.
@@ -48,5 +67,18 @@ pub async fn system_status() -> Result<SystemStatus> {
         os: snapshot.os,
         arch: snapshot.arch.to_owned(),
         uptime_seconds: snapshot.uptime_seconds as f64,
+        battery: snapshot.battery.map(|battery| BatteryStatus {
+            percent: battery.percent,
+            state: match battery.state {
+                deskfleet_native::system_status::BatteryState::Unknown => BatteryState::Unknown,
+                deskfleet_native::system_status::BatteryState::Charging => BatteryState::Charging,
+                deskfleet_native::system_status::BatteryState::Discharging => {
+                    BatteryState::Discharging
+                }
+                deskfleet_native::system_status::BatteryState::Empty => BatteryState::Empty,
+                deskfleet_native::system_status::BatteryState::Full => BatteryState::Full,
+                deskfleet_native::system_status::BatteryState::Paused => BatteryState::Paused,
+            },
+        }),
     })
 }

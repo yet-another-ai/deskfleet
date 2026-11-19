@@ -793,6 +793,7 @@
     "lastSeen": "Last seen {time}",
     "local": "This machine",
     "addWorkspace": "Add workspace",
+    "batteryLabel": "Battery {percent}%, {state}",
     "noWorkspaces": "No workspaces",
     "remoteControl": "Remote control",
     "localControl": "Local control",
@@ -1063,6 +1064,15 @@
     "cpu": "CPU",
     "memory": "Memory",
     "swap": "Swap",
+    "battery": "Battery",
+    "batteryState": {
+      "charging": "Charging",
+      "discharging": "On battery",
+      "full": "Fully charged",
+      "paused": "Not charging",
+      "empty": "Empty",
+      "unknown": "Unknown"
+    },
     "noSwap": "Not allocated",
     "highUsage": "High usage",
     "cores": "{count} logical cores",

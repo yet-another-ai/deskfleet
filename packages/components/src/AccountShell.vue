@@ -28,6 +28,7 @@ import { trackEvent, useFeatureGate } from "./services/analytics.ts"
 import { billingReturn } from "./services/billing-events.ts"
 import { createMachineRuntimes, machineRuntimesKey } from "./composables/useMachineRuntimes.ts"
 import { useAppearanceStore } from "./stores/appearance.ts"
+import { machineBatteriesKey, useMachineBatteriesStore } from "./stores/machine-batteries.ts"
 import { useOutlineAudioStore } from "./stores/outline-audio.ts"
 import { platformClientKey } from "./composables/usePlatformClient.ts"
 
@@ -71,7 +72,11 @@ const { t } = useI18n()
 const session = createAccountSession(props.host.central!, props.host.initialError)
 useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
-provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore()))
+provide(accountSessionKey, session)
+const batteries = useMachineBatteriesStore()
+batteries.attachAccount(session)
+provide(machineBatteriesKey, batteries)
+provide(machineRuntimesKey, createMachineRuntimes(props.host, session, useAppearanceStore(), useOutlineAudioStore(), batteries))
 useAccountAnalytics(session)
 const { ready, account, site, teams, team, machine, dialog } = session
 let localAgentRunning: boolean | undefined
@@ -136,7 +141,6 @@ useEventListener(window, "focus", () => {
   void refreshNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
 })
-provide(accountSessionKey, session)
 onBeforeUnmount(session.dispose)
 const onboarding = ref<OnboardingState | undefined>(props.host.onboarding ? undefined : { step: "complete", permissionSteps: [] })
 const onboardingError = ref<string>()

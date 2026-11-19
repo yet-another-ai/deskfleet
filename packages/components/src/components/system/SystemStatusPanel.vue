@@ -14,6 +14,8 @@ const { t, locale } = useI18n()
 const { snapshot, history, loading, error, available, running, refresh } = useSystemStatus(() => props.machineId, () => props.active && props.online)
 const numberFormat = computed(() => new Intl.NumberFormat(intlLocale(locale.value as AppLocale), { maximumFractionDigits: 1 }))
 const memoryPercent = computed(() => snapshot.value?.memoryTotalBytes ? snapshot.value.memoryUsedBytes / snapshot.value.memoryTotalBytes * 100 : 0)
+const battery = computed(() => snapshot.value?.battery)
+const batteryDetail = computed(() => battery.value ? t(`systemStatus.batteryState.${battery.value.state}`) : "")
 const samples = computed(() => history.value.map(sample => ({
   time: sample.sampledAt,
   cpu: sample.cpuUsagePercent,
@@ -47,10 +49,11 @@ const swapAmount = computed(() => fileSize(snapshot.value?.swapUsedBytes ?? 0).s
     <div v-else-if="!snapshot && loading" role="status" class="flex min-h-56 items-center justify-center gap-2 text-sm text-ui-text-muted"><Activity :size="18" aria-hidden="true" />{{ t('systemStatus.loading') }}</div>
 
     <template v-if="snapshot">
-      <div class="system-metrics grid grid-cols-1 gap-3">
+      <div class="system-metrics grid grid-cols-1 gap-3" :class="{ 'has-battery': battery }">
         <SystemMetricCard metric="cpu" :label="t('systemStatus.cpu')" :value="numberFormat.format(snapshot.cpuUsagePercent)" unit="%" :detail="t('systemStatus.cores', { count: snapshot.logicalCpuCount })" :warning="snapshot.cpuUsagePercent >= 85 ? t('systemStatus.highUsage') : undefined" />
         <SystemMetricCard metric="memory" :label="t('systemStatus.memory')" :value="numberFormat.format(memoryPercent)" unit="%" :detail="memoryDetail" :warning="memoryPercent >= 85 ? t('systemStatus.highUsage') : undefined" />
         <SystemMetricCard metric="swap" :label="t('systemStatus.swap')" :value="swapAmount[0]!" :unit="swapAmount[1]!" :detail="swapDetail" />
+        <SystemMetricCard v-if="battery" metric="battery" :label="t('systemStatus.battery')" :value="numberFormat.format(Math.round(battery.percent))" unit="%" :detail="batteryDetail" />
       </div>
       <section class="mt-4 overflow-hidden rounded-xl border border-ui-border bg-ui-surface px-4 pb-2 pt-5">
         <h3 class="mb-1 ml-1 mt-0 text-sm font-medium">{{ t('systemStatus.trendTitle') }}</h3>
@@ -71,7 +74,11 @@ const swapAmount = computed(() => fileSize(snapshot.value?.swapUsedBytes ?? 0).s
 .system-status { container-type: inline-size; }
 @container (min-width: 460px) {
   .system-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .system-metrics.has-battery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .system-info { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 760px) {
+  .system-metrics.has-battery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container (min-width: 800px) {
   .system-info { grid-template-columns: repeat(5, minmax(0, 1fr)); }
