@@ -2,11 +2,11 @@
 import { Zap } from "@lucide/vue"
 import { computed, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { useMachineBatteriesStore } from "../../stores/machine-batteries.ts"
+import { useMachineBatteries } from "../../stores/machine-batteries.ts"
 
 const props = defineProps<{ machineId: string; online: boolean }>()
 const { t } = useI18n()
-const batteries = useMachineBatteriesStore()
+const batteries = useMachineBatteries()
 const battery = computed(() => props.online ? batteries.forMachine(props.machineId) : undefined)
 const percent = computed(() => Math.max(0, Math.min(100, battery.value?.percent ?? 0)))
 const charging = computed(() => battery.value?.state === "charging")

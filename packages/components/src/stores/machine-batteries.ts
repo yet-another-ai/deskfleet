@@ -2,7 +2,7 @@ import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import type { SystemStatus } from "@deskfleet/client/system"
 import { useDocumentVisibility, useIntervalFn } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { computed, hasInjectionContext, onScopeDispose, ref, shallowRef, watch } from "vue"
+import { computed, hasInjectionContext, inject, onScopeDispose, ref, shallowRef, watch, type InjectionKey } from "vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 
 export const MACHINE_BATTERY_INTERVAL = 60_000
@@ -11,6 +11,13 @@ export const MACHINE_BATTERY_MISSING_INTERVAL = 5 * 60_000
 
 type BatteryStatus = NonNullable<SystemStatus["battery"]>
 interface BatteryEntry { battery: BatteryStatus | null; checkedAt: number }
+
+export interface MachineBatteriesStore {
+  observe(machineId: string): () => void
+  forMachine(machineId: string): BatteryStatus | undefined
+  refresh(force?: boolean): Promise<void>
+}
+
 const entryKey = (teamId: string, machineId: string) => JSON.stringify([teamId, machineId])
 
 /**
@@ -118,3 +125,11 @@ export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
 
   return { observe, forMachine, refresh }
 })
+
+/** One cache and poller shared by the account shell and every isolated machine app. */
+export const machineBatteriesKey: InjectionKey<MachineBatteriesStore> =
+  Symbol("deskfleet machine batteries")
+
+export function useMachineBatteries(): MachineBatteriesStore {
+  return inject(machineBatteriesKey, undefined) ?? useMachineBatteriesStore()
+}

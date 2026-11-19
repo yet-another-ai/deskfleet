@@ -5,6 +5,7 @@ import { createPinia, disposePinia } from "pinia"
 import { defineComponent, effectScope, h, nextTick } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { useAppearanceStore } from "../stores/appearance.ts"
+import { useMachineBatteries, useMachineBatteriesStore, type MachineBatteriesStore } from "../stores/machine-batteries.ts"
 import { useOutlineAudioStore } from "../stores/outline-audio.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
@@ -42,9 +43,12 @@ async function fixture() {
   await flushPromises()
   const state = createPinia()
   const scope = effectScope()
-  const runtimes = scope.run(() => createMachineRuntimes(getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state)))!
+  const batteries = useMachineBatteriesStore(state)
+  const runtimes = scope.run(() => createMachineRuntimes(
+    getClient(), session, useAppearanceStore(state), useOutlineAudioStore(state), batteries,
+  ))!
   cleanups.push(() => { scope.stop(); session.dispose(); disposePinia(state) })
-  return { ...fake, first, second, session, scope, runtimes, createPeer, closePeer, catalog }
+  return { ...fake, first, second, session, scope, runtimes, batteries, createPeer, closePeer, catalog }
 }
 
 function mountFleet(runtime: MachineRuntime) {
@@ -62,6 +66,24 @@ function mountFleet(runtime: MachineRuntime) {
   cleanups.push(() => { unmount(); root.remove() })
   return { fleet, api, root, unmount }
 }
+
+test("child machine apps share the account battery cache", async () => {
+  const f = await fixture()
+  vi.spyOn(f.batteries, "forMachine").mockReturnValue({ percent: 68.4, state: "charging" })
+  const root = document.createElement("div")
+  document.body.append(root)
+  let injected: MachineBatteriesStore | undefined
+  const unmount = f.runtimes.open(f.first).mount(defineComponent({
+    setup() {
+      injected = useMachineBatteries()
+      return () => h("p", injected!.forMachine("m1")?.percent)
+    },
+  }), root)
+  cleanups.push(() => { unmount(); root.remove() })
+  await nextTick()
+  expect(injected).toBe(f.batteries)
+  expect(root.textContent).toBe("68.4")
+})
 
 test("changing the selected machine retains each opened machine's stores, adapter, and peer", async () => {
   const f = await fixture()
