@@ -1,0 +1,12 @@
+name: Configure Gradle Maven Central mirror
+description: Install a CI Gradle init script that prefers Google's Maven Central mirror with Maven Central fallback.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Gradle Maven Central mirror init script
+      shell: bash
+      run: |
+        gradle_home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+        mkdir -p "$gradle_home/init.d"
+        cp "$GITHUB_ACTION_PATH/ci-maven-mirror.gradle" "$gradle_home/init.d/ci-maven-mirror.gradle"

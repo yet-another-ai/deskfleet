@@ -296,6 +296,7 @@ function closeAfterUpgrade(code: number, onAuthenticate?: (token: string) => voi
   }
   server.on("upgrade", (request, socket) => {
     upgraded = socket
+    socket.on("error", () => {})
     const accept = createHash("sha1").update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64")
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
     let received = Buffer.alloc(0)
@@ -432,6 +433,7 @@ test("real Node WebSocket closes malformed control traffic without unhandled fai
   }
   server.on("upgrade", (request, socket) => {
     upgraded = socket
+    socket.on("error", () => {})
     const accept = createHash("sha1").update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64")
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
     // Exercise the actual Undici WebSocket restriction against application close(1002).

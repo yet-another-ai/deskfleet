@@ -14,7 +14,7 @@ const inspection = new GitInspection()
 
 async function fixture(context: TestContext): Promise<string> {
   const root = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-git-")))
-  context.after(() => rm(root, { recursive: true, force: true }))
+  context.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }))
   return root
 }
 

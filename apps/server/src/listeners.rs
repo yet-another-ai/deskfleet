@@ -77,15 +77,7 @@ mod tests {
     #[actix_web::test]
     async fn serves_ipv4_and_ipv6_on_the_same_port_in_either_order() {
         for ipv6_first in [false, true] {
-            let port = unused_ipv4_address().port();
-            let mut addresses = vec![
-                SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)),
-                SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
-            ];
-            if ipv6_first {
-                addresses.reverse();
-            }
-            let listeners = bind_all(&addresses).unwrap();
+            let (port, listeners) = bind_dual_stack_ephemeral(ipv6_first);
             assert_eq!(listeners.len(), 2);
             for listener in &listeners {
                 let address = listener.local_addr().unwrap();
@@ -96,6 +88,39 @@ mod tests {
             }
             assert_health_on_each(listeners).await;
         }
+    }
+
+    fn bind_dual_stack_ephemeral(ipv6_first: bool) -> (u16, Vec<TcpListener>) {
+        let mut last_error = None;
+        for _ in 0..16 {
+            // Probe the IPv4 wildcard rather than loopback: on macOS a port busy
+            // on another interface can bind 127.0.0.1 while failing 0.0.0.0.
+            // Retry AddrInUse in case another process claims the port on either
+            // address family before bind_all binds both listeners.
+            let port = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port();
+            let mut addresses = [
+                SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)),
+                SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
+            ];
+            if ipv6_first {
+                addresses.reverse();
+            }
+            match bind_all(&addresses) {
+                Ok(listeners) => return (port, listeners),
+                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                    last_error = Some(error);
+                }
+                Err(error) => panic!("unexpected bind_all error: {error}"),
+            }
+        }
+        panic!(
+            "failed to bind dual-stack ephemeral port after 16 attempts: {}",
+            last_error.unwrap()
+        );
     }
 
     #[test]

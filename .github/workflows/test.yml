@@ -189,6 +189,9 @@ jobs:
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
+      - name: Configure Gradle Maven Central mirror
+        uses: ./.github/actions/setup-gradle-mirror
+
       - name: Run Android unit tests and lint
         run: mise run android:test
 

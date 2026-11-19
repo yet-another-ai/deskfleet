@@ -110,6 +110,7 @@ test("packaging detector covers desktop builder configs, staging scripts, and bu
     "packaging/aur/PKGBUILD.in",
     "packaging/linux/deb-control.in",
     ".github/workflows/build.yml",
+    ".github/actions/setup-gradle-mirror/ci-maven-mirror.gradle",
     ".github/workflows/linux-packages.yml",
     ".github/workflows/nix-server.yml",
     "flake.nix",
@@ -446,5 +447,14 @@ test("classifier process failure or missing output cannot skip CI", { skip: proc
     assert.ok(lines.includes("run_build=true"))
     assert.ok(lines.includes("all_platforms=true"))
     assert.ok(lines.includes("run_backend=true"))
+  }
+})
+
+test("Android CI test and build jobs configure the Gradle Maven Central mirror", () => {
+  for (const workflow of ["../.github/workflows/build.yml", "../.github/workflows/test.yml"]) {
+    const yaml = workflowYaml(workflow)
+    const androidJob = yaml.match(/^  android:[\s\S]*?(?=^  [a-z]|\z)/m)?.[0]
+    assert.ok(androidJob, `Missing android job in ${workflow}`)
+    assert.match(androidJob, /uses:\s*\.\/\.github\/actions\/setup-gradle-mirror\b/)
   }
 })

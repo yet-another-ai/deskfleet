@@ -302,6 +302,9 @@ jobs:
         with:
           github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
 
+      - name: Configure Gradle Maven Central mirror
+        uses: ./.github/actions/setup-gradle-mirror
+
       - name: Add Android SDK build-tools to PATH for apksigner
         shell: bash
         run: |
