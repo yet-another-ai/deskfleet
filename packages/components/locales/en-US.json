@@ -488,6 +488,15 @@
       "hours": "Every hour | Every {n} hours"
     },
     "executionHint": "Runs while this machine’s daemon is online. Missed times and overlapping runs are skipped. Agent permission requests still need approval.",
+    "executionHintYolo": "Runs while this machine’s daemon is online. Missed times and overlapping runs are skipped. YOLO auto-approves permission requests for dispatched sessions.",
+    "approvals": "Approvals",
+    "yolo": "YOLO",
+    "yoloHint": "Auto-approve agent permission requests when this task runs. For an existing session, YOLO stays on after the run.",
+    "yoloConfirmation": {
+      "title": "Enable YOLO for this task?",
+      "description": "While YOLO is enabled, agent permission requests from this task’s runs are approved automatically. New sessions are created with YOLO on; an existing session target keeps YOLO enabled after the run.",
+      "confirm": "Enable YOLO"
+    },
     "cancel": "Cancel",
     "save": "Save changes",
     "createAction": "Create task",

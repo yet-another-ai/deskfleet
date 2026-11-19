@@ -36,3 +36,12 @@ test("schedule parsing rejects invalid timing, targets, and empty prompts", () =
   assert.throws(() => scheduleTrigger({ kind: "interval", minutes: 0.5 }), /interval/u)
   assert.throws(() => scheduleInput({ title: "Task", prompt: " ", workspaceId: "1", enabled: true, target: { kind: "existing", sessionId: "1" }, trigger: { kind: "manual" } }), /prompt/u)
 })
+
+test("schedule YOLO is optional, defaults off, and rejects non-booleans", () => {
+  const legacy = { title: "Task", prompt: "Review", workspaceId: "1", enabled: true, target: { kind: "existing", sessionId: "1" }, trigger: { kind: "manual" } }
+  assert.deepEqual(scheduleInput(legacy), legacy)
+  assert.equal("yolo" in scheduleInput(legacy), false)
+  assert.deepEqual(scheduleInput({ ...legacy, yolo: true }).yolo, true)
+  assert.equal("yolo" in scheduleInput({ ...legacy, yolo: false }), false)
+  assert.throws(() => scheduleInput({ ...legacy, yolo: "yes" }), /YOLO/u)
+})

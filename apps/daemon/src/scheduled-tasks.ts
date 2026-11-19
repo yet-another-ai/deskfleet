@@ -169,6 +169,8 @@ export class ScheduledTasks {
       if (input.enabled || Object.keys(changes).some(key => key !== "enabled")) await this.#validateTarget(input)
       const reschedule = JSON.stringify(input.trigger) !== JSON.stringify(task.trigger) || input.enabled !== task.enabled
       Object.assign(task, input, { actor: owner, updatedAt: now })
+      // scheduleInput omits false YOLO; drop a previously saved flag when disabled.
+      if (!input.yolo) delete task.yolo
       if (reschedule) task.nextRunAt = input.enabled ? nextScheduleTime(input.trigger, this.#now()) : undefined
       await this.#save(tasks)
       return publicTask(task)
@@ -277,11 +279,16 @@ export class ScheduledTasks {
       if (this.#closed) throw new Error("Scheduler stopped before dispatch")
       await this.#validateTarget(task)
       let sessionId: string
-      if (task.target.kind === "existing") sessionId = task.target.sessionId
-      else {
+      if (task.target.kind === "existing") {
+        sessionId = task.target.sessionId
+        // YOLO on an existing target enables Session auto-approve for this and later runs; it does not disable a Session that already has YOLO.
+        if (task.yolo) {
+          await this.#dependencies.agents.handle("_deskfleet/session/yolo", { sessionId, operationId: randomUUID(), enabled: true }, actor)
+        }
+      } else {
         const snapshot = await this.#dependencies.agents.handle("_deskfleet/session/create", {
           workspaceId: task.workspaceId, operationId: run.createOperationId, title: task.title, provider: task.target.provider,
-          context: task.target.context, ...task.target.configuration,
+          context: task.target.context, ...task.target.configuration, ...(task.yolo ? { yolo: true } : {}),
         }, actor) as AgentSnapshot
         sessionId = snapshot.session.id
         run.sessionId = sessionId

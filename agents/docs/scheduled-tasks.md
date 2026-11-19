@@ -18,13 +18,22 @@ chat streaming does not repeatedly publish unchanged schedules.
 
 ## Targets and timing
 
-A task contains a title, prompt, enabled state, Workspace, execution target, and
-trigger. A new-Session target captures the provider ID, model/reasoning/mode
-selection, and directory or generated-worktree context. An existing-Session
-target retains that Session's provider and execution context. Workspace is
-required, and cannot change after task creation. Removing a Workspace requires
-removing its scheduled tasks first. Deleting a task retains its existing
-Sessions, Worktrees, and history.
+A task contains a title, prompt, enabled state, optional YOLO flag, Workspace,
+execution target, and trigger. A new-Session target captures the provider ID,
+model/reasoning/mode selection, and directory or generated-worktree context. An
+existing-Session target retains that Session's provider and execution context.
+Workspace is required, and cannot change after task creation. Removing a
+Workspace requires removing its scheduled tasks first. Deleting a task retains
+its existing Sessions, Worktrees, and history.
+
+YOLO is off by default and omitted from saved tasks that never enabled it, so
+older `scheduled-tasks.json` files and clients that omit the field keep the
+previous approval behavior. When enabled, a new-Session dispatch creates the
+Session with YOLO; an existing-Session dispatch enables YOLO on that Session
+before submitting the prompt and leaves it enabled afterward. YOLO never turns
+off a Session that already has it. Older daemons that ignore unknown schedule
+fields still accept create/update payloads that include `yolo`, and they keep
+manual permission approval.
 
 Triggers are manual, a minute interval, daily, or selected weekdays. Daily and
 weekly triggers store an explicit IANA time zone and `HH:mm` wall time, so a
@@ -45,7 +54,8 @@ manual task. Changes affect future claims, not work already accepted.
 The scheduler persists a claim and operation IDs before creating a Session or
 submitting its prompt. It uses the same Session creation, captured directories,
 configuration, input backlog, command audit, provider supervision, and approval
-flow as an interactive user. It never answers a permission or user question.
+flow as an interactive user. Without YOLO it never answers a permission or user
+question. With YOLO it relies on the Session's ordinary auto-approve path.
 An existing Session receives an ordinary backlog input. If an earlier input
 from the same task remains active or uncertain, another occurrence is recorded
 as skipped rather than creating overlapping scheduled work.

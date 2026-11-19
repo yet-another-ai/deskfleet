@@ -17,6 +17,8 @@ export interface ScheduleInput {
   prompt: string
   workspaceId: string
   enabled: boolean
+  /** When true, dispatched Sessions auto-approve permission requests (YOLO). Absent or false keeps the previous approval behavior. */
+  yolo?: boolean
   target: ScheduleTarget
   trigger: ScheduleTrigger
 }
@@ -92,6 +94,7 @@ export function scheduleInput(value: unknown): ScheduleInput {
   const input = scheduleObject(value)
   resourceId(input.workspaceId)
   if (typeof input.enabled !== "boolean") throw new Error("Invalid schedule enabled state")
+  if (input.yolo !== undefined && typeof input.yolo !== "boolean") throw new Error("Invalid schedule YOLO flag")
   const target = scheduleObject(input.target)
   let parsed: ScheduleTarget
   if (target.kind === "existing") {
@@ -107,6 +110,7 @@ export function scheduleInput(value: unknown): ScheduleInput {
       parsed.configuration = Object.fromEntries(["model", "reasoningEffort", "mode", "configValues"].filter(key => config[key] !== undefined).map(key => [key, config[key]]))
     }
   } else throw new Error("Invalid schedule target")
+  // Omit false so legacy payloads and older readers stay byte-compatible when YOLO is unused.
   return { title: nonempty(input.title, "title", 200), prompt: nonempty(input.prompt, "prompt", 100_000), workspaceId: input.workspaceId as string,
-    enabled: input.enabled, target: parsed, trigger: scheduleTrigger(input.trigger) }
+    enabled: input.enabled, ...(input.yolo === true ? { yolo: true } : {}), target: parsed, trigger: scheduleTrigger(input.trigger) }
 }

@@ -17,7 +17,7 @@ const target = { oneOf: [
   object({ kind: { const: "new" }, provider: id, context: { enum: ["worktree", "directory"] }, configuration }, ["kind", "provider", "context"]),
   object({ kind: { const: "existing" }, sessionId: id }, ["kind", "sessionId"]),
 ] }
-const fields = { title: id, prompt: id, enabled: { type: "boolean" }, target, trigger }
+const fields = { title: id, prompt: id, enabled: { type: "boolean" }, yolo: { type: "boolean", description: "When true, dispatched Sessions auto-approve permission requests. Omit or false keeps manual approval." }, target, trigger }
 const sessionFields = { provider: id, context: { enum: ["worktree", "directory"] }, title: id, prompt: id, baseBranch: id, configuration }
 
 /** The tool surface is independent of an ACP provider and of daemon implementation details. */
@@ -43,8 +43,8 @@ export const DESKFLEET_TOOLS: (Tool & { method: string })[] = [
   { name: "deskfleet_session_create", method: "_deskfleet/session/create", description: "Create a Session on this machine and optionally submit its first prompt. Uses this Session's Workspace, or the home directory for a machine-scoped Session.", inputSchema: object({ workspaceId: id, ...sessionFields }, ["provider"]) },
   { name: "deskfleet_session_send", method: "_deskfleet/input/submit", description: "Submit a prompt to a Session in this Agent's delegation scope. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn.", inputSchema: object({ sessionId: id, prompt: id, delivery: { enum: ["backlog", "steer"] }, turnId: id }, ["sessionId", "prompt"]) },
   { name: "deskfleet_schedules", method: "scheduleList", description: "List scheduled tasks and recent runs in this Agent's Workspace.", inputSchema: object({}) },
-  { name: "deskfleet_schedule_create", method: "scheduleCreate", description: "Create a scheduled task in this Agent's Workspace. Use an explicit IANA time zone for daily or weekly times. New runs create a Session; existing targets append a prompt to that Session.", inputSchema: object({ schedule: object(fields, ["title", "prompt", "enabled", "target", "trigger"]) }, ["schedule"]) },
-  { name: "deskfleet_schedule_update", method: "scheduleUpdate", description: "Update a Workspace scheduled task. Set enabled to false to pause it.", inputSchema: object({ scheduleId: id, changes: object(fields) }, ["scheduleId", "changes"]) },
+  { name: "deskfleet_schedule_create", method: "scheduleCreate", description: "Create a scheduled task in this Agent's Workspace. Use an explicit IANA time zone for daily or weekly times. New runs create a Session; existing targets append a prompt to that Session. Optional yolo auto-approves permission requests on dispatched Sessions.", inputSchema: object({ schedule: object(fields, ["title", "prompt", "enabled", "target", "trigger"]) }, ["schedule"]) },
+  { name: "deskfleet_schedule_update", method: "scheduleUpdate", description: "Update a Workspace scheduled task. Set enabled to false to pause it. Optional yolo controls permission auto-approval for future dispatches.", inputSchema: object({ scheduleId: id, changes: object(fields) }, ["scheduleId", "changes"]) },
   { name: "deskfleet_schedule_delete", method: "scheduleDelete", description: "Delete a Workspace scheduled task. Existing Sessions and their history remain available.", inputSchema: object({ scheduleId: id }, ["scheduleId"]) },
   { name: "deskfleet_schedule_run", method: "scheduleRun", description: "Run a Workspace scheduled task now, including a manual task.", inputSchema: object({ scheduleId: id }, ["scheduleId"]) },
 ]

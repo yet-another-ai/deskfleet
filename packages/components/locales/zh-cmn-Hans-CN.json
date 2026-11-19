@@ -488,6 +488,15 @@
       "hours": "每 {n} 小时"
     },
     "executionHint": "仅在此机器的 daemon 在线时运行；错过的时间和重叠运行会跳过。Agent 的权限请求仍需批准。",
+    "executionHintYolo": "仅在此机器的 daemon 在线时运行；错过的时间和重叠运行会跳过。YOLO 会自动批准该任务所调度会话中的权限请求。",
+    "approvals": "审批",
+    "yolo": "YOLO",
+    "yoloHint": "此任务运行时自动批准 Agent 的权限请求。若目标为已有会话，运行后 YOLO 会保持开启。",
+    "yoloConfirmation": {
+      "title": "为此任务启用 YOLO？",
+      "description": "启用 YOLO 后，此任务运行时的 Agent 权限请求会自动同意。新建会话会带上 YOLO；已有会话目标会在运行后保持 YOLO 开启。",
+      "confirm": "启用 YOLO"
+    },
     "cancel": "取消",
     "save": "保存更改",
     "createAction": "创建任务",
