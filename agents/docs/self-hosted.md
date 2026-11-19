@@ -238,8 +238,9 @@ separated lists are split on `,`, trimmed, and empty items dropped.
 | `DESKFLEET_TURN_URLS` | no | empty | Comma-separated `turn:`/`turns:` URLs used to initialize the persisted list on first API startup. Manage later changes in Site administration. A nonempty list requires a secret. |
 | `DESKFLEET_TURN_SECRET` | with TURN URLs | unset | Shared with the TURN server's REST `static-auth-secret`. Empty is treated as missing and startup fails when TURN URLs are set. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | no | unset | `redis://` or `rediss://` URL for [Team TURN usage collection](#team-turn-usage-collection). Empty disables collection. Invalid URLs fail startup; unavailable Redis is retried in the background. |
-| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` (or `DESKFLEET_APNS_PRIVATE_KEY`), `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_PRODUCTION` | for iOS push notifications | unset (`false` for `DESKFLEET_APNS_PRODUCTION`) | Apple Push Notification service (APNs) token credentials for iOS clients. Partial configuration fails startup. |
-| `DESKFLEET_FCM_PROJECT_ID`, `DESKFLEET_FCM_CREDENTIALS_PATH` (or `DESKFLEET_FCM_CREDENTIALS_JSON`) | for Android push notifications | unset | Firebase Cloud Messaging (FCM) HTTP v1 service account credentials for Android clients. Partial configuration fails startup. |
+| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` or `DESKFLEET_APNS_PRIVATE_KEY` | for iOS push notifications | unset | Set both IDs and exactly one private key source. Partial credentials fail startup. See [push provider setup](../../apps/server/README.md#mobile-push-notifications). |
+| `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_SANDBOX` | no | `ai.yetanother.deskfleet`, `false` | Set `DESKFLEET_APNS_SANDBOX=true` for development builds. |
+| `DESKFLEET_FCM_SERVICE_ACCOUNT_PATH` or `DESKFLEET_FCM_SERVICE_ACCOUNT_JSON` | for Android push notifications | unset | Set exactly one FCM HTTP v1 service account credentials source. The service account JSON supplies `project_id`. |
 | `RUST_LOG` | no | `info` | `tracing` `EnvFilter`. A missing or invalid value falls back to `info`. |
 
 `DESKFLEET_PUBLIC_URL` is also the `serverId` in `/api/daemon/me`, the

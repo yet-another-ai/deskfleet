@@ -92,7 +92,26 @@ mise run android:build
 
 On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`ai.yetanother.deskfleet.BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.ai.yetanother.deskfleet` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
 
-Mobile push notifications use `@capacitor/push-notifications` with Apple Push Notification service (APNs) on iOS and Firebase Cloud Messaging (FCM) on Android. When device notification permission is granted and the user is signed in, the client registers its push token, locale, and notification preferences (`enabled`, `taskCompleted`, `taskNeedsInput`) with `PUT /api/push/subscription`. Tapping a notification navigates to the target Session's Team, Machine, and Session route. On Android, place `google-services.json` in `apps/web/android/app/` when building with FCM configured; builds without `google-services.json` skip the Google Services Gradle plugin so local and CI checks remain self-contained.
+### Mobile push notifications
+
+The native apps use `@capacitor/push-notifications` with APNs on iOS and FCM on
+Android. The `mobile_push_notifications` Statsig gate controls onboarding,
+settings, and token registration. Build with `VITE_STATSIG_CLIENT_KEY` and
+enable the gate for the intended users in the build's Statsig environment.
+Gate evaluation requires both site telemetry and user consent. See [analytics setup](../../agents/docs/analytics.md#privacy-gates-site-master-switch-and-user-opt-in-consent).
+
+When the gate is on, device notification permission is granted, and the user
+is signed in, the client registers its push token, locale, and notification
+preferences (`enabled`, `taskCompleted`, `taskNeedsInput`) with
+`PUT /api/push/subscription`. Tapping a notification opens the target Session.
+
+For iOS, follow the [App ID and signing setup](../../agents/docs/ci.md#ios-distribution-signing-and-testflight).
+For Android, place the Firebase `google-services.json` for
+`ai.yetanother.deskfleet` in `apps/web/android/app/`. Release CI stages it from
+the `ANDROID_GOOGLE_SERVICES_JSON` secret. Builds without the file skip the
+Google Services Gradle plugin. Configure the
+[server push credentials](../server/README.md#mobile-push-notifications) for
+the matching APNs environment or Firebase project.
 
 ## Backend and integrations
 

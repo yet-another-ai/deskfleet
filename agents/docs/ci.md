@@ -346,6 +346,17 @@ Set the two profile names in the production variables above. No profile file
 Secrets, Development certificates, device UDIDs, or development profiles are
 needed for this release path.
 
+Enable Push Notifications on the main App ID (`ai.yetanother.deskfleet`) in
+Apple Developer. After enabling the capability, regenerate the main app's
+App Store Connect profile and ensure it includes `aps-environment=production`.
+Reuse the existing Apple Distribution certificate while it is valid. If the
+profile name changes, update `IOS_APP_PROFILE_NAME` in the production
+environment. Apple invalidates profiles for a modified App ID. See
+[Apple's capability setup](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/).
+The server uses a separate [APNs token signing key](../../apps/server/README.md#mobile-push-notifications)
+for sending notifications. The App ID's APNs SSL certificate field can stay
+empty with this authentication method.
+
 The signing preparation step imports the P12 into a temporary keychain, then
 `scripts/prepare-ios-signing.ts` downloads the named profiles through read-only
 App Store Connect API calls. Before compiling, it validates the usable
@@ -384,10 +395,17 @@ Before the next release tag, run **Build → Run workflow → signed_ios = true*
 a branch allowed by the production environment's deployment rules. This skips
 desktop and Android jobs, uses the same signing path, and produces the IPA and
 metadata without uploading to TestFlight. Inspect the main app and extension's
-signatures and profiles in that artifact. Validate the proposed Developer Team
-key in this rehearsal before switching production back from an Admin key. The
-`APPLE_API_*` secrets are also used by macOS notarization, so keep their declarations
-and verify that shared consumer when rotating the key.
+signatures and profiles in that artifact. After unzipping `App.ipa`, confirm
+the main app reports `production` for TestFlight and App Store builds.
+
+```sh
+codesign -d --entitlements - --xml Payload/App.app | plutil -extract aps-environment raw -o - -
+```
+
+Validate the proposed Developer Team key in this rehearsal before switching
+production back from an Admin key. The `APPLE_API_*` secrets are also used by
+macOS notarization, so keep their declarations and verify that shared consumer
+when rotating the key.
 
 ### Desktop updates
 
