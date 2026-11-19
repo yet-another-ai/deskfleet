@@ -1,7 +1,7 @@
-import { executeGit } from "./git-execution.ts"
+import { checkoutRoot, executeGit } from "./git-execution.ts"
 import { watch, type FSWatcher } from "node:fs"
-import { realpath } from "node:fs/promises"
-import { resolve } from "node:path"
+import { access, realpath } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import type { CatalogDirectory, CatalogSnapshot, GitHubBranch, SessionGitHubBranches } from "./catalog-protocol.ts"
 
 
@@ -127,11 +127,7 @@ export class GitHubBranches {
     let root: string
     try {
       const directory = await realpath(path)
-      // A known checkout root already watches its Git metadata. Avoid running
-      // rev-parse per Workspace on every catalog read.
-      const watched = this.#checkouts.get(directory)
-      if (watched?.watchers.has(directory) && watched.watchers.size > 1) return watched
-      root = await git(directory, ["rev-parse", "--show-toplevel"]).then(value => realpath(value)).catch(() => directory)
+      root = await checkoutRoot(directory).catch(() => directory)
     } catch { return }
     if (this.#closed) return
     const existing = this.#checkouts.get(root)
@@ -158,6 +154,8 @@ export class GitHubBranches {
         const directories = new Set([checkout.root])
         let gitCheckout = false
         try {
+          // A plain Workspace directory only needs a watch for a future git init.
+          await access(join(checkout.root, ".git"))
           const paths = await git(checkout.root, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"])
           for (const path of paths.split("\n")) directories.add(resolve(checkout.root, path))
           gitCheckout = true

@@ -60,6 +60,20 @@ test("workspace repositories follow remotes on all configured directories withou
   await eventually(async () => (await f.observer.snapshot(f.catalog)).workspaceGithubRepositories[0]?.repositories.length === 1)
 })
 
+test("a plain Workspace directory gains and loses its GitHub repository after git init", async context => {
+  const f = await fixture(context)
+  const directory = join(f.directory, "plain")
+  await mkdir(directory)
+  f.catalog.workspaces[0]!.worktrees = [{ id: "2", workspaceId: "1", directories: [{ path: directory }] }]
+  const repositories = async () => (await f.observer.snapshot(f.catalog)).workspaceGithubRepositories
+  assert.deepEqual(await repositories(), [])
+  await git(directory, "init", "--initial-branch=main")
+  await git(directory, "remote", "add", "origin", "git@github.com:acme/new.git")
+  await eventually(async () => (await repositories())[0]?.repositories[0] === "acme/new")
+  await rm(join(directory, ".git"), { recursive: true, force: true })
+  await eventually(async () => (await repositories()).length === 0)
+})
+
 test("catalog projection shares checkout metadata and follows branch and remote changes", async context => {
   const f = await fixture(context)
   await git(f.root, "remote", "add", "origin", "git@github.com:owner/repo.git")
