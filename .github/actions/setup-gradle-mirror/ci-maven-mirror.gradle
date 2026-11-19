@@ -1,0 +1,39 @@
+// GitHub-hosted runners intermittently fail resolving Maven Central directly.
+// Prefer Google's Maven Central mirror while keeping mavenCentral() as fallback
+// for newly published artifacts.
+def mirrorUrl = "https://maven-central.storage-download.googleapis.com/maven2/"
+
+def prependMirror = { repos ->
+    if (repos.any { it instanceof MavenArtifactRepository && it.url.toString() == mirrorUrl }) {
+        return
+    }
+    def mirror = repos.maven {
+        name = "GoogleMavenCentralMirror"
+        url = java.net.URI.create(mirrorUrl)
+    }
+    repos.remove(mirror)
+    repos.addFirst(mirror)
+}
+
+beforeSettings { settings ->
+    settings.pluginManagement {
+        prependMirror(repositories)
+    }
+    settings.dependencyResolutionManagement {
+        prependMirror(repositories)
+    }
+}
+
+beforeProject { project ->
+    project.buildscript {
+        prependMirror(repositories)
+    }
+}
+
+// Only touch projects that declare their own repositories so projects relying on
+// dependencyResolutionManagement under PREFER_PROJECT keep its google() + mirror set.
+afterProject { project ->
+    if (!project.repositories.isEmpty()) {
+        prependMirror(project.repositories)
+    }
+}

@@ -745,6 +745,14 @@ mise checks the downloaded bytes against that checksum. Linux and Windows keep
 using nodejs.org. A throttled Actions cache restore or save is retried for up
 to two minutes; without that wait, HTTP 429 is treated as a missing tool cache.
 
+Android CI jobs install `.github/actions/setup-gradle-mirror` into Gradle's
+`init.d` directory so hosted runners prefer Google's Maven Central mirror
+(`https://maven-central.storage-download.googleapis.com/maven2/`) with
+`mavenCentral()` kept as fallback. This covers `pluginManagement`,
+`dependencyResolutionManagement`, project `buildscript` repositories, and
+subprojects that declare their own repositories without changing local Gradle
+builds.
+
 When the suites are scheduled together, daemon tests wait for Rust tests to
 finish, and desktop tests wait for native compilation, Rust tests, and daemon
 tests. Each suite sizes its own worker pool; hosted macOS runs hit renderer

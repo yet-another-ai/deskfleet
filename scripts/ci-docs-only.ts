@@ -35,6 +35,7 @@ export function isPackagingPath(path: string): boolean {
     /^scripts\/(?:package-|check-(?:aur|linux-release)|smoke-linux-package|stage-native-binaries|build-(?:android|ios)-viewer\.ts)/u.test(path) ||
     /^scripts\/(?:app-store-connect|prepare-ios-signing|publish-ios-release)\.ts$/u.test(path) ||
     /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
+    path.startsWith(".github/actions/setup-gradle-mirror/") ||
     path === "apps/desktop/package.json" ||
     path === "apps/web/capacitor.config.ts" ||
     path.startsWith("apps/web/android/") ||
