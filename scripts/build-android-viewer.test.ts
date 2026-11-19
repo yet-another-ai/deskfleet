@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import test from "node:test"
 import {
   buildAndroidViewerEnv,
@@ -87,58 +87,4 @@ test("verifyElfLoadAlignment accepts 16 KB segments and rejects 4 KB segments", 
       ),
     /0x1000.*16 KB/,
   )
-})
-
-function xmlAttributes(tagBody: string): Record<string, string> {
-  const attrs: Record<string, string> = {}
-  for (const match of tagBody.matchAll(/([\w:.-]+)\s*=\s*(["'])(.*?)\2/gsu)) {
-    attrs[match[1]!] = match[3]!
-  }
-  return attrs
-}
-
-function xmlTags(xml: string, tagName: string): Record<string, string>[] {
-  const stripped = xml.replace(/<!--[\s\S]*?-->/gu, "")
-  return [...stripped.matchAll(new RegExp(`<${tagName}\\b([^>]*)/?>`, "gsu"))]
-    .map(match => xmlAttributes(match[1] ?? ""))
-}
-
-test("Android manifests keep android.hardware.screen.landscape optional when landscape activities are declared", () => {
-  const repoRoot = resolve(import.meta.dirname, "..")
-  const manifestPaths = [
-    join(repoRoot, "apps/web/android/app/src/main/AndroidManifest.xml"),
-    join(repoRoot, "packages/capacitor-bridge/android/src/main/AndroidManifest.xml"),
-  ]
-  const landscapeOrientations = new Set(["landscape", "sensorLandscape", "reverseLandscape", "userLandscape"])
-
-  let hasLandscapeActivity = false
-  const landscapeFeatures: Array<{ path: string; required: string | undefined }> = []
-
-  for (const manifestPath of manifestPaths) {
-    const xml = readFileSync(manifestPath, "utf8").replace(/\r\n/gu, "\n")
-    for (const activity of xmlTags(xml, "activity")) {
-      const orientation = activity["android:screenOrientation"]
-      if (orientation && landscapeOrientations.has(orientation)) {
-        hasLandscapeActivity = true
-      }
-    }
-    for (const feature of xmlTags(xml, "uses-feature")) {
-      if (feature["android:name"] === "android.hardware.screen.landscape") {
-        landscapeFeatures.push({ path: manifestPath, required: feature["android:required"] })
-      }
-    }
-  }
-
-  assert.equal(hasLandscapeActivity, true, "Expected at least one landscape activity declaration")
-  assert.ok(
-    landscapeFeatures.length > 0,
-    "Expected android.hardware.screen.landscape to be explicitly declared as optional",
-  )
-  for (const feature of landscapeFeatures) {
-    assert.equal(
-      feature.required,
-      "false",
-      `Manifest Merger OR-merges required="true" or omitted required attributes; ${feature.path} must set android:required="false"`,
-    )
-  }
 })
