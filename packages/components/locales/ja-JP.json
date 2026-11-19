@@ -729,6 +729,23 @@
     "loading": "読み込み中…", "unavailable": "利用できません",
     "loadingConfiguration": "エージェントから設定を読み込み中…", "reloadConfiguration": "エージェントから再読み込み",
     "viewUsage": "使用状況を表示", "usageEmpty": "利用可能なクォータ情報はありません。", "usageResetsAt": "{time} にリセット",
+    "geminiPeriodicTable": {
+      "trigger": "Gemini 4 元素周期表",
+      "title": "モデル選択",
+      "gridLabel": "Gemini 4 モデル元素周期表",
+      "eyebrow": "元素周期表",
+      "availableLabel": "モデル利用可能",
+      "current": "使用中",
+      "chooseVariant": "モデルバリエーション",
+      "empty": "この Antigravity エージェントから利用可能な Gemini 4 モデルが見つかりませんでした。",
+      "fallbackDescriptions": {
+        "H": "高速かつ軽量な日常向けモデル。素早いコード編集、テスト実行、高頻度のエージェント作業に適しています。",
+        "C": "最も深い推論を行うフラッグシップモデル。複雑なアーキテクチャ設計や難題の解決に向いています。",
+        "Ne": "推論力と速度のバランスに優れたモデル。複数ファイルのリファクタリングや日常の高度な知識作業に適しています。",
+        "Ar": "高い能力を備えたフロンティアモデル。複雑なソフトウェア開発や専門的な知識業務を深さと精度で解決します。",
+        "default": "Antigravity で利用可能な Gemini 4 {name} モデルです。"
+      }
+    },
     "yolo": "YOLO", "yoloHint": "このセッションでのエージェントの権限要求を自動承認",
     "yoloConfirmation": {
       "title": "YOLO モードを有効にしますか？",

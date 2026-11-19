@@ -909,6 +909,23 @@
     "viewUsage": "查看用量",
     "usageEmpty": "暂无可用额度信息。",
     "usageResetsAt": "{time} 重置",
+    "geminiPeriodicTable": {
+      "trigger": "Gemini 4 元素周期表",
+      "title": "选择模型",
+      "gridLabel": "Gemini 4 模型元素周期表",
+      "eyebrow": "元素周期表",
+      "availableLabel": "个可用",
+      "current": "当前使用",
+      "chooseVariant": "模型规格",
+      "empty": "当前 Antigravity 未返回可用的 Gemini 4 模型。",
+      "fallbackDescriptions": {
+        "H": "轻量极速的日常主力模型，适合快速改代码、运行测试与高频智能体任务。",
+        "C": "深度前沿推理旗舰模型，适合复杂架构设计、疑难排查与高难度长链路任务。",
+        "Ne": "兼顾速度与深度的均衡推理与编程模型，适合多文件重构、日常知识工作与高可控性协作。",
+        "Ar": "高能力前沿模型，兼顾深度与精度，适合复杂软件工程与专业知识工作。",
+        "default": "可通过 Antigravity 使用的 Gemini 4 {name} 模型。"
+      }
+    },
     "yolo": "YOLO",
     "yoloHint": "在此会话中自动批准 Agent 的权限请求",
     "yoloConfirmation": {

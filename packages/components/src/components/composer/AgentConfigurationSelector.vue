@@ -9,9 +9,11 @@ import { supportsProviderUsage } from "../../../../client/src/providers.ts"
 import { useAgentConfiguration } from "./useAgentConfiguration.ts"
 import AgentConfigOptionMenu from "./AgentConfigOptionMenu.vue"
 import AgentProviderUsageMenu from "./AgentProviderUsageMenu.vue"
+import GeminiPeriodicTableDialog from "./GeminiPeriodicTableDialog.vue"
 import ProviderIcon from "../common/ProviderIcon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import UiScrollArea from "../common/UiScrollArea.vue"
+import { findGemini4ElementById } from "../../services/gemini-periodic-table.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
 import { useAgentSessionsStore, type AgentSelection } from "../../stores/agent-sessions.ts"
 
@@ -36,7 +38,16 @@ const pendingProvider = ref<string>()
 const pendingProviderName = computed(() => providers.providers.find(provider => provider.id === pendingProvider.value)?.name ?? pendingProvider.value)
 const currentProviderName = computed(() => selectedProvider.value?.name ?? providerId.value ?? "")
 const providerUnavailable = computed(() => !!(props.sessionId || props.providerId) && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
+const periodicTableOpen = ref(false)
+const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, ensureLoaded, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover } = useAgentConfiguration(
+  () => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }),
+  draftSelection,
+  () => periodicTableOpen.value && isAntigravity.value,
+)
+const isAntigravity = computed(() => selectedProvider.value?.template === "antigravity" || (!selectedProvider.value && configuration.value?.provider.id === "antigravity"))
+watch(isAntigravity, value => { if (!value) periodicTableOpen.value = false }, { flush: "sync" })
+const currentModelId = computed(() => modelValue.value ?? (!props.sessionId && draftSelection.value.provider === providerId.value ? draftSelection.value.model : undefined))
+const activeGeminiElement = computed(() => isAntigravity.value ? findGemini4ElementById(configuration.value?.models?.options ?? [], currentModelId.value) : null)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)
 watch(loading, value => emit("loading", value), { immediate: true })
 watch(configuration, value => emit("configuration", value), { immediate: true })
@@ -105,10 +116,19 @@ async function confirmSwitch(): Promise<void> {
   if (!provider || !props.sessionId) return
   await agents.switchAgent(props.sessionId, provider)
 }
+function openPeriodicTable(): void {
+  if (!isAntigravity.value || props.disabled || !sessionReady.value) return
+  if (expanded.value) setOpen(false)
+  periodicTableOpen.value = true
+  ensureLoaded()
+}
+function selectPeriodicModel(modelId: string): void {
+  void changeModel(modelId)
+}
 </script>
 
 <template>
-  <div data-agent-configuration class="flex min-w-0">
+  <div data-agent-configuration class="flex min-w-0 items-center gap-1">
     <DropdownMenuRoot :open="expanded" :modal="false" @update:open="setOpen">
       <DropdownMenuTrigger data-agent-configuration-trigger data-composer-context class="ui-text-button min-w-0 max-w-full cursor-pointer leading-5 hover:bg-ui-hover hover:text-ui-text" :title="t('composer.provider')" :aria-label="t('composer.configureAgent', { selection: summary })">
         <span v-if="providerPending" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
@@ -163,6 +183,48 @@ async function confirmSwitch(): Promise<void> {
         </DropdownMenuContent>
       </DropdownMenuPortal>
     </DropdownMenuRoot>
+    <button
+      v-if="isAntigravity"
+      type="button"
+      data-gemini-periodic-table-trigger
+      class="ui-text-button h-7 shrink-0 cursor-pointer px-1.5 leading-5 hover:bg-ui-hover hover:text-ui-text"
+      :title="t('composer.geminiPeriodicTable.trigger')"
+      :aria-label="t('composer.geminiPeriodicTable.trigger')"
+      :disabled="disabled || !sessionReady"
+      @click="openPeriodicTable"
+    >
+      <span
+        v-if="activeGeminiElement"
+        class="gemini-element-chip inline-flex h-[18px] min-w-[20px] items-center justify-center rounded px-1 font-mono text-[11px] font-semibold leading-none"
+        :style="{ '--el-rgb': activeGeminiElement.rgb }"
+        :data-gemini-element-chip="activeGeminiElement.symbol"
+        aria-hidden="true"
+      >{{ activeGeminiElement.symbol }}</span>
+      <svg v-else viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true" class="shrink-0">
+        <rect x="1.5" y="2.5" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.9" />
+        <rect x="12" y="2.5" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.55" />
+        <rect x="1.5" y="6.25" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />
+        <rect x="5" y="6.25" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />
+        <rect x="8.5" y="6.25" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.9" />
+        <rect x="12" y="6.25" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.9" />
+        <rect x="1.5" y="10" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />
+        <rect x="5" y="10" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />
+        <rect x="8.5" y="10" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.45" />
+        <rect x="12" y="10" width="2.5" height="2.5" rx="0.6" fill="currentColor" opacity="0.9" />
+      </svg>
+    </button>
+    <GeminiPeriodicTableDialog
+      v-if="periodicTableOpen && isAntigravity"
+      :models="configuration?.models?.options ?? []"
+      :current-model="currentModelId"
+      :requested-model="requestedModel"
+      :loading="loading"
+      :error="error"
+      :disabled="disabled || !sessionReady || (loading && !requestedModel)"
+      @select="selectPeriodicModel"
+      @reload="reload"
+      @close="periodicTableOpen = false"
+    />
     <ConfirmDialog
       v-if="pendingProvider"
       :title="t('composer.switchAgent.title')"
@@ -174,3 +236,17 @@ async function confirmSwitch(): Promise<void> {
     />
   </div>
 </template>
+
+<style scoped>
+.gemini-element-chip {
+  border: 1px solid rgb(var(--el-rgb) / 0.45);
+  background: rgb(var(--el-rgb) / 0.16);
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 80%, var(--ui-color-text));
+}
+
+:global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .gemini-element-chip {
+  border-color: rgb(var(--el-rgb) / 0.52);
+  background: rgb(var(--el-rgb) / 0.26);
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 36%, #ffffff);
+}
+</style>

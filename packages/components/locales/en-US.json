@@ -909,6 +909,23 @@
     "viewUsage": "View usage",
     "usageEmpty": "No quota information available.",
     "usageResetsAt": "Resets {time}",
+    "geminiPeriodicTable": {
+      "trigger": "Gemini 4 periodic table",
+      "title": "Model selection",
+      "gridLabel": "Periodic table of Gemini 4 models",
+      "eyebrow": "The periodic table of",
+      "availableLabel": "available",
+      "current": "Current",
+      "chooseVariant": "Model variants",
+      "empty": "No Gemini 4 models were reported by this Antigravity agent.",
+      "fallbackDescriptions": {
+        "H": "Fast, lightweight everyday workhorse for rapid code edits, testing, and high-throughput agentic tasks.",
+        "C": "Deepest frontier reasoning flagship built for the hardest multi-step architecture, debugging, and research tasks.",
+        "Ne": "Balanced reasoning and agentic coding model for multi-file refactoring, daily knowledge work, and strong steerability.",
+        "Ar": "High-capability frontier model built to solve complex problems with depth and precision across software engineering and knowledge work.",
+        "default": "Gemini 4 {name} model available through Antigravity."
+      }
+    },
     "yolo": "YOLO",
     "yoloHint": "Auto-approve agent permission requests in this session",
     "yoloConfirmation": {
