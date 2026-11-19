@@ -1013,6 +1013,15 @@
     "cpu": "CPU",
     "memory": "Memory",
     "swap": "Swap",
+    "battery": "Battery",
+    "batteryState": {
+      "charging": "Charging",
+      "discharging": "On battery",
+      "full": "Fully charged",
+      "paused": "Not charging",
+      "empty": "Empty",
+      "unknown": "Unknown"
+    },
     "noSwap": "Not allocated",
     "highUsage": "High usage",
     "cores": "{count} logical cores",

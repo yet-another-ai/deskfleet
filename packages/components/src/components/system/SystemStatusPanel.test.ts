@@ -64,6 +64,7 @@ test("renders the target machine's measured usage, shared chart, and system deta
   expect(wrapper.get('[data-system-metric="cpu"]').text()).toContain("42")
   expect(wrapper.get('[data-system-metric="memory"]').text()).toContain("50")
   expect(wrapper.get('[data-system-metric="swap"]').text()).toMatch(/512\s*MiB/)
+  expect(wrapper.find('[data-system-metric="battery"]').exists()).toBe(false)
   expect(wrapper.text()).toContain("Remote machine CPU")
   expect(wrapper.text()).toContain("Linux 6.8")
   expect(wrapper.text()).toContain("x86_64")
@@ -82,15 +83,32 @@ test("renders the target machine's measured usage, shared chart, and system deta
   ])
 })
 
+test("renders remaining battery charge and charging state when available", async () => {
+  status.mockResolvedValue({
+    ...sample,
+    battery: { percent: 87.6, state: "charging" },
+  })
+  const wrapper = await setup()
+  const battery = wrapper.get('[data-system-metric="battery"]')
+  expect(battery.text()).toContain("88")
+  expect(battery.text()).toContain("Charging")
+})
+
 test("renders usage and timestamps with the application's Chinese locale", async () => {
   const previousLocale = i18n.global.locale.value
   i18n.global.locale.value = "zh-cmn-Hans-CN"
+  status.mockResolvedValue({
+    ...sample,
+    battery: { percent: 24.5, state: "discharging" },
+  })
   try {
     const wrapper = await setup()
     expect(wrapper.get('[data-system-metric="cpu"]').text()).toContain("42")
     expect(wrapper.get('[data-system-metric="memory"]').text()).toContain("50")
     expect(wrapper.get('[data-system-metric="memory"]').text()).toContain("内存")
     expect(wrapper.get('[data-system-metric="swap"]').text()).toContain("交换空间")
+    expect(wrapper.get('[data-system-metric="battery"]').text()).toContain("电池")
+    expect(wrapper.get('[data-system-metric="battery"]').text()).toContain("使用电池")
     expect(wrapper.text()).not.toMatch(/每 2 秒|采样/)
     expect(wrapper.text()).toContain("1 天 1 小时 1 分钟")
     expect(wrapper.get("dl").text()).toContain("DeskFleet 版本2.3.4")

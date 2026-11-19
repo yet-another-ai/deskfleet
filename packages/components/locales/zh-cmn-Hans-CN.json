@@ -1013,6 +1013,15 @@
     "cpu": "CPU",
     "memory": "内存",
     "swap": "交换空间",
+    "battery": "电池",
+    "batteryState": {
+      "charging": "正在充电",
+      "discharging": "使用电池",
+      "full": "已充满",
+      "paused": "未充电",
+      "empty": "电量耗尽",
+      "unknown": "未知"
+    },
     "noSwap": "未分配",
     "highUsage": "高占用",
     "cores": "{count} 个逻辑核心",

@@ -72,6 +72,15 @@ export declare class NativeTerminal {
   close(): Promise<void>
 }
 
+/** Power direction reported by a battery controller. */
+export type BatteryState = 'unknown' | 'charging' | 'discharging' | 'empty' | 'full' | 'paused'
+
+/** Aggregated battery charge and state for the machine. */
+export interface BatteryStatus {
+  percent: number
+  state: BatteryState
+}
+
 /** Enumerate capture displays only on explicit request. */
 export declare function captureDisplays(): Promise<Array<DisplayInfo>>
 
@@ -332,6 +341,7 @@ export interface SystemStatus {
   os: string
   arch: string
   uptimeSeconds: number
+  battery?: BatteryStatus
 }
 
 export interface TerminalConfig {

@@ -77,6 +77,7 @@ rtc = { version = "0.21.1", default-features = false }
 rand = "0.10"
 opus = "0.4"
 portable-pty = "0.9"
+starship-battery = "0.12"
 sysinfo = { version = "0.40.0", default-features = false, features = ["system"] }
 socket2 = "0.6.5"
 filedescriptor = "0.8"
