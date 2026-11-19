@@ -916,9 +916,7 @@
       "eyebrow": "元素周期表",
       "availableLabel": "个可用",
       "current": "当前使用",
-      "atomicNumber": "第 {number} 号元素 · {name}",
-      "clickToSelect": "点击高亮元素即可切换模型",
-      "chooseVariant": "点击上方规格即可切换模型",
+      "chooseVariant": "模型规格",
       "empty": "当前 Antigravity 未返回可用的 Gemini 4 模型。",
       "fallbackDescriptions": {
         "H": "轻量极速的日常主力模型，适合快速改代码、运行测试与高频智能体任务。",

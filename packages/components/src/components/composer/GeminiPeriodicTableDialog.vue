@@ -187,17 +187,17 @@ function close(): void {
       class="-mx-1.5 overflow-x-auto px-1.5 py-1.5"
       @pointerleave="clearHover"
     >
-      <div class="periodic-grid mx-auto min-w-[39rem]" role="group" :aria-label="t('composer.geminiPeriodicTable.gridLabel')">
+      <div class="periodic-grid mx-auto min-w-[42rem]" role="group" :aria-label="t('composer.geminiPeriodicTable.gridLabel')">
         <!-- Classic periodic table center hero nestled in columns 3..12, rows 1..3 -->
-        <div class="periodic-hero flex flex-col justify-center px-3 py-1">
-          <span class="text-[10px] font-medium uppercase tracking-[0.18em] text-ui-text-faint">
+        <div class="periodic-hero flex flex-col justify-center px-3.5 py-1">
+          <span class="text-[10px] font-medium uppercase tracking-[0.2em] text-ui-text-faint">
             {{ t("composer.geminiPeriodicTable.eyebrow") }}
           </span>
-          <div class="mt-0.5 text-2xl font-semibold tracking-tight text-ui-text sm:text-[2rem] sm:leading-none">
+          <div class="mt-1 text-[1.75rem] font-semibold tracking-tight text-ui-text sm:text-[2.125rem] sm:leading-none">
             Gemini 4
           </div>
-          <div class="mt-2 flex items-center gap-2 text-xs text-ui-text-muted">
-            <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-ui-border-strong bg-ui-control px-1.5 text-[11px] font-semibold tabular-nums text-ui-text">
+          <div class="mt-2.5 flex items-center gap-2 text-xs text-ui-text-muted">
+            <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-ui-border-strong bg-ui-control px-1.5 text-[11px] font-semibold tabular-nums text-ui-text shadow-ui-card">
               {{ availableEntries.length }}
             </span>
             <span>{{ t("composer.geminiPeriodicTable.availableLabel", availableEntries.length) }}</span>
@@ -210,7 +210,7 @@ function close(): void {
           style="grid-row: 6; grid-column: 3"
           aria-hidden="true"
         >
-          <span class="text-[9px] font-medium tracking-tight opacity-65">57–71</span>
+          <span class="text-[10px] font-medium tracking-tight opacity-65">57–71</span>
         </div>
 
         <!-- Main 18×6 periodic table elements -->
@@ -288,14 +288,14 @@ function close(): void {
     <div
       ref="detailRef"
       data-periodic-detail
-      class="mt-4 min-h-[7rem] rounded-xl border border-ui-border bg-ui-canvas/75 p-4"
+      class="periodic-detail mt-4 min-h-[5.75rem] rounded-xl border border-ui-border bg-ui-canvas/75 px-4 py-3.5"
     >
-      <div v-if="loading && !models.length" role="status" class="flex min-h-[4.5rem] items-center gap-2 text-[13px] text-ui-text-muted">
+      <div v-if="loading && !models.length" role="status" class="flex min-h-[3.75rem] items-center gap-2 text-[13px] text-ui-text-muted">
         <LoaderCircle :size="15" class="shrink-0 animate-spin" aria-hidden="true" />
         <span>{{ t("composer.loadingConfiguration") }}</span>
       </div>
 
-      <div v-else-if="error && !availableEntries.length" class="flex min-h-[4.5rem] flex-col items-start justify-center gap-2.5 text-[13px]">
+      <div v-else-if="error && !availableEntries.length" class="flex min-h-[3.75rem] flex-col items-start justify-center gap-2.5 text-[13px]">
         <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
         <UiButton type="button" @click="emit('reload')">
           <RotateCw :size="13" aria-hidden="true" />
@@ -303,7 +303,7 @@ function close(): void {
         </UiButton>
       </div>
 
-      <div v-else-if="!inspectedEntry || !inspectedModel" class="flex min-h-[4.5rem] flex-wrap items-center justify-between gap-3 text-[13px] text-ui-text-muted">
+      <div v-else-if="!inspectedEntry || !inspectedModel" class="flex min-h-[3.75rem] flex-wrap items-center justify-between gap-3 text-[13px] text-ui-text-muted">
         <p class="m-0">{{ t("composer.geminiPeriodicTable.empty") }}</p>
         <UiButton type="button" @click="emit('reload')">
           <RotateCw :size="13" aria-hidden="true" />
@@ -313,12 +313,12 @@ function close(): void {
 
       <div v-else class="flex items-start gap-3.5">
         <div
-          class="periodic-badge flex h-12 w-12 shrink-0 flex-col justify-between rounded-lg p-1.5"
+          class="periodic-badge relative flex h-13 w-13 shrink-0 items-center justify-center rounded-[0.625rem]"
           :style="{ '--el-rgb': inspectedEntry.element.rgb }"
           aria-hidden="true"
         >
-          <span class="text-[10px] leading-none font-medium opacity-80">{{ inspectedEntry.element.number }}</span>
-          <span class="text-center text-lg leading-none font-semibold tracking-tight">{{ inspectedEntry.element.symbol }}</span>
+          <span class="periodic-badge-number">{{ inspectedEntry.element.number }}</span>
+          <span class="periodic-badge-symbol">{{ inspectedEntry.element.symbol }}</span>
         </div>
 
         <div class="min-w-0 flex-1">
@@ -335,11 +335,16 @@ function close(): void {
             </span>
           </div>
 
-          <p class="m-0 mt-1.5 text-[13px] leading-relaxed text-ui-text-muted" data-periodic-description>
+          <p class="m-0 mt-1 text-[13px] leading-relaxed text-ui-text-muted" data-periodic-description>
             {{ descriptionFor(inspectedModel, inspectedEntry.element) }}
           </p>
 
-          <div v-if="inspectedEntry.models.length > 1" class="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <div
+            v-if="inspectedEntry.models.length > 1"
+            class="mt-2.5 flex flex-wrap items-center gap-1.5"
+            role="group"
+            :aria-label="t('composer.geminiPeriodicTable.chooseVariant')"
+          >
             <button
               v-for="variant in inspectedEntry.models"
               :key="variant.id"
@@ -359,11 +364,6 @@ function close(): void {
               <span>{{ extractGeminiVariantLabel(variant, inspectedEntry.element) }}</span>
             </button>
           </div>
-
-          <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ui-text-faint">
-            <span>{{ t("composer.geminiPeriodicTable.atomicNumber", { number: inspectedEntry.element.number, name: inspectedEntry.element.name }) }}</span>
-            <span>{{ t(inspectedEntry.models.length > 1 ? "composer.geminiPeriodicTable.chooseVariant" : "composer.geminiPeriodicTable.clickToSelect") }}</span>
-          </div>
         </div>
       </div>
     </div>
@@ -373,9 +373,9 @@ function close(): void {
 <style scoped>
 .periodic-grid {
   display: grid;
-  grid-template-columns: repeat(18, minmax(2.05rem, 1fr));
-  grid-template-rows: repeat(6, 2.55rem);
-  gap: 0.3rem;
+  grid-template-columns: repeat(18, minmax(2.2rem, 1fr));
+  grid-template-rows: repeat(6, 2.75rem);
+  gap: 0.3125rem;
 }
 
 .periodic-hero {
@@ -386,58 +386,69 @@ function close(): void {
 .periodic-tile {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 0.4375rem;
+  border-radius: 0.5rem;
   border-width: 1px;
-  padding: 0.25rem 0.2rem 0.2rem;
+  padding: 0;
   user-select: none;
 }
 
 .periodic-tile-dim {
-  border-color: color-mix(in srgb, var(--ui-color-border) 80%, transparent);
-  background: color-mix(in srgb, var(--ui-color-canvas) 60%, var(--ui-color-surface));
+  border-color: color-mix(in srgb, var(--ui-color-border) 82%, transparent);
+  background: color-mix(in srgb, var(--ui-color-canvas) 72%, var(--ui-color-surface));
   color: var(--ui-color-text-faint);
+  box-shadow: inset 0 1px 0 var(--ui-highlight);
+}
+
+:global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .periodic-tile-dim {
+  border-color: rgb(255 255 255 / 0.055);
+  background: rgb(255 255 255 / 0.028);
+  color: rgb(231 233 239 / 0.44);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
 }
 
 .periodic-tile-faded {
-  opacity: 0.45;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 96%);
-  mask-image: linear-gradient(to bottom, #000 0%, transparent 96%);
+  opacity: 0.48;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 94%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 94%);
 }
 
 .periodic-tile-active {
   cursor: pointer;
-  border-color: rgb(var(--el-rgb) / 0.48);
+  border-color: rgb(var(--el-rgb) / 0.46);
   background: linear-gradient(
     180deg,
-    rgb(var(--el-rgb) / 0.22),
-    rgb(var(--el-rgb) / 0.12)
+    rgb(var(--el-rgb) / 0.2),
+    rgb(var(--el-rgb) / 0.11)
   );
-  color: color-mix(in srgb, rgb(var(--el-rgb)) 78%, var(--ui-color-text));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22);
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 80%, var(--ui-color-text));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 1px 2px rgb(var(--el-rgb) / 0.08);
 }
 
 :global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .periodic-tile-active {
-  border-color: rgb(var(--el-rgb) / 0.52);
+  border-color: rgb(var(--el-rgb) / 0.56);
   background: linear-gradient(
     180deg,
-    rgb(var(--el-rgb) / 0.34),
+    rgb(var(--el-rgb) / 0.36),
     rgb(var(--el-rgb) / 0.2)
   );
-  color: color-mix(in srgb, rgb(var(--el-rgb)) 36%, #ffffff);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 30%, #ffffff);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 2px 8px rgb(0 0 0 / 0.22);
 }
 
 .periodic-tile-active:hover:not(:disabled),
 .periodic-tile-active:focus-visible:not(:disabled) {
   z-index: 2;
   scale: 1.07;
-  border-color: rgb(var(--el-rgb) / 0.85);
+  border-color: rgb(var(--el-rgb) / 0.9);
   box-shadow:
-    0 4px 14px rgb(var(--el-rgb) / 0.24),
-    inset 0 1px 0 rgb(255 255 255 / 0.28);
+    0 6px 18px rgb(var(--el-rgb) / 0.26),
+    inset 0 1px 0 rgb(255 255 255 / 0.3);
 }
 
 .periodic-tile-active:active:not(:disabled) {
@@ -445,16 +456,16 @@ function close(): void {
 }
 
 .periodic-tile-inspected:not(.periodic-tile-selected) {
-  border-color: rgb(var(--el-rgb) / 0.82);
+  border-color: rgb(var(--el-rgb) / 0.85);
 }
 
 .periodic-tile-selected {
   z-index: 1;
-  border-color: rgb(var(--el-rgb) / 0.95);
+  border-color: rgb(var(--el-rgb) / 0.96);
   box-shadow:
-    0 0 0 2px rgb(var(--el-rgb) / 0.38),
-    0 4px 16px rgb(var(--el-rgb) / 0.28),
-    inset 0 1px 0 rgb(255 255 255 / 0.28);
+    0 0 0 2px rgb(var(--el-rgb) / 0.36),
+    0 6px 18px rgb(var(--el-rgb) / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.3);
 }
 
 .periodic-tile-active:disabled {
@@ -464,54 +475,77 @@ function close(): void {
 
 .periodic-number {
   position: absolute;
-  top: 0.18rem;
-  left: 0.25rem;
-  font-size: 0.5625rem;
+  top: 0.2rem;
+  left: 0.28rem;
+  font-size: 0.53125rem;
+  font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  opacity: 0.72;
+  opacity: 0.68;
 }
 
 .periodic-dot {
   position: absolute;
-  top: 0.24rem;
-  right: 0.24rem;
+  top: 0.26rem;
+  right: 0.26rem;
   width: 0.3125rem;
   height: 0.3125rem;
   border-radius: 9999px;
   background: currentColor;
-  box-shadow: 0 0 6px rgb(var(--el-rgb) / 0.9);
+  box-shadow: 0 0 6px rgb(var(--el-rgb) / 0.95);
 }
 
 .periodic-symbol {
-  margin-top: 0.32rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  margin-top: 0.14rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
-.periodic-tile-dim .periodic-symbol {
-  font-weight: 500;
+.periodic-tile-active .periodic-symbol {
+  font-size: 1rem;
+  font-weight: 650;
 }
 
 .periodic-badge {
-  border: 1px solid rgb(var(--el-rgb) / 0.46);
+  border: 1px solid rgb(var(--el-rgb) / 0.48);
   background: linear-gradient(
     180deg,
     rgb(var(--el-rgb) / 0.22),
     rgb(var(--el-rgb) / 0.12)
   );
-  color: color-mix(in srgb, rgb(var(--el-rgb)) 78%, var(--ui-color-text));
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 80%, var(--ui-color-text));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3);
 }
 
 :global(:is(:root.dark:not([data-theme="light"]), [data-theme="dark"])) .periodic-badge {
-  border-color: rgb(var(--el-rgb) / 0.55);
+  border-color: rgb(var(--el-rgb) / 0.58);
   background: linear-gradient(
     180deg,
-    rgb(var(--el-rgb) / 0.36),
-    rgb(var(--el-rgb) / 0.2)
+    rgb(var(--el-rgb) / 0.38),
+    rgb(var(--el-rgb) / 0.22)
   );
-  color: color-mix(in srgb, rgb(var(--el-rgb)) 36%, #ffffff);
+  color: color-mix(in srgb, rgb(var(--el-rgb)) 30%, #ffffff);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+
+.periodic-badge-number {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.38rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+}
+
+.periodic-badge-symbol {
+  margin-top: 0.18rem;
+  font-size: 1.3125rem;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 </style>

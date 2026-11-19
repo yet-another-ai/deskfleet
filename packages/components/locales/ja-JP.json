@@ -736,9 +736,7 @@
       "eyebrow": "元素周期表",
       "availableLabel": "モデル利用可能",
       "current": "使用中",
-      "atomicNumber": "原子番号 {number} · {name}",
-      "clickToSelect": "ハイライトされた元素をクリックしてモデルを切り替え",
-      "chooseVariant": "上のバリエーションを選んでモデルを切り替え",
+      "chooseVariant": "モデルバリエーション",
       "empty": "この Antigravity エージェントから利用可能な Gemini 4 モデルが見つかりませんでした。",
       "fallbackDescriptions": {
         "H": "高速かつ軽量な日常向けモデル。素早いコード編集、テスト実行、高頻度のエージェント作業に適しています。",

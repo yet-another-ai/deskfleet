@@ -916,9 +916,7 @@
       "eyebrow": "The periodic table of",
       "availableLabel": "available",
       "current": "Current",
-      "atomicNumber": "Element #{number} · {name}",
-      "clickToSelect": "Click an element to switch model",
-      "chooseVariant": "Choose a variant above to switch model",
+      "chooseVariant": "Model variants",
       "empty": "No Gemini 4 models were reported by this Antigravity agent.",
       "fallbackDescriptions": {
         "H": "Fast, lightweight everyday workhorse for rapid code edits, testing, and high-throughput agentic tasks.",
