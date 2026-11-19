@@ -158,6 +158,34 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CONTROL_ICONS: [&str; 8] = [
+        "grip", "maximize", "minimize", "settings", "unplug", "chevron", "check", "monitor",
+    ];
+
+    #[component]
+    fn ControlIcons() -> impl IntoElement {
+        let mut row = view().flex_row();
+        for name in CONTROL_ICONS {
+            row = row.child(icon(name, Palette::new(true).muted, 16.));
+        }
+        row
+    }
+
+    #[test]
+    fn native_control_icons_emit_drawings_on_first_mount() {
+        use nsh_core::{ApproxTextEngine, Core, MountItem, canvas::CanvasOp, element::Root};
+
+        let mut core = Core::new(ApproxTextEngine, size(px(320.), px(48.)));
+        core.mount_root(&Root::of::<ControlIcons>());
+        let mount = core.commit().expect("icon row mounted");
+        let drawn = mount.items.iter().filter(|item| {
+            matches!(item, MountItem::Canvas { drawing, .. }
+                if drawing.ops.iter().any(|op| matches!(op, CanvasOp::Stroke(_))))
+        });
+        assert_eq!(drawn.count(), CONTROL_ICONS.len());
+    }
+
     #[test]
     fn native_controls_use_the_shared_desktop_translations() {
         for locale in ["en-US", "zh-cmn-Hans-CN", "ja-JP"] {
