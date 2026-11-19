@@ -1,8 +1,8 @@
-import { executeGit } from "./git-execution.ts"
+import { checkoutRoot, executeGit } from "./git-execution.ts"
 import { watch, type FSWatcher } from "node:fs"
-import { realpath } from "node:fs/promises"
-import { resolve } from "node:path"
-import type { CatalogSnapshot, GitHubBranch, SessionGitHubBranches } from "./catalog-protocol.ts"
+import { access, realpath } from "node:fs/promises"
+import { join, resolve } from "node:path"
+import type { CatalogDirectory, CatalogSnapshot, GitHubBranch, SessionGitHubBranches } from "./catalog-protocol.ts"
 
 
 async function git(root: string, args: string[]): Promise<string> {
@@ -25,10 +25,12 @@ export function githubRepository(remote: string): string | undefined {
   return repository.toLowerCase()
 }
 
-async function branches(root: string): Promise<GitHubBranch[]> {
-  const reference = await git(root, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => "")
-  if (!reference.startsWith("refs/heads/")) return []
-  const branch = reference.slice("refs/heads/".length)
+interface CheckoutMetadata {
+  repositories: string[]
+  branches: GitHubBranch[]
+}
+
+async function readMetadata(root: string): Promise<CheckoutMetadata> {
   const config = new Map<string, string>()
   for (const entry of (await git(root, ["config", "--null", "--list"])).split("\0")) {
     const end = entry.indexOf("\n")
@@ -42,29 +44,33 @@ async function branches(root: string): Promise<GitHubBranch[]> {
     const repository = remote && githubRepository(value)
     if (remote && repository) (match?.[2] === "pushurl" ? pushRepositories : remotes).set(remote, repository)
   }
+  const repositories = [...new Set([...remotes.values(), ...pushRepositories.values()])].sort()
+  const reference = await git(root, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => "")
+  if (!reference.startsWith("refs/heads/")) return { repositories, branches: [] }
+  const branch = reference.slice("refs/heads/".length)
   const upstream = config.get(`branch.${branch}.remote`)
   const pushRemote = config.get(`branch.${branch}.pushremote`) ?? config.get("remote.pushdefault")
   const headRemote = pushRemote ?? (upstream && remotes.has(upstream) ? upstream : undefined)
     ?? (remotes.has("origin") ? "origin" : remotes.keys().next().value)
   const headRepository = headRemote && (pushRepositories.get(headRemote) ?? remotes.get(headRemote))
-  if (!headRepository) return []
+  if (!headRepository) return { repositories, branches: [] }
   const merge = config.get(`branch.${branch}.merge`)
   const pushesCurrentName = ["current", "matching"].includes(config.get("push.default") ?? "")
   const headBranch = !pushesCurrentName && headRemote === upstream && merge?.startsWith("refs/heads/") ? merge.slice("refs/heads/".length) : branch
-  return [...new Set(remotes.values())].sort().map(repository => ({ repository, headRepository, branch: headBranch }))
+  return { repositories, branches: [...new Set(remotes.values())].sort().map(repository => ({ repository, headRepository, branch: headBranch })) }
 }
 
 interface Checkout {
   root: string
   watchers: Map<string, FSWatcher>
-  repositories: GitHubBranch[]
+  metadata: CheckoutMetadata
   pending?: Promise<void>
   timer?: ReturnType<typeof setTimeout>
   again: boolean
   closed: boolean
 }
 
-/** Observe branch identity only; working files, indexes and refs do not need scans. */
+/** Observe GitHub remotes and branch identity without scanning working files. */
 export class GitHubBranches {
   readonly #checkouts = new Map<string, Checkout>()
   readonly #changed: () => void
@@ -72,15 +78,14 @@ export class GitHubBranches {
 
   constructor(changed: () => void) { this.#changed = changed }
 
-  async snapshot(catalog: Pick<CatalogSnapshot, "workspaces" | "sessions">, inactive = new Set<string>()): Promise<SessionGitHubBranches[]> {
+  async snapshot(catalog: Pick<CatalogSnapshot, "workspaces" | "sessions">, inactive = new Set<string>()) {
     const worktrees = [...catalog.sessions, ...catalog.workspaces.flatMap(workspace => workspace.worktrees)]
       .filter(worktree => worktree.sessionId && !inactive.has(worktree.sessionId))
     const used = new Set<string>()
     const resolved = new Map<string, Promise<Checkout | undefined>>()
-    const entries: SessionGitHubBranches[] = []
-    for (const worktree of worktrees) {
-      const repositories = new Map<string, GitHubBranch>()
-      for (const directory of worktree.directories) {
+    const metadataFor = async (directories: CatalogDirectory[]) => {
+      const metadata: CheckoutMetadata[] = []
+      for (const directory of directories) {
         let pending = resolved.get(directory.path)
         if (!pending) {
           pending = this.#checkout(directory.path)
@@ -90,15 +95,31 @@ export class GitHubBranches {
         if (!checkout) continue
         used.add(checkout.root)
         await checkout.pending
-        for (const repository of checkout.repositories) repositories.set(JSON.stringify(repository), repository)
+        metadata.push(checkout.metadata)
       }
-      if (repositories.size) entries.push({ sessionId: worktree.sessionId!, repositories: [...repositories.values()] })
+      return metadata
+    }
+    const workspaceGithubRepositories: NonNullable<CatalogSnapshot["workspaceGithubRepositories"]> = []
+    for (const workspace of catalog.workspaces) {
+      const main = workspace.worktrees.find(worktree => !worktree.sessionId)
+      if (!main) continue
+      const metadata = await metadataFor(main.directories)
+      const repositories = [...new Set(metadata.flatMap(entry => entry.repositories))]
+      if (repositories.length) workspaceGithubRepositories.push({ workspaceId: workspace.id, repositories })
+    }
+    const githubBranches: SessionGitHubBranches[] = []
+    for (const worktree of worktrees) {
+      const repositories = new Map<string, GitHubBranch>()
+      for (const checkout of await metadataFor(worktree.directories)) {
+        for (const branch of checkout.branches) repositories.set(JSON.stringify(branch), branch)
+      }
+      if (repositories.size) githubBranches.push({ sessionId: worktree.sessionId!, repositories: [...repositories.values()] })
     }
     for (const [root, checkout] of this.#checkouts) if (!used.has(root)) {
       this.#release(checkout)
       this.#checkouts.delete(root)
     }
-    return entries
+    return { githubBranches, workspaceGithubRepositories }
   }
 
   async #checkout(path: string): Promise<Checkout | undefined> {
@@ -106,12 +127,12 @@ export class GitHubBranches {
     let root: string
     try {
       const directory = await realpath(path)
-      root = await git(directory, ["rev-parse", "--show-toplevel"]).then(value => realpath(value)).catch(() => directory)
+      root = await checkoutRoot(directory).catch(() => directory)
     } catch { return }
     if (this.#closed) return
     const existing = this.#checkouts.get(root)
     if (existing) return existing
-    const checkout: Checkout = { root, watchers: new Map(), repositories: [], again: false, closed: false }
+    const checkout: Checkout = { root, watchers: new Map(), metadata: { repositories: [], branches: [] }, again: false, closed: false }
     this.#checkouts.set(root, checkout)
     await this.#refresh(checkout, false)
     return checkout
@@ -131,9 +152,13 @@ export class GitHubBranches {
       do {
         checkout.again = false
         const directories = new Set([checkout.root])
+        let gitCheckout = false
         try {
+          // A plain Workspace directory only needs a watch for a future git init.
+          await access(join(checkout.root, ".git"))
           const paths = await git(checkout.root, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"])
           for (const path of paths.split("\n")) directories.add(resolve(checkout.root, path))
+          gitCheckout = true
         } catch { /* A directory Session can acquire a repository later. */ }
         if (checkout.closed || this.#closed) return
         for (const [path, watcher] of checkout.watchers) if (!directories.has(path)) {
@@ -152,10 +177,11 @@ export class GitHubBranches {
             checkout.watchers.set(path, watcher)
           } catch { /* Missing checkout metadata is represented by no locator. */ }
         }
-        const next = await branches(checkout.root).catch(() => [])
+        const metadata = gitCheckout ? await readMetadata(checkout.root).catch(() => undefined) : undefined
+        const next = metadata ?? { repositories: [], branches: [] }
         if (checkout.closed || this.#closed) return
-        if (JSON.stringify(next) !== JSON.stringify(checkout.repositories)) {
-          checkout.repositories = next
+        if (JSON.stringify(next) !== JSON.stringify(checkout.metadata)) {
+          checkout.metadata = next
           if (notify) this.#changed()
         }
       } while (checkout.again && !checkout.closed && !this.#closed)

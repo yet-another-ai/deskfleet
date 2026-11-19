@@ -192,6 +192,10 @@ test("desktop GitHub settings bridge keeps authorization in the host transport",
   f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ pullRequest })))
   await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubPullRequest", [{ owner: "owner", repo: "repo", branch: "feat/status" }])).resolves.toEqual({ ok: true, value: { pullRequest } })
   expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/integrations/github/pull-request?owner=owner&repo=repo&branch=feat%2Fstatus`, method: "GET" })
+  const page = { items: [], nextCursor: "page-3" }
+  f.fetch.mockResolvedValueOnce(Response.json(page))
+  await expect(invoke({} as Electron.IpcMainInvokeEvent, "githubRepositoryItems", [{ owner: "owner", repo: "repo", kind: "issue", includeClosed: true, cursor: "opaque+/=" }])).resolves.toEqual({ ok: true, value: page })
+  expect(sentRequest(f.fetch)).toMatchObject({ url: `${serverUrl}/api/integrations/github/repository-items?owner=owner&repo=repo&kind=issue&includeClosed=true&cursor=opaque%2B%2F%3D`, method: "GET" })
 })
 
 test("the browser login callback submits its code as a same-origin form", async () => {

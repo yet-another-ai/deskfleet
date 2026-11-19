@@ -72,7 +72,7 @@ function prohibited(key: string): boolean {
     || /^(extensions\.partialclone|gc\.recentobjectshook)$/u.test(key)
 }
 
-async function checkoutRoot(path: string): Promise<string> {
+export async function checkoutRoot(path: string): Promise<string> {
   let directory = await realpath(path)
   for (;;) {
     if (await stat(join(directory, ".git")).then(() => true, () => false)) return directory

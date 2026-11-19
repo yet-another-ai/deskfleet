@@ -1,14 +1,17 @@
 import { client as platformClient } from "@deskfleet/client/platform"
+import type { GithubRepositoryItem } from "@deskfleet/client/central"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
 import { ref } from "vue"
 import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
-import { buildPromptContent, type ComposerAttachment } from "../../services/composer-attachments.ts"
+import { buildPromptContent, previewPromptContent, sessionTitleFromDraft, type ComposerAttachment } from "../../services/composer-attachments.ts"
+import { writeGithubItemDrag } from "../../services/github-composer-reference.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
+import { useFleetStore } from "../../stores/fleet.ts"
 import type { SessionTarget, WorkspaceLocation } from "../../stores/fleet.ts"
-import { workspaceId } from "../../test/catalog.ts"
+import { catalogFixture, workspaceId } from "../../test/catalog.ts"
 import AgentContent from "../session/AgentContent.vue"
 import SessionComposer from "./SessionComposer.vue"
 
@@ -84,6 +87,59 @@ test("composer highlights file drags across its children and attaches files with
     expect(wrapper.emitted("update:attachments")?.[0]?.[0]).toEqual([
       expect.objectContaining({ kind: "local_file", name: "README", size: 5 }),
     ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test.each(["issue", "pullRequest"] as const)("a scoped GitHub %s drop attaches one removable snapshot to the draft", async kind => {
+  pinia = createPinia()
+  const catalog = catalogFixture()
+  const scope = { teamId: catalog.teamId, machineId: catalog.machineId, workspaceId }
+  const location: WorkspaceLocation = {
+    machine: yoloLocation.machine,
+    workspace: { id: workspaceId, name: "DeskFleet", directories: [{ path: "/repo" }], sessions: [], terminals: [] },
+  }
+  const wrapper = mount(SessionComposer, {
+    props: { location },
+    global: { plugins: [pinia, router, i18n], stubs: { AgentConfigurationSelector: true } },
+  })
+  useFleetStore(pinia).catalog = catalog
+  await flushPromises()
+  const item: GithubRepositoryItem = { kind, state: kind === "issue" ? "closed" : "merged", number: 12, repository: "acme/app", title: "Fix toolbar",
+    url: `https://github.com/acme/app/${kind === "issue" ? "issues" : "pull"}/12`, body: "Reproduce by opening a Session." }
+  const drop = async (source: typeof scope, value = item) => {
+    const transfer = new DataTransfer()
+    writeGithubItemDrag(transfer, source, value)
+    wrapper.get("textarea").element.dispatchEvent(dragEvent("drop", transfer))
+    await flushPromises()
+  }
+  try {
+    for (const field of ["teamId", "machineId", "workspaceId"]) await drop({ ...scope, [field]: "different" })
+    await drop(scope, { ...item, url: "file:///some/file" })
+    expect(wrapper.find("[data-attachment-kind=github]").exists()).toBe(false)
+    await drop(scope)
+    await drop(scope)
+    expect(wrapper.findAll("[data-attachment-kind=github]")).toHaveLength(1)
+    expect(wrapper.get("[data-attachment-kind=github]").text()).toBe("acme/app#12 · Fix toolbar")
+    await wrapper.get(".composer-send").trigger("click")
+    expect(wrapper.emitted("submit")).toEqual([["backlog"]])
+    const attachments = wrapper.emitted<[ComposerAttachment[]]>("update:attachments")!.at(-1)![0]
+    const text = `${kind === "issue" ? "GitHub Issue" : "GitHub Pull Request"} acme/app#12 · Fix toolbar\n${item.url}\n\n${item.body}`
+    const blocks = [{ type: "resource", resource: { uri: item.url, mimeType: "text/markdown", text } }]
+    expect(previewPromptContent("", attachments)).toEqual(blocks)
+    const content = await buildPromptContent({ draft: "", attachments, sessionId: "123" })
+    expect(content).toEqual(blocks)
+    const message = mount(AgentContent, { props: { content }, global: { plugins: [i18n] } })
+    try {
+      expect(message.get("button").text()).toContain("acme/app#12 · Fix toolbar")
+      expect(message.get("a").attributes("href")).toBe(item.url)
+      await message.get("button").trigger("click")
+      expect(message.get("pre").text()).toContain(item.body)
+    } finally { message.unmount() }
+    expect(sessionTitleFromDraft("", attachments)).toBe("acme/app#12 · Fix toolbar")
+    await wrapper.get("[data-attachment-kind=github] button").trigger("click")
+    expect(wrapper.find("[data-attachment-kind=github]").exists()).toBe(false)
   } finally {
     wrapper.unmount()
   }

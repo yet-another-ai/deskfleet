@@ -10,7 +10,7 @@ import { router } from "../../router/index.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import { catalogFixture, sessionId } from "../../test/catalog.ts"
+import { catalogFixture, sessionId, workspaceId } from "../../test/catalog.ts"
 import WindowManager from "./WindowManager.vue"
 
 const mounted: Array<{ wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }> = []
@@ -30,7 +30,7 @@ async function setup(platform: DeskfleetDesktopApi["platform"] = "linux") {
   const wrapper = mount(WindowManager, {
     props: { sessionId }, attachTo: document.body,
     global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform } }, stubs: {
-      AppMainWindow: true, ChangesPanel: true, SessionPreviewWindow: true, WindowToolbar: true,
+      AppMainWindow: true, ChangesPanel: true, GithubPanel: true, SessionPreviewWindow: true, WindowToolbar: true,
       SessionDesktopPanel: desktopStub,
     } },
   })
@@ -127,6 +127,32 @@ test("closing a desktop tab pauses it and + reopens it in the requested group", 
   await flushPromises()
   expect(api.getPanel("desktops")!.api.group).toBe(api.getPanel("changes")!.api.group)
   expect(wrapper.get("[data-session-desktops]").attributes("data-active")).toBe("true")
+})
+
+test.each([true, false])("adding GitHub from Chat keeps Chat visible (neighbor visible: %s)", async neighborVisible => {
+  const { wrapper, api, pinia } = await setup()
+  const chat = api.getPanel("chat")!
+  const neighbor = api.getPanel("changes")!.api.group
+  neighbor.api.setVisible(neighborVisible)
+  const menu = async () => {
+    const group = wrapper.get('[data-window-tab-id="chat"]').element.closest(".dv-groupview")!
+    ;(group.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
+    await flushPromises()
+    return new DOMWrapper(document.body)
+  }
+  expect((await menu()).find('[data-window-type="github"]').exists()).toBe(false)
+  useFleetStore(pinia).catalog!.workspaceGithubRepositories = [{ workspaceId, repositories: ["deskfleet/demo"] }]
+  await flushPromises()
+  await new DOMWrapper(document.body).get('[data-window-type="github"]').trigger("click")
+  await flushPromises()
+  const github = api.getPanel("github")!
+  expect(github.api.isVisible).toBe(true)
+  expect(chat.api.isVisible).toBe(true)
+  expect(github.api.group).not.toBe(chat.api.group)
+  if (neighborVisible) expect(github.api.group).toBe(neighbor)
+  await wrapper.get('[aria-label="Close GitHub"]').trigger("click")
+  await flushPromises()
+  expect(api.getPanel("github")).toBeUndefined()
 })
 
 test("resource previews reuse the desktop group when Changes is closed and pause desktop capture", async () => {

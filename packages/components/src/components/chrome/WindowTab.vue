@@ -2,10 +2,11 @@
 import { MessageSquare, MonitorPlay, SquareTerminal, X } from "@lucide/vue"
 import { defineComponent } from "vue"
 import UiTabTitle from "../common/UiTabTitle.vue"
+import GithubIcon from "../common/GithubIcon.vue"
 import UiTooltip from "../common/UiTooltip.vue"
 
 export default defineComponent({
-  components: { MessageSquare, MonitorPlay, SquareTerminal, UiTabTitle, UiTooltip, X },
+  components: { GithubIcon, MessageSquare, MonitorPlay, SquareTerminal, UiTabTitle, UiTooltip, X },
   props: {
     tabId: { type: String, required: true },
     title: { type: String, required: true },
@@ -26,6 +27,7 @@ export default defineComponent({
     >
       <MessageSquare v-if="tabId === 'chat'" :size="14" class="shrink-0" aria-hidden="true" />
       <MonitorPlay v-else-if="tabId === 'desktops'" :size="14" class="shrink-0" aria-hidden="true" />
+      <GithubIcon v-else-if="tabId === 'github'" :size="14" />
       <SquareTerminal v-else-if="tabId.startsWith('terminal:')" :size="14" class="shrink-0" aria-hidden="true" />
       <span v-else class="shrink-0 text-xs font-semibold" aria-hidden="true">±</span>
       <UiTabTitle :class="overflow && 'flex-1'">{{ title }}</UiTabTitle>

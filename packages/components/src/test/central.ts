@@ -82,6 +82,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     openAccountSettings: vi.fn(async () => {}),
     githubSettings: vi.fn<CentralApi["githubSettings"]>(async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false })),
     githubPullRequest: vi.fn<CentralApi["githubPullRequest"]>(async () => ({ pullRequest: null })),
+    githubRepositoryItems: vi.fn<CentralApi["githubRepositoryItems"]>(async () => ({ items: [], nextCursor: null })),
     search: vi.fn<CentralApi["search"]>(async () => ({ results: [] })),
     scheduleSnapshot: vi.fn<CentralApi["scheduleSnapshot"]>(async () => ({ tasks: [], lastObservedAt: null })),
     manageGithub: vi.fn(async () => {}),

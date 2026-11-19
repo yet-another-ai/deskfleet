@@ -631,6 +631,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     openAccountSettings: async () => {},
     githubSettings: async () => ({ configured: false, manageUrl: null, authorized: false, login: null, actAsYou: false }),
     githubPullRequest: async () => ({ pullRequest: null }),
+    githubRepositoryItems: async () => ({ items: [], nextCursor: null }),
     search: async () => ({ results: [] }),
     scheduleSnapshot: async () => ({ tasks: structuredClone(schedules), lastObservedAt: "2026-10-31T12:00:00Z" }),
     manageGithub: async () => {},
