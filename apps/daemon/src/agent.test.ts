@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration } from "./agent-configuration-protocol.ts"
 import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
-import { authenticateCursor } from "./agents/cursor.ts"
-import { authenticateGrok } from "./agents/grok.ts"
+import { authenticateCursor, createCursorExtension } from "./agents/cursor.ts"
+import { authenticateGrok, createGrokExtension } from "./agents/grok.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
 const launch: AgentProcess = { command: process.execPath, args: [fixture] }
@@ -300,7 +300,7 @@ test("Cursor parameterized model options expose reasoning effort and apply it", 
 test("Grok model metadata exposes reasoning effort and applies it with session/set_mode", { timeout: 15_000 }, async context => {
   const connection = await connectAcpProcess({
     ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "grok-effort" },
-  }, { onUpdate() {} })
+  }, { onUpdate() {} }, { extensions: [createGrokExtension()] })
   context.after(() => connection.close())
   const created = await connection.newSession(session)
   const discovered = agentConfiguration(created.configOptions ?? [], { id: "grok", name: "Grok" })
@@ -355,7 +355,7 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
         requests.push(request)
         return { action: "accept", content: { q1: "agent", q2: ["lint"] } }
       },
-    })
+    }, { extensions: [createCursorExtension()] })
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -370,7 +370,11 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
   })
 
   await context.test("cursor question without a handler", async () => {
-    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } }, { onUpdate() {} })
+    const connection = await connectAcpProcess(
+      { ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question" } },
+      { onUpdate() {} },
+      { extensions: [createCursorExtension()] },
+    )
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -384,7 +388,7 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
     const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-question-invalid" } }, {
       onUpdate() {},
       async requestElicitation() { asked = true; return { action: "cancel" } },
-    })
+    }, { extensions: [createCursorExtension()] })
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -400,7 +404,7 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
         requests.push(request)
         return { action: "accept", content: {} }
       },
-    })
+    }, { extensions: [createCursorExtension()] })
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -414,7 +418,11 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
   })
 
   await context.test("cursor create_plan without a handler", async () => {
-    const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan" } }, { onUpdate() {} })
+    const connection = await connectAcpProcess(
+      { ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan" } },
+      { onUpdate() {} },
+      { extensions: [createCursorExtension()] },
+    )
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -428,7 +436,7 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
     const connection = await connectAcpProcess({ ...launch, env: { DESKFLEET_TEST_AGENT_MODE: "cursor-plan-invalid" } }, {
       onUpdate() {},
       async requestElicitation() { asked = true; return { action: "cancel" } },
-    })
+    }, { extensions: [createCursorExtension()] })
     context.after(() => connection.close())
     const created = await connection.newSession(session)
     const result = await connection.prompt({ sessionId: created.sessionId, prompt })
@@ -445,7 +453,7 @@ test("Cursor and Grok questions use the session form", { timeout: 30_000 }, asyn
           requests.push(request)
           return mode === "grok-question" ? { action: "accept", content: { "Which database?": "Redis" } } : { action: "cancel" }
         },
-      })
+      }, { extensions: [createGrokExtension()] })
       context.after(() => connection.close())
       const created = await connection.newSession(session)
       const result = await connection.prompt({ sessionId: created.sessionId, prompt })

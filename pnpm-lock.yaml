@@ -51,6 +51,12 @@ importers:
       '@deskfleet/agent-core':
         specifier: workspace:*
         version: link:../../packages/agents/core
+      '@deskfleet/agent-cursor':
+        specifier: workspace:*
+        version: link:../../packages/agents/cursor
+      '@deskfleet/agent-grok':
+        specifier: workspace:*
+        version: link:../../packages/agents/grok
       '@deskfleet/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -332,6 +338,24 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 2.7.0
         version: 2.7.0(zod@4.6.7)
+
+  packages/agents/cursor:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 2.7.0
+        version: 2.7.0(zod@4.6.7)
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/agents/grok:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 2.7.0
+        version: 2.7.0(zod@4.6.7)
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/capacitor-bridge:
     dependencies:

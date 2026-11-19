@@ -51,10 +51,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       (source + /packages/components/uno.config.ts)
       # The browser shares wire contracts and pure helpers with the daemon.
       (lib.fileset.fileFilter (file: lib.hasSuffix "-protocol.ts" file.name) (source + /apps/daemon/src))
+      (lib.fileset.fileFilter (file: file.name == "protocol.ts") (source + /packages/agents))
       (source + /apps/daemon/src/agent-command-results.ts)
       (source + /apps/daemon/src/agent-configuration-matrix.ts)
-      (source + /apps/daemon/src/agents/plans.ts)
-      (source + /apps/daemon/src/agents/questions.ts)
       (source + /apps/daemon/src/files-wire.ts)
       (source + /apps/daemon/src/titles.ts)
       (source + /crates/protocol/control.ts)
@@ -99,9 +98,11 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     # Browser-shared daemon helpers resolve ACP relative to the daemon tree.
     # Reuse the SDK already installed for the UI, without installing agents or
     # native daemon packages in this static Web build.
-    mkdir -p apps/daemon/node_modules/@agentclientprotocol
+    mkdir -p apps/daemon/node_modules/@agentclientprotocol packages/agents/core/node_modules/@agentclientprotocol
     ln -s "$PWD/packages/components/node_modules/@agentclientprotocol/sdk" \
       apps/daemon/node_modules/@agentclientprotocol/sdk
+    ln -s "$PWD/packages/components/node_modules/@agentclientprotocol/sdk" \
+      packages/agents/core/node_modules/@agentclientprotocol/sdk
     pnpm --filter @deskfleet/web build
     runHook postBuild
   '';

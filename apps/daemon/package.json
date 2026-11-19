@@ -17,6 +17,8 @@
     "@deskfleet/agent-claude-code": "workspace:*",
     "@deskfleet/agent-codex": "workspace:*",
     "@deskfleet/agent-core": "workspace:*",
+    "@deskfleet/agent-cursor": "workspace:*",
+    "@deskfleet/agent-grok": "workspace:*",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",

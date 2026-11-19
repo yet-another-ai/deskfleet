@@ -25,12 +25,23 @@ export class CursorNotifications {
       const todos = params.merge ? this.#todos.get(sessionId) ?? new Map<string, Todo>() : new Map<string, Todo>()
       for (const todo of incoming) todos.set(todo.id, todo)
       this.#todos.set(sessionId, todos)
-      return { sessionId, update: { sessionUpdate: "plan_update", _meta: meta, plan: {
-        type: "items", planId: "cursor-todos", entries: [...todos.values()].map(todo => ({
-          content: todo.content, priority: "medium", status: todo.status === "cancelled" ? "completed" : todo.status,
-          _meta: { cursor: { id: todo.id, status: todo.status } },
-        })),
-      } } }
+      return {
+        sessionId,
+        update: {
+          sessionUpdate: "plan_update",
+          _meta: meta,
+          plan: {
+            type: "items",
+            planId: "cursor-todos",
+            entries: [...todos.values()].map(todo => ({
+              content: todo.content,
+              priority: "medium",
+              status: todo.status === "cancelled" ? "completed" : todo.status,
+              _meta: { cursor: { id: todo.id, status: todo.status } },
+            })),
+          },
+        },
+      }
     }
     if (!text(params.description)) return undefined
     const content: acp.ToolCallContent[] = []
@@ -40,12 +51,31 @@ export class CursorNotifications {
     } else if (method === "cursor/generate_image") {
       if (text(params.filePath)) {
         const path = isAbsolute(params.filePath) ? params.filePath : cwd ? resolve(cwd, params.filePath) : undefined
-        if (path) content.push({ type: "content", content: { type: "resource_link", uri: pathToFileURL(path).href,
-          name: basename(path), description: params.description } })
+        if (path) {
+          content.push({
+            type: "content",
+            content: {
+              type: "resource_link",
+              uri: pathToFileURL(path).href,
+              name: basename(path),
+              description: params.description,
+            },
+          })
+        }
       }
     } else return undefined
-    return { sessionId, update: { sessionUpdate: "tool_call", toolCallId: params.toolCallId,
-      title: params.description, kind: "other", status: "completed", content, rawInput: params, _meta: meta,
-    } }
+    return {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: params.toolCallId,
+        title: params.description,
+        kind: "other",
+        status: "completed",
+        content,
+        rawInput: params,
+        _meta: meta,
+      },
+    }
   }
 }

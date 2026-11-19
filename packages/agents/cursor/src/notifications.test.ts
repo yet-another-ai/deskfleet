@@ -3,7 +3,7 @@ import test from "node:test"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { pathToFileURL } from "node:url"
-import { CursorNotifications } from "./agents/cursor-notifications.ts"
+import { CursorNotifications } from "./notifications.ts"
 
 test("Cursor todos merge by id, replace the full list, and preserve cancelled semantics", () => {
   const cursor = new CursorNotifications()
@@ -31,7 +31,13 @@ test("Cursor task and generated-image notifications retain their tool IDs and re
   assert.deepEqual(taskUpdate.rawInput, task)
   const image = cursor.update("cursor/generate_image", { toolCallId: "image-id", description: "A diagram", filePath: "diagram.png" }, "parent", tmpdir())!.update
   if (image.sessionUpdate !== "tool_call") assert.fail()
-  assert.deepEqual(image.content, [{ type: "content", content: { type: "resource_link",
-    uri: pathToFileURL(join(tmpdir(), "diagram.png")).href, name: "diagram.png", description: "A diagram",
-  } }])
+  assert.deepEqual(image.content, [{
+    type: "content",
+    content: {
+      type: "resource_link",
+      uri: pathToFileURL(join(tmpdir(), "diagram.png")).href,
+      name: "diagram.png",
+      description: "A diagram",
+    },
+  }])
 })
