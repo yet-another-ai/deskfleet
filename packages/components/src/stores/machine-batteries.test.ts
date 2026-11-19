@@ -66,6 +66,21 @@ test("skips offline machines and only retries a missing battery after the long i
   expect(rpc).toHaveBeenCalledTimes(2)
 })
 
+test("accepts an account session attached after the store was created", async () => {
+  configureClient({ ...host, target: { id: "m1", local: false } })
+  const fake = fakeCentral({ machines: [machineFixture("m1", "team-1", "Laptop")] })
+  const rpc = vi.fn(async () => ({ battery: charging } as unknown as SystemStatus))
+  fake.central.rpc = rpc as unknown as CentralApi["rpc"]
+  account = createAccountSession(fake.central)
+  await flushPromises()
+  const store = useMachineBatteriesStore(pinia)
+  store.attachAccount(account)
+  store.observe("m1")
+  await flushPromises()
+  expect(rpc).toHaveBeenCalledExactlyOnceWith("team-1", "m1", "systemStatus", {})
+  expect(store.forMachine("m1")).toEqual(charging)
+})
+
 test("drops entries and late replies after the Team changes", async () => {
   const { store, rpc } = await setup([
     machineFixture("m1", "team-1", "Laptop"),

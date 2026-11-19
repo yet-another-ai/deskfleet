@@ -1,9 +1,10 @@
+import type { CentralApi } from "@deskfleet/client/central"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import type { SystemStatus } from "@deskfleet/client/system"
 import { useDocumentVisibility, useIntervalFn } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { computed, hasInjectionContext, inject, onScopeDispose, ref, shallowRef, watch, type InjectionKey } from "vue"
-import { useAccountSession } from "../composables/useAccountSession.ts"
+import { useAccountSession, type AccountSession } from "../composables/useAccountSession.ts"
 
 export const MACHINE_BATTERY_INTERVAL = 60_000
 /** Machine presence rarely changes after startup, so a missing battery is not re-read every minute. */
@@ -13,6 +14,7 @@ type BatteryStatus = NonNullable<SystemStatus["battery"]>
 interface BatteryEntry { battery: BatteryStatus | null; checkedAt: number }
 
 export interface MachineBatteriesStore {
+  attachAccount(account: AccountSession): void
   observe(machineId: string): () => void
   forMachine(machineId: string): BatteryStatus | undefined
   refresh(force?: boolean): Promise<void>
@@ -29,11 +31,19 @@ const entryKey = (teamId: string, machineId: string) => JSON.stringify([teamId, 
  * before another read. Battery is best-effort: failures leave the last value.
  */
 export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
-  const account = hasInjectionContext() ? useAccountSession() : undefined
-  const automatic = account?.central && typeof account.central.rpc === "function"
-    ? withCentralRequestTrigger(account.central, "background")
-    : undefined
+  const account = shallowRef<AccountSession>()
+  const automatic = shallowRef<CentralApi>()
   const visibility = useDocumentVisibility()
+
+  /** The account shell provides its session after setup, so it attaches explicitly. */
+  function attachAccount(next: AccountSession): void {
+    account.value = next
+    automatic.value = next.central && typeof next.central.rpc === "function"
+      ? withCentralRequestTrigger(next.central, "background")
+      : undefined
+  }
+  const initialAccount = hasInjectionContext() ? useAccountSession() : undefined
+  if (initialAccount) attachAccount(initialAccount)
   const observed = ref(new Map<string, number>())
   const entries = shallowRef<Record<string, BatteryEntry>>({})
   const pending = new Map<string, Promise<void>>()
@@ -41,22 +51,22 @@ export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
   let disposed = false
 
   const scope = computed(() => {
-    const user = account?.account?.value.user
-    const teamId = account?.teamId?.value
+    const user = account.value?.account?.value.user
+    const teamId = account.value?.teamId?.value
     return user && teamId
-      ? JSON.stringify([account!.account.value.serverUrl, user.id, teamId])
+      ? JSON.stringify([account.value!.account.value.serverUrl, user.id, teamId])
       : undefined
   })
   const online = computed(() => {
-    const teamId = account?.teamId?.value
-    return new Set(teamId ? (account?.machines?.value ?? [])
+    const teamId = account.value?.teamId?.value
+    return new Set(teamId ? (account.value?.machines?.value ?? [])
       .filter(machine => machine.teamId === teamId && machine.online)
       .map(machine => machine.id) : [])
   })
   const active = computed(() => !!scope.value && visibility.value !== "hidden" && observed.value.size > 0)
 
   function forMachine(machineId: string): BatteryStatus | undefined {
-    const teamId = account?.teamId?.value
+    const teamId = account.value?.teamId?.value
     return teamId ? entries.value[entryKey(teamId, machineId)]?.battery ?? undefined : undefined
   }
 
@@ -81,8 +91,8 @@ export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
     const entry = entries.value[key]
     const ttl = entry?.battery ? MACHINE_BATTERY_INTERVAL / 2 : MACHINE_BATTERY_MISSING_INTERVAL
     if (!force && entry && Date.now() - entry.checkedAt < ttl) return Promise.resolve()
-    const request = automatic!.rpc<SystemStatus>(teamId, machineId, "systemStatus", {}).then(status => {
-      if (current !== generation || disposed || account?.teamId?.value !== teamId || !observed.value.has(machineId)) return
+    const request = automatic.value!.rpc<SystemStatus>(teamId, machineId, "systemStatus", {}).then(status => {
+      if (current !== generation || disposed || account.value?.teamId?.value !== teamId || !observed.value.has(machineId)) return
       entries.value = {
         ...entries.value,
         [key]: { battery: status.battery ?? null, checkedAt: Date.now() },
@@ -97,8 +107,8 @@ export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
   }
 
   async function refresh(force = false): Promise<void> {
-    const teamId = account?.teamId?.value
-    if (!automatic || !account || !active.value || !teamId) return
+    const teamId = account.value?.teamId?.value
+    if (!automatic.value || !account.value || !active.value || !teamId) return
     const current = generation
     const targets = [...observed.value.keys()].filter(machineId => online.value.has(machineId))
     await Promise.all(targets.map(machineId => read(teamId, machineId, current, force)))
@@ -123,7 +133,7 @@ export const useMachineBatteriesStore = defineStore("machine-batteries", () => {
   }, { immediate: true })
   onScopeDispose(() => { disposed = true; generation++; interval.pause() })
 
-  return { observe, forMachine, refresh }
+  return { attachAccount, observe, forMachine, refresh }
 })
 
 /** One cache and poller shared by the account shell and every isolated machine app. */
