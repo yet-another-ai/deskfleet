@@ -14,7 +14,7 @@ interface ConfigurationProbe {
 }
 
 /** Draft choices are local preferences; existing Sessions always use their live agent. */
-export function useAgentConfiguration(target: () => { workspaceId?: string; sessionId?: string; providerId?: string }, draft?: Ref<AgentSelection>) {
+export function useAgentConfiguration(target: () => { workspaceId?: string; sessionId?: string; providerId?: string }, draft?: Ref<AgentSelection>, open?: () => boolean) {
   const agents = useAgentSessionsStore()
   const providers = useProvidersStore()
   const cache = useAgentConfigurationCacheStore()
@@ -176,7 +176,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     error.value = null
     loading.value = false
     requestedModel.value = undefined
-    if (expanded.value) void configure()
+    if (expanded.value || open?.()) void configure()
   }
   watch(() => [target().workspaceId, target().sessionId, target().providerId, providers.revision], (current, previous) => {
     const targetChanged = current.slice(0, 3).some((value, index) => value !== previous[index])

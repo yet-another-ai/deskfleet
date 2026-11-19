@@ -193,3 +193,63 @@ test("supports keyboard arrow navigation between available Gemini 4 elements", a
   expect(document.activeElement).toBe(dialog.get('[data-periodic-element="H"]').element)
   expect(dialog.get("[data-periodic-model-name]").text()).toBe("Gemini 4 Hydrogen")
 })
+
+test("refetches configuration on provider revision invalidation while the periodic table is open", async () => {
+  const providers = useProvidersStore()
+  const api = vi.mocked(agents.agentConfiguration)
+  const view = render()
+
+  await view.get("[data-gemini-periodic-table-trigger]").trigger("click")
+  await flushPromises()
+  expect(api).toHaveBeenCalledTimes(1)
+
+  api.mockResolvedValueOnce(antigravityConfiguration("gemini-4-argon"))
+  providers.revision = "registry-2"
+  await flushPromises()
+
+  expect(api).toHaveBeenCalledTimes(2)
+  const dialog = body().get("[data-gemini-periodic-table-dialog]")
+  expect(dialog.get('[data-periodic-element="Ar"]').attributes("aria-pressed")).toBe("true")
+  expect(dialog.get("[data-periodic-model-name]").text()).toBe("Gemini 4 Argon")
+})
+
+test("moves initial focus to the active element after asynchronous model loading completes", async () => {
+  let resolveConfig!: (value: AgentConfiguration) => void
+  vi.mocked(agents.agentConfiguration).mockReturnValueOnce(new Promise(resolve => { resolveConfig = resolve }))
+  const view = render()
+
+  await view.get("[data-gemini-periodic-table-trigger]").trigger("click")
+  await flushPromises()
+  const dialog = body().get("[data-gemini-periodic-table-dialog]")
+  expect(dialog.findAll("[data-periodic-element]")).toHaveLength(0)
+
+  resolveConfig(antigravityConfiguration("gemini-4-neon"))
+  await flushPromises()
+
+  expect(document.activeElement).toBe(dialog.get('[data-periodic-element="Ne"]').element)
+})
+
+test("announces loading status while refreshing cached live Session models", async () => {
+  agents.configurations["30"] = antigravityConfiguration("gemini-4-neon")
+  let resolveRefresh!: (value: AgentConfiguration) => void
+  vi.spyOn(agents, "sessionConfiguration").mockReturnValueOnce(new Promise(resolve => { resolveRefresh = resolve }))
+
+  const view = render({ workspaceId: "11", sessionId: "30" })
+  await view.get("[data-gemini-periodic-table-trigger]").trigger("click")
+  await flushPromises()
+
+  const dialog = body().get("[data-gemini-periodic-table-dialog]")
+  expect(dialog.attributes("aria-busy")).toBe("true")
+  expect(dialog.get("[data-periodic-refreshing]").attributes("role")).toBe("status")
+  expect(dialog.get("[data-periodic-refreshing]").text()).toContain("Reading configuration from the agent")
+  expect(dialog.get('[data-periodic-element="Ne"]').attributes("disabled")).toBeDefined()
+
+  const refreshed = antigravityConfiguration("gemini-4-argon")
+  agents.configurations["30"] = refreshed
+  resolveRefresh(refreshed)
+  await flushPromises()
+
+  expect(dialog.find("[data-periodic-refreshing]").exists()).toBe(false)
+  expect(dialog.get('[data-periodic-element="Ar"]').attributes("disabled")).toBeUndefined()
+  expect(document.activeElement).toBe(dialog.get('[data-periodic-element="Ar"]').element)
+})

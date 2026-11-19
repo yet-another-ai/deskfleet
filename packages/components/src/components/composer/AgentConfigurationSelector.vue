@@ -38,10 +38,14 @@ const pendingProvider = ref<string>()
 const pendingProviderName = computed(() => providers.providers.find(provider => provider.id === pendingProvider.value)?.name ?? pendingProvider.value)
 const currentProviderName = computed(() => selectedProvider.value?.name ?? providerId.value ?? "")
 const providerUnavailable = computed(() => !!(props.sessionId || props.providerId) && providers.loaded && !selectedProvider.value)
-const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, ensureLoaded, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover } = useAgentConfiguration(() => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }), draftSelection)
-const isAntigravity = computed(() => selectedProvider.value?.template === "antigravity" || (!selectedProvider.value && configuration.value?.provider.id === "antigravity"))
 const periodicTableOpen = ref(false)
-watch(isAntigravity, value => { if (!value) periodicTableOpen.value = false })
+const { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, ensureLoaded, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover } = useAgentConfiguration(
+  () => ({ workspaceId: props.workspaceId, sessionId: props.sessionId, providerId: providerId.value }),
+  draftSelection,
+  () => periodicTableOpen.value && isAntigravity.value,
+)
+const isAntigravity = computed(() => selectedProvider.value?.template === "antigravity" || (!selectedProvider.value && configuration.value?.provider.id === "antigravity"))
+watch(isAntigravity, value => { if (!value) periodicTableOpen.value = false }, { flush: "sync" })
 const currentModelId = computed(() => modelValue.value ?? (!props.sessionId && draftSelection.value.provider === providerId.value ? draftSelection.value.model : undefined))
 const activeGeminiElement = computed(() => isAntigravity.value ? findGemini4ElementById(configuration.value?.models?.options ?? [], currentModelId.value) : null)
 const providerPending = computed(() => !selectedProvider.value && !configuration.value && !providerUnavailable.value)

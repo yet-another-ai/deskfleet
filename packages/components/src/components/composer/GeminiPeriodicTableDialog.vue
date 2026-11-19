@@ -50,6 +50,7 @@ const selectedElementNumber = computed(() => {
 const hoveredNumber = ref<number | undefined>()
 const pinnedNumber = ref<number | undefined>()
 const hoveredVariantId = ref<string | undefined>()
+const pendingInitialFocus = ref(false)
 
 watch(availableEntries, list => {
   if (pinnedNumber.value !== undefined && !list.some(entry => entry.element.number === pinnedNumber.value)) {
@@ -58,6 +59,30 @@ watch(availableEntries, list => {
   if (hoveredNumber.value !== undefined && !list.some(entry => entry.element.number === hoveredNumber.value)) {
     hoveredNumber.value = undefined
   }
+})
+
+function focusInitialElement(): boolean {
+  if (props.disabled) return false
+  const targetNumber = selectedElementNumber.value ?? availableEntries.value[0]?.element.number
+  if (targetNumber === undefined) return false
+  const target = gridRef.value?.querySelector<HTMLButtonElement>(`[data-atomic-number="${targetNumber}"]`)
+  if (!target || target.disabled) return false
+  target.focus()
+  return true
+}
+
+watch([() => availableEntries.value.length, () => props.disabled], async ([count, isDisabled]) => {
+  if (!pendingInitialFocus.value || isDisabled || !count) return
+  await nextTick()
+  if (!pendingInitialFocus.value) return
+  const active = document.activeElement
+  const defaultFocus = !active || active === document.body
+    || active.matches("[data-gemini-periodic-table-dialog], [data-periodic-close]")
+  if (!defaultFocus) {
+    pendingInitialFocus.value = false
+    return
+  }
+  if (focusInitialElement()) pendingInitialFocus.value = false
 })
 
 const inspectedEntry = computed<GeminiPeriodicEntry | undefined>(() => {
@@ -144,12 +169,12 @@ function onElementKeydown(event: KeyboardEvent, number: number): void {
 }
 
 function onOpenAutoFocus(event: Event): void {
-  const targetNumber = selectedElementNumber.value ?? availableEntries.value[0]?.element.number
-  if (targetNumber === undefined) return
-  const target = gridRef.value?.querySelector<HTMLButtonElement>(`[data-atomic-number="${targetNumber}"]`)
-  if (!target) return
-  event.preventDefault()
-  target.focus()
+  if (focusInitialElement()) {
+    event.preventDefault()
+    pendingInitialFocus.value = false
+  } else {
+    pendingInitialFocus.value = true
+  }
 }
 
 function close(): void {
@@ -161,6 +186,7 @@ function close(): void {
   <UiDialog
     ref="dialog"
     data-gemini-periodic-table-dialog
+    :aria-busy="loading || undefined"
     class="w-[min(56rem,calc(100vw-2rem))] p-5 sm:p-6"
     @open-auto-focus="onOpenAutoFocus"
     @close="emit('close')"
@@ -169,17 +195,28 @@ function close(): void {
       <DialogTitle class="ui-dialog-title flex items-center gap-2">
         <span>{{ t("composer.geminiPeriodicTable.title") }}</span>
       </DialogTitle>
-      <UiButton
-        variant="ghost"
-        size="icon"
-        type="button"
-        class="h-7 w-7"
-        :label="t('common.close')"
-        data-periodic-close
-        @click="close"
-      >
-        <X :size="15" aria-hidden="true" />
-      </UiButton>
+      <div class="flex items-center gap-2">
+        <span
+          v-if="loading && models.length"
+          role="status"
+          data-periodic-refreshing
+          class="inline-flex items-center gap-1.5 text-xs text-ui-text-muted"
+        >
+          <LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />
+          <span>{{ t("composer.loadingConfiguration") }}</span>
+        </span>
+        <UiButton
+          variant="ghost"
+          size="icon"
+          type="button"
+          class="h-7 w-7"
+          :label="t('common.close')"
+          data-periodic-close
+          @click="close"
+        >
+          <X :size="15" aria-hidden="true" />
+        </UiButton>
+      </div>
     </div>
 
     <div
@@ -365,6 +402,17 @@ function close(): void {
             </button>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="error && availableEntries.length"
+        class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-ui-border pt-3 text-xs"
+      >
+        <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
+        <UiButton type="button" size="sm" @click="emit('reload')">
+          <RotateCw :size="12" aria-hidden="true" />
+          {{ t("composer.reloadConfiguration") }}
+        </UiButton>
       </div>
     </div>
   </UiDialog>
