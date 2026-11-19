@@ -1,7 +1,7 @@
 diff --git a/dist/index.js b/dist/index.js
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -27966,10 +27966,10 @@
+@@ -27966,10 +27966,10 @@ function startCodexConnection(codexPath, env, appServerStartupArgs = ["app-serve
    const spawnEnv = env ?? process.env;
    let codex;
    if (codexPath) {
@@ -14,7 +14,7 @@ diff --git a/dist/index.js b/dist/index.js
    }
    attachLogs(codex);
    codex.stdin.on("error", (error62) => logger.log(`[STDIN ERROR] ${error62.message}`));
-@@ -34598,11 +34598,11 @@
+@@ -34598,11 +34598,11 @@ var CodexSubagentEventRouter = class _CodexSubagentEventRouter {
        resolvedModel ? { model: resolvedModel, source: "activity" } : void 0
      );
      await this.session.update({
@@ -31,7 +31,7 @@ diff --git a/dist/index.js b/dist/index.js
      }, parentSessionId);
      this.children.set(childSessionId, {
        parentThreadId,
-@@ -34638,9 +34638,9 @@
+@@ -34638,9 +34638,9 @@ var CodexSubagentEventRouter = class _CodexSubagentEventRouter {
      child.terminalState = state;
      try {
        await this.session.update({
@@ -44,7 +44,7 @@ diff --git a/dist/index.js b/dist/index.js
        }, child.parentSessionId);
      } catch (error62) {
        if (child.terminalState === state) delete child.terminalState;
-@@ -34665,11 +34665,11 @@
+@@ -34665,11 +34665,11 @@ var CodexSubagentEventRouter = class _CodexSubagentEventRouter {
          generation: 2
        };
        await this.session.update({
@@ -61,7 +61,7 @@ diff --git a/dist/index.js b/dist/index.js
        }, parentSessionId);
        this.children.set(childThreadId, reopened);
        this.terminalPendingSpawns.delete(childThreadId);
-@@ -34686,11 +34686,11 @@
+@@ -34686,11 +34686,11 @@ var CodexSubagentEventRouter = class _CodexSubagentEventRouter {
      delete child.terminalState;
      try {
        await this.session.update({
@@ -78,7 +78,7 @@ diff --git a/dist/index.js b/dist/index.js
        }, child.parentSessionId);
      } catch (error62) {
        child.generation -= 1;
-@@ -34764,6 +34764,10 @@
+@@ -34764,6 +34764,10 @@ var CodexSubagentEventRouter = class _CodexSubagentEventRouter {
      return parent ? { threadId: parent[0], sessionId: parent[1].sessionId } : { threadId: this.rootSessionId, sessionId: this.rootSessionId };
    }
  };
@@ -89,7 +89,7 @@ diff --git a/dist/index.js b/dist/index.js
  function terminalStateOf(status) {
    switch (status) {
      case "completed":
-@@ -43076,7 +43080,11 @@
+@@ -43076,7 +43080,11 @@ var CodexAppServerSupervisor = class {
      let closed = false;
      let stdoutEnded = false;
      let wedgedTimer = null;
@@ -101,7 +101,7 @@ diff --git a/dist/index.js b/dist/index.js
        child.dead = true;
        for (const listener of [...this.deathListeners]) {
          try {
-@@ -43199,14 +43207,14 @@
+@@ -43199,14 +43207,14 @@ var CodexAppServerSupervisor = class {
          process11.stdin?.end();
        } catch {
        }
@@ -118,7 +118,121 @@ diff --git a/dist/index.js b/dist/index.js
            if (exitSeen) return;
            exitSeen = true;
            markDead();
-@@ -45148,7 +45156,7 @@
+@@ -45016,44 +45024,94 @@ var FAST_MODE_CATEGORY = "model_config";
+ var FAST_MODE_ON = "on";
+ var FAST_MODE_OFF = "off";
+ var FAST_MODE_DESCRIPTION = "1.5x speed, increased usage";
+-function modelSupportsFast(model) {
+-  return model?.additionalSpeedTiers?.includes("fast") ?? false;
++var STANDARD_SPEED_DESCRIPTION = "Default speed, normal usage";
++function isFastServiceTier(tier) {
++  return tier === "fast" || tier === "priority";
++}
++function modelServiceTiers(model) {
++  if (model?.serviceTiers?.length) {
++    return model.serviceTiers.map(({ id, name, description }) => ({ id, name, description }));
++  }
++  return (model?.additionalSpeedTiers ?? []).map((id) => isFastServiceTier(id) ? { id, name: "Fast", description: FAST_MODE_DESCRIPTION } : { id, name: id, description: "" });
++}
++function serviceTierFromThread(tier) {
++  return tier == null || tier === "default" ? null : tier;
++}
++function resolveServiceTier(selected, tiers) {
++  if (selected == null) return null;
++  const tier = tiers.find((candidate) => candidate.id === selected) ?? (isFastServiceTier(selected) ? tiers.find((candidate) => isFastServiceTier(candidate.id)) : void 0);
++  return tier?.id ?? null;
+ }
+-function resolveFastServiceTier(fastModeEnabled, currentModelSupportsFast) {
+-  return fastModeEnabled && currentModelSupportsFast ? "fast" : null;
++function fastServiceTierId(tiers) {
++  return tiers.find((tier) => isFastServiceTier(tier.id))?.id;
++}
++function onlyFastServiceTier(tiers) {
++  return tiers.length === 1 && isFastServiceTier(tiers[0].id);
++}
++function serviceTierFromConfigValue(value, tiers) {
++  if (value === false || value === FAST_MODE_OFF) return null;
++  if (value === true || value === FAST_MODE_ON) return fastServiceTierId(tiers);
++  if (typeof value !== "string") return void 0;
++  return tiers.some((tier) => tier.id === value) ? value : void 0;
+ }
+ function clientSupportsBooleanConfigOptions(clientCapabilities) {
+   return clientCapabilities?.session?.configOptions?.boolean != null;
+ }
+-function createFastModeConfigOption(fastModeEnabled, useBooleanConfigOption = false) {
+-  if (useBooleanConfigOption) {
++function createFastModeConfigOption(selected, tiers, useBooleanConfigOption = false) {
++  if (tiers.length === 0) return null;
++  const current = resolveServiceTier(selected, tiers);
++  if (onlyFastServiceTier(tiers)) {
++    const description = tiers[0].description || FAST_MODE_DESCRIPTION;
++    if (useBooleanConfigOption) {
++      return {
++        id: FAST_MODE_CONFIG_ID,
++        name: "Fast mode",
++        description,
++        category: FAST_MODE_CATEGORY,
++        type: "boolean",
++        currentValue: current !== null
++      };
++    }
+     return {
+       id: FAST_MODE_CONFIG_ID,
+       name: "Fast mode",
+-      description: FAST_MODE_DESCRIPTION,
++      description,
+       category: FAST_MODE_CATEGORY,
+-      type: "boolean",
+-      currentValue: fastModeEnabled
++      type: "select",
++      currentValue: current !== null ? FAST_MODE_ON : FAST_MODE_OFF,
++      options: [
++        {
++          value: FAST_MODE_OFF,
++          name: "Off",
++          description: STANDARD_SPEED_DESCRIPTION
++        },
++        {
++          value: FAST_MODE_ON,
++          name: "On",
++          description
++        }
++      ]
+     };
+   }
++  // Several tiers (e.g. Fast and Ultrafast) need a select even for boolean-capable clients.
+   return {
+     id: FAST_MODE_CONFIG_ID,
+-    name: "Fast mode",
+-    description: FAST_MODE_DESCRIPTION,
++    name: "Speed",
++    description: "Service tier for this model",
+     category: FAST_MODE_CATEGORY,
+     type: "select",
+-    currentValue: fastModeEnabled ? FAST_MODE_ON : FAST_MODE_OFF,
++    currentValue: current ?? FAST_MODE_OFF,
+     options: [
+       {
+         value: FAST_MODE_OFF,
+-        name: "Off",
+-        description: "Default speed, normal usage"
++        name: "Standard",
++        description: STANDARD_SPEED_DESCRIPTION
+       },
+-      {
+-        value: FAST_MODE_ON,
+-        name: "On",
+-        description: FAST_MODE_DESCRIPTION
+-      }
++      ...tiers.map((tier) => ({
++        value: tier.id,
++        name: tier.name,
++        description: tier.description
++      }))
+     ]
+   };
+ }
+@@ -45148,7 +45206,7 @@ var TitleGenerator = class {
    }
    /**
     * Call when an explicit rename failed. A title that this generator dropped for that rename is generated
@@ -127,7 +241,7 @@ diff --git a/dist/index.js b/dist/index.js
     */
    retryAfterFailedRename() {
      if (!this.droppedForExplicitTitle) return;
-@@ -45166,13 +45174,13 @@
+@@ -45166,13 +45224,13 @@ var TitleGenerator = class {
      this.renameEchoResolve = null;
    }
    /**
@@ -143,7 +257,7 @@ diff --git a/dist/index.js b/dist/index.js
      if (this.generated) return;
      const src = this.getSessionTitleSource();
      if (src === "explicit" || src === "unknown") return;
-@@ -45185,7 +45193,7 @@
+@@ -45185,7 +45243,7 @@ var TitleGenerator = class {
    }
    /**
     * Resolves once the fire-and-forget generation started by
@@ -152,7 +266,7 @@ diff --git a/dist/index.js b/dist/index.js
     *
     * Generation renames the thread, which Codex echoes back as a
     * `session_info_update`. `session/load` has to finish replaying a session
-@@ -48042,7 +48050,8 @@
+@@ -48042,7 +48100,8 @@ var CodexAcpServer = class {
      ];
      return {
        steering: {
@@ -162,7 +276,64 @@ diff --git a/dist/index.js b/dist/index.js
        },
        ...this.capabilities.airClient ? {
          [JETBRAINS_META_KEY]: {
-@@ -49756,6 +49765,9 @@
+@@ -48401,7 +48460,7 @@ You have been logged out. Please try again.`);
+     }
+     const sessionMcpServers = this.resolveSessionMcpServers(requestedMcpServers, operation === "resume");
+     const currentModel = this.findCurrentModel(models, currentModelId);
+-    const currentModelSupportsFast = modelSupportsFast(currentModel);
++    const serviceTiers = modelServiceTiers(currentModel);
+     const sessionState = {
+       sessionId,
+       currentModelId,
+@@ -48426,8 +48485,8 @@ You have been logged out. Please try again.`);
+       cwd: request.cwd,
+       additionalDirectories: sessionMetadata.additionalDirectories,
+       mcpServers: requestedMcpServers,
+-      fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+-      currentModelSupportsFast,
++      serviceTier: serviceTierFromThread(sessionMetadata.currentServiceTier),
++      serviceTiers,
+       sessionMcpServers,
+       clientCapabilities: this.capabilities,
+       goalRevision: 0,
+@@ -49562,15 +49621,11 @@ You have been logged out. Please try again.`);
+     }
+   }
+   applyFastModeChange(sessionState, params) {
+-    const value = params.value;
+-    if (typeof value === "boolean") {
+-      sessionState.fastModeEnabled = value;
+-      return;
+-    }
+-    if (value !== FAST_MODE_ON && value !== FAST_MODE_OFF) {
++    const serviceTier = serviceTierFromConfigValue(params.value, sessionState.serviceTiers);
++    if (serviceTier === void 0) {
+       throw RequestError.invalidParams();
+     }
+-    sessionState.fastModeEnabled = value === FAST_MODE_ON;
++    sessionState.serviceTier = serviceTier;
+   }
+   stringConfigValue(params) {
+     if (typeof params.value !== "string") {
+@@ -49630,7 +49685,7 @@ You have been logged out. Please try again.`);
+     const currentModel = this.findCurrentModel(resumed.models, sessionState.currentModelId);
+     sessionState.supportedReasoningEfforts = currentModel?.supportedReasoningEfforts ?? [];
+     sessionState.supportedInputModalities = currentModel?.inputModalities ?? ["text", "image"];
+-    sessionState.currentModelSupportsFast = modelSupportsFast(currentModel);
++    sessionState.serviceTiers = modelServiceTiers(currentModel);
+     if (JSON.stringify(this.createSessionConfigOptions(sessionState)) !== configOptions) {
+       await new ACPSessionConnection(this.connection, sessionState.sessionId).update({
+         sessionUpdate: "config_option_update",
+@@ -49642,7 +49697,7 @@ You have been logged out. Please try again.`);
+     sessionState.currentModelId = ModelId.fromComponents(model, effort).toString();
+     sessionState.supportedReasoningEfforts = model.supportedReasoningEfforts;
+     sessionState.supportedInputModalities = model.inputModalities;
+-    sessionState.currentModelSupportsFast = modelSupportsFast(model);
++    sessionState.serviceTiers = modelServiceTiers(model);
+   }
+   async unstable_setSessionModel(params) {
+     this.assertInstructionsReady(params.sessionId);
+@@ -49756,6 +49811,9 @@ You have been logged out. Please try again.`);
          return { outcome: "injected" };
        }
      }
@@ -172,7 +343,7 @@ diff --git a/dist/index.js b/dist/index.js
      return await this.startNewTurnFromSteering(params, clientUserMessageId);
    }
    /**
-@@ -49897,7 +49909,8 @@
+@@ -49897,7 +49955,8 @@ You have been logged out. Please try again.`);
      }
      return {
        sessionId,
@@ -182,7 +353,46 @@ diff --git a/dist/index.js b/dist/index.js
      };
    }
    createSessionConfigOptions(sessionState) {
-@@ -50289,11 +50302,11 @@
+@@ -49924,11 +49983,13 @@ You have been logged out. Please try again.`);
+         )
+       );
+     }
+-    if (sessionState.currentModelSupportsFast) {
+-      configOptions.push(createFastModeConfigOption(
+-        sessionState.fastModeEnabled,
+-        this.booleanConfigOptionsSupported
+-      ));
++    const serviceTierOption = createFastModeConfigOption(
++      sessionState.serviceTier,
++      sessionState.serviceTiers,
++      this.booleanConfigOptionsSupported
++    );
++    if (serviceTierOption) {
++      configOptions.push(serviceTierOption);
+     }
+     return configOptions;
+   }
+@@ -50116,7 +50177,7 @@ You have been logged out. Please try again.`);
+     }
+     const sessionMcpServers = this.resolveSessionMcpServers(requestedMcpServers, true);
+     const currentModel = this.findCurrentModel(models, currentModelId);
+-    const currentModelSupportsFast = modelSupportsFast(currentModel);
++    const serviceTiers = modelServiceTiers(currentModel);
+     const sessionState = {
+       sessionId,
+       currentModelId,
+@@ -50141,8 +50202,8 @@ You have been logged out. Please try again.`);
+       cwd: request.cwd,
+       additionalDirectories: sessionMetadata.additionalDirectories,
+       mcpServers: requestedMcpServers,
+-      fastModeEnabled: sessionMetadata.currentServiceTier === "fast",
+-      currentModelSupportsFast,
++      serviceTier: serviceTierFromThread(sessionMetadata.currentServiceTier),
++      serviceTiers,
+       sessionMcpServers,
+       clientCapabilities: this.capabilities,
+       goalRevision: 0,
+@@ -50289,11 +50350,11 @@ You have been logged out. Please try again.`);
              const name = nameFromAgentPath(item.agentPath, `Agent ${item.agentThreadId.slice(-8)}`);
              const model = item.model || previous?.model;
              await session.update({
@@ -199,7 +409,7 @@ diff --git a/dist/index.js b/dist/index.js
              });
              announced.set(item.agentThreadId, {
                generation,
-@@ -50334,11 +50347,11 @@
+@@ -50334,11 +50395,11 @@ You have been logged out. Please try again.`);
                const name = nameFromAgentPath(item.agentPath, `Agent ${item.agentThreadId.slice(-8)}`);
                const model = item.model || void 0;
                await session.update({
@@ -216,7 +426,7 @@ diff --git a/dist/index.js b/dist/index.js
                });
                announced.set(item.agentThreadId, {
                  generation: 1,
-@@ -50351,9 +50364,9 @@
+@@ -50351,9 +50412,9 @@ You have been logged out. Please try again.`);
              }
              if (child.terminal) continue;
              await session.update({
@@ -229,7 +439,7 @@ diff --git a/dist/index.js b/dist/index.js
              });
              child.terminal = true;
            }
-@@ -50371,9 +50384,9 @@
+@@ -50371,9 +50432,9 @@ You have been logged out. Please try again.`);
      for (const child of announced.values()) {
        if (child.terminal) continue;
        await session.update({
@@ -242,18 +452,31 @@ diff --git a/dist/index.js b/dist/index.js
        });
      }
    }
-@@ -51387,6 +51400,10 @@
-             pendingTurnStart?.resolve(turnId);
+@@ -51357,9 +51418,9 @@ You have been logged out. Please try again.`);
+         throw RequestError.invalidRequest("The current model does not support image input");
+       }
+       const agentMode = sessionState.agentMode;
+-      const serviceTier = resolveFastServiceTier(
+-        sessionState.fastModeEnabled,
+-        sessionState.currentModelSupportsFast
++      const serviceTier = resolveServiceTier(
++        sessionState.serviceTier,
++        sessionState.serviceTiers
+       );
+       this.beginPromptTokenUsage(sessionState);
+       ensurePendingTurnStart();
+@@ -51388,6 +51449,10 @@ You have been logged out. Please try again.`);
              if (priorRunningTurnId !== null && turnId === priorRunningTurnId) {
                insertion?.onTurnAdopted?.();
-+            }
+             }
 +            if (sessionState.titleGen) {
 +              const promptText = params.prompt.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim();
 +              sessionState.titleGen.onTurnStarted(promptText);
-             }
++            }
              onTurnStarted?.();
            },
-@@ -51556,10 +51573,6 @@
+           () => this.promptShouldStop(params.sessionId, activePrompt),
+@@ -51556,10 +51621,6 @@ You have been logged out. Please try again.`);
          () => this.sessionPublishIsCurrent(sessionState, turnSessionGeneration),
          true
        );
