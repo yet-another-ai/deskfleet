@@ -249,6 +249,20 @@ const connection = acp.agent({ name: "deskfleet-test-agent" })
     if (pending) {
       try { return await pending } finally { activePrompts.delete(params.sessionId) }
     }
+    if (mode === "antigravity-background") {
+      const child = `${params.sessionId}-child`
+      await client.notify(acp.methods.client.session.update, {
+        sessionId: params.sessionId,
+        update: { sessionUpdate: "subagent_update", sessionId: child, title: "Explorer", state: { state: "running" } },
+      })
+      setTimeout(() => {
+        void client.notify(acp.methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "subagent_update", sessionId: child, state: { state: "idle", stopReason: "end_turn" } },
+        }).catch(() => {})
+      }, 120).unref()
+      return { stopReason: "end_turn" }
+    }
     if (mode === "cursor-question" || mode === "cursor-question-invalid") {
       return askVendor(client, "cursor/ask_question", mode === "cursor-question" ? cursorQuestion : { toolCallId: "call_123", questions: [] })
     }
