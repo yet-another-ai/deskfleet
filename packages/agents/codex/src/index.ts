@@ -232,14 +232,11 @@ export const codexPlugin: AgentProviderPlugin<"codex"> = {
   },
   parseComposerSkill: parseCodexComposerSkill,
   setup: {
+    prioritySearchDirectories: ctx => ctx.env.CODEX_INSTALL_DIR ? [ctx.env.CODEX_INSTALL_DIR] : [],
     searchDirectories(ctx) {
-      const directories: string[] = []
-      if (ctx.env.CODEX_INSTALL_DIR) directories.push(ctx.env.CODEX_INSTALL_DIR)
-      if (ctx.platform === "win32") {
-        const local = ctx.env.LOCALAPPDATA ?? ctx.path.join(ctx.home, "AppData", "Local")
-        directories.push(ctx.path.join(local, "Programs", "OpenAI", "Codex", "bin"))
-      }
-      return directories
+      if (ctx.platform !== "win32") return []
+      const local = ctx.env.LOCALAPPDATA ?? ctx.path.join(ctx.home, "AppData", "Local")
+      return [ctx.path.join(local, "Programs", "OpenAI", "Codex", "bin")]
     },
     validateBinary(binary, ctx) {
       // Bundled adapter launches Codex directly; Windows shell shims cannot be CODEX_PATH.

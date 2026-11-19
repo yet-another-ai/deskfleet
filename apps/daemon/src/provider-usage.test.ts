@@ -1,10 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { runJsonLineExchange } from "./agent-usage.ts"
-import { parseAntigravityUsage } from "./agents/antigravity.ts"
-import { parseClaudeCodeUsage } from "./agents/claude-code.ts"
-import { parseCodexUsage } from "./agents/codex.ts"
-import { parseOmpUsage } from "./agents/omp.ts"
+import { parseAntigravityUsage } from "@deskfleet/agent-antigravity"
+import { parseClaudeCodeUsage } from "@deskfleet/agent-claude-code"
+import { parseCodexUsage } from "@deskfleet/agent-codex"
+import { parseOmpUsage } from "@deskfleet/agent-omp"
 
 test("runJsonLineExchange drives a stdio JSON-line exchange, terminates lingering processes, and surfaces stderr", async () => {
   const script = `

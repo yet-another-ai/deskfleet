@@ -1,8 +1,7 @@
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
-import { claudeCodePlugin } from "@deskfleet/agent-claude-code"
-import { codexPlugin } from "@deskfleet/agent-codex"
 import { invalidMcpConfigError, type McpServerInput } from "@deskfleet/agent-core"
+import { getAgentPlugin } from "./agents/registry.ts"
 import { mcpServerInput } from "./mcp-server-protocol.ts"
 import { providerInput, shellEnvironmentEnabled, type AgentProviderInput } from "./provider-protocol.ts"
 import type { ProviderMcpServerDiscovery } from "./provider-mcp-server-types.ts"
@@ -11,11 +10,6 @@ import { loadShellEnvironment } from "./shell-environment.ts"
 
 export interface ProviderMcpServerDependencies extends ProviderWorkspaceDependencies {
   executable?: (path: string) => Promise<boolean>
-}
-
-const mcpDiscoverers = {
-  codex: codexPlugin.discoverMcpServers,
-  "claude-code": claudeCodePlugin.discoverMcpServers,
 }
 
 function validateImportedServer(server: McpServerInput): McpServerInput {
@@ -32,7 +26,7 @@ export async function discoverProviderMcpServers(
 ): Promise<ProviderMcpServerDiscovery> {
   const { id: _providerId, ...settings } = input as AgentProviderInput & { id?: string }
   const provider = providerInput(settings)
-  const discover = mcpDiscoverers[provider.template as keyof typeof mcpDiscoverers]
+  const discover = getAgentPlugin(provider.template)?.discoverMcpServers
   if (!discover) return { supported: false, candidates: [], warnings: [] }
   const platform = dependencies.platform ?? process.platform
   const path = platform === "win32" ? win32 : posix

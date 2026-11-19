@@ -1,3 +1,4 @@
+import { normalizeAntigravityBinaryPath } from "../../../packages/agents/antigravity/src/protocol.ts"
 import type { TerminalSummary } from "./terminal-protocol.ts"
 import type { ProviderMcpServerDiscovery } from "./provider-mcp-server-types.ts"
 export type { ProviderMcpServerCandidate, ProviderMcpServerDiscovery } from "./provider-mcp-server-types.ts"
@@ -126,8 +127,6 @@ export function validateProviderId(value: unknown): asserts value is string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(value)) throw new Error("Invalid provider ID")
 }
 
-const LEGACY_ANTIGRAVITY_BINARY = /(?:^|[/\\])agy_acp_server(?:\.(?:par|exe))?$/iu
-
 /** Normalize blank or retired legacy binary paths to the template default at the execution boundary. */
 export function providerSettings(value: unknown): AgentProviderSettings {
   const settings = object(value)
@@ -152,7 +151,7 @@ export function providerSettings(value: unknown): AgentProviderSettings {
     if (typeof value !== "string" || value.includes("\0")) throw new Error("Environment variable values must be strings without null characters")
   }
   const rawBinaryPath = settings.binaryPath?.trim() as string | undefined
-  const binaryPath = rawBinaryPath && !LEGACY_ANTIGRAVITY_BINARY.test(rawBinaryPath) ? rawBinaryPath : undefined
+  const binaryPath = rawBinaryPath ? normalizeAntigravityBinaryPath(rawBinaryPath) : undefined
   return {
     name: settings.name.trim(),
     ...(settings.icon !== undefined ? { icon: settings.icon } : {}),

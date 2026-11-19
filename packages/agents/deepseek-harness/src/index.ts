@@ -60,6 +60,7 @@ export const deepseekHarnessPlugin: AgentProviderPlugin<"deepseek-harness"> = {
   id: "deepseek-harness",
   template: { id: "deepseek-harness", name: "DeepSeek Harness", defaultBinaryPath: "dsh" },
   provider: deepseekHarnessProvider,
+  usesBundledDefaultBinary: true,
   resolveEnvironment: deepseekHarnessEnvironment,
   setup: {
     probeTimeoutMs: input => (!input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : undefined),

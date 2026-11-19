@@ -6,7 +6,7 @@ import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { configureDshRuntime, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import { AgentProviders } from "./agent-providers.ts"
-import { deepseekHarnessProcess } from "./agents/deepseek-harness.ts"
+import { deepseekHarnessProcess } from "@deskfleet/agent-deepseek-harness"
 
 test("bundled DeepSeek provider loads the session workspace dotenv before ACP initialization", { timeout: 45_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-deepseek-workspace-"))

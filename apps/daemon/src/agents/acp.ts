@@ -1,7 +1,7 @@
 import {
   canContinueSession, connectAcpProcess as coreConnectAcpProcess, supportsSteering,
   type AcpConnectOptions, type AcpExtension, type AgentClient as CoreAgentClient, type AgentConfig,
-  type AgentConnection, type AgentProcess, type AgentProvider as CoreAgentProvider, type AgentTerminalHandler,
+  type AgentConnection, type AgentProcess, type AgentProvider as CoreAgentProvider,
   type SteeringOutcome,
 } from "@deskfleet/agent-core"
 import { createAgentTerminalHandler, isAgentTerminalHandler, type AgentTerminalContext } from "./terminals.ts"

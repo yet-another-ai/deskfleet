@@ -1,7 +1,6 @@
 import { homedir } from "node:os"
 import { posix, win32 } from "node:path"
-import { claudeCodePlugin } from "@deskfleet/agent-claude-code"
-import { codexPlugin } from "@deskfleet/agent-codex"
+import { getAgentPlugin } from "./agents/registry.ts"
 import { providerInput, shellEnvironmentEnabled, type AgentProviderInput, type ProviderWorkspaceDiscovery } from "./provider-protocol.ts"
 import { loadShellEnvironment } from "./shell-environment.ts"
 
@@ -13,11 +12,6 @@ export interface ProviderWorkspaceDependencies {
   shellEnvironment?: () => Promise<Record<string, string>>
 }
 
-const workspaceDiscoverers = {
-  codex: codexPlugin.discoverWorkspaces,
-  "claude-code": claudeCodePlugin.discoverWorkspaces,
-}
-
 /** Read project paths on the provider's machine without starting the Agent or changing its configuration. */
 export async function discoverProviderWorkspaces(
   input: AgentProviderInput,
@@ -26,7 +20,7 @@ export async function discoverProviderWorkspaces(
   // Saved providers carry a registry ID alongside the same launch settings.
   const { id: _providerId, ...settings } = input as AgentProviderInput & { id?: string }
   const provider = providerInput(settings)
-  const discover = workspaceDiscoverers[provider.template as keyof typeof workspaceDiscoverers]
+  const discover = getAgentPlugin(provider.template)?.discoverWorkspaces
   if (!discover) return { supported: false, candidates: [], warnings: [] }
   const platform = dependencies.platform ?? process.platform
   const path = platform === "win32" ? win32 : posix

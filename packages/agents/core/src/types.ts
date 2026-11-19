@@ -151,7 +151,9 @@ export interface ProviderInstallerLaunch {
 export interface ProviderSetupSpec {
   /** Override total probe timeout for this provider (defaults to 10s). */
   probeTimeoutMs?(input: { binaryPath?: string }): number | undefined
-  /** Extra search directories checked after PATH during executable discovery. */
+  /** High-priority search directories checked before `~/.local/bin` (e.g., explicit install-dir env vars). */
+  prioritySearchDirectories?(ctx: ProviderSetupContext): string[]
+  /** Extra search directories checked after `~/.local/bin` and before system bin directories. */
   searchDirectories?(ctx: ProviderSetupContext): string[]
   /** Default command names to probe when binaryPath is unset (defaults to [template.defaultBinaryPath]). */
   defaultCommands?: readonly string[]
@@ -210,6 +212,8 @@ export interface AgentProviderPlugin<Id extends string = string> {
   readonly template: AgentProviderTemplateMetadata<Id>
   readonly provider: AgentProvider
   readonly bundledAdapter?: BundledAdapterSpec
+  /** When true, omitting `binaryPath` keeps `config.binaryPath` undefined so the bundled runtime is used. */
+  readonly usesBundledDefaultBinary?: boolean
   normalizeBinaryPath?(rawBinaryPath: string): string | undefined
   resolveEnvironment?(input: { binaryPath?: string; env: Record<string, string> }, directory?: string, platform?: NodeJS.Platform): Record<string, string>
   parseComposerSkill?: AgentComposerSkillParser

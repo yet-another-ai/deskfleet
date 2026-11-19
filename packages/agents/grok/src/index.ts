@@ -78,12 +78,8 @@ export const grokPlugin: AgentProviderPlugin<"grok"> = {
   template: { id: "grok", name: "Grok", defaultBinaryPath: "grok" },
   provider: grokProvider,
   setup: {
-    searchDirectories(ctx) {
-      const directories: string[] = []
-      if (ctx.env.GROK_BIN_DIR) directories.push(ctx.env.GROK_BIN_DIR)
-      directories.push(ctx.path.join(ctx.home, ".grok", "bin"))
-      return directories
-    },
+    prioritySearchDirectories: ctx => ctx.env.GROK_BIN_DIR ? [ctx.env.GROK_BIN_DIR] : [],
+    searchDirectories: ctx => [ctx.path.join(ctx.home, ".grok", "bin")],
     identityPattern: /\bgrok\b/iu,
     async resolveInstaller(ctx) {
       if (!supportsAutoInstallPlatform(ctx)) return UNSUPPORTED_INSTALL_PLATFORM_MESSAGE

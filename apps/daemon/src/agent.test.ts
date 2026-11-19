@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentConfiguration } from "./agent-configuration-protocol.ts"
 import { canContinueSession, connectAcpProcess, supportsSteering, type AgentProcess } from "./agents/acp.ts"
-import { authenticateCursor, createCursorExtension } from "./agents/cursor.ts"
-import { authenticateGrok, createGrokExtension } from "./agents/grok.ts"
+import { authenticateCursor, createCursorExtension } from "@deskfleet/agent-cursor"
+import { authenticateGrok, createGrokExtension } from "@deskfleet/agent-grok"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-agent.ts", import.meta.url))
 const launch: AgentProcess = { command: process.execPath, args: [fixture] }

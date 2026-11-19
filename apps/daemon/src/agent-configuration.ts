@@ -1,7 +1,7 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, selectAgentOption, selectReasoningEffort, type AgentConfiguration, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import type { AgentConfig, AgentConnection, AgentProvider } from "./agents/acp.ts"
-import { codexProvider } from "./agents/codex.ts"
+import { defaultAgentProvider as codexProvider } from "./agents/registry.ts"
 import { AgentComposerCommands } from "./agent-composer-commands.ts"
 
 /** Apply dependent choices against the provider's latest confirmed configuration. */

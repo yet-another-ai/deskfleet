@@ -78,10 +78,9 @@ export const ompPlugin: AgentProviderPlugin<"omp"> = {
   provider: ompProvider,
   parseComposerSkill: parseOmpComposerSkill,
   setup: {
+    prioritySearchDirectories: ctx => ctx.env.PI_INSTALL_DIR ? [ctx.env.PI_INSTALL_DIR] : [],
     searchDirectories(ctx) {
-      const directories: string[] = []
-      if (ctx.env.PI_INSTALL_DIR) directories.push(ctx.env.PI_INSTALL_DIR)
-      directories.push(ctx.path.join(ctx.env.BUN_INSTALL ?? ctx.path.join(ctx.home, ".bun"), "bin"))
+      const directories = [ctx.path.join(ctx.env.BUN_INSTALL ?? ctx.path.join(ctx.home, ".bun"), "bin")]
       if (ctx.platform === "win32") {
         const local = ctx.env.LOCALAPPDATA ?? ctx.path.join(ctx.home, "AppData", "Local")
         directories.push(ctx.path.join(local, "omp"))
