@@ -435,7 +435,7 @@ hide = true
 depends = ["native:debug"]
 # Both suites create many SQLite catalogs; avoid competing for runner storage.
 wait_for = ["rust:test"]
-run = "node --test apps/daemon/src/*.test.ts packages/mcp/src/*.test.ts"
+run = "node --test apps/daemon/src/*.test.ts packages/agents/*/src/*.test.ts packages/mcp/src/*.test.ts"
 
 [tasks."check:desktop"]
 hide = true

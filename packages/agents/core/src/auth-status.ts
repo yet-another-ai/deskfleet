@@ -1,4 +1,4 @@
-import type { AgentAuthStatus } from "@deskfleet/client/agent-live"
+import type { AgentAuthStatus } from "./protocol.ts"
 
 export const AUTH_STATUS_UPDATE_METHOD = "_auth/status_update"
 const kinds = new Set(["account", "api_key", "gateway", "external", "none"])
@@ -12,7 +12,8 @@ export function agentAuthStatus(params: unknown): AgentAuthStatus | undefined {
   const details = record(status.account) ? status.account : undefined
   const account = details ? Object.fromEntries(["email", "organization", "plan"]
     .flatMap(key => typeof details[key] === "string" ? [[key, details[key]]] : [])) : undefined
-  return { kind: status.kind as AgentAuthStatus["kind"], label: status.label,
+  return {
+    kind: status.kind as AgentAuthStatus["kind"], label: status.label,
     ...(typeof status.detail === "string" ? { detail: status.detail } : {}),
     ...(account && Object.keys(account).length ? { account } : {}),
   }

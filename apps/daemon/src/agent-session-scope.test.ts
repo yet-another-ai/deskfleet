@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { AcpSessionScope } from "./agents/session-scope.ts"
+import { AcpSessionScope } from "@deskfleet/agent-core"
 
 test("ACP callbacks require an opening or active provider session", () => {
   const scope = new AcpSessionScope()

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test, { type TestContext } from "node:test"
-import { createAcpFilesystem } from "./agents/filesystem.ts"
+import { createAcpFilesystem } from "@deskfleet/agent-core"
 
 const sessionId = "provider-session"
 const filesystem = createAcpFilesystem(id => {

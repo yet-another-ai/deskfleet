@@ -219,6 +219,7 @@ test("platform and backend detectors cover shared actions and build-env paths", 
     ".github/workflows/test.yml",
     "mise.toml",
     "mise.ci.toml",
+    "packages/agents/core/src/index.ts",
     "packages/client/src/file-transfers.ts",
     "packages/mcp/src/index.ts",
   ]) {

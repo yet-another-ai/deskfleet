@@ -1,9 +1,8 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { REASONING_CONFIG_IDS, selectReasoningEffort } from "../agent-configuration-protocol.ts"
+import { findReasoningEffortOption, REASONING_CONFIG_IDS } from "./protocol.ts"
 
 const MODEL_REASONING = "deskfleet/modelReasoningEffort"
 const SESSION_CONFIG_MODEL = "deskfleet/sessionConfigModel"
-const SESSION_CONFIG = "x.ai/sessionConfig"
 const EFFORT_LIST_KEYS = ["reasoningEfforts", "thinkingIntensities", "thinkingLevels"] as const
 const CURRENT_KEYS = ["reasoningEffort", "thinkingIntensity", "thinkingLevel"] as const
 const SUPPORT_KEYS = ["supportsReasoningEffort", "supportsThinkingIntensity"] as const
@@ -30,7 +29,7 @@ interface CatalogModel {
   meta?: Record<string, unknown>
 }
 
-interface ReasoningSource {
+export interface ReasoningSource {
   models?: unknown
   _meta?: { [key: string]: unknown } | null
 }
@@ -133,17 +132,20 @@ function asSelect(value: unknown): SelectOption | undefined {
   }
 }
 
-function sessionSelects(source: ReasoningSource): SelectOption[] {
-  const config = source._meta?.[SESSION_CONFIG]
-  if (!isRecord(config) || !Array.isArray(config.options)) return []
-  return config.options.flatMap(option => {
-    const select = asSelect(option)
-    return select ? [select] : []
-  })
+function sessionSelects(source: ReasoningSource, metaKeys: readonly string[]): SelectOption[] {
+  for (const key of metaKeys) {
+    const config = source._meta?.[key]
+    if (!isRecord(config) || !Array.isArray(config.options)) continue
+    return config.options.flatMap(option => {
+      const select = asSelect(option)
+      return select ? [select] : []
+    })
+  }
+  return []
 }
 
-function sessionEffort(source: ReasoningSource): SelectOption | undefined {
-  const selects = sessionSelects(source).filter(option => option.category !== "model" && option.id !== "model")
+function sessionEffort(source: ReasoningSource, metaKeys: readonly string[]): SelectOption | undefined {
+  const selects = sessionSelects(source, metaKeys).filter(option => option.category !== "model" && option.id !== "model")
   return selects.find(option => option.category === "thought_level")
     ?? selects.find(option => isReasoningId(option.id))
     ?? selects.find(option => option.category === "mode")
@@ -181,8 +183,8 @@ function reasoningOption(id: string, levels: EffortLevels, override?: string): S
   }
 }
 
-function synthesizeModel(source: ReasoningSource): SelectOption | undefined {
-  const advertised = sessionSelects(source).find(option => option.category === "model" || option.id === "model")
+function synthesizeModel(source: ReasoningSource, metaKeys: readonly string[]): SelectOption | undefined {
+  const advertised = sessionSelects(source, metaKeys).find(option => option.category === "model" || option.id === "model")
   if (advertised && selectValues(advertised).length > 0) {
     return { ...advertised, id: "model", category: "model", _meta: { ...advertised._meta, [SESSION_CONFIG_MODEL]: true } }
   }
@@ -201,7 +203,12 @@ function synthesizeModel(source: ReasoningSource): SelectOption | undefined {
   }
 }
 
-function resolveEfforts(options: acp.SessionConfigOption[], source: ReasoningSource, override?: string): SelectOption | undefined {
+function resolveEfforts(
+  options: acp.SessionConfigOption[],
+  source: ReasoningSource,
+  metaKeys: readonly string[],
+  override?: string,
+): SelectOption | undefined {
   const model = modelSelect(options)
   const selected = model ? selectValues(model).find(choice => choice.value === model.currentValue) : undefined
   const fromChoice = effortsFromMeta(selected?._meta ?? undefined)
@@ -211,7 +218,7 @@ function resolveEfforts(options: acp.SessionConfigOption[], source: ReasoningSou
   const fromCatalog = effortsFromMeta(catalog(source).models.find(entry => entry.id === selectedId)?.meta)
   if (fromCatalog === "unsupported") return undefined
   if (fromCatalog) return reasoningOption("reasoning_effort", fromCatalog, override)
-  const session = sessionEffort(source)
+  const session = sessionEffort(source, metaKeys)
   if (!session) return undefined
   const fromSession = effortsFromSelect(session)
   if (fromSession === "unsupported" || !fromSession) return undefined
@@ -255,19 +262,20 @@ export function projectModelReasoning(
   options: acp.SessionConfigOption[] | null | undefined,
   source: ReasoningSource = {},
   effortOverride?: string,
+  sessionConfigMetaKeys: readonly string[] = [],
 ): acp.SessionConfigOption[] | null | undefined {
   if (options === null) return null
   if (options && options.length === 0) return options
   const stripped = options ? presentReasoningCategory(withoutEmptyReasoning(stripProjectedReasoning(options))) : undefined
-  if (stripped && selectReasoningEffort(stripped)) return sameOptions(stripped, options!) ? options : stripped
+  if (stripped && findReasoningEffortOption(stripped)) return sameOptions(stripped, options!) ? options : stripped
   let next = stripped
   if (!modelSelect(next)) {
     if (options !== undefined) return sameOptions(next ?? [], options) ? options : next
-    const synthesized = synthesizeModel(source)
+    const synthesized = synthesizeModel(source, sessionConfigMetaKeys)
     if (!synthesized) return options
     next = [synthesized]
   }
-  const effort = resolveEfforts(next!, source, effortOverride)
+  const effort = resolveEfforts(next!, source, sessionConfigMetaKeys, effortOverride)
   if (effort) next = [...next!, effort]
   if (options && next && sameOptions(next, options)) return options
   return next
@@ -280,11 +288,16 @@ function modelIdOf(options: acp.SessionConfigOption[] | null | undefined): strin
 
 /** Remembers model catalogs that older agents omit from config options and reapplies them. */
 export class AcpModelReasoning {
+  readonly #sessionConfigMetaKeys: readonly string[]
   #models: unknown
   #meta: { [key: string]: unknown } | undefined
   #effortOverride: string | undefined
   #modelId: string | undefined
   #projected: acp.SessionConfigOption[] | undefined
+
+  constructor(sessionConfigMetaKeys: readonly string[] = []) {
+    this.#sessionConfigMetaKeys = sessionConfigMetaKeys
+  }
 
   remember(response: unknown): void {
     if (!isRecord(response)) return
@@ -310,11 +323,11 @@ export class AcpModelReasoning {
 
   project<T extends { configOptions?: acp.SessionConfigOption[] | null }>(response: T): T {
     const source = { models: this.#models, _meta: this.#meta }
-    let projected = projectModelReasoning(response.configOptions, source, this.#effortOverride)
+    let projected = projectModelReasoning(response.configOptions, source, this.#effortOverride, this.#sessionConfigMetaKeys)
     let modelId = modelIdOf(Array.isArray(projected) ? projected : undefined)
     if (modelId && this.#modelId && modelId !== this.#modelId && this.#effortOverride !== undefined) {
       this.#effortOverride = undefined
-      projected = projectModelReasoning(response.configOptions, source)
+      projected = projectModelReasoning(response.configOptions, source, undefined, this.#sessionConfigMetaKeys)
       modelId = modelIdOf(Array.isArray(projected) ? projected : undefined) ?? modelId
     }
     if (modelId) this.#modelId = modelId

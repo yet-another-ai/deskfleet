@@ -37,7 +37,7 @@ export class AcpSessionModes {
     const modes = state.modes.availableModes
     return !state.options?.some(option => {
       if (option.category === "mode" || option.id === "mode") return true
-      // Pi also publishes its thinking levels as legacy modes. The thought
+      // Some agents also publish their thinking levels as legacy modes. The thought
       // selector already owns that setting, including its confirmed updates.
       if (option.type !== "select" || option.category !== "thought_level") return false
       const choices = option.options.flatMap(value => "group" in value ? value.options : [value])

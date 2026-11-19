@@ -70,7 +70,8 @@ export class AcpSessionScope {
     if (child.cwd != null && !isAbsolute(child.cwd)) {
       throw RequestError.invalidParams({ details: "ACP child working directory must be absolute" })
     }
-    children.set(child.sessionId, { parent,
+    children.set(child.sessionId, {
+      parent,
       ...(child.cwd === undefined ? previous?.cwd ? { cwd: previous.cwd } : {} : child.cwd === null ? {} : { cwd: child.cwd }),
     })
   }

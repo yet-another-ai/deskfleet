@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -12,11 +12,15 @@ test("repository Node packages and Cargo share the release version", () => {
   const directory = join(import.meta.dirname, "..")
   const release = readReleaseVersions(directory)
   validateReleaseTag(`v${release.root}`, release)
+  const agentManifests = readdirSync(join(directory, "packages/agents"), { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => `packages/agents/${entry.name}/package.json`)
+  assert.ok(agentManifests.length > 0, "packages/agents must declare at least one package")
   for (const manifest of [
     "apps/daemon/package.json", "apps/desktop/package.json", "apps/web/package.json",
     "crates/node/package.json", "docs/package.json", "packages/capacitor-bridge/package.json",
     "packages/client/package.json", "packages/components/package.json", "packages/dsh-runtime/package.json",
-    "packages/mcp/package.json",
+    "packages/mcp/package.json", ...agentManifests,
   ]) {
     const { version } = JSON.parse(readFileSync(join(directory, manifest), "utf8"))
     assert.equal(version, release.root, `${manifest} must match the release version`)
