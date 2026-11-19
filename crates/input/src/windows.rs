@@ -23,6 +23,7 @@ pub(super) struct PlatformInput {
     wheel_y: f64,
     pressed_buttons: [Option<u8>; 5],
     desktop_generation: u64,
+    clipboard: super::windows_clipboard::WindowsClipboard,
 }
 
 impl PlatformInput {
@@ -37,6 +38,7 @@ impl PlatformInput {
             wheel_y: 0.0,
             pressed_buttons: [None; 5],
             desktop_generation,
+            clipboard: super::windows_clipboard::WindowsClipboard::new(),
         })
     }
 
@@ -49,8 +51,17 @@ impl PlatformInput {
         self.desktop_generation = generation;
         self.wheel_x = 0.0;
         self.wheel_y = 0.0;
+        self.clipboard.reset_sequence();
         // Keep physical button mappings until Controller releases old presses.
         Ok(true)
+    }
+
+    pub(super) fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        self.clipboard.set_text(text)
+    }
+
+    pub(super) fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        self.clipboard.poll_text()
     }
 
     pub(super) fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {

@@ -883,7 +883,7 @@
     "moveControls": "操作パネルを移動",
     "display": "ディスプレイ", "displayName": "ディスプレイ {number}", "displayOption": "{display} · {width} × {height}",
     "codecStatus": "映像コーデック: {codec}", "audio": "システム音声",
-    "control": "マウスとキーボードの操作", "reverseScroll": "マウススクロールを反転", "pauseControl": "操作を一時停止",
+    "control": "マウスとキーボードの操作", "reverseScroll": "マウススクロールを反転", "clipboard": "クリップボード共有", "pauseControl": "操作を一時停止",
     "resumeControl": "操作を再開", "controlHint": "デスクトップをクリックすると、マウスとキーボードの入力を送信できます。",
     "sendSecureAttention": "Ctrl+Alt+Del を送信",
     "video": "リモートデスクトップ映像", "checking": "ローカルデスクトップを確認中…",

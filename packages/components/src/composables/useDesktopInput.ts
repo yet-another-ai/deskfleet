@@ -1,6 +1,6 @@
 import { useDocumentVisibility, useEventListener, watchImmediate } from "@vueuse/core"
 import { onScopeDispose, watch, type Ref } from "vue"
-import type { DesktopInputMessage, DesktopPointerButton } from "../../../client/src/desktop-input.ts"
+import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPointerButton } from "../../../client/src/desktop-input.ts"
 
 interface Point { x: number; y: number }
 const buttonMasks: readonly (readonly [DesktopPointerButton, number])[] = [[0, 1], [1, 4], [2, 2], [3, 8], [4, 16]]
@@ -34,12 +34,51 @@ export function useDesktopInput(
   enabled: Readonly<Ref<boolean>>,
   send: (message: DesktopInputMessage) => boolean,
   reverseScroll?: Readonly<Ref<boolean>>,
+  clipboardSharing?: Readonly<Ref<boolean>>,
+  remoteClipboard?: Readonly<Ref<{ id: number; text: string } | null>>,
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
   const pointers = new Set<number>()
   const macClient = navigator.platform.startsWith("Mac")
   let lastPoint: Point = { x: 0, y: 0 }
+  let lastSyncedClipboard: string | null = null
+  const textEncoder = new TextEncoder()
+
+  function clipboardAllowed(): boolean {
+    return enabled.value && (clipboardSharing?.value ?? true)
+  }
+
+  function sanitizeClipboard(raw: string): string | null {
+    const text = raw.replaceAll("\0", "")
+    if (!text || textEncoder.encode(text).byteLength > MAX_DESKTOP_CLIPBOARD_BYTES) return null
+    return text
+  }
+
+  function sendClipboardText(raw: string): void {
+    if (!clipboardAllowed()) return
+    const text = sanitizeClipboard(raw)
+    if (!text || text === lastSyncedClipboard) return
+    if (send({ type: "clipboard", text })) {
+      lastSyncedClipboard = text
+    }
+  }
+
+  async function syncLocalClipboard(): Promise<void> {
+    if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    try {
+      const text = await navigator.clipboard.readText()
+      sendClipboardText(text)
+    } catch {
+      // Browsers may reject background or unpermitted clipboard reads.
+    }
+  }
+
+  function handlePaste(event: ClipboardEvent): void {
+    if (!clipboardAllowed()) return
+    const text = event.clipboardData?.getData("text/plain")
+    if (text) sendClipboardText(text)
+  }
 
   function release(): void {
     if (buttons.size || keys.size) send({ type: "releaseAll" })
@@ -133,6 +172,9 @@ export function useDesktopInput(
     if (!enabled.value || event.isComposing || !event.code || event.code === "Unidentified") return
     event.preventDefault()
     event.stopPropagation()
+    if (!event.repeat && (event.code === "KeyV" || event.code === "Insert")) {
+      void syncLocalClipboard()
+    }
     if (send({ type: "key", code: event.code, pressed: true, repeat: event.repeat })) keys.add(event.code)
   }
 
@@ -171,8 +213,25 @@ export function useDesktopInput(
   useEventListener(video, "keydown", keyDown)
   useEventListener(video, "keyup", keyUp)
   useEventListener(video, "contextmenu", contextMenu)
+  useEventListener(video, "paste", handlePaste)
   useEventListener(video, "blur", release)
-  watch(enabled, value => { if (!value) release() }, { flush: "sync" })
+  watch(enabled, value => {
+    if (!value) release()
+    else void syncLocalClipboard()
+  }, { flush: "sync" })
+  if (clipboardSharing) {
+    watch(clipboardSharing, value => { if (value) void syncLocalClipboard() })
+  }
+  if (remoteClipboard) {
+    watch(remoteClipboard, entry => {
+      if (!entry || !clipboardAllowed()) return
+      const text = sanitizeClipboard(entry.text)
+      if (!text || text === lastSyncedClipboard) return
+      lastSyncedClipboard = text
+      void navigator.clipboard?.writeText?.(text)?.catch(() => {})
+    })
+  }
+  useEventListener(window, "focus", () => { void syncLocalClipboard() })
   useEventListener(window, "blur", release)
   watch(useDocumentVisibility(), state => { if (state === "hidden") release() })
   onScopeDispose(release)

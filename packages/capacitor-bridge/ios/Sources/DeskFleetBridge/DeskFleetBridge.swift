@@ -33,7 +33,17 @@ internal func deskfleetIosStringFree(_ ptr: UnsafeMutablePointer<CChar>?)
 
 private let viewerEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { payloadPtr in
     guard let payloadPtr else { return }
-    DeskFleetBridge.activePlugin?.notifyListeners("viewerEvent", data: ["payload": String(cString: payloadPtr)])
+    let payload = String(cString: payloadPtr)
+    if payload.contains("\"clipboard\""),
+       let data = payload.data(using: .utf8),
+       let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+       (obj["type"] as? String) == "clipboard",
+       let text = obj["text"] as? String {
+        DispatchQueue.main.async {
+            DeskFleetBridge.activeController?.applyRemoteClipboard(text)
+        }
+    }
+    DeskFleetBridge.activePlugin?.notifyListeners("viewerEvent", data: ["payload": payload])
 }
 
 @objc(DeskFleetBridge)

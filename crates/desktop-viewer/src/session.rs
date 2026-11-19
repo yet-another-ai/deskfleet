@@ -144,6 +144,11 @@ pub(crate) async fn run_peer(
                                 }
                             },
                             Some(Command::Ui { state }) => crate::session_manager::ui(&proxy, state),
+                            Some(Command::Clipboard { text }) => {
+                                if control && input_open && input_ready && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::Clipboard { text })?).await?;
+                                }
+                            },
                             Some(Command::Start { .. }) => return Err("viewer already started".into()),
                         },
                         event = input.recv() => {
@@ -202,6 +207,14 @@ pub(crate) async fn run_peer(
                                     }
                                     Reply::ConfigurationError { request_id, control: enabled, error } => {
                                         if configuration.reply(request_id, enabled, Some(error))? { control = enabled; input_ready = true; }
+                                    }
+                                    Reply::Clipboard { text } => {
+                                        if control && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
+                                            #[cfg(any(target_os = "android", target_os = "ios"))]
+                                            protocol::emit(json!({"type":"clipboard", "text":text}))?;
+                                            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                                            let _ = proxy.send_event(WindowEvent::RemoteClipboard(text));
+                                        }
                                     }
                                 }
                             },

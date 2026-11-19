@@ -1123,6 +1123,7 @@
     "audio": "系统音频",
     "control": "鼠标和键盘控制",
     "reverseScroll": "反转鼠标滚动",
+    "clipboard": "剪贴板共享",
     "pauseControl": "暂停控制",
     "resumeControl": "恢复控制",
     "sendSecureAttention": "发送 Ctrl+Alt+Del",

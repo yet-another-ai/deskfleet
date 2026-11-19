@@ -112,6 +112,8 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   const stream = shallowRef<MediaStream | null>(null)
   const codec = ref<VideoCodec | null>(null)
   const inputReady = ref(false)
+  const remoteClipboard = shallowRef<{ id: number; text: string } | null>(null)
+  let clipboardSequence = 0
   let current: Session | null = null
   let generation = 0
   let running = false
@@ -396,6 +398,10 @@ export function useDesktopConnection(api: DesktopMediaApi) {
                 sessionSettingsFailure.value = null
                 sendSettings(active)
               }
+            } else if (message.type === "clipboard" && typeof (message as { text?: unknown }).text === "string") {
+              if (active.inputReady) {
+                remoteClipboard.value = { id: ++clipboardSequence, text: (message as { text: string }).text }
+              }
             } else if (message.type === "error" && typeof message.error === "string") {
               operationFailed(active, message.error)
             } else {
@@ -591,7 +597,7 @@ export function useDesktopConnection(api: DesktopMediaApi) {
   }
 
   onScopeDispose(() => { void disconnect() })
-  return { state, failure, settingsFailure, stream, codec, inputReady, connect, reconfigure, disconnect, sendInput }
+  return { state, failure, settingsFailure, stream, codec, inputReady, remoteClipboard, connect, reconfigure, disconnect, sendInput }
 }
 
 function sameTransportOptions(current: DesktopConnectOptions | null, next: DesktopConnectOptions): boolean {

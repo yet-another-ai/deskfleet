@@ -4,6 +4,7 @@
 //! portal session; shutdown, compositor revocation and portal disconnection do.
 #![cfg(target_os = "linux")]
 
+mod clipboard;
 mod identity;
 mod input;
 mod monitor_metadata;
@@ -176,6 +177,14 @@ impl InputConnection {
 
     pub fn release_all(&mut self) -> Result<()> {
         self.send(input::Action::Release)
+    }
+
+    pub fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        clipboard::set_clipboard(text)
+    }
+
+    pub fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        clipboard::poll_clipboard()
     }
 
     fn send(&self, action: input::Action) -> Result<()> {

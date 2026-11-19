@@ -195,7 +195,7 @@ export function openNativeDesktopAttempt(
           else transportFailed(error)
           break
         }
-        case "stats": break
+        case "stats": case "clipboard": break
       }
     } catch (error) { fail(error) }
   }

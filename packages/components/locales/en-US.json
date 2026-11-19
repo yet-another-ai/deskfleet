@@ -1123,6 +1123,7 @@
     "audio": "System audio",
     "control": "Mouse and keyboard control",
     "reverseScroll": "Reverse mouse scrolling",
+    "clipboard": "Clipboard sharing",
     "pauseControl": "Pause control",
     "resumeControl": "Resume control",
     "sendSecureAttention": "Send Ctrl+Alt+Del",

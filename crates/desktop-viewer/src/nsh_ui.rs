@@ -197,6 +197,7 @@ mod tests {
                 "displayName",
                 "control",
                 "reverseScroll",
+                "clipboard",
                 "disconnect",
                 "connect",
                 "moveControls",

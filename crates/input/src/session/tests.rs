@@ -11,6 +11,8 @@ struct Fake {
     key_error: Rc<RefCell<Option<InputError>>>,
     desktop_changed: Rc<Cell<bool>>,
     fail_prepare: Rc<Cell<bool>>,
+    clipboard: Rc<RefCell<Option<String>>>,
+    clipboard_unsupported: Rc<Cell<bool>>,
 }
 
 impl Backend for Fake {
@@ -48,6 +50,17 @@ impl Backend for Fake {
             return Err(InputError::Platform("release failed".into()));
         }
         Ok(())
+    }
+    fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        if self.clipboard_unsupported.get() {
+            return Err(InputError::Unsupported("clipboard sharing"));
+        }
+        self.events.borrow_mut().push(format!("clipboard {text}"));
+        *self.clipboard.borrow_mut() = Some(text.to_owned());
+        Ok(())
+    }
+    fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        Ok(self.clipboard.borrow().clone())
     }
 }
 
@@ -255,6 +268,12 @@ fn malformed_input_releases_pressed_keys_without_injecting_coordinates() {
         },
         key("", true, false),
         key(&"A".repeat(33), true, false),
+        InputEvent::Clipboard {
+            text: String::new(),
+        },
+        InputEvent::Clipboard {
+            text: "x".repeat(crate::MAX_CLIPBOARD_BYTES + 1),
+        },
     ] {
         let fake = Fake::default();
         let mut controller = Controller::new(fake.clone());
@@ -458,4 +477,44 @@ fn exclusive_lease_is_reusable_after_drop() {
     ));
     drop(lease);
     assert!(crate::ControlLease::acquire().is_ok());
+}
+
+#[test]
+fn clipboard_deduplicates_echoes_and_ignores_unsupported_backends_without_releasing_keys() {
+    let fake = Fake::default();
+    let mut controller = Controller::new(fake.clone());
+    controller.handle(key("ControlLeft", true, false)).unwrap();
+    controller
+        .handle(InputEvent::Clipboard {
+            text: "copied text".into(),
+        })
+        .unwrap();
+    controller
+        .handle(InputEvent::Clipboard {
+            text: "copied text".into(),
+        })
+        .unwrap();
+    // Echo of the text we just injected must not be emitted back to the viewer.
+    assert_eq!(controller.poll_clipboard().unwrap(), None);
+
+    // A new local host clipboard change is returned once.
+    *fake.clipboard.borrow_mut() = Some("host text".into());
+    assert_eq!(
+        controller.poll_clipboard().unwrap().as_deref(),
+        Some("host text")
+    );
+    assert_eq!(controller.poll_clipboard().unwrap(), None);
+
+    // Unsupported clipboard backends preserve held keys.
+    fake.clipboard_unsupported.set(true);
+    controller
+        .handle(InputEvent::Clipboard {
+            text: "ignored".into(),
+        })
+        .unwrap();
+    assert_eq!(controller.keys, ["ControlLeft"]);
+    assert_eq!(
+        *fake.events.borrow(),
+        ["key ControlLeft true false", "clipboard copied text"]
+    );
 }

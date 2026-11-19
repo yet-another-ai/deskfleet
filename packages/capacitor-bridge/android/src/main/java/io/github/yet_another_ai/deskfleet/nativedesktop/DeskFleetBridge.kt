@@ -164,6 +164,9 @@ class DeskFleetBridge : Plugin() {
 
     @Suppress("unused")
     fun onViewerEvent(payload: String) {
+        if (payload.contains("\"type\":\"clipboard\"")) {
+            activeActivity?.get()?.applyRemoteClipboard(payload)
+        }
         notifyListeners("viewerEvent", JSObject().put("payload", payload))
     }
 

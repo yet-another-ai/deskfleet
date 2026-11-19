@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::media::{DesktopConfig, Packet};
 
-const MAX_MESSAGE: usize = 64 * 1024;
+const MAX_MESSAGE: usize = 256 * 1024;
 const MAX_PACKET: usize = 32 * 1024 * 1024;
 const MAX_BATCH: usize = 64 * 1024 * 1024;
 const MAX_PACKETS: usize = 256;
@@ -111,7 +111,10 @@ impl From<DisplayInfo> for Display {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub(super) enum Reply {
-    Ready,
+    Ready {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        clipboard: Option<String>,
+    },
     Displays {
         displays: Vec<DisplayInfo>,
     },

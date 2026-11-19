@@ -28,7 +28,7 @@ impl Client {
 
     fn ready(&mut self, request: Request) -> Result<(), MediaError> {
         match self.call(request)? {
-            Reply::Ready => Ok(()),
+            Reply::Ready { .. } => Ok(()),
             _ => Err(failure("unexpected response from desktop helper")),
         }
     }
@@ -84,8 +84,11 @@ impl Client {
         self.ready(Request::Input { event })
     }
 
-    pub(crate) fn refresh_input(&mut self) -> Result<(), MediaError> {
-        self.ready(Request::RefreshInput)
+    pub(crate) fn refresh_input(&mut self) -> Result<Option<String>, MediaError> {
+        match self.call(Request::RefreshInput)? {
+            Reply::Ready { clipboard } => Ok(clipboard),
+            _ => Err(failure("unexpected response from desktop helper")),
+        }
     }
 
     pub(crate) fn stop(&mut self) -> Result<(), MediaError> {

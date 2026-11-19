@@ -26,6 +26,7 @@ pub(super) struct PlatformInput {
     caps_lock: bool,
     scroll_remainder: [f64; 2],
     clicks: [Option<Click>; 5],
+    clipboard: crate::macos_clipboard::MacOsClipboard,
 }
 
 #[derive(Clone, Copy)]
@@ -52,7 +53,16 @@ impl PlatformInput {
             caps_lock,
             scroll_remainder: [0.0; 2],
             clicks: [None; 5],
+            clipboard: crate::macos_clipboard::MacOsClipboard::new(),
         })
+    }
+
+    pub(super) fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        self.clipboard.set_text(text)
+    }
+
+    pub(super) fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        self.clipboard.poll_text()
     }
 
     pub(super) fn move_pointer(&mut self, x: f64, y: f64) -> Result<()> {

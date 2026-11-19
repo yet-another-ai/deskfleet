@@ -50,9 +50,12 @@ final class MetalVideoView: UIView {
 }
 
 final class RemoteDesktopViewController: UIViewController {
+    private static let maxClipboardBytes = 32 * 1024
     private let metalView = MetalVideoView(frame: .zero)
     private var dragging = false
     private var closeSent = false
+    private var lastSyncedClipboard: String?
+    private var lastPasteboardChangeCount: Int = UIPasteboard.general.changeCount
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
@@ -78,13 +81,29 @@ final class RemoteDesktopViewController: UIViewController {
         closeButton.addTarget(self, action: #selector(handleCloseTapped), for: .touchUpInside)
         view.addSubview(closeButton)
 
+        let clipboardButton = UIButton(type: .custom)
+        clipboardButton.translatesAutoresizingMaskIntoConstraints = false
+        clipboardButton.setTitle("📋", for: .normal)
+        clipboardButton.setTitleColor(.white, for: .normal)
+        clipboardButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        clipboardButton.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        clipboardButton.accessibilityLabel = "Clipboard sharing"
+        clipboardButton.backgroundColor = UIColor(red: 20 / 255, green: 20 / 255, blue: 24 / 255, alpha: 140 / 255)
+        clipboardButton.layer.cornerRadius = 18
+        clipboardButton.layer.borderWidth = 1
+        clipboardButton.layer.borderColor = UIColor(white: 1, alpha: 90 / 255).cgColor
+        clipboardButton.addTarget(self, action: #selector(handleClipboardTapped), for: .touchUpInside)
+        view.addSubview(clipboardButton)
+
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             metalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             metalView.topAnchor.constraint(equalTo: view.topAnchor),
             metalView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            clipboardButton.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
+            clipboardButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
         ])
 
         metalView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:))))
@@ -98,6 +117,12 @@ final class RemoteDesktopViewController: UIViewController {
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleFocusLost), name: UIApplication.willResignActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handlePasteboardChanged), name: UIPasteboard.changedNotification, object: nil
         )
     }
 
@@ -176,5 +201,52 @@ final class RemoteDesktopViewController: UIViewController {
         if !closeSent { closeSent = true; deskfleetIosTouch(7, 0, 0, 0, 0) }
         metalView.detachSurface()
         dismiss(animated: false)
+    }
+
+    @objc private func handleClipboardTapped() {
+        syncLocalClipboardToRemote(force: true)
+    }
+
+    @objc private func handleDidBecomeActive() {
+        syncLocalClipboardToRemote(force: false)
+    }
+
+    @objc private func handlePasteboardChanged() {
+        syncLocalClipboardToRemote(force: false)
+    }
+
+    func applyRemoteClipboard(_ rawText: String) {
+        let sanitized = rawText.replacingOccurrences(of: "\0", with: "")
+        guard !sanitized.isEmpty,
+              sanitized.utf8.count <= Self.maxClipboardBytes,
+              sanitized != lastSyncedClipboard else {
+            return
+        }
+        lastSyncedClipboard = sanitized
+        UIPasteboard.general.string = sanitized
+        lastPasteboardChangeCount = UIPasteboard.general.changeCount
+    }
+
+    private func syncLocalClipboardToRemote(force: Bool) {
+        let pasteboard = UIPasteboard.general
+        let currentCount = pasteboard.changeCount
+        if !force && currentCount == lastPasteboardChangeCount {
+            return
+        }
+        lastPasteboardChangeCount = currentCount
+        guard pasteboard.hasStrings,
+              let rawText = pasteboard.string else {
+            return
+        }
+        let sanitized = rawText.replacingOccurrences(of: "\0", with: "")
+        guard !sanitized.isEmpty,
+              sanitized.utf8.count <= Self.maxClipboardBytes,
+              sanitized != lastSyncedClipboard,
+              let data = try? JSONSerialization.data(withJSONObject: ["type": "clipboard", "text": sanitized]),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        lastSyncedClipboard = sanitized
+        json.withCString { deskfleetIosSendCommand($0) }
     }
 }

@@ -42,12 +42,13 @@ const displayId = ref<number | null>(null)
 const audio = ref(true)
 const control = ref(true)
 const reverseScroll = ref(false)
+const clipboard = ref(true)
 const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
 const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
 const windowsTarget = computed(() => fleet.localDesktopTarget.platform === "win32")
 const secureAttentionAvailable = computed(() => windowsTarget.value && capabilities.value?.secureAttention === true)
-useDesktopInput(video, inputEnabled, connection.sendInput, reverseScroll)
+useDesktopInput(video, inputEnabled, connection.sendInput, reverseScroll, clipboard, connection.remoteClipboard)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
 const isFullscreen = ref(false)
@@ -355,6 +356,10 @@ const errorDescription = computed(() => {
           <label v-if="!useNativeViewer" class="flex items-center gap-2 text-[13px]">
             <UiCheckbox v-model="reverseScroll" data-desktop-reverse-scroll />
             {{ t("desktop.reverseScroll") }}
+          </label>
+          <label v-if="!useNativeViewer" class="flex items-center gap-2 text-[13px]">
+            <UiCheckbox v-model="clipboard" data-desktop-clipboard />
+            {{ t("desktop.clipboard") }}
           </label>
         </PopoverContent>
         </PopoverPortal>

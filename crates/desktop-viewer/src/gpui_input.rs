@@ -24,7 +24,7 @@ impl Input {
             if !std::mem::take(&mut self.release_pending) {
                 return None;
             }
-        } else {
+        } else if !matches!(event, InputEvent::Clipboard { .. }) {
             self.release_pending = true;
         }
         Some(event)

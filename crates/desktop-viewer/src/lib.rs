@@ -6,6 +6,8 @@ mod android;
 mod android_decoder;
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod av1_config;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod clipboard;
 #[cfg(test)]
 mod codec_tests;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -87,6 +89,8 @@ enum WindowEvent {
     Connected(bool),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     InputReady,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    RemoteClipboard(String),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     SessionEnded,
 }

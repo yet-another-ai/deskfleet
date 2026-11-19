@@ -5,6 +5,7 @@
 #![cfg(target_os = "linux")]
 
 mod capture;
+mod clipboard;
 mod connection;
 mod display;
 mod input;

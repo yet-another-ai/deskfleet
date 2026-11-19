@@ -33,6 +33,9 @@ pub(crate) enum Command {
     Ui {
         state: UiState,
     },
+    Clipboard {
+        text: String,
+    },
     Close,
 }
 

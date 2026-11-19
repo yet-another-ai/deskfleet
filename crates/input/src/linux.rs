@@ -48,6 +48,20 @@ impl PlatformInput {
             Self::X11(input) => input.key(code, pressed, repeat),
         }
     }
+
+    pub(super) fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        match self {
+            Self::Wayland(input) => input.set_clipboard(text),
+            Self::X11(input) => input.set_clipboard(text),
+        }
+    }
+
+    pub(super) fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        match self {
+            Self::Wayland(input) => input.poll_clipboard(),
+            Self::X11(input) => input.poll_clipboard(),
+        }
+    }
 }
 
 fn button_code(button: u8) -> Result<u32> {

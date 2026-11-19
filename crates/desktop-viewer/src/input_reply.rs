@@ -22,6 +22,9 @@ pub(crate) enum Reply {
         control: bool,
         error: String,
     },
+    Clipboard {
+        text: String,
+    },
 }
 
 pub(crate) fn parse(data: &[u8], is_string: bool) -> Result<Reply, Error> {
@@ -40,6 +43,8 @@ mod tests {
         assert!(parse(br#"{"type":"ready"}"#, true).is_ok());
         let error = parse(br#"{"type":"error","error":"access denied"}"#, true).unwrap();
         assert!(matches!(error, Reply::Error { error } if error == "access denied"));
+        let clip = parse(br#"{"type":"clipboard","text":"copied"}"#, true).unwrap();
+        assert!(matches!(clip, Reply::Clipboard { text } if text == "copied"));
         for data in [
             br#"{"type":"unknown"}"#.as_slice(),
             br#"{"type":"error"}"#,

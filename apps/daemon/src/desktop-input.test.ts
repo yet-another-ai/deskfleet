@@ -42,6 +42,12 @@ test("view-only, revoked, malformed and closed channels cannot inject input", as
   await f.channel.started(true)
   await assert.rejects(f.data('{}', false), /Invalid/)
   await assert.rejects(f.data(' '.repeat(4097)), /Invalid/)
+  await assert.rejects(f.data(JSON.stringify({ type: "key", code: "x".repeat(4100), pressed: true })), /Invalid/)
+  const largeClipboard = JSON.stringify({ type: "clipboard", text: "a".repeat(8192) })
+  await f.data(largeClipboard)
+  assert.deepEqual(f.input, [largeClipboard])
+  f.input.length = 0
+  await assert.rejects(f.data(JSON.stringify({ type: "clipboard", text: "a".repeat(66_000) })), /Invalid/)
   f.revoke()
   await assert.rejects(f.data('{}'), /revoked/)
   f.channel.close()

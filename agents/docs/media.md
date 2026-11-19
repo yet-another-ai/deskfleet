@@ -303,8 +303,11 @@ while checking permissions.
 Linux supports the current user's logged-in, unlocked Wayland desktop through
 RemoteDesktop portal v2, ScreenCast, PipeWire, and EIS. The portal backend must
 support keyboard and pointer access and monitor capture; a ScreenCast-only
-backend is insufficient. GNOME and KDE provide these interfaces. Login-screen
-access, remote unlock, clipboard, and system audio are outside this backend.
+backend is insufficient. GNOME and KDE provide these interfaces. When the portal
+implements `org.freedesktop.portal.Clipboard`, the session requests clipboard
+access before `RemoteDesktop.Start` so plain-text clipboard updates can flow in
+both directions while remote control is active. Login-screen
+access, remote unlock, and system audio are outside this backend.
 
 After discovery and local IPC are ready, both standalone and Electron-hosted
 daemons request screen and input access together. This runs asynchronously so a
@@ -435,7 +438,8 @@ system audio. Desktop streaming still requires one of the GStreamer encoders abo
 
 On Linux (such as `linux-arm64` inside Termux `proot-distro`), setting
 `DESKFLEET_ANDROID_SCRCPY_SERVER` to an upstream `scrcpy-server` v2.4+/v3.x JAR
-routes display/codec discovery, hardware video streaming, and touch/key input
+routes display/codec discovery, hardware video streaming, touch/key input, and
+bidirectional plain-text clipboard synchronization
 through `com.genymobile.scrcpy.Server` in UID 2000 instead of Wayland or X11
 (`linuxDesktopBackend` stays `null`). Transport defaults to `adb`
 (`DESKFLEET_ANDROID_SERIAL` or `ANDROID_SERIAL`), or uses
@@ -786,7 +790,7 @@ capture, while sustained loss releases the peer and grant and leaves the native
 window available to reconnect.
 
 The window-to-session input queue holds at most 256 events and coalesces only
-adjacent pointer moves, preserving key/button/wheel ordering. On overflow, it
+adjacent pointer moves or clipboard updates, preserving key/button/wheel ordering. On overflow, it
 discards pending input and the overflowing action, then queues `ReleaseAll`
 without closing the video. Focus-loss release also clears pending presses.
 Any event already being sent precedes the reset on the ordered DataChannel;
@@ -1044,7 +1048,19 @@ positions. Buttons follow DOM numbering (left, middle, right, back, forward).
 `KeyboardEvent.code`, pressed state, and repeat. The remote keyboard layout
 determines characters. Physical keys that the target cannot map are ignored without
 releasing held input or disconnecting the stream. Malformed messages and OS injection
-failures still fail the connection. Clipboard, text/IME composition forwarding, and operating
+failures still fail the connection. `clipboard` carries plain-text UTF-8 payloads
+from 1 through 32,768 bytes (`MAX_CLIPBOARD_BYTES`) in both directions on
+`deskfleet-input` while control is active, deduplicating echoes so remote writes
+do not loop back. Both the embedded browser viewer and the native GPUI desktop
+window expose a **Clipboard sharing** setting (enabled by default) and sync on
+window focus and paste gestures; Android and iOS viewers sync automatically with
+`ClipboardManager` / `UIPasteboard` on focus and change events and expose a
+top-left `📋` action for explicit sync. Target clipboard integration uses Win32
+`CF_UNICODETEXT` on the bound input desktop (including across the Windows
+desktop service worker pipe on `RefreshInput`), macOS `NSPasteboard`, Wayland
+`org.freedesktop.portal.Clipboard`, X11 `CLIPBOARD` selection ownership and
+`XFIXES` notifications, and Android `scrcpy-server` control/device messages.
+Text/IME composition forwarding and operating
 system shortcuts intercepted by the viewer's OS are outside this contract, apart
 from the explicit Windows `secureAttention` action described above.
 `releaseAll` releases only controls held by this controller.
