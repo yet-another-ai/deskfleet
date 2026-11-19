@@ -8,23 +8,19 @@ import PlatformIcon from "./PlatformIcon.vue"
 import { findAndroidDownload, formatSize, releasesPage, type LatestRelease } from "./home-downloads.ts"
 import { homeCopy } from "./home-locales.ts"
 
-const props = defineProps<{ locale: AppLocale; release?: LatestRelease; loading: boolean }>()
+const props = defineProps<{ locale: AppLocale; release?: LatestRelease }>()
 const t = computed(() => homeCopy[props.locale].install)
 const iosUrl = "https://apps.apple.com/us/app/deskfleet/id6833434060"
+const androidPlayUrl = "https://play.google.com/store/apps/details?id=ai.yetanother.deskfleet"
 const androidFile = computed(() => findAndroidDownload(props.release))
-const androidUrl = computed(() => androidFile.value?.url ?? releasesPage)
 const qrOptions = { width: 264, margin: 4, color: { dark: "#111111", light: "#ffffff" } }
 const iosQr = useQRCode(iosUrl, qrOptions)
-const androidQr = useQRCode(androidUrl, qrOptions)
+const androidQr = useQRCode(androidPlayUrl, qrOptions)
 const downloads = computed(() => [
-  { platform: "ios", title: "iOS", detail: "App Store", href: iosUrl, qr: iosQr.value,
+  { platform: "ios", title: "iOS", detail: "App Store", href: iosUrl, qr: iosQr.value, channel: "app_store",
     action: t.value.appStore, scan: t.value.scanIos, status: t.value.iosDevices },
-  { platform: "android", title: "Android", detail: "APK · arm64", href: androidUrl.value, qr: androidQr.value,
-    action: androidFile.value ? t.value.downloadApk : t.value.releases,
-    scan: androidFile.value ? t.value.scanAndroid : t.value.scanReleases,
-    status: androidFile.value
-      ? `v${props.release!.version} · ${formatSize(androidFile.value.size, intlLocale(props.locale))}`
-      : props.loading ? t.value.checkingRelease : t.value.downloadAvailability },
+  { platform: "android", title: "Android", detail: "Google Play", href: androidPlayUrl, qr: androidQr.value, channel: "google_play",
+    action: t.value.googlePlay, scan: t.value.scanGooglePlay },
 ])
 </script>
 
@@ -45,15 +41,14 @@ const downloads = computed(() => [
               <p class="mobile-download__detail">{{ item.detail }}</p>
             </div>
           </div>
-          <p class="mobile-download__status" aria-live="polite">{{ item.status }}</p>
+          <p v-if="item.status" class="mobile-download__status">{{ item.status }}</p>
           <a
             class="mobile-download__action"
             :href="item.href"
-            @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: item.platform, channel: item.platform === 'ios' ? 'app_store' : 'apk' })"
+            @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: item.platform, channel: item.channel })"
           >
             {{ item.action }}
-            <Download v-if="item.platform === 'android' && androidFile" :size="16" aria-hidden="true" />
-            <ArrowUpRight v-else :size="16" aria-hidden="true" />
+            <ArrowUpRight :size="16" aria-hidden="true" />
           </a>
           <a
             v-if="item.platform === 'ios'"
@@ -64,6 +59,20 @@ const downloads = computed(() => [
             {{ t.testFlight }}
             <ArrowUpRight :size="16" aria-hidden="true" />
           </a>
+          <template v-else>
+            <a
+              class="mobile-download__action mobile-download__action--secondary"
+              :href="androidFile?.url ?? releasesPage"
+              @click="trackAcquisitionConversion('marketing_mobile_download_clicked', { os: 'android', channel: androidFile ? 'apk' : 'releases' })"
+            >
+              {{ androidFile ? `${t.downloadApk} (arm64)` : t.releases }}
+              <Download v-if="androidFile" :size="16" aria-hidden="true" />
+              <ArrowUpRight v-else :size="16" aria-hidden="true" />
+            </a>
+            <p v-if="androidFile && release" class="mobile-download__status mobile-download__status--apk">
+              v{{ release.version }} · {{ formatSize(androidFile.size, intlLocale(locale)) }}
+            </p>
+          </template>
         </div>
         <a
           class="mobile-download__qr"
@@ -90,6 +99,7 @@ const downloads = computed(() => [
 .mobile-download__icon { display: grid; width: 38px; height: 38px; flex: none; place-items: center; border-radius: 12px; background: var(--home-fill); font-size: 22px; }
 .mobile-download__detail { margin: 2px 0 0; color: var(--home-ink-2); font-size: 12px; }
 .mobile-download__status { margin: 12px 0 16px; color: var(--home-ink-2); font-size: 12px; line-height: 1.5; }
+.mobile-download__status--apk { margin: 0; }
 .mobile-download__action { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: auto; color: var(--home-ink); font-size: 14px; font-weight: 650; line-height: 1.5; text-decoration: none; }
 .mobile-download__action--secondary { min-height: 28px; margin-top: 0; color: var(--home-ink-2); font-size: 13px; font-weight: 500; }
 .mobile-download__action svg { flex: none; }
