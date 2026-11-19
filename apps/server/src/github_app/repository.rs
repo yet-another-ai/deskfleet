@@ -61,8 +61,16 @@ impl<'a> RepositoryClient<'a> {
     }
 
     pub(super) async fn get(&self, url: url::Url) -> Result<reqwest::Response> {
-        self.client
-            .get(url)
+        self.send(self.client.get(url)).await
+    }
+
+    pub(super) async fn graphql(&self, body: &serde_json::Value) -> Result<reqwest::Response> {
+        let url = format!("{}/graphql", self.config.api_url.trim_end_matches('/'));
+        self.send(self.client.post(url).json(body)).await
+    }
+
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        request
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "DeskFleet")
             .header("X-GitHub-Api-Version", "2022-11-28")

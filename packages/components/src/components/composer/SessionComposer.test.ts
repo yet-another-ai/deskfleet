@@ -106,7 +106,7 @@ test.each(["issue", "pullRequest"] as const)("a scoped GitHub %s drop attaches o
   })
   useFleetStore(pinia).catalog = catalog
   await flushPromises()
-  const item: GithubRepositoryItem = { kind, number: 12, repository: "acme/app", title: "Fix toolbar",
+  const item: GithubRepositoryItem = { kind, state: kind === "issue" ? "closed" : "merged", number: 12, repository: "acme/app", title: "Fix toolbar",
     url: `https://github.com/acme/app/${kind === "issue" ? "issues" : "pull"}/12`, body: "Reproduce by opening a Session." }
   const drop = async (source: typeof scope, value = item) => {
     const transfer = new DataTransfer()

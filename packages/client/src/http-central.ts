@@ -226,7 +226,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     return this.request<{ pullRequest: GithubPullRequest | null }>("GET", `/api/integrations/github/pull-request?${params}`)
   }
   githubRepositoryItems(query: GithubRepositoryItemsQuery) {
-    const params = new URLSearchParams({ owner: query.owner, repo: query.repo, kind: query.kind, page: String(query.page) })
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo, kind: query.kind, includeClosed: String(query.includeClosed) })
+    if (query.cursor) params.set("cursor", query.cursor)
     return this.request<GithubRepositoryItemsPage>("GET", `/api/integrations/github/repository-items?${params}`)
   }
   billing(teamId: string) { return this.request<TeamBilling>("GET", `/api/teams/${encodeURIComponent(teamId)}/billing`) }

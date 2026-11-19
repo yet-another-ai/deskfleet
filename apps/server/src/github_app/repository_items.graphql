@@ -1,0 +1,17 @@
+query RepositoryIssues($owner: String!, $repo: String!, $cursor: String, $states: [IssueState!]!) {
+  repository(owner: $owner, name: $repo) {
+    items: issues(first: 30, after: $cursor, states: $states, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number title body state }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+
+query RepositoryPullRequests($owner: String!, $repo: String!, $cursor: String, $states: [PullRequestState!]!) {
+  repository(owner: $owner, name: $repo) {
+    items: pullRequests(first: 30, after: $cursor, states: $states, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number title body state }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

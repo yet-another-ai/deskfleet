@@ -26,14 +26,21 @@ export interface GithubPullRequestQuery { owner: string; repo: string; branch: s
 export interface GithubPullRequest { number: number; title: string; url: string; state: "draft" | "open" | "merged" | "closed" }
 export interface GithubRepositoryItem {
   kind: "issue" | "pullRequest"
+  state: "open" | "closed" | "merged"
   repository: string
   number: number
   title: string
   url: string
   body: string
 }
-export interface GithubRepositoryItemsQuery { owner: string; repo: string; kind: GithubRepositoryItem["kind"]; page: number }
-export interface GithubRepositoryItemsPage { items: GithubRepositoryItem[]; nextPage: number | null }
+export interface GithubRepositoryItemsQuery {
+  owner: string
+  repo: string
+  kind: GithubRepositoryItem["kind"]
+  includeClosed: boolean
+  cursor?: string
+}
+export interface GithubRepositoryItemsPage { items: GithubRepositoryItem[]; nextCursor: string | null }
 export interface AccountState { serverUrl: string; user?: AccountUser; siteAdmin: boolean }
 export type { SiteSettings, MarketingAttribution, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, TeamTurnAvailability, TeamTurnSettings, TeamTurnSettingsUpdate } from "../../../crates/protocol/control.ts"
 export type TeamRole = "owner" | "admin" | "member"

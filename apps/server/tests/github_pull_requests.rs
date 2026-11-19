@@ -36,10 +36,51 @@ fn daemon_request(token: &str, user_id: &str) -> test::TestRequest {
         }}))
 }
 
-fn list_request(token: &str, kind: &str, page: u32) -> test::TestRequest {
+fn list_request(token: &str, query: &str) -> test::TestRequest {
     test::TestRequest::get()
-        .uri(&format!("/api/integrations/github/repository-items?owner=upstream&repo=project&kind={kind}&page={page}"))
+        .uri(&format!(
+            "/api/integrations/github/repository-items?owner=upstream&repo=project&{query}"
+        ))
         .insert_header(("Authorization", format!("Bearer {token}")))
+}
+
+async fn github_items(req: HttpRequest, body: web::Json<Value>) -> HttpResponse {
+    assert_eq!(
+        req.headers().get("authorization").unwrap(),
+        "Bearer ghu_fixture"
+    );
+    let vars = &body["variables"];
+    assert_eq!(vars["owner"], "upstream");
+    assert_eq!(vars["repo"], "project");
+    let cursor = vars["cursor"].as_str();
+    if cursor == Some("denied") {
+        return HttpResponse::Ok().json(
+            json!({"data":{"repository":null},"errors":[{"type":"FORBIDDEN","message":"private"}]}),
+        );
+    }
+    let (number, state, next) = match (body["operationName"].as_str().unwrap(), cursor) {
+        ("RepositoryIssues", None) if vars["states"] == json!(["OPEN"]) => {
+            (77, "OPEN", Some("issue+cursor"))
+        }
+        ("RepositoryIssues", Some("issue+cursor")) => {
+            assert_eq!(vars["states"], json!(["OPEN"]));
+            (75, "OPEN", None)
+        }
+        ("RepositoryIssues", None) => {
+            assert_eq!(vars["states"], json!(["OPEN", "CLOSED"]));
+            (74, "CLOSED", None)
+        }
+        ("RepositoryPullRequests", None) if vars["states"] == json!(["OPEN"]) => (79, "OPEN", None),
+        ("RepositoryPullRequests", None) => {
+            assert_eq!(vars["states"], json!(["OPEN", "CLOSED", "MERGED"]));
+            (78, "MERGED", None)
+        }
+        _ => panic!("unexpected operation or cursor"),
+    };
+    HttpResponse::Ok().json(json!({"data":{"repository":{"items":{
+        "nodes":[{"number":number,"title":"Title","body":"**Markdown**","state":state}],
+        "pageInfo":{"hasNextPage":next.is_some(),"endCursor":next.unwrap_or("last-item")}
+    }}}}))
 }
 
 fn grant(expired: bool) -> GithubAppGrant {
@@ -95,12 +136,6 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
                     assert!(auth == "Bearer ghu_fixture" || auth == "Bearer ghu_rotated");
                     assert_eq!(query.get("sort").unwrap(), "updated");
                     assert_eq!(query.get("direction").unwrap(), "desc");
-                    if !query.contains_key("head") {
-                        assert_eq!(query["state"], "open");
-                        assert_eq!(query["page"], "1");
-                        assert_eq!(query["per_page"], "30");
-                        return HttpResponse::Ok().json(json!([{"number":78,"title":"Draft PR","body":null}]));
-                    }
                     assert_eq!(query.get("per_page").unwrap(), "1");
                     let head = query.get("head").unwrap().strip_prefix("octocat:").unwrap();
                     if head == "failure" {
@@ -119,16 +154,7 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
                     }]))
                 }
             }))
-            .route("/repos/upstream/project/issues", web::get().to(|req: HttpRequest, query: web::Query<HashMap<String,String>>| async move {
-                assert_eq!(req.headers().get("authorization").unwrap(), "Bearer ghu_fixture");
-                assert_eq!(query["state"], "open");
-                if query["page"] == "1" {
-                    return HttpResponse::Ok().insert_header(("Link", "<https://api.github.com/repos/upstream/project/issues?page=2>; rel=\"next\""))
-                        .json(json!([{"number":78,"title":"Draft PR","body":null,"pull_request":{}}]));
-                }
-                assert_eq!(query["page"], "2");
-                HttpResponse::Ok().json(json!([{"number":77,"title":"An issue","body":"**Markdown**","html_url":"untrusted"}]))
-            }))
+            .route("/graphql", web::post().to(github_items))
     }).listen(listener).unwrap().run();
     let mock_handle = mock.handle();
     actix_web::rt::spawn(mock);
@@ -208,7 +234,7 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     let response = test::call_service(&app, request(token, "open").to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(pull_calls.load(Ordering::SeqCst), 0);
-    let response = test::call_service(&app, list_request(token, "issue", 1).to_request()).await;
+    let response = test::call_service(&app, list_request(token, "kind=issue").to_request()).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response =
         test::call_service(&app, daemon_request(machine_token, &user.id).to_request()).await;
@@ -226,26 +252,50 @@ async fn reads_branch_prs_with_opt_in_and_serializes_token_refresh() {
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    for (kind, page, expected) in [
-        ("issue", 1, json!({"items":[],"nextPage":2})),
+    for (query, kind, number, item_state, next) in [
+        ("kind=issue", "issue", 77, "open", Some("issue+cursor")),
         (
+            "kind=issue&cursor=issue%2Bcursor",
             "issue",
-            2,
-            json!({"items":[{"kind":"issue","repository":"upstream/project","number":77,
-            "title":"An issue","url":"https://github.com/upstream/project/issues/77","body":"**Markdown**"}],"nextPage":null}),
+            75,
+            "open",
+            None,
+        ),
+        ("kind=issue&includeClosed=true", "issue", 74, "closed", None),
+        (
+            "kind=pullRequest&includeClosed=false",
+            "pullRequest",
+            79,
+            "open",
+            None,
         ),
         (
+            "kind=pullRequest&includeClosed=true",
             "pullRequest",
-            1,
-            json!({"items":[{"kind":"pullRequest","repository":"upstream/project","number":78,
-            "title":"Draft PR","url":"https://github.com/upstream/project/pull/78","body":""}],"nextPage":null}),
+            78,
+            "merged",
+            None,
         ),
     ] {
-        let response = test::call_service(&app, list_request(token, kind, page).to_request()).await;
+        let response = test::call_service(&app, list_request(token, query).to_request()).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+        let path = if kind == "issue" { "issues" } else { "pull" };
+        let expected = json!({
+            "items":[{"kind":kind, "repository":"upstream/project", "number":number, "state":item_state,
+                "title":"Title", "url":format!("https://github.com/upstream/project/{path}/{number}"), "body":"**Markdown**"}],
+            "nextCursor":next,
+        });
         assert_eq!(test::read_body_json::<Value, _>(response).await, expected);
     }
+    let response = test::call_service(
+        &app,
+        list_request(token, "kind=issue&cursor=denied").to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let failure: Value = test::read_body_json(response).await;
+    assert_eq!(failure["error"]["code"], "github_repository_inaccessible");
 
     let response = test::call_service(&app, daemon_request(token, &user.id).to_request()).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);

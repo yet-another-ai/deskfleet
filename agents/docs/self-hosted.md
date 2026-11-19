@@ -296,8 +296,9 @@ Act as you is off after authorization and must be enabled explicitly. Turning it
 off retains the authorization and does not uninstall the App or revoke the grant
 on GitHub. Settings report authorization while an access token or refresh token
 is usable; an expired grant requires reauthorization. When enabled, the sidebar
-reads the current branch's PR status and the GitHub tab can list open issues and
-pull requests using this authorization. The server refreshes
+reads the current branch's PR status and the GitHub tab lists issues and pull
+requests using this authorization. The tab shows open items by default. Enabling
+**Include closed** also shows closed issues and closed or merged pull requests. The server refreshes
 expired access tokens when needed and retains the rotated credentials. Turning the
 switch off stops these reads. App permissions and the user's repository permissions
 both bound user-token access. No PR write operations are performed.

@@ -19,6 +19,7 @@ export function readGithubItemDrag(transfer: DataTransfer, target: GithubReferen
     const { scope, item } = JSON.parse(transfer.getData(githubItemDragType))
     if (scope?.teamId !== target.teamId || scope.machineId !== target.machineId || scope.workspaceId !== target.workspaceId) return
     if (!item || (item.kind !== "issue" && item.kind !== "pullRequest") || typeof item.title !== "string" || typeof item.body !== "string"
+      || (item.state !== "open" && item.state !== "closed" && !(item.kind === "pullRequest" && item.state === "merged"))
       || !Number.isSafeInteger(item.number) || item.number < 1 || typeof item.repository !== "string"
       || !/^[\w.-]+\/[\w.-]+$/u.test(item.repository) || typeof item.url !== "string") return
     const url = `https://github.com/${item.repository}/${item.kind === "issue" ? "issues" : "pull"}/${item.number}`

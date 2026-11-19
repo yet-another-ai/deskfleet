@@ -311,8 +311,9 @@ belong to the account, not to a Team or Machine, and do not grant DeskFleet
 resource access. The daemon projects GitHub repository names from each Workspace's
 configured directories into its registration's catalog. The server retains App
 credentials and user tokens. With Act as you enabled, it uses the viewer's grant
-to list open issues and pull requests in a selected repository. Branch PR status
-lookups share this grant handling, which refreshes expired access tokens under
+to page through the selected repository's issues or pull requests. The panel
+shows open items by default and can include closed issues and closed or merged
+PRs. Branch PR status lookups share this grant handling, which refreshes expired access tokens under
 a database lock. Selecting an item for a conversation includes its title, URL and
 description in the submitted prompt.
 [Identity and billing requirements](identity-billing.md) define the accepted
