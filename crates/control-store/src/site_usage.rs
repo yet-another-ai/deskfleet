@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 
 use crate::entities::{
     cp_ai_turns as turns, cp_cloudflare_turn_daily as cloudflare,
-    cp_cloudflare_turn_usage as cloudflare_periods, cp_sessions as sessions, cp_teams as teams,
-    cp_turn_usage_minutes as relay, cp_users as users,
+    cp_cloudflare_turn_usage as cloudflare_periods, cp_machine_registrations as registrations,
+    cp_sessions as sessions, cp_teams as teams, cp_turn_usage_minutes as relay, cp_users as users,
 };
 use crate::policies::{SiteAction, SitePolicy, authorize};
 use crate::{ControlStore, Error, Result, now_ms, one_query, timestamp};
@@ -32,6 +32,7 @@ enum UsageColumn {
 struct Totals {
     users: i64,
     teams: i64,
+    machines: i64,
     sessions: i64,
 }
 
@@ -53,6 +54,8 @@ impl ControlStore {
     /// users and archived Sessions, and excludes resources deleted by that time.
     /// Revoked registrations retain their historical Sessions and consumption.
     /// Team totals can only include retained Teams: Team deletion is permanent.
+    /// Managed machines are a current-only distinct count across non-revoked Team
+    /// registrations, including offline machines. Registration history is not retained.
     ///
     /// # Errors
     /// Returns an error for non-administrators, unsupported periods or storage errors.
@@ -145,6 +148,18 @@ impl ControlStore {
         let mut totals = Totals {
             users: *user_changes.get(&(first_day - 1)).unwrap_or(&0),
             teams: *team_changes.get(&(first_day - 1)).unwrap_or(&0),
+            machines: one_query(
+                &self.db,
+                Query::select()
+                    .expr_as(
+                        Expr::col(registrations::Column::MachineId).count_distinct(),
+                        UsageColumn::Count,
+                    )
+                    .from(registrations::Entity)
+                    .and_where(Expr::col(registrations::Column::Revoked).not()),
+            )
+            .await?
+            .try_get("", "count")?,
             sessions: *session_changes.get(&(first_day - 1)).unwrap_or(&0),
         };
         let mut buckets = Vec::with_capacity(days as usize);

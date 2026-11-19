@@ -2,7 +2,7 @@
 import type { SiteAdministrationApi } from "@deskfleet/client/central"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
 import type { SiteUsagePeriod } from "@deskfleet/client/site-usage"
-import { Building2, MessagesSquare, RadioTower, RefreshCw, Users } from "@lucide/vue"
+import { Building2, MessagesSquare, Monitor, RadioTower, RefreshCw, Users } from "@lucide/vue"
 import { useAsyncState } from "@vueuse/core"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -54,7 +54,7 @@ const date = (value: string) => new Intl.DateTimeFormat(intlLocale(locale.value 
     </div>
     <template v-else-if="state">
       <p class="text-xs text-ui-text-muted">{{ date(state.from) }} – {{ date(state.to) }} · UTC</p>
-      <div class="grid gap-4 lg:grid-cols-3">
+      <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <section v-for="item in inventories" :key="item.metric" class="ui-card min-w-0 overflow-hidden" :data-site-usage-metric="item.metric">
           <div class="px-5 pb-4 pt-5">
             <h2 class="flex items-center gap-2 text-xs font-medium text-ui-text-muted"><component :is="item.icon" :size="14" aria-hidden="true" />{{ t(`siteUsage.${item.metric}`) }}</h2>
@@ -62,6 +62,12 @@ const date = (value: string) => new Intl.DateTimeFormat(intlLocale(locale.value 
             <p class="mt-2 text-xs text-ui-text-muted">{{ t("siteUsage.currentTotal") }}</p>
           </div>
           <div class="px-3 pb-3"><SiteUsageChart :buckets="state.buckets" :metric="item.metric" :label="t(`siteUsage.${item.metric}`)" compact /></div>
+        </section>
+        <section class="ui-card min-w-0 p-5" data-site-usage-metric="machines">
+          <h2 class="flex items-center gap-2 text-xs font-medium text-ui-text-muted"><Monitor :size="14" aria-hidden="true" />{{ t("siteUsage.machines") }}</h2>
+          <p class="mt-3 text-3xl font-medium tracking-tight tabular-nums" data-site-usage-value>{{ number(state.totals.machines) }}</p>
+          <p class="mt-2 text-xs text-ui-text-muted">{{ t("siteUsage.currentMachines") }}</p>
+          <p class="mt-5 text-xs leading-relaxed text-ui-text-muted">{{ t("siteUsage.machinesNote") }}</p>
         </section>
       </div>
 

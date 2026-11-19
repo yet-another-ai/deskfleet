@@ -79,7 +79,7 @@ test("loads deployment STUN configuration without creating a peer and preserves 
 
 test("loads installation usage trends through the authenticated admin endpoint", async () => {
   const f = setup()
-  const usage = { period: "30d", timeZone: "UTC", totals: { users: 12, teams: 3, sessions: 42 }, buckets: [] }
+  const usage = { period: "30d", timeZone: "UTC", totals: { users: 12, teams: 3, machines: 5, sessions: 42 }, buckets: [] }
   f.responses.push(usage)
   expect(await f.client.usageTrends("30d")).toEqual(usage)
   await expectRequest(f.fetch, 1, "https://fleet.example/api/admin/usage-trends?period=30d", {

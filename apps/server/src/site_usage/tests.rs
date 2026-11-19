@@ -59,6 +59,7 @@ async fn usage_trends_requires_current_site_grant_and_bounded_period() {
         assert_eq!(usage["timeZone"], "UTC");
         assert_eq!(usage["buckets"].as_array().unwrap().len(), days);
         assert!(usage["totals"]["users"].as_u64().unwrap() > 0);
+        assert!(usage["totals"]["machines"].is_u64());
         assert!(usage["buckets"][0]["relayedBytes"].is_string());
     }
     for query in ["", "?period=all", "?period=30d&timeZone=UTC"] {

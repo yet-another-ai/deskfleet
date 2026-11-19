@@ -3,10 +3,12 @@ export type SiteUsagePeriod = "7d" | "30d" | "90d"
 export interface SiteUsageTotals {
   users: number
   teams: number
+  /** Distinct machines with at least one current Team registration, including offline machines. */
+  machines: number
   sessions: number
 }
 
-export interface SiteUsageBucket extends SiteUsageTotals {
+export interface SiteUsageBucket extends Omit<SiteUsageTotals, "machines"> {
   /** UTC calendar date. Inventory totals are measured at the end of this day. */
   date: string
   turnCount: number

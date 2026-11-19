@@ -643,7 +643,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     siteSettings: async () => ({ ...site }),
     usageTrends: async period => ({
       period, timeZone: "UTC", from: "2026-10-16T00:00:00Z", to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z",
-      relayHistoryIncomplete: false, totals: { users: 2, teams: teams.length, sessions: 0 }, buckets: [],
+      relayHistoryIncomplete: false, totals: { users: 2, teams: teams.length, machines: machines.length, sessions: 0 }, buckets: [],
     }),
     updateSiteSettings: async (next: SiteSettings) => {
       site = { ...next }

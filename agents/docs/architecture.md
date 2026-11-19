@@ -458,6 +458,12 @@ from their earliest retained activity. Daily conversation counts use durable,
 terminal consumed AI turns, and relay traffic combines coturn minute counters
 with Cloudflare daily egress estimates. Today is partial. The page does not expose
 individual conversations or grant site administrators access to Team resources.
+The managed-machine total counts distinct public Machine IDs with at least one
+non-revoked Team registration, including offline machines. A machine registered
+in multiple Teams counts once; revoking its last registration removes it from
+the total, and re-enrollment restores it. This total is current-only and independent
+of the selected period: registration creation and revocation history is not
+retained, so the page does not display a historical machine-count curve.
 
 Central authorization uses resource policies with typed actions and explicit
 `authorize` calls. `TeamPolicy` and `MachinePolicy` receive membership in the
