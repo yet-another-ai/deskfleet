@@ -136,9 +136,12 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
   }
 
+  function ensureLoaded(): void {
+    if (!loading.value && (target().sessionId || !configuration.value)) void configure()
+  }
   function toggle(): void {
     expanded.value = !expanded.value
-    if (expanded.value && !loading.value && (target().sessionId || !configuration.value)) void configure()
+    if (expanded.value) ensureLoaded()
   }
   function changeModel(model: string): Promise<void> {
     // The provider owns dependent effort/mode choices after a model change.
@@ -193,5 +196,5 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   const modelName = computed(() => configuration.value?.models?.options.find(option => option.id === modelValue.value)?.name ?? modelValue.value ?? selection.value?.model)
   const reasoningEffort = computed(() => configuration.value?.reasoningEfforts?.currentValue ?? selection.value?.reasoningEffort)
   const modeName = computed(() => configuration.value?.modes?.options.find(option => option.id === configuration.value?.modes?.currentValue)?.name ?? configuration.value?.modes?.currentValue ?? selection.value?.mode)
-  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover }
+  return { configuration, expanded, loading, error, modelName, modelValue, requestedModel, reasoningEffort, modeName, ensureLoaded, toggle, changeModel, changeReasoningEffort, changeMode, changeConfigOption, reload, discover }
 }
