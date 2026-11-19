@@ -9,7 +9,7 @@ overrides:
 
 patchedDependencies:
   '@agentclientprotocol/claude-agent-acp@*': 82e29ca94eb7e2e7eb80f7c1ad26b577fa3562e6aab3e174277d91295c16c01b
-  '@agentclientprotocol/codex-acp@2.3.0': 908ceb0464d4e16e42d7ec6435e6621596c4a6b8c7203889e92a6705c697a677
+  '@agentclientprotocol/codex-acp@2.3.0': 07b4d9ef1b36c21cb7b6a149c2daa3874f12f9ee1ebb2dfc56412f182b0b4cc8
   '@deepseek-ai/dsh-app-boot@*': 9628a9aeca9810359879e255fb64f6a8d5ec910ed16ea3e1fb446979ce330b5f
   '@xterm/addon-ligatures@*': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   '@xterm/addon-search@*': a3398047a9423d007abbb875aec542ed6f855cc861c4b69b46fd93b7c649c1a0
@@ -44,7 +44,7 @@ importers:
         version: 0.107.0(patch_hash=82e29ca94eb7e2e7eb80f7c1ad26b577fa3562e6aab3e174277d91295c16c01b)(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 2.3.0
-        version: 2.3.0(patch_hash=908ceb0464d4e16e42d7ec6435e6621596c4a6b8c7203889e92a6705c697a677)
+        version: 2.3.0(patch_hash=07b4d9ef1b36c21cb7b6a149c2daa3874f12f9ee1ebb2dfc56412f182b0b4cc8)
       '@agentclientprotocol/sdk':
         specifier: 2.7.0
         version: 2.7.0(zod@4.6.7)
@@ -10291,7 +10291,7 @@ snapshots:
       - '@modelcontextprotocol/sdk'
       - '@modelcontextprotocol/server'
 
-  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=908ceb0464d4e16e42d7ec6435e6621596c4a6b8c7203889e92a6705c697a677)':
+  '@agentclientprotocol/codex-acp@2.3.0(patch_hash=07b4d9ef1b36c21cb7b6a149c2daa3874f12f9ee1ebb2dfc56412f182b0b4cc8)':
     dependencies:
       '@agentclientprotocol/sdk': 2.0.2(zod@4.6.7)
       '@openai/codex': 0.164.0

@@ -1285,7 +1285,7 @@ Provider capabilities determine which controls are available:
 
 | Provider | Native modes | Model changes within a Session |
 | --- | --- | --- |
-| Codex | The bundled adapter offers Read-only, Workspace access, Auto review (Approve for Me), and Full access through its mode option. | Uses the advertised model option. |
+| Codex | The bundled adapter offers Read-only, Workspace access, Auto review (Approve for Me), and Full access through its mode option. | Uses the advertised model option. The `fast-mode` option follows the model's Codex service tiers: a Fast-only model keeps the Fast toggle, and a model with several tiers, such as Fast and Ultrafast, offers a Speed select. |
 | Claude Code | The bundled adapter offers Manual, Accept edits, Plan, Auto, and Bypass permissions where available. Auto can fall back for an unsupported model. | Uses the advertised model option; the returned configuration can also change the effective mode. |
 | Cursor | Uses advertised ACP modes, including its documented Agent, Plan, and Ask workflows. These are not its Auto-review permission setting. | Uses model choices advertised by the installed CLI. Initialization requests parameterized model options so reasoning effort is separate from fast variants. Available choices depend on that CLI version. |
 | Grok | Current upstream session setup advertises no mode catalog. Its startup Auto/YOLO settings are not exposed as a Session mode selector. Reasoning levels carried beside the model are not Session modes. | Model and reasoning options support changes. A model that does not advertise adjustable effort leaves the reasoning control unavailable. |
