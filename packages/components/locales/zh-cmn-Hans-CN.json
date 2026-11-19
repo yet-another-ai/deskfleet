@@ -760,6 +760,7 @@
     "lastSeen": "最后在线：{time}",
     "local": "本机",
     "addWorkspace": "添加工作区",
+    "batteryLabel": "电池 {percent}%，{state}",
     "noWorkspaces": "没有工作区",
     "remoteControl": "远程控制",
     "localControl": "本机控制",

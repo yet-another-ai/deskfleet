@@ -760,6 +760,7 @@
     "lastSeen": "Last seen {time}",
     "local": "This machine",
     "addWorkspace": "Add workspace",
+    "batteryLabel": "Battery {percent}%, {state}",
     "noWorkspaces": "No workspaces",
     "remoteControl": "Remote control",
     "localControl": "Local control",

@@ -1615,8 +1615,11 @@ Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, battery charge and power
 direction when the machine reports a battery, and machine details from the owning
 daemon's native collector through the authenticated machine management RPC. Battery
-sampling is best-effort and never fails the rest of the status sample. The client
-refreshes every two seconds while the panel is visible and the
+sampling is best-effort and never fails the rest of the status sample. The sidebar
+reuses the same authenticated management RPC at a slower cadence for online
+machines with a mounted battery indicator, pauses while the document is hidden,
+and remembers machines that reported no battery to avoid repeated reads. The
+client refreshes every two seconds while the panel is visible and the
 machine is online, pauses when its tab or window is hidden, and retains recent
 samples only in the mounted panel for CPU and memory trends. Failed reads leave
 the last sample visibly stale; these measurements are not persisted in the central

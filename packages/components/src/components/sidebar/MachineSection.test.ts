@@ -11,13 +11,21 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
 import type { GithubPullRequest } from "@deskfleet/client/central"
+import type { SystemStatus } from "@deskfleet/client/system"
 import { usePullRequestsStore } from "../../stores/pull-requests.ts"
+import { useMachineBatteriesStore } from "../../stores/machine-batteries.ts"
 import MachineSection from "./MachineSection.vue"
 
-async function setup(machine: Partial<MachineSummary> = {}, account?: AccountSession, pullRequest?: GithubPullRequest) {
+async function setup(
+  machine: Partial<MachineSummary> = {},
+  account?: AccountSession,
+  pullRequest?: GithubPullRequest,
+  battery?: NonNullable<SystemStatus["battery"]>,
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   if (pullRequest) vi.spyOn(usePullRequestsStore(), "forSession").mockReturnValue([pullRequest])
+  if (battery) vi.spyOn(useMachineBatteriesStore(), "forMachine").mockReturnValue(battery)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -37,6 +45,19 @@ async function setup(machine: Partial<MachineSummary> = {}, account?: AccountSes
   })
   return { wrapper, router }
 }
+
+test("shows battery charge and state in the machine header", async () => {
+  const { wrapper } = await setup({}, undefined, undefined, { percent: 68.4, state: "charging" })
+  const indicator = wrapper.get("[data-machine-battery]")
+  expect(indicator.attributes("aria-label")).toBe("Battery 68%, Charging")
+  wrapper.unmount()
+})
+
+test("hides a stale battery indicator when the machine is offline", async () => {
+  const { wrapper } = await setup({ online: false }, undefined, undefined, { percent: 68.4, state: "charging" })
+  expect(wrapper.find("[data-machine-battery]").exists()).toBe(false)
+  wrapper.unmount()
+})
 
 test.each([
   { local: true, desktop: true, label: "Local control" },

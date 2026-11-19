@@ -5,6 +5,7 @@ import type { GithubPullRequest } from "@deskfleet/client/central"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { githubSettingsChanged } from "../../services/github-settings-events.ts"
 import { usePullRequestsStore } from "../../stores/pull-requests.ts"
+import { useMachineBatteriesStore } from "../../stores/machine-batteries.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
 import MachineSection from "./MachineSection.vue"
@@ -179,3 +180,27 @@ function statusStory(): Story {
 }
 
 export const PullRequestStatuses = statusStory()
+
+function batteryStory(battery: { percent: number; state: "charging" | "discharging" }): Story {
+  return {
+    args: { machine: sampleMachine },
+    render: args => ({
+      components: { MachineSection },
+      setup() {
+        const account = useAccountSession()!
+        const store = useMachineBatteriesStore()
+        const original = account.central.rpc
+        account.central.rpc = ((teamId, machineId, method, params) => method === "systemStatus"
+          ? Promise.resolve({ battery })
+          : original(teamId, machineId, method, params)) as typeof account.central.rpc
+        void Promise.resolve().then(() => store.refresh(true))
+        onScopeDispose(() => { account.central.rpc = original })
+        return { args }
+      },
+      template: "<div class='w-72 p-2 bg-ui-sidebar border border-ui-border rounded-lg'><MachineSection v-bind='args' /></div>",
+    }),
+  }
+}
+
+export const BatteryStatus = batteryStory({ percent: 68.4, state: "charging" })
+export const BatteryLow = batteryStory({ percent: 12, state: "discharging" })

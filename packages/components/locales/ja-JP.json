@@ -614,6 +614,7 @@
   "machine": {
     "offline": "オフライン", "lastSeen": "最終接続: {time}",
     "local": "このマシン", "addWorkspace": "ワークスペースを追加",
+    "batteryLabel": "バッテリー {percent}%、{state}",
     "noWorkspaces": "ワークスペースはありません", "remoteControl": "リモート操作",
     "localControl": "ローカル操作", "online": "オンライン"
   },
