@@ -31,8 +31,8 @@ async function setup(machines = [
 ]) {
   configureClient({ ...host, target: { id: "m1", local: false } })
   const fake = fakeCentral({ machines })
-  const rpc = vi.fn<CentralApi["rpc"]>(async () => ({ battery: charging } as unknown as SystemStatus))
-  fake.central.rpc = rpc
+  const rpc = vi.fn(async () => ({ battery: charging } as unknown as SystemStatus))
+  fake.central.rpc = rpc as unknown as CentralApi["rpc"]
   account = createAccountSession(fake.central)
   await flushPromises()
   const app = createApp({}).use(pinia).provide(accountSessionKey, account)
