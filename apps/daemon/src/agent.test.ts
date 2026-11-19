@@ -1,10 +1,7 @@
 import assert from "node:assert/strict"
-import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createRequire } from "node:module"
-import { runInNewContext } from "node:vm"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
@@ -248,48 +245,6 @@ test("ACP process loss reports closure once and rejects pending prompt and steer
   await promptRejected
   await connection.close()
   assert.equal(closed.length, 1)
-})
-
-const adapter = readFileSync(createRequire(import.meta.url).resolve("@agentclientprotocol/codex-acp"), "utf8")
-
-// The published adapter only exports its executable. Exercise the patched methods
-// themselves with a fake provider, without booting Codex or copying their logic.
-function patchedMethod(name: string): (this: unknown, params: unknown) => unknown {
-  const match = adapter.match(new RegExp(`^  (async )?${name}\\(params\\) \\{[\\s\\S]*?^  \\}`, "m"))
-  assert.ok(match, `Pinned adapter method ${name} exists`)
-  return runInNewContext(`(${match[0].trimStart().replace(name, `function ${name}`)})`, {
-    logger: { log() {} },
-    randomUUID5: randomUUID,
-  }) as (this: unknown, params: unknown) => unknown
-}
-
-test("patched Codex steering preserves the opt-in and never starts a detached fallback", async context => {
-  const parse = patchedMethod("parseSessionSteerParams")
-  const perform = patchedMethod("performSteeringRequest")
-  const request = {
-    sessionId: "codex-session",
-    prompt: [{ type: "text", text: "Change direction" }],
-    _meta: { steering: { idleBehavior: "promptRequired" } },
-  }
-  const parsed = parse(request)
-  assert.deepEqual(JSON.parse(JSON.stringify(parsed)), request)
-  for (const scenario of ["active", "idle", "ended-during-injection"] as const) {
-    await context.test(scenario, async () => {
-      let fallback = 0
-      let injected = 0
-      const provider = {
-        getSessionState: () => ({}),
-        assertSteerInputSupported() {},
-        getSteerableTurnId: async () => scenario === "idle" ? null : "provider-turn",
-        injectSteerIntoActiveTurn: async () => { injected++; return scenario === "active" },
-        startNewTurnFromSteering: async () => { fallback++; return { outcome: "startedNewTurn" } },
-      }
-      const result = await perform.call(provider, parsed)
-      assert.equal((result as { outcome: string }).outcome, scenario === "active" ? "injected" : "promptRequired")
-      assert.equal(fallback, 0)
-      assert.equal(injected, scenario === "idle" ? 0 : 1)
-    })
-  }
 })
 
 test("Cursor ACP authenticates and loads a saved session without replaying its history", { timeout: 15_000 }, async context => {

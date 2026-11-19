@@ -39,15 +39,15 @@ importers:
 
   apps/daemon:
     dependencies:
-      '@agentclientprotocol/claude-agent-acp':
-        specifier: 0.107.0
-        version: 0.107.0(patch_hash=82e29ca94eb7e2e7eb80f7c1ad26b577fa3562e6aab3e174277d91295c16c01b)(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
-      '@agentclientprotocol/codex-acp':
-        specifier: 2.3.0
-        version: 2.3.0(patch_hash=908ceb0464d4e16e42d7ec6435e6621596c4a6b8c7203889e92a6705c697a677)
       '@agentclientprotocol/sdk':
         specifier: 2.7.0
         version: 2.7.0(zod@4.6.7)
+      '@deskfleet/agent-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/agents/claude-code
+      '@deskfleet/agent-codex':
+        specifier: workspace:*
+        version: link:../../packages/agents/codex
       '@deskfleet/agent-core':
         specifier: workspace:*
         version: link:../../packages/agents/core
@@ -66,9 +66,6 @@ importers:
       pi-acp:
         specifier: 0.0.34
         version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
-      smol-toml:
-        specifier: 1.9.1
-        version: 1.9.1
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -308,6 +305,27 @@ importers:
       vue-tsc:
         specifier: 3.3.14
         version: 3.3.14(@typescript/typescript6@6.0.2)
+
+  packages/agents/claude-code:
+    dependencies:
+      '@agentclientprotocol/claude-agent-acp':
+        specifier: 0.107.0
+        version: 0.107.0(patch_hash=82e29ca94eb7e2e7eb80f7c1ad26b577fa3562e6aab3e174277d91295c16c01b)(@anthropic-ai/sdk@0.129.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@7.2.0)(zod@4.6.7))
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/agents/codex:
+    dependencies:
+      '@agentclientprotocol/codex-acp':
+        specifier: 2.3.0
+        version: 2.3.0(patch_hash=908ceb0464d4e16e42d7ec6435e6621596c4a6b8c7203889e92a6705c697a677)
+      '@deskfleet/agent-core':
+        specifier: workspace:*
+        version: link:../core
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
 
   packages/agents/core:
     dependencies:

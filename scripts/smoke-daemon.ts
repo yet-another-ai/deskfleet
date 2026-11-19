@@ -28,6 +28,12 @@ try {
     version: string
     dependencies: Record<string, string>
   }
+  const codexManifest = JSON.parse(readFileSync(join(root, "packages/agents/codex/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
+  const claudeManifest = JSON.parse(readFileSync(join(root, "packages/agents/claude-code/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
   const expectedNative = {
     version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
@@ -53,11 +59,11 @@ try {
   const adapterVersion = execFileSync(command, ["--codex-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${manifest.dependencies["@agentclientprotocol/codex-acp"]}`)
+  assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${codexManifest.dependencies["@agentclientprotocol/codex-acp"]}`)
   const claudeAdapterVersion = execFileSync(command, ["--claude-agent-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(claudeAdapterVersion, manifest.dependencies["@agentclientprotocol/claude-agent-acp"])
+  assert.equal(claudeAdapterVersion, claudeManifest.dependencies["@agentclientprotocol/claude-agent-acp"])
   const piAdapterVersion = execFileSync(command, ["--pi-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()

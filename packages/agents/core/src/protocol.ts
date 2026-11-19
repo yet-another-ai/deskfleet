@@ -1,5 +1,9 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 
+export type AcpAvailableCommand = acp.AvailableCommand
+export type AcpCreateElicitationRequest = acp.CreateElicitationRequest
+export type AcpCreateElicitationResponse = acp.CreateElicitationResponse
+
 export interface AgentAuthStatus {
   kind: "account" | "api_key" | "gateway" | "external" | "none"
   label: string

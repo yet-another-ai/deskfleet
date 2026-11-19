@@ -56,6 +56,14 @@ function legacyVendorExtension(): AcpExtension {
   }
 }
 
+export function adaptProvider(provider: CoreAgentProvider): AgentProvider {
+  return {
+    id: provider.id,
+    connect: (config, client) => provider.connect(config, normalizeAgentClient(client)),
+    ...(provider.readUsage ? { readUsage: (config, signal) => provider.readUsage!(config, signal) } : {}),
+  }
+}
+
 export function connectAcpProcess(launch: AgentProcess, client: AgentClient, options: AcpConnectOptions = {}): Promise<AgentConnection> {
   return coreConnectAcpProcess(launch, normalizeAgentClient(client), {
     ...options,
