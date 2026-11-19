@@ -156,7 +156,7 @@ onMounted(() => {
           </template>
         </div>
       </Transition>
-      <HomeMobileDownloads :locale="locale" :release="release" :loading="isLoading" />
+      <HomeMobileDownloads :locale="locale" :release="release" />
       <p class="install__links reveal-line" style="--line: 5"><a :href="guide">{{ t.guide }} →</a><a :href="releasesPage">{{ t.allDownloads }} →</a><a href="https://github.com/yet-another-ai/deskfleet">{{ t.repository }} →</a><a href="https://discord.gg/YmxPdN4HvD" target="_blank" rel="noreferrer">{{ t.discord }} →</a><a href="https://x.com/askdeskfleet" target="_blank" rel="noreferrer">{{ t.x }} →</a></p>
     </div>
   </section>
