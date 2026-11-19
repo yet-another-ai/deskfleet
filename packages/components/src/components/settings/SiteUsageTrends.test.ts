@@ -12,7 +12,7 @@ afterEach(() => { view?.unmount(); view = undefined; i18n.global.locale.value = 
 function fixture(period: SiteUsagePeriod = "30d"): UsageTrends {
   return {
     period, timeZone: "UTC", from: "2026-10-16T00:00:00Z", to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z", relayHistoryIncomplete: false,
-    totals: { users: 1_234, teams: 56, sessions: 789 },
+    totals: { users: 1_234, teams: 56, machines: 1_048, sessions: 789 },
     buckets: [
       { date: "2026-11-13", users: 1_200, teams: 54, sessions: 780, turnCount: 120, relayedBytes: "1073741824" },
       { date: "2026-11-14", users: 1_234, teams: 56, sessions: 789, turnCount: 30, relayedBytes: "536870912" },
@@ -36,6 +36,11 @@ test("loads 30 days of global totals and period usage with five daily charts", a
   expect(fake.central.usageTrends).toHaveBeenCalledExactlyOnceWith("30d")
   expect(value("users")).toBe("1,234")
   expect(value("teams")).toBe("56")
+  expect(value("machines")).toBe("1,048")
+  const machines = view!.get('[data-site-usage-metric="machines"]')
+  expect(machines.get("h2").text()).toBe("Managed machines")
+  expect(machines.text()).toContain("Includes offline machines. Each machine is counted once across teams while it remains registered.")
+  expect(machines.findComponent(SiteUsageChart).exists()).toBe(false)
   expect(value("sessions")).toBe("789")
   expect(value("turnCount")).toBe("150")
   expect(value("relayedBytes")).toBe("1.5 GiB")
@@ -56,7 +61,7 @@ test("period changes discard a late response and refresh reloads the selected pe
   await selectPeriod("90d")
   expect(fake.central.usageTrends).toHaveBeenLastCalledWith("90d")
   expect(view!.get('[data-site-usage-period="90d"]').attributes("aria-pressed")).toBe("true")
-  old.resolve({ ...fixture("7d"), totals: { users: 99, teams: 3, sessions: 6 } })
+  old.resolve({ ...fixture("7d"), totals: { users: 99, teams: 3, machines: 4, sessions: 6 } })
   await flushPromises()
   expect(value("users")).toBe("1,234")
   await view!.get('[aria-label="Refresh usage trends"]').trigger("click")
@@ -77,9 +82,11 @@ test("a failed request displays a retry and no fabricated zero totals", async ()
 
 test("recorded zeros remain visible and labels follow the Chinese locale", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
-  await setup(fake => fake.central.usageTrends.mockResolvedValue({ ...fixture(), totals: { users: 0, teams: 0, sessions: 0 }, buckets: [] }))
+  await setup(fake => fake.central.usageTrends.mockResolvedValue({ ...fixture(), totals: { users: 0, teams: 0, machines: 0, sessions: 0 }, buckets: [] }))
   expect(view!.get("h1").text()).toBe("用量趋势")
   expect(value("users")).toBe("0")
+  expect(value("machines")).toBe("0")
+  expect(view!.get('[data-site-usage-metric="machines"] h2').text()).toBe("受管机器")
   expect(value("turnCount")).toBe("0")
   expect(value("relayedBytes")).toBe("0 B")
 })

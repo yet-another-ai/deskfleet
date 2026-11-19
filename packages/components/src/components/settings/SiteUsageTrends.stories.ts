@@ -19,7 +19,7 @@ function usageTrends(period: SiteUsagePeriod, empty = false): UsageTrends {
   const last = buckets.at(-1)!
   return {
     period, timeZone: "UTC", from: `${buckets[0]!.date}T00:00:00Z`, to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z",
-    relayHistoryIncomplete: false, totals: { users: last.users, teams: last.teams, sessions: last.sessions }, buckets,
+    relayHistoryIncomplete: false, totals: { users: last.users, teams: last.teams, machines: empty ? 0 : 148, sessions: last.sessions }, buckets,
   }
 }
 

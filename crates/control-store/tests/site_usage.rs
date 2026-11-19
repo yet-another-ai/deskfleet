@@ -186,7 +186,10 @@ async fn daily_counts_use_creation_and_deletion_dates_and_keep_usage_after_clean
     }
     let result = store.site_usage_trends(&fixture.admin, "7d").await.unwrap();
     assert_eq!(result["buckets"].as_array().unwrap().len(), 7);
-    assert_eq!(result["totals"], json!({"users":2,"teams":1,"sessions":1}));
+    assert_eq!(
+        result["totals"],
+        json!({"users":2,"teams":1,"machines":0,"sessions":1})
+    );
     assert_eq!(result["timeZone"], "UTC");
     assert_eq!(result["relayHistoryIncomplete"], false);
     assert_eq!(bucket(&result, base)["users"], 1);
@@ -212,6 +215,95 @@ async fn daily_counts_use_creation_and_deletion_dates_and_keep_usage_after_clean
         .unwrap();
     assert_eq!(before["buckets"], after["buckets"]);
     assert_eq!(bucket(&after, base - 4 * DAY_MS)["relayedBytes"], "19");
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn managed_machines_count_distinct_current_registrations_including_offline() {
+    let fixture = Fixture::new().await;
+    let store = &fixture.store;
+    let admin = &fixture.admin;
+    let empty = store.site_usage_trends(admin, "7d").await.unwrap();
+    assert_eq!(empty["totals"]["machines"], 0);
+    let first_team = store.create_team(admin, "First").await.unwrap();
+    let second_team = store.create_team(admin, "Second").await.unwrap();
+    let identity = deskfleet_control_store::secret();
+    let origin = uuid::Uuid::new_v4().to_string();
+    let (first, _) = store
+        .enroll(
+            admin,
+            &first_team.id,
+            "Shared",
+            &origin,
+            "1",
+            json!({}),
+            &identity,
+        )
+        .await
+        .unwrap();
+    let (second, _) = store
+        .enroll(
+            admin,
+            &second_team.id,
+            "Shared",
+            &uuid::Uuid::new_v4().to_string(),
+            "1",
+            json!({}),
+            &identity,
+        )
+        .await
+        .unwrap();
+    let (other, _) = store
+        .enroll(
+            admin,
+            &second_team.id,
+            "Other",
+            &uuid::Uuid::new_v4().to_string(),
+            "2",
+            json!({}),
+            &deskfleet_control_store::secret(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(first.machine_id, second.machine_id);
+    assert_ne!(first.machine_id, other.machine_id);
+    // No presence or last-seen record is needed for an enrolled machine to count.
+    for period in ["7d", "30d", "90d"] {
+        let result = store.site_usage_trends(admin, period).await.unwrap();
+        assert_eq!(result["totals"]["machines"], 2);
+        assert!(
+            result["buckets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row.get("machines").is_none())
+        );
+    }
+    store.revoke_machine(admin, &first.id).await.unwrap();
+    let partial = store.site_usage_trends(admin, "7d").await.unwrap();
+    assert_eq!(partial["totals"]["machines"], 2);
+    store.revoke_machine(admin, &second.id).await.unwrap();
+    let removed = store.site_usage_trends(admin, "7d").await.unwrap();
+    assert_eq!(removed["totals"]["machines"], 1);
+    store.revoke_machine(admin, &other.id).await.unwrap();
+    let all_removed = store.site_usage_trends(admin, "7d").await.unwrap();
+    assert_eq!(all_removed["totals"]["machines"], 0);
+    let (restored, _) = store
+        .enroll(
+            admin,
+            &first_team.id,
+            "Restored",
+            &origin,
+            "1",
+            json!({}),
+            &identity,
+        )
+        .await
+        .unwrap();
+    assert_eq!(restored.id, first.id);
+    let restored = store.site_usage_trends(admin, "7d").await.unwrap();
+    assert_eq!(restored["totals"]["machines"], 1);
     fixture.close().await;
 }
 
