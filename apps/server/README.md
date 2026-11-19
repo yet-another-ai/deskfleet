@@ -74,8 +74,9 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_TURN_URLS` | Optional comma-separated `turn:`/`turns:` URLs used to initialize the persisted TURN list on first startup. Manage the list online in Site administration afterward. |
 | `DESKFLEET_TURN_SECRET` | Required with TURN URLs; shared with coturn's REST credential mechanism. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Optional `redis://` or `rediss://` URL for [Team TURN usage collection](../../agents/docs/self-hosted.md#team-turn-usage-collection). Empty or unset disables it. |
-| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` (or `DESKFLEET_APNS_PRIVATE_KEY`), `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_PRODUCTION` | Optional Apple Push Notification service (APNs) token credentials for iOS mobile push notifications. Set all required fields together (`DESKFLEET_APNS_PRODUCTION` defaults to `false`). |
-| `DESKFLEET_FCM_PROJECT_ID`, `DESKFLEET_FCM_CREDENTIALS_PATH` (or `DESKFLEET_FCM_CREDENTIALS_JSON`) | Optional Firebase Cloud Messaging (FCM) HTTP v1 service account credentials for Android mobile push notifications. Set project ID and one credentials source together. |
+| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` or `DESKFLEET_APNS_PRIVATE_KEY` | Optional APNs token authentication for iOS. Set both IDs and exactly one private key source. Partial credentials fail startup. |
+| `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_SANDBOX` | Optional APNs overrides. The bundle ID defaults to `ai.yetanother.deskfleet`. Production is the default. Set `DESKFLEET_APNS_SANDBOX=true` for development builds. |
+| `DESKFLEET_FCM_SERVICE_ACCOUNT_PATH` or `DESKFLEET_FCM_SERVICE_ACCOUNT_JSON` | Optional FCM HTTP v1 service account credentials for Android. Set exactly one source. The service account JSON supplies `project_id`. |
 | `RUST_LOG` | Log filter; defaults to `info`. |
 
 To listen explicitly on both IPv4 and IPv6, set:
@@ -117,6 +118,27 @@ bounded lifetime. See [multi-instance operation](../../agents/docs/self-hosted.m
 `GET /healthz` reports process liveness and protocol version. Database migrations
 and authentication configuration validation complete before the HTTP listener starts.
 Database, migration, or invalid configuration failures stop startup. Actix handles graceful shutdown.
+
+### Mobile push notifications
+
+For iOS, use an [APNs token signing key](https://developer.apple.com/documentation/UserNotifications/establishing-a-token-based-connection-to-apns)
+(`.p8`), its Key ID, and the Apple Developer Team ID. The key must support the
+environment and bundle ID of the signed app. TestFlight and App Store builds
+use production APNs. The Apple Developer App ID's APNs SSL certificate can be
+left blank when using token authentication. See
+[iOS signing](../../agents/docs/ci.md#ios-distribution-signing-and-testflight)
+for the App ID and provisioning profile steps.
+
+For Android, enable the [FCM HTTP v1 API](https://firebase.google.com/docs/cloud-messaging/send/v1-api)
+in the Firebase project used by the app's `google-services.json`. Give the
+sender service account the Firebase Cloud Messaging API Admin role in that
+project and supply its service account JSON to the server.
+
+Supply provider credentials through the deployment's secret store on each
+server instance. When using a file path, ensure the server process can read
+the mounted file. Restart the server after updating credentials. Use a
+[signed-in mobile client](../web/README.md#mobile-push-notifications) to verify
+delivery from a Session task event.
 
 ## Web static hosting
 

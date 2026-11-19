@@ -119,8 +119,9 @@ URLs and use the database/Redis TLS options required by those services.
 | `DESKFLEET_TURN_URLS` | Initial comma-separated `turn:`/`turns:` URLs reachable from both peers. Seeds the persisted list on first API startup; manage later changes online in Site administration. Relay tests need a configured TURN list. |
 | `DESKFLEET_TURN_SECRET` | Required when TURN URLs are set; secret shared with coturn's `static-auth-secret`. |
 | `DESKFLEET_TURN_USAGE_REDIS_URL` | Empty/unset disables collection. `redis://` or `rediss://`; required for Go/Pro metering. An unavailable Redis is retried in the background. |
-| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` (or `DESKFLEET_APNS_PRIVATE_KEY`), `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_PRODUCTION` | Optional APNs credentials for iOS push notifications; set all required fields (`DESKFLEET_APNS_PRODUCTION=true` in production). |
-| `DESKFLEET_FCM_PROJECT_ID`, `DESKFLEET_FCM_CREDENTIALS_PATH` (or `DESKFLEET_FCM_CREDENTIALS_JSON`) | Optional FCM HTTP v1 service account credentials for Android push notifications. |
+| `DESKFLEET_APNS_KEY_ID`, `DESKFLEET_APNS_TEAM_ID`, `DESKFLEET_APNS_PRIVATE_KEY_PATH` or `DESKFLEET_APNS_PRIVATE_KEY` | Optional APNs credentials for iOS. Set both IDs and exactly one private key source. See [push provider setup](../../apps/server/README.md#mobile-push-notifications). |
+| `DESKFLEET_APNS_BUNDLE_ID`, `DESKFLEET_APNS_SANDBOX` | Optional APNs overrides. The bundle ID defaults to `ai.yetanother.deskfleet`. Production is the default. Set `DESKFLEET_APNS_SANDBOX=true` for development builds. |
+| `DESKFLEET_FCM_SERVICE_ACCOUNT_PATH` or `DESKFLEET_FCM_SERVICE_ACCOUNT_JSON` | Optional FCM HTTP v1 credentials for Android. Set exactly one source. The service account JSON supplies `project_id`. |
 | `RUST_LOG` | Defaults to `info`; controls the server log filter. |
 | `DESKFLEET_MAIL_DIRECTORY` | Local development only, default `.local/mail`. Omit in the official deployment. |
 
