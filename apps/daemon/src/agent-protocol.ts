@@ -7,6 +7,7 @@ import type { AgentConfiguration, AgentConfigurationParams, AgentConfigurationSe
 export const AGENT_CHANNEL = "deskfleet-acp"
 export const AGENT_CHUNK_BYTES = 16 * 1024
 export const AGENT_MESSAGE_BYTES = 32 * 1024 * 1024
+export const AGENT_HISTORY_MAX_EVENTS = 1000
 
 export interface AgentActor {
   kind: "local_token" | "user" | "system"

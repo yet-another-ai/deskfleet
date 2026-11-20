@@ -138,6 +138,34 @@ test("history compression is negotiated and preserves the original events", asyn
   assert.ok(result.data.length < JSON.stringify(events).length / 2)
 })
 
+test("history pages fit the UTF-8 byte limit and continue from the last returned event", async t => {
+  const sessions = new Sessions()
+  const message = (seq: string, text: string): AgentEvent => ({ sessionId: "1", seq, kind: "acp", createdAt: now,
+    payload: { sessionId: "provider", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+  })
+  const halfPage = "界".repeat(Math.floor(AGENT_MESSAGE_BYTES / 6))
+  const events = [message("1", halfPage), message("2", halfPage), message("3", "end")]
+  sessions.handler = async (_method, params) => events.filter(event => Number(event.seq) > Number(params.afterSeq))
+  const h = attach(sessions)
+  t.after(() => h.channel.close())
+  await h.initialize()
+  const read = async (id: string, afterSeq: string): Promise<AgentEvent[]> => {
+    h.request(id, "_deskfleet/session/history", { sessionId: "1", afterSeq, responseEncoding: "gzip" })
+    const { result } = await h.waitFor(message => message.id === id)
+    assert.equal(result.encoding, "gzip")
+    return JSON.parse(gunzipSync(Buffer.from(result.data, "base64")).toString("utf8"))
+  }
+  const first = await read("first", "0")
+  assert.deepEqual(first, events.slice(0, 1))
+  assert.deepEqual(await read("next", first[0]!.seq), events.slice(1))
+
+  events.push(message("4", halfPage.repeat(2)))
+  h.request("oversized", "_deskfleet/session/history", { sessionId: "1", afterSeq: "3" })
+  const response = await h.waitFor(message => message.id === "oversized")
+  assert.match(response.error!.message, /event 4 exceeds the Agent message size limit/u)
+  assert.deepEqual(h.failures, [])
+})
+
 test("AgentChannel offers rename, archive, restore, and Session deletion", async t => {
   const h = attach()
   t.after(() => h.channel.close())

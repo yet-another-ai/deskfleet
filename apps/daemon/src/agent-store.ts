@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { compactCommandEvent, compactCommandResult } from "./agent-command-results.ts"
 import { AgentLiveState } from "./agent-live.ts"
+import { AGENT_HISTORY_MAX_EVENTS, AGENT_MESSAGE_BYTES } from "./agent-protocol.ts"
 import type {
   AgentActor, AgentCommand, AgentCommit, AgentEvent, AgentEventDraft,
   AgentPreview, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn,
@@ -25,6 +26,7 @@ export const timestamp = () => new Date().toISOString()
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
 
 const STREAM_COMMIT_MS = 5_000
+const HISTORY_READ_SIZE = 200
 interface PendingStream {
   preview: AgentPreview
   session: AgentSessionRecord
@@ -86,7 +88,22 @@ export class AgentJournal {
     })
   }
   async history(id: string, afterSeq: string, limit = 100): Promise<AgentEvent[]> {
-    return (JSON.parse(await this.native.agentHistory(id, afterSeq, Math.max(1, Math.min(limit, 200)))) as AgentEvent[]).map(compactCommandEvent)
+    const size = Math.max(1, Math.min(limit, AGENT_HISTORY_MAX_EVENTS))
+    const events: AgentEvent[] = []
+    let cursor = afterSeq
+    let bytes = 0
+    while (events.length < size) {
+      const readSize = Math.min(HISTORY_READ_SIZE, size - events.length)
+      const json = await this.native.agentHistory(id, cursor, readSize)
+      const page = JSON.parse(json) as AgentEvent[]
+      events.push(...page)
+      if (page.length < readSize || events.length === size) break
+      // Stop reading more rows once there is enough history for a wire page.
+      bytes += Buffer.byteLength(json)
+      if (bytes >= AGENT_MESSAGE_BYTES) break
+      cursor = page.at(-1)!.seq
+    }
+    return events.map(compactCommandEvent)
   }
   serial<T>(id: string, action: () => Promise<T>, options: { flushStreaming?: boolean } = {}): Promise<T> {
     const running = (this.#queues.get(id) ?? Promise.resolve()).then(async () => {

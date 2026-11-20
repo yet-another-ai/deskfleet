@@ -7,6 +7,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
 import { markRaw, onScopeDispose, ref, toRaw, watch } from "vue"
+import { AGENT_HISTORY_MAX_EVENTS } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { AgentCommand, AgentElicitation, AgentEvent, AgentInput, AgentMethod, AgentMethods, AgentPermission, AgentPreview, AgentRun, AgentSessionContext, AgentSessionRecord, AgentSnapshot, AgentTurn } from "../../../../apps/daemon/src/agent-protocol.ts"
 import { AgentPreviews } from "../services/agent-preview.ts"
 import type { ElicitationDraft } from "../services/agent-elicitation.ts"
@@ -53,7 +54,19 @@ export interface SubmittedAgentDraft {
   attachmentIds: readonly string[]
 }
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
-const sequenceCompare = (left: string, right: string) => BigInt(left) < BigInt(right) ? -1 : BigInt(left) > BigInt(right) ? 1 : 0
+function sequenceCompare(left: string, right: string): number {
+  const difference = BigInt(left) - BigInt(right)
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0
+}
+function contiguousThrough(after: string, committed: ReadonlyMap<string, AgentEvent>, staged?: ReadonlyMap<string, AgentEvent>): string {
+  let sequence = BigInt(after)
+  let next = (sequence + 1n).toString()
+  while (committed.has(next) || staged?.has(next)) {
+    sequence++
+    next = (sequence + 1n).toString()
+  }
+  return sequence.toString()
+}
 function replace<T>(values: T[], value: T, key: (value: T) => string | number): void {
   const index = values.findIndex(item => key(item) === key(value))
   if (index === -1) values.push(value)
@@ -232,7 +245,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   function advance(id: string): void {
     const current = view(id)
     const events = journal(id)
-    while (events.has((BigInt(current.historySeq) + 1n).toString())) current.historySeq = (BigInt(current.historySeq) + 1n).toString()
+    current.historySeq = contiguousThrough(current.historySeq, events)
     if (!current.snapshot) return
     let next = events.get((BigInt(current.snapshotSeq) + 1n).toString())
     while (next) {
@@ -245,7 +258,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     resolvePermissions()
     resolveElicitations(current.snapshot)
   }
-  function remember(events: AgentEvent[]): void {
+  function remember(events: Iterable<AgentEvent>, history?: { id: string; complete: boolean }): void {
     const changed = new Map<string, AgentEvent[]>()
     for (const event of events) {
       if (deletedSessions.has(event.sessionId)) continue
@@ -281,7 +294,19 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       additions.push(event)
       changed.set(event.sessionId, additions)
     }
+    // A complete authoritative read also replaces an empty or duplicate-only cached display.
+    if (history?.complete && retainedDisplays.has(history.id) && !changed.has(history.id)) changed.set(history.id, [])
     for (const [id, additions] of changed) {
+      if (history?.id === id && (history.complete || !retainedDisplays.has(id))) {
+        retainedDisplays.delete(id)
+        advance(id)
+        const current = view(id)
+        previews.committed(id, current.historySeq)
+        visiblePreviews.delete(id)
+        const committed = [...journal(id).values()].sort((left, right) => sequenceCompare(left.seq, right.seq))
+        current.events = committed.concat(takePreview(id, committed.at(-1)?.seq ?? "0"))
+        continue
+      }
       const current = view(id)
       // A committed preview has exactly the same draft and sequence. Promote it
       // without replacing display history, even when a commit spans many frames.
@@ -309,16 +334,20 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       appendPreview(id)
     }
   }
-  function appendPreview(id: string): void {
-    if (deletedSessions.has(id)) return
-    const current = view(id)
-    const events = previews.after(id, current.events.at(-1)?.seq ?? "0")
+  function takePreview(id: string, after: string): AgentEvent[] {
+    const events = previews.after(id, after)
     if (events.length) {
       let visible = visiblePreviews.get(id)
       if (!visible) { visible = new Set(); visiblePreviews.set(id, visible) }
       for (const event of events) visible.add(event.seq)
-      current.events.push(...events.map(event => markRaw(event)))
     }
+    return events.map(event => markRaw(event))
+  }
+  function appendPreview(id: string): void {
+    if (deletedSessions.has(id)) return
+    const current = view(id)
+    const events = takePreview(id, current.events.at(-1)?.seq ?? "0")
+    if (events.length) current.events.push(...events)
   }
   function flushDisplay(recoverHistory = true): void {
     displayTimer.stop()
@@ -509,22 +538,32 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   function readHistory(id: string): Promise<void> {
     const existing = reads.get(id)
     if (existing) return existing
+    const current = view(id)
+    // Keep pages out of the reactive transcript until the read catches up.
+    const staged = new Map<string, AgentEvent>()
     const reading = (async () => {
+      let afterSeq = current.historySeq
+      let stagedTail = afterSeq
       for (;;) {
-        const afterSeq = view(id).historySeq
-        const events = await call("_deskfleet/session/history", { sessionId: id, afterSeq, limit: 100 })
-        if (disposed || deletedSessions.has(id)) return
-        remember(events)
-        const current = view(id)
-        const latest = journalTails.get(id) ?? "0"
-        const target = sequenceCompare(latest, current.snapshotSeq) > 0 ? latest : current.snapshotSeq
-        if (sequenceCompare(current.historySeq, target) >= 0) { current.error = null; current.relayDeniedReason = undefined; return }
-        if (events.length === 0 || current.historySeq === afterSeq) throw new Error("Conversation history is incomplete; reconnect to load missing events")
+        const page = await call("_deskfleet/session/history", { sessionId: id, afterSeq, limit: AGENT_HISTORY_MAX_EVENTS })
+        if (disposed || views.value[id] !== current) return
+        for (const event of page) staged.set(event.seq, event)
+        const last = page.at(-1)?.seq ?? afterSeq
+        if (sequenceCompare(last, stagedTail) > 0) stagedTail = last
+        // Live commits can fill a gap while a history page is in flight.
+        const through = contiguousThrough(afterSeq, journal(id), staged)
+        if ([stagedTail, current.snapshotSeq, journalTails.get(id) ?? "0"].every(target => sequenceCompare(through, target) >= 0)) break
+        if (page.length === 0 || through === afterSeq) throw new Error("Conversation history is incomplete; reconnect to load missing events")
+        afterSeq = through
       }
+      remember(staged.values(), { id, complete: true })
+      current.error = null
+      current.relayDeniedReason = undefined
     })().catch(reason => {
-      if (!deletedSessions.has(id)) {
-        view(id).error = messageOf(reason)
-        view(id).relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
+      if (!disposed && views.value[id] === current) {
+        remember(staged.values(), { id, complete: false })
+        current.error = messageOf(reason)
+        current.relayDeniedReason = reason instanceof RelayConnectionError ? reason.relayDeniedReason : undefined
       }
       throw reason
     }).finally(() => { reads.delete(id) })
@@ -558,28 +597,31 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       const snapshot = await history.snapshot(id)
       const events: AgentEvent[] = []
       let after = "0"
-      while (!disposed && !deletedSessions.has(id) && !liveSnapshot) {
-        const page = await history.events(id, after, 100)
-        if (disposed || deletedSessions.has(id) || liveSnapshot) return
-        events.push(...page)
-        if (journal(id).size === 0 && !cachedShown) {
-          current.snapshot = snapshot
-          current.events = [...events]
-          retainedDisplays.add(id)
-          current.loading = false
-        }
+      while (!disposed && views.value[id] === current && !liveSnapshot && !cachedShown) {
+        const page = await history.events(id, after, AGENT_HISTORY_MAX_EVENTS).catch(reason => {
+          if (events.length === 0) throw reason
+          return []
+        })
+        if (disposed || views.value[id] !== current || liveSnapshot || cachedShown) return
+        for (const event of page) events.push(markRaw(event))
         const next = page.at(-1)?.seq
-        if (!next || sequenceCompare(next, after) <= 0 || sequenceCompare(next, snapshot.session.lastEventSeq) >= 0) return
+        if (!next || sequenceCompare(next, after) <= 0 || sequenceCompare(next, snapshot.session.lastEventSeq) >= 0) break
         after = next
       }
+      if (disposed || views.value[id] !== current || liveSnapshot || cachedShown || journal(id).size > 0) return
+      current.snapshot = snapshot
+      current.events = events
+      retainedDisplays.add(id)
+      current.loading = false
     })().catch(() => {}) : undefined
     const loading = (async () => {
       const snapshot = await call("_deskfleet/session/subscribe", { sessionId: id })
-      if (disposed || deletedSessions.has(id)) return
+      if (disposed || views.value[id] !== current) return
       liveSnapshot = true
       snapshotReceived(snapshot)
       await readHistory(id)
-      if (retainedDisplays.delete(id)) current.events = [...journal(id).values()].sort((a, b) => sequenceCompare(a.seq, b.seq))
+      if (disposed || views.value[id] !== current) return
+      current.loading = false
       if (cache) { cacheDirty.add(id); if (!cacheTimer.isPending.value) cacheTimer.start() }
       await reconcileOperations(id)
     })().catch(async reason => {
