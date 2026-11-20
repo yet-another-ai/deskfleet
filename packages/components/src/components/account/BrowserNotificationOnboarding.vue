@@ -26,7 +26,7 @@ async function enable(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-12 shrink-0 items-center gap-2 px-5 text-[13px] font-medium">
+  <div class="titlebar-overlay-inset box-content flex h-[var(--titlebar-height,3rem)] shrink-0 items-center gap-2 px-5 pt-[var(--safe-area-top,0px)] text-[13px] font-medium">
     <BrandLogo :size="24" decorative />{{ siteName }}
   </div>
   <main class="flex min-h-0 flex-1 justify-center overflow-y-auto p-5 sm:p-8">

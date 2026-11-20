@@ -50,10 +50,11 @@ function restoreFocus(event: Event): void {
 }
 .ui-dialog-content {
   position: fixed;
-  top: 50%;
-  left: 50%;
+  top: calc(50% + (var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))) / 2);
+  left: calc(50% + (var(--safe-area-inset-left, env(safe-area-inset-left, 0px)) - var(--safe-area-inset-right, env(safe-area-inset-right, 0px))) / 2);
   z-index: 50;
-  max-height: calc(100dvh - 2rem);
+  max-width: calc(100vw - var(--safe-area-inset-left, env(safe-area-inset-left, 0px)) - var(--safe-area-inset-right, env(safe-area-inset-right, 0px)) - 2rem);
+  max-height: calc(100dvh - var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) - var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) - 2rem);
   overflow-y: auto;
   transform: translate(-50%, -50%);
 }

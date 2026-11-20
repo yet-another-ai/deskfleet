@@ -50,8 +50,28 @@ body,
 #root {
   --safe-area-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
   --safe-area-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --titlebar-height: 3rem;
+  --status-bar-right-inset: 0px;
+  --status-bar-left-inset: 0px;
   padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+}
+
+/*
+ * Wide viewports on vertical-bar iOS hardware (e.g. unfolded iPhone Duo) switch the
+ * status bar to the top axis and merge its height and corner inset into the title bar.
+ */
+@media (width >= 900px) {
+  :root[data-vertical-bar-edge] #root {
+    --safe-area-top: 0px;
+    --titlebar-height: max(3rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)));
+  }
+  :root[data-vertical-bar-edge="right"] #root {
+    --status-bar-right-inset: 8.5rem;
+  }
+  :root[data-vertical-bar-edge="left"] #root {
+    --status-bar-left-inset: 8.5rem;
+  }
 }
 
 body {
@@ -89,7 +109,10 @@ textarea {
  * window. The rightmost title bar region reserves that space.
  */
 .titlebar-overlay-inset {
-  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px);
+  padding-right: max(
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px),
+    var(--status-bar-right-inset, 0px)
+  );
 }
 
 /* The composer card shows focus for its text box. */
@@ -556,7 +579,7 @@ span[style*="--shiki-light"] {
 }
 
 /* Mobile navigation owns gestures; the browser may scroll but must not zoom the page. */
-@media (width < 1024px) {
+@media (width < 900px) {
   :where(html, body, body *) { touch-action: pan-x pan-y; }
   [data-mobile-viewport] { overscroll-behavior-x: none; }
   [data-mobile-viewport] :where(*) { touch-action: pan-y; }

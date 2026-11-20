@@ -101,7 +101,7 @@ if (props.host.onboarding) void loadOnboarding()
       <RouterView v-else-if="route.meta.fullWindow" />
       <div v-else class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-clip">
         <aside class="flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-sidebar pt-[calc(0.5rem+var(--safe-area-top,0px))] md:w-65 md:border-b-0 md:border-r md:pt-[var(--safe-area-top,0px)]">
-          <div class="app-drag hidden h-12 shrink-0 md:block" />
+          <div class="app-drag hidden h-[var(--titlebar-height,3rem)] shrink-0 md:block" />
           <TeamSwitcher v-if="teams.length" />
           <div class="hidden md:block md:flex-1" />
           <AccountNotices />
@@ -109,7 +109,7 @@ if (props.host.onboarding) void loadOnboarding()
           <AccountFooter />
         </aside>
         <main class="flex min-w-0 flex-1 flex-col py-6 md:py-0">
-          <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
+          <div class="app-drag titlebar-overlay-inset box-content hidden h-[var(--titlebar-height,3rem)] shrink-0 pt-[var(--safe-area-top,0px)] md:block" />
           <MachineOnboarding v-if="team" />
           <TeamOnboarding v-else-if="!teams.length" />
         </main>

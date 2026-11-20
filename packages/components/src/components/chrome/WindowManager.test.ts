@@ -48,9 +48,13 @@ test.each(["win32", "linux"] as const)("%s window controls reserve only the uppe
   const chatRect = vi.spyOn(chat.element, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 900, 720))
   const changesRect = vi.spyOn(changes.element, "getBoundingClientRect").mockReturnValue(new DOMRect(900, 0, 300, 720))
   const insetGroups = () => wrapper.findAll("[data-window-header-actions].titlebar-overlay-inset").map(element => element.attributes("data-window-header-actions-group"))
+  const topRowGroups = () => wrapper.findAll("[data-window-header-actions][data-window-top-row]").map(element => element.attributes("data-window-header-actions-group"))
+  const topRightGroups = () => wrapper.findAll("[data-window-header-actions][data-window-top-right]").map(element => element.attributes("data-window-header-actions-group"))
   api.layout(1200, 720, true)
   await flushPromises()
   expect(insetGroups()).toEqual([changes.id])
+  expect(topRowGroups()).toEqual([chat.id, changes.id])
+  expect(topRightGroups()).toEqual([changes.id])
 
   api.getPanel("desktops")!.api.moveTo({ group: changes, position: "bottom" })
   const desktops = api.getPanel("desktops")!.api.group
@@ -59,18 +63,24 @@ test.each(["win32", "linux"] as const)("%s window controls reserve only the uppe
   api.layout(1200, 720, true)
   await flushPromises()
   expect(insetGroups()).toEqual([changes.id])
+  expect(topRowGroups()).toEqual([chat.id, changes.id])
+  expect(topRightGroups()).toEqual([changes.id])
 
   changes.api.setVisible(false)
   desktopRect.mockReturnValue(new DOMRect(900, 0, 300, 720))
   api.layout(1200, 720, true)
   await flushPromises()
   expect(insetGroups()).toEqual([desktops.id])
+  expect(topRowGroups()).toEqual([chat.id, desktops.id])
+  expect(topRightGroups()).toEqual([desktops.id])
 
   desktops.api.setVisible(false)
   chatRect.mockReturnValue(new DOMRect(0, 0, 1200, 720))
   api.layout(1200, 720, true)
   await flushPromises()
   expect(insetGroups()).toEqual([chat.id])
+  expect(topRowGroups()).toEqual([chat.id])
+  expect(topRightGroups()).toEqual([chat.id])
 })
 
 test.each(["darwin", "web"] as const)("%s keeps the right side of session headers free of Windows/Linux control spacing", async platform => {

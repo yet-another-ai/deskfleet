@@ -231,7 +231,7 @@ Site Admin override. Existing development databases must be rebuilt for this
 schema; legacy identity/data migration is not supported.
 
 The Vue Web client and the Electron client share a common UI component package.
-Below 1024 CSS pixels, a Session shows one full-width view at a time.
+Below 900 CSS pixels, a Session shows one full-width view at a time.
 Chat, Changes, each terminal, and each preview form one ordered list without
 nested tabs or a two-dimensional window layout. The title bar zooms the content
 out into a three-column overview. Existing view instances keep their DOM parents

@@ -24,14 +24,14 @@ beforeEach(() => {
   let width = 390
   const queries: (EventTarget & { matches: boolean; media: string })[] = []
   vi.spyOn(window, "matchMedia").mockImplementation(query => {
-    const media = Object.assign(new EventTarget(), { matches: query.includes("max-width") && width < 1024, media: query })
+    const media = Object.assign(new EventTarget(), { matches: query.includes("max-width") && width < 900, media: query })
     queries.push(media)
     return media as MediaQueryList
   })
   setWidth = value => {
     width = value
     for (const media of queries) {
-      media.matches = media.media.includes("max-width") && width < 1024
+      media.matches = media.media.includes("max-width") && width < 900
       media.dispatchEvent(Object.assign(new Event("change"), { matches: media.matches }))
     }
   }
@@ -79,7 +79,7 @@ test("compact drawers preserve desktop sidebar state across viewport changes", a
   expect(window.localStorage.getItem("deskfleet.sidebar-open")).toBe("false")
   expect(window.localStorage.getItem("deskfleet.sidebar-width")).toBe("420")
 
-  setWidth(1024)
+  setWidth(951)
   await flushPromises()
   expect(view.find('[role="dialog"]').exists()).toBe(false)
   expect(view.findAll("aside")).toHaveLength(1)

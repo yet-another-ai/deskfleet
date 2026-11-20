@@ -25,7 +25,7 @@ function focusPanel(event: Event): void {
       <DrawerContent
         :aria-describedby="undefined"
         :final-focus="opener"
-        class="bottom-sheet app-no-drag fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full flex-col overflow-hidden rounded-t-3xl shadow-ui-dialog"
+        class="bottom-sheet app-no-drag fixed bottom-0 left-[var(--safe-area-inset-left,env(safe-area-inset-left,0px))] right-[var(--safe-area-inset-right,env(safe-area-inset-right,0px))] z-50 mx-auto flex flex-col overflow-hidden rounded-t-3xl shadow-ui-dialog"
         :class="background === 'sidebar' ? 'bg-ui-sidebar' : 'bg-ui-canvas'"
         @open-auto-focus="focusPanel"
       >

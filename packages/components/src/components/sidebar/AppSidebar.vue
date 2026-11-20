@@ -76,13 +76,14 @@ function refresh(): void {
 <template>
   <aside
     class="relative flex shrink-0 flex-col overflow-y-clip border-r border-ui-border bg-ui-sidebar"
+    :class="!compact && 'pt-[var(--safe-area-top,0px)]'"
     :style="{ width: compact ? '100%' : `${width}px` }"
   >
     <!-- On macOS the traffic lights sit at the start of this row. -->
     <div
       v-if="!compact"
-      class="app-drag flex h-12 shrink-0 items-center justify-end pr-2"
-      :class="platform === 'darwin' ? 'pl-20' : 'pl-2'"
+      class="app-drag flex h-[var(--titlebar-height,3rem)] shrink-0 items-center justify-end pr-2"
+      :class="platform === 'darwin' ? 'pl-20' : 'pl-[max(0.5rem,var(--status-bar-left-inset,0px))]'"
     >
       <WindowToolbar :sidebar="compact" />
     </div>

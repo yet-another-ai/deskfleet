@@ -20,7 +20,7 @@ if (props.windowed) provide(windowHeaderActionsTargetKey, computed(() => props.w
   <main class="ui-route-stage relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-ui-canvas">
     <RouterView />
     <div v-if="focusedPreview && route.name !== 'session'" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @vue:unmounted="performPreviewLocateDom()">
-      <div v-if="layout.compact || !layout.sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="platform === 'darwin' ? 'pl-20' : 'pl-3'">
+      <div v-if="layout.compact || !layout.sidebarOpen" class="app-drag titlebar-overlay-inset box-content flex shrink-0 items-center border-b border-ui-border pr-3 pt-[var(--safe-area-top,0px)]" :class="[platform === 'darwin' ? 'pl-20' : 'pl-3', layout.compact ? 'h-12' : 'h-[var(--titlebar-height,3rem)]']">
         <WindowToolbar />
       </div>
       <PreviewViewer :key="focusedPreview.content" v-bind="focusedPreview" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />

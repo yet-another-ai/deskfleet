@@ -84,7 +84,7 @@ export const useLayoutStore = defineStore("layout", () => {
   // Per-device preferences; they fall back to the defaults when storage is unavailable.
   const desktopSidebarOpen = useLocalStorage("deskfleet.sidebar-open", true)
   const sidebarWidth = useLocalStorage("deskfleet.sidebar-width", 260)
-  const compact = useBreakpoints({ desktop: 1024 }).smaller("desktop")
+  const compact = useBreakpoints({ desktop: 900 }).smaller("desktop")
   const compactPanel = ref<"sidebar" | "details" | null>(null)
   const detailsOpenRequest = ref(0)
   const sessionWindowRequest = shallowRef<SessionWindowRequest>()

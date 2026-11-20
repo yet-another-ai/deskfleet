@@ -49,6 +49,7 @@ const stored = useLocalStorage<SerializedDockview | null>(() => `deskfleet.windo
   serializer: StorageSerializers.object,
 })
 const api = shallowRef<DockviewApi>()
+const topRowGroupIds = shallowRef<ReadonlySet<string>>(new Set())
 const topLeftGroupId = shallowRef<string>()
 const topRightGroupId = shallowRef<string>()
 const changesOpen = shallowRef(false)
@@ -232,6 +233,12 @@ function updateTitlebarGroups(): void {
     const box = group.api.boundingBox
     return box && box.width > 0 && box.height > 0 ? [{ group, box }] : []
   })
+  const minTop = groups.reduce((min, item) => Math.min(min, item.box.top), Infinity)
+  topRowGroupIds.value = new Set(
+    groups.length
+      ? groups.filter(item => item.box.top - minTop <= 1).map(item => item.group.id)
+      : gridGroups.map(group => group.id),
+  )
   groups.sort((first, second) => first.box.top - second.box.top || first.box.left - second.box.left)
   topLeftGroupId.value = groups[0]?.group.id ?? gridGroups[0]?.id
   groups.sort((first, second) => first.box.top - second.box.top || (second.box.left + second.box.width) - (first.box.left + first.box.width))
@@ -423,7 +430,7 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <section class="deskfleet-windows min-h-0 min-w-0 flex-1 overflow-clip" :aria-label="t('toolbar.windows')">
+  <section class="deskfleet-windows min-h-0 min-w-0 flex-1 overflow-clip bg-ui-canvas pt-[var(--safe-area-top,0px)]" :aria-label="t('toolbar.windows')">
     <DockviewVue
       class="h-full w-full"
       :theme="themeLight"
@@ -491,6 +498,8 @@ onScopeDispose(() => {
           :class="{ 'titlebar-overlay-inset': group.id === topRightGroupId && (platform === 'win32' || platform === 'linux') }"
           data-window-header-actions
           :data-window-header-actions-group="group.id"
+          :data-window-top-row="topRowGroupIds.has(group.id) ? '' : undefined"
+          :data-window-top-right="group.id === topRightGroupId ? '' : undefined"
         />
       </template>
     </DockviewVue>
@@ -530,10 +539,26 @@ onScopeDispose(() => {
   padding-left: 2px;
   border-bottom: 1px solid var(--ui-color-border);
 }
+.deskfleet-windows :deep(.dv-tabs-and-actions-container:has([data-window-top-row])) {
+  height: var(--titlebar-height, 48px);
+}
+.deskfleet-windows :deep(.dv-tabs-container:not(.dv-tabs-container--wrap):not(.dv-tabs-container-vertical)) {
+  align-items: center;
+}
+.deskfleet-windows :deep([data-window-top-right]) {
+  padding-right: var(--status-bar-right-inset, 0px);
+}
+.deskfleet-windows :deep([data-window-toolbar-group]:not(.pl-20)) {
+  padding-left: var(--status-bar-left-inset, 0px);
+}
 .deskfleet-windows :deep(.dv-tab),
 .deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default) {
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+.deskfleet-windows :deep(.dv-tabs-overflow-dropdown-default) {
+  height: 36px;
+  align-self: center;
 }
 .deskfleet-windows :deep(.dv-tab) {
   height: 36px;
@@ -552,6 +577,9 @@ onScopeDispose(() => {
 .deskfleet-windows :deep(.dv-tab::after) { display: none; }
 .deskfleet-windows :deep(.dv-active-tab:hover) { background: color-mix(in srgb, var(--ui-color-accent) 20%, transparent); }
 .deskfleet-windows :deep(.dv-inactive-tab:hover) { background: var(--ui-color-hover); }
+.deskfleet-windows :deep(.dv-pre-actions-container),
+.deskfleet-windows :deep(.dv-left-actions-container),
+.deskfleet-windows :deep(.dv-right-actions-container),
 .deskfleet-windows :deep(.dv-pre-actions-container > .dv-vue-part),
 .deskfleet-windows :deep(.dv-left-actions-container > .dv-vue-part),
 .deskfleet-windows :deep(.dv-right-actions-container > .dv-vue-part) {
