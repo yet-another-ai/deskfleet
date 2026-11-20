@@ -39,7 +39,7 @@ export class BackendAgent implements AgentProvider {
         } })
         const decision = await client.requestPermission!({
           sessionId: params.sessionId, toolCall: { toolCallId: "fixture-tool", title: toolTitle },
-          options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
+          options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }, { optionId: "deny", name: "Reject", kind: "reject_once" }],
         }, new AbortController().signal)
         return { stopReason: decision.outcome.outcome === "cancelled" ? "cancelled" : "end_turn" }
       },
