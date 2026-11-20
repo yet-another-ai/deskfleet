@@ -289,6 +289,46 @@ jobs:
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
 
+  super_agent_image:
+    name: Publish Super Agent image
+    needs: [validate, test, build, nix, aur, linux_packages]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download both tested Linux images
+        uses: actions/download-artifact@v8
+        with:
+          pattern: deskfleet-super-agent-image-*
+          path: images
+          merge-multiple: true
+
+      - name: Assemble the multi-architecture manifest
+        shell: bash
+        run: |
+          podman manifest create deskfleet-super-agent
+          for platform in linux-x64 linux-arm64; do
+            podman manifest add deskfleet-super-agent "docker-archive:$PWD/images/super-agent-$platform.tar"
+          done
+          podman manifest inspect deskfleet-super-agent | jq -e \
+            '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]'
+
+      - name: Publish the release tags to GitHub Container Registry
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-super-agent"
+          printf '%s' "$REGISTRY_TOKEN" | podman login --username "$GITHUB_ACTOR" --password-stdin ghcr.io
+          podman manifest push --all deskfleet-super-agent "docker://$image:$VERSION"
+          if [[ "$PRERELEASE" == false ]]; then
+            skopeo copy --all --preserve-digests "docker://$image:$VERSION" "docker://$image:latest"
+          fi
+
   google_play:
     name: Publish to Google Play (internal)
     needs: [validate, test, build, nix, aur, linux_packages]

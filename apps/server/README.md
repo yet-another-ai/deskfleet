@@ -175,6 +175,10 @@ build from the same release run. Web files live at `/usr/share/deskfleet/web`
 and are served by the single Actix process. It runs as UID/GID `10001:10001`
 and listens on `0.0.0.0:8080` inside the container.
 
+To enable the hosted Super Agent, deploy the matching
+`ghcr.io/yet-another-ai/deskfleet-super-agent` tag on the API's private network.
+See the [Super Agent container guide](../super-agent/README.md#run-the-container).
+
 Put the configuration above in an environment file, including `DATABASE_URL`,
 the public API/Web origins, and SMTP settings. Use a database hostname reachable from
 the container; `127.0.0.1` inside it refers to the server container itself.
@@ -519,7 +523,7 @@ Each run creates uniquely scoped fixture identities.
 mise exec -- cargo test -p deskfleet-protocol -p deskfleet-server -p deskfleet-control-store --locked
 TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/deskfleet_test' \
 TEST_REDIS_URL='redis://127.0.0.1:6379/' \
-  mise exec -- cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored
+  mise run backend:test
 ```
 
 The backend smoke script additionally exercises mailbox verification and password/native exchange APIs, the live

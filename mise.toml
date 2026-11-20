@@ -69,7 +69,8 @@ run = "nix build .#server-image --print-build-logs --out-link result-server-imag
 
 [tasks."backend:test"]
 description = "Run persistence, API, and TURN collection tests against TEST_DATABASE_URL and TEST_REDIS_URL"
-run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored"
+# The Super Agent image smoke provisions its own PostgreSQL and Eve containers.
+run = "cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored --skip cloud_agent::tests::image::"
 
 [tasks."backend:smoke"]
 description = "Verify owned login, two authenticated daemons, WebRTC, and synchronized history against PostgreSQL"

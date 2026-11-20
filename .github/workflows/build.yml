@@ -81,6 +81,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Free unused Android SDK space on Linux
+        if: runner.os == 'Linux'
+        # The separate Android job owns that build. Leave room here for the
+        # release target, container layers, and the tested image archive.
+        run: sudo rm -rf /usr/local/lib/android
+
       - name: Disable MSVC PDB generation for release builds
         if: runner.os == 'Windows'
         shell: pwsh
@@ -237,6 +243,33 @@ jobs:
           cp -R apps/web/dist/. image-context/web/
           docker build --platform "linux/$arch" -f apps/server/Dockerfile -t deskfleet-server:smoke image-context
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
+
+      - name: Build and smoke test the Super Agent image
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          version=$(mise exec node -- node -p 'require("./package.json").version')
+          docker build --file apps/super-agent/Dockerfile --tag deskfleet-super-agent:smoke \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$version" .
+          # Reuse the release dependencies compiled by napi for the explicit host target.
+          host_target=$(mise exec -- rustc --print host-tuple)
+          CARGO_BUILD_TARGET="$host_target" mise exec -- node scripts/smoke-super-agent-image.ts deskfleet-super-agent:smoke --release
+
+      - name: Save the tested Super Agent image for publishing
+        if: runner.os == 'Linux' && inputs.production_release
+        run: docker save --output "$RUNNER_TEMP/super-agent-${{ matrix.platform }}.tar" deskfleet-super-agent:smoke
+
+      - name: Upload the tested Super Agent image
+        if: runner.os == 'Linux' && inputs.production_release
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-super-agent-image-${{ matrix.platform }}
+          path: ${{ runner.temp }}/super-agent-${{ matrix.platform }}.tar
+          compression-level: 1
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify the standalone daemon
         run: mise run daemon:smoke

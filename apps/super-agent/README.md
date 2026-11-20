@@ -5,6 +5,30 @@ conversations in eve's PostgreSQL Workflow world. The DeskFleet API handles
 Team authorization, saves operation receipts and meters tokens. Each cloud
 Session belongs to one Team.
 
+## Run the container
+
+Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-super-agent` for
+Linux amd64 and arm64. Use the same version tag as your DeskFleet server.
+On a private Docker network shared with the API and PostgreSQL, create an
+`eve.env` file with `WORKFLOW_POSTGRES_URL`, `DESKFLEET_SUPER_AGENT_SECRET`,
+and the model settings described below. Use a PostgreSQL hostname reachable
+from the container.
+
+Set `DESKFLEET_VERSION` to your server's release version and substitute your
+application network for `deskfleet`. Run `bootstrap` on the first deployment
+and when upgrading `@workflow/world-postgres`, then start the service.
+
+```sh
+image="ghcr.io/yet-another-ai/deskfleet-super-agent:${DESKFLEET_VERSION:?}"
+docker run --rm --network deskfleet --env-file eve.env "$image" bootstrap
+docker run -d --name super-agent --network deskfleet --env-file eve.env "$image"
+```
+
+Set `DESKFLEET_SUPER_AGENT_URL=http://super-agent:3100` and the same
+`DESKFLEET_SUPER_AGENT_SECRET` on the Rust API. Clients continue to use the
+API's public URL. All Eve replicas for this deployment share the workflow
+database and the same model configuration.
+
 ## Run locally
 
 Use the locked mise toolchain from the repository root. Install the workspace

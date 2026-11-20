@@ -1,3 +1,4 @@
+mod image;
 mod rich_messages;
 
 use super::*;
