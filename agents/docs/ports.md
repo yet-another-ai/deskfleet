@@ -110,9 +110,7 @@ Native tests exercise real WebRTC peers and loopback sockets (including
 `localhost` auto-family probing and the mobile JSON command registry). Desktop
 tests cover parameter validation, trusted-renderer access, native adaptation,
 `WebPreviewController` `<webview>` lockdown, and cleanup of active and pending
-forwards. Electron smoke verification (`desktop:smoke-web-preview`) exercises a
-real `<webview>` guest under production CSP, including loading `X-Frame-Options: DENY`
-content, preload stripping, and main-frame origin containment. Signaling tests
+forwards. Signaling tests
 cover early ICE, revocation, expiry, account changes, setup cancellation, and
 signaling outages.
 
@@ -142,7 +140,7 @@ and Capacitor mobile clients.
 
 - **Desktop (Electron)** renders pages inside an isolated `<webview>` in the
   ephemeral `temp:deskfleet-web-preview` partition. `WebPreviewController` in
-  main authorizes loopback origins per `BrowserWindow`, enforces
+  main pins each attached `<webview>` to its initial loopback HTTP origin, enforces
   `will-attach-webview` and guest `will-navigate` / `will-redirect` containment,
   strips preloads, enables sandbox/context isolation with `nodeIntegration` off,
   denies guest `window.open` and permission prompts, and exposes a Desktop-only

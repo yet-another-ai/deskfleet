@@ -6,47 +6,16 @@ import {
   formatLogicalPreviewUrl,
   formatWebPreviewTabTitle,
   isWebPreviewSupported,
-  normalizeStoredWebPreviewTarget,
   parseWebPreviewInput,
 } from "./web-preview.ts"
 
 test("parses port shorthands and loopback URLs while rejecting non-loopback or non-HTTP inputs", () => {
-  expect(parseWebPreviewInput("5173")).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 5173,
-    path: "/",
-  })
-  expect(parseWebPreviewInput(":3000/docs?tab=1#top")).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 3000,
-    path: "/docs?tab=1#top",
-  })
-  expect(parseWebPreviewInput("localhost:4321/app")).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 4321,
-    path: "/app",
-  })
-  expect(parseWebPreviewInput("http://127.0.0.1:8080/api")).toEqual({
-    displayHost: "127.0.0.1",
-    targetHost: "127.0.0.1",
-    targetPort: 8080,
-    path: "/api",
-  })
-  expect(parseWebPreviewInput("http://[::1]:9000/metrics")).toEqual({
-    displayHost: "::1",
-    targetHost: "::1",
-    targetPort: 9000,
-    path: "/metrics",
-  })
-  expect(parseWebPreviewInput("http://localhost")).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 80,
-    path: "/",
-  })
+  expect(parseWebPreviewInput("5173")).toEqual({ host: "localhost", port: 5173, path: "/" })
+  expect(parseWebPreviewInput(":3000/docs?tab=1#top")).toEqual({ host: "localhost", port: 3000, path: "/docs?tab=1#top" })
+  expect(parseWebPreviewInput("localhost:4321/app")).toEqual({ host: "localhost", port: 4321, path: "/app" })
+  expect(parseWebPreviewInput("http://127.0.0.1:8080/api")).toEqual({ host: "127.0.0.1", port: 8080, path: "/api" })
+  expect(parseWebPreviewInput("http://[::1]:9000/metrics")).toEqual({ host: "::1", port: 9000, path: "/metrics" })
+  expect(parseWebPreviewInput("http://localhost")).toEqual({ host: "localhost", port: 80, path: "/" })
 
   for (const invalid of [
     "",
@@ -68,7 +37,7 @@ test("parses port shorthands and loopback URLs while rejecting non-loopback or n
   }
 })
 
-test("formats logical URLs, actual tunnel origins, path extraction, and tab titles", () => {
+test("formats logical URLs, actual tunnel origins, path extraction, tab titles, and platform gating", () => {
   const target = parseWebPreviewInput("localhost:5173/dashboard?a=1")!
   expect(formatLogicalPreviewUrl(target)).toBe("http://localhost:5173/dashboard?a=1")
   expect(formatLogicalPreviewUrl(parseWebPreviewInput("5173")!)).toBe("http://localhost:5173")
@@ -85,29 +54,9 @@ test("formats logical URLs, actual tunnel origins, path extraction, and tab titl
   expect(formatWebPreviewTabTitle(target, "Vite App")).toBe("Vite App")
   expect(formatWebPreviewTabTitle(target, "127.0.0.1:49152/dashboard")).toBe("localhost:5173")
   expect(formatWebPreviewTabTitle(null, "", "Web Preview")).toBe("Web Preview")
-})
 
-test("platform gating and stored target normalization reject invalid entries", () => {
   expect(isWebPreviewSupported({ platform: "darwin" })).toBe(true)
   expect(isWebPreviewSupported({ platform: "web" })).toBe(false)
   expect(isWebPreviewSupported({ platform: "web", mobile: true })).toBe(false)
   expect(isWebPreviewSupported({ platform: "web", mobile: true, ports: {} as never })).toBe(true)
-
-  expect(normalizeStoredWebPreviewTarget({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 5173,
-    path: "/docs",
-  })).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 5173,
-    path: "/docs",
-  })
-  expect(normalizeStoredWebPreviewTarget({
-    displayHost: "example.com",
-    targetHost: "localhost",
-    targetPort: 5173,
-    path: "/",
-  })).toBeNull()
 })

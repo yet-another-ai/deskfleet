@@ -2,13 +2,10 @@ import type { DeskfleetDesktopApi } from "../../../client/src/desktop-api.ts"
 import type { PortForwardHost } from "../../../client/src/ports.ts"
 
 export interface WebPreviewTarget {
-  displayHost: PortForwardHost
-  targetHost: PortForwardHost
-  targetPort: number
+  host: PortForwardHost
+  port: number
   path: string
 }
-
-const VALID_HOSTS = new Set<PortForwardHost>(["localhost", "127.0.0.1", "::1"])
 
 export function isWebPreviewSupported(
   client: Pick<DeskfleetDesktopApi, "platform" | "mobile" | "ports">,
@@ -42,9 +39,8 @@ export function parseWebPreviewInput(raw: string): WebPreviewTarget | null {
     try {
       const normalized = new URL(`http://localhost:${port}${suffix.startsWith("/") ? suffix : `/${suffix}`}`)
       return {
-        displayHost: "localhost",
-        targetHost: "localhost",
-        targetPort: port,
+        host: "localhost",
+        port,
         path: `${normalized.pathname}${normalized.search}${normalized.hash}`,
       }
     } catch {
@@ -53,8 +49,7 @@ export function parseWebPreviewInput(raw: string): WebPreviewTarget | null {
   }
 
   let candidate = trimmed
-  const hasSchemeSeparator = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed)
-  if (hasSchemeSeparator) {
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed)) {
     if (!/^http:\/\//iu.test(trimmed)) return null
   } else {
     if (/^[a-zA-Z][a-zA-Z\d+.-]*:/u.test(trimmed) && !/^localhost(?::|$)/iu.test(trimmed)) {
@@ -77,16 +72,15 @@ export function parseWebPreviewInput(raw: string): WebPreviewTarget | null {
   if (!isValidPort(port)) return null
 
   return {
-    displayHost: host,
-    targetHost: host,
-    targetPort: port,
+    host,
+    port,
     path: `${parsed.pathname}${parsed.search}${parsed.hash}`,
   }
 }
 
 export function formatLogicalPreviewUrl(target: WebPreviewTarget): string {
-  const host = target.displayHost === "::1" ? "[::1]" : target.displayHost
-  const port = target.targetPort === 80 ? "" : `:${target.targetPort}`
+  const host = target.host === "::1" ? "[::1]" : target.host
+  const port = target.port === 80 ? "" : `:${target.port}`
   const path = target.path && target.path !== "/"
     ? (target.path.startsWith("/") ? target.path : `/${target.path}`)
     : ""
@@ -123,36 +117,8 @@ export function formatWebPreviewTabTitle(
     return trimmedTitle
   }
   if (target) {
-    const host = target.displayHost === "::1" ? "[::1]" : target.displayHost
-    return target.targetPort === 80 ? host : `${host}:${target.targetPort}`
+    const host = target.host === "::1" ? "[::1]" : target.host
+    return target.port === 80 ? host : `${host}:${target.port}`
   }
   return fallback
-}
-
-export function normalizeStoredWebPreviewTarget(raw: unknown): WebPreviewTarget | null {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
-  const record = raw as Record<string, unknown>
-  if (
-    typeof record.displayHost !== "string"
-    || typeof record.targetHost !== "string"
-    || typeof record.targetPort !== "number"
-    || typeof record.path !== "string"
-  ) {
-    return null
-  }
-  if (!VALID_HOSTS.has(record.displayHost as PortForwardHost) || !VALID_HOSTS.has(record.targetHost as PortForwardHost)) {
-    return null
-  }
-  if (!isValidPort(record.targetPort)) return null
-  try {
-    const normalized = new URL(`http://localhost${record.path.startsWith("/") ? record.path : `/${record.path}`}`)
-    return {
-      displayHost: record.displayHost as PortForwardHost,
-      targetHost: record.targetHost as PortForwardHost,
-      targetPort: record.targetPort,
-      path: `${normalized.pathname}${normalized.search}${normalized.hash}`,
-    }
-  } catch {
-    return null
-  }
 }

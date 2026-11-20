@@ -1590,7 +1590,6 @@
     "reload": "再読み込み",
     "addressLabel": "プレビューのアドレスまたはポート",
     "addressPlaceholder": "ポートまたは localhost URL を入力（例: 5173）",
-    "portPlaceholder": "5173 または localhost:3000",
     "open": "開く",
     "openExternal": "ブラウザーで開く",
     "openDevTools": "DevTools を開く",

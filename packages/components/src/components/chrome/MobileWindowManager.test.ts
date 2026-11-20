@@ -26,9 +26,9 @@ afterEach(async () => {
 })
 
 const webPreviewStub = {
-  props: ["sessionId", "active", "initialTarget"],
+  props: ["sessionId", "active", "initialUrl"],
   emits: ["title", "change"],
-  template: '<div data-session-web-preview :data-session-id="sessionId" :data-active="String(active)" :data-target="initialTarget ? `${initialTarget.displayHost}:${initialTarget.targetPort}${initialTarget.path}` : \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', { displayHost: \'localhost\', targetHost: \'localhost\', targetPort: 5173, path: \'/app\' })" /></div>',
+  template: '<div data-session-web-preview :data-session-id="sessionId" :data-active="String(active)" :data-url="initialUrl ?? \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', \'http://localhost:5173/app\')" /></div>',
 }
 
 interface SetupOptions {
@@ -54,7 +54,6 @@ async function setup(options: SetupOptions = {}) {
           targetPort: 5173,
           localHost: "127.0.0.1" as const,
           localPort: 41234,
-          createdAt: "2026-11-16T00:00:00.000Z",
         }),
         stop: async () => {},
         list: async () => [],
@@ -129,7 +128,7 @@ test("mobile previews pause in overview, behind the sidebar and when another vie
 test("pure web omits mobile web preview creation even when persisted views exist", async () => {
   window.localStorage.setItem(
     `deskfleet.mobile-web-previews:${sessionId}`,
-    JSON.stringify([{ id: "saved-1", target: { displayHost: "localhost", targetHost: "localhost", targetPort: 5173, path: "/" } }]),
+    JSON.stringify([{ id: "saved-1", url: "http://localhost:5173" }]),
   )
   const view = await setup({ platform: "web", mobile: false, ports: undefined })
   await view.get("[data-open-overview]").trigger("click")
@@ -153,12 +152,7 @@ test("mobile overview creates, persists lazily, activates, and closes web previe
 
   const storedAfterCommit = JSON.parse(window.localStorage.getItem(`deskfleet.mobile-web-previews:${sessionId}`)!)
   expect(storedAfterCommit).toHaveLength(1)
-  expect(storedAfterCommit[0].target).toEqual({
-    displayHost: "localhost",
-    targetHost: "localhost",
-    targetPort: 5173,
-    path: "/app",
-  })
+  expect(storedAfterCommit[0].url).toBe("http://localhost:5173/app")
   const previewId = storedAfterCommit[0].id as string
 
   first.unmount()
@@ -176,7 +170,7 @@ test("mobile overview creates, persists lazily, activates, and closes web previe
   await second.get(`[data-mobile-view="web-preview:${previewId}"] button[aria-label="localhost:5173"]`).trigger("click")
   await flushPromises()
   expect(second.get("[data-session-web-preview]").attributes("data-active")).toBe("true")
-  expect(second.get("[data-session-web-preview]").attributes("data-target")).toBe("localhost:5173/app")
+  expect(second.get("[data-session-web-preview]").attributes("data-url")).toBe("http://localhost:5173/app")
 
   await second.get("[data-open-overview]").trigger("click")
   await flushPromises()

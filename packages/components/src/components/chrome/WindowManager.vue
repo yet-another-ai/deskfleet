@@ -29,10 +29,10 @@ import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import {
+  formatLogicalPreviewUrl,
   formatWebPreviewTabTitle,
   isWebPreviewSupported,
-  normalizeStoredWebPreviewTarget,
-  type WebPreviewTarget,
+  parseWebPreviewInput,
 } from "../../services/web-preview.ts"
 import UiButton from "../common/UiButton.vue"
 import GithubIcon from "../common/GithubIcon.vue"
@@ -312,9 +312,13 @@ function onReady(event: DockviewReadyEvent): void {
         event.api.removePanel(panel)
         updatedStoredPanels = true
       } else {
-        const normalized = normalizeStoredWebPreviewTarget(panel.params?.target)
-        panel.api.updateParameters({ target: normalized })
-        panel.api.setTitle(formatWebPreviewTabTitle(normalized, undefined, t("webPreview.title")))
+        const parsed = typeof panel.params?.url === "string" ? parseWebPreviewInput(panel.params.url) : null
+        const url = parsed ? formatLogicalPreviewUrl(parsed) : null
+        if (panel.params?.url !== url) {
+          panel.api.updateParameters({ url })
+          updatedStoredPanels = true
+        }
+        panel.api.setTitle(formatWebPreviewTabTitle(parsed, undefined, t("webPreview.title")))
       }
     }
   }
@@ -421,7 +425,7 @@ function openWebPreviewTab(group?: DockviewGroupPanel): void {
     id: windowId,
     component: "webPreview",
     title: t("webPreview.title"),
-    params: { target: null },
+    params: { url: null },
     position: targetGroup
       ? { referenceGroup: targetGroup, direction: "within" }
       : { referencePanel: "chat", direction: "right" },
@@ -434,8 +438,8 @@ function openWebPreviewTab(group?: DockviewGroupPanel): void {
   saveLayout()
 }
 
-function updateWebPreviewParams(panelApi: DockviewPanelApi, target: WebPreviewTarget | null): void {
-  panelApi.updateParameters({ target: target ? structuredClone(toRaw(target)) : null })
+function updateWebPreviewParams(panelApi: DockviewPanelApi, url: string | null): void {
+  panelApi.updateParameters({ url })
   saveLayout()
 }
 
@@ -534,7 +538,7 @@ onScopeDispose(() => {
         <SessionWebPreviewWindow
           :session-id="sessionId"
           :panel-api="panelApi"
-          :initial-target="normalizeStoredWebPreviewTarget(params?.target)"
+          :initial-url="typeof params?.url === 'string' ? params.url : null"
           @change="updateWebPreviewParams(panelApi, $event)"
         />
       </template>

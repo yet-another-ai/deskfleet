@@ -2181,7 +2181,6 @@
     "reload": "刷新",
     "addressLabel": "预览地址或端口",
     "addressPlaceholder": "输入端口或 localhost 地址（如 5173）",
-    "portPlaceholder": "5173 或 localhost:3000",
     "open": "打开",
     "openExternal": "在系统浏览器中打开",
     "openDevTools": "打开开发者工具",

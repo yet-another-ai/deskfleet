@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,7 +25,7 @@ enum PortCommand {
     Create {
         peer_id: String,
         #[serde(default)]
-        ice_servers: Vec<WireIceServer>,
+        ice_servers: Vec<IceServer>,
         #[serde(default)]
         relay_only: bool,
         #[serde(default)]
@@ -40,31 +40,10 @@ enum PortCommand {
     #[serde(rename_all = "camelCase")]
     Candidate {
         peer_id: String,
-        candidate: WireIceCandidate,
+        candidate: IceCandidate,
     },
     #[serde(rename_all = "camelCase")]
     Close { peer_id: String },
-}
-
-#[derive(Deserialize)]
-struct WireIceServer {
-    urls: Vec<String>,
-    #[serde(default)]
-    username: String,
-    #[serde(default)]
-    credential: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WireIceCandidate {
-    candidate: String,
-    #[serde(default)]
-    sdp_mid: Option<String>,
-    #[serde(default, alias = "sdpMLineIndex")]
-    sdp_mline_index: Option<u16>,
-    #[serde(default)]
-    username_fragment: Option<String>,
 }
 
 static RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
@@ -84,8 +63,11 @@ fn runtime() -> Result<&'static Runtime, String> {
         .map_err(Clone::clone)
 }
 
-fn peers() -> &'static Mutex<HashMap<String, Arc<MobilePortPeer>>> {
-    PEERS.get_or_init(|| Mutex::new(HashMap::new()))
+fn lock_peers() -> Result<MutexGuard<'static, HashMap<String, Arc<MobilePortPeer>>>, String> {
+    PEERS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|_| "port forwarding registry poisoned".to_owned())
 }
 
 fn emitter_slot() -> &'static Mutex<Option<EventEmitter>> {
@@ -109,11 +91,12 @@ fn emit_json(payload: &Value) {
     }
 }
 
+fn emit_error(peer_id: &str, error: impl Into<String>) {
+    emit_json(&json!({ "peerId": peer_id, "kind": "error", "error": error.into() }));
+}
+
 fn lookup_peer(peer_id: &str) -> Result<Arc<MobilePortPeer>, String> {
-    let guard = peers()
-        .lock()
-        .map_err(|_| "port forwarding registry poisoned".to_owned())?;
-    guard
+    lock_peers()?
         .get(peer_id)
         .map(Arc::clone)
         .ok_or_else(|| "port forwarding peer not found".to_owned())
@@ -131,38 +114,21 @@ fn spawn_event_pump(runtime: &Runtime, peer_id: String, entry: Arc<MobilePortPee
                         PeerEvent::IceCandidate(Some(candidate)) => emit_json(&json!({
                             "peerId": peer_id,
                             "kind": "iceCandidate",
-                            "candidate": {
-                                "candidate": candidate.candidate,
-                                "sdpMid": candidate.sdp_mid,
-                                "sdpMlineIndex": candidate.sdp_mline_index,
-                                "usernameFragment": candidate.username_fragment,
-                            }
+                            "candidate": candidate,
                         })),
                         PeerEvent::DataChannelOpen { label } if label == "deskfleet-ports" => {
                             emit_json(&json!({ "peerId": peer_id, "kind": "open" }));
                         }
                         PeerEvent::DataChannelClosed { label } if label == "deskfleet-ports" => {
-                            emit_json(&json!({
-                                "peerId": peer_id,
-                                "kind": "error",
-                                "error": "Port forwarding peer closed",
-                            }));
+                            emit_error(&peer_id, "Port forwarding peer closed");
                             break;
                         }
                         PeerEvent::StateChanged(PeerState::Failed | PeerState::Closed) => {
-                            emit_json(&json!({
-                                "peerId": peer_id,
-                                "kind": "error",
-                                "error": "Port forwarding peer closed",
-                            }));
+                            emit_error(&peer_id, "Port forwarding peer closed");
                             break;
                         }
                         PeerEvent::Error { message, .. } => {
-                            emit_json(&json!({
-                                "peerId": peer_id,
-                                "kind": "error",
-                                "error": message,
-                            }));
+                            emit_error(&peer_id, message);
                             break;
                         }
                         _ => {}
@@ -170,21 +136,13 @@ fn spawn_event_pump(runtime: &Runtime, peer_id: String, entry: Arc<MobilePortPee
                 }
                 Ok(None) => {
                     if !entry.closing.load(Ordering::Acquire) {
-                        emit_json(&json!({
-                            "peerId": peer_id,
-                            "kind": "error",
-                            "error": "Port forwarding peer closed",
-                        }));
+                        emit_error(&peer_id, "Port forwarding peer closed");
                     }
                     break;
                 }
                 Err(error) => {
                     if !entry.closing.load(Ordering::Acquire) {
-                        emit_json(&json!({
-                            "peerId": peer_id,
-                            "kind": "error",
-                            "error": error.to_string(),
-                        }));
+                        emit_error(&peer_id, error.to_string());
                     }
                     break;
                 }
@@ -209,23 +167,11 @@ async fn execute_command(rt: &Runtime, command: PortCommand) -> Result<Value, St
             if target_port == 0 {
                 return Err("invalid TCP port".to_owned());
             }
-            {
-                let guard = peers()
-                    .lock()
-                    .map_err(|_| "port forwarding registry poisoned".to_owned())?;
-                if guard.contains_key(&peer_id) {
-                    return Err("duplicate port forwarding peer ID".to_owned());
-                }
+            if lock_peers()?.contains_key(&peer_id) {
+                return Err("duplicate port forwarding peer ID".to_owned());
             }
             let config = PeerConfig {
-                ice_servers: ice_servers
-                    .into_iter()
-                    .map(|server| IceServer {
-                        urls: server.urls,
-                        username: server.username,
-                        credential: server.credential,
-                    })
-                    .collect(),
+                ice_servers,
                 relay_only,
                 video: None,
                 audio: false,
@@ -246,15 +192,9 @@ async fn execute_command(rt: &Runtime, command: PortCommand) -> Result<Value, St
                 closing: AtomicBool::new(false),
             });
             let inserted = {
-                let mut guard = peers()
-                    .lock()
-                    .map_err(|_| "port forwarding registry poisoned".to_owned())?;
-                if guard.contains_key(&peer_id) {
-                    false
-                } else {
-                    guard.insert(peer_id.clone(), Arc::clone(&entry));
-                    true
-                }
+                let mut guard = lock_peers()?;
+                !guard.contains_key(&peer_id)
+                    && guard.insert(peer_id.clone(), Arc::clone(&entry)).is_none()
             };
             if !inserted {
                 entry.closing.store(true, Ordering::Release);
@@ -265,8 +205,7 @@ async fn execute_command(rt: &Runtime, command: PortCommand) -> Result<Value, St
             Ok(json!({ "localPort": bound_port }))
         }
         PortCommand::Offer { peer_id } => {
-            let entry = lookup_peer(&peer_id)?;
-            let sdp = entry
+            let sdp = lookup_peer(&peer_id)?
                 .peer
                 .create_offer()
                 .await
@@ -274,8 +213,7 @@ async fn execute_command(rt: &Runtime, command: PortCommand) -> Result<Value, St
             Ok(json!({ "sdp": sdp }))
         }
         PortCommand::Answer { peer_id, sdp } => {
-            let entry = lookup_peer(&peer_id)?;
-            entry
+            lookup_peer(&peer_id)?
                 .peer
                 .accept_answer(sdp)
                 .await
@@ -283,24 +221,15 @@ async fn execute_command(rt: &Runtime, command: PortCommand) -> Result<Value, St
             Ok(json!({ "ok": true }))
         }
         PortCommand::Candidate { peer_id, candidate } => {
-            let entry = lookup_peer(&peer_id)?;
-            entry
+            lookup_peer(&peer_id)?
                 .peer
-                .add_ice_candidate(IceCandidate {
-                    candidate: candidate.candidate,
-                    sdp_mid: candidate.sdp_mid,
-                    sdp_mline_index: candidate.sdp_mline_index,
-                    username_fragment: candidate.username_fragment,
-                })
+                .add_ice_candidate(candidate)
                 .await
                 .map_err(|error| error.to_string())?;
             Ok(json!({ "ok": true }))
         }
         PortCommand::Close { peer_id } => {
-            let removed = peers()
-                .lock()
-                .map_err(|_| "port forwarding registry poisoned".to_owned())?
-                .remove(&peer_id);
+            let removed = lock_peers()?.remove(&peer_id);
             if let Some(entry) = removed {
                 entry.closing.store(true, Ordering::Release);
                 entry
@@ -330,8 +259,7 @@ pub fn handle_command(raw_json: &str) -> String {
 
 /// Close and remove all active mobile port-forwarding peers.
 pub fn close_all() {
-    let drained: Vec<Arc<MobilePortPeer>> = peers()
-        .lock()
+    let drained: Vec<Arc<MobilePortPeer>> = lock_peers()
         .ok()
         .map(|mut guard| guard.drain().map(|(_, entry)| entry).collect())
         .unwrap_or_default();
@@ -355,8 +283,8 @@ mod tests {
 
     static TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
-    fn parse(raw: String) -> Value {
-        serde_json::from_str(&raw).expect("valid JSON response")
+    fn call(payload: Value) -> Value {
+        serde_json::from_str(&handle_command(&payload.to_string())).expect("valid JSON response")
     }
 
     #[test]
@@ -364,86 +292,56 @@ mod tests {
         let _guard = TEST_LOCK.lock().expect("lock test");
         close_all();
 
-        let bad_json = parse(handle_command("not-json"));
+        let bad_json: Value =
+            serde_json::from_str(&handle_command("not-json")).expect("valid JSON");
         assert!(bad_json["error"].as_str().is_some());
 
-        let zero_port = parse(handle_command(
-            &json!({
-                "op": "create",
-                "peerId": "p0",
-                "iceServers": [],
-                "targetHost": "localhost",
-                "targetPort": 0,
-            })
-            .to_string(),
-        ));
-        assert!(zero_port["error"].as_str().is_some());
+        for bad in [
+            json!({ "op": "create", "peerId": "p0", "targetHost": "localhost", "targetPort": 0 }),
+            json!({ "op": "create", "peerId": "p-bad-host", "targetHost": "example.com", "targetPort": 3000 }),
+        ] {
+            assert!(call(bad)["error"].as_str().is_some());
+        }
 
-        let bad_host = parse(handle_command(
-            &json!({
-                "op": "create",
-                "peerId": "p-bad-host",
-                "iceServers": [],
-                "targetHost": "example.com",
-                "targetPort": 3000,
-            })
-            .to_string(),
-        ));
-        assert!(bad_host["error"].as_str().is_some());
-
-        let created = parse(handle_command(
-            &json!({
-                "op": "create",
-                "peerId": "p1",
-                "iceServers": [],
-                "targetHost": "localhost",
-                "targetPort": 5173,
-            })
-            .to_string(),
-        ));
+        let created = call(
+            json!({ "op": "create", "peerId": "p1", "targetHost": "localhost", "targetPort": 5173 }),
+        );
         let local_port = created["result"]["localPort"]
             .as_u64()
             .expect("localPort should be bound");
         assert!(local_port > 0 && local_port <= 65535);
 
-        let offered = parse(handle_command(
-            &json!({ "op": "offer", "peerId": "p1" }).to_string(),
-        ));
-        let sdp = offered["result"]["sdp"]
-            .as_str()
-            .expect("SDP offer should be returned");
-        assert!(sdp.contains("m=application"));
+        let offered = call(json!({ "op": "offer", "peerId": "p1" }));
+        assert!(
+            offered["result"]["sdp"]
+                .as_str()
+                .expect("SDP offer")
+                .contains("m=application")
+        );
 
-        let closed = parse(handle_command(
-            &json!({ "op": "close", "peerId": "p1" }).to_string(),
-        ));
-        assert_eq!(closed["result"]["ok"], Value::Bool(true));
+        assert_eq!(
+            call(json!({ "op": "close", "peerId": "p1" }))["result"]["ok"],
+            Value::Bool(true)
+        );
+        assert!(
+            call(json!({ "op": "offer", "peerId": "p1" }))["error"]
+                .as_str()
+                .is_some()
+        );
+        assert_eq!(
+            call(json!({ "op": "close", "peerId": "p1" }))["result"]["ok"],
+            Value::Bool(true)
+        );
 
-        let missing = parse(handle_command(
-            &json!({ "op": "offer", "peerId": "p1" }).to_string(),
-        ));
-        assert!(missing["error"].as_str().is_some());
-
-        let idempotent = parse(handle_command(
-            &json!({ "op": "close", "peerId": "p1" }).to_string(),
-        ));
-        assert_eq!(idempotent["result"]["ok"], Value::Bool(true));
-
-        let created2 = parse(handle_command(
-            &json!({
-                "op": "create",
-                "peerId": "p2",
-                "iceServers": [],
-                "targetHost": "127.0.0.1",
-                "targetPort": 3000,
-            })
-            .to_string(),
-        ));
+        let created2 = call(
+            json!({ "op": "create", "peerId": "p2", "targetHost": "127.0.0.1", "targetPort": 3000 }),
+        );
         assert!(created2["result"]["localPort"].as_u64().is_some());
         close_all();
-        let after_close_all = parse(handle_command(
-            &json!({ "op": "offer", "peerId": "p2" }).to_string(),
-        ));
-        assert!(after_close_all["error"].as_str().is_some());
+        assert!(
+            call(json!({ "op": "offer", "peerId": "p2" }))["error"]
+                .as_str()
+                .is_some()
+        );
     }
 }

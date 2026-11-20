@@ -2181,7 +2181,6 @@
     "reload": "Reload",
     "addressLabel": "Preview address or port",
     "addressPlaceholder": "Enter port or localhost URL (e.g. 5173)",
-    "portPlaceholder": "5173 or localhost:3000",
     "open": "Open",
     "openExternal": "Open in browser",
     "openDevTools": "Open DevTools",

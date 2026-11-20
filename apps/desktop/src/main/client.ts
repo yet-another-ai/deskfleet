@@ -77,7 +77,7 @@ function start(): void {
     const speech = installSpeech()
     const files = installFiles(central)
     const ports = installPorts(central)
-    const webPreview = installWebPreview(central)
+    const webPreview = installWebPreview()
     const localChannels = installLocalChannels(central)
     const muxChannels = installMuxChannels(central)
     installRendererPermissions()

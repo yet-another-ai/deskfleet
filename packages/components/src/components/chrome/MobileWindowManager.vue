@@ -8,10 +8,10 @@ import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useMobileViewportSwipe } from "../../composables/useMobileViewportSwipe.ts"
 import {
+  formatLogicalPreviewUrl,
   formatWebPreviewTabTitle,
   isWebPreviewSupported,
-  normalizeStoredWebPreviewTarget,
-  type WebPreviewTarget,
+  parseWebPreviewInput,
 } from "../../services/web-preview.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { pendingMermaidLocate, useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
@@ -31,14 +31,14 @@ import { windowHeaderActionsId, windowHeaderActionsTarget, windowHeaderActionsTa
 
 interface StoredMobileWebPreview {
   id: string
-  target: WebPreviewTarget | null
+  url: string | null
 }
 
 type MobileView =
   | { id: string; title: string; kind: "chat" | "changes" | "desktops" | "github" }
   | { id: string; title: string; kind: "terminal"; terminalId: string }
   | { id: string; title: string; kind: "preview"; request: SessionWindowRequest }
-  | { id: string; title: string; kind: "webPreview"; previewId: string; target: WebPreviewTarget | null }
+  | { id: string; title: string; kind: "webPreview"; previewId: string; url: string | null }
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
@@ -74,13 +74,14 @@ const webPreviewViews = computed<Extract<MobileView, { kind: "webPreview" }>[]>(
   if (!webPreviewAvailable.value || !Array.isArray(storedWebPreviews.value)) return []
   return storedWebPreviews.value.flatMap(entry => {
     if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || !entry.id) return []
-    const target = normalizeStoredWebPreviewTarget(entry.target)
+    const parsed = typeof entry.url === "string" ? parseWebPreviewInput(entry.url) : null
+    const url = parsed ? formatLogicalPreviewUrl(parsed) : null
     return [{
       id: `web-preview:${entry.id}`,
       kind: "webPreview" as const,
       previewId: entry.id,
-      target,
-      title: webPreviewTitles[entry.id] || formatWebPreviewTabTitle(target, undefined, t("webPreview.title")),
+      url,
+      title: webPreviewTitles[entry.id] || formatWebPreviewTabTitle(parsed, undefined, t("webPreview.title")),
     }]
   })
 })
@@ -144,24 +145,15 @@ watch([pendingPreviewLocate, pendingMermaidLocate], requests => {
 }, { flush: "sync" })
 
 if (!terminals.loaded) void terminals.refresh()
-function targetsEqual(a: WebPreviewTarget | null, b: WebPreviewTarget | null): boolean {
-  if (a === b) return true
-  if (!a || !b) return false
-  return a.displayHost === b.displayHost
-    && a.targetHost === b.targetHost
-    && a.targetPort === b.targetPort
-    && a.path === b.path
-}
-function updateWebPreviewTarget(previewId: string, target: WebPreviewTarget | null): void {
-  const normalized = normalizeStoredWebPreviewTarget(target)
+function updateWebPreviewUrl(previewId: string, url: string | null): void {
+  const parsed = url ? parseWebPreviewInput(url) : null
+  const canonical = parsed ? formatLogicalPreviewUrl(parsed) : null
   const list = Array.isArray(storedWebPreviews.value) ? storedWebPreviews.value : []
   let changed = false
   const next = list.map(entry => {
-    if (entry?.id !== previewId) return entry
-    const existing = normalizeStoredWebPreviewTarget(entry.target)
-    if (targetsEqual(existing, normalized)) return entry
+    if (entry?.id !== previewId || entry.url === canonical) return entry
     changed = true
-    return { id: previewId, target: normalized }
+    return { id: previewId, url: canonical }
   })
   if (changed) storedWebPreviews.value = next
 }
@@ -169,7 +161,7 @@ function newWebPreview(): void {
   if (!webPreviewAvailable.value || busy.value) return
   const id = crypto.randomUUID()
   const current = Array.isArray(storedWebPreviews.value) ? storedWebPreviews.value : []
-  storedWebPreviews.value = [...current, { id, target: null }]
+  storedWebPreviews.value = [...current, { id, url: null }]
   selectId(`web-preview:${id}`)
 }
 async function newTerminal(): Promise<void> {
@@ -273,7 +265,7 @@ const { offset, dragging, settling } = useMobileViewportSwipe({
               <SessionDesktopPanel v-else-if="view.kind === 'desktops'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" class="h-full" />
               <TerminalShellWindow v-else-if="view.kind === 'terminal'" :terminal-id="view.terminalId" @title="terminals.titles[view.terminalId] = truncateGeneratedTitle($event)" />
               <SessionPreviewWindow v-else-if="view.kind === 'preview'" :request="view.request" />
-              <SessionWebPreviewPanel v-else-if="view.kind === 'webPreview'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" :initial-target="view.target" class="h-full" @title="webPreviewTitles[view.previewId] = $event" @change="updateWebPreviewTarget(view.previewId, $event)" />
+              <SessionWebPreviewPanel v-else-if="view.kind === 'webPreview'" :session-id="sessionId" :active="activeId === view.id && !overviewOpen && !zooming && !layout.sidebarOpen" :initial-url="view.url" class="h-full" @title="webPreviewTitles[view.previewId] = $event" @change="updateWebPreviewUrl(view.previewId, $event)" />
             </template>
             <div v-else-if="view.kind === 'terminal'" data-unopened-terminal class="flex h-full flex-col items-center justify-center gap-6 px-8 text-center text-ui-text-muted">
               <SquareTerminal :size="80" :stroke-width="1.25" aria-hidden="true" />

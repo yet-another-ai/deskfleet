@@ -43,11 +43,11 @@ const QUICK_PORTS = [3000, 5173, 8080] as const
 const props = defineProps<{
   sessionId: string
   active: boolean
-  initialTarget?: WebPreviewTarget | null
+  initialUrl?: string | null
 }>()
 const emit = defineEmits<{
   title: [value: string]
-  change: [target: WebPreviewTarget | null]
+  change: [url: string | null]
 }>()
 
 const { t } = useI18n()
@@ -61,9 +61,8 @@ watchImmediate(() => props.active, active => {
   if (active) everActivated.value = true
 })
 
-const committedTarget = ref<WebPreviewTarget | null>(props.initialTarget ?? null)
+const committedTarget = ref<WebPreviewTarget | null>(props.initialUrl ? parseWebPreviewInput(props.initialUrl) : null)
 const addressInput = ref(committedTarget.value ? formatLogicalPreviewUrl(committedTarget.value) : "")
-const emptyInput = ref("")
 const addressError = ref<string | null>(null)
 const connectError = ref<string | null>(null)
 const loadError = ref<string | null>(null)
@@ -92,42 +91,22 @@ const machineOffline = computed(() => Boolean(committedTarget.value && machine.v
 const webviewCanGoBack = ref(false)
 const webviewCanGoForward = ref(false)
 const guestWebContentsId = ref<number | null>(null)
+const iframeKey = ref(0)
 let webviewEl: ElectronWebviewElement | null = null
 let webviewDomReady = false
 
-const mobileHistory = ref<string[]>([])
-const mobileHistoryIndex = ref(-1)
-const iframeKey = ref(0)
-
-const mobileCurrentPath = computed(() =>
-  mobileHistoryIndex.value >= 0 ? mobileHistory.value[mobileHistoryIndex.value] ?? "/" : (committedTarget.value?.path ?? "/"),
-)
 const actualUrl = computed(() =>
   resolvedOrigin.value && committedTarget.value
-    ? buildActualPreviewUrl(resolvedOrigin.value, isDesktopWebview.value ? committedTarget.value.path : mobileCurrentPath.value)
+    ? buildActualPreviewUrl(resolvedOrigin.value, committedTarget.value.path)
     : undefined,
 )
-const canGoBack = computed(() =>
-  isDesktopWebview.value ? webviewCanGoBack.value : mobileHistoryIndex.value > 0,
-)
-const canGoForward = computed(() =>
-  isDesktopWebview.value
-    ? webviewCanGoForward.value
-    : mobileHistoryIndex.value >= 0 && mobileHistoryIndex.value < mobileHistory.value.length - 1,
-)
-const canReload = computed(() => Boolean(resolvedOrigin.value && committedTarget.value))
-const canOpenExternal = computed(() => Boolean(actualUrl.value))
 const canOpenDevTools = computed(() => Boolean(isDesktopWebview.value && guestWebContentsId.value !== null))
 const committedLogicalUrl = computed(() => (committedTarget.value ? formatLogicalPreviewUrl(committedTarget.value) : ""))
 const addressDirty = computed(() => addressInput.value.trim() !== committedLogicalUrl.value)
 
-function emitTitle(): void {
-  emit("title", formatWebPreviewTabTitle(committedTarget.value, pageTitle.value, t("webPreview.title")))
-}
-
 watch(
-  [() => committedTarget.value?.displayHost, () => committedTarget.value?.targetPort, pageTitle],
-  () => emitTitle(),
+  [() => committedTarget.value?.host, () => committedTarget.value?.port, pageTitle],
+  () => emit("title", formatWebPreviewTabTitle(committedTarget.value, pageTitle.value, t("webPreview.title"))),
   { immediate: true },
 )
 
@@ -139,8 +118,8 @@ const endpointKey = computed(() => {
     useDirectLocal.value ? "local" : remoteTarget.value!.teamId,
     machine.value.id,
     useDirectLocal.value,
-    committedTarget.value.targetHost,
-    committedTarget.value.targetPort,
+    committedTarget.value.host,
+    committedTarget.value.port,
     retryNonce.value,
   ])
 })
@@ -151,7 +130,6 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
   const revision = ++endpointRevision
   let cancelled = false
   let forwardId: string | undefined
-  let grantId: string | undefined
   activeForwardId = undefined
 
   resolvedOrigin.value = null
@@ -162,8 +140,6 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
   webviewCanGoBack.value = false
   webviewCanGoForward.value = false
   guestWebContentsId.value = null
-  mobileHistory.value = []
-  mobileHistoryIndex.value = -1
 
   onCleanup(() => {
     cancelled = true
@@ -172,11 +148,6 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
       if (activeForwardId === id) activeForwardId = undefined
       forwardId = undefined
       void client.ports?.stop(id).catch(() => {})
-    }
-    if (grantId) {
-      const id = grantId
-      grantId = undefined
-      void client.webPreview?.revokeOrigin(id).catch(() => {})
     }
   })
 
@@ -194,13 +165,13 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
     try {
       let origin: string
       if (direct) {
-        origin = buildActualPreviewOrigin(target.targetHost, target.targetPort)
+        origin = buildActualPreviewOrigin(target.host, target.port)
       } else {
         if (!client.ports || !forwardTarget) throw new Error(t("webPreview.unavailable"))
         const forward = await client.ports.start({
           target: forwardTarget,
-          targetHost: target.targetHost,
-          targetPort: target.targetPort,
+          targetHost: target.host,
+          targetPort: target.port,
         })
         if (cancelled || revision !== endpointRevision) {
           void client.ports.stop(forward.id).catch(() => {})
@@ -210,21 +181,7 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
         activeForwardId = forward.id
         origin = buildActualPreviewOrigin("127.0.0.1", forward.localPort)
       }
-
-      if (client.webPreview) {
-        const createdGrant = await client.webPreview.allowOrigin(origin)
-        if (cancelled || revision !== endpointRevision) {
-          void client.webPreview.revokeOrigin(createdGrant).catch(() => {})
-          return
-        }
-        grantId = createdGrant
-      }
-
       if (cancelled || revision !== endpointRevision) return
-      if (!isDesktopWebview.value) {
-        mobileHistory.value = [target.path]
-        mobileHistoryIndex.value = 0
-      }
       resolvedOrigin.value = origin
     } catch (reason) {
       if (cancelled || revision !== endpointRevision) return
@@ -247,11 +204,12 @@ function syncPathFromGuest(rawUrl: string): void {
   const nextPath = extractLogicalPath(rawUrl, origin)
   if (!nextPath || nextPath === current.path) return
   const updated: WebPreviewTarget = { ...current, path: nextPath }
+  const logicalUrl = formatLogicalPreviewUrl(updated)
   committedTarget.value = updated
   if (document.activeElement !== addressInputEl.value) {
-    addressInput.value = formatLogicalPreviewUrl(updated)
+    addressInput.value = logicalUrl
   }
-  emit("change", updated)
+  emit("change", logicalUrl)
 }
 
 watch(
@@ -264,10 +222,6 @@ watch(
     // Partition must be assigned before src and before DOM attachment.
     el.setAttribute("partition", WEB_PREVIEW_PARTITION)
     el.className = "min-h-0 h-full w-full flex-1 border-0 bg-white"
-    el.style.width = "100%"
-    el.style.height = "100%"
-    el.style.flex = "1 1 auto"
-    el.style.border = "0"
 
     const onDomReady = () => {
       webviewDomReady = true
@@ -307,8 +261,7 @@ watch(
     el.addEventListener("page-title-updated", onTitleUpdated)
     el.addEventListener("did-fail-load", onFailLoad)
 
-    const initialUrl = buildActualPreviewUrl(origin, committedTarget.value?.path ?? "/")
-    el.setAttribute("src", initialUrl)
+    el.setAttribute("src", buildActualPreviewUrl(origin, committedTarget.value?.path ?? "/"))
     host.replaceChildren(el)
 
     onCleanup(() => {
@@ -344,20 +297,22 @@ async function isActiveForwardRetired(): Promise<boolean> {
   }
 }
 
+function runWithLiveForward(action: () => void): void {
+  const currentForwardId = !useDirectLocal.value ? activeForwardId : undefined
+  if (!currentForwardId) {
+    action()
+    return
+  }
+  void isActiveForwardRetired().then(retired => {
+    if (activeForwardId !== currentForwardId || !resolvedOrigin.value) return
+    if (retired) retryNonce.value++
+    else action()
+  })
+}
+
 function reloadCurrentTarget(): void {
   if (isDesktopWebview.value) webviewEl?.reload?.()
   else iframeKey.value++
-}
-
-function navigateResolvedUrl(url: string, nextPath: string): void {
-  if (isDesktopWebview.value && webviewEl) {
-    if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(url)
-    else webviewEl.setAttribute("src", url)
-  } else if (!isDesktopWebview.value) {
-    mobileHistory.value = [...mobileHistory.value.slice(0, mobileHistoryIndex.value + 1), nextPath]
-    mobileHistoryIndex.value = mobileHistory.value.length - 1
-    iframeKey.value++
-  }
 }
 
 function applyTarget(raw: string): void {
@@ -367,69 +322,31 @@ function applyTarget(raw: string): void {
     return
   }
   const previous = committedTarget.value
-  const sameOrigin = Boolean(
-    previous
-    && previous.targetHost === parsed.targetHost
-    && previous.targetPort === parsed.targetPort
-    && resolvedOrigin.value,
-  )
+  const sameOrigin = Boolean(previous && previous.host === parsed.host && previous.port === parsed.port && resolvedOrigin.value)
+  const logicalUrl = formatLogicalPreviewUrl(parsed)
   committedTarget.value = parsed
-  addressInput.value = formatLogicalPreviewUrl(parsed)
-  emptyInput.value = ""
+  addressInput.value = logicalUrl
   addressError.value = null
   loadError.value = null
-  emit("change", parsed)
+  emit("change", logicalUrl)
 
   if (sameOrigin && resolvedOrigin.value) {
-    const nextActualUrl = buildActualPreviewUrl(resolvedOrigin.value, parsed.path)
-    if (!useDirectLocal.value && activeForwardId) {
-      const currentForwardId = activeForwardId
-      void isActiveForwardRetired().then(retired => {
-        if (activeForwardId !== currentForwardId || !resolvedOrigin.value) return
-        if (retired) {
-          retryNonce.value++
-          return
-        }
-        navigateResolvedUrl(buildActualPreviewUrl(resolvedOrigin.value, parsed.path), parsed.path)
-      })
-      return
-    }
-    navigateResolvedUrl(nextActualUrl, parsed.path)
+    runWithLiveForward(() => {
+      if (!resolvedOrigin.value) return
+      const url = buildActualPreviewUrl(resolvedOrigin.value, parsed.path)
+      if (isDesktopWebview.value && webviewEl) {
+        if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(url)
+        else webviewEl.setAttribute("src", url)
+      } else {
+        iframeKey.value++
+      }
+    })
   }
-}
-
-function submitAddress(): void {
-  applyTarget(addressInput.value)
-}
-
-function submitEmpty(): void {
-  applyTarget(emptyInput.value)
-}
-
-function updateMobileHistoryPath(index: number): void {
-  const path = mobileHistory.value[index]
-  if (!path || !committedTarget.value) return
-  mobileHistoryIndex.value = index
-  const updated: WebPreviewTarget = { ...committedTarget.value, path }
-  committedTarget.value = updated
-  addressInput.value = formatLogicalPreviewUrl(updated)
-  emit("change", updated)
-  iframeKey.value++
-}
-
-function goBack(): void {
-  if (isDesktopWebview.value) webviewEl?.goBack?.()
-  else if (mobileHistoryIndex.value > 0) updateMobileHistoryPath(mobileHistoryIndex.value - 1)
-}
-
-function goForward(): void {
-  if (isDesktopWebview.value) webviewEl?.goForward?.()
-  else if (mobileHistoryIndex.value < mobileHistory.value.length - 1) updateMobileHistoryPath(mobileHistoryIndex.value + 1)
 }
 
 function reload(): void {
   if (addressDirty.value && addressInput.value.trim()) {
-    submitAddress()
+    applyTarget(addressInput.value)
     return
   }
   loadError.value = null
@@ -437,19 +354,7 @@ function reload(): void {
     retryNonce.value++
     return
   }
-  if (!useDirectLocal.value && activeForwardId) {
-    const currentForwardId = activeForwardId
-    void isActiveForwardRetired().then(retired => {
-      if (activeForwardId !== currentForwardId) return
-      if (retired) {
-        retryNonce.value++
-        return
-      }
-      reloadCurrentTarget()
-    })
-    return
-  }
-  reloadCurrentTarget()
+  runWithLiveForward(reloadCurrentTarget)
 }
 
 function openExternal(): void {
@@ -470,17 +375,17 @@ function openDevTools(): void {
 <template>
   <section class="flex h-full min-h-0 flex-col bg-ui-surface text-ui-text" :aria-label="t('webPreview.title')" data-web-preview>
     <header class="flex shrink-0 items-center gap-1 border-b border-ui-border px-2 py-1.5">
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.back')" :disabled="!canGoBack" data-web-preview-back @click="goBack">
+      <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.back')" :disabled="!webviewCanGoBack" data-web-preview-back @click="webviewEl?.goBack?.()">
         <ArrowLeft :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.forward')" :disabled="!canGoForward" data-web-preview-forward @click="goForward">
+      <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.forward')" :disabled="!webviewCanGoForward" data-web-preview-forward @click="webviewEl?.goForward?.()">
         <ArrowRight :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.reload')" :disabled="!canReload && !connectError" data-web-preview-reload @click="reload">
+      <UiButton variant="ghost" size="icon" :label="t('webPreview.reload')" :disabled="!resolvedOrigin && !connectError" data-web-preview-reload @click="reload">
         <LoaderCircle v-if="connecting || pageLoading" :size="15" :stroke-width="1.75" class="animate-spin" aria-hidden="true" />
         <RotateCw v-else :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="submitAddress">
+      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="applyTarget(addressInput)">
         <input
           ref="addressInputEl"
           v-model="addressInput"
@@ -504,7 +409,7 @@ function openDevTools(): void {
           class="h-8 shrink-0 px-2.5 text-xs"
         >{{ t('webPreview.open') }}</UiButton>
       </form>
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.openExternal')" :disabled="!canOpenExternal" data-web-preview-external @click="openExternal">
+      <UiButton variant="ghost" size="icon" :label="t('webPreview.openExternal')" :disabled="!actualUrl" data-web-preview-external @click="openExternal">
         <ExternalLink :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
       <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.openDevTools')" :disabled="!canOpenDevTools" data-web-preview-devtools @click="openDevTools">
@@ -520,22 +425,6 @@ function openDevTools(): void {
       <Globe :size="28" class="mb-2 text-ui-text-muted" aria-hidden="true" />
       <p class="m-0 text-sm font-medium">{{ t('webPreview.emptyTitle') }}</p>
       <p class="m-0 mt-1 max-w-sm text-center text-[13px] leading-5 text-ui-text-muted">{{ t('webPreview.emptyDescription') }}</p>
-      <form class="mt-4 flex w-full max-w-xs items-center gap-2" @submit.prevent="submitEmpty">
-        <input
-          v-model="emptyInput"
-          type="text"
-          enterkeyhint="go"
-          spellcheck="false"
-          autocomplete="off"
-          autocapitalize="off"
-          :aria-label="t('webPreview.addressLabel')"
-          :placeholder="t('webPreview.portPlaceholder')"
-          data-web-preview-empty-input
-          class="ui-input h-8 min-w-0 flex-1 px-2.5 text-xs"
-          @input="addressError = null"
-        />
-        <UiButton type="submit" size="sm" variant="primary" data-web-preview-open>{{ t('webPreview.open') }}</UiButton>
-      </form>
       <div class="mt-3 flex flex-wrap items-center justify-center gap-1.5">
         <button
           v-for="port in QUICK_PORTS"

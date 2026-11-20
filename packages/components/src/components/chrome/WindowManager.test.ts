@@ -16,9 +16,9 @@ import WindowManager from "./WindowManager.vue"
 const mounted: Array<{ wrapper: VueWrapper; pinia: ReturnType<typeof createPinia> }> = []
 const desktopStub = { props: ["sessionId", "active"], template: '<div data-session-desktops :data-session-id="sessionId" :data-active="String(active)" />' }
 const webPreviewStub = {
-  props: ["sessionId", "active", "initialTarget"],
+  props: ["sessionId", "active", "initialUrl"],
   emits: ["title", "change"],
-  template: '<div data-session-web-preview :data-session-id="sessionId" :data-active="String(active)" :data-target="initialTarget ? `${initialTarget.displayHost}:${initialTarget.targetPort}${initialTarget.path}` : \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', { displayHost: \'localhost\', targetHost: \'localhost\', targetPort: 5173, path: \'/docs\' })" /></div>',
+  template: '<div data-session-web-preview :data-session-id="sessionId" :data-active="String(active)" :data-url="initialUrl ?? \'\'"><button type="button" data-stub-commit @click="$emit(\'change\', \'http://localhost:5173/docs\')" /></div>',
 }
 
 afterEach(async () => {
@@ -213,36 +213,23 @@ test("restoring a Chat-only layout never starts newly introduced desktop preview
 })
 
 test("offers web preview creation in + menu for desktop and mobile, and omits it on pure web", async () => {
-  const desktop = await setup("linux")
-  const changesGroup = desktop.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
-  ;(changesGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
-  await flushPromises()
-  expect(new DOMWrapper(document.body).find('[data-window-type="web-preview"]').exists()).toBe(true)
-  desktop.wrapper.unmount()
-  disposePinia(desktop.pinia)
-  mounted.splice(mounted.findIndex(value => value.wrapper === desktop.wrapper), 1)
-
-  const mobile = await setup({
-    platform: "web",
-    mobile: true,
-    ports: { start: vi.fn(), stop: vi.fn(), list: vi.fn() },
-  })
-  const mobileGroup = mobile.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
-  ;(mobileGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
-  await flushPromises()
-  expect(new DOMWrapper(document.body).find('[data-window-type="web-preview"]').exists()).toBe(true)
-  mobile.wrapper.unmount()
-  disposePinia(mobile.pinia)
-  mounted.splice(mounted.findIndex(value => value.wrapper === mobile.wrapper), 1)
-
-  const pureWeb = await setup({ platform: "web", mobile: false, ports: undefined })
-  const webGroup = pureWeb.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
-  ;(webGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
-  await flushPromises()
-  expect(new DOMWrapper(document.body).find('[data-window-type="web-preview"]').exists()).toBe(false)
+  for (const [opts, expected] of [
+    ["linux", true],
+    [{ platform: "web", mobile: true, ports: { start: vi.fn(), stop: vi.fn(), list: vi.fn() } }, true],
+    [{ platform: "web", mobile: false, ports: undefined }, false],
+  ] as const) {
+    const view = await setup(opts)
+    const changesGroup = view.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
+    ;(changesGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(new DOMWrapper(document.body).find('[data-window-type="web-preview"]').exists()).toBe(expected)
+    view.wrapper.unmount()
+    disposePinia(view.pinia)
+    mounted.splice(mounted.findIndex(value => value.wrapper === view.wrapper), 1)
+  }
 })
 
-test("opens multiple web previews, persists targets lazily across reload, and closes individual tabs", async () => {
+test("opens multiple web previews, persists URLs lazily across reload, and closes individual tabs", async () => {
   const first = await setup("linux")
   const openFromMenu = async () => {
     const group = first.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
@@ -254,8 +241,7 @@ test("opens multiple web previews, persists targets lazily across reload, and cl
 
   await openFromMenu()
   await openFromMenu()
-  const panels = first.api.panels.filter(panel => panel.id.startsWith("web-preview:"))
-  expect(panels).toHaveLength(2)
+  expect(first.api.panels.filter(panel => panel.id.startsWith("web-preview:"))).toHaveLength(2)
 
   await first.wrapper.get("[data-stub-commit]").trigger("click")
   await flushPromises()
@@ -264,8 +250,7 @@ test("opens multiple web previews, persists targets lazily across reload, and cl
   first.api.getPanel("changes")!.api.setActive()
   await flushPromises()
 
-  const storedRaw = window.localStorage.getItem(`deskfleet.window-layout-v4:${sessionId}`)
-  expect(storedRaw).toContain('"targetPort":5173')
+  expect(window.localStorage.getItem(`deskfleet.window-layout-v4:${sessionId}`)).toContain("http://localhost:5173/docs")
 
   first.wrapper.unmount()
   disposePinia(first.pinia)
@@ -276,15 +261,13 @@ test("opens multiple web previews, persists targets lazily across reload, and cl
   expect(restored).toHaveLength(2)
   expect(second.wrapper.findAll('[data-session-web-preview][data-active="true"]')).toHaveLength(0)
 
-  const persistedPanel = restored.find(panel => Boolean(panel.params?.target))!
-  expect(persistedPanel).toBeDefined()
+  const persistedPanel = restored.find(panel => Boolean(panel.params?.url))!
   expect(persistedPanel.api.title).toBe("localhost:5173")
   persistedPanel.api.setActive()
   await flushPromises()
-  expect(second.wrapper.get('[data-session-web-preview][data-active="true"]').attributes("data-target")).toBe("localhost:5173/docs")
+  expect(second.wrapper.get('[data-session-web-preview][data-active="true"]').attributes("data-url")).toBe("http://localhost:5173/docs")
 
-  const tabClose = second.wrapper.get(`[data-window-tab-id="${restored[0]!.id}"] button`)
-  await tabClose.trigger("click")
+  await second.wrapper.get(`[data-window-tab-id="${restored[0]!.id}"] button`).trigger("click")
   await flushPromises()
   expect(second.api.panels.filter(panel => panel.id.startsWith("web-preview:"))).toHaveLength(1)
 })
