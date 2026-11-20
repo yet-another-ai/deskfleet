@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join } from "node:path"
 import { createInterface } from "node:readline"
 import test, { type TestContext } from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
@@ -142,6 +142,56 @@ test("Pi runs the bundled ACP bridge with its configured CLI and continues saved
   await pi.exited(launches[1]!.pid as number)
 })
 
+test("Pi registers injected MCP servers with the current configuration on new and loaded sessions", { timeout: 20_000, skip: process.platform === "win32" }, async t => {
+  const pi = await fixture(t)
+  const connection = await pi.connect()
+  assert.equal(connection.initialization.agentCapabilities?.mcpCapabilities?.http, true)
+  assert.equal(connection.initialization.agentCapabilities?.mcpCapabilities?.sse, false)
+  const stdio = {
+    name: "deskfleet",
+    command: "/path with spaces/mcp",
+    args: ["--stdio", "literal argument"],
+    env: [{ name: "LEASE", value: "initial-lease" }, { name: "LITERAL", value: "!echo ${PI_VALUE}" }],
+  }
+  const http = {
+    name: "remote",
+    type: "http" as const,
+    url: "https://tools.example.test/mcp",
+    headers: [{ name: "Authorization", value: "Bearer ${MCP_TOKEN}" }],
+  }
+  const created = await connection.newSession({ cwd: pi.cwd, mcpServers: [stdio, http] })
+  await connection.close()
+
+  const resumed = await pi.connect()
+  await resumed.resume({
+    sessionId: created.sessionId, cwd: pi.cwd,
+    mcpServers: [{ ...stdio, env: [{ name: "LEASE", value: "refreshed-lease" }] }],
+  })
+  await resumed.close()
+
+  const events = await pi.log()
+  const launches = events.filter(event => event.type === "launch")
+  assert.equal(launches.length, 2)
+  for (const launch of launches) {
+    const args = launch.args as string[]
+    const extensionArgument = args.indexOf("--extension")
+    assert.notEqual(extensionArgument, -1, "Pi receives a session extension")
+    const extension = args[extensionArgument + 1]
+    assert.ok(extension && isAbsolute(extension), "Pi receives an absolute extension path")
+    assert.doesNotMatch(JSON.stringify(args), /initial-lease|refreshed-lease|MCP_TOKEN/)
+    await assert.rejects(access(extension), { code: "ENOENT" }, "adapter shutdown removes the MCP handoff")
+  }
+  const registrations = events.filter(event => event.type === "mcp-registration")
+  assert.deepEqual(registrations.map(({ pid, name }) => [pid, name]), [
+    [launches[0]!.pid, stdio.name], [launches[0]!.pid, http.name], [launches[1]!.pid, stdio.name],
+  ])
+  assert.deepEqual(registrations.map(({ config }) => config), [
+    { command: stdio.command, args: stdio.args, env: { LEASE: "initial-lease", LITERAL: "$!echo $${PI_VALUE}" }, exposure: "direct" },
+    { url: http.url, headers: { Authorization: "Bearer $${MCP_TOKEN}" }, exposure: "direct" },
+    { command: stdio.command, args: stdio.args, env: { LEASE: "refreshed-lease" }, exposure: "direct" },
+  ])
+})
+
 test("Pi CLI fixture survives a closed output pipe until adapter disposal", { timeout: 10_000 }, async t => {
   const pi = await fixture(t)
   const child = spawn(process.execPath, [fileURLToPath(new URL("./fixtures/pi-rpc-agent.ts", import.meta.url))], {
@@ -188,8 +238,10 @@ test("Pi disposes its CLI when ACP output closes before input", { timeout: 15_00
   const pi = await fixture(t)
   const child = spawn(process.execPath, [fileURLToPath(new URL("./main.ts", import.meta.url)), "--pi-acp"], {
     env: { ...process.env, ...pi.env, PI_ACP_PI_COMMAND: pi.binaryPath },
-    stdio: ["pipe", "pipe", "inherit"],
+    stdio: ["pipe", "pipe", "pipe"],
   })
+  const stderr: Buffer[] = []
+  child.stderr.on("data", chunk => stderr.push(chunk))
   const exited = once(child, "close")
   const lines = createInterface({ input: child.stdout })
   t.after(async () => {
@@ -216,6 +268,10 @@ test("Pi disposes its CLI when ACP output closes before input", { timeout: 15_00
   }
   try {
     await request("initialize", { protocolVersion: 1, clientCapabilities: {} })
+    await assert.rejects(request("session/new", {
+      cwd: "relative",
+      mcpServers: [{ name: "deskfleet", command: process.execPath, args: [], env: [{ name: "LEASE", value: "test-secret-lease" }] }],
+    }), /cwd must be an absolute path/u)
     const commandsUpdated = new Promise<void>(resolve => {
       const received = (line: string) => {
         const message = JSON.parse(line)
@@ -238,6 +294,9 @@ test("Pi disposes its CLI when ACP output closes before input", { timeout: 15_00
     const [code, signal] = await exited
     assert.equal(code, 0)
     assert.equal(signal, null)
+    const diagnostics = Buffer.concat(stderr).toString()
+    assert.match(diagnostics, /MCP server settings redacted/u)
+    assert.doesNotMatch(diagnostics, /test-secret-lease/u)
     await pi.exited(launched.pid as number)
   } finally {
     lines.close()

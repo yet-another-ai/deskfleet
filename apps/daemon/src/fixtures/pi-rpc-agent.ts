@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
+import { pathToFileURL } from "node:url"
 
 const args = process.argv.slice(2)
 const logPath = process.env.DESKFLEET_TEST_PI_LOG!
@@ -31,6 +32,15 @@ process.on("SIGTERM", () => {
   process.exit(0)
 })
 record({ type: "launch", pid: process.pid, args, cwd: process.cwd(), extra: process.env.DESKFLEET_TEST_VALUE, piCommand: process.env.PI_ACP_PI_COMMAND })
+const extensionArgument = args.indexOf("--extension")
+if (extensionArgument >= 0) {
+  const { default: extension } = await import(pathToFileURL(args[extensionArgument + 1]!).href)
+  await extension({
+    registerMcpServer(name: string, config: unknown) {
+      record({ type: "mcp-registration", pid: process.pid, name, config })
+    },
+  })
+}
 save()
 
 for await (const line of createInterface({ input: process.stdin })) {
