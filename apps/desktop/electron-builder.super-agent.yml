@@ -1,0 +1,13 @@
+extends: ./electron-builder.yml
+appId: io.github.yet-another-ai.deskfleet.workspace-agent
+productName: DeskFleet Workspace Agent
+executableName: deskfleet-workspace-agent
+extraMetadata:
+  name: deskfleet-workspace-agent
+  productName: DeskFleet Workspace Agent
+artifactName: "deskfleet-workspace-agent-${version}-${os}-${arch}.${ext}"
+publish: null
+mac:
+  type: distribution
+  forceCodeSigning: true
+  notarize: false

@@ -52,7 +52,7 @@ function nixManagedDarwinInstall(): boolean {
 }
 
 export function resolveDesktopInstallSource(): Extract<UpdateInstallSource, "desktop_installer" | "package_manager" | "development"> {
-  if (!app.isPackaged) return "development"
+  if (!app.isPackaged || app.getName() === "DeskFleet Workspace Agent") return "development"
   if (nixManagedDarwinInstall()) return "package_manager"
   if (process.platform === "linux" && !process.env.APPIMAGE) return "package_manager"
   return "desktop_installer"

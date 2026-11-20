@@ -10,6 +10,7 @@ const { handle, app, loadUpdater, createDriver, createAppImageUpdater, appImageU
   handle: vi.fn(), app: {
     isPackaged: false,
     getVersion: () => "0.1.0",
+    getName: vi.fn(() => "deskfleet"),
     getPath: vi.fn(() => "/Applications/DeskFleet.app/Contents/MacOS/deskfleet"),
   }, loadUpdater: vi.fn(), createDriver: vi.fn(), createAppImageUpdater: vi.fn(), appImageUpdater: {},
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
@@ -29,6 +30,7 @@ const controllers: UpdateController[] = []
 const originalPlatform = process.platform
 beforeEach(() => {
   vi.clearAllMocks()
+  app.getName.mockReturnValue("deskfleet")
   app.isPackaged = false
   app.getPath.mockReturnValue("/Applications/DeskFleet.app/Contents/MacOS/deskfleet")
   createDriver.mockReturnValue(driver)
@@ -79,6 +81,14 @@ test("development installs disabled IPC without importing or creating the update
   expect(loadUpdater).not.toHaveBeenCalled()
   expect(createDriver).not.toHaveBeenCalled()
   expect(handle).toHaveBeenCalledWith(UPDATES_CHANNEL, expect.any(Function))
+})
+
+test("an independent workspace-agent build cannot install the upstream release", async () => {
+  app.isPackaged = true
+  app.getName.mockReturnValue("DeskFleet Workspace Agent")
+  expect(resolveDesktopInstallSource()).toBe("development")
+  await installUpdates({ shutdown: vi.fn() } as never, async () => {})
+  expect(loadUpdater).not.toHaveBeenCalled()
 })
 
 test("extracted Linux bundles are disabled while AppImage installs can update", async () => {
