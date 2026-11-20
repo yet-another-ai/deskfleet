@@ -67,11 +67,17 @@ impl Session {
         }
     }
 
-    fn refresh(&mut self) -> Result<()> {
+    fn refresh(&mut self) -> Result<Option<String>> {
         match self {
-            Self::Local(session) => session.refresh_desktop(),
+            Self::Local(session) => {
+                session.refresh_desktop()?;
+                Ok(session.poll_clipboard().unwrap_or(None))
+            }
             #[cfg(target_os = "linux")]
-            Self::Android(session) => session.refresh_desktop(),
+            Self::Android(session) => {
+                session.refresh_desktop()?;
+                session.poll_clipboard()
+            }
             #[cfg(windows)]
             Self::Service { client, .. } => client.refresh_input().map_err(service_error),
         }
@@ -136,6 +142,14 @@ pub struct InputWorker {
 impl InputWorker {
     /// Initialize input only for an explicitly authorized desktop controller.
     pub async fn start(display_id: u32) -> Result<Self> {
+        Self::start_with_peer(display_id, None).await
+    }
+
+    /// Initialize input and emit remote clipboard updates over `"deskfleet-input"`.
+    pub async fn start_with_peer(
+        display_id: u32,
+        peer: Option<Arc<crate::rtc::Peer>>,
+    ) -> Result<Self> {
         let (sender, mut receiver) = mpsc::channel::<Command>(32);
         let (ready, initialized) = oneshot::channel();
         let stopped = Arc::new(AtomicBool::new(false));
@@ -167,7 +181,16 @@ impl InputWorker {
                         Ok(None) => break,
                         Err(_) => {
                             match session.refresh() {
-                                Ok(()) => refresh_failed = false,
+                                Ok(clipboard) => {
+                                    refresh_failed = false;
+                                    if let (Some(peer), Some(text)) = (peer.as_ref(), clipboard)
+                                        && let Ok(payload) =
+                                            serde_json::to_string(&InputEvent::Clipboard { text })
+                                    {
+                                        let _ = runtime
+                                            .block_on(peer.send_text("deskfleet-input", &payload));
+                                    }
+                                }
                                 Err(error) if !refresh_failed => {
                                     tracing::warn!(%error, "desktop input refresh failed");
                                     refresh_failed = true;

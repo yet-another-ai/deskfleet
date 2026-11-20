@@ -39,6 +39,14 @@ impl X11Input {
         }
         self.connection.key(code, pressed).map_err(platform_error)
     }
+
+    pub(super) fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        self.connection.set_clipboard(text).map_err(platform_error)
+    }
+
+    pub(super) fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        self.connection.poll_clipboard().map_err(platform_error)
+    }
 }
 
 fn platform_error(error: deskfleet_x11::Error) -> InputError {

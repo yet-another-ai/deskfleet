@@ -19,6 +19,7 @@ pub(crate) struct ToolbarState {
     pub(crate) ui: UiState,
     pub(crate) paused: bool,
     pub(crate) reverse_scroll: bool,
+    pub(crate) clipboard_sharing: bool,
     pub(crate) fullscreen: bool,
     pub(crate) dark: bool,
     pub(crate) settings_open: bool,
@@ -35,6 +36,7 @@ impl Default for ToolbarState {
             ui: UiState::default(),
             paused: false,
             reverse_scroll: false,
+            clipboard_sharing: true,
             fullscreen: false,
             dark: false,
             settings_open: false,
@@ -42,7 +44,7 @@ impl Default for ToolbarState {
             toolbar_size: (480., 42.),
             viewport: (960., 640.),
             panel_position: (12., 62.),
-            panel_height: 176.,
+            panel_height: 204.,
         }
     }
 }
@@ -64,6 +66,7 @@ pub(crate) enum ToolbarAction {
     SelectDisplay(u32),
     SetControl(bool),
     SetReverseScroll(bool),
+    SetClipboardSharing(bool),
     SecureAttention,
     Reconnect,
     Disconnect,
@@ -535,6 +538,12 @@ fn settings(state: &ToolbarState, p: Palette) -> impl IntoElement + use<> {
             state.reverse_scroll,
             label(locale, "reverseScroll"),
             ToolbarAction::SetReverseScroll,
+            p,
+        ))
+        .child(settings_checkbox(
+            state.clipboard_sharing,
+            label(locale, "clipboard"),
+            ToolbarAction::SetClipboardSharing,
             p,
         ));
     if let Some(error) = &ui.settings_error {

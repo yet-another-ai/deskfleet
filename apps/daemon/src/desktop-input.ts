@@ -45,10 +45,18 @@ export class DesktopInputChannel {
     if (event.label !== DESKTOP_INPUT_CHANNEL) return
     if (event.kind === "dataChannelOpen") { this.#open = true; await this.#ready() }
     if (event.kind !== "data") return
-    if (!event.isString || !event.data || event.data.length > 4096) throw new Error("Invalid desktop input message")
+    if (!event.isString || !event.data || event.data.length > 65_536) throw new Error("Invalid desktop input message")
     const text = event.data.toString("utf8")
-    const message: unknown = JSON.parse(text)
-    if (typeof message === "object" && message !== null && "type" in message && message.type === "configure") {
+    let message: unknown
+    try {
+      message = JSON.parse(text)
+    } catch (error) {
+      if (event.data.length > 4096) throw new Error("Invalid desktop input message")
+      throw error
+    }
+    const kind = typeof message === "object" && message !== null && "type" in message ? message.type : undefined
+    if (kind !== "clipboard" && event.data.length > 4096) throw new Error("Invalid desktop input message")
+    if (kind === "configure") {
       await this.#configure(message as Record<string, unknown>)
       return
     }

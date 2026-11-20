@@ -1,5 +1,6 @@
 //! Bidirectional physical-key tables shared by capture and injection.
 
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
 macro_rules! key_mapping {
     ($native:ty; $($code:literal $(| $alias:literal)* => $value:tt,)*) => {
         pub(super) fn keycode(code: &str) -> Option<$native> {

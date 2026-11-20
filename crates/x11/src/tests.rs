@@ -397,3 +397,23 @@ fn x11_input_and_held_state_cleanup_stop_when_server_replies_stall() {
         .unwrap();
     assert!(!key_pressed(&connection, keycode));
 }
+
+#[test]
+#[ignore = "operates a disposable Xvfb server"]
+fn x11_clipboard_exchanges_utf8_selection_in_both_directions() {
+    let source = display::enumerate(&connect_display()).unwrap().remove(0);
+    let mut first = InputConnection::new(source.id).unwrap();
+    let mut second = InputConnection::new(source.id).unwrap();
+
+    first.set_clipboard("from viewer").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut received = None;
+    while Instant::now() < deadline && received.is_none() {
+        let _ = first.poll_clipboard().unwrap();
+        received = second.poll_clipboard().unwrap();
+        if received.is_none() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    assert_eq!(received.as_deref(), Some("from viewer"));
+}

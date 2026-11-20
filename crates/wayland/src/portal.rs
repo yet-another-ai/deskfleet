@@ -29,6 +29,7 @@ pub struct Live {
     pub sources: Vec<Source>,
     pub snapshot: PermissionSnapshot,
     pub input: Option<Eis>,
+    pub clipboard: crate::clipboard::SessionClipboard,
 }
 
 impl Live {
@@ -50,6 +51,7 @@ impl Live {
     }
 
     pub async fn close(mut self) {
+        drop(self.clipboard);
         if let Some(input) = self.input.as_mut() {
             let _ = input.detach();
         }
@@ -190,9 +192,14 @@ pub async fn authorize(
         ]),
     )
     .await?;
+    crate::clipboard::request_clipboard(&connection, &session).await;
     // Persistence belongs to RemoteDesktop.SelectDevices for a combined session.
     let mut selected =
         request(&connection, REMOTE, "Start", Some(&session), HashMap::new()).await?;
+    let clipboard_enabled = selected
+        .remove("clipboard_enabled")
+        .and_then(|value| bool::try_from(value).ok())
+        .unwrap_or(false);
     let grants = selected
         .remove("devices")
         .map(u32::try_from)
@@ -220,6 +227,8 @@ pub async fn authorize(
         .as_ref()
         .is_some_and(|input| sources.iter().any(|source| input.controls(source)));
     let snapshot = granted_snapshot(!sources.is_empty(), control, returned_token.is_some());
+    let clipboard =
+        crate::clipboard::bind_session(&connection, &session, clipboard_enabled && control).await;
     Ok(Live {
         connection,
         session,
@@ -228,6 +237,7 @@ pub async fn authorize(
         sources,
         snapshot,
         input,
+        clipboard,
     })
 }
 

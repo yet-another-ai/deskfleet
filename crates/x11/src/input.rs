@@ -8,7 +8,9 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 
-use crate::{Error, Result, Source, connection::Watchdog, display, keys, platform};
+use crate::{
+    Error, Result, Source, clipboard::Clipboard, connection::Watchdog, display, keys, platform,
+};
 
 pub(crate) fn initialize(connection: &RustConnection) -> Result<()> {
     connection
@@ -40,6 +42,7 @@ pub struct InputConnection {
     buttons: BTreeSet<u8>,
     scroll: (f64, f64),
     source_error: Option<Error>,
+    clipboard: Option<Clipboard>,
     watchdog: Watchdog,
 }
 
@@ -48,6 +51,9 @@ impl InputConnection {
         let (connection, deadline) = display::connect_with_deadline()?;
         deadline.finish(initialize(&connection))?;
         let source = deadline.finish(display::select(&connection, source_id))?;
+        let clipboard = deadline
+            .finish(Clipboard::new(&connection, source.root))
+            .ok();
         drop(deadline);
         let watchdog = Watchdog::new(connection.stream())?;
         Ok(Self {
@@ -58,6 +64,7 @@ impl InputConnection {
             buttons: BTreeSet::new(),
             scroll: (0.0, 0.0),
             source_error: None,
+            clipboard,
         })
     }
 
@@ -180,6 +187,31 @@ impl InputConnection {
         deadline.finish(self.release_all_inner())
     }
 
+    pub fn set_clipboard(&mut self, text: &str) -> Result<()> {
+        let deadline = self.watchdog.operation()?;
+        deadline.finish(self.set_clipboard_inner(text))
+    }
+
+    fn set_clipboard_inner(&mut self, text: &str) -> Result<()> {
+        self.check_source()?;
+        let Some(clipboard) = &mut self.clipboard else {
+            return Ok(());
+        };
+        clipboard.set_text(&self.connection, text)
+    }
+
+    pub fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        let deadline = self.watchdog.operation()?;
+        deadline.finish(self.poll_clipboard_inner())
+    }
+
+    fn poll_clipboard_inner(&mut self) -> Result<Option<String>> {
+        let Some(clipboard) = &mut self.clipboard else {
+            return Ok(None);
+        };
+        clipboard.poll_text(&self.connection)
+    }
+
     fn release_all_inner(&mut self) -> Result<()> {
         let mut error = None;
         for (code, keycode) in self
@@ -218,6 +250,8 @@ impl Drop for InputConnection {
     fn drop(&mut self) {
         if let Err(error) = self.release_all() {
             tracing::warn!(%error, "X11 input cleanup failed");
+        } else if let Some(clipboard) = &mut self.clipboard {
+            clipboard.cleanup(&self.connection);
         }
     }
 }

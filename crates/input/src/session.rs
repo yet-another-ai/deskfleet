@@ -5,6 +5,7 @@ pub(super) struct Controller<B: Backend> {
     keys: Vec<String>,
     buttons: Vec<u8>,
     desktop_reset_pending: bool,
+    last_clipboard: Option<String>,
 }
 
 impl<B: Backend> Controller<B> {
@@ -14,6 +15,7 @@ impl<B: Backend> Controller<B> {
             keys: Vec::new(),
             buttons: Vec::new(),
             desktop_reset_pending: false,
+            last_clipboard: None,
         }
     }
 
@@ -31,12 +33,30 @@ impl<B: Backend> Controller<B> {
     }
 
     pub(super) fn refresh_desktop(&mut self) -> Result<()> {
-        self.desktop_reset_pending |= self.backend.prepare()?;
+        let desktop_changed = self.backend.prepare()?;
+        if desktop_changed {
+            self.last_clipboard = None;
+        }
+        self.desktop_reset_pending |= desktop_changed;
         if self.desktop_reset_pending {
             self.release_held()?;
             self.desktop_reset_pending = false;
         }
         Ok(())
+    }
+
+    pub(super) fn poll_clipboard(&mut self) -> Result<Option<String>> {
+        let Some(text) = self.backend.poll_clipboard()? else {
+            return Ok(None);
+        };
+        if text.is_empty()
+            || text.len() > crate::MAX_CLIPBOARD_BYTES
+            || self.last_clipboard.as_deref() == Some(text.as_str())
+        {
+            return Ok(None);
+        }
+        self.last_clipboard = Some(text.clone());
+        Ok(Some(text))
     }
 
     fn apply(&mut self, event: InputEvent) -> Result<()> {
@@ -88,6 +108,24 @@ impl<B: Backend> Controller<B> {
             InputEvent::SecureAttention => {
                 self.release_all()?;
                 self.backend.secure_attention()
+            }
+            InputEvent::Clipboard { text } => {
+                if self.last_clipboard.as_deref() == Some(text.as_str()) {
+                    return Ok(());
+                }
+                match self.backend.set_clipboard(&text) {
+                    Ok(()) => {
+                        self.last_clipboard = Some(text);
+                        Ok(())
+                    }
+                    // Clipboard sync is best-effort; a contended or unsupported
+                    // clipboard must not drop held keys or tear down control.
+                    Err(InputError::Unsupported(_)) => Ok(()),
+                    Err(error) => {
+                        tracing::debug!(%error, "desktop clipboard update failed");
+                        Ok(())
+                    }
+                }
             }
             InputEvent::ReleaseAll => self.release_all(),
         }

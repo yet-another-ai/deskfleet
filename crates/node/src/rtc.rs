@@ -326,7 +326,7 @@ impl NativePeer {
         let display_id = config.display_id;
         let input = if config.control.unwrap_or(false) {
             Some(
-                InputWorker::start(config.display_id)
+                InputWorker::start_with_peer(config.display_id, Some(Arc::clone(&self.peer)))
                     .await
                     .map_err(native_error)?,
             )
@@ -371,7 +371,7 @@ impl NativePeer {
         if enabled {
             if input.is_none() {
                 *input = Some(
-                    InputWorker::start(desktop.display_id)
+                    InputWorker::start_with_peer(desktop.display_id, Some(Arc::clone(&self.peer)))
                         .await
                         .map_err(native_error)?,
                 );
@@ -391,7 +391,7 @@ impl NativePeer {
     /// Apply a desktop DataChannel message after the daemon checks its control grant.
     #[napi]
     pub async fn send_desktop_input(&self, message: String) -> Result<()> {
-        if message.len() > 4096 {
+        if message.len() > 65_536 {
             return Err(native_error("desktop input message is too large"));
         }
         let event = serde_json::from_str(&message).map_err(native_error)?;

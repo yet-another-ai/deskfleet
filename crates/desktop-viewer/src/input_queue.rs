@@ -46,10 +46,12 @@ impl Sender {
             let mut pending = self.pending.lock().map_err(|_| "input queue poisoned")?;
             if matches!(event, InputEvent::ReleaseAll) {
                 pending.clear();
-            } else if matches!(event, InputEvent::PointerMove { .. })
-                && matches!(pending.back(), Some(InputEvent::PointerMove { .. }))
+            } else if (matches!(event, InputEvent::PointerMove { .. })
+                && matches!(pending.back(), Some(InputEvent::PointerMove { .. })))
+                || (matches!(event, InputEvent::Clipboard { .. })
+                    && matches!(pending.back(), Some(InputEvent::Clipboard { .. })))
             {
-                // Never move pointer updates across a key, button, or wheel.
+                // Never move pointer or clipboard updates across a key, button, or wheel.
                 pending.pop_back();
             } else if pending.len() == CAPACITY {
                 // The ordered channel delivers any in-flight event first.

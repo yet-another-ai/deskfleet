@@ -1,6 +1,8 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -26,6 +28,11 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private var dragging = false
     private var closeSent = false
+    private val clipboardSync = RemoteDesktopClipboard()
+    private var clipboardManager: ClipboardManager? = null
+    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+        syncLocalClipboardToRemote()
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,12 +101,33 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
             setOnClickListener { requestCloseAndFinish() }
         }
+        val clipboardButton = TextView(this).apply {
+            text = "📋"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(12f), dp(6f), dp(12f), dp(6f))
+            gravity = Gravity.CENTER
+            contentDescription = "Clipboard sharing"
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18f).toFloat()
+                setColor(Color.argb(140, 20, 20, 24))
+                setStroke(dp(1f), Color.argb(90, 255, 255, 255))
+            }
+            setOnClickListener { syncLocalClipboardToRemote() }
+        }
+
+        clipboardManager = getSystemService(ClipboardManager::class.java)?.also {
+            it.addPrimaryClipChangedListener(clipListener)
+        }
 
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(surfaceView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(closeButton, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
                 setMargins(m, m, m, m)
+            })
+            addView(clipboardButton, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
+                setMargins(m + dp(46f), m, m, m)
             })
         })
 
@@ -113,9 +141,34 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemBars() else {
+        if (hasFocus) {
+            hideSystemBars()
+            window.decorView.post { syncLocalClipboardToRemote(onFocus = true) }
+        } else {
             dragging = false
             DeskFleetBridge.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
+        }
+    }
+
+    internal fun applyRemoteClipboard(payload: String) {
+        val text = clipboardSync.acceptIncomingEvent(payload) ?: return
+        runOnUiThread {
+            runCatching {
+                clipboardManager?.setPrimaryClip(ClipData.newPlainText("DeskFleet", text))
+            }
+        }
+    }
+
+    private fun syncLocalClipboardToRemote(onFocus: Boolean = false) {
+        runCatching {
+            val clip = clipboardManager?.primaryClip
+            val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
+            val command = if (onFocus) {
+                clipboardSync.takeFocusCommand(text)
+            } else {
+                clipboardSync.takeOutgoingCommand(text)
+            } ?: return
+            DeskFleetBridge.nativeSendCommand(command)
         }
     }
 
@@ -153,6 +206,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        runCatching { clipboardManager?.removePrimaryClipChangedListener(clipListener) }
         val active = DeskFleetBridge.activeActivity?.get() === this
         if (active) DeskFleetBridge.activeActivity = null
         if (active && isFinishing && !closeSent) {

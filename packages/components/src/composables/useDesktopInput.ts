@@ -1,6 +1,6 @@
 import { useDocumentVisibility, useEventListener, watchImmediate } from "@vueuse/core"
 import { onScopeDispose, watch, type Ref } from "vue"
-import type { DesktopInputMessage, DesktopPointerButton } from "../../../client/src/desktop-input.ts"
+import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPointerButton } from "../../../client/src/desktop-input.ts"
 
 interface Point { x: number; y: number }
 const buttonMasks: readonly (readonly [DesktopPointerButton, number])[] = [[0, 1], [1, 4], [2, 2], [3, 8], [4, 16]]
@@ -34,14 +34,143 @@ export function useDesktopInput(
   enabled: Readonly<Ref<boolean>>,
   send: (message: DesktopInputMessage) => boolean,
   reverseScroll?: Readonly<Ref<boolean>>,
+  clipboardSharing?: Readonly<Ref<boolean>>,
+  remoteClipboard?: Readonly<Ref<{ id: number; text: string } | null>>,
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
   const pointers = new Set<number>()
   const macClient = navigator.platform.startsWith("Mac")
   let lastPoint: Point = { x: 0, y: 0 }
+  let lastObservedLocal: string | null = null
+  let lastRemoteSynced: string | null = null
+  let baselineSeeded = false
+  let clipboardSeq = 0
+  let pasteBarrierQueue: (() => void)[] | null = null
+  let pasteBarrierGeneration = 0
+  let pasteBarrierTimer: ReturnType<typeof setTimeout> | null = null
+  const textEncoder = new TextEncoder()
+
+  function clipboardAllowed(): boolean {
+    return enabled.value && (clipboardSharing?.value ?? true)
+  }
+
+  function sanitizeClipboard(raw: string): string | null {
+    const text = raw.replaceAll("\0", "")
+    if (!text || textEncoder.encode(text).byteLength > MAX_DESKTOP_CLIPBOARD_BYTES) return null
+    return text
+  }
+
+  function sendClipboardText(raw: string): void {
+    if (!clipboardAllowed()) return
+    const text = sanitizeClipboard(raw)
+    if (!text) return
+    lastObservedLocal = text
+    baselineSeeded = true
+    if (text === lastRemoteSynced) return
+    if (send({ type: "clipboard", text })) {
+      lastRemoteSynced = text
+    }
+  }
+
+  async function seedLocalClipboardBaseline(): Promise<void> {
+    if (baselineSeeded || !clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
+    try {
+      const text = sanitizeClipboard(await navigator.clipboard.readText())
+      if (seq !== clipboardSeq) return
+      baselineSeeded = true
+      if (text && lastObservedLocal === null) {
+        lastObservedLocal = text
+      }
+    } catch {
+      // Browser denied unprompted or unfocused clipboard read; retry baseline seed on focus.
+    }
+  }
+
+  async function syncLocalClipboardOnFocus(): Promise<void> {
+    if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
+    try {
+      const text = sanitizeClipboard(await navigator.clipboard.readText())
+      if (seq !== clipboardSeq) return
+      if (!baselineSeeded) {
+        baselineSeeded = true
+        if (text && lastObservedLocal === null) {
+          lastObservedLocal = text
+        }
+        return
+      }
+      if (!text || text === lastObservedLocal) return
+      sendClipboardText(text)
+    } catch {
+      // Browsers may reject background or unpermitted clipboard reads.
+    }
+  }
+
+  async function syncLocalClipboardForPaste(generation: number): Promise<void> {
+    if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
+    try {
+      const text = await navigator.clipboard.readText()
+      if (generation !== pasteBarrierGeneration || pasteBarrierQueue === null || seq !== clipboardSeq) return
+      sendClipboardText(text)
+    } catch {
+      // Browsers may reject unpermitted clipboard reads.
+    }
+  }
+
+  function handlePaste(event: ClipboardEvent): void {
+    if (!clipboardAllowed()) return
+    const text = event.clipboardData?.getData("text/plain")
+    if (text) {
+      clipboardSeq += 1
+      sendClipboardText(text)
+    }
+  }
+
+  function clearPasteBarrier(): void {
+    pasteBarrierGeneration += 1
+    clipboardSeq += 1
+    pasteBarrierQueue = null
+    if (pasteBarrierTimer !== null) {
+      clearTimeout(pasteBarrierTimer)
+      pasteBarrierTimer = null
+    }
+  }
+
+  function flushPasteBarrier(generation: number): void {
+    if (generation !== pasteBarrierGeneration || pasteBarrierQueue === null) return
+    pasteBarrierGeneration += 1
+    clipboardSeq += 1
+    const queue = pasteBarrierQueue
+    pasteBarrierQueue = null
+    if (pasteBarrierTimer !== null) {
+      clearTimeout(pasteBarrierTimer)
+      pasteBarrierTimer = null
+    }
+    const flushedGeneration = pasteBarrierGeneration
+    for (const action of queue) {
+      if (!enabled.value || flushedGeneration !== pasteBarrierGeneration) break
+      action()
+    }
+  }
+
+  function isPasteShortcut(event: KeyboardEvent): boolean {
+    if (event.repeat) return false
+    if (event.code === "KeyV") {
+      return event.ctrlKey || event.metaKey
+        || keys.has("ControlLeft") || keys.has("ControlRight")
+        || keys.has("MetaLeft") || keys.has("MetaRight")
+    }
+    if (event.code === "Insert") {
+      return event.shiftKey || keys.has("ShiftLeft") || keys.has("ShiftRight")
+    }
+    return false
+  }
 
   function release(): void {
+    clearPasteBarrier()
     if (buttons.size || keys.size) send({ type: "releaseAll" })
     buttons.clear()
     keys.clear()
@@ -129,27 +258,60 @@ export function useDesktopInput(
     }
   }
 
+  function deliverKeyDown(code: string, repeat: boolean): void {
+    if (!enabled.value) return
+    if (send({ type: "key", code, pressed: true, repeat })) keys.add(code)
+  }
+
+  function deliverKeyUp(code: string): void {
+    if (!keys.has(code)) return
+    send({ type: "key", code, pressed: false, repeat: false })
+    keys.delete(code)
+    if (macClient && (code === "MetaLeft" || code === "MetaRight")) {
+      // macOS browsers can omit key-up events for keys used while Command is held.
+      for (const held of [...keys]) {
+        if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(held)) continue
+        send({ type: "key", code: held, pressed: false, repeat: false })
+        keys.delete(held)
+      }
+    }
+  }
+
   function keyDown(event: KeyboardEvent): void {
     if (!enabled.value || event.isComposing || !event.code || event.code === "Unidentified") return
     event.preventDefault()
     event.stopPropagation()
-    if (send({ type: "key", code: event.code, pressed: true, repeat: event.repeat })) keys.add(event.code)
+    const { code, repeat } = event
+    if (pasteBarrierQueue !== null) {
+      pasteBarrierQueue.push(() => deliverKeyDown(code, repeat))
+      return
+    }
+    if (
+      isPasteShortcut(event)
+      && clipboardAllowed()
+      && typeof navigator.clipboard?.readText === "function"
+    ) {
+      const generation = ++pasteBarrierGeneration
+      pasteBarrierQueue = [() => deliverKeyDown(code, false)]
+      pasteBarrierTimer = setTimeout(() => flushPasteBarrier(generation), 150)
+      void syncLocalClipboardForPaste(generation).finally(() => flushPasteBarrier(generation))
+      return
+    }
+    deliverKeyDown(code, repeat)
   }
 
   function keyUp(event: KeyboardEvent): void {
-    if (!keys.has(event.code)) return
+    const { code } = event
+    if (pasteBarrierQueue !== null) {
+      event.preventDefault()
+      event.stopPropagation()
+      pasteBarrierQueue.push(() => deliverKeyUp(code))
+      return
+    }
+    if (!keys.has(code)) return
     event.preventDefault()
     event.stopPropagation()
-    send({ type: "key", code: event.code, pressed: false, repeat: false })
-    keys.delete(event.code)
-    if (macClient && (event.code === "MetaLeft" || event.code === "MetaRight")) {
-      // macOS browsers can omit key-up events for keys used while Command is held.
-      for (const code of keys) {
-        if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(code)) continue
-        send({ type: "key", code, pressed: false, repeat: false })
-        keys.delete(code)
-      }
-    }
+    deliverKeyUp(code)
   }
 
   function contextMenu(event: MouseEvent): void {
@@ -171,8 +333,28 @@ export function useDesktopInput(
   useEventListener(video, "keydown", keyDown)
   useEventListener(video, "keyup", keyUp)
   useEventListener(video, "contextmenu", contextMenu)
+  useEventListener(video, "paste", handlePaste)
   useEventListener(video, "blur", release)
-  watch(enabled, value => { if (!value) release() }, { flush: "sync" })
+  watchImmediate(enabled, value => {
+    if (!value) release()
+    else void seedLocalClipboardBaseline()
+  }, { flush: "sync" })
+  if (clipboardSharing) {
+    watch(clipboardSharing, value => { if (value) void seedLocalClipboardBaseline() })
+  }
+  if (remoteClipboard) {
+    watch(remoteClipboard, entry => {
+      if (!entry || !clipboardAllowed()) return
+      const text = sanitizeClipboard(entry.text)
+      if (!text || text === lastRemoteSynced) return
+      clipboardSeq += 1
+      lastObservedLocal = text
+      lastRemoteSynced = text
+      baselineSeeded = true
+      void navigator.clipboard?.writeText?.(text)?.catch(() => {})
+    })
+  }
+  useEventListener(window, "focus", () => { void syncLocalClipboardOnFocus() })
   useEventListener(window, "blur", release)
   watch(useDocumentVisibility(), state => { if (state === "hidden") release() })
   onScopeDispose(release)

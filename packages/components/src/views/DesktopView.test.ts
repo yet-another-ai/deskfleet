@@ -969,3 +969,35 @@ test("reverse mouse scrolling flips wheel deltas without reconnecting", async ()
   wheel(12, -24)
   expect(JSON.parse(peer.input.send.mock.calls.at(-1)![0])).toEqual({ type: "wheel", deltaX: -12, deltaY: 24 })
 })
+
+test("clipboard sharing syncs in both directions when control is active and can be toggled in stream settings", async () => {
+  const readText = vi.fn(async () => "initial baseline")
+  const writeText = vi.fn(async () => {})
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { readText, writeText },
+  })
+  const { wrapper, peer } = await connectDesktop()
+  peer.input.ready()
+  await flushPromises()
+  expect(peer.input.send).not.toHaveBeenCalledWith(JSON.stringify({ type: "clipboard", text: "initial baseline" }))
+
+  readText.mockResolvedValue("from browser")
+  window.dispatchEvent(new Event("focus"))
+  await flushPromises()
+  expect(peer.input.send).toHaveBeenCalledWith(JSON.stringify({ type: "clipboard", text: "from browser" }))
+
+  peer.input.onmessage?.({ data: JSON.stringify({ type: "clipboard", text: "from remote host" }) })
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("from remote host")
+
+  await wrapper.get('[aria-label="Stream settings"]').trigger("click")
+  const checkbox = wrapper.get("[data-desktop-clipboard]")
+  expect(checkbox.attributes("aria-checked")).toBe("true")
+  await checkbox.trigger("click")
+  expect(checkbox.attributes("aria-checked")).toBe("false")
+
+  peer.input.onmessage?.({ data: JSON.stringify({ type: "clipboard", text: "blocked while unchecked" }) })
+  await flushPromises()
+  expect(writeText).toHaveBeenCalledTimes(1)
+})

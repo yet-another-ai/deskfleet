@@ -131,7 +131,7 @@ fn execute(request: Request, activity: &mut Activity, pipe: &mut Pipe) -> Result
             activity.require_idle()?;
             *activity =
                 Activity::Capture(Box::new(CapturePipeline::new(config, codec.into(), false)?));
-            Reply::Ready
+            Reply::Ready { clipboard: None }
         }
         Request::Poll {
             keyframe,
@@ -152,25 +152,26 @@ fn execute(request: Request, activity: &mut Activity, pipe: &mut Pipe) -> Result
         Request::InputStart { display_id } => {
             activity.require_idle()?;
             *activity = Activity::Input(InputSession::new(display_id).map_err(input_error)?);
-            Reply::Ready
+            Reply::Ready { clipboard: None }
         }
         Request::Input { event } => {
             let Activity::Input(input) = activity else {
                 return Err(MediaError::InvalidConfig("desktop input has not started").into());
             };
             input.handle(event).map_err(input_error)?;
-            Reply::Ready
+            Reply::Ready { clipboard: None }
         }
         Request::RefreshInput => {
             let Activity::Input(input) = activity else {
                 return Err(MediaError::InvalidConfig("desktop input has not started").into());
             };
             input.refresh_desktop().map_err(input_error)?;
-            Reply::Ready
+            let clipboard = input.poll_clipboard().unwrap_or(None);
+            Reply::Ready { clipboard }
         }
         Request::Stop => {
             activity.stop()?;
-            Reply::Ready
+            Reply::Ready { clipboard: None }
         }
     };
     protocol::write_json(pipe, &reply).map_err(Failure::Transport)

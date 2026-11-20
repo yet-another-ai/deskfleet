@@ -68,6 +68,9 @@ export function spawnDesktopViewer(executable: string, receive: (event: ViewerEv
         case "controlConfigured":
           if (typeof value.control !== "boolean" || (value.error !== undefined && typeof value.error !== "string")) throw new Error("Invalid native desktop control acknowledgement")
           break
+        case "clipboard":
+          if (typeof value.text !== "string") throw new Error("Invalid native desktop clipboard")
+          break
         case "answerApplied": case "inputReady": case "videoReady": case "connected": case "disconnected": case "stopped": case "reconnect": case "disconnect": case "closeRequested": case "closed": case "stats": break
         default: throw new Error("Unknown native desktop response")
       }

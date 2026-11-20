@@ -24,9 +24,11 @@ function fixture(platform = "Win32") {
   const scope = effectScope()
   const enabled = ref(true)
   const reverseScroll = ref(false)
+  const clipboardSharing = ref(true)
+  const remoteClipboard = shallowRef<{ id: number; text: string } | null>(null)
   const send = vi.fn(() => true)
   const surface = shallowRef<HTMLVideoElement | null>(video)
-  scope.run(() => useDesktopInput(surface, enabled, send, reverseScroll))
+  scope.run(() => useDesktopInput(surface, enabled, send, reverseScroll, clipboardSharing, remoteClipboard))
   disposers.push(() => { scope.stop(); video.remove() })
   let mouseButtons = 0
   function pointer(type: string, init: PointerEventInit = {}) {
@@ -39,12 +41,12 @@ function fixture(platform = "Win32") {
     video.dispatchEvent(event)
     return event
   }
-  function key(type: string, code: string, repeat = false) {
-    const event = new KeyboardEvent(type, { code, repeat, cancelable: true })
+  function key(type: string, code: string, repeat = false, init: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent(type, { code, repeat, cancelable: true, ...init })
     video.dispatchEvent(event)
     return event
   }
-  return { video, surface, enabled, reverseScroll, send, pointer, key, scope }
+  return { video, surface, enabled, reverseScroll, clipboardSharing, remoteClipboard, send, pointer, key, scope }
 }
 
 test("maps the visible image rather than letterbox bars, and clamps captured drags", () => {
@@ -230,4 +232,126 @@ test("replacing the video releases held input and follows the new surface", asyn
   }))
   expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "pointerButton", button: 0, pressed: true, x: 0.5, y: 0.5 })
   next.remove()
+})
+
+test("synchronizes local and remote clipboard text while seeding baseline, ordering paste before KeyV, deduplicating echoes, and honoring the toggle", async () => {
+  const readText = vi.fn(async () => "initial baseline")
+  const writeText = vi.fn(async () => {})
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { readText, writeText },
+  })
+  const f = fixture()
+  await nextTick()
+
+  // Initial connect and first focus with unchanged baseline do not overwrite the remote clipboard.
+  window.dispatchEvent(new Event("focus"))
+  await nextTick()
+  expect(f.send).not.toHaveBeenCalled()
+
+  // Plain KeyV typing sends immediately in order without waiting on clipboard reads.
+  f.key("keydown", "KeyV")
+  f.key("keydown", "KeyE")
+  f.key("keyup", "KeyV")
+  f.key("keyup", "KeyE")
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyE", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+    [{ type: "key", code: "KeyE", pressed: false, repeat: false }],
+  ])
+  f.send.mockClear()
+
+  // Ctrl+V syncs the clipboard before KeyV and preserves modifier release and subsequent key ordering.
+  f.key("keydown", "ControlLeft", false, { ctrlKey: true })
+  f.key("keydown", "KeyV", false, { ctrlKey: true })
+  f.key("keyup", "KeyV", false, { ctrlKey: true })
+  f.key("keyup", "ControlLeft")
+  f.key("keydown", "KeyA")
+  f.key("keyup", "KeyA")
+  await nextTick()
+  await nextTick()
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "key", code: "ControlLeft", pressed: true, repeat: false }],
+    [{ type: "clipboard", text: "initial baseline" }],
+    [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+    [{ type: "key", code: "ControlLeft", pressed: false, repeat: false }],
+    [{ type: "key", code: "KeyA", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyA", pressed: false, repeat: false }],
+  ])
+  f.send.mockClear()
+
+  // Copying new text while unfocused sends it on window focus.
+  readText.mockResolvedValue("local clip")
+  window.dispatchEvent(new Event("focus"))
+  await nextTick()
+  expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "clipboard", text: "local clip" })
+  f.send.mockClear()
+
+  // Identical local clipboard read or remote echo is suppressed.
+  window.dispatchEvent(new Event("focus"))
+  await nextTick()
+  expect(f.send).not.toHaveBeenCalled()
+  f.remoteClipboard.value = { id: 1, text: "local clip" }
+  await nextTick()
+  expect(writeText).not.toHaveBeenCalled()
+
+  // Fresh remote clipboard update writes to navigator.clipboard and prevents echo back.
+  f.remoteClipboard.value = { id: 2, text: "remote clip" }
+  await nextTick()
+  expect(writeText).toHaveBeenCalledExactlyOnceWith("remote clip")
+  readText.mockResolvedValue("remote clip")
+  window.dispatchEvent(new Event("focus"))
+  await nextTick()
+  expect(f.send).not.toHaveBeenCalled()
+
+  // Disabling clipboard sharing suppresses both directions.
+  f.clipboardSharing.value = false
+  readText.mockResolvedValue("while disabled")
+  window.dispatchEvent(new Event("focus"))
+  f.remoteClipboard.value = { id: 3, text: "ignored remote" }
+  await nextTick()
+  expect(f.send).not.toHaveBeenCalled()
+  expect(writeText).toHaveBeenCalledTimes(1)
+})
+
+test("stale paste clipboard read resolving after barrier timeout is discarded", async () => {
+  vi.useFakeTimers()
+  try {
+    let resolveRead!: (value: string) => void
+    const readText = vi.fn()
+      .mockResolvedValueOnce("initial baseline")
+      .mockImplementationOnce(() => new Promise<string>(resolve => { resolveRead = resolve }))
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText, writeText },
+    })
+    const f = fixture()
+    await nextTick()
+    f.send.mockClear()
+
+    f.key("keydown", "ControlLeft", false, { ctrlKey: true })
+    f.key("keydown", "KeyV", false, { ctrlKey: true })
+    f.key("keyup", "KeyV", false, { ctrlKey: true })
+    f.key("keyup", "ControlLeft")
+
+    vi.advanceTimersByTime(150)
+    expect(f.send.mock.calls).toEqual([
+      [{ type: "key", code: "ControlLeft", pressed: true, repeat: false }],
+      [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+      [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+      [{ type: "key", code: "ControlLeft", pressed: false, repeat: false }],
+    ])
+    f.send.mockClear()
+
+    // Late resolution of the timed-out read must not send stale clipboard text.
+    resolveRead("stale late clipboard")
+    await nextTick()
+    await nextTick()
+    expect(f.send).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
 })

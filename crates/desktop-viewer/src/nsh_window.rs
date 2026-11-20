@@ -13,6 +13,7 @@ use gpui::{
 use serde_json::json;
 use tokio::sync::watch;
 
+use crate::clipboard::ClipboardSync;
 use crate::gpui_input::Input;
 use crate::host::Host;
 use crate::input_queue;
@@ -99,6 +100,7 @@ struct Viewer {
     input: input_queue::Sender,
     shutdown: watch::Sender<bool>,
     controls: Input,
+    clipboard: ClipboardSync,
     physical: Option<PhysicalInput>,
     handle_focused: bool,
     select_open: bool,
@@ -204,6 +206,7 @@ impl Viewer {
                     }
                 } else {
                     viewer.sync_input(window, cx);
+                    viewer.sync_local_clipboard(window, cx);
                 }
             }),
             cx.observe_window_bounds(window, |viewer, window, cx| {
@@ -213,12 +216,14 @@ impl Viewer {
                 cx.notify();
             }),
         ];
+        let clipboard = ClipboardSync::new(cx);
         Self {
             title: window_branding::title("", None),
             video: Rc::new(RefCell::new(Video::new(frames))),
             input,
             shutdown,
             controls: Input::default(),
+            clipboard,
             physical,
             handle_focused: false,
             select_open: false,
@@ -253,8 +258,14 @@ impl Viewer {
                 self.title = title;
             }
             WindowEvent::Connected(_) | WindowEvent::InputReady => {}
+            WindowEvent::RemoteClipboard(text) => {
+                let enabled =
+                    self.toolbar_state.controls_enabled() && self.toolbar_state.clipboard_sharing;
+                self.clipboard.apply_remote(enabled, text, cx);
+            }
             WindowEvent::SessionEnded => {
                 self.release(window, cx);
+                self.clipboard.reset_session(cx);
                 self.video.borrow_mut().clear(window, cx);
             }
             WindowEvent::FrameReady => {}
@@ -274,10 +285,21 @@ impl Viewer {
     fn keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let result = self.physical.as_ref().map(PhysicalInput::poll);
         match result {
-            Some(Ok(events)) => self.send(events, window, cx),
+            Some(Ok(events)) => {
+                let enabled =
+                    self.toolbar_state.controls_enabled() && self.toolbar_state.clipboard_sharing;
+                let clip = self.clipboard.before_events(enabled, &events, cx);
+                self.send(clip.into_iter().chain(events), window, cx);
+            }
             Some(Err(error)) => self.fail(error, window, cx),
             None => {}
         }
+    }
+
+    fn sync_local_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let enabled = self.toolbar_state.controls_enabled() && self.toolbar_state.clipboard_sharing;
+        let event = self.clipboard.on_window_active(enabled, cx);
+        self.send(event, window, cx);
     }
 
     fn sync_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -472,6 +494,13 @@ impl Viewer {
                 self.toolbar_state.reverse_scroll = reverse_scroll;
                 None
             }
+            ToolbarAction::SetClipboardSharing(clipboard_sharing) => {
+                self.toolbar_state.clipboard_sharing = clipboard_sharing;
+                if clipboard_sharing {
+                    self.sync_local_clipboard(window, cx);
+                }
+                None
+            }
             ToolbarAction::SecureAttention
                 if self.toolbar_state.controls_enabled()
                     && self.toolbar_state.ui.secure_attention =>
@@ -586,7 +615,10 @@ impl Viewer {
             self.resume_focus(window, cx);
             self.sync_input(window, cx);
             let events = self.controls.mouse_down(event, self.video_bounds(window));
-            self.send(events, window, cx);
+            let enabled =
+                self.toolbar_state.controls_enabled() && self.toolbar_state.clipboard_sharing;
+            let clip = self.clipboard.before_events(enabled, &events, cx);
+            self.send(clip.into_iter().chain(events), window, cx);
             cx.stop_propagation();
         }
     }
