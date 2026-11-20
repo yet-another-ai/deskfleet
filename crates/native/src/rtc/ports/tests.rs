@@ -324,7 +324,7 @@ async fn native_deadline_closes_idle_sockets_without_js_or_event_consumers() {
 async fn forwarding_requires_explicit_authorization_and_loopback_target() {
     let peer = Peer::new(PeerConfig::default()).await.unwrap();
     for host in [
-        "localhost",
+        "localhost.example",
         "127.0.0.2",
         "::ffff:127.0.0.1",
         "192.168.1.1",
@@ -359,9 +359,73 @@ fn wire_rejects_invalid_targets_frames_and_zero_ids() {
     }
     assert!(Frame::decode(Bytes::from(vec![0; CHUNK_BYTES + 6]), false).is_err());
     assert!(Frame::decode(Bytes::from_static(&[5, 0, 0, 0, 1]), true).is_err());
-    for host in ["127.0.0.1", "::1"] {
+    for host in ["localhost", "127.0.0.1", "::1"] {
         let target = Target::new(host, 65535).unwrap();
         let decoded = Frame::decode(Frame::Open(1, target).encode().freeze(), false).unwrap();
         assert!(matches!(decoded, Frame::Open(1, actual) if actual == target));
+    }
+}
+
+#[tokio::test]
+async fn localhost_target_forwards_to_ipv4_and_ipv6_loopback_listeners() {
+    let v4_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let v4_port = v4_listener.local_addr().unwrap().port();
+    let left_v4 = Peer::new(PeerConfig::default()).await.unwrap();
+    let right_v4 = Peer::new(PeerConfig::default()).await.unwrap();
+    right_v4
+        .enable_port_forwarding(expires_after(Duration::from_secs(120)))
+        .await
+        .unwrap();
+    let local_v4 = left_v4
+        .listen_port_forward(0, "localhost", v4_port)
+        .await
+        .unwrap();
+    connect(&left_v4, &right_v4).await;
+    let service_v4 = tokio::spawn(async move {
+        let (mut socket, _) = v4_listener.accept().await.unwrap();
+        socket.write_all(b"v4-ok").await.unwrap();
+    });
+    let mut client_v4 = TcpStream::connect((Ipv4Addr::LOCALHOST, local_v4))
+        .await
+        .unwrap();
+    let mut buf_v4 = [0; 5];
+    tokio::time::timeout(Duration::from_secs(5), client_v4.read_exact(&mut buf_v4))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(&buf_v4, b"v4-ok");
+    service_v4.await.unwrap();
+    left_v4.close().await.unwrap();
+    right_v4.close().await.unwrap();
+
+    if let Ok(v6_listener) = TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).await {
+        let v6_port = v6_listener.local_addr().unwrap().port();
+        let left_v6 = Peer::new(PeerConfig::default()).await.unwrap();
+        let right_v6 = Peer::new(PeerConfig::default()).await.unwrap();
+        right_v6
+            .enable_port_forwarding(expires_after(Duration::from_secs(120)))
+            .await
+            .unwrap();
+        let local_v6 = left_v6
+            .listen_port_forward(0, "localhost", v6_port)
+            .await
+            .unwrap();
+        connect(&left_v6, &right_v6).await;
+        let service_v6 = tokio::spawn(async move {
+            let (mut socket, _) = v6_listener.accept().await.unwrap();
+            socket.write_all(b"v6-ok").await.unwrap();
+        });
+        let mut client_v6 = TcpStream::connect((Ipv4Addr::LOCALHOST, local_v6))
+            .await
+            .unwrap();
+        let mut buf_v6 = [0; 5];
+        tokio::time::timeout(Duration::from_secs(5), client_v6.read_exact(&mut buf_v6))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&buf_v6, b"v6-ok");
+        service_v6.await.unwrap();
+        left_v6.close().await.unwrap();
+        right_v6.close().await.unwrap();
     }
 }

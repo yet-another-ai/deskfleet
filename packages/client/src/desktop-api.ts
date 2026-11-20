@@ -22,6 +22,7 @@ import type { NetworkDiagnosticsApi } from "./network-diagnostics.ts"
 import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
 import type { SpeechApi } from "./speech.ts"
+import type { WebPreviewDesktopApi } from "./web-preview.ts"
 
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
@@ -42,6 +43,7 @@ export interface DeskfleetDesktopApi {
   application?: ApplicationApi
   speech?: SpeechApi
   haptic?: (kind: "activate" | "tick") => void
+  openExternal?: (url: string) => Promise<void>
   onOpenNotificationSession?: (listener: (target: { teamId: string; machineId: string; sessionId: string }) => void) => () => void
   initialError?: string
   target?: { id: string; local: boolean; lastSeen?: string }
@@ -53,6 +55,7 @@ export interface DeskfleetDesktopApi {
   filesystem: FilesystemApi
   files?: FilesApi
   ports?: PortsApi
+  webPreview?: WebPreviewDesktopApi
   desktop: DesktopMediaApi
   terminal: TerminalSignalingApi
   agent: AgentSignalingApi

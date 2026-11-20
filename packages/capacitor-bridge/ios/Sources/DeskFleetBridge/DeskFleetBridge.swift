@@ -28,6 +28,15 @@ internal func deskfleetIosTouch(_ kind: Int32, _ x: Double, _ y: Double, _ dx: D
 @_silgen_name("deskfleet_ios_test_nat")
 internal func deskfleetIosTestNat(_ server: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 
+@_silgen_name("deskfleet_ios_ports_init")
+internal func deskfleetIosPortsInit(_ onEvent: (@convention(c) (UnsafePointer<CChar>?) -> Void)?)
+
+@_silgen_name("deskfleet_ios_ports_call")
+internal func deskfleetIosPortsCall(_ requestJson: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("deskfleet_ios_ports_close_all")
+internal func deskfleetIosPortsCloseAll()
+
 @_silgen_name("deskfleet_ios_string_free")
 internal func deskfleetIosStringFree(_ ptr: UnsafeMutablePointer<CChar>?)
 
@@ -46,6 +55,11 @@ private let viewerEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void 
     DeskFleetBridge.activePlugin?.notifyListeners("viewerEvent", data: ["payload": payload])
 }
 
+private let portsEventCallback: @convention(c) (UnsafePointer<CChar>?) -> Void = { payloadPtr in
+    guard let payloadPtr else { return }
+    DeskFleetBridge.activePortsPlugin?.notifyListeners("portsEvent", data: ["payload": String(cString: payloadPtr)])
+}
+
 @objc(DeskFleetBridge)
 public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
     public let identifier = "DeskFleetBridge"
@@ -56,6 +70,8 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         CAPPluginMethod(name: "send", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "testNat", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "portsCall", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openExternal", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "outlineAudioStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startOutlineAudio", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopOutlineAudio", returnType: CAPPluginReturnPromise),
@@ -74,7 +90,10 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
     ]
 
     nonisolated(unsafe) internal static weak var activePlugin: DeskFleetBridge?
+    nonisolated(unsafe) internal static weak var activePortsPlugin: DeskFleetBridge?
     nonisolated(unsafe) internal static weak var activeController: RemoteDesktopViewController?
+    private static let portsQueue = DispatchQueue(label: "ai.yetanother.deskfleet.ports")
+    private static var portsInitialized = false
     private var authSession: ASWebAuthenticationSession?
     private var speechInput: SpeechInput?
     private lazy var impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -272,6 +291,44 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
         call.resolve()
     }
 
+    @objc func openExternal(_ call: CAPPluginCall) {
+        guard let rawUrl = call.getString("url"),
+              let url = URL(string: rawUrl),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else {
+            call.reject("Invalid external URL")
+            return
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url, options: [:]) { opened in
+                if opened { call.resolve() }
+                else { call.reject("Failed to open URL") }
+            }
+        }
+    }
+
+    @objc func portsCall(_ call: CAPPluginCall) {
+        guard let request = call.getString("request"), !request.isEmpty else {
+            call.reject("Missing port forwarding request")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            Self.portsQueue.sync {
+                Self.activePortsPlugin = self
+                if !Self.portsInitialized {
+                    deskfleetIosPortsInit(portsEventCallback)
+                    Self.portsInitialized = true
+                }
+            }
+            guard let ptr = request.withCString({ deskfleetIosPortsCall($0) }) else {
+                call.reject("Failed to invoke port forwarding")
+                return
+            }
+            defer { deskfleetIosStringFree(ptr) }
+            call.resolve(["response": String(cString: ptr)])
+        }
+    }
+
     @objc func testNat(_ call: CAPPluginCall) {
         guard let server = call.getString("server"), !server.isEmpty else {
             call.reject("Missing STUN server")
@@ -435,6 +492,7 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
             DispatchQueue.main.async { session?.cancel() }
         }
         Self.stopSession()
+        deskfleetIosPortsCloseAll()
     }
 
     internal static func stopSession() {

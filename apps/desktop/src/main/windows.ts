@@ -14,11 +14,12 @@ import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
 import { attachApplication } from "./application.ts"
 import { attachGoogleTag } from "./google-tag.ts"
+import { attachWebPreview } from "./web-preview.ts"
 
 let mainWindow: BrowserWindow | null = null
 const sessionWindows = new Map<string, BrowserWindow>()
 
-export function secureWebPreferences(): WebPreferences {
+export function secureWebPreferences(options: { webviewTag?: boolean } = {}): WebPreferences {
   return {
     preload: join(import.meta.dirname, "../preload/index.cjs"),
     additionalArguments: [`${LOCALE_ARGUMENT_PREFIX}${resolveAppLocale(app.getPreferredSystemLanguages())}`],
@@ -30,7 +31,7 @@ export function secureWebPreferences(): WebPreferences {
     webSecurity: true,
     allowRunningInsecureContent: false,
     experimentalFeatures: false,
-    webviewTag: false,
+    webviewTag: options.webviewTag ?? false,
   }
 }
 
@@ -52,12 +53,13 @@ function auxiliaryWindowOptions(url: string): BrowserWindowConstructorOptions | 
       : { width: 960, height: 680, minWidth: 480, minHeight: 360 }),
     ...(process.platform === "darwin" ? {} : { icon: buildResourcePath("icon.png") }),
     ...windowChromeOptions(process.platform),
-    webPreferences: secureWebPreferences(),
+    webPreferences: secureWebPreferences({ webviewTag: Boolean(sessionTarget) }),
   }
 }
 
 function attachRendererWindow(window: BrowserWindow): void {
   attachApplication(window)
+  attachWebPreview(window)
   attachGoogleTag(window)
   attachDesktopMedia(window)
   attachSettings(window)
@@ -121,7 +123,7 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
     // macOS takes the icon from the application bundle.
     ...(process.platform === "darwin" ? {} : { icon: buildResourcePath("icon.png") }),
     ...windowChromeOptions(process.platform),
-    webPreferences: secureWebPreferences(),
+    webPreferences: secureWebPreferences({ webviewTag: true }),
   })
   mainWindow = window
   attachRendererWindow(window)
