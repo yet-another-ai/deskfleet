@@ -25,6 +25,7 @@ const INACTIVE_TOOL_STATUSES: Readonly<Record<string, true>> = {
 export class AntigravityWork {
   readonly #live = new Map<string, Set<string>>()
   readonly #children = new Map<string, Set<string>>()
+  readonly #daemonTools = new Set<string>()
   readonly #waiters = new Set<() => void>()
 
   observe(notification: SessionNotification): void {
@@ -43,10 +44,14 @@ export class AntigravityWork {
       const rawInput = update.rawInput
       const daemon = typeof rawInput === "object" && rawInput !== null && "IsDaemon" in rawInput
         && (rawInput.IsDaemon === true || rawInput.IsDaemon === "true")
+      const key = `${sessionId}\0${update.toolCallId}`
+      if (daemon) this.#daemonTools.add(key)
       this.#set(sessionId, `tool:${update.toolCallId}`, !daemon
         && !INACTIVE_TOOL_STATUSES[update.status ?? "pending"])
     } else if (update.sessionUpdate === "tool_call_update" && update.status !== undefined) {
-      this.#set(sessionId, `tool:${update.toolCallId}`, !INACTIVE_TOOL_STATUSES[update.status ?? "pending"])
+      const shared = this.#daemonTools.has(`${sessionId}\0${update.toolCallId}`)
+      this.#set(sessionId, `tool:${update.toolCallId}`, !shared
+        && !INACTIVE_TOOL_STATUSES[update.status ?? "pending"])
     } else return
     for (const resolve of [...this.#waiters]) resolve()
     this.#waiters.clear()

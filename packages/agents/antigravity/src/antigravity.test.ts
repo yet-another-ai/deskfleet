@@ -91,7 +91,7 @@ test("wrapAntigravityConnection bridges active-turn steering, merges usage, and 
   assert.deepEqual(received, ["first", "second", "third"])
 })
 
-test("wrapAntigravityConnection keeps end_turn open while background tools and subagents run", async () => {
+test("wrapAntigravityConnection keeps end_turn open while background tools and subagents run", { timeout: 5_000 }, async () => {
   const sessionId = "session-background"
   const child = "session-background-child"
   const work = new AntigravityWork()
@@ -120,10 +120,11 @@ test("wrapAntigravityConnection keeps end_turn open while background tools and s
   await delay(20)
   assert.equal(resolved, false, "daemon tools alone must not hold the turn, but the non-daemon build must")
 
+  work.observe({ sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "daemon", status: "in_progress" } })
   work.observe({ sessionId, update: { sessionUpdate: "tool_call_update", toolCallId: "build", status: "completed" } })
   work.observe({ sessionId: child, update: { sessionUpdate: "tool_call_update", toolCallId: "search", status: "completed" } })
   await delay(20)
-  assert.equal(resolved, false, "a running child still holds the turn")
+  assert.equal(resolved, false, "a running child still holds the turn, while a daemon update must not re-hold it")
 
   work.observe({ sessionId, update: {
     sessionUpdate: "subagent_update", sessionId: child, state: { state: "idle", stopReason: "end_turn" },
@@ -187,7 +188,7 @@ test("wrapAntigravityConnection releases inactive tool states", async () => {
   assert.deepEqual(await turn, { stopReason: "end_turn" })
 })
 
-test("wrapAntigravityConnection delivers steering while background work holds the turn", async () => {
+test("wrapAntigravityConnection delivers steering while background work holds the turn", { timeout: 5_000 }, async () => {
   const sessionId = "session-background-steer"
   const work = new AntigravityWork()
   const received: string[] = []
