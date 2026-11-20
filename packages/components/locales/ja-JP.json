@@ -620,6 +620,8 @@
     "windowsLockControlWorking": "設定を確認または適用しています…",
     "windowsLockControlStopped": "インストール済みですが、実行されていません",
     "windowsLockControlStart": "開始",
+    "windowsLockControlUpdateAvailable": "アップデートが利用可能です",
+    "windowsLockControlUpdate": "アップデート",
     "worktreeRoot": "ワークツリーのルートディレクトリ", "worktreeRootDescription": "このコンピューターで新しいセッションのワークツリーを保存する場所です。既存のファイルは移動しません。",
     "chooseWorktreeRoot": "フォルダーを選択…", "useDefaultWorktreeRoot": "デフォルトを使用",
     "choosingFolder": "フォルダーを選択中…", "runLocalAgent": "このマシンの操作を許可",

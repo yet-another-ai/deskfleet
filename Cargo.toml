@@ -2,6 +2,7 @@
 members = [
     "apps/server",
     "apps/desktop-service",
+    "apps/maintenance-service",
     "crates/control-store",
     "crates/desktop-viewer",
     "crates/capture",
@@ -60,7 +61,10 @@ deskfleet-protocol = { path = "crates/protocol" }
 
 actix-web = { version = "4.17", default-features = false, features = ["macros"] }
 async-trait = "0.1"
+base64 = "0.22"
 bytes = "1"
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
+sha2 = "0.10"
 napi = { version = "3.15", default-features = false, features = ["napi8", "dyn-symbols", "tokio_rt"] }
 napi-build = "2.6"
 napi-derive = "3.6"

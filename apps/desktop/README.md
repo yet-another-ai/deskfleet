@@ -679,20 +679,22 @@ integrity validation and disable the `NODE_OPTIONS` and `--inspect` fuses.
 electron-builder signs macOS builds when it finds a signing identity; set
 `CSC_IDENTITY_AUTO_DISCOVERY=false` for unsigned local builds.
 
-Windows packaging also builds and bundles `deskfleet-desktop-service.exe` in
-`resources/windows/`. Settings → Permissions → **Remote control while locked**
-uses this helper's fixed setup commands to install or remove the optional
-`DeskFleetDesktop` system service with UAC approval. The application remains a
-per-user install; merely opening Settings does not request elevation. The helper
-owns its protected Program Files installation and service stop/start lifecycle.
-Installer updates maintain an already-installed service without enabling it on
-other machines. An ordinary uninstall removes the service, while the uninstall
-phase of an application update preserves it. Updating or removing the service
-can require administrator approval. Service updates stage a protected recovery
+Windows packaging also builds and bundles `deskfleet-desktop-service.exe` and
+`deskfleet-maintenance-service.exe` in `resources/windows/`, along with
+`deskfleet-desktop-service.manifest.json` when release signing is configured.
+Settings → Permissions → **Remote control while locked** uses the helper's fixed
+setup commands to install or remove both the optional `DeskFleetDesktop` system
+service and the on-demand `DeskFleetMaintenance` updater service with UAC
+approval. The application remains a per-user install; merely opening Settings
+does not request elevation. NSIS updates do not prompt for UAC or block
+restarting the updated app. After restart, the app automatically applies signed
+updates to an already-installed `DeskFleetDesktop` service through
+`DeskFleetMaintenance` without UAC; unsigned builds and legacy installations
+without `DeskFleetMaintenance` expose an online **Update** button in Settings.
+An ordinary uninstall removes both services, while the uninstall phase of an
+application update preserves them. Service updates stage a protected recovery
 copy before stopping the previous process and restore it if the replacement
-cannot start. A cancelled or failed maintenance step
-aborts the installer and requires rerunning it; it does not roll back an already
-extracted application payload. See [native media](../../agents/docs/media.md#windows-locked-desktop-access)
+cannot start. See [native media](../../agents/docs/media.md#windows-locked-desktop-access)
 for the console-session boundary and runtime requirements.
 
 Linux packaging produces both an AppImage and a desktop `tar.gz` archive from
@@ -737,6 +739,7 @@ Configure these secrets in the same environment:
 | `APPLE_API_KEY_P8` | Base64-encoded App Store Connect API `.p8` private key. |
 | `APPLE_API_KEY_ID` | App Store Connect API key ID. |
 | `APPLE_API_ISSUER` | App Store Connect API issuer ID. |
+| `WINDOWS_SERVICE_SIGNING_KEY` | Optional base64-encoded PKCS#8 Ed25519 private key used to sign `deskfleet-desktop-service.manifest.json` during Windows packaging (paired with the `DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS` variable). |
 
 The release workflow decodes the API key into a temporary runner file and passes
 it as `APPLE_API_KEY`, alongside `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`.

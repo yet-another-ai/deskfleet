@@ -69,6 +69,9 @@ function start(): void {
     // setup; the bundled binary needs that identity before agents can use it.
     const auvPath = prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
     const windowsDesktopService = installWindowsDesktopService()
+    void windowsDesktopService?.reconcileOnStartup().catch(error => {
+      console.warn("Windows desktop service maintenance update failed", error)
+    })
     const central = await installCentralAccount()
     const nativeDesktop = installNativeDesktop(central)
     installLocalApplications(central)

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 /// The caller serializes setup and validates/protects these sibling paths before
 /// replacing an executable. Staging and backup finish while the old service runs.
-pub(super) struct PreparedInstall {
+pub(crate) struct PreparedInstall {
     executable: PathBuf,
     staging: PathBuf,
     previous: Option<PathBuf>,
@@ -14,16 +14,30 @@ pub(super) struct PreparedInstall {
 }
 
 impl PreparedInstall {
-    pub(super) fn stage(source: &Path, executable: &Path) -> io::Result<Self> {
+    pub(crate) fn stage(source: &Path, executable: &Path) -> io::Result<Self> {
+        Self::stage_named(
+            source,
+            executable,
+            "desktop-service.installing.exe",
+            "desktop-service.previous.exe",
+        )
+    }
+
+    pub(crate) fn stage_named(
+        source: &Path,
+        executable: &Path,
+        staging_name: &str,
+        previous_name: &str,
+    ) -> io::Result<Self> {
         let directory = executable
             .parent()
             .ok_or_else(|| io::Error::other("invalid service executable directory"))?;
         let prepared = Self {
             executable: executable.to_owned(),
-            staging: directory.join("desktop-service.installing.exe"),
+            staging: directory.join(staging_name),
             previous: executable
                 .try_exists()?
-                .then(|| directory.join("desktop-service.previous.exe")),
+                .then(|| directory.join(previous_name)),
             replaced: false,
         };
         fs::copy(source, &prepared.staging)?;
@@ -33,24 +47,49 @@ impl PreparedInstall {
         Ok(prepared)
     }
 
-    pub(super) fn staging(&self) -> &Path {
+    /// Adopts a caller-verified staged file already placed inside the protected
+    /// directory and prepares the recovery copy of the currently installed binary.
+    pub(crate) fn from_staged(
+        staging: PathBuf,
+        executable: &Path,
+        previous_name: &str,
+    ) -> io::Result<Self> {
+        let directory = executable
+            .parent()
+            .ok_or_else(|| io::Error::other("invalid service executable directory"))?;
+        let previous = executable
+            .try_exists()?
+            .then(|| directory.join(previous_name));
+        let prepared = Self {
+            executable: executable.to_owned(),
+            staging,
+            previous,
+            replaced: false,
+        };
+        if let Some(previous) = &prepared.previous {
+            fs::copy(executable, previous)?;
+        }
+        Ok(prepared)
+    }
+
+    pub(crate) fn staging(&self) -> &Path {
         &self.staging
     }
 
-    pub(super) fn previous(&self) -> Option<&Path> {
+    pub(crate) fn previous(&self) -> Option<&Path> {
         self.previous.as_deref()
     }
 
     /// Windows std::fs::rename uses MoveFileExW with replacement enabled. The
     /// caller has waited for the previous service and workers to exit.
-    pub(super) fn replace(&mut self) -> io::Result<()> {
+    pub(crate) fn replace(&mut self) -> io::Result<()> {
         fs::rename(&self.staging, &self.executable)?;
         self.replaced = true;
         Ok(())
     }
 
     /// Keep the backup if restoring fails so setup never destroys its recovery copy.
-    pub(super) fn rollback(&mut self) -> io::Result<()> {
+    pub(crate) fn rollback(&mut self) -> io::Result<()> {
         if !self.replaced {
             return Ok(());
         }
@@ -63,7 +102,7 @@ impl PreparedInstall {
         Ok(())
     }
 
-    pub(super) fn commit(mut self) -> io::Result<()> {
+    pub(crate) fn commit(mut self) -> io::Result<()> {
         if let Some(previous) = &self.previous {
             remove_if_present(previous)?;
         }
@@ -175,5 +214,24 @@ mod tests {
         prepared.replace().unwrap();
         prepared.rollback().unwrap();
         assert!(!executable.exists());
+    }
+
+    #[test]
+    fn from_staged_backs_up_replaces_and_rolls_back_verified_staging_file() {
+        let directory = Directory::new();
+        let executable = directory.file("service.exe");
+        let staging = directory.file("desktop-service.installing.exe");
+        fs::write(&executable, b"old-binary").unwrap();
+        fs::write(&staging, b"verified-new").unwrap();
+        let mut prepared =
+            PreparedInstall::from_staged(staging, &executable, "desktop-service.previous.exe")
+                .unwrap();
+        prepared.replace().unwrap();
+        assert_eq!(fs::read(&executable).unwrap(), b"verified-new");
+        prepared.rollback().unwrap();
+        drop(prepared);
+        assert_eq!(fs::read(&executable).unwrap(), b"old-binary");
+        assert!(!directory.file("desktop-service.previous.exe").exists());
+        assert!(!directory.file("desktop-service.installing.exe").exists());
     }
 }

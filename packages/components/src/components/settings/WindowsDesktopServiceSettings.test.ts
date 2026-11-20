@@ -8,6 +8,7 @@ import WindowsDesktopServiceSettings from "./WindowsDesktopServiceSettings.vue"
 const host = getClient()
 const get = vi.fn<WindowsDesktopServiceApi["get"]>()
 const setEnabled = vi.fn<WindowsDesktopServiceApi["setEnabled"]>()
+const update = vi.fn<NonNullable<WindowsDesktopServiceApi["update"]>>()
 const disabled = { available: true, installed: false, running: false }
 const enabled = { available: true, installed: true, running: true }
 let wrapper: VueWrapper | undefined
@@ -15,7 +16,8 @@ let wrapper: VueWrapper | undefined
 beforeEach(() => {
   get.mockReset().mockResolvedValue(disabled)
   setEnabled.mockReset().mockResolvedValue(enabled)
-  configureClient({ ...host, platform: "win32", windowsDesktopService: { get, setEnabled } })
+  update.mockReset().mockResolvedValue({ ...enabled, maintenanceInstalled: true, updateAvailable: false })
+  configureClient({ ...host, platform: "win32", windowsDesktopService: { get, setEnabled, update } })
   i18n.global.locale.value = "en-US"
 })
 afterEach(() => {
@@ -40,6 +42,7 @@ test("opening settings and regaining focus only read Windows service status", as
   await flushPromises()
   expect(get).toHaveBeenCalledTimes(2)
   expect(setEnabled).not.toHaveBeenCalled()
+  expect(update).not.toHaveBeenCalled()
 })
 
 test("the switch waits for administrator approval and uses the confirmed service state", async () => {
@@ -85,6 +88,16 @@ test("an installed stopped service can be started without first removing it", as
   await view.get("button.ui-button").trigger("click")
   await flushPromises()
   expect(setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+  expect(view.find("button.ui-button").exists()).toBe(false)
+})
+
+test("an outdated running service offers an inline update action", async () => {
+  get.mockResolvedValue({ ...enabled, maintenanceInstalled: false, updateAvailable: true })
+  const view = await render()
+  expect(view.get('[role="status"]').text()).toBe("Update available")
+  await view.get("button.ui-button").trigger("click")
+  await flushPromises()
+  expect(update).toHaveBeenCalledTimes(1)
   expect(view.find("button.ui-button").exists()).toBe(false)
 })
 

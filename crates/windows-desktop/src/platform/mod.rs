@@ -4,23 +4,30 @@
 mod broker;
 mod identity;
 mod install;
+mod maintenance;
 mod pipe;
 mod sas;
 mod service;
 
 pub use broker::{connect, send_secure_attention};
 pub use install::{run_cli, status};
+pub use maintenance::run_maintenance_cli;
 pub use pipe::Pipe;
 pub use sas::secure_attention_available;
 
 use std::io;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HANDLE;
 
 const SERVICE_NAME: &str = "DeskFleetDesktop";
+const MAINTENANCE_SERVICE_NAME: &str = "DeskFleetMaintenance";
 const BROKER_PIPE: &str = r"\\.\pipe\deskfleet-desktop-service";
+const MAINTENANCE_PIPE: &str = r"\\.\pipe\deskfleet-maintenance-service";
 const EXECUTABLE: &str = "deskfleet-desktop-service.exe";
+const MAINTENANCE_EXECUTABLE: &str = "deskfleet-maintenance-service.exe";
+const BUNDLED_MANIFEST_FILE: &str = "deskfleet-desktop-service.manifest.json";
+const INSTALLED_RECORD_FILE: &str = "desktop-service.installed.json";
 
 fn wide(value: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
@@ -45,7 +52,7 @@ fn owned(handle: HANDLE) -> OwnedHandle {
     unsafe { OwnedHandle::from_raw_handle(handle.0) }
 }
 
-fn executable_path() -> io::Result<std::path::PathBuf> {
+fn service_directory() -> io::Result<PathBuf> {
     use windows::Win32::System::Com::CoTaskMemFree;
     use windows::Win32::UI::Shell::{FOLDERID_ProgramFiles, SHGetKnownFolderPath};
     // SAFETY: The known folder is fixed and the returned COM allocation is freed.
@@ -55,7 +62,17 @@ fn executable_path() -> io::Result<std::path::PathBuf> {
     let text = unsafe { path.to_string() }.map_err(io::Error::other);
     // SAFETY: The allocation was returned by SHGetKnownFolderPath.
     unsafe { CoTaskMemFree(Some(path.0.cast())) };
-    Ok(Path::new(&text?)
-        .join("DeskFleet Desktop Service")
-        .join(EXECUTABLE))
+    Ok(Path::new(&text?).join("DeskFleet Desktop Service"))
+}
+
+fn executable_path() -> io::Result<PathBuf> {
+    Ok(service_directory()?.join(EXECUTABLE))
+}
+
+fn maintenance_executable_path() -> io::Result<PathBuf> {
+    Ok(service_directory()?.join(MAINTENANCE_EXECUTABLE))
+}
+
+fn installed_record_path() -> io::Result<PathBuf> {
+    Ok(service_directory()?.join(INSTALLED_RECORD_FILE))
 }

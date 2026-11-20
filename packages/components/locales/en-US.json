@@ -744,6 +744,8 @@
     "windowsLockControlWorking": "Checking or applying settings…",
     "windowsLockControlStopped": "Installed, but not running",
     "windowsLockControlStart": "Start",
+    "windowsLockControlUpdateAvailable": "Update available",
+    "windowsLockControlUpdate": "Update",
     "worktreeRoot": "Worktree root directory",
     "worktreeRootDescription": "Store worktrees for new Sessions on this computer here. Existing files stay in place.",
     "chooseWorktreeRoot": "Choose folder…",

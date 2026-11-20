@@ -1,0 +1,15 @@
+[package]
+name = "deskfleet-maintenance-service"
+description = "On-demand signed maintenance service for DeskFleet on Windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[target.'cfg(windows)'.dependencies]
+deskfleet-windows-desktop.workspace = true
+
+[lints]
+workspace = true
