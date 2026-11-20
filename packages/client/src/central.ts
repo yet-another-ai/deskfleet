@@ -4,7 +4,7 @@ import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, BillingPlan, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
-import type { SuperAgentHistory, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
+import type { SuperAgentHistory, SuperAgentMessageContent, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
@@ -112,8 +112,8 @@ export interface CentralApi {
   superAgentAvailability(teamId: string): Promise<{ enabled: boolean }>
   superAgentSessions(teamId: string): Promise<SuperAgentSession[]>
   superAgentUsage(teamId: string): Promise<SuperAgentUsage>
-  createSuperAgentSession(teamId: string, operationId: string): Promise<{ sessionId: string }>
-  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: string): Promise<{ sessionId: string; deliveryId: string }>
+  createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId?: string }>
+  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId: string }>
   superAgentHistory(teamId: string, sessionId: string, startIndex: number): Promise<SuperAgentHistory>
   status(): Promise<AccountState>
   login(): Promise<void>

@@ -138,8 +138,10 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       runtimeConfigured: true, admitted: true, usedTokens: 0, includedTokens: null, plan: "selfHosted",
       start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
     })),
-    createSuperAgentSession: vi.fn(async (_teamId: string, operationId: string) => ({ sessionId: `wrun_${operationId}` })),
-    sendSuperAgentMessage: vi.fn(async (_teamId: string, sessionId: string, operationId: string, _message: string) => ({ sessionId, deliveryId: `delivery_${operationId}` })),
+    createSuperAgentSession: vi.fn<CentralApi["createSuperAgentSession"]>(async (_teamId, operationId, message) => ({
+      sessionId: `wrun_${operationId}`, ...(message === undefined ? {} : { deliveryId: `delivery_${operationId}` }),
+    })),
+    sendSuperAgentMessage: vi.fn<CentralApi["sendSuperAgentMessage"]>(async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` })),
     superAgentHistory: vi.fn(async (_teamId: string, _sessionId: string, startIndex: number): Promise<SuperAgentHistory> => ({ messages: [], nextIndex: startIndex })),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     teamTurnSettings: vi.fn(async (_teamId: string) => teamTurnSettings()),

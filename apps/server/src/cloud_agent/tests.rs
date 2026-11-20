@@ -1,11 +1,13 @@
+mod rich_messages;
+
 use super::*;
 use actix_web::{App, HttpServer, test};
 use deskfleet_control_store::billing::Plan;
-use sea_orm::{ConnectionTrait, Database};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
 use serde_json::Value;
 use statsig_rust::{Statsig, StatsigOptions};
 use std::{
-    net::TcpListener,
+    net::{SocketAddr, TcpListener},
     sync::Arc,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -21,6 +23,68 @@ fn check_secret(req: &HttpRequest) {
         req.headers().get("authorization").unwrap(),
         "Bearer fixture-secret"
     );
+}
+
+struct TestSchema {
+    admin: DatabaseConnection,
+    name: String,
+}
+
+impl TestSchema {
+    async fn close(self) {
+        self.admin
+            .execute_unprepared(&format!("DROP SCHEMA {} CASCADE", self.name))
+            .await
+            .unwrap();
+    }
+}
+
+async fn fixture_state(address: SocketAddr) -> (TestSchema, AppState, Arc<Statsig>) {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
+    let admin = Database::connect(&url).await.unwrap();
+    let schema = format!("cloud_agent_{}", uuid::Uuid::new_v4().simple());
+    admin
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let mut state = AppState::new(crate::config::ServerConfig {
+        bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
+        database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
+        public_url: "https://control.test".into(),
+        web_origins: vec![],
+        auth: crate::auth::config::AuthConfig::development("https://control.test"),
+        billing: crate::billing::BillingConfig {
+            hosted: true,
+            ..Default::default()
+        },
+        github_app: None,
+        stun_urls: vec![],
+        turn_urls: vec![],
+        turn_secret: None,
+        turn_usage_redis_url: None,
+    })
+    .await
+    .unwrap();
+    let sdk = Arc::new(Statsig::new(
+        "secret-fixture",
+        Some(Arc::new(StatsigOptions {
+            disable_network: Some(true),
+            disable_all_logging: Some(true),
+            ..Default::default()
+        })),
+    ));
+    state.super_agent_rollout = Rollout::offline(Arc::clone(&sdk));
+    let eve = EveClient::new(&format!("http://{address}"), "fixture-secret".into()).unwrap();
+    state.eve = Some(eve);
+    (
+        TestSchema {
+            admin,
+            name: schema,
+        },
+        state,
+        sdk,
+    )
 }
 
 #[actix_web::test]
@@ -99,44 +163,11 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     let handle = server.handle();
     actix_web::rt::spawn(server);
 
-    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
-    let admin = Database::connect(&url).await.unwrap();
-    let schema = format!("cloud_agent_{}", uuid::Uuid::new_v4().simple());
-    admin
-        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
-        .await
-        .unwrap();
-    let separator = if url.contains('?') { '&' } else { '?' };
-    let mut state = AppState::new(crate::config::ServerConfig {
-        bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
-        database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
-        public_url: "https://control.test".into(),
-        web_origins: vec![],
-        auth: crate::auth::config::AuthConfig::development("https://control.test"),
-        billing: crate::billing::BillingConfig {
-            hosted: true,
-            ..Default::default()
-        },
-        github_app: None,
-        stun_urls: vec![],
-        turn_urls: vec![],
-        turn_secret: None,
-        turn_usage_redis_url: None,
-    })
-    .await
-    .unwrap();
-    let sdk = Arc::new(Statsig::new(
-        "secret-fixture",
-        Some(Arc::new(StatsigOptions {
-            disable_network: Some(true),
-            disable_all_logging: Some(true),
-            ..Default::default()
-        })),
+    let (database, mut state, sdk) = fixture_state(address).await;
+    state._cloud_meter = Some(crate::cloud_meter::start(
+        state.store.clone(),
+        state.eve.clone().unwrap(),
     ));
-    state.super_agent_rollout = Rollout::offline(Arc::clone(&sdk));
-    let eve = EveClient::new(&format!("http://{address}"), "fixture-secret".into()).unwrap();
-    state._cloud_meter = Some(crate::cloud_meter::start(state.store.clone(), eve.clone()));
-    state.eve = Some(eve);
     let store = state.store.clone();
     let user = store
         .verified_user(&format!("super-{session_id}@fixture.test"), "Super Agent")
@@ -296,6 +327,30 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     assert_eq!(usage["admitted"], false);
     let repeated: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery, repeated);
+    // A receipt written by the text-only gateway still replays without contacting Eve.
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let old_key = hash(&[&user.id, &team.id, &operation_id]);
+    let old_fingerprint = hash(&["message", &session_id, "previous message"]);
+    store
+        .cloud_agent_request(
+            &team.id,
+            &old_key,
+            &old_fingerprint,
+            Some(&session_id),
+            true,
+        )
+        .await
+        .unwrap();
+    store
+        .finish_cloud_agent_request(&old_key, "old_delivery")
+        .await
+        .unwrap();
+    let old_body = json!({"operationId":operation_id, "message":"previous message"});
+    let old_replay: Value = test::call_and_read_body_json(&app, post(&send_path, old_body)).await;
+    assert_eq!(
+        old_replay,
+        json!({"sessionId":session_id, "deliveryId":"old_delivery"})
+    );
     let mut changed = body.clone();
     changed["message"] = json!("different");
     assert_eq!(
@@ -335,8 +390,5 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     drop(app);
     handle.stop(true).await;
     store.close().await.unwrap();
-    admin
-        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
-        .await
-        .unwrap();
+    database.close().await;
 }

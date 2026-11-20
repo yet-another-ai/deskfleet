@@ -1,17 +1,22 @@
 //! Authenticated Team gateway to the private Super Agent runtime.
 mod client;
+mod content;
 mod rollout;
 
 use crate::{
     AppState, auth,
     error::{ApiError, Result},
 };
-use actix_web::{HttpRequest, HttpResponse, http::StatusCode, middleware::DefaultHeaders, web};
+use actix_web::{
+    HttpRequest, HttpResponse, error::JsonPayloadError, http::StatusCode,
+    middleware::DefaultHeaders, web,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
+use content::Message;
 use deskfleet_control_store::{billing::CloudTokenPeriod, policies::TeamAction};
 pub(crate) use rollout::Rollout;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -20,13 +25,6 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
     config.service(
         web::scope("/teams/{teamId}/super-agent")
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
-            .app_data(
-                web::JsonConfig::default()
-                    .limit(256 * 1024)
-                    .error_handler(|_, _| {
-                        ApiError::bad("invalid or oversized Super Agent request").into()
-                    }),
-            )
             .route("/availability", web::get().to(availability))
             .route("/sessions", web::get().to(list))
             .route("/sessions", web::post().to(create))
@@ -40,13 +38,42 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateRequest {
     operation_id: String,
+    #[serde(default, deserialize_with = "Message::present")]
+    message: Option<Message>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MessageRequest {
     operation_id: String,
-    message: String,
+    message: Message,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EveDelivery<'a> {
+    message: &'a Message,
+    idempotency_key: &'a str,
+}
+
+// Allow a 25 MiB eve attachment after base64 encoding, plus the JSON envelope.
+const MAX_MESSAGE_BODY: usize = 35 * 1024 * 1024;
+
+/// Read attachment bytes only after authenticating and checking the Team gate.
+async fn read_body<T: DeserializeOwned>(req: &HttpRequest, body: web::Payload) -> Result<T> {
+    web::JsonBody::new(req, &mut body.into_inner(), None, true)
+        .limit(MAX_MESSAGE_BODY)
+        .await
+        .map_err(|error| match error {
+            JsonPayloadError::OverflowKnownLength { .. } | JsonPayloadError::Overflow { .. } => {
+                ApiError::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "invalid_request",
+                    "Super Agent request exceeds 35 MiB",
+                )
+            }
+            _ => ApiError::bad("invalid Super Agent JSON request"),
+        })
 }
 
 #[derive(Deserialize)]
@@ -159,15 +186,23 @@ async fn create(
     req: HttpRequest,
     state: web::Data<AppState>,
     team: web::Path<String>,
-    body: web::Json<CreateRequest>,
+    body: web::Payload,
 ) -> Result<HttpResponse> {
     let actor = authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
+    let body: CreateRequest = read_body(&req, body).await?;
+    let fingerprint = match &body.message {
+        Some(message) => {
+            message.validate()?;
+            message.fingerprint("create", "")
+        }
+        None => "create".to_owned(),
+    };
     let eve = runtime(&state)?;
     let key = request_key(&actor, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
     let saved = state
         .store
-        .cloud_agent_request(&team, &key, "create", None, admitted)
+        .cloud_agent_request(&team, &key, &fingerprint, None, admitted)
         .await?;
     let session = match saved {
         Some(session) => session,
@@ -199,6 +234,15 @@ async fn create(
         }
     };
     state.store.bind_cloud_session(&team, &session).await?;
+    if let Some(message) = body.message {
+        // The creation receipt admitted this payload. Finish it on the bound winner,
+        // including when the quota changes between prewarm and delivery or retry.
+        let delivery_key = hash(&["initial-message", &key]);
+        let delivery = deliver(&state, &team, &session, &delivery_key, &message, true).await?;
+        return Ok(
+            HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery}))
+        );
+    }
     Ok(HttpResponse::Accepted().json(json!({"sessionId":session})))
 }
 
@@ -206,32 +250,45 @@ async fn message(
     req: HttpRequest,
     state: web::Data<AppState>,
     path: web::Path<(String, String)>,
-    body: web::Json<MessageRequest>,
+    body: web::Payload,
 ) -> Result<HttpResponse> {
     let (team, session) = path.into_inner();
     let actor = authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
     require_session(&state, &team, &session).await?;
-    let eve = runtime(&state)?;
-    if body.message.trim().is_empty() {
-        return Err(ApiError::bad("message must contain text"));
-    }
+    let body: MessageRequest = read_body(&req, body).await?;
+    body.message.validate()?;
     let key = request_key(&actor, &team, &body.operation_id)?;
-    let fingerprint = hash(&["message", &session, &body.message]);
     let admitted = period(&state, &team).await?.admitted;
+    let delivery = deliver(&state, &team, &session, &key, &body.message, admitted).await?;
+    Ok(HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery})))
+}
+
+async fn deliver(
+    state: &AppState,
+    team: &str,
+    session: &str,
+    key: &str,
+    message: &Message,
+    admitted: bool,
+) -> Result<String> {
+    let eve = runtime(state)?;
+    let fingerprint = message.fingerprint("message", session);
     let saved = state
         .store
-        .cloud_agent_request(&team, &key, &fingerprint, Some(&session), admitted)
+        .cloud_agent_request(team, key, &fingerprint, Some(session), admitted)
         .await?;
     let delivery = match saved {
         Some(delivery) => delivery,
         None => {
             // Schedule usage collection before delivery: eve may accept the
             // message even when the HTTP acknowledgement is lost.
-            state.store.wake_cloud_meter(&team, &session).await?;
-            let response = client::send(
-                eve.post(&["eve", "v1", "session", &session])?
-                    .json(&json!({"message": body.message, "idempotencyKey": key})),
-            )
+            state.store.wake_cloud_meter(team, session).await?;
+            let response = client::send(eve.post(&["eve", "v1", "session", session])?.json(
+                &EveDelivery {
+                    message,
+                    idempotency_key: key,
+                },
+            ))
             .await?;
             let sent: Delivered = response.json().await.map_err(|_| client::unavailable())?;
             if sent.delivery_id.is_empty() {
@@ -239,15 +296,14 @@ async fn message(
             }
             state
                 .store
-                .finish_cloud_agent_request(&key, &sent.delivery_id)
+                .finish_cloud_agent_request(key, &sent.delivery_id)
                 .await?
         }
     };
-    state
-        .store
-        .name_cloud_session(&team, &session, &body.message)
-        .await?;
-    Ok(HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery})))
+    if let Some(title) = message.title() {
+        state.store.name_cloud_session(team, session, title).await?;
+    }
+    Ok(delivery)
 }
 
 async fn stream(

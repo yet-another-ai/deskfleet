@@ -93,7 +93,17 @@ pub(super) async fn send(request: RequestBuilder) -> Result<reqwest::Response> {
     let response = request.send().await.map_err(|_| unavailable())?;
     match response.status().as_u16() {
         200..=299 => Ok(response),
-        400 | 413 => Err(ApiError::bad("Super Agent rejected the request")),
+        400 => Err(ApiError::bad("Super Agent rejected the request")),
+        413 => Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "invalid_request",
+            "Super Agent attachment exceeds the runtime size limit",
+        )),
+        415 => Err(ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "invalid_request",
+            "Super Agent does not accept this attachment type",
+        )),
         404 => Err(ApiError::new(
             StatusCode::NOT_FOUND,
             "not_found",

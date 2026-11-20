@@ -17,6 +17,13 @@ export interface SuperAgentUsage {
   admitted: boolean
 }
 
+/** Ordered input parts for the Eve HTTP channel. A file's data is base64, a data URL, or a URL. */
+export type SuperAgentMessagePart =
+  | { type: "text"; text: string }
+  | { type: "file"; mediaType: string; data: string; filename?: string }
+
+export type SuperAgentMessageContent = string | readonly SuperAgentMessagePart[]
+
 export interface SuperAgentMessage {
   id: string
   role: "user" | "assistant"
@@ -51,7 +58,7 @@ interface EveFact {
   }
 }
 
-/** DeskFleet sends plain text to eve. Only committed replies and consumed user text enter its chat. */
+/** The text transcript projects consumed user text and committed replies from Eve's stream. */
 function applyFact(history: SuperAgentHistory, at: string, { type, data }: EveFact) {
   switch (type) {
     case "delivery.consumed": {

@@ -56,10 +56,36 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 | --- | --- |
 | GET `/availability` | Read the boolean `enabled` for the authenticated account and selected Team. |
 | GET `/sessions` | List this Team's conversations by most recent activity, with `sessionId`, the first message's short `title` when available, and `lastActiveAt` in UTC milliseconds. |
-| POST `/sessions` | Send `{"operationId":"<uuid>"}` to create a Session and receive its `sessionId`. |
-| POST `/sessions/{sessionId}/messages` | Send `{"operationId":"<uuid>","message":"Plan the release"}` to receive a delivery receipt. |
+| POST `/sessions` | Send `{"operationId":"<uuid>"}` to create an empty Session and receive `{sessionId}`. Include `message` to deliver the first message and receive `{sessionId, deliveryId}`. |
+| POST `/sessions/{sessionId}/messages` | Send `operationId` and `message` to receive `{sessionId, deliveryId}`. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
 | GET `/usage` | Read the effective plan, billing period, configured allowance, recorded tokens, runtime availability and admission decision. |
+
+Both writes accept a plain string (including Markdown) or an ordered array of
+1–64 text and file parts. A file can be the entire message. This request opens
+a Session with a screenshot.
+
+```json
+{
+  "operationId": "ad6df494-c85c-47ad-80ff-c035da204365",
+  "message": [
+    { "type": "text", "text": "What changed in this screen?" },
+    {
+      "type": "file",
+      "mediaType": "image/png",
+      "filename": "screen.png",
+      "data": "https://example.com/screens/screen.png"
+    }
+  ]
+}
+```
+
+`filename` is optional. `data` can also contain base64 bytes or a data URL. The
+gateway accepts up to 35 MiB of JSON per request. Eve applies its upload
+policy (25 MiB per file by default). A delivery receipt confirms that Eve
+accepted the message. On a retry, send the same operation ID with the same
+parts in the same order. The server binds the Session to the Team before
+delivering the first message, including when resuming an interrupted create.
 
 When rollout is disabled, the other routes return HTTP 404 with code
 `super_agent_disabled`. The usage collector continues settling accepted work.

@@ -7,7 +7,7 @@ import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
-import { readSuperAgentHistory, superAgentPath, type SuperAgentSession, type SuperAgentHistory, type SuperAgentUsage } from "./super-agent.ts"
+import { readSuperAgentHistory, superAgentPath, type SuperAgentSession, type SuperAgentHistory, type SuperAgentMessageContent, type SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
@@ -297,10 +297,10 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   superAgentAvailability(teamId: string) { return this.request<{ enabled: boolean }>("GET", `${superAgentPath(teamId)}/availability`) }
   superAgentSessions(teamId: string) { return this.request<SuperAgentSession[]>("GET", `${superAgentPath(teamId)}/sessions`) }
   superAgentUsage(teamId: string) { return this.request<SuperAgentUsage>("GET", `${superAgentPath(teamId)}/usage`) }
-  createSuperAgentSession(teamId: string, operationId: string) {
-    return this.request<{ sessionId: string }>("POST", `${superAgentPath(teamId)}/sessions`, { operationId })
+  createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent) {
+    return this.request<{ sessionId: string; deliveryId?: string }>("POST", `${superAgentPath(teamId)}/sessions`, { operationId, message })
   }
-  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: string) {
+  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent) {
     return this.request<{ sessionId: string; deliveryId: string }>("POST", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/messages`, { operationId, message })
   }
   superAgentHistory(teamId: string, sessionId: string, startIndex: number) {

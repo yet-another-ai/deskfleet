@@ -94,6 +94,24 @@ test("sends Team-scoped Super Agent operations and preserves caller-supplied ret
   await expectRequest(f.fetch, 5, root + "/sessions/session%2F1/messages", { method: "POST", body: JSON.stringify({ operationId: "send-op", message: "hello" }) })
 })
 
+test("sends ordered rich message parts when creating and continuing a Super Agent Session", async () => {
+  const f = setup()
+  const parts = [
+    { type: "text", text: "Compare the screenshot and the report." },
+    { type: "file", mediaType: "image/png", filename: "screen.png", data: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "file", mediaType: "application/pdf", data: "https://assets.example/report.pdf" },
+  ] as const
+  const sessionId = "session"
+  const root = "https://fleet.example/api/teams/team/super-agent/sessions"
+  f.responses.push({ sessionId, deliveryId: "first" }, { sessionId, deliveryId: "next" })
+  const created = await f.client.createSuperAgentSession("team", "create-op", parts)
+  expect(created.deliveryId).toBe("first")
+  expect(await f.client.sendSuperAgentMessage("team", created.sessionId, "follow-up", [parts[1]]))
+    .toEqual({ sessionId, deliveryId: "next" })
+  await expectRequest(f.fetch, 1, root, { method: "POST", body: JSON.stringify({ operationId: "create-op", message: parts }) })
+  await expectRequest(f.fetch, 2, root + "/session/messages", { method: "POST", body: JSON.stringify({ operationId: "follow-up", message: [parts[1]] }) })
+})
+
 test("replays committed chat over the authenticated stream, advancing its durable cursor", async () => {
   const f = setup()
   const at = "2026-11-21T10:00:00Z"
