@@ -8,7 +8,7 @@ import { useWorkspaceCommands } from "./useWorkspaceCommands.ts"
 import { workspacePromptAttachments, type ComposerAttachment } from "../services/composer-attachments.ts"
 import { validComposerMentions, type ComposerMention } from "../services/composer-mentions.ts"
 import { githubReferenceLabel } from "../services/github-composer-reference.ts"
-import { missingWorker } from "../services/workspace-message-timeline.ts"
+import { missingWorker, type LocalWorkspaceStop, type WorkspaceReplyProgress, stoppableSteps } from "../services/workspace-message-timeline.ts"
 import { useWorkspaceAgentDrafts } from "../stores/workspace-agent-drafts.ts"
 
 /** The view is keyed by workspace. Late reads must never replace acknowledged mutations. */
@@ -55,6 +55,7 @@ export function useWorkspaceConversation(
   const actionError = ref("")
   const sending = ref(false)
   const saving = ref(false)
+  const localStops = ref(new Map<string, LocalWorkspaceStop>())
   const visible = useDocumentVisibility()
   let active = true
   let generation = 0
@@ -65,6 +66,12 @@ export function useWorkspaceConversation(
     if (!active || value.workspaceId !== workspaceId) return
     snapshot.value = value
     readingError.value = ""
+    for (const [id, local] of localStops.value) {
+      if (local.state !== "unconfirmed") continue
+      const source = value.messages.find(message => message.id === id)
+      const acknowledged = value.messages.some(message => message.sourceMessageId === id && message.stopState && (!local.ticketId || local.ticketId === message.ticketId))
+      if ((source?.revision ?? 0) !== local.revision || source?.state === "stopped" || source?.state === "answered" || acknowledged) localStops.value.delete(id)
+    }
     const pending = draft.pending
     if (pending && value.messages.some(message => message.id === pending.messageId)) {
       const submitted = pending.attachmentIds ?? []
@@ -169,16 +176,34 @@ export function useWorkspaceConversation(
     catch (reason) { if (active) actionError.value = messageOf(reason) }
     finally { sending.value = false }
   }
-  async function change(operation: () => Promise<SuperSnapshot>) {
+  async function change(operation: () => Promise<SuperSnapshot>, reportError = true) {
     if (offline() || saving.value || sending.value) return false
     saving.value = true
     generation++
     actionError.value = ""
     try { accept(await operation()); return true }
-    catch (reason) { if (active) actionError.value = messageOf(reason); return false }
+    catch (reason) {
+      if (active && reportError) actionError.value = messageOf(reason)
+      return false
+    }
     finally { saving.value = false }
   }
+  async function stop(progress: WorkspaceReplyProgress, ticketId?: string) {
+    const command = api.stop
+    if (!command || offline() || saving.value || sending.value || !snapshot.value?.supportsStop) return
+    const steps = stoppableSteps(progress).filter(step => !ticketId || step.ticketId === ticketId)
+    if (!steps.length) return
+    if (steps.length === 1) ticketId = steps[0]!.ticketId
+    const { sourceId: messageId, revision } = progress
+    const sharedTurns = steps.flatMap(step => step.sharedTurn && step.ticketId && step.turnId ? [{ ticketId: step.ticketId, turnId: step.turnId }] : [])
+    localStops.value.set(messageId, { ticketId, revision, state: "stopping" })
+    const ok = await change(() => command({ workspaceId, messageId, revision, ...(ticketId && { ticketId }),
+      ...(sharedTurns.length && { sharedTurns }) }), false)
+    if (ok) localStops.value.delete(messageId)
+    else localStops.value.set(messageId, { ticketId, revision, state: "unconfirmed" })
+  }
   return {
+    stop, localStops,
     snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, send, refresh, commandMenu: commands.menu, canSendPlain, canRefresh: computed(() => !!readingError.value && !actionError.value),
     retry: (message: SuperMessage) => canRoute(message.text, !!message.attachments?.length, !message.command && !missingWorker(message)) && change(() => {
       lastSentId = message.id

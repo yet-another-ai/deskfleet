@@ -74,10 +74,22 @@
       "blocked": "受阻"
     },
     "progress": {
+      "stopping": "正在停止…",
+      "unconfirmed": "尚未确认停止",
       "waiting": "正在等待执行结果…",
       "queued": "已排队，等待执行…",
       "working": "正在执行任务…",
       "attention": "正在等待你确认或回复…"
+    },
+    "stop": {
+      "request": "停止本次请求",
+      "turn": "停止本轮",
+      "choose": "选择要停止的请求",
+      "group": "停止本次请求（{count} 项）",
+      "groupShared": "停止本次请求（{count} 项），含共用的整轮执行",
+      "selectBranch": "按事项停止",
+      "named": "停止「{name}」",
+      "namedTurn": "停止「{name}」的整轮执行"
     },
     "role": {
       "user": "你",

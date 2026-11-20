@@ -33,7 +33,7 @@ function sessionLinks(sessionId: string | undefined, jobs: Dispatch[]) {
 
 /** The host retains dispatch records for auditing and quote IDs. The conversation shows their
  * controls on the originating request and transient progress in the agent reply. */
-export function workspaceMessageRows(messages: SuperMessage[], tickets: Map<string, SuperTicket>) {
+export function workspaceMessageRows(messages: SuperMessage[], tickets: Map<string, SuperTicket>, localStops?: Map<string, LocalWorkspaceStop>) {
   const byId = new Map(messages.map(message => [message.id, message]))
   const operations = new Set<string>()
   const dispatches = new Map<string, Map<string, Dispatch>>()
@@ -60,7 +60,7 @@ export function workspaceMessageRows(messages: SuperMessage[], tickets: Map<stri
     if (delivery) item.delivery = message
     group.set(ticket.id, item)
   }
-  const progress = replyProgress(messages, tickets, dispatches, operations)
+  const progress = replyProgress(messages, tickets, dispatches, operations, localStops)
   return messages.filter(message => !operations.has(message.id)).map(message => {
     const jobs = [...(dispatches.get(message.id)?.values() ?? [])]
     const onlyJob = jobs.length === 1 ? jobs[0] : undefined
@@ -134,14 +134,21 @@ export function groupWorkspaceApprovals(rows: WorkspaceRow[]): TranscriptGroup[]
 }
 
 interface ProgressStep {
-  state: "routing" | "queued" | "working" | "attention" | "waiting"
+  state: "routing" | "queued" | "working" | "attention" | "waiting" | "stopping" | "stopped" | "unconfirmed"
   title?: string
+  ticketId?: string
+  canStop?: boolean
+  sharedTurn?: boolean
+  turnId?: string
 }
 
+export interface LocalWorkspaceStop { revision: number; ticketId?: string; state: "stopping" | "unconfirmed" }
 export interface WorkspaceReplyProgress {
   sourceId: string
+  revision: number
   steps: ProgressStep[]
 }
+export const stoppableSteps = (progress: WorkspaceReplyProgress) => progress.steps.filter(step => step.canStop && step.state !== "stopping" && step.state !== "stopped")
 
 const scopedId = (scope: string, id: string) => JSON.stringify([scope, id])
 
@@ -178,24 +185,38 @@ function indexReplies(messages: SuperMessage[], operations: Set<string>) {
 
 /** Ticket status is shared across turns. A result closes only its originating work;
  * a new turn on the same ticket must not reopen progress on historical replies. */
-function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicket>, dispatches: Map<string, Map<string, Dispatch>>, operations: Set<string>) {
+function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicket>, dispatches: Map<string, Map<string, Dispatch>>, operations: Set<string>, localStops?: Map<string, LocalWorkspaceStop>) {
   const index = indexReplies(messages, operations)
   const result = new Map<string, WorkspaceReplyProgress>()
   const concurrent = new Map<string, { step: ProgressStep; ownsTurn: boolean }[]>()
   for (const source of messages) {
     if (source.role !== "user") continue
     const steps: ProgressStep[] = []
-    if (source.state === "routing") steps.push({ state: "routing" })
+    if (source.state === "routing" || source.state === "stopped") steps.push({ state: source.state, canStop: source.state === "routing" })
     else {
       const jobs = dispatches.get(source.id)
-      if (source.state !== "assigned" && !(jobs && jobs.size > 1 && (source.state === "failed" || source.state === "uncertain"))) continue
+      if (source.state !== "assigned") {
+        if (!jobs || (source.state !== "failed" && source.state !== "uncertain")) continue
+        const hasPendingStop = [...jobs.values()].some(job => job.marker.stopState || (source.state === "uncertain" && job.marker.canStop))
+        if (jobs.size === 1 && !hasPendingStop) continue
+      }
       // Older snapshots may have the ticket link without its dispatch record.
       const assigned = source.ticketId ? [source.ticketId] : [...(jobs?.keys() ?? [])]
       for (const id of assigned) {
         const ticket = tickets.get(id)
-        if (!ticket || (ticket.status !== "queued" && ticket.status !== "working" && ticket.status !== "attention")) continue
-        if (index.completed.has(scopedId(id, source.id))) continue
         const dispatch = jobs?.get(id)
+        if (!ticket || index.completed.has(scopedId(id, source.id))) continue
+        const marker = dispatch?.marker
+        const target = { ticketId: id, title: assigned.length > 1 ? ticket.title : undefined, canStop: marker?.canStop, sharedTurn: marker?.sharedTurn, turnId: marker?.turnId }
+        if (marker?.stopState) {
+          if (marker.stopState !== "finished") steps.push({ ...target, state: marker.stopState })
+          continue
+        }
+        if (source.state === "uncertain" && marker?.canStop && dispatch?.delivery) {
+          steps.push({ ...target, state: "waiting" })
+          continue
+        }
+        if (ticket.status !== "queued" && ticket.status !== "working" && ticket.status !== "attention") continue
         if (source.state !== "assigned" && dispatch?.delivery) continue
         const turnId = dispatch?.marker.turnId ?? source.turnId
         const inputId = dispatch?.marker.inputId ?? source.inputId
@@ -211,7 +232,7 @@ function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicke
           || !!turnId && prompt.turnId === turnId || !!inputId && prompt.inputId === inputId)
         const step: ProgressStep = {
           state: ticket.status === "attention" && prompt && !ownsTurn ? "waiting" : ticket.status,
-          title: assigned.length > 1 ? ticket.title : undefined,
+          ...target,
         }
         steps.push(step)
         const group = concurrent.get(id) ?? []
@@ -219,7 +240,13 @@ function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicke
         concurrent.set(id, group)
       }
     }
-    if (steps.length) result.set(source.state === "routing" ? source.id : index.replies.get(source.id) ?? source.id, { sourceId: source.id, steps })
+    const revision = source.revision ?? 0
+    const local = localStops?.get(source.id)
+    if (local?.revision === revision) {
+      for (const step of steps) if (step.canStop && step.state !== "stopped" && (!local.ticketId || step.ticketId === local.ticketId)) step.state = local.state
+    }
+    const anchor = source.state === "routing" || source.state === "stopped" ? source.id : index.replies.get(source.id) ?? source.id
+    if (steps.length) result.set(anchor, { sourceId: source.id, revision, steps })
   }
   // A working ticket can already have another input in its backlog. Without
   // turn-specific evidence, acknowledge pending work without claiming it is running.

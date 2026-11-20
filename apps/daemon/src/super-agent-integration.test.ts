@@ -139,6 +139,96 @@ test("Agent channel, SQLite, real AgentSessions permissions and result projectio
   assert.deepEqual(backend.prompts, ["Read README\n\nTicket scope:\nRead only", "Read the second file"])
 })
 
+test("project stop withdraws only the queued input, ignores a late click and cancels the next turn's outstanding permission", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-stop-"))
+  const backend = new BackendAgent()
+  const machine = await open(directory, backend)
+  t.after(async () => { try { await machine.close() } finally { await rm(directory, { recursive: true, force: true }) } })
+  const workspaceId = (await machine.catalog.native.createWorkspace("Project", [{ path: directory }])).id
+  await machine.providers.create({ template: "codex", name: "Fixture", env: {}, inheritShellEnvironment: false })
+  const snap = () => machine.call<SuperSnapshot>("_deskfleet/super-agent/snapshot", { workspaceId })
+  const send = (messageId: string) => machine.call("_deskfleet/super-agent/send", { workspaceId, messageId, text: messageId })
+  const stop = (messageId: string) => machine.call("_deskfleet/super-agent/stop", { workspaceId, messageId, revision: 0 })
+  await send("A")
+  const first = await eventually(snap, room => !!room.pendingRequests?.length)
+  const permission = first.pendingRequests![0]!.item
+  const sessionId = permission.sessionId
+  const journal = () => machine.workers.journal.read(sessionId)
+  await send("B")
+  await eventually(journal, session => session.inputs.length === 2 && session.inputs[1]?.state === "pending")
+  await Promise.all([stop("B"), stop("B")])
+  const withdrawn = await eventually(snap, room => room.messages.some(m => m.kind === "dispatch" && m.sourceMessageId === "B" && m.stopState === "stopped"))
+  assert.equal(withdrawn.pendingRequests?.[0]?.item.id, permission.id)
+  assert.equal((await journal()).inputs[1]?.state, "withdrawn")
+  await machine.restartFront()
+  await machine.call("_deskfleet/permission/respond", { sessionId, permissionId: permission.id, optionId: "allow", operationId: randomUUID() })
+  await eventually(snap, room => room.messages.some(m => m.workerEvent === "result" && m.sourceMessageId === "A"))
+  await send("C")
+  const third = await eventually(snap, room => !!room.pendingRequests?.length)
+  await stop("A")
+  await eventually(snap, room => room.messages.some(m => m.kind === "dispatch" && m.sourceMessageId === "A" && m.stopState === "finished"))
+  assert.equal((await snap()).pendingRequests?.[0]?.item.id, third.pendingRequests![0]!.item.id)
+  await stop("C")
+  const stopped = await eventually(snap, room => !room.pendingRequests?.length && room.messages.some(m => m.workerEvent === "result" && m.sourceMessageId === "C" && m.stopState === "stopped"))
+  assert.match(stopped.messages.find(m => m.sourceMessageId === "C" && m.workerEvent === "result")!.text, /waiting for approval/)
+  const state = await journal()
+  assert.deepEqual(state.turns.map(turn => turn.state), ["completed", "cancelled"])
+  assert.deepEqual(state.permissions.map(p => p.state), ["resolved", "cancelled"])
+  assert.deepEqual(state.inputs.map(i => i.state), ["delivered", "withdrawn", "delivered"])
+  assert.equal(backend.prompts.length, 2)
+})
+
+test("stopping one branch and then its whole request leaves an independent Worker's approval intact", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-stop-split-"))
+  const machine = await open(directory, new BackendAgent(), async ctx => ({
+    reason: "independent tasks",
+    actions: (ctx.text === "split" ? ["left", "right"] : [ctx.text]).map(title => ({ kind: "create", title, prompt: title, scope: title })),
+  }))
+  t.after(async () => { try { await machine.close() } finally { await rm(directory, { recursive: true, force: true }) } })
+  const workspaceId = (await machine.catalog.native.createWorkspace("Project", [{ path: directory }])).id
+  await machine.providers.create({ template: "codex", name: "Fixture", env: {}, inheritShellEnvironment: false })
+  const snap = () => machine.call<SuperSnapshot>("_deskfleet/super-agent/snapshot", { workspaceId })
+  for (const messageId of ["split", "independent"]) await machine.call("_deskfleet/super-agent/send", { workspaceId, messageId, text: messageId })
+  const active = await eventually(snap, room => room.pendingRequests?.length === 3)
+  const left = active.tickets.find(ticket => ticket.title === "left")!
+  const independent = active.tickets.find(ticket => ticket.title === "independent")!
+  const remainingApproval = active.pendingRequests!.find(request => request.ticketId === independent.id)!.item.id
+  const stop = { workspaceId, messageId: "split", revision: 0 }
+  await assert.rejects(machine.call("_deskfleet/super-agent/stop", { ...stop, ticketId: independent.id }), /does not belong/)
+  await machine.call("_deskfleet/super-agent/stop", { ...stop, ticketId: left.id })
+  const partial = await eventually(snap, room => room.pendingRequests?.length === 2)
+  assert.ok(partial.pendingRequests!.every(request => request.ticketId !== left.id))
+  await machine.call("_deskfleet/super-agent/stop", stop)
+  const done = await eventually(snap, room => room.pendingRequests?.length === 1 && room.messages.filter(m =>
+    m.sourceMessageId === "split" && m.workerEvent === "result" && m.stopState === "stopped").length === 2)
+  assert.equal(done.pendingRequests![0]!.item.id, remainingApproval)
+})
+
+test("stopping after a Worker claims an input but before provider dispatch withdraws it without consuming a turn", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-stop-admission-"))
+  const backend = new BackendAgent(), quotas = new TestAgentQuotas()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  quotas.turnLimit = async () => { await gate; return null }
+  const machine = await open(directory, backend, undefined, quotas)
+  t.after(async () => { release(); try { await machine.close() } finally { await rm(directory, { recursive: true, force: true }) } })
+  const workspaceId = (await machine.catalog.native.createWorkspace("Project", [{ path: directory }])).id
+  await machine.providers.create({ template: "codex", name: "Fixture", env: {}, inheritShellEnvironment: false })
+  const snap = () => machine.call<SuperSnapshot>("_deskfleet/super-agent/snapshot", { workspaceId })
+  await machine.call("_deskfleet/super-agent/send", { workspaceId, messageId: "claim", text: "claim" })
+  const active = await eventually(snap, room => !!room.tickets[0]?.sessionId)
+  const journal = () => machine.workers.journal.read(active.tickets[0]!.sessionId!)
+  await eventually(journal, session => session.turns[0]?.state === "running" && session.turns[0]?.consumed === false)
+  await machine.call("_deskfleet/super-agent/stop", { workspaceId, messageId: "claim", revision: 0 })
+  await eventually(journal, session => session.turns[0]?.state === "cancelling" || session.turns[0]?.state === "cancelled")
+  release()
+  const done = await eventually(journal, session => !["running", "cancelling"].includes(session.turns[0]!.state))
+  assert.equal(done.turns[0]?.state, "cancelled")
+  assert.equal(done.turns[0]?.consumed, false)
+  assert.equal(done.inputs[0]?.state, "withdrawn")
+  assert.equal(backend.prompts.length, 0)
+})
+
 test("an outstanding default-workspace question survives a front desk restart and answers the original Worker", async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-super-question-"))
   const backend = new BackendAgent()

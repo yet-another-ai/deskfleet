@@ -74,10 +74,22 @@
       "blocked": "Blocked"
     },
     "progress": {
+      "stopping": "Stopping…",
+      "unconfirmed": "Stop not confirmed",
       "waiting": "Waiting for the result…",
       "queued": "Waiting to start…",
       "working": "Working on this task…",
       "attention": "Waiting for your approval or reply…"
+    },
+    "stop": {
+      "request": "Stop this request",
+      "turn": "Stop this turn",
+      "choose": "Choose a request to stop",
+      "group": "Stop this request ({count} tasks)",
+      "groupShared": "Stop this request ({count} tasks), including shared turns",
+      "selectBranch": "Stop individual tasks",
+      "named": "Stop {name}",
+      "namedTurn": "Stop the shared turn for {name}"
     },
     "role": {
       "user": "You",

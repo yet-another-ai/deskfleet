@@ -74,10 +74,22 @@
       "blocked": "保留中"
     },
     "progress": {
+      "stopping": "停止中…",
+      "unconfirmed": "停止を確認できていません",
       "waiting": "実行結果を待っています…",
       "queued": "実行を待っています…",
       "working": "タスクを実行しています…",
       "attention": "承認または返信を待っています…"
+    },
+    "stop": {
+      "request": "このリクエストを停止",
+      "turn": "このターンを停止",
+      "choose": "停止するリクエストを選択",
+      "group": "このリクエストを停止（{count} 件）",
+      "groupShared": "このリクエストを停止（{count} 件、共有ターン全体を含む）",
+      "selectBranch": "タスクを個別に停止",
+      "named": "「{name}」を停止",
+      "namedTurn": "「{name}」のターン全体を停止"
     },
     "role": {
       "user": "あなた",

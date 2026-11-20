@@ -25,9 +25,13 @@ import type { SpeechApi } from "./speech.ts"
 
 import type { SuperMethods, SuperHistory, SuperHistoryRequest } from "../../../apps/daemon/src/super-agent-protocol.ts"
 
-export type SuperAgentApi = { history?: (params: SuperHistoryRequest) => Promise<SuperHistory> } & {
+type SuperAgentActions = {
   [Name in keyof SuperMethods as Name extends `_deskfleet/super-agent/${infer Action}` ? Action : never]:
     (params: SuperMethods[Name]["params"]) => Promise<SuperMethods[Name]["result"]>
+}
+export type SuperAgentApi = Omit<SuperAgentActions, "stop"> & {
+  stop?: SuperAgentActions["stop"]
+  history?: (params: SuperHistoryRequest) => Promise<SuperHistory>
 }
 
 /** The host platform adapter configured for the shared application. */

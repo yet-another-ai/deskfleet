@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto"
 import type { ComposerReference, ComposerSkillReference } from "./composer-reference-protocol.ts"
 import type { AgentActor } from "./agent-protocol.ts"
-import type { SuperCoordinator, SuperCoordinatorUsage, SuperMessage, SuperModelSelection, SuperSnapshot, SuperTicket, SuperTicketStatus, SuperWorkerSelection, SuperWorkspaceId } from "./super-agent-protocol.ts"
+import type { SuperCoordinator, SuperCoordinatorUsage, SuperMessage, SuperModelSelection, SuperSnapshot, SuperStopState, SuperTicket, SuperTicketStatus, SuperWorkerSelection, SuperWorkspaceId } from "./super-agent-protocol.ts"
 
 export interface StoredSuperMessage extends SuperMessage {
   workerRequestId?: string
   attachmentKeys?: string[]
   actor?: AgentActor
-  revision?: number
   correctedTicketId?: string
   corrections?: { fromTicketId?: string; toTicketId: string; actor: AgentActor; createdAt: string }[]
   options?: string[]
@@ -51,6 +50,9 @@ export interface DispatchIntent {
   context?: "directory" | "worktree"
   turnId?: string
   inputId?: string
+  deliveredTurnId?: string
+  sharedTurn?: boolean
+  stop?: { state: SuperStopState; requestedAt: number; actor: AgentActor; withdrawId: string; cancelId: string; sharedTurnId?: string }
   adoptHistory?: boolean
   /** null restores an existing ticket with no status; a new ticket has no prior state. */
   priorTicketStatus?: SuperTicketStatus | null
@@ -113,6 +115,11 @@ export function dispatchRecovery(room: SuperRoom, intents: DispatchIntent[]) {
   return recoverable
 }
 
+// A missing acknowledgement is never a terminal result. Keep the durable command available for reconciliation.
+export function visibleStopState(stop: NonNullable<DispatchIntent["stop"]>): SuperStopState {
+  return stop.state === "stopping" && Date.now() - stop.requestedAt > 15_000 ? "unconfirmed" : stop.state
+}
+
 export function publicRoom(room: SuperRoom, coordinator: SuperCoordinator | undefined, provider: string, intents: DispatchIntent[]): SuperSnapshot {
   const recoverable = dispatchRecovery(room, intents)
   const sourceTickets = new Map(room.messages.filter(m => m.role === "user").map(m => [m.id, m.ticketId]))
@@ -123,7 +130,7 @@ export function publicRoom(room: SuperRoom, coordinator: SuperCoordinator | unde
     workerAutoApprove: room.workerAutoApprove === true,
     workerSelection: room.provider === provider ? room.workerSelection ?? {} : {},
     coordinator, workspaceId: room.workspaceId, provider, focusTicketId: room.focusTicketId,
-    messages: room.messages.map(({ actor, revision, correctedTicketId, corrections, options, attachmentKeys, workerRequestId, ...message }) => {
+    messages: room.messages.map(({ actor, correctedTicketId, corrections, options, attachmentKeys, workerRequestId, ...message }) => {
       if (message.workerEvent === "permission" || message.workerEvent === "question") message.text = withoutWorkerLink(message.text)
       if (message.role === "user" && actor?.userId) {
         message.author = { kind: "user", userId: actor.userId, ...(actor.sourceMachine && { sourceMachine: actor.sourceMachine }) }
@@ -145,12 +152,16 @@ export function publicRoom(room: SuperRoom, coordinator: SuperCoordinator | unde
     tickets: room.tickets.map(({ executionWorkspaceId, acceptanceMessageId, lastEventSeq, output, ...ticket }) => ({ ...ticket, summary: withoutWorkerLink(ticket.summary) })),
   }
   for (const intent of intents) {
-    if (intent.roomId !== room.workspaceId || intent.phase === "withdrawn") continue
+    if (intent.roomId !== room.workspaceId || intent.phase === "withdrawn" && !intent.stop) continue
     const marker = markers.get(markerKey(intent.messageId, intent.ticketId))
     if (!marker) continue
+    marker.canStop = intent.operation !== "stop" && intent.phase !== "failed" && intent.phase !== "withdrawn"
+    if (intent.stop) marker.stopState = visibleStopState(intent.stop)
+    if (intent.sharedTurn) marker.sharedTurn = true
     if (intent.inputId) marker.inputId = intent.inputId
     // A queued submit can share a session with a running turn belonging to another input.
-    if (intent.operation !== "submit" && intent.turnId) marker.turnId = intent.turnId
+    if (intent.deliveredTurnId) marker.turnId = intent.deliveredTurnId
+    else if (intent.operation !== "submit" && intent.turnId) marker.turnId = intent.turnId
   }
   return snapshot
 }

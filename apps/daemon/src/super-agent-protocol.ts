@@ -7,7 +7,8 @@ export type SuperWorkspaceId = string | null
 /** Configured provider instance ID within this machine registration. */
 export type SuperCoordinator = string
 export type SuperTicketStatus = "queued" | "working" | "attention" | "stopped" | "blocked"
-export type SuperMessageState = "routing" | "assigned" | "answered" | "failed" | "uncertain" | "transferred"
+export type SuperMessageState = "routing" | "assigned" | "answered" | "failed" | "uncertain" | "transferred" | "stopped"
+export type SuperStopState = "stopping" | "stopped" | "unconfirmed" | "finished"
 
 export interface SuperAttachmentInfo { type: "image" | "resource" | "resource_link"; name: string }
 
@@ -28,6 +29,11 @@ export interface SuperMessage {
   attachments?: SuperAttachmentInfo[]
   createdAt: string
   state?: SuperMessageState
+  revision?: number
+  stopState?: SuperStopState
+  canStop?: boolean
+  /** This input was delivered into an existing turn along with another input. */
+  sharedTurn?: boolean
   replyTo?: string
   /** The execution target chosen when submitting a provider slash command. */
   command?: SuperWorkerCommandTarget
@@ -86,6 +92,7 @@ export type SuperHistoryRequest = { view: "links" } | { view: "groups"; assign?:
 export interface SuperWorkspace { id: string; name: string; roots: string[] }
 
 export interface SuperSnapshot {
+  supportsStop?: boolean
   pendingRequests?: (SuperWorkerRequest & { ticketId: string })[]
   coordinatorUsage?: SuperCoordinatorUsage
   coordinatorOverrides?: SuperModelSelection
@@ -142,6 +149,15 @@ export interface SuperCorrection {
   messageId: string
   ticketId: string
 }
+export interface SuperStop {
+  workspaceId: SuperWorkspaceId
+  messageId: string
+  revision: number
+  /** Omit to stop all unfinished branches of this request. */
+  ticketId?: string
+  /** Shared turns explicitly shown to the user, keyed by their ticket. */
+  sharedTurns?: { ticketId: string; turnId: string }[]
+}
 export interface SuperSettings {
   coordinatorSelection?: SuperModelSelection & { provider: SuperCoordinator }
   workerSelection?: SuperModelSelection & { provider: string }
@@ -154,6 +170,7 @@ export interface SuperSettings {
 export interface SuperMethods {
   "_deskfleet/super-agent/snapshot": { params: { workspaceId: SuperWorkspaceId; attachment?: SuperAttachmentRequest }; result: SuperSnapshot }
   "_deskfleet/super-agent/send": { params: SuperSend; result: SuperSnapshot }
+  "_deskfleet/super-agent/stop": { params: SuperStop; result: SuperSnapshot }
   "_deskfleet/super-agent/correct": { params: SuperCorrection; result: SuperSnapshot }
   "_deskfleet/super-agent/settings": { params: SuperSettings; result: SuperSnapshot }
 }

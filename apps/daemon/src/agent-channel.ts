@@ -218,7 +218,7 @@ export class AgentChannel {
         return
       }
       if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
-      if (this.#sessions.superAgent && ["snapshot", "send", "correct", "settings", "history"].some(name => method === `_deskfleet/super-agent/${name}`)) {
+      if (this.#sessions.superAgent && ["snapshot", "send", "stop", "correct", "settings", "history"].some(name => method === `_deskfleet/super-agent/${name}`)) {
         const result = await this.#sessions.superAgent(method, params, this.#actor)
         if (!this.#closed) this.#queue({ jsonrpc: "2.0", id, result })
         return

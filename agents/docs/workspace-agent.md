@@ -153,6 +153,7 @@ A literal filesystem path can still be sent as text.
 | Scoped renderer API | `packages/components/src/composables/useMachineRuntimes.ts`, `packages/client/src/desktop-api.ts` |
 | Granted peer RPC and wire contract | `apps/daemon/src/authorized-peers.ts`, `agent-channel.ts`, `super-agent-protocol.ts` |
 | Host decisions, focus, private state and worker receipts | `apps/daemon/src/super-agent-service.ts`, `super-agent-state.ts`, `super-agent-worker.ts` |
+| Stop a request or one of its branches | `apps/daemon/src/super-agent-stop.ts`, `packages/components/src/components/session/WorkspaceReplyProgress.vue` |
 | Worker address format, origin and explicit routing | `packages/client/src/worker-reference.ts`, `packages/client/src/desktop-api.ts` (machine target), `apps/daemon/src/super-agent-target.ts` |
 | Candidate selection, bounded file/history evidence and inference | `apps/daemon/src/super-agent-router.ts`, `super-agent-evidence.ts`, `super-agent-model.ts`, `super-agent-codex.ts` |
 | Registration storage and private default execution directory | `apps/daemon/src/super-agent-store.ts`, `super-agent-workspaces.ts`, `crates/store/src/super_agent.rs` |
@@ -194,6 +195,24 @@ returns to the project or default workspace where the dialog was opened.
 Live routing and execution progress appears in the agent reply, or in
 a temporary agent row while waiting for the first reply. The final result clears
 that request’s progress. Split requests retain progress for unfinished tickets.
+On compatible hosts the empty composer and each Agent progress row can stop a
+request directly. With several requests the composer asks which one to stop.
+A split request can stop all unfinished branches or one named ticket. A draft
+keeps the send button and the inline stop remains available.
+
+The host resolves the original user message and revision, including a handoff.
+Stopping routing aborts that decision and fences off late dispatch. A stop of
+an assigned branch is saved on its existing dispatch intent. For a queued
+Worker input the host uses `_deskfleet/input/withdraw`; for an actual turn it
+uses `_deskfleet/turn/cancel` with its journal ID. A delivered steer shares the
+original turn. Single-request cancellation uses the optional `requireUnshared`
+guard inside the Worker's existing journal transaction. A steer that arrives
+after cancellation starts can run on its own next turn. Pending approvals close
+through the same Worker cancellation.
+A claimed input cancelled before provider admission is withdrawn without consuming a turn.
+The terminal journal outcome wins a race with natural completion. If delivery
+or cancellation cannot be confirmed, the conversation reports that uncertainty.
+Partial output and completed work remain available for follow-up.
 Dispatch markers and delivery notices still supply recovery controls on the
 source message. Previous records without a marker type are recognized as well.
 If a Worker is missing before the workspace checkpoint, no create or submit

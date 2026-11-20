@@ -23,6 +23,7 @@ export function createWorkspaceAgentClient(signaling: AgentSignalingApi, availab
   const api: SuperAgentApi = {
     history: params => call<SuperHistory>("history", params),
     snapshot: params => call("snapshot", params), send: params => call("send", params),
+    stop: params => call("stop", params),
     correct: params => call("correct", params), settings: params => call("settings", params),
   }
   return { api, close: () => client.close() }

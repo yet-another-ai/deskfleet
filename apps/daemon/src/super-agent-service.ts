@@ -3,7 +3,7 @@ import type { CatalogSnapshot } from "@deskfleet/native"
 import type { SuperHistory } from "./super-agent-protocol.ts"
 import { effectiveCoordinatorProfile, validateCoordinatorProfile } from "./super-agent-profiles.ts"
 import { attachmentInfo, previewSuperAttachments, superAttachments, type SuperAttachmentStore } from "./super-agent-attachments.ts"
-import { isDeepStrictEqual } from "node:util"
+import { aborted, isDeepStrictEqual } from "node:util"
 import { composerSkillText } from "./composer-reference-protocol.ts"
 import { selectedReferences, selectedSkills, workspaceMentions, workspaceReferenceEvidence } from "./super-agent-mentions.ts"
 import { randomUUID } from "node:crypto"
@@ -18,6 +18,7 @@ import { superRequestObject as object, superResourceId as identifier, parseSuper
 import { dispatchRecovery, emptyState, errorText, missingCoordinatorProvider, missingWorkerProvider, note, publicRoom, roomFor, userFocus, type DispatchIntent, type SuperRoom, type SuperStateStore, type SuperUserState } from "./super-agent-state.ts"
 import { activeTurn, deliverSuperIntent, projectSuperEvents, type SuperWorkers } from "./super-agent-worker.ts"
 import { routeWorkerCommand, sameCommandTarget } from "./super-agent-command.ts"
+import { observeWorkerInputs, requestWorkspaceStop, stopWorkspaceDispatch, withdrawDispatch } from "./super-agent-stop.ts"
 
 export type { SuperUserState } from "./super-agent-state.ts"
 import type { SuperWorkspace } from "./super-agent-protocol.ts"
@@ -44,6 +45,12 @@ function knownWorkspace(catalog: SuperWorkspace[], id: string): SuperWorkspace {
   if (!project) throw new Error("Workspace not found in this registration")
   return project
 }
+function bindWorker(room: SuperRoom, ticket: SuperRoom["tickets"][number], session: AgentSessionRecord) {
+  if (ticket.sessionId && ticket.sessionId !== session.id) throw new Error("The ticket already has a different worker")
+  ticket.sessionId = session.id
+  ticket.lastEventSeq ??= session.lastEventSeq
+  for (const message of room.messages) if (message.ticketId === ticket.id && !message.sessionId) message.sessionId = session.id
+}
 /** A personal front desk inside an existing authenticated machine registration. Workers retain their normal lifecycle. */
 export class SuperAgentService {
   readonly #deps: Dependencies
@@ -54,6 +61,7 @@ export class SuperAgentService {
   readonly #pendingRequests = new Map<string, { ticketId: string; requests: SuperWorkerRequest[] }>()
   readonly #failedReplays = new Set<string>()
   readonly #stop = new AbortController()
+  readonly #routes = new Map<string, AbortController>()
   #unsubscribe?: () => void
   constructor(deps: Dependencies) { this.#deps = deps }
 
@@ -97,6 +105,7 @@ export class SuperAgentService {
     }
     snapshot.supportsWorkerReferences = true
     snapshot.supportsWorkerCommands = true
+    snapshot.supportsStop = true
     snapshot.supportsComposerMentions = true
     snapshot.supportsAttachmentPreviews = !!this.#deps.attachments
     snapshot.supportsAttachments = !!this.#deps.attachments
@@ -132,6 +141,10 @@ export class SuperAgentService {
         for (const message of room.messages) if (message.role === "user" && message.state === "routing") this.#scheduleRoute(uid, room.workspaceId, message.id)
       }
       for (const intent of state.intents) {
+        if (intent.stop) {
+          if (intent.stop.state === "stopping" || intent.stop.state === "unconfirmed") this.#scheduleStop(uid, intent)
+          continue
+        }
         if (intent.phase === "planned" || intent.phase === "working") this.#scheduleDispatch(uid, intent)
         if (intent.phase === "uncertain") this.#track(this.#reconcile(uid, intent))
       }
@@ -326,6 +339,16 @@ export class SuperAgentService {
       if (Array.isArray(accepted)) {
         for (const intent of accepted) this.#scheduleDispatch(uid, intent)
       } else if (accepted) this.#scheduleRoute(uid, workspaceId, request.messageId)
+    } else if (method === "_deskfleet/super-agent/stop") {
+      if (typeof arg.revision !== "number" || !Number.isSafeInteger(arg.revision) || arg.revision < 0) throw new Error("Invalid request revision")
+      if (arg.sharedTurns !== undefined && (!Array.isArray(arg.sharedTurns) || arg.sharedTurns.length > 6)) throw new Error("Invalid shared turn selection")
+      const request = { workspaceId, messageId: identifier(arg.messageId), revision: arg.revision,
+        ticketId: arg.ticketId === undefined ? undefined : identifier(arg.ticketId),
+        sharedTurns: arg.sharedTurns?.map(value => { const turn = object(value); return { ticketId: identifier(turn.ticketId), turnId: identifier(turn.turnId) } }) }
+      const authorized = await this.#deps.authorize(actor)
+      const { routeId, intents } = await this.#transaction(uid, state => requestWorkspaceStop(state, request, authorized))
+      if (routeId) this.#routes.get(JSON.stringify([uid, routeId]))?.abort()
+      for (const intent of intents) this.#scheduleStop(uid, intent)
     } else if (method === "_deskfleet/super-agent/correct") {
       const messageId = identifier(arg.messageId), ticketId = identifier(arg.ticketId)
       await this.#correct(uid, workspaceId, messageId, ticketId, actor)
@@ -342,19 +365,11 @@ export class SuperAgentService {
       if (!target || !original) throw new Error("Unknown ticket or original message")
       if (original.command) throw new Error("This command is bound to its selected worker. Send a new command to choose another.")
       const intents = state.intents.filter(intent => intent.roomId === id && intent.messageId === messageId)
-      if (original.state === "transferred" || intents.some(intent => !["planned", "withdrawn"].includes(intent.phase))) {
+      if (original.state === "transferred" || original.state === "stopped" || intents.some(intent => intent.stop || !["planned", "withdrawn"].includes(intent.phase))) {
         throw new Error("This message may already have reached its worker. Inspect the linked session and send a new instruction to correct the work; it has not been sent again.")
       }
       for (const intent of intents.filter(item => item.phase === "planned")) {
-        intent.phase = "withdrawn"
-        const previous = room.tickets.find(ticket => ticket.id === intent.ticketId)
-        if (previous?.acceptanceMessageId === messageId) {
-          previous.latestAcceptance = intent.priorAcceptance
-          previous.acceptanceMessageId = intent.priorAcceptanceMessageId
-        }
-        if (previous?.status === "queued" && !state.intents.some(other => other.ticketId === previous.id && ["planned","working"].includes(other.phase))) {
-          previous.status = intent.priorTicketStatus === undefined ? "stopped" : intent.priorTicketStatus ?? undefined
-        }
+        withdrawDispatch(state, room, intent)
       }
       original.corrections ??= []
       original.corrections.push({ fromTicketId: original.correctedTicketId || original.ticketId, toTicketId: ticketId, actor, createdAt: new Date().toISOString() })
@@ -370,6 +385,10 @@ export class SuperAgentService {
       const message = room.messages.find(item => item.id === messageId)
       if (message?.state !== "routing" || !message.actor) return
       const revision = message.revision
+      const key = JSON.stringify([uid, messageId])
+      const controller = new AbortController()
+      this.#routes.set(key, controller)
+      const signal = AbortSignal.any([this.#stop.signal, controller.signal])
       const historySources: SuperHistorySource[] = []
       let measurement: SuperRoom["coordinatorMeasurement"]
       try {
@@ -380,7 +399,7 @@ export class SuperAgentService {
         if (message.command) {
           const providers = this.#deps.providers()
           const decision = await routeWorkerCommand(workers, actor, room, message, message.command, providers)
-          if (!this.#stop.signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces, providers, new Map(), new Map(), [])
+          if (!signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces, providers, new Map(), new Map(), [])
           return
         }
         const reference = parseWorkerReference(message.text)
@@ -397,7 +416,7 @@ export class SuperAgentService {
           const historical = new Map<string, AgentSessionRecord>()
           const sessionId = reference.target.sessionId
           if (historicalWorkspace) historical.set(sessionId, await inspectHistoricalWorker(workers, sessionId, historicalWorkspace, actor))
-          if (!this.#stop.signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces,
+          if (!signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces,
             providers, historical, new Map(), [], undefined, { sessionId, prompt })
           return
         }
@@ -442,10 +461,13 @@ export class SuperAgentService {
         })
         const coordinator = context.coordinator
         const selection = context.coordinatorSelection ?? {}
-        const decision = await (this.#deps.route || routeSuperMessage)(context, {
-          evidence, model: this.#deps.coordinatorModel?.(coordinator), signal: this.#stop.signal, onUsage: usage => { measurement = { coordinator, selection, usage } },
+        signal.throwIfAborted()
+        const routing = (this.#deps.route || routeSuperMessage)(context, {
+          evidence, model: this.#deps.coordinatorModel?.(coordinator), signal, onUsage: usage => { measurement = { coordinator, selection, usage } },
         })
-        if (this.#stop.signal.aborted) return
+        // A provider or an in-flight evidence read can finish after abort. Free this project's routing queue now.
+        const decision = await Promise.race([routing, aborted(signal, controller).then(() => undefined)])
+        if (!decision || signal.aborted) return
         const turnIds = new Map<string, string>(), legacy = new Map<string, AgentSessionRecord>()
         for (const action of decision.actions) {
           if (action.kind === "create" && action.sessionId) {
@@ -465,7 +487,7 @@ export class SuperAgentService {
         }
         await this.#apply(uid, room.workspaceId, messageId, revision, decision, actor, workspaces, providers, legacy, turnIds, historySources, measurement)
       } catch (error) {
-        if (this.#stop.signal.aborted) return
+        if (signal.aborted) return
         await this.#transaction(uid, state => {
           const failedRoom = roomFor(state, workspaceId)
           const current = failedRoom.messages.find(item => item.id === messageId)
@@ -477,7 +499,7 @@ export class SuperAgentService {
           if (historySources.length) current.historySources = historySources
           if (error instanceof HistoricalSessionUnavailable) current.sessionId = error.sessionId
         })
-      }
+      } finally { this.#routes.delete(key) }
     })
   }
 
@@ -631,6 +653,43 @@ export class SuperAgentService {
     })
   }
 
+  #scheduleStop(uid: string, intent: DispatchIntent) {
+    // A create/submit already on the wire must save its receipt before resolving this request.
+    this.#queue(JSON.stringify(["dispatch", uid, intent.ticketId]), async () => {
+      const live = this.#deps.store.get(uid)?.intents.find(item => item.id === intent.id)
+      if (!live?.stop || !["stopping", "unconfirmed"].includes(live.stop.state)) return
+      const result = await projectWorkers(this.#deps, uid)
+        .then(workers => stopWorkspaceDispatch(workers, live, this.#deps.authorize))
+        .catch(() => ({ state: "unconfirmed" as const, snapshot: undefined, undelivered: false }))
+      if (result.state === live.stop.state && (!result.snapshot || !observeWorkerInputs([live], result.snapshot))) return
+      await this.#transaction(uid, state => {
+        const saved = state.intents.find(item => item.id === live.id)
+        if (!saved?.stop || saved.stop.cancelId !== live.stop!.cancelId) return
+        saved.stop.state = result.state
+        const room = roomFor(state, saved.roomId)
+        const ticket = room.tickets.find(item => item.id === saved.ticketId)
+        if (!saved.sessionId && ticket && result.snapshot) {
+          bindWorker(room, ticket, result.snapshot.session)
+          saved.sessionId = result.snapshot.session.id
+          ticket.executionWorkspaceId = saved.workspaceId
+        }
+        if (result.undelivered) withdrawDispatch(state, room, saved, result.snapshot)
+        if (!result.snapshot) return
+        observeWorkerInputs(state.intents, result.snapshot)
+        if (result.state === "stopped" && ticket?.status === "queued" && BigInt(ticket.lastEventSeq ?? "0") <= BigInt(result.snapshot.session.lastEventSeq) &&
+          !result.snapshot.turns.some(activeTurn) && !result.snapshot.inputs.some(i => i.state === "pending" || i.state === "dispatching") &&
+          !state.intents.some(i => i.ticketId === saved.ticketId && !i.stop && (i.phase === "planned" || i.phase === "working"))) {
+          ticket.status = "stopped"
+          if (room.pendingQuestion?.ticketId === ticket.id) room.pendingQuestion = undefined
+        }
+      })
+      if (!live.sessionId && result.snapshot) {
+        this.#watch(uid, result.snapshot.session.id)
+        this.#replay(uid, result.snapshot.session.id)
+      }
+    })
+  }
+
   #scheduleDispatch(uid: string, intent: DispatchIntent) {
     this.#queue(JSON.stringify(["dispatch", uid, intent.ticketId]), async () => {
       const current = () => this.#deps.store.get(uid)?.intents.find(item => item.id === intent.id)
@@ -689,9 +748,7 @@ export class SuperAgentService {
             if (saved.workspaceId) ticket.executionWorkspaceId = saved.workspaceId
             if (patch.provider && ticket.sessionId === saved.sessionId) ticket.provider = patch.provider
             if (bound) {
-              if (ticket.sessionId && ticket.sessionId !== bound.id) throw new Error("The ticket already has a different worker")
-              ticket.sessionId = bound.id; ticket.lastEventSeq ??= bound.lastEventSeq
-              for (const msg of room.messages) if (msg.ticketId === ticket.id && !msg.sessionId) msg.sessionId = bound.id
+              bindWorker(room, ticket, bound)
             }
             if (saved.inputId && saved.sessionId) {
               const original = room.messages.find(m => m.id === saved.messageId && m.ticketId === saved.ticketId)
@@ -759,12 +816,13 @@ export class SuperAgentService {
               const ticket = liveRoom.tickets.find(t => t.id === bound.id && t.sessionId === sessionId)
               if (ticket) {
                 ticket.provider = snapshot.session.provider
+                observeWorkerInputs(state.intents, snapshot)
                 projectSuperEvents(liveRoom, ticket, page, snapshot, state.intents)
                 if (BigInt(ticket.lastEventSeq || "0") >= BigInt(snapshot.session.lastEventSeq)) {
                   const active = snapshot.turns.some(activeTurn)
                   const queued = snapshot.inputs.some(input => (input.state === "pending" || input.state === "dispatching") && !input.error) ||
                     state.intents.some(i => i.ticketId === ticket.id && i.operation !== "stop" && (i.phase === "planned" || i.phase === "working"))
-                  if (ticket.status === undefined && (active || queued)) ticket.status = active ? "working" : "queued"
+                  if ((ticket.status === undefined || ticket.status === "stopped") && (active || queued)) ticket.status = active ? "working" : "queued"
                   if ([...snapshot.permissions, ...snapshot.elicitations].some(item => item.state === "pending")) ticket.status = "attention"
                 }
               }
@@ -785,6 +843,12 @@ export class SuperAgentService {
                 t.status = last.state === "completed" ? undefined : last.state === "cancelled" ? "stopped" : "blocked"
               }
             })
+          }
+          const intents = this.#deps.store.get(uid)?.intents ?? []
+          // A fast steer can be delivered before the front desk checkpoints its input receipt.
+          if (observeWorkerInputs(intents, snapshot)) await this.#transaction(uid, current => observeWorkerInputs(current.intents, snapshot))
+          for (const intent of intents) {
+            if (intent.sessionId === sessionId && (intent.stop?.state === "stopping" || intent.stop?.state === "unconfirmed")) this.#scheduleStop(uid, intent)
           }
         } while (slot.dirty && !this.#stop.signal.aborted)
         this.#failedReplays.delete(key)

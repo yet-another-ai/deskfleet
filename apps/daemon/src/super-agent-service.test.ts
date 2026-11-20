@@ -11,6 +11,7 @@ import { SuperAgentService } from "./super-agent-service.ts"
 import { routeSuperMessage, type SuperRouteContext } from "./super-agent-router.ts"
 import { emptyState, note, publicRoom, roomFor, type DispatchIntent, type SuperStateStore, type SuperUserState } from "./super-agent-state.ts"
 import type { SuperWorkers } from "./super-agent-worker.ts"
+import { observeWorkerInputs, stopWorkspaceDispatch } from "./super-agent-stop.ts"
 
 const actor: AgentActor = { kind: "user", userId: "user", deviceId: "device" }
 const workspaceId = "project"
@@ -145,6 +146,110 @@ async function until(check: () => boolean | Promise<boolean>) {
   for (let i = 0; i < 300; i++) { if (await check()) return; await sleep(5) }
   assert.fail("Condition did not become true")
 }
+
+test("stop uses actual steer delivery, requires shared-turn consent and targets a fallback's own turn", async () => {
+  const f = fixture()
+  const snapshot = f.create("worker", workspaceId)
+  const turn = { id: "original", sessionId: "worker", initialInputId: "A", dispatchCommandId: "dispatch-A",
+    runGeneration: 1, state: "running" as const, startedAt: time() }
+  snapshot.turns.push(turn)
+  const common = { submissionCommandId: "submit", author: actor, content: [], acceptedSeq: "1", createdAt: time(), sessionId: "worker" }
+  snapshot.inputs.push({ ...common, id: "A", state: "dispatching", requestedDelivery: "backlog", actualDelivery: "turn_start", turnId: turn.id },
+    { ...common, id: "B", state: "dispatching", requestedDelivery: "steer", requestedTurnId: turn.id })
+  const intent: DispatchIntent = { id: "B", roomId: workspaceId, workspaceId, ticketId: "ticket", messageId: "B", actor,
+    sessionId: "worker", inputId: "B", phase: "sent", operation: "steer", turnId: turn.id, prompt: "Adjust", provider: "codex",
+    createId: "create", submitId: "submit", stop: { actor, state: "stopping", requestedAt: Date.now(), withdrawId: "withdraw", cancelId: "cancel" } }
+  const stop = () => stopWorkspaceDispatch(f.workers, intent, async who => who)
+  assert.equal((await stop()).state, "stopping")
+  const original = { ...intent, inputId: "A", operation: "submit" as const }
+  assert.equal((await stopWorkspaceDispatch(f.workers, original, async who => who)).state, "stopping")
+  Object.assign(snapshot.inputs[1]!, { state: "delivered", actualDelivery: "steer", turnId: turn.id })
+  observeWorkerInputs([original, intent], snapshot)
+  assert.equal(original.sharedTurn, true)
+  assert.equal(intent.sharedTurn, true)
+  intent.stop!.sharedTurnId = "stale-turn"
+  assert.equal((await stop()).state, "unconfirmed")
+  assert.equal(f.calls.length, 0)
+  intent.stop!.sharedTurnId = turn.id
+  await stop()
+  await stop()
+  assert.deepEqual(f.calls.map(call => call.args.turnId), [turn.id])
+  snapshot.turns.push({ ...turn, id: "fallback", initialInputId: "B" })
+  Object.assign(snapshot.inputs[1]!, { actualDelivery: "turn_start", turnId: "fallback" })
+  observeWorkerInputs([original, intent], snapshot)
+  assert.equal(intent.sharedTurn, undefined)
+  assert.equal(intent.deliveredTurnId, "fallback")
+  intent.stop = { ...intent.stop!, cancelId: "cancel-fallback", sharedTurnId: undefined }
+  await stop()
+  assert.deepEqual(f.calls.map(call => call.args.turnId), [turn.id, "fallback"])
+})
+
+test("stopping during native session creation and restarting before its binding never resubmits the input", async () => {
+  const f = fixture()
+  let service = f.service()
+  const handle = f.workers.handle.bind(f.workers)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  f.workers.handle = async (...args) => {
+    const result = await handle(...args)
+    if (args[0] === "_deskfleet/session/create") await gate
+    return result
+  }
+  await service.init()
+  try {
+    await f.send(service, "create", "Start a Worker")
+    await until(() => f.sessions.size === 1)
+    await service.handle("_deskfleet/super-agent/stop", { workspaceId, messageId: "create", revision: 0 }, actor)
+    const beforeBinding = f.store.get("user")!
+    assert.equal(beforeBinding.intents[0]?.sessionId, undefined)
+    assert.equal(beforeBinding.intents[0]?.stop?.state, "stopping")
+    release()
+    await until(() => f.store.get("user")?.intents[0]?.stop?.state === "stopped")
+    await service.close()
+    f.store.data.set("user", beforeBinding)
+    service = f.service()
+    await service.init()
+    await until(() => f.store.get("user")?.intents[0]?.stop?.state === "stopped")
+    const recovered = f.store.get("user")!.intents[0]!
+    assert.equal(recovered.phase, "withdrawn")
+    assert.equal(recovered.sessionId, [...f.sessions.keys()][0])
+    assert.equal((await f.snap(service)).tickets[0]?.sessionId, recovered.sessionId)
+    assert.deepEqual(f.calls.map(call => call.method), ["_deskfleet/session/create"])
+  } finally { release(); await service.close() }
+})
+
+test("project stop aborts only its own routing, discards late decisions and follows the original handoff", async () => {
+  const f = fixture(), service = f.service()
+  let entered!: (signal: AbortSignal) => void, release!: () => void
+  const started = new Promise<AbortSignal>(resolve => { entered = resolve })
+  const late = new Promise<void>(resolve => { release = resolve })
+  f.route(async (ctx, options) => {
+    if (!ctx.workspaceId) return { actions: [{ kind: "handoff", workspaceId, prompt: ctx.text, context: "Continue in project" }], reason: "project edit" }
+    if (ctx.text === "Other request") return { actions: [{ kind: "answer", text: "Other result" }], reason: "independent" }
+    entered(options!.signal!)
+    await late
+    return { actions: [{ kind: "create", title: "Late", scope: ctx.text, prompt: ctx.text }], reason: "late" }
+  })
+  await service.init()
+  try {
+    await f.send(service, "origin", "Edit project", null)
+    const signal = await started
+    await f.send(service, "other", "Other request")
+    const stop = { workspaceId: null, messageId: "origin", revision: 0 }
+    await assert.rejects(service.handle("_deskfleet/super-agent/stop", stop, { ...actor, userId: "different" }), /Unknown/)
+    await service.handle("_deskfleet/super-agent/stop", { ...stop, revision: 1 }, actor)
+    assert.ok(!signal.aborted)
+    await service.handle("_deskfleet/super-agent/stop", stop, actor)
+    assert.ok(signal.aborted)
+    await until(async () => (await f.snap(service)).messages.some(m => m.text === "Other result"))
+    release()
+    await sleep(0)
+    const room = await f.snap(service)
+    assert.equal(room.messages.find(m => m.sourceMessageId === "origin")?.state, "stopped")
+    assert.equal(room.tickets.length, 0)
+    assert.equal(f.calls.length, 0)
+  } finally { release(); await service.close() }
+})
 
 test("user scope, idempotent submit, quoted follow-up, real worker result and focus survive restart", async () => {
   const f = fixture(); let s = f.service(); await s.init()

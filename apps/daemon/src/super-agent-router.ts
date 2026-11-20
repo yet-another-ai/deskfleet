@@ -199,6 +199,7 @@ export async function routeSuperMessage(ctx: SuperRouteContext, options: SuperRo
       if (reads.length !== actions.length) throw new Error("Read evidence separately from final actions")
       if (pass >= 5 || evidence.length + reads.length > 12) throw new Error("Evidence budget exhausted; give a grounded answer or ask for clarification")
       for (const { request } of reads) {
+        options.signal?.throwIfAborted()
         if (evidence.some(item => JSON.stringify(item.request) === JSON.stringify(request))) throw new Error("Evidence already returned; use its result or request a different range")
         let result: string
         try {

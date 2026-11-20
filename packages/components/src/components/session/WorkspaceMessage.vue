@@ -59,6 +59,7 @@ const input = computed(() => ({
     </div>
     <slot name="before" />
     <AgentContent class="max-w-full" :content="content" markdown final />
+    <p v-if="message.workerEvent === 'result' && message.stopState === 'stopped'" role="status" class="my-1 text-sm text-ui-text-muted">{{ t("superAgent.status.stopped") }}</p>
     <slot />
     <AgentMessageActions :text="message.text" :can-fork="canFork" :fork-disabled="forkDisabled" :always-visible="touch" can-quote @fork="emit('fork')" @quote="emit('quote')" />
   </div>

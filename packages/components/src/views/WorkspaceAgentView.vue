@@ -21,6 +21,7 @@ import ScrollToBottom from "../components/session/ScrollToBottom.vue"
 import { scrollSpring, type SpringScroll } from "../services/spring-scroll.ts"
 import { useConversationReadingStore } from "../stores/conversation-reading.ts"
 import UiButton from "../components/common/UiButton.vue"
+import UiDialog from "../components/common/UiDialog.vue"
 import ProjectModelMenu from "../components/composer/ProjectModelMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
 import WorkspaceReplyProgress from "../components/session/WorkspaceReplyProgress.vue"
@@ -31,7 +32,7 @@ import { useAccountSession } from "../composables/useAccountSession.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { useConnectionResume } from "../composables/useConnectionResume.ts"
 import { useWorkspaceConversation } from "../composables/useWorkspaceConversation.ts"
-import { groupWorkspaceApprovals, hasTicketStatus, missingWorker, workerSummary, workspaceMessageRows } from "../services/workspace-message-timeline.ts"
+import { groupWorkspaceApprovals, hasTicketStatus, missingWorker, stoppableSteps, workerSummary, workspaceMessageRows, type WorkspaceReplyProgress as ReplyProgress } from "../services/workspace-message-timeline.ts"
 import { workspaceAgentRoute, workspaceSessionRoute } from "../services/workspace-agent-navigation.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useFleetStore } from "../stores/fleet.ts"
@@ -65,7 +66,7 @@ const offlineMachine = computed(() => {
   const machine = machinePresence.value
   if (deviceOnline?.value === false || machine?.online === false) return machine ?? location.value?.machine
 })
-const { snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, refresh, canRefresh, commandMenu, canSendPlain, send, retry, correct, saveSettings } = useWorkspaceConversation(props.api, props.workspaceId, goToProject, () => !!offlineMachine.value)
+const { snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, refresh, canRefresh, commandMenu, canSendPlain, send, retry, correct, saveSettings, stop, localStops } = useWorkspaceConversation(props.api, props.workspaceId, goToProject, () => !!offlineMachine.value)
 if (touchWorkspace) useConnectionResume(() => { void refresh() })
 const workers = computed(() => snapshot.value?.workerProviders ?? providers.providers)
 const providerName = (id: string) => workers.value.find(provider => provider.id === id)?.name ?? id
@@ -117,7 +118,25 @@ const correcting = ref<string>()
 const target = ref("")
 const details = ref<string>()
 const busy = computed(() => sending.value || saving.value || !!offlineMachine.value)
-const rows = computed(() => workspaceMessageRows(messages.value, tickets.value))
+const rows = computed(() => workspaceMessageRows(messages.value, tickets.value, localStops.value))
+const supportsStop = computed(() => !!props.api.stop && snapshot.value?.supportsStop === true)
+const stopChoices = computed(() => supportsStop.value ? rows.value.flatMap(({ progress }) =>
+  progress && stoppableSteps(progress).length ? [progress] : []) : [])
+const choosingStop = ref(false)
+watch(() => stopChoices.value.length, count => { if (!count) choosingStop.value = false })
+const stopUnreachable = computed(() => !!offlineMachine.value || machinePresence.value?.online === false || canRefresh.value)
+const stopDisabled = computed(() => busy.value || stopUnreachable.value)
+function stopLabel(choice: ReplyProgress) {
+  const steps = stoppableSteps(choice)
+  if (steps.length === 1) return t(steps[0]?.sharedTurn ? "superAgent.stop.turn" : "superAgent.stop.request")
+  return t(steps.some(step => step.sharedTurn) ? "superAgent.stop.groupShared" : "superAgent.stop.group", { count: steps.length })
+}
+const cancelLabel = computed(() => stopChoices.value.length === 1 ? stopLabel(stopChoices.value[0]!) : t("superAgent.stop.choose"))
+function composerStop() {
+  if (stopDisabled.value) return
+  if (stopChoices.value.length === 1) void stop(stopChoices.value[0]!)
+  else choosingStop.value = stopChoices.value.length > 1
+}
 const transcriptGroups = computed(() => groupWorkspaceApprovals(rows.value))
 const expandedApprovals = ref(new Set<string>())
 watch(attachmentScope, () => expandedApprovals.value.clear())
@@ -129,7 +148,7 @@ const progressText = (summary: string) => workerSummary(summary, t("superAgent.a
 function correctionSource(message?: SuperMessage) {
   if (!message) return
   const source = message.role === "user" ? message : byId.value.get(message.sourceMessageId ?? "")
-  if (source?.role === "user" && source.state !== "transferred") return source
+  if (source?.role === "user" && source.state !== "transferred" && source.state !== "stopped") return source
 }
 const original = computed(() => correcting.value ? correctionSource(byId.value.get(correcting.value)) : undefined)
 const correctionChoices = computed(() => {
@@ -315,7 +334,7 @@ function canCorrect(message: SuperMessage) {
                   </div>
                   <blockquote v-if="message.replyTo && byId.has(message.replyTo)" class="m-0 mb-1 truncate border-l-2 border-ui-accent pl-2 text-xs text-ui-text-muted">{{ quoteText(byId.get(message.replyTo)!) }}</blockquote>
                 </template>
-                <WorkspaceReplyProgress v-if="progress && message.role !== 'user'" :progress="progress" />
+                <WorkspaceReplyProgress v-if="progress && message.role !== 'user'" :progress="progress" :supports-stop="supportsStop" :disabled="stopDisabled" :unreachable="stopUnreachable" @stop="stop" />
                 <details v-if="message.context" class="mt-1 break-words text-xs text-ui-text-muted">
                   <summary class="cursor-pointer">{{ message.sourceWorkspaceId === undefined ? t('superAgent.context') : t('superAgent.fromWorkspace', { name: conversationName(message.sourceWorkspaceId) }) }}</summary>
                   <p class="my-1 select-text whitespace-pre-wrap">{{ message.context }}</p>
@@ -348,7 +367,7 @@ function canCorrect(message: SuperMessage) {
             </li>
             <li v-if="progress && message.role === 'user'" :aria-label="t('superAgent.role.assistant')" class="mr-auto min-w-0 max-w-full">
               <div class="mb-1 text-xs text-ui-text-muted">{{ t("superAgent.role.assistant") }}</div>
-              <WorkspaceReplyProgress :progress="progress" />
+              <WorkspaceReplyProgress :progress="progress" :supports-stop="supportsStop" :disabled="stopDisabled" :unreachable="stopUnreachable" @stop="stop" />
             </li>
           </template>
           </template>
@@ -372,7 +391,15 @@ function canCorrect(message: SuperMessage) {
     <p v-if="offlineMachine" role="status" class="mb-2 break-words text-sm text-ui-text-muted">{{ t('desktop.offline', { machine: offlineMachine.name }) }}</p>
     <p v-else-if="error" role="alert" class="mb-2 break-words text-sm text-ui-danger">{{ error }} <button v-if="canRefresh" type="button" class="text-ui-accent" @click="refresh">{{ t('errors.retry') }}</button><button v-if="canSendPlain" type="button" class="text-ui-accent" @click="send(true)">{{ t('superAgent.commands.sendText') }}</button></p>
   </div>
-  <SessionComposer ref="editor" v-model="draft.text" v-model:attachments="attachments" v-model:mentions="mentions" :workspace-agent="commandMenu" :location="location" :coordinator-usage="snapshot?.coordinatorUsage" :disabled="!snapshot || saving" :submitting="sending" :submit-blocked="!!offlineMachine || draft.text.trim() === '/' || unsupportedAttachments || !!missingAttachments.length" @submit="submit">
+  <UiDialog v-if="choosingStop && stopChoices.length" v-slot="{ close }" :title="t('superAgent.stop.choose')" class="w-[26rem] max-w-[90vw] p-4" @close="choosingStop = false">
+    <h2 class="mb-2 font-medium">{{ t('superAgent.stop.choose') }}</h2>
+    <button v-for="choice in stopChoices" :key="choice.sourceId" type="button" :disabled="stopDisabled" class="ui-menu-item min-h-11 w-full justify-start" @click="close(); stop(choice)">
+      <span class="min-w-0 truncate">{{ quoteText(byId.get(choice.sourceId)!) }}</span>
+      <span v-if="stoppableSteps(choice).length > 1 || stoppableSteps(choice)[0]?.sharedTurn" class="shrink-0 text-xs">{{ stopLabel(choice) }}</span>
+    </button>
+    <UiButton variant="ghost" size="sm" @click="close">{{ t('catalog.cancel') }}</UiButton>
+  </UiDialog>
+  <SessionComposer ref="editor" v-model="draft.text" v-model:attachments="attachments" v-model:mentions="mentions" :workspace-agent="commandMenu" :location="location" :coordinator-usage="snapshot?.coordinatorUsage" :disabled="!snapshot || saving" :submitting="sending" :submit-blocked="!!offlineMachine || draft.text.trim() === '/' || unsupportedAttachments || !!missingAttachments.length" :can-cancel="!!stopChoices.length && !stopDisabled" :cancel-label="cancelLabel" @cancel="composerStop" @submit="submit">
     <template #before-input>
       <div v-if="quoted" class="mx-3 mt-3 flex items-center gap-2 border-l-2 border-ui-accent pl-2 text-xs text-ui-text-muted">
         <span class="min-w-0 flex-1 truncate">{{ quoteText(quoted) }}</span>

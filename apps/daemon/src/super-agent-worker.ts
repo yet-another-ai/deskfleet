@@ -40,12 +40,12 @@ interface DispatchContext {
 /** Persist intent and operation IDs before entry. Every retry consults the original receipt first. */
 export async function deliverSuperIntent(ctx: DispatchContext): Promise<void> {
   const operation = ctx.current()
-  if (!operation || (operation.phase !== "planned" && operation.phase !== "working")) return
+  if (!operation || operation.stop || (operation.phase !== "planned" && operation.phase !== "working")) return
   const { workers } = ctx
   try {
     const actor = await ctx.authorize(operation.actor)
     const workspace = await ctx.workspace()
-    if (ctx.suspended?.() || ctx.current()?.phase === "withdrawn") return
+    if (ctx.suspended?.() || ctx.current()?.stop || ctx.current()?.phase === "withdrawn") return
     await ctx.checkpoint({ phase: "working", workspaceId: workspace.id, context: operation.context || workspace.context })
     let sessionId = operation.sessionId
     if (!sessionId) {
@@ -57,7 +57,7 @@ export async function deliverSuperIntent(ctx: DispatchContext): Promise<void> {
         if (saved.status !== "completed" || !saved.sessionId) throw new UnknownDelivery("Session creation has no confirmed outcome. Inspect the original command.")
         snapshot = await workers.journal.read(saved.sessionId)
       } else {
-        if (ctx.suspended?.()) return
+        if (ctx.suspended?.() || ctx.current()?.stop) return
         snapshot = await workers.handle("_deskfleet/session/create", {
           operationId: operation.createId, workspaceId: workspace.id, provider: operation.provider,
           ...operation.workerSelection, ...(ctx.autoApproveNewWorker() && { yolo: true }),
@@ -103,7 +103,7 @@ export async function deliverSuperIntent(ctx: DispatchContext): Promise<void> {
       const references = operation.references?.length
         ? await workers.handle("_deskfleet/composer/resolve", { sessionId, references: operation.references }, actor) as AgentInput["content"] : []
       const attachments = operation.attachmentKeys?.length ? await ctx.loadAttachments(operation.attachmentKeys) : []
-      if (ctx.suspended?.() || ctx.current()?.phase === "withdrawn") return
+      if (ctx.suspended?.() || ctx.current()?.stop || ctx.current()?.phase === "withdrawn") return
       result = await workers.handle("_deskfleet/input/submit", {
         sessionId, operationId: operation.submitId, content: [...attachments, { type: "text", text: operation.prompt,
           ...(boundInvocation && { _meta: { "deskfleet/composerProvider": operation.provider } }) }, ...references],
@@ -202,8 +202,9 @@ export function projectSuperEvents(room: SuperRoom, ticket: StoredSuperTicket, e
         ticket.status = turn.state === "completed" ? undefined : turn.state === "cancelled" ? "stopped" : "blocked"
         const output = ticket.output?.turnId === turn.id ? ticket.output.text.trim() : ""
         const message = turn.state === "completed" ? output || "The worker finished its turn. Its session contains the execution details."
-          : turn.error || (turn.state === "cancelled" ? "Worker turn stopped." : `Worker turn ${turn.state}.`)
-        report(event, message, "result")
+          : turn.state === "cancelled" ? output : turn.error || `Worker turn ${turn.state}.`
+        const result = report(event, message, "result")
+        if (turn.state === "cancelled") result.stopState = "stopped"
         ticket.output = undefined
       }
     }

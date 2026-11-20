@@ -29,6 +29,7 @@ async function setup(initial: SuperSnapshot, teamId?: string, ios = false, share
   const machines = ref([{ id: "local-daemon", teamId, name: "Studio Mac", online: true }])
   const api = {
     snapshot: vi.fn<SuperAgentApi["snapshot"]>(async () => state),
+    stop: vi.fn<NonNullable<SuperAgentApi["stop"]>>(async () => state),
     send: vi.fn<SuperAgentApi["send"]>(async request => {
       state = { ...state, messages: [...state.messages, message(request.messageId, { text: request.text, replyTo: request.replyTo, state: "routing" })] }
       return state
@@ -300,6 +301,51 @@ async function setupProgress(initial: SuperSnapshot) {
 }
 
 const progressFor = (userId: string) => wrapper.find(`[data-agent-progress-for="${userId}"]`)
+
+test.each([false, true])("stops routing from the empty composer and keeps the inline stop available with a draft (mobile=%s)", async ios => {
+  const initial = room({ supportsStop: true, messages: [message("request", { state: "routing", revision: 2 })] })
+  const { api } = await setup(initial, "team", ios)
+  const label = i18n.global.t("superAgent.stop.request")
+  const selector = `button[aria-label="${label}"]`
+  const composer = wrapper.get(".composer-shell")
+  api.stop.mockRejectedValueOnce(new Error("connection closed"))
+  await composer.get(selector).trigger("click")
+  await flushPromises()
+  expect(progressFor("request").text()).toContain(i18n.global.t("superAgent.progress.unconfirmed"))
+  await composer.get("textarea").setValue("A separate draft")
+  expect(composer.find(selector).exists()).toBe(false)
+  expect(composer.find(".composer-send").exists()).toBe(true)
+  api.stop.mockResolvedValueOnce(room({ supportsStop: true, messages: [message("request", { state: "stopped", revision: 2 })] }))
+  await progressFor("request").get(selector).trigger("click")
+  await flushPromises()
+  expect(api.stop).toHaveBeenLastCalledWith({ workspaceId: "A", messageId: "request", revision: 2 })
+  expect(progressFor("request").text()).toBe(i18n.global.t("superAgent.status.stopped"))
+  expect(progressFor("request").find("button").exists()).toBe(false)
+  expect(composer.get("textarea").element.value).toBe("A separate draft")
+  expect(api.send).not.toHaveBeenCalled()
+})
+
+test.each([false, true])("the stop chooser addresses a request and an expanded split can stop one shared turn (mobile=%s)", async ios => {
+  const one = ticket("Tests"), two = ticket("Docs")
+  const branch = (job: SuperTicket) => message(job.id, { role: "assistant", kind: "dispatch", sourceMessageId: "split",
+    ticketId: job.id, canStop: true, sharedTurn: job === two, turnId: job === two ? "shared" : undefined })
+  const { api } = await setup(room({ supportsStop: true, tickets: [one, two], messages: [
+    message("split", { state: "assigned" }), branch(one), branch(two), message("independent", { state: "routing" }),
+  ] }), "team", ios)
+  await wrapper.get(`.composer-shell button[aria-label="${i18n.global.t("superAgent.stop.choose")}"]`).trigger("click")
+  await flushPromises()
+  const dialog = new DOMWrapper(document.body).get('[role="dialog"]')
+  expect(api.stop).not.toHaveBeenCalled()
+  await dialog.findAll("button").find(item => item.text().includes("independent"))!.trigger("click")
+  await flushPromises()
+  expect(api.stop).toHaveBeenLastCalledWith({ workspaceId: "A", messageId: "independent", revision: 0 })
+  const progress = progressFor("split")
+  expect(progress.text()).toContain(i18n.global.t("superAgent.stop.groupShared", { count: 2 }))
+  await progress.get("summary").trigger("click")
+  await progress.findAll("details button").find(item => item.text().includes("Docs"))!.trigger("click")
+  await flushPromises()
+  expect(api.stop).toHaveBeenLastCalledWith({ workspaceId: "A", messageId: "split", ticketId: "Docs", revision: 0, sharedTurns: [{ ticketId: "Docs", turnId: "shared" }] })
+})
 
 test.each([false, true])("collapses seven legacy tool requests and retains their quoting actions (mobile=%s)", async ios => {
   const owner = { sessionId: "worker", ticketId: "verify" }
