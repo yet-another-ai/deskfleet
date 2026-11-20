@@ -142,15 +142,12 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   workspace and configures shared caches for the Test and Build workflows. It
   writes a cache restore summary for each job.
 
-The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
-server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
-`deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
-Full builds run a separate `Build (macos-x64)` job on Apple Silicon in parallel
-with `Build (macos-arm64)`. The Intel job cross-compiles the x86_64 Rust server
-and a Bun daemon that embeds the x86_64 native addon. It checks the binary
-architectures and runs the Intel daemon smoke test under Rosetta before
-uploading `deskfleet-macos-x64.tar.gz` for Publish.
-Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
+The build matrix covers Linux x64/arm64, macOS arm64/x64, and Windows x64. The
+Intel macOS job uses the native `macos-26-intel` runner and the same build and
+packaging steps as Apple Silicon. Each server/daemon archive, such as
+`deskfleet-macos-x64.tar.gz`, contains `deskfleet-server` and `deskfleet-daemon`
+(`.exe` on Windows).
+Separate desktop artifacts contain macOS arm64/x64 DMG/ZIP, Windows x64 NSIS, and
 Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
 The Linux desktop archive names include the app version, such as
 `deskfleet-<version>-linux-x64.tar.gz`. PRs and main pushes exercise packaging on
@@ -308,7 +305,7 @@ renderer can initiate a direct peer connection.
 Each tag produces a **draft** GitHub Release containing the desktop installers,
 two Linux desktop archives, four Linux distribution packages (`.deb` for amd64
 and arm64, `.rpm` for x86_64 and aarch64), the `deskfleet-nix.tar.gz` flake
-bundle, four server/daemon archives, updater metadata and blockmaps, and the
+bundle, five server/daemon archives, updater metadata and blockmaps, and the
 Android arm64 APK (`deskfleet-<version>-android-arm64.apk`). Review its
 generated notes and assets, then publish it in GitHub. Prerelease tags create
 prerelease drafts.
@@ -326,12 +323,12 @@ architecture. Publishing a stable release makes it discoverable without another
 Pages build. Drafts and prereleases do not replace the website's stable downloads;
 failed requests and unavailable assets retain a link to GitHub Releases.
 
-The installation section groups methods by platform: Homebrew and DMG on macOS;
-the Windows installer; and AppImage, DEB, RPM, AUR, Linux Nix, and desktop
-archives on Linux. The macOS ZIP is reserved for the updater and Nix, and is not
-offered as a website installation method; macOS Nix users follow the nix-darwin
-instructions in the guide. DEB, RPM, Linux Nix, and Linux desktop archives
-appear only when the published release contains their assets. The Nix command
+The installation section offers DMGs for Apple Silicon and Intel, Homebrew for
+Apple Silicon, the Windows installer, and AppImage, DEB, RPM, AUR, Linux Nix,
+and desktop archives on Linux. The macOS updater uses the ZIP for its
+architecture. Apple Silicon nix-darwin installations use the same arm64 ZIP
+and follow the instructions in the guide. DEB, RPM, Linux Nix, and Linux desktop
+archives appear only when the published release contains their assets. The Nix command
 uses that release's versioned flake URL. Homebrew uses the official tap. AUR
 links to the `deskfleet-bin` package page and remains available independently of
 GitHub release assets. Neither Homebrew nor AUR displays GitHub's release
@@ -417,8 +414,10 @@ when rotating the key.
 
 Electron uses `electron-updater` with the public GitHub provider for
 `yet-another-ai/deskfleet`. Packaging generates `latest.yml`, `latest-mac.yml`,
-`latest-linux.yml` and `latest-linux-arm64.yml`; the release job requires all four,
-the macOS update ZIP and the Windows/ZIP blockmaps before creating its draft.
+`latest-linux.yml` and `latest-linux-arm64.yml`. The release job combines the
+two macOS manifests into one `latest-mac.yml` so the updater can select the ZIP
+for its architecture. The draft requires all four manifests, both macOS ZIPs
+and their blockmaps, and the Windows blockmap.
 Each release carries its own metadata, including prereleases. GitHub's release
 status controls discovery, so a draft cannot trigger an update and stable clients
 do not receive prereleases. Publish complete releases with a higher version;

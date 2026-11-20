@@ -43,6 +43,16 @@ test("an unconfigured project skips uploads and removes public maps", t => {
   assert.ok(f.files.every(file => !existsSync(join(f.root, `${file}.map`))))
 })
 
+test("the Intel macOS build uploads its desktop maps and cleans up all maps", t => {
+  const f = fixture(t)
+  const calls: string[][] = []
+  uploadSourceMaps(f.root, "macos-x64", f.env, args => calls.push(args))
+  assert.deepEqual(calls.map(args => [args[args.indexOf("--url-prefix") + 1], args[args.indexOf("--dist") + 1]]), [
+    ["app:///", "macos-x64"], ["deskfleet-app://bundle/", "macos-x64"],
+  ])
+  assert.ok(f.files.every(file => !existsSync(join(f.root, `${file}.map`))))
+})
+
 test("configured reporting requires upload credentials and fails on an upload error", t => {
   const f = fixture(t)
   assert.throws(() => uploadSourceMaps(f.root, "linux-x64", { ...f.env, SENTRY_AUTH_TOKEN: "" }), /requires SENTRY_AUTH_TOKEN/)

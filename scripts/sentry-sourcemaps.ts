@@ -7,7 +7,7 @@ type Run = (args: string[], env: NodeJS.ProcessEnv) => void
 
 /** Release artifacts match the renderer URLs and the main stack's app:/// basenames. */
 export function uploadSourceMaps(root: string, platform: string, env: NodeJS.ProcessEnv, run?: Run): void {
-  if (!["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"].includes(platform)) throw new Error("Unknown source-map distribution")
+  if (!["linux-x64", "linux-arm64", "macos-arm64", "macos-x64", "windows-x64"].includes(platform)) throw new Error("Unknown source-map distribution")
   const groups = [
     { directory: "apps/web/dist", prefix: "~/", dist: "web" },
     { directory: "apps/desktop/out/main", prefix: "app:///", dist: platform },
@@ -28,6 +28,8 @@ export function uploadSourceMaps(root: string, platform: string, env: NodeJS.Pro
       if (!env[key]?.trim()) throw new Error(`Source-map upload requires ${key}`)
     }
     for (const group of groups) {
+      // Publish takes the Web bundle from Linux x64. Intel only needs its desktop maps.
+      if (platform === "macos-x64" && group.dist === "web") continue
       if (!group.maps.length) throw new Error(`No JavaScript source maps in ${group.directory}`)
       execute(["sourcemaps", "upload", "--release", env.VITE_SENTRY_RELEASE!.trim(), "--dist", group.dist,
         "--url-prefix", group.prefix, "--validate", "--strict", "--wait", group.directory],

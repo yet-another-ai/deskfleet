@@ -4,17 +4,19 @@ You can run DeskFleet as a native desktop application (which hosts a local machi
 
 ## Install the desktop app
 
-### macOS (Apple Silicon)
+### macOS
 
-Install DeskFleet from the official Homebrew tap:
+Download the disk image for your Mac from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
+Choose the filename ending in `-mac-arm64.dmg` for Apple Silicon or `-mac-x64.dmg` for Intel.
+Open the disk image and drag DeskFleet into Applications.
+
+On Apple Silicon, you can also install DeskFleet from the official Homebrew tap:
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-You can also download the `.dmg` disk image directly from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
-
-- **Nix (nix-darwin)**: Add the release flake as an input, apply its `deskfleet` overlay, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and manages upgrades. See the [Nix distribution guide](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution).
+- **Nix (nix-darwin, Apple Silicon)**: Add the release flake as an input, apply its `deskfleet` overlay, and include `pkgs.deskfleet` in `environment.systemPackages`. nix-darwin installs the signed app bundle under `/Applications/Nix Apps` and manages upgrades. See the [Nix distribution guide](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution).
 
 ### Windows (`x64`)
 

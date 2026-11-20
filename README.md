@@ -102,7 +102,7 @@ DeskFleet supervises any ACP-compatible agent installed on an enrolled machine:
 | Platform | Architecture | Desktop App | Headless Daemon | Web Client (PWA) | Packages & Installers |
 | --- | --- | :---: | :---: | :---: | --- |
 | **macOS** | Apple Silicon (`arm64`) | ✅ | ✅ | ✅ | Homebrew Cask, `.dmg`, `.tar.gz`, Nix (nix-darwin) |
-| **macOS** | Intel (`x64`) | — | ✅ | ✅ | `deskfleet-macos-x64.tar.gz` |
+| **macOS** | Intel (`x64`) | ✅ | ✅ | ✅ | `.dmg`, `deskfleet-macos-x64.tar.gz` |
 | **Windows** | `x64` | ✅ | ✅ | ✅ | `.exe` installer, standalone `.tar.gz` |
 | **Linux** | `x86_64`, `arm64` | ✅ | ✅ | ✅ | AppImage, `.deb`, `.rpm`, `.tar.gz`, [AUR (`deskfleet-bin`)](https://aur.archlinux.org/packages/deskfleet-bin), [Nix flake](agents/docs/ci.md#nix-distribution) |
 
@@ -135,7 +135,7 @@ The Electron desktop app includes an embedded machine daemon in its main process
   nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'
   ```
   To try it without adding it to your profile, use `nix run` with the same URL. See [Nix distribution](agents/docs/ci.md#nix-distribution) for packaging details.
-- **Direct Downloads**: Download `.dmg` (macOS), `.exe` (Windows), or `.AppImage` / `.deb` / `.rpm` / `.tar.gz` (Linux) from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
+- **Direct Downloads**: Download `-mac-arm64.dmg` for Apple Silicon, `-mac-x64.dmg` for Intel Macs, `.exe` for Windows, or `.AppImage` / `.deb` / `.rpm` / `.tar.gz` for Linux from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
 
 ### Headless Machine Daemon
 

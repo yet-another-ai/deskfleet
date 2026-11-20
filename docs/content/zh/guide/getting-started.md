@@ -4,17 +4,17 @@
 
 ## 安装桌面应用
 
-### macOS（Apple Silicon）
+### macOS
 
-通过官方 Homebrew Tap 安装 DeskFleet：
+从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载与你的 Mac 对应的磁盘映像。Apple Silicon Mac 选择以 `-mac-arm64.dmg` 结尾的文件，Intel Mac 选择以 `-mac-x64.dmg` 结尾的文件。打开磁盘映像后，将 DeskFleet 拖入“应用程序”文件夹。
+
+在 Apple Silicon Mac 上，你也可以通过官方 Homebrew Tap 安装 DeskFleet：
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-你也可以直接从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载 `.dmg` 磁盘映像。
-
-- **Nix（nix-darwin）**：将发布版 flake 添加为输入，应用其 `deskfleet` overlay，并把 `pkgs.deskfleet` 加入 `environment.systemPackages`。nix-darwin 会把已签名的应用包安装到 `/Applications/Nix Apps` 并管理升级。详见 [Nix 分发说明](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution)。
+- **Nix（nix-darwin，Apple Silicon）**：将发布版 flake 添加为输入，应用其 `deskfleet` overlay，并把 `pkgs.deskfleet` 加入 `environment.systemPackages`。nix-darwin 会把已签名的应用包安装到 `/Applications/Nix Apps` 并管理升级。详见 [Nix 分发说明](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution)。
 
 ### Windows（`x64`）
 

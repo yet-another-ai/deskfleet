@@ -40,9 +40,10 @@ no release variable needs configuring. Local or custom builds may optionally
 set `VITE_SENTRY_RELEASE` to label their events.
 
 Tagged builds also set `VITE_SENTRY_DIST` to `web` or the packaging platform
-(`linux-x64`, `linux-arm64`, `macos-arm64`, `windows-x64`). It separates main
-bundles with identical filenames across platforms. Custom builds that upload
-maps must use the same release and distribution in the SDK and upload command.
+(`linux-x64`, `linux-arm64`, `macos-arm64`, `macos-x64`, `windows-x64`). This
+distinguishes main bundles with identical filenames across platforms. Custom
+builds that upload maps must use the same release and distribution in the SDK
+and upload command.
 
 PR, main, and manual Build runs do not bind the production environment and leave
 Sentry disabled. Keep production values out of repository and organization
