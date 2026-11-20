@@ -50,8 +50,10 @@ try {
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
     arch: arch === "arm64" ? "aarch64" : arch === "x64" ? "x86_64" : arch,
   }
+  // Rosetta may need to translate the standalone executable on first launch.
+  const firstLaunchTimeout = macIntel && process.arch === "arm64" ? 90_000 : 15_000
   const info = JSON.parse(execFileSync(command, ["--info"], {
-    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
+    cwd: directory, env: environment, encoding: "utf8", timeout: firstLaunchTimeout,
   })) as { native: typeof expectedNative; runtime: { name: string; version: string } }
   assert.deepEqual(info.native, expectedNative)
   const bunVersion = execFileSync("bun", ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }).trim()
