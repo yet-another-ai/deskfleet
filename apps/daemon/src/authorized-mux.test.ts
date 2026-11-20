@@ -1,9 +1,6 @@
 import assert from "node:assert/strict"
 import test, { type TestContext } from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
 import type { NativePeer, PeerEvent } from "@deskfleet/native"
 import { MuxConnection, type MuxStream } from "../../../packages/client/src/mux/connection.ts"
 import { MUX_LABELS, type MuxLane, type MuxPurpose } from "../../../packages/client/src/mux/protocol.ts"
@@ -177,19 +174,19 @@ test("one authorized peer isolates Agent RPC IDs and terminal views while sharin
 })
 
 test("file frames share the authorized Mux peer without changing their binary protocol", { timeout: 5_000 }, async t => {
-  const directory = await mkdtemp(join(tmpdir(), "deskfleet-mux-files-"))
-  t.after(() => rm(directory, { recursive: true, force: true }))
-  await writeFile(join(directory, "hello.txt"), "hello")
   const f = await fixture(t)
-  const stream = f.client.open("files"), decoder = new FileFrameDecoder()
-  const replies: ReturnType<FileFrameDecoder["push"]> = []
-  stream.onData = data => { assert.ok(data instanceof Uint8Array); replies.push(...decoder.push(data)) }
+  const stream = f.client.open("files")
   await stream.ready
-  await stream.send(encodeFileFrame({ id: 1, method: "list", params: { path: directory } }))
-  await until(() => replies.length === 1)
-  assert.equal(replies[0]!.header.id, 1)
-  assert.equal(replies[0]!.header.error, undefined)
-  assert.ok(JSON.stringify(replies[0]!.header.value).includes("hello.txt"))
+  const reply = new Promise<string | Uint8Array>((resolve, reject) => {
+    stream.onData = resolve
+    stream.onClose = error => reject(error ?? new Error("Files stream closed before its reply"))
+  })
+  // Closing an absent read handle exercises the real file endpoint without disk I/O.
+  const request = encodeFileFrame({ id: 1, method: "closeRead", params: { readId: "absent" } })
+  const [bytes] = await Promise.all([reply, stream.send(request)])
+  assert.ok(bytes instanceof Uint8Array)
+  const frames = new FileFrameDecoder().push(bytes)
+  assert.deepEqual(frames.map(frame => frame.header), [{ id: 1, value: null }])
   assert.equal(f.created(), 1)
   assert.ok(f.lanes.includes("bulk"))
 })

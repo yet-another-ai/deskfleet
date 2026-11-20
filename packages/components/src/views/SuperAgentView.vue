@@ -32,11 +32,14 @@ const transcript = computed(() => pending.value.length ? [...messages.value, ...
 const teamName = computed(() => account?.team.value?.name ?? "")
 const blocked = computed(() => {
   if (!usage.value || usage.value.admitted) return undefined
-  if (!usage.value.runtimeConfigured) return "runtimeOffline"
+  if (!usage.value.runtimeConfigured) return { message: t("superAgent.runtimeOffline"), action: "retry" }
   const allowance = usage.value.includedCredits === undefined ? usage.value.includedTokens : usage.value.includedCredits
-  return allowance === 0 ? "noAllowance" : "quotaReached"
+  return { message: allowance === 0 ? t("superAgent.noAllowance") : t("superAgent.quotaReached"), action: "billing" }
 })
-const suggestions = [{ label: "plan", prompt: "planPrompt", icon: Layers3 }, { label: "breakdown", prompt: "breakdownPrompt", icon: ListTree }] as const
+const suggestions = computed(() => [
+  { label: t("superAgent.plan"), prompt: t("superAgent.planPrompt"), icon: Layers3 },
+  { label: t("superAgent.breakdown"), prompt: t("superAgent.breakdownPrompt"), icon: ListTree },
+])
 
 watch(transcript, async (current, previous) => {
   if (!current.length || (previous.length > 0 && !arrivedState.bottom && !pending.value.length)) return
@@ -101,8 +104,8 @@ function enter(event: KeyboardEvent): void {
             <h2 class="m-0 text-balance text-[clamp(1.65rem,3.5cqw,2.35rem)] font-semibold leading-tight tracking-tight">{{ t("superAgent.heading") }}</h2>
             <p class="m-0 mt-2.5 max-w-98 text-pretty text-[15px] leading-6 text-ui-text-muted">{{ t("superAgent.intro") }}</p>
             <div v-if="canSend" class="mt-6 flex flex-wrap gap-2">
-              <button v-for="item in suggestions" :key="item.label" type="button" class="ui-button gap-2 rounded-xl px-3 py-2" @click="suggest(t('superAgent.' + item.prompt))">
-                <component :is="item.icon" :size="15" class="text-ui-accent" aria-hidden="true" />{{ t('superAgent.' + item.label) }}<ArrowUpRight :size="13" class="text-ui-text-faint" aria-hidden="true" />
+              <button v-for="item in suggestions" :key="item.label" type="button" class="ui-button gap-2 rounded-xl px-3 py-2" @click="suggest(item.prompt)">
+                <component :is="item.icon" :size="15" class="text-ui-accent" aria-hidden="true" />{{ item.label }}<ArrowUpRight :size="13" class="text-ui-text-faint" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -128,9 +131,9 @@ function enter(event: KeyboardEvent): void {
             <UiButton size="sm" :disabled="sending || (!!sendError && !canSend)" @click="sendError ? send() : refreshUsage()">{{ t("errors.retry") }}</UiButton>
           </ErrorNotice>
           <div v-if="blocked || status === 'ended'" role="status" class="ui-notice mb-2 justify-between border-ui-border bg-ui-surface text-ui-text-muted">
-            <span>{{ t('superAgent.' + (blocked ?? 'ended')) }}</span>
-            <UiButton v-if="blocked === 'runtimeOffline'" size="sm" @click="refreshUsage">{{ t("errors.retry") }}</UiButton>
-            <UiButton v-else-if="blocked && !platform.mobile" size="sm" @click="account?.openSettings('plans')">{{ t("errors.viewBilling") }}</UiButton>
+            <span>{{ blocked?.message ?? t('superAgent.ended') }}</span>
+            <UiButton v-if="blocked?.action === 'retry'" size="sm" @click="refreshUsage">{{ t("errors.retry") }}</UiButton>
+            <UiButton v-else-if="blocked?.action === 'billing' && !platform.mobile" size="sm" @click="account?.openSettings('plans')">{{ t("errors.viewBilling") }}</UiButton>
             <UiButton v-else-if="!blocked" size="sm" @click="open()">{{ t("superAgent.new") }}</UiButton>
           </div>
           <form class="rounded-2xl border border-ui-border-strong bg-ui-surface p-3 shadow-ui-card focus-within:border-ui-accent/60" @submit.prevent="send">
