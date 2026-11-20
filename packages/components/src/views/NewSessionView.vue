@@ -95,7 +95,7 @@ async function submit(): Promise<void> {
     void fleet.refreshLocalCatalog().catch(() => undefined)
     const sameTarget = newSessionTarget.value?.workspace?.id === target.workspace?.id
       && newSessionTarget.value?.machine.id === target.machine.id
-    if (!disposed && router.currentRoute.value.name === "new-session" && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
+    if (!disposed && ["new-session", "manual-session"].includes(String(router.currentRoute.value.name)) && sameTarget) await router.push({ name: "session", params: { sessionId: id } })
     // A rejected or disconnected submission remains in the Session draft for reconciliation.
     if (canStartPrompt) {
       await (async () => {

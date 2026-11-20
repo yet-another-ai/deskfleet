@@ -59,6 +59,7 @@ function selectedMachine(): boolean {
 function activeWorkspace(): string | undefined {
   if (!selectedMachine()) return
   if (route.name === "session") return fleet.findSession(String(route.params.sessionId))?.workspace?.id
+  if (route.name === "workspace-agent") return String(route.params.workspaceId)
   if (route.name === "worktree") return fleet.findWorktree(String(route.params.worktreeId))?.workspace?.id
   if (route.name === "terminal") return fleet.findTerminal(String(route.params.terminalId))?.workspace?.id
 }

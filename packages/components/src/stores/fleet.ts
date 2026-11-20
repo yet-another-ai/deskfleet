@@ -104,10 +104,19 @@ export const useFleetStore = defineStore("fleet", () => {
     }
     return groups
   })
+  // Older history rows can omit workspaceId even when their catalog worktree
+  // still identifies the owner. An explicit Session owner takes precedence.
+  const catalogSessionOwners = computed(() => {
+    const owners = new Map<string, string>()
+    for (const workspace of catalog.value?.workspaces ?? []) {
+      for (const tree of workspace.worktrees) if (tree.sessionId) owners.set(tree.sessionId, workspace.id)
+    }
+    return owners
+  })
   const sessionsByWorkspace = computed(() => {
     const groups = new Map<string | undefined, AgentSessionRecord[]>()
     for (const session of Object.values(agents.sessions)) {
-      const id = session.workspaceId || undefined
+      const id = session.workspaceId || catalogSessionOwners.value.get(session.id)
       const group = groups.get(id)
       if (group) group.push(session)
       else groups.set(id, [session])
@@ -120,7 +129,10 @@ export const useFleetStore = defineStore("fleet", () => {
   const workspaces = computed(() => (catalog.value?.workspaces ?? []).map(value => {
     const workspace = workspaceSummary(value)
     workspace.githubRepositories = githubRepositories.value.get(value.id)
-    const summaries = new Map(workspace.sessions.map(session => [session.id, session]))
+    const summaries = new Map(workspace.sessions.filter(session => {
+      const owner = agents.sessions[session.id]?.workspaceId
+      return !owner || owner === workspace.id
+    }).map(session => [session.id, session]))
     for (const metadata of sessionsByWorkspace.value.get(workspace.id) ?? []) {
       const provider = providersById.value.get(metadata.provider)
       summaries.set(metadata.id, {
@@ -138,9 +150,12 @@ export const useFleetStore = defineStore("fleet", () => {
     return workspace
   }))
   const machineSessions = computed(() => {
+    // Until the first catalog arrives a legacy row with a missing workspaceId
+    // might still have an owning project worktree.
+    if (!catalog.value) return []
     const summaries = new Map<string, AgentSessionSummary>()
     for (const worktree of catalog.value?.sessions ?? []) {
-      if (!worktree.sessionId) continue
+      if (!worktree.sessionId || catalogSessionOwners.value.has(worktree.sessionId) || agents.sessions[worktree.sessionId]?.workspaceId) continue
       summaries.set(worktree.sessionId, { id: worktree.sessionId, worktree: worktreeSummary(worktree) })
     }
     for (const metadata of sessionsByWorkspace.value.get(undefined) ?? []) {

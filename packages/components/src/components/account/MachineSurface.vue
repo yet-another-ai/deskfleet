@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef } from "vue"
+import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from "vue-router"
 import type { Machine } from "@deskfleet/client/central"
 import App from "../../App.vue"
 import type { AccountSession } from "../../composables/useAccountSession.ts"
 import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
+import { workspaceRouteMachine } from "../../services/workspace-agent-navigation.ts"
 import { router } from "../../router/index.ts"
 
 // Route views remount on selection; the account retains each machine's runtime.
@@ -13,6 +15,27 @@ const runtimes = useMachineRuntimes()!
 const root = useTemplateRef<HTMLElement>("root")
 let unmount: (() => void) | undefined
 let disposed = false
+
+function enterOwner(route: Pick<RouteLocationNormalizedLoaded, "name" | "query" | "fullPath">): false | RouteLocationRaw | undefined {
+  const id = workspaceRouteMachine(route)
+  if (!id) return
+  const session = props.session
+  if ((route.query.team !== undefined && route.query.team !== session.teamId.value)
+    || !session.machines.value.some(item => item.id === id)) {
+    // A project entry can show an inaccessible target without touching its resources.
+    if (route.name === "session") return { name: "new-session", query: { machine: id, team: route.query.team } }
+    return
+  }
+  if (id !== props.machine.id) {
+    session.openMachineRoute(id, route.fullPath)
+    return false
+  }
+}
+
+// Also guard Back/Forward while a different machine's isolated App is mounted.
+const stopNavigation = router.beforeResolve(to => {
+  if (!disposed && unmount && props.session.machineId.value === props.machine.id) return enterOwner(to)
+})
 
 // Every store and cache is scoped to one machine so equal local IDs on two machines never meet.
 onMounted(async () => {
@@ -26,7 +49,11 @@ onMounted(async () => {
     // Cross-machine results and desktop previews keep their overview in history for Back.
     if (route.name === "search" || route.name === "remote-desktops") await router.push(destination)
     else await router.replace(destination)
-  } else if (!route.meta.fullWindow && !(route.name === "session" && route.query.window === "session")) {
+  } else if (workspaceRouteMachine(route)) {
+    const redirect = enterOwner(route)
+    if (redirect === false) return
+    if (redirect) await router.replace(redirect)
+  } else if (!route.meta.fullWindow && route.name !== "new-project" && !(route.name === "session" && route.query.window === "session")) {
     const path = route.name === "search" ? props.session.searchPath.value : route.name === "remote-desktops" ? "/desktops" : route.name === "schedules" ? "/schedules" : route.name === "archived-sessions" ? "/sessions/archived" : "/"
     await router.replace(path)
   }
@@ -36,6 +63,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  stopNavigation()
   unmount?.()
 })
 </script>

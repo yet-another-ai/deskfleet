@@ -155,8 +155,8 @@ test("browses synchronized history with the machine offline and isolates equal l
   expect(page().get<HTMLElement>("aside [data-sidebar-scroll-viewport]").element.scrollTop).toBe(0)
 })
 
-const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin", mobile = false) => {
-  view = mount(AccountShell, { props: { host: { ...host, platform, ...(mobile ? { mobile: true } : {}), central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
+const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin", mobile = false, remoteWorkspaceAgent = false) => {
+  view = mount(AccountShell, { props: { host: { ...host, platform, ...(mobile ? { mobile: true } : {}), remoteWorkspaceAgent, central } }, global: { plugins: [pinia, router, i18n] }, attachTo: document.body })
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
 
@@ -725,4 +725,21 @@ test("standalone Session window selects its Team and Machine and opens focused w
   await settled(() => expect(view!.text()).toContain("Message from 102"))
   expect(fake.central.machines).toHaveBeenLastCalledWith("7")
   expect(page().find("aside [data-sidebar-scroll-area]").exists()).toBe(false)
+})
+
+test("the iOS first-use screen checks the computer roster and lets the user choose between same-name computers", async () => {
+  const f = fakeCentral()
+  withEmptyCatalogs(f)
+  mountShell(f.central, "web", true, true)
+  await settled(() => expect(page().get("main").text()).toContain("the computer with your project"))
+  expect(page().find('[data-add-machine="local"]').exists()).toBe(false)
+  f.state.machines.push(...["test-A", "test-B"].map(id => ({ ...machineFixture(id, "team-1", "Mac mini"), capabilities: { superAgent: true } })))
+  await buttonText("Check again")!.trigger("click")
+  await settled(() => expect(page().get("[data-machine-picker] button").text()).toContain("test-A"))
+  const second = page().findAll("[data-machine-picker] button")[1]!
+  expect(second.text()).toContain("test-B")
+  await second.trigger("click")
+  await settled(() => expect(view!.getComponent({ name: "MachineSurface" }).props("machine").id).toBe("test-B"))
+  expect(page().find("[data-machine-picker]").exists()).toBe(false)
+  localStorage.removeItem("deskfleet.workspace-agent.recent-machines")
 })

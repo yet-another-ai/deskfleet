@@ -571,3 +571,20 @@ test("selecting a different machine starts with its own initial loading state an
     expect(next.catalogIdentity).toEqual({ teamId: "2", machineId: "3" })
   } finally { configureClient(host) }
 })
+
+test("legacy metadata without an owner takes its catalog worktree's project; only genuine standalone sessions stay under the machine", async () => {
+  const store = setup()
+  const agents = useAgentSessionsStore()
+  const session = agentSnapshot().session
+  agents.sessions = {
+    [sessionId]: { ...session, id: sessionId, workspaceId: undefined },
+    loose: { ...session, id: "loose", workspaceId: undefined },
+    premapped: { ...session, id: "premapped", workspaceId },
+  }
+  expect(store.machines[0]!.sessions).toEqual([])
+  await store.refreshLocalCatalog()
+  expect(store.machines[0]!.sessions.map(item => item.id)).toEqual(["loose"])
+  expect(store.findSession(sessionId)?.workspace?.id).toBe(workspaceId)
+  expect(store.findSession(sessionId)?.session.title).toBe(session.title)
+  expect(store.findSession("premapped")?.workspace?.id).toBe(workspaceId)
+})

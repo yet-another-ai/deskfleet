@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { usesWorkspaceNavigation } from "../../services/workspace-agent-navigation.ts"
 import { CalendarClock, MessagesSquare, MonitorPlay, Search, SquarePen } from "@lucide/vue"
 import { vSpring } from "../../directives/spring.ts"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRoute } from "vue-router"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import UiTooltip from "../common/UiTooltip.vue"
@@ -12,8 +14,11 @@ import SidebarLink from "./SidebarLink.vue"
 
 const { t } = useI18n()
 const route = useRoute()
+const client = usePlatformClient()
 const { conversationPath } = storeToRefs(useLayoutStore())
-const searchPath = useAccountSession()?.searchPath ?? ref("/search")
+const account = useAccountSession()
+const searchPath = account?.searchPath ?? ref("/search")
+const workspaceHome = computed(() => usesWorkspaceNavigation(client, !!account))
 // Only the active section reveals its label, leaving room for more destinations.
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
@@ -23,7 +28,7 @@ const sections = [
 ] as const
 type Section = typeof sections[number]
 /** Machine-local resource routes that belong under Conversations. */
-const conversationRouteNames = new Set(["new-session", "session", "worktree", "machine-control", "terminal"])
+const conversationRouteNames = new Set(["new-session", "new-project", "manual-session", "workspace-agent", "session", "worktree", "machine-control", "terminal"])
 const activeSection = computed(() => sections.find(section => section.routeName === route.name)
   ?? (conversationRouteNames.has(String(route.name)) ? sections[0] : undefined))
 
@@ -59,7 +64,7 @@ function destination(section: Section) {
         </UiTooltip>
       </RouterLink>
     </div>
-    <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
+    <SidebarLink v-if="!workspaceHome" :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
   </nav>
 </template>
 

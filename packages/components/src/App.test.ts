@@ -111,6 +111,26 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
   expect(sidebar.get(`a[href="#/sessions/${sessionId}"]`).text()).toBe("Pinned investigation")
 })
 
+test("the project sidebar offers a collapsed Pinned group only after a Worker is pinned", async () => {
+  configureClient({ ...host, remoteWorkspaceAgent: true })
+  const pinia = createPinia()
+  hydrateSession(pinia, "Pinned Worker")
+  const wrapper = await mountApp("/machines/local-daemon/control", pinia)
+  const sidebar = wrapper.get("aside")
+  expect(sidebar.find("[data-pinned-sessions]").exists()).toBe(false)
+  const pins = usePinnedSessionsStore(pinia)
+  pins.pin("local-daemon", sessionId, "Pinned Worker")
+  await flushPromises()
+  const pinned = sidebar.get("[data-pinned-sessions]")
+  expect(pinned.get("button").attributes("aria-expanded")).toBe("false")
+  expect(pinned.find("[data-pinned-session]").exists()).toBe(false)
+  await pinned.get("button").trigger("click")
+  expect(pinned.get("[data-pinned-session]").text()).toContain("Pinned Worker")
+  pins.unpin("local-daemon", sessionId)
+  await flushPromises()
+  expect(sidebar.find("[data-pinned-sessions]").exists()).toBe(false)
+})
+
 test("the archive route retains the sidebar without tiled windows", async () => {
   const pinia = createPinia()
   vi.spyOn(useAgentSessionsStore(pinia), "refresh").mockResolvedValue()
@@ -660,6 +680,24 @@ test("the Chat window tab uses the Session title and exposes its location as a t
   useAgentSessionsStore(pinia).sessions[sessionId]!.title = "Renamed title"
   await flushPromises()
   expect(chatTab().text()).toContain("Renamed title")
+})
+
+test("titles follow the project, its Worker and the personal default conversation", async () => {
+  const snapshot = async ({ workspaceId }: { workspaceId: string | null }) => ({ workspaceId, provider: "codex", tickets: [], messages: [] })
+  configureClient({ ...host, superAgent: { snapshot, send: vi.fn(), correct: vi.fn(), settings: vi.fn() } })
+  const pinia = createPinia()
+  hydrateSession(pinia, "Review changes")
+  await mountApp("/", pinia)
+  expect(document.title).toBe(i18n.global.t("superAgent.defaultWorkspace"))
+  await router.push({ name: "workspace-agent", params: { workspaceId }, query: { machine: "local-daemon" } })
+  await flushPromises()
+  expect(document.title).toBe("storefront")
+  await router.push({ name: "session", params: { sessionId } })
+  await flushPromises()
+  expect(document.title).toBe("Review changes")
+  await router.push("/sessions/archived")
+  await flushPromises()
+  expect(document.title).toBe("DeskFleet")
 })
 
 test("updates the document title to the active Session title and restores it on other routes", async () => {

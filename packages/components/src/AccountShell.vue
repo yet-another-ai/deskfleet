@@ -34,6 +34,7 @@ import { platformClientKey } from "./composables/usePlatformClient.ts"
 
 const loadMachineSurface = () => import("./components/account/MachineSurface.vue")
 const MachineSurface = defineAsyncComponent(loadMachineSurface)
+const WorkspaceAgentSetupView = defineAsyncComponent(() => import("./views/WorkspaceAgentSetupView.vue"))
 // Overlap the workspace bundle with the account status request.
 void loadMachineSurface()
 
@@ -69,7 +70,7 @@ async function refreshNotificationPermission(): Promise<void> {
 }
 watch(notificationsEnabled, () => { void refreshNotificationPermission() }, { immediate: true })
 const { t } = useI18n()
-const session = createAccountSession(props.host.central!, props.host.initialError)
+const session = createAccountSession(props.host.central!, props.host.initialError, props.host.remoteWorkspaceAgent)
 useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
 provide(accountSessionKey, session)
@@ -136,7 +137,7 @@ watch([ready, account], async () => {
   // A Machine surface initializes its own route before it signals readiness.
   if (!machine.value) finishBillingReturn()
 }, { immediate: true })
-useTitle(() => machine.value && route.value.name === "session" ? undefined : (site.value?.siteName ?? "DeskFleet"))
+useTitle(() => machine.value && ["session", "workspace-agent", "new-session"].includes(String(route.value.name)) ? undefined : (site.value?.siteName ?? "DeskFleet"))
 useEventListener(window, "focus", () => {
   void refreshNotificationPermission()
   void session.reload().catch((reason: unknown) => { session.notice.value = reason instanceof Error ? reason.message : String(reason) })
@@ -176,7 +177,8 @@ if (props.host.onboarding) void loadOnboarding()
         </aside>
         <main class="flex min-w-0 flex-1 flex-col py-6 md:py-0">
           <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
-          <MachineOnboarding v-if="team" />
+          <WorkspaceAgentSetupView v-if="team && host.localChannels" :key="team.id" />
+          <MachineOnboarding v-else-if="team" :remote-workspace-agent="host.remoteWorkspaceAgent" />
           <TeamOnboarding v-else-if="!teams.length" />
         </main>
       </div>

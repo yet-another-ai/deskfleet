@@ -1,23 +1,28 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
+import { getClient } from "@deskfleet/client/platform"
+import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
 import SidebarNavigation from "./SidebarNavigation.vue"
 import { accountSessionKey, createAccountSession } from "../../composables/useAccountSession.ts"
-import { fakeCentral } from "../../test/central.ts"
+import { fakeCentral, machineFixture } from "../../test/central.ts"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 
 let wrapper: VueWrapper | undefined
 let pinia: ReturnType<typeof createPinia> | undefined
 const sectionLink = (label: string) => wrapper!.get<HTMLAnchorElement>(`a[aria-label="${label}"]`)
 const newSessionLink = () => wrapper!.findAll("a").find(link => link.text() === i18n.global.t("nav.newSession"))!
 
-async function setup(path = "/") {
+async function setup(path = "/", client?: DeskfleetDesktopApi, account?: ReturnType<typeof createAccountSession>) {
   pinia = createPinia()
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: "/", name: "new-session", component: {} },
+      { path: "/projects/new", name: "new-project", component: {} },
+      { path: "/compose", name: "manual-session", component: {} },
       { path: "/search", name: "search", component: {} },
       { path: "/desktops", name: "remote-desktops", component: {} },
       { path: "/schedules/:scheduleId?", name: "schedules", component: {} },
@@ -37,7 +42,12 @@ async function setup(path = "/") {
     ],
   })
   await router.push(path)
-  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: { plugins: [pinia, router, i18n] } })
+  wrapper = mount(SidebarNavigation, { attachTo: document.body, global: {
+    plugins: [pinia, router, i18n], provide: {
+      ...(client && { [platformClientKey as symbol]: client }),
+      ...(account && { [accountSessionKey as symbol]: account }),
+    },
+  } })
   await flushPromises()
   return router
 }
@@ -65,6 +75,24 @@ test("keeps New session available alongside the section capsules", async () => {
   expect(router.currentRoute.value.name).toBe("new-session")
   expect(sectionLink("Conversations").attributes("aria-current")).toBe("page")
   expect(sectionLink("Schedules").attributes("aria-current")).toBeUndefined()
+})
+
+test.each(["darwin", "web"] as const)("the project-aware %s host puts project actions under their machine", async platform => {
+  const machine = machineFixture("remote", "team-1", "Existing Mac")
+  const { central } = fakeCentral({ machines: [machine] })
+  const account = createAccountSession(central)
+  try {
+    await flushPromises()
+    await setup("/sessions/session-42", {
+      ...getClient(), platform, remoteWorkspaceAgent: platform === "web", target: { id: machine.id, local: false },
+      localChannels: platform === "web" ? undefined : { open: vi.fn(), close: vi.fn(), send: vi.fn(), onEvent: vi.fn() },
+    }, account)
+    expect(wrapper!.find('[data-new-project]').exists()).toBe(false)
+    expect(wrapper!.text()).not.toContain(i18n.global.t("superAgent.defaultWorkspace"))
+    expect(wrapper!.text()).not.toContain(i18n.global.t("nav.newSession"))
+  } finally {
+    account.dispose()
+  }
 })
 
 test.each(["/schedules", "/schedules/new", "/schedules/daily-review"])("recognizes %s as the Schedules section", async path => {

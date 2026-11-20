@@ -1,4 +1,5 @@
 import { clearConversationOwner, conversationCacheKey, createConversationCache } from "../services/conversation-cache.ts"
+import { createWorkspaceAgentClient } from "../services/workspace-agent-client.ts"
 import { createPinia, disposePinia } from "pinia"
 import { computed, createApp, h, inject, nextTick, onScopeDispose, ref, shallowReactive, vaporInteropPlugin, watch, type Component, type InjectionKey } from "vue"
 import type { Machine } from "@deskfleet/client/central"
@@ -40,6 +41,7 @@ export function createMachineRuntimes(
   outlineAudio: ReturnType<typeof useOutlineAudioStore>,
   batteries: MachineBatteriesStore,
 ): MachineRuntimes {
+  const canUseWorkspaceAgent = host.platform !== "web" || host.remoteWorkspaceAgent === true
   const opened = shallowReactive(new Map<string, MachineRuntime>())
   function release(id: string): void {
     const runtime = opened.get(id)
@@ -66,6 +68,7 @@ export function createMachineRuntimes(
     opened,
     sidebarScrollTop: 0,
     open(machine) {
+      if (session.teamId.value !== machine.teamId) throw new Error("Machine is outside the selected team")
       const existing = opened.get(machine.id)
       if (existing) return existing
       function isLocal(previous: boolean): boolean {
@@ -76,6 +79,12 @@ export function createMachineRuntimes(
         return session.localMachineId.value === machine.id && enrollment.teamId === machine.teamId
       }
       const remote = remoteMachineClient(host, session.central, machine, { local: isLocal(false), rosterReady: session.machineRosterVersion.value !== undefined })
+      const supportsRemoteFrontDesk = ref(machine.capabilities?.superAgent === true)
+      const hasFrontDesk = () => !disposed && canUseWorkspaceAgent && (remote.api.target?.local
+        ? !!host.localChannels && isLocal(true)
+        : supportsRemoteFrontDesk.value && !isLocal(false))
+      const frontDesk = createWorkspaceAgentClient(remote.api.agent, hasFrontDesk)
+      Object.defineProperty(remote.api, "superAgent", { get: () => hasFrontDesk() ? frontDesk.api : undefined })
       const cache = createConversationCache(owner.value, JSON.stringify([machine.teamId, machine.id]))
       const state = createPinia()
       const views = new Set<() => void>()
@@ -83,9 +92,34 @@ export function createMachineRuntimes(
       let mounted = false
       let disposed = false
       let viewId = 0
+      // A machine can join the roster before its first daemon capability report.
+      // Check the first full catalog after connecting, including daemon upgrades.
+      let awaitingCapabilityReport = !supportsRemoteFrontDesk.value
+      let capabilityRequest = 0
+      function refreshCapabilities() {
+        const request = ++capabilityRequest
+        const entry = session.machines.value.find(item => item.id === machine.id)
+        void session.central.machines(machine.teamId).then(roster => {
+          if (disposed || request !== capabilityRequest || !entry || !session.machines.value.includes(entry)) return
+          const updated = roster.find(item => item.id === entry.id && item.teamId === entry.teamId)
+          if (updated) entry.capabilities = updated.capabilities
+        }).catch(() => { if (request === capabilityRequest) awaitingCapabilityReport = true })
+      }
+      if (canUseWorkspaceAgent && !remote.api.target?.local && machine.online && awaitingCapabilityReport) refreshCapabilities()
+      const stopCapabilities = !canUseWorkspaceAgent ? undefined : session.central.onEvent(event => {
+        if ((event.type !== "presence" && event.type !== "catalogChanged") ||
+          event.teamId !== machine.teamId || event.machineId !== machine.id || remote.api.target?.local) return
+        if (event.type === "presence") {
+          if (event.online) awaitingCapabilityReport = true
+        } else if (!event.sessionId && awaitingCapabilityReport) {
+          awaitingCapabilityReport = false
+          refreshCapabilities()
+        }
+      })
       // Reattach viewers when enrollment changes transport, including inactive machines.
       // Keep the adapter, stores, drafts, and current route throughout the transition.
       const stopLocal = watch(() => isLocal(remote.api.target?.local ?? false), async value => {
+        frontDesk.close()
         if (!mounted) { remote.setLocal(value); return }
         renderViews.value = false
         await nextTick()
@@ -99,7 +133,11 @@ export function createMachineRuntimes(
         state,
         api: remote.api,
         refreshCatalog: remote.refreshCatalog,
-        updateMachine: remote.updateMachine,
+        updateMachine(value, rosterRefreshed) {
+          remote.updateMachine(value, rosterRefreshed)
+          supportsRemoteFrontDesk.value = value.capabilities?.superAgent === true
+          if (!hasFrontDesk()) frontDesk.close()
+        },
         mount(component, root) {
           const app = createApp({ render: () => renderViews.value ? h(component) : null })
             .provide(conversationCacheKey, cache)
@@ -121,6 +159,8 @@ export function createMachineRuntimes(
         },
         dispose() {
           disposed = true
+          frontDesk.close()
+          stopCapabilities?.()
           stopLocal()
           for (const unmount of views) unmount()
           disposePinia(state)

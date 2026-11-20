@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Pin, Unplug } from "@lucide/vue"
+import { ChevronRight, Pin, Unplug } from "@lucide/vue"
 import { useArrayFilter } from "@vueuse/core"
-import { useId } from "vue"
+import { ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
@@ -14,9 +14,11 @@ import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 
+defineProps<{ collapsible?: boolean }>()
 const { t } = useI18n()
 const id = useId()
 const pins = usePinnedSessionsStore()
+const expanded = ref(false)
 const account = useAccountSession()
 const route = useRoute()
 const router = useRouter()
@@ -35,8 +37,13 @@ function open(machineId: string, sessionId: string): void {
 
 <template>
   <section v-if="visiblePins.length" :aria-labelledby="id" data-pinned-sessions class="mb-5">
-    <h2 :id="id" class="m-0 mb-2 px-2.5 text-xs font-normal text-ui-text-faint">{{ t('pinnedSessions.title') }}</h2>
-    <ul class="m-0 flex list-none flex-col gap-1 p-0">
+    <h2 :id="id" class="m-0 mb-2 px-2.5 text-xs font-normal text-ui-text-faint">
+      <button v-if="collapsible" type="button" :aria-expanded="expanded" class="inline-flex items-center gap-1" @click="expanded = !expanded">
+        <ChevronRight :size="13" :class="expanded && 'rotate-90'" aria-hidden="true" />{{ t('pinnedSessions.title') }}
+      </button>
+      <template v-else>{{ t('pinnedSessions.title') }}</template>
+    </h2>
+    <ul v-if="!collapsible || expanded" class="m-0 flex list-none flex-col gap-1 p-0">
       <li v-for="item in visiblePins" :key="`${item.machineId}:${item.sessionId}`" :data-pinned-machine="item.machineId" :data-pinned-session="item.sessionId">
         <SessionContextMenu :machine-id="item.machineId" :session-id="item.sessionId" :title="item.title" :context="item.context" :archive-state="item.archiveState" :disabled="!item.online || !item.loaded">
           <button

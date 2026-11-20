@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usesWorkspaceNavigation } from "../../services/workspace-agent-navigation.ts"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import type { Machine } from "@deskfleet/client/central"
 import type { MachineSummary } from "../../stores/fleet-types.ts"
@@ -42,6 +43,7 @@ onBeforeUnmount(() => {
 })
 const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
 const platform = platformClient.platform
+const projectHome = computed(() => usesWorkspaceNavigation(platformClient, !!account))
 // Each opened machine retains its own catalog and action scope.
 const loaded = (id: string) => machines.value.find(machine => machine.id === id)
 const unopened = (machine: Machine): MachineSummary => ({
@@ -50,7 +52,7 @@ const unopened = (machine: Machine): MachineSummary => ({
   local: machine.id === account?.localMachineId.value,
   online: machine.online,
   lastSeen: machine.lastSeenAt ?? undefined,
-  desktop: machine.capabilities.desktop === true,
+  desktop: machine.capabilities?.desktop === true,
   terminals: [],
   sessions: [],
   workspaces: [],
@@ -109,9 +111,9 @@ function refresh(): void {
       data-sidebar-scroll-area
       :viewport-attrs="{ 'data-sidebar-scroll-viewport': '' }"
     >
-      <PinnedSessions />
+      <PinnedSessions :collapsible="projectHome" />
       <div class="mb-2 flex items-center justify-between gap-2 px-2.5 text-xs text-ui-text-faint">
-        <span>{{ catalogLoading ? t("catalog.loading") : t("catalog.workspaces") }}</span>
+        <span>{{ catalogLoading ? t("catalog.loading") : t(projectHome ? "superAgent.machineNav.machines" : "catalog.workspaces") }}</span>
         <div class="-mr-1.5 flex items-center">
           <button type="button" class="cursor-pointer rounded px-1 py-1 ui-motion hover:bg-ui-hover disabled:op-40" :disabled="catalogLoading" @click="refresh">{{ t("catalog.refresh") }}</button>
           <UiButton v-if="account" variant="ghost" size="icon" :label="t('account.addMachine')" @click="account.dialog.value = 'add-machine'"><Plus :size="16" :stroke-width="1.75" aria-hidden="true" /></UiButton>

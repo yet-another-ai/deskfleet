@@ -549,3 +549,56 @@ test("local enrollment completion keeps the selection made after changing Teams"
   expect(session.machineId.value).toBe("other")
   expect(session.machine.value!.name).toBe("Other machine")
 })
+
+test("on iOS a single compatible computer opens even with an old host listed first", async () => {
+  const old = machineFixture("old", "team-1", "Mac")
+  const development = { ...machineFixture("dev", "team-1", "Mac"), capabilities: { superAgent: true } }
+  const f = fakeCentral({ machines: [old, development] })
+  session = createAccountSession(f.central, undefined, true)
+  await flushPromises()
+  expect(session.machineId.value).toBe("dev")
+  f.emit({ type: "presence", teamId: development.teamId, machineId: development.id, online: false })
+  expect(session.machineId.value).toBe("dev")
+})
+
+test("iOS asks which compatible computer to open and remembers an explicit selection per Team", async () => {
+  const computer = (id: string, teamId: string) => ({ ...machineFixture(id, teamId, "Mac"), capabilities: { superAgent: true } })
+  const f = fakeCentral({
+    teams: [{ id: "one", name: "One", role: "admin" }, { id: "two", name: "Two", role: "admin" }],
+    machines: [computer("one-a", "one"), computer("one-b", "one"), computer("two-a", "two"), computer("two-b", "two")],
+  })
+  localStorage.removeItem("deskfleet.workspace-agent.recent-machines")
+  session = createAccountSession(f.central, undefined, true)
+  await flushPromises()
+  expect(session.machineId.value).toBeUndefined()
+  session.selectMachine("one-b")
+  await session.selectTeam("two")
+  expect(session.machineId.value).toBeUndefined()
+  session.selectMachine("two-a")
+  await session.selectTeam("one")
+  expect(session.machineId.value).toBe("one-b")
+  await flushPromises()
+  session.dispose()
+  f.state.machines.find(machine => machine.id === "one-b")!.online = false
+  session = createAccountSession(f.central, undefined, true)
+  await flushPromises()
+  expect(session.machineId.value).toBe("one-b")
+  expect(session.machine.value?.online).toBe(false)
+  localStorage.removeItem("deskfleet.workspace-agent.recent-machines")
+})
+
+test.each([
+  ["/workspaces/17/agent?team=team-1&machine=b", "b"],
+  ["/sessions/17?team=team-1&superMachine=b&superFrom=17", "b"],
+  ["/workspaces/17/agent?team=stranger&machine=b", undefined],
+  ["/workspaces/17/agent?team=team-1&machine=removed", undefined],
+])("an iOS workspace or Worker link selects only its authorized registration: %s", async (path, expected) => {
+  const priorPath = router.currentRoute.value.fullPath
+  try {
+    await router.replace(path!)
+    const f = fakeCentral({ machines: ["a", "b"].map(id => ({ ...machineFixture(id, "team-1", "Mac"), capabilities: { superAgent: true } })) })
+    session = createAccountSession(f.central, undefined, true)
+    await flushPromises()
+    expect(session.machineId.value).toBe(expected)
+  } finally { await router.replace(priorPath) }
+})

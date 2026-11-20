@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router"
 import { client } from "@deskfleet/client/platform"
+import { usesWorkspaceNavigation } from "../services/workspace-agent-navigation.ts"
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -66,6 +67,28 @@ export const router = createRouter({
     {
       path: "/",
       name: "new-session",
+      // Only project-aware clients load the workspace entry bundle.
+      component: () => usesWorkspaceNavigation(client)
+        ? import("../views/WorkspaceEntryView.vue") : import("../views/NewSessionView.vue"),
+    },
+    {
+      path: "/workspaces/:workspaceId/agent",
+      name: "workspace-agent",
+      component: () => import("../views/WorkspaceEntryView.vue"),
+      props: true,
+    },
+    {
+      path: "/projects/new",
+      name: "new-project",
+      beforeEnter: () => usesWorkspaceNavigation(client) ? true : { name: "new-session", replace: true },
+      component: () => import("../views/WorkspaceEntryView.vue"),
+      props: { createProject: true },
+    },
+    {
+      path: "/compose",
+      name: "manual-session",
+      // Old desktop bookmarks should enter the project flow as well.
+      beforeEnter: () => usesWorkspaceNavigation(client) ? { name: "new-project", replace: true } : true,
       component: () => import("../views/NewSessionView.vue"),
     },
     {

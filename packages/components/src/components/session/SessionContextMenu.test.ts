@@ -3,6 +3,8 @@ import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { h } from "vue"
 import { createMemoryHistory, createRouter, RouterLink } from "vue-router"
+import { getClient } from "@deskfleet/client/platform"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { i18n } from "../../i18n/index.ts"
 import { agentSnapshot } from "../../test/agent.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
@@ -21,7 +23,7 @@ afterEach(async () => {
   await flushPromises()
 })
 
-async function render(selected = false, disabled = false, archiveState: "active" | "archiving" | "archived" = "active") {
+async function render(selected = false, disabled = false, archiveState: "active" | "archiving" | "archived" = "active", registered = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/sessions/:sessionId", name: "session", component: { template: "<div />" } },
   ] })
@@ -34,7 +36,8 @@ async function render(selected = false, disabled = false, archiveState: "active"
     attachTo: document.body,
     props: { sessionId: "30", title: "Investigate failing checks", context: "directory", archiveState, disabled },
     slots: { default: () => h(RouterLink, { to: "/sessions/30" }, () => "Investigate failing checks") },
-    global: { plugins: [pinia, router, i18n] },
+    global: { plugins: [pinia, router, i18n], provide: registered
+      ? { [platformClientKey as symbol]: { ...getClient(), target: { id: "registered-machine", teamId: "registered-team", local: true } } } : {} },
   })
   return { router, rename, archive, restore, row: wrapper.get("a") }
 }
@@ -48,6 +51,22 @@ test.each([false, true])("right-click opens a session menu without navigating (s
   await page().get('[role="menu"]').trigger("keydown", { key: "Escape" }); await flushPromises()
   expect(page().find('[role="menu"]').exists()).toBe(false)
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
+})
+
+test("registered project sessions copy a scoped Worker ID only while active and on the bound machine", async () => {
+  const { row } = await render(false, false, "active", true)
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  try {
+    await wrapper!.setProps({ projectWorker: true, machineId: "registered-machine" })
+    await row.trigger("keydown", { key: "ContextMenu" }); await flushPromises()
+    await item("Copy ID").trigger("click"); await flushPromises()
+    expect(write).toHaveBeenCalledExactlyOnceWith("@worker[registered-team/registered-machine/30]")
+    await row.trigger("keydown", { key: "ContextMenu" }); await flushPromises()
+    await wrapper!.setProps({ machineId: "another-machine" })
+    expect(page().get('[role="menu"]').find("[data-session-action=copy-id]").exists()).toBe(false)
+    await wrapper!.setProps({ machineId: "registered-machine", archiveState: "archiving" })
+    expect(page().get('[role="menu"]').find("[data-session-action=copy-id]").exists()).toBe(false)
+  } finally { write.mockRestore() }
 })
 
 test("offline sessions can be pinned while session mutations remain disabled", async () => {

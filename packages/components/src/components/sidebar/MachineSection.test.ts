@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto"
+import { getClient } from "@deskfleet/client/platform"
+import type { SuperAgentApi } from "@deskfleet/client/desktop-api"
+import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
 import { expect, test, vi } from "vitest"
@@ -9,7 +13,8 @@ import type { AgentSessionSummary, MachineSummary } from "../../stores/fleet-typ
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
-import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
+import { fakeCentral, machineFixture } from "../../test/central.ts"
+import { accountSessionKey, createAccountSession, type AccountSession } from "../../composables/useAccountSession.ts"
 import type { GithubPullRequest } from "@deskfleet/client/central"
 import type { SystemStatus } from "@deskfleet/client/system"
 import { usePullRequestsStore } from "../../stores/pull-requests.ts"
@@ -20,6 +25,7 @@ async function setup(
   machine: Partial<MachineSummary> = {},
   account?: AccountSession,
   pullRequest?: GithubPullRequest,
+  superAgent?: SuperAgentApi,
   battery?: NonNullable<SystemStatus["battery"]>,
 ) {
   const pinia = createPinia()
@@ -32,6 +38,8 @@ async function setup(
       { path: "/", name: "new-session", component: {} },
       { path: "/machines/:machineId/control", name: "machine-control", component: {} },
       { path: "/sessions/:sessionId", name: "session", component: {} },
+      { path: "/workspaces/:workspaceId/agent", name: "workspace-agent", component: {} },
+      { path: "/projects/new", name: "new-project", component: {} },
       { path: "/terminals/:terminalId", name: "terminal", component: {} },
     ],
   })
@@ -41,20 +49,23 @@ async function setup(
       id: "local-daemon", name: "host", local: true, online: true, desktop: false,
       terminals: [{ id: "shell", title: "Machine shell", cwd: "/home/user" }], sessions: [], workspaces: [], ...machine,
     } },
-    global: { plugins: [pinia, router, i18n], provide: account ? { [accountSessionKey as symbol]: account } : {} },
+    global: { plugins: [pinia, router, i18n], provide: {
+      ...(account && { [accountSessionKey as symbol]: account }),
+      ...(superAgent && { [platformClientKey as symbol]: { ...getClient(), superAgent } }),
+    } },
   })
   return { wrapper, router }
 }
 
 test("shows battery charge and state in the machine header", async () => {
-  const { wrapper } = await setup({}, undefined, undefined, { percent: 68.4, state: "charging" })
+  const { wrapper } = await setup({}, undefined, undefined, undefined, { percent: 68.4, state: "charging" })
   const indicator = wrapper.get("[data-machine-battery]")
   expect(indicator.attributes("aria-label")).toBe("Battery 68%, Charging")
   wrapper.unmount()
 })
 
 test("hides a stale battery indicator when the machine is offline", async () => {
-  const { wrapper } = await setup({ online: false }, undefined, undefined, { percent: 68.4, state: "charging" })
+  const { wrapper } = await setup({ online: false }, undefined, undefined, undefined, { percent: 68.4, state: "charging" })
   expect(wrapper.find("[data-machine-battery]").exists()).toBe(false)
   wrapper.unmount()
 })
@@ -485,4 +496,166 @@ test.each(["machine", "workspace"] as const)("%s hover Archive confirms before a
   finishArchive()
   await flushPromises()
   wrapper.unmount()
+})
+
+test("local workspace agents separate opening the project from expanding existing Sessions", async () => {
+  const project = {
+    id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [{ id: "workspace-shell", title: "Task shell", cwd: "/project" }],
+    sessions: [{ id: "old", title: "Existing Session", archiveState: "active" as const, provider: "codex" }],
+  }
+  const { wrapper, router } = await setup({ workspaces: [
+    project, { ...project, id: "private", name: "Private backing directory", directories: [{ path: `/data/super-agent-files/${"a".repeat(64)}` }] },
+  ] }, undefined, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
+  expect(wrapper.text()).not.toContain("Private backing directory")
+  expect(wrapper.find('a[title="Local control"]').exists()).toBe(true)
+  const projectRow = wrapper.get("[data-project-workspace=workspace]")
+  expect(projectRow.get("[data-open-project]").text()).toBe("Project")
+  expect(projectRow.findAll("button").at(0)?.element).toBe(projectRow.get("[data-open-project]").element)
+  const toggle = wrapper.get('button[aria-label="Sessions in Project"]')
+  expect(toggle.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('a[href="/sessions/old?superFrom=workspace&superMachine=local-daemon"]').exists()).toBe(false)
+  await wrapper.findAll("button").find(button => button.text() === "Project")!.trigger("click")
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe("/workspaces/workspace/agent?machine=local-daemon")
+  expect(toggle.attributes("aria-expanded")).toBe("false")
+  await toggle.trigger("click")
+  expect(wrapper.get('a[href="/sessions/old?superFrom=workspace&superMachine=local-daemon"]').text()).toBe("Existing Session")
+  expect(router.currentRoute.value.fullPath).toBe("/workspaces/workspace/agent?machine=local-daemon")
+  expect(wrapper.find('button[aria-label="New session"]').exists()).toBe(false)
+  expect(projectRow.get('a[href="/terminals/workspace-shell"]').text()).toBe("Task shell")
+  const create = vi.spyOn(useTerminalsStore(), "create").mockResolvedValue({
+    id: "new-shell", title: "shell", cwd: "/project", cols: 80, rows: 24, status: "running",
+  })
+  await projectRow.get('button[aria-label="Open terminal in default directory"]').trigger("click")
+  await flushPromises()
+  expect(create).toHaveBeenCalledExactlyOnceWith({ cwd: "/project" })
+  expect(router.currentRoute.value.fullPath).toBe("/terminals/new-shell")
+  expect(toggle.attributes("aria-expanded")).toBe("true")
+  wrapper.unmount()
+})
+
+test("Copy ID uses the clicked project Worker's registration and leaves unassigned sessions out", async () => {
+  const machineId = "second-machine"
+  const account = createAccountSession(fakeCentral({ machines: [
+    machineFixture("first-machine", "team-1", "Mac"),
+    machineFixture(machineId, "team-1", "PC"),
+  ] }).central)
+  await flushPromises()
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("Denied")).mockResolvedValue()
+  const session: AgentSessionSummary = { id: "42", title: "Review", context: "directory", archiveState: "active" }
+  const { wrapper, router } = await setup({ id: machineId, local: false, online: false,
+    sessions: [{ ...session, id: "43" }],
+    workspaces: [{ id: "17", name: "Project", directories: [{ path: "/project" }], terminals: [], sessions: [session] }],
+  }, account, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
+  try {
+    const page = new DOMWrapper(document.body)
+    const route = router.currentRoute.value.fullPath
+    await wrapper.get('button[aria-label="Sessions in Project"]').trigger("click")
+    const row = wrapper.get('a[href^="/sessions/42"]')
+    await row.trigger("contextmenu", { button: 2 })
+    await flushPromises()
+    await page.get("[data-session-action=copy-id]").trigger("click")
+    await flushPromises()
+    expect(wrapper.get("[data-worker-id-feedback]").attributes("role")).toBe("alert")
+    expect(page.find('[role="menu"]').exists()).toBe(false)
+    await row.trigger("contextmenu", { button: 2 })
+    await flushPromises()
+    await page.get("[data-session-action=copy-id]").trigger("click")
+    await flushPromises()
+    expect(copy).toHaveBeenCalledTimes(2)
+    expect(copy).toHaveBeenLastCalledWith("@worker[team-1/second-machine/42]")
+    expect(wrapper.get("[data-worker-id-feedback]").text()).toBe("Worker ID copied")
+    expect(router.currentRoute.value.fullPath).toBe(route)
+
+    await wrapper.get("[data-unassigned-sessions]").trigger("click")
+    await wrapper.get('a[href^="/sessions/43"]').trigger("contextmenu", { button: 2 })
+    await flushPromises()
+    expect(page.get('[role="menu"]').find("[data-session-action=copy-id]").exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+    account.dispose()
+    copy.mockRestore()
+  }
+})
+
+test("projects sharing a name and folder show a distinct ID on each project row", async () => {
+  const example = { name: "A", directories: [{ path: "/code/A" }], sessions: [], terminals: [] }
+  const { wrapper, router } = await setup({ workspaces: [{ ...example, id: "20" }, { ...example, id: "21" }] }, undefined, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
+  for (const id of ["20", "21"]) {
+    const row = wrapper.get(`[data-project-workspace="${id}"]`)
+    const link = row.get("[data-open-project]")
+    expect(link.attributes("title")).toBe("/code/A")
+    expect(link.text()).toContain(`#${id}`)
+    expect(row.get(`button[aria-label="Sessions in A #${id}"]`).attributes("aria-expanded")).toBe("false")
+    await link.trigger("click")
+    await flushPromises()
+    expect(router.currentRoute.value.params.workspaceId).toBe(id)
+  }
+  wrapper.unmount()
+})
+
+test("remote project actions and unassigned history stay scoped to the machine even with equal project IDs elsewhere", async () => {
+  const account = createAccountSession(fakeCentral({ machines: [machineFixture("mac", "team-1", "Mac"), machineFixture("pc", "team-1", "Windows PC")] }).central)
+  await flushPromises()
+  vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
+  const row = { id: "17", name: "demo", directories: [{ path: "C:\\demo" }], terminals: [], sessions: [] }
+  const { wrapper } = await setup({
+    id: "pc", local: false, sessions: [{ id: "loose", title: "Standalone conversation", archiveState: "active" }], workspaces: [row],
+  }, account, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
+  const machineToggle = wrapper.get("button[aria-expanded]")
+  await machineToggle.trigger("click")
+  expect(machineToggle.attributes("aria-expanded")).toBe("false")
+  const header = new DOMWrapper(machineToggle.element.parentElement!)
+  const createProject = header.get("[data-new-project]")
+  expect(wrapper.findAll("[data-new-project]")).toHaveLength(1)
+  expect(createProject.text()).toBe("")
+  expect(createProject.attributes("aria-label")).toBe("New project")
+  expect(createProject.attributes("title")).toBe("New project")
+  const headerActions = header.findAll("button, a").map(item => item.element)
+  const control = header.get('a[title="Remote control"]').element
+  expect(headerActions[headerActions.indexOf(control) - 1]).toBe(createProject.element)
+  await createProject.trigger("click")
+  expect(account.openMachineRoute).toHaveBeenLastCalledWith("pc", { name: "new-project", query: { machine: "pc", team: "team-1" } })
+  expect(machineToggle.attributes("aria-expanded")).toBe("false")
+  await machineToggle.trigger("click")
+  await wrapper.get("[data-open-project]").trigger("click")
+  expect(account.openMachineRoute).toHaveBeenLastCalledWith("pc", { name: "workspace-agent", params: { workspaceId: "17" }, query: { machine: "pc", team: "team-1" } })
+  expect(wrapper.text()).not.toContain("Standalone conversation")
+  await wrapper.get("[data-unassigned-sessions]").trigger("click")
+  expect(wrapper.get('a[href^="/sessions/loose"]').attributes("href")).toContain("superMachine=pc")
+  expect(wrapper.get("[data-project-workspace]").text()).not.toContain("Standalone conversation")
+  await wrapper.setProps({ machine: { ...wrapper.props("machine"), online: false } })
+  vi.mocked(account.openMachineRoute).mockClear()
+  expect(createProject.element.matches(":disabled, [aria-disabled=true]")).toBe(true)
+  await createProject.trigger("click")
+  expect(account.openMachineRoute).not.toHaveBeenCalled()
+  wrapper.unmount()
+  account.dispose()
+})
+
+test("the default workspace opens independently of its trailing Worker disclosure", async () => {
+  const account = createAccountSession(fakeCentral().central)
+  await flushPromises()
+  const navigate = vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
+  const owner = createHash("sha256").update(account.account.value.user!.id).digest("hex")
+  const { wrapper } = await setup({ workspaces: [{
+    id: "private", name: "Private files", directories: [{ path: `/data/super-agent-files/${owner}` }], terminals: [],
+    sessions: [{ id: "worker", title: "Default worker", archiveState: "active" }],
+  }] }, account, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
+  try {
+    const row = wrapper.get("[data-default-workspace]")
+    await vi.waitFor(() => expect(row.find('button[aria-label="Sessions in Default workspace"]').exists()).toBe(true))
+    const [open, toggle] = row.findAll("button")
+    expect(open!.text()).toBe("Default workspace")
+    expect(toggle!.attributes("aria-expanded")).toBe("false")
+    await open!.trigger("click")
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("local-daemon", { name: "new-session", query: { machine: "local-daemon", team: "team-1" } })
+    expect(toggle!.attributes("aria-expanded")).toBe("false")
+    await toggle!.trigger("click")
+    expect(row.get('a[href^="/sessions/worker"]').text()).toBe("Default worker")
+    expect(navigate).toHaveBeenCalledTimes(1)
+  } finally {
+    wrapper.unmount()
+    account.dispose()
+  }
 })
