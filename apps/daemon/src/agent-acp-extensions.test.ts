@@ -5,16 +5,17 @@ import { join } from "node:path"
 import test, { type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
-import { connectAcpProcess, type AgentClient, type AgentConnection } from "./agents/acp.ts"
+import { createCursorExtension } from "@deskfleet/agent-cursor"
+import { connectAcpProcess, type AcpConnectOptions, type AgentClient, type AgentConnection } from "./agents/acp.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/acp-extensions-agent.ts", import.meta.url))
 const prompt = [{ type: "text" as const, text: "Exercise client extensions" }]
 
-async function connect(context: TestContext, client: AgentClient = { onUpdate() {} }, mode?: string) {
+async function connect(context: TestContext, client: AgentClient = { onUpdate() {} }, mode?: string, options?: AcpConnectOptions) {
   const cwd = await mkdtemp(join(tmpdir(), "deskfleet-acp-extensions-"))
   const connection = await connectAcpProcess({
     command: process.execPath, args: [fixture], env: { DESKFLEET_TEST_EXTENSIONS_MODE: mode },
-  }, client)
+  }, client, options)
   context.after(async () => { await connection.close(); await rm(cwd, { recursive: true, force: true }) })
   return { connection, cwd }
 }
@@ -210,7 +211,7 @@ test("Cursor notifications reach the active session as structured events", { tim
   const receivedUpdates = new Promise<void>(resolve => { receive = resolve })
   const { connection, cwd } = await connect(context, { capabilities: { plans: true },
     onUpdate: notification => { updates.push(notification); if (updates.length === 3) receive() },
-  })
+  }, undefined, { extensions: [createCursorExtension()] })
   const { sessionId } = await connection.newSession({ cwd, mcpServers: [] })
   for (const notification of [
     { method: "cursor/update_todos", params: { toolCallId: "todos-1", merge: false,

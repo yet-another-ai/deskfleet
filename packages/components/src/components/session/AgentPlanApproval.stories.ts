@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
-import type { CursorPlanApproval } from "../../../../../apps/daemon/src/agents/plans.ts"
+import type { CursorPlanApproval } from "../../../../../packages/agents/cursor/src/protocol.ts"
 import { storybookPlanApproval } from "../../../.storybook/storybook-fixtures.ts"
 import AgentPlanApproval from "./AgentPlanApproval.vue"
 

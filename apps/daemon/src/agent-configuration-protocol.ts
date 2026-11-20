@@ -1,4 +1,9 @@
 import type * as acp from "@agentclientprotocol/sdk/unstable"
+import { parseClaudeCodeComposerSkill } from "../../../packages/agents/claude-code/src/protocol.ts"
+import { parseCodexComposerSkill } from "../../../packages/agents/codex/src/protocol.ts"
+import type { AgentComposerSkillParser } from "../../../packages/agents/core/src/protocol.ts"
+import { parseOmpComposerSkill } from "../../../packages/agents/omp/src/protocol.ts"
+import { parsePiComposerSkill } from "../../../packages/agents/pi/src/protocol.ts"
 import { validateProviderId } from "./provider-protocol.ts"
 
 export interface AgentChoice {
@@ -210,29 +215,25 @@ export function agentPromptCapabilities(capabilities?: acp.PromptCapabilities | 
   return Object.keys(result).length ? result : undefined
 }
 
+const composerSkillParsers: Record<string, AgentComposerSkillParser> = {
+  codex: parseCodexComposerSkill,
+  "claude-code": parseClaudeCodeComposerSkill,
+  pi: parsePiComposerSkill,
+  omp: parseOmpComposerSkill,
+}
+
 /** Only adapter-defined spellings or explicit skill metadata identify a skill. */
 export function agentComposerCatalog(available: acp.AvailableCommand[], providerKind: string): AgentComposerCatalog {
   const commands: AgentComposerCommand[] = []
   const skills: AgentComposerSkill[] = []
   const seen = new Set<string>()
+  const parseSkill = Object.hasOwn(composerSkillParsers, providerKind) ? composerSkillParsers[providerKind] : undefined
   for (const command of available) {
     if (!command.name || seen.has(command.name)) continue
     seen.add(command.name)
-    const { name, description } = command
-    // codex-acp advertises skills with a literal "$" prefix; Pi and Oh My Pi
-    // advertise "skill:" commands.
-    if (providerKind === "codex" && name.startsWith("$") && name.length > 1) {
-      skills.push({ id: name, name: name.slice(1), description, invocation: name })
-    } else if ((providerKind === "pi" || providerKind === "omp") && name.startsWith("skill:") && name.length > 6) {
-      skills.push({ id: name, name: name.slice(6), description, invocation: `/${name}` })
-    } else {
-      const jetbrains = command._meta?.jetbrains
-      const air = typeof jetbrains === "object" && jetbrains !== null && "air" in jetbrains ? jetbrains.air : undefined
-      const confirmedClaudeSkill = providerKind === "claude-code" && typeof air === "object" && air !== null
-        && "kind" in air && air.kind === "skill" && "skillPath" in air && typeof air.skillPath === "string"
-      if (confirmedClaudeSkill) skills.push({ id: name, name, description, invocation: `/${name}` })
-      else commands.push({ name, description, ...(command.input?.hint ? { inputHint: command.input.hint } : {}) })
-    }
+    const skill = parseSkill?.(command)
+    if (skill) skills.push(skill)
+    else commands.push({ name: command.name, description: command.description, ...(command.input?.hint ? { inputHint: command.input.hint } : {}) })
   }
   return { commands, skills }
 }

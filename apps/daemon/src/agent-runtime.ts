@@ -10,7 +10,7 @@ import { applyAgentConfiguration, readAgentConfiguration } from "./agent-configu
 import { agentComposerCatalog, agentConfiguration, agentPromptCapabilities, normalizeAgentConfigurationSelection, type AgentConfiguration, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { AgentComposerCommands } from "./agent-composer-commands.ts"
 import { savedAgentConfiguration } from "./agent-session-configuration.ts"
-import { withRestoredSessionMode } from "./agents/session-modes.ts"
+import { withRestoredSessionMode } from "@deskfleet/agent-core"
 import { AgentElicitations } from "./agent-elicitations.ts"
 import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"

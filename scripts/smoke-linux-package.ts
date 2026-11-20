@@ -33,6 +33,15 @@ const manifest = JSON.parse(await readFile(new URL("../apps/daemon/package.json"
   version: string
   dependencies: Record<string, string>
 }
+const codexManifest = JSON.parse(await readFile(new URL("../packages/agents/codex/package.json", import.meta.url), "utf8")) as {
+  dependencies: Record<string, string>
+}
+const claudeManifest = JSON.parse(await readFile(new URL("../packages/agents/claude-code/package.json", import.meta.url), "utf8")) as {
+  dependencies: Record<string, string>
+}
+const piManifest = JSON.parse(await readFile(new URL("../packages/agents/pi/package.json", import.meta.url), "utf8")) as {
+  dependencies: Record<string, string>
+}
 const directory = await realpath(await mkdtemp(join(tmpdir(), "deskfleet-package-smoke-")))
 const profile = join(directory, "profile")
 const configHome = join(directory, "config")
@@ -214,12 +223,12 @@ try {
   })
   assert.equal(info.launcher, executable, "The wrapper must preserve its launcher for autostart")
   assert.deepEqual(info.terminal, { output: "deskfleet-package-pty", exitCode: 0 })
-  for (const [argument, dependency, prefix] of [
-    ["--codex-acp", "@agentclientprotocol/codex-acp", "@agentclientprotocol/codex-acp "],
-    ["--claude-agent-acp", "@agentclientprotocol/claude-agent-acp", ""],
-    ["--pi-acp", "pi-acp", ""],
+  for (const [argument, version, prefix] of [
+    ["--codex-acp", codexManifest.dependencies["@agentclientprotocol/codex-acp"], "@agentclientprotocol/codex-acp "],
+    ["--claude-agent-acp", claudeManifest.dependencies["@agentclientprotocol/claude-agent-acp"], ""],
+    ["--pi-acp", piManifest.dependencies["pi-acp"], ""],
   ]) {
-    assert.equal(await node([entry, argument, "--version"]), `${prefix}${manifest.dependencies[dependency]}`)
+    assert.equal(await node([entry, argument, "--version"]), `${prefix}${version}`)
   }
   const dsh = join(resources, "dsh/node_modules/@deepseek-ai/dsh")
   const dshEntry = join(dsh, "lib/bin.js")

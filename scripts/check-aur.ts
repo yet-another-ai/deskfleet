@@ -16,9 +16,16 @@ try {
   // user that created mkdtemp's otherwise private directory.
   chmodSync(staging, 0o755)
   mkdirSync(join(staging, "scripts"))
-  mkdirSync(join(staging, "apps/daemon"), { recursive: true })
   copyFileSync(new URL("./smoke-linux-package.ts", import.meta.url), join(staging, "scripts/smoke-linux-package.ts"))
-  copyFileSync(new URL("../apps/daemon/package.json", import.meta.url), join(staging, "apps/daemon/package.json"))
+  for (const manifest of [
+    "apps/daemon/package.json",
+    "packages/agents/codex/package.json",
+    "packages/agents/claude-code/package.json",
+    "packages/agents/pi/package.json",
+  ]) {
+    mkdirSync(join(staging, manifest, ".."), { recursive: true })
+    copyFileSync(new URL(`../${manifest}`, import.meta.url), join(staging, manifest))
+  }
   execFileSync("docker", [
     // Chromium needs more shared memory than Docker's default 64 MiB. Allow
     // namespace syscalls for its own sandbox, which remains enabled.

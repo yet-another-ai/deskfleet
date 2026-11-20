@@ -1,5 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk/unstable"
-import { grokPlanInterview, grokPlanOutcome } from "./agents/questions.ts"
+import { grokPlanInterview, grokPlanOutcome } from "../../../packages/agents/grok/src/protocol.ts"
 
 /** Browser flows are opened only by the user, and only for web URLs. */
 export function elicitationUrl(request: acp.CreateElicitationRequest): URL | undefined {

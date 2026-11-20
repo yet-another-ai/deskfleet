@@ -8,7 +8,7 @@ import test from "node:test"
 import { fileURLToPath } from "node:url"
 import { runAgent } from "./agent-cli.ts"
 import { AgentProviders } from "./agent-providers.ts"
-import { codebuddyProcess } from "./agents/codebuddy.ts"
+import { codebuddyProcess } from "@deskfleet/agent-codebuddy"
 import { launchProviderCommand } from "./provider-setup-process.ts"
 
 test("CodeBuddy uses native ACP with the selected workspace and environment", () => {

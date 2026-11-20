@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import type * as acp from "@agentclientprotocol/sdk/unstable"
 import { connectAcpProcess } from "./agents/acp.ts"
 import { applyAgentConfiguration } from "./agent-configuration.ts"
-import { AcpSessionModes, withRestoredSessionMode } from "./agents/session-modes.ts"
+import { AcpSessionModes, withRestoredSessionMode } from "@deskfleet/agent-core"
 
 const launch = {
   command: process.execPath,

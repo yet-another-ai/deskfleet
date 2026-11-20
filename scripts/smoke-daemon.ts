@@ -28,6 +28,15 @@ try {
     version: string
     dependencies: Record<string, string>
   }
+  const codexManifest = JSON.parse(readFileSync(join(root, "packages/agents/codex/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
+  const claudeManifest = JSON.parse(readFileSync(join(root, "packages/agents/claude-code/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
+  const piManifest = JSON.parse(readFileSync(join(root, "packages/agents/pi/package.json"), "utf8")) as {
+    dependencies: Record<string, string>
+  }
   const expectedNative = {
     version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
@@ -53,20 +62,20 @@ try {
   const adapterVersion = execFileSync(command, ["--codex-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${manifest.dependencies["@agentclientprotocol/codex-acp"]}`)
+  assert.equal(adapterVersion, `@agentclientprotocol/codex-acp ${codexManifest.dependencies["@agentclientprotocol/codex-acp"]}`)
   const claudeAdapterVersion = execFileSync(command, ["--claude-agent-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(claudeAdapterVersion, manifest.dependencies["@agentclientprotocol/claude-agent-acp"])
+  assert.equal(claudeAdapterVersion, claudeManifest.dependencies["@agentclientprotocol/claude-agent-acp"])
   const piAdapterVersion = execFileSync(command, ["--pi-acp", "--version"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   }).trim()
-  assert.equal(piAdapterVersion, manifest.dependencies["pi-acp"])
+  assert.equal(piAdapterVersion, piManifest.dependencies["pi-acp"])
   const piInitialization = JSON.parse(execFileSync(command, ["agent", "pi", "--check"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
   })) as { agentInfo: { name: string; version: string } }
   assert.equal(piInitialization.agentInfo.name, "pi-acp")
-  assert.equal(piInitialization.agentInfo.version, manifest.dependencies["pi-acp"])
+  assert.equal(piInitialization.agentInfo.version, piManifest.dependencies["pi-acp"])
 
   const deepseek = JSON.parse(execFileSync(command, ["agent", "deepseek-harness", "--check"], {
     cwd: directory, env: { ...environment, HOME: directory, USERPROFILE: directory,

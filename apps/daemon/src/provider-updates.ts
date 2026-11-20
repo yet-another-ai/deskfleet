@@ -1,5 +1,7 @@
 import { stripVTControlCharacters } from "node:util"
+import { compareSemverVersions, extractSemverVersion } from "@deskfleet/agent-core"
 import type { AgentProviders } from "./agent-providers.ts"
+import { getAgentPlugin } from "./agents/registry.ts"
 import type { AgentProviderConfig, AgentProviderInput, AgentProviderTemplateId, ProviderTemplateUpdates, ProviderUpdate } from "./provider-protocol.ts"
 import { probeProvider, resolveProviderInstaller, type ProbeDependencies } from "./provider-setup.ts"
 import { runProbeCommand } from "./provider-setup-process.ts"
@@ -13,82 +15,26 @@ const UPGRADE_MAX_BUFFER_BYTES = 4 * 1024 * 1024
 type UpdatableProviderTemplateId = Exclude<AgentProviderTemplateId, "deepseek-harness" | "acp">
 
 function isUpdatableProviderTemplate(template: AgentProviderTemplateId): template is UpdatableProviderTemplateId {
-  return template !== "deepseek-harness" && template !== "acp"
+  return Boolean(getAgentPlugin(template)?.update)
 }
-
-const CURSOR_VERSION = /(?:^|[^0-9A-Za-z.])(\d{4}\.\d{1,2}\.\d{1,2}-[0-9A-Za-z._-]+)(?![0-9A-Za-z._-])/u
-const SEMVER_VERSION = /(?:^|[^0-9A-Za-z.])(?:rust-v|v)?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+[0-9A-Za-z.-]+)?(?![0-9A-Za-z.])/u
-const VERSION_COLLATOR = new Intl.Collator("en", { numeric: true, sensitivity: "base" })
 
 export function extractProviderVersion(template: AgentProviderTemplateId, raw: string): string | undefined {
   const cleaned = stripVTControlCharacters(raw).trim()
   if (!cleaned) return undefined
-  if (template === "cursor") {
-    const cursorMatch = CURSOR_VERSION.exec(cleaned)
-    if (cursorMatch?.[1]) return cursorMatch[1]
-  }
-  return SEMVER_VERSION.exec(cleaned)?.[1]
-}
-
-function splitVersion(version: string): [core: string, suffix?: string] {
-  const dash = version.indexOf("-")
-  return dash < 0 ? [version] : [version.slice(0, dash), version.slice(dash + 1)]
+  const custom = getAgentPlugin(template)?.update?.extractVersion
+  return custom ? custom(cleaned) : extractSemverVersion(cleaned)
 }
 
 function compareVersionOrder(template: AgentProviderTemplateId, current: string, latest: string): number {
-  const [currentCore, currentSuffix] = splitVersion(current)
-  const [latestCore, latestSuffix] = splitVersion(latest)
-  const coreDiff = VERSION_COLLATOR.compare(currentCore, latestCore)
-  if (coreDiff !== 0 || template === "cursor") return coreDiff
-  if (!currentSuffix || !latestSuffix) return currentSuffix ? -1 : latestSuffix ? 1 : 0
-  return VERSION_COLLATOR.compare(currentSuffix, latestSuffix)
+  const custom = getAgentPlugin(template)?.update?.compareVersions
+  return custom ? custom(current, latest) : compareSemverVersions(current, latest)
 }
 
 /** Compares versions already normalized by `extractProviderVersion`. */
 export function isProviderVersionNewer(template: AgentProviderTemplateId, current: string, latest: string): boolean {
   if (current === latest) return false
-  const diff = compareVersionOrder(template, current, latest)
-  // Cursor builds share a date and differ only by commit hash.
-  return diff === 0 ? template === "cursor" : diff < 0
-}
-
-interface VersionSource {
-  url: string
-  parse: (body: string) => string | undefined
-}
-
-function jsonVersion(template: UpdatableProviderTemplateId): VersionSource["parse"] {
-  return body => {
-    const parsed: unknown = JSON.parse(body)
-    if (!parsed || typeof parsed !== "object") return undefined
-    const { version, tag_name: tag } = parsed as { version?: unknown; tag_name?: unknown }
-    const candidate = typeof version === "string" ? version : typeof tag === "string" ? tag : undefined
-    return candidate ? extractProviderVersion(template, candidate) : undefined
-  }
-}
-
-const CURSOR_DOWNLOAD_VERSION = /downloads\.cursor\.com\/(?:lab|versions)\/(\d{4}\.\d{1,2}\.\d{1,2}-[0-9A-Za-z._-]+)/u
-const CURSOR_WINDOWS_VERSION = /\$version\s*=\s*['"](\d{4}\.\d{1,2}\.\d{1,2}-[0-9A-Za-z._-]+)['"]/u
-
-/** Probing reports installable only on darwin, linux, and win32 with x64 or arm64. */
-const VERSION_SOURCES: Record<UpdatableProviderTemplateId, (platform: NodeJS.Platform, arch: string) => VersionSource> = {
-  "codex": () => ({ url: "https://releases.openai.com/codex/channels/latest", parse: jsonVersion("codex") }),
-  "claude-code": () => ({ url: "https://downloads.claude.ai/claude-code-releases/latest", parse: body => extractProviderVersion("claude-code", body) }),
-  "cursor": platform => ({
-    url: platform === "win32" ? "https://cursor.com/install?win32=true" : "https://cursor.com/install",
-    parse: body => CURSOR_DOWNLOAD_VERSION.exec(body)?.[1] ?? CURSOR_WINDOWS_VERSION.exec(body)?.[1],
-  }),
-  "grok": () => ({ url: "https://x.ai/cli/stable", parse: body => extractProviderVersion("grok", body) }),
-  "pi": () => ({ url: "https://pi.dev/api/installer/releases/latest", parse: jsonVersion("pi") }),
-  "omp": (platform, arch) => ({
-    url: `https://build.stencil.so/api/products/omp/latest/${platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux"}-${arch === "x64" ? "x86_64" : "arm64"}?channel=stable`,
-    parse: jsonVersion("omp"),
-  }),
-  "antigravity": (platform, arch) => ({
-    url: `https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/${platform === "win32" ? "windows" : platform}_${arch === "x64" ? "amd64" : "arm64"}.json`,
-    parse: jsonVersion("antigravity"),
-  }),
-  "codebuddy": () => ({ url: "https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/latest", parse: body => extractProviderVersion("codebuddy", body) }),
+  const custom = getAgentPlugin(template)?.update?.isVersionNewer
+  return custom ? custom(current, latest) : compareVersionOrder(template, current, latest) < 0
 }
 
 interface FetchLatestVersionOptions {
@@ -102,7 +48,9 @@ export async function fetchLatestProviderVersion(
   template: UpdatableProviderTemplateId,
   options: FetchLatestVersionOptions = {},
 ): Promise<string | undefined> {
-  const source = VERSION_SOURCES[template](options.platform ?? process.platform, options.arch ?? process.arch)
+  const update = getAgentPlugin(template)?.update
+  if (!update) return undefined
+  const source = update.versionSource(options.platform ?? process.platform, options.arch ?? process.arch)
   const timeout = AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS)
   const response = await (options.fetchImpl ?? fetch)(source.url, {
     headers: { "user-agent": "deskfleet" },

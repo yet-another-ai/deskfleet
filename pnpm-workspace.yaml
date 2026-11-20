@@ -3,6 +3,7 @@ packages:
   - apps/desktop
   - crates/node
   - apps/web
+  - packages/agents/*
   - packages/capacitor-bridge
   - packages/client
   - packages/components

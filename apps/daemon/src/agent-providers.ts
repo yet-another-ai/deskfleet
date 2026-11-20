@@ -4,28 +4,14 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { RequestError } from "@agentclientprotocol/sdk/unstable"
 import { commandEnvironment } from "./agent-command-path.ts"
-import { connectAcpProcess, type AgentConfig, type AgentProvider } from "./agents/acp.ts"
-import { antigravityProvider } from "./agents/antigravity.ts"
-import { claudeCodeProvider } from "./agents/claude-code.ts"
-import { codebuddyProvider } from "./agents/codebuddy.ts"
-import { codexProvider } from "./agents/codex.ts"
-import { cursorProvider } from "./agents/cursor.ts"
-import { deepseekHarnessProvider } from "./agents/deepseek-harness.ts"
-import { grokProvider } from "./agents/grok.ts"
-import { ompProvider } from "./agents/omp.ts"
-import { piProvider } from "./agents/pi.ts"
-import { launchProviderCommand } from "./provider-setup-process.ts"
+import type { AgentConfig, AgentProvider } from "./agents/acp.ts"
+import { defaultAgentProvider, getAgentPlugin, getDaemonAgentProvider } from "./agents/registry.ts"
 import { providerEnvironment } from "./provider-environment.ts"
 import { loadShellEnvironment } from "./shell-environment.ts"
 import {
   AGENT_PROVIDER_TEMPLATES, PROVIDER_TEST_TIMEOUT_MS, providerInput, providerSettings, shellEnvironmentEnabled, validateProviderId,
   type AgentProviderConfig, type AgentProviderInput, type AgentProviderSettings, type AgentProviderTemplateId, type ProviderSnapshot, type ProviderTestResult,
 } from "./provider-protocol.ts"
-
-const acpProvider: AgentProvider = {
-  id: "acp",
-  connect: (config, client) => connectAcpProcess(launchProviderCommand(config.binaryPath || "acp-agent", [], config.env), client),
-}
 
 /** ACP adapters often put the actual cause in error data behind a generic JSON-RPC message. */
 function testFailure(error: unknown): string {
@@ -50,22 +36,16 @@ export class AgentProviders {
   #revision = randomUUID()
   #queue: Promise<unknown> = Promise.resolve()
 
-  constructor(directory: string, codexOverride: AgentProvider = codexProvider, commandDirectory?: string) {
+  constructor(directory: string, codexOverride: AgentProvider = defaultAgentProvider, commandDirectory?: string) {
     this.#directory = directory
     this.#path = join(directory, "agent-providers.json")
     this.#commandDirectory = commandDirectory
-    this.#providerByTemplate = {
-      codex: codexOverride,
-      "claude-code": claudeCodeProvider,
-      codebuddy: codebuddyProvider,
-      cursor: cursorProvider,
-      grok: grokProvider,
-      pi: piProvider,
-      omp: ompProvider,
-      "deepseek-harness": deepseekHarnessProvider,
-      antigravity: antigravityProvider,
-      acp: acpProvider,
-    }
+    this.#providerByTemplate = Object.fromEntries(
+      AGENT_PROVIDER_TEMPLATES.map(template => [
+        template.id,
+        template.id === "codex" ? codexOverride : getDaemonAgentProvider(template.id),
+      ]),
+    ) as Record<AgentProviderTemplateId, AgentProvider>
     this.#shellProviderByTemplate = Object.fromEntries(
       Object.entries(this.#providerByTemplate).map(([template, actualProvider]) => [template, {
         id: actualProvider.id,
@@ -170,13 +150,14 @@ export class AgentProviders {
 
   #launch(record: AgentProviderInput): { provider: AgentProvider; config: AgentConfig } {
     const template = AGENT_PROVIDER_TEMPLATES.find(template => template.id === record.template)!
+    const plugin = getAgentPlugin(record.template)
     const inheritShell = shellEnvironmentEnabled(record.inheritShellEnvironment)
     const provider = (inheritShell ? this.#shellProviderByTemplate : this.#providerByTemplate)[record.template]
     return {
       provider,
       config: {
         name: record.name,
-        binaryPath: record.binaryPath ?? (record.template === "deepseek-harness" ? undefined : template.defaultBinaryPath),
+        binaryPath: record.binaryPath ?? (plugin?.usesBundledDefaultBinary ? undefined : template.defaultBinaryPath),
         env: inheritShell ? providerEnvironment(record, this.#directory)
           : commandEnvironment(providerEnvironment(record, this.#directory), this.#commandDirectory),
         ...(this.#commandDirectory ? { commandDirectory: this.#commandDirectory } : {}),

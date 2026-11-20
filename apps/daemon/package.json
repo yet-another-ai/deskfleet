@@ -13,15 +13,21 @@
     "./agent-protocol": "./src/agent-protocol.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.107.0",
-    "@agentclientprotocol/codex-acp": "2.3.0",
     "@agentclientprotocol/sdk": "2.7.0",
+    "@deskfleet/agent-antigravity": "workspace:*",
+    "@deskfleet/agent-claude-code": "workspace:*",
+    "@deskfleet/agent-codebuddy": "workspace:*",
+    "@deskfleet/agent-codex": "workspace:*",
+    "@deskfleet/agent-core": "workspace:*",
+    "@deskfleet/agent-cursor": "workspace:*",
+    "@deskfleet/agent-deepseek-harness": "workspace:*",
+    "@deskfleet/agent-grok": "workspace:*",
+    "@deskfleet/agent-omp": "workspace:*",
+    "@deskfleet/agent-pi": "workspace:*",
     "@deskfleet/client": "workspace:*",
     "@deskfleet/dsh-runtime": "workspace:*",
     "@deskfleet/mcp": "workspace:*",
     "@deskfleet/native": "workspace:*",
-    "pi-acp": "0.0.34",
-    "smol-toml": "1.9.1",
     "zod": "4.6.7"
   }
 }

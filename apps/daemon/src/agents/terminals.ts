@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { isAbsolute } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 import * as acp from "@agentclientprotocol/sdk/unstable"
+import type { AgentTerminalHandler } from "@deskfleet/agent-core"
 import { commandEnvironment } from "../agent-command-path.ts"
 import { MAX_TERMINAL_HISTORY_READ_BYTES } from "../terminal-history.ts"
 import type { TerminalSummary } from "../terminal-protocol.ts"
@@ -16,6 +17,20 @@ export interface AgentTerminalContext {
   path?: string
   /** Provider environment for terminals opened by a shell-enabled Agent. */
   env?: Record<string, string>
+}
+
+export function isAgentTerminalHandler(value: AgentTerminalContext | AgentTerminalHandler): value is AgentTerminalHandler {
+  return "createController" in value && typeof value.createController === "function"
+}
+
+export function createAgentTerminalHandler(context: AgentTerminalContext): AgentTerminalHandler {
+  return {
+    cwd: context.cwd,
+    env: context.env,
+    createController(requireSession, sessionCwd, env) {
+      return new AcpTerminals(env ? { ...context, env } : context, requireSession, sessionCwd)
+    },
+  }
 }
 
 interface Handle {
