@@ -5,6 +5,7 @@ import type { AccountState, CentralApi } from "@deskfleet/client/central"
 import { centralRequestFailure } from "@deskfleet/client/request-diagnostics"
 import { browserClient } from "@deskfleet/client/browser"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
+import { remoteMachineClient } from "@deskfleet/client/remote"
 import { HttpCentralClient } from "@deskfleet/client/http-central"
 import { centralBridgeClient, centralIpcFailure } from "@deskfleet/client/central-bridge"
 import { captureCentralRequestError, initializeErrorReporting, installErrorReporting, installErrorReportingAccount, setErrorReportingUser, shutdownErrorReporting } from "./error-reporting.ts"
@@ -281,6 +282,42 @@ test("desktop HTTP error codes survive IPC into Sentry without changing issue gr
     expect(events().map(event => event.fingerprint)).toEqual([fingerprint, fingerprint, fingerprint, fingerprint])
     for (const secret of ["private", "fleet.example"]) expect(JSON.stringify(events())).not.toContain(secret)
   } finally { http.dispose() }
+})
+
+test("background terminal lists suppress only the structured offline response in Sentry", async () => {
+  initializeErrorReporting("web")
+  const fetch = vi.fn<typeof globalThis.fetch>()
+  vi.stubGlobal("fetch", fetch)
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError, { cookieAuth: false })
+  const central = adapter.central as HttpCentralClient
+  const target = { id: "machine", teamId: "team", name: "Machine", originId: "origin", localMachineId: "local", capabilities: {}, online: true }
+  const remote = remoteMachineClient(adapter, central, target)
+  const failure = (status: number, code?: string) => Response.json({ error: { code, message: "Machine request failed" } }, { status })
+  try {
+    fetch.mockResolvedValueOnce(failure(503, "machine_offline"))
+    const offline = await remote.api.terminal.list().catch(error => error)
+    expect(offline).toMatchObject({ message: "Machine request failed", diagnostics: { status: 503, apiErrorCode: "machine_offline", trigger: "background" } })
+    globalThis.onunhandledrejection?.call(window, { reason: offline } as PromiseRejectionEvent)
+    await flushSdk()
+    expect(events()).toHaveLength(0)
+
+    fetch.mockResolvedValueOnce(failure(503, "machine_busy"))
+      .mockResolvedValueOnce(failure(503))
+      .mockResolvedValueOnce(failure(504, "daemon_timeout"))
+      .mockResolvedValueOnce(failure(503, "machine_offline"))
+    for (const status of [503, 503, 504]) await expect(remote.api.terminal.list()).rejects.toMatchObject({ status })
+    await expect(remote.api.terminal.dial({ mode: "resume", terminalId: "shell" })).rejects.toMatchObject({ status: 503 })
+    await flushSdk()
+    expect(events().map(event => [event.tags?.["central.rpc_method"], event.tags?.["central.status"], event.tags?.["central.api_error_code"], event.tags?.["central.trigger"]])).toEqual([
+      ["terminalList", "503", "machine_busy", "background"],
+      ["terminalList", "503", undefined, "background"],
+      ["terminalList", "504", "daemon_timeout", "background"],
+      ["terminalDial", "503", "machine_offline", "user"],
+    ])
+  } finally {
+    remote.dispose()
+    central.dispose()
+  }
 })
 
 test("caller cancellation is ignored while deadlines still report a timeout", async () => {

@@ -106,17 +106,20 @@ impl Hub {
                     .unwrap_or_else(|_| Err(timeout_error()))
                 };
                 if let Err(error) = delivered {
-                    self.inner.lock().await.forwarded.remove(&id);
-                    self.publish(
-                        &source,
-                        &Envelope::Response {
-                            id,
-                            registration_id,
-                            connection_id,
-                            result: WireResult::from(Err(error)),
-                        },
-                    )
-                    .await?;
+                    // Socket retirement can already own the reply.
+                    let forwarded = self.inner.lock().await.forwarded.remove(&id);
+                    if forwarded.is_some() {
+                        self.publish(
+                            &source,
+                            &Envelope::Response {
+                                id,
+                                registration_id,
+                                connection_id,
+                                result: WireResult::from(Err(error)),
+                            },
+                        )
+                        .await?;
+                    }
                 }
             }
             Envelope::Response {
@@ -241,42 +244,27 @@ impl Hub {
             {
                 return false;
             }
-            if let Some(daemon) = routes.daemons.remove(machine) {
-                let _ = daemon.shutdown.send(Some(1012));
-            }
-            let ids: Vec<_> = routes
-                .pending
-                .iter()
-                .filter(|(_, p)| p.registration_id == machine && p.connection_id == connection)
-                .map(|(id, _)| id.clone())
-                .collect();
-            for id in ids {
-                if let Some(pending) = routes.pending.remove(&id) {
-                    let _ = pending.response.send(Err(ApiError::unavailable()));
-                }
-            }
-            let ids: Vec<_> = routes
-                .forwarded
-                .iter()
-                .filter(|(_, p)| p.registration_id == machine && p.connection_id == connection)
-                .map(|(id, _)| id.clone())
-                .collect();
-            ids.into_iter()
-                .filter_map(|id| routes.forwarded.remove(&id).map(|p| (id, p)))
-                .collect::<Vec<_>>()
+            let daemon = routes
+                .daemons
+                .remove(machine)
+                .expect("current daemon was checked under the routes lock");
+            routes.retire_daemon(machine, daemon)
         };
+        self.fail_forwarded_requests(forwarded).await;
+        true
+    }
+    pub(super) async fn fail_forwarded_requests(&self, forwarded: Vec<(String, Forwarded)>) {
         for (id, pending) in forwarded {
             let reply = Envelope::Response {
                 id,
-                registration_id: machine.into(),
-                connection_id: connection.into(),
+                registration_id: pending.registration_id,
+                connection_id: pending.connection_id,
                 result: WireResult::from(Err(ApiError::unavailable())),
             };
             if self.publish(&pending.source, &reply).await.is_err() {
                 tracing::warn!("cross-instance disconnect response delivery failed");
             }
         }
-        true
     }
     pub(super) async fn fail_local(&self) {
         let mut routes = self.inner.lock().await;
@@ -298,6 +286,28 @@ impl Hub {
         let mut routes = self.inner.lock().await;
         routes.pending.retain(|_, p| !p.response.is_closed());
         routes.forwarded.retain(|_, p| p.expires_at > now);
+    }
+}
+
+impl Routes {
+    pub(super) fn retire_daemon(
+        &mut self,
+        registration_id: &str,
+        daemon: Daemon,
+    ) -> Vec<(String, Forwarded)> {
+        let _ = daemon.shutdown.send(Some(1012));
+        for (_, pending) in self.pending.extract_if(|_, request| {
+            request.registration_id == registration_id
+                && request.connection_id == daemon.connection_id
+        }) {
+            let _ = pending.response.send(Err(ApiError::unavailable()));
+        }
+        self.forwarded
+            .extract_if(|_, request| {
+                request.registration_id == registration_id
+                    && request.connection_id == daemon.connection_id
+            })
+            .collect()
     }
 }
 

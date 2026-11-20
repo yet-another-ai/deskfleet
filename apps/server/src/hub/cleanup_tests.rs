@@ -3,6 +3,67 @@ use super::*;
 use serde_json::json;
 
 #[tokio::test]
+async fn same_node_replacement_retires_old_rpc_before_socket_cleanup() {
+    let hub = Hub::default();
+    let (old_send, mut old_messages) = mpsc::channel(1);
+    let (old_shutdown, old_stopped) = watch::channel(None);
+    hub.add_daemon(
+        "registration",
+        "team",
+        "machine",
+        "old",
+        old_send,
+        old_shutdown,
+    )
+    .await
+    .unwrap();
+
+    let old_request = hub.request("registration", "terminalList", json!({}), None);
+    tokio::pin!(old_request);
+    assert!(futures_util::poll!(&mut old_request).is_pending());
+    let Ok(ControlMessage::Request { id: old_id, .. }) = old_messages.try_recv() else {
+        panic!("old socket must receive terminalList");
+    };
+
+    let (new_send, mut new_messages) = mpsc::channel(1);
+    let (new_shutdown, new_stopped) = watch::channel(None);
+    hub.add_daemon(
+        "registration",
+        "team",
+        "machine",
+        "new",
+        new_send,
+        new_shutdown,
+    )
+    .await
+    .unwrap();
+    assert_eq!(*old_stopped.borrow(), Some(1012));
+    let error = tokio::time::timeout(Duration::from_secs(1), old_request)
+        .await
+        .expect("replacement releases the RPC before old socket cleanup")
+        .unwrap_err();
+    assert_eq!(error.status.as_u16(), 503);
+    assert_eq!(error.code, "machine_offline");
+
+    let new_request = hub.request("registration", "terminalList", json!({}), None);
+    tokio::pin!(new_request);
+    assert!(futures_util::poll!(&mut new_request).is_pending());
+    let Ok(ControlMessage::Request { id: new_id, .. }) = new_messages.try_recv() else {
+        panic!("replacement socket must receive terminalList");
+    };
+    hub.response("registration", "old", &old_id, Ok(json!([])))
+        .await;
+    hub.response("registration", "old", &new_id, Ok(json!("stale")))
+        .await;
+    assert!(!hub.remove_daemon("registration", "old").await);
+    assert!(new_stopped.borrow().is_none());
+    assert!(futures_util::poll!(&mut new_request).is_pending());
+    hub.response("registration", "new", &new_id, Ok(json!([])))
+        .await;
+    assert_eq!(new_request.await.unwrap(), json!([]));
+}
+
+#[tokio::test]
 async fn request_deadline_bounds_delivery_and_response_and_retires_pending_rpc() {
     for block_delivery in [false, true] {
         let hub = Hub::default();

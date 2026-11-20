@@ -405,6 +405,61 @@ async fn postgres_replaced_daemon_cannot_reply_to_or_remove_current_connection()
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_same_node_replacement_retires_forwarded_rpc_before_socket_cleanup() {
+    let fixture = Fixture::new().await;
+    let mut old = Socket::daemon(&fixture.target, &fixture.machine.id, "old").await;
+    let (old_id, replacement) = {
+        let request =
+            fixture
+                .source
+                .hub
+                .request(&fixture.machine.id, "terminalList", json!({}), None);
+        tokio::pin!(request);
+        let old_id = tokio::select! {
+            result = &mut request => panic!("RPC completed before daemon response: {result:?}"),
+            message = old.next() => match message {
+                ControlMessage::Request { id, .. } => id,
+                message => panic!("unexpected daemon message: {message:?}"),
+            },
+        };
+
+        let replacement = Socket::daemon(&fixture.target, &fixture.machine.id, "replacement").await;
+        assert_eq!(old.stopped().await, 1012);
+        let error = tokio::time::timeout(WAIT, request)
+            .await
+            .expect("replacement releases the forwarded RPC before old socket cleanup")
+            .unwrap_err();
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code, "machine_offline");
+        (old_id, replacement)
+    };
+
+    fixture
+        .target
+        .hub
+        .response(&fixture.machine.id, "old", &old_id, Ok(json!([])))
+        .await;
+    assert!(
+        !fixture
+            .target
+            .hub
+            .remove_daemon(&fixture.machine.id, "old")
+            .await
+    );
+    assert!(replacement.shutdown.borrow().is_none());
+    assert!(
+        fixture
+            .target
+            .hub
+            .is_current(&fixture.machine.id, "replacement")
+            .await
+    );
+    assert!(fixture.source.hub.online(&fixture.machine.id).await);
+    fixture.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
 async fn postgres_database_failure_does_not_fall_back_to_local_daemon_authority() {
     let fixture = Fixture::new().await;
     let mut daemon = Socket::daemon(&fixture.source, &fixture.machine.id, "local").await;

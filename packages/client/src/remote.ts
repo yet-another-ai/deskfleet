@@ -191,7 +191,11 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       },
     },
     terminal: {
-      ...signaling("terminal"), list: async () => online && !awaitingRoster ? (knownTerminals = await rpc("terminalList")) : knownTerminals,
+      ...signaling("terminal"),
+      async list() {
+        if (online && !awaitingRoster) knownTerminals = await automatic.rpc(machine.teamId, machine.id, "terminalList", {})
+        return knownTerminals
+      },
       multiplexed: !local && !!messageChannel("terminal"),
       dial: options => userRpc("terminalDial", options), hangup: terminalId => userRpc("terminalHangup", { terminalId }),
       onSessionEvent: () => () => {},
