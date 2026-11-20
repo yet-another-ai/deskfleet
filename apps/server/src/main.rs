@@ -25,6 +25,7 @@ async fn main() -> std::io::Result<()> {
         let mut cors = actix_cors::Cors::default()
             .allowed_methods(["GET", "POST", "PUT", "PATCH", "DELETE"])
             .allowed_headers(["authorization", "content-type", "x-csrf-token"])
+            .expose_headers(["x-eve-stream-version", "x-eve-stream-tail-index"])
             .supports_credentials()
             .max_age(3600);
         for origin in &origins {

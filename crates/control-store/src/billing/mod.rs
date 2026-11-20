@@ -2,11 +2,13 @@
 mod admin;
 mod admissions;
 mod analytics;
+mod cloud_tokens;
 mod payments;
 mod period;
 
 pub use admin::AdminBillingPage;
 pub use analytics::{BillingAnalyticsDelivery, BillingAnalyticsEvent};
+pub use cloud_tokens::{CloudTokenAllowance, CloudTokenEvent, CloudTokenPeriod};
 pub use payments::{CheckoutAttempt, PaymentEvent, SubscriptionProjection};
 pub use period::period_at;
 

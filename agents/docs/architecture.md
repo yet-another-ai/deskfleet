@@ -140,6 +140,20 @@ authentication, checkout, and peer mutations are not automatically replayed.
 Catalog/history synchronization retains its own durable retry mechanism.
 Caller cancellation and daemon shutdown stop active requests and backoff waits.
 
+### Hosted Super Agent
+
+The optional `apps/super-agent` Node service runs a conversational coordinator
+using eve and its PostgreSQL Workflow world. Actix authenticates clients,
+authorizes Team access and binds every root eve Session to its owning Team.
+The server uses a private service credential for the runtime. The cloud service
+owns conversation execution and replay. The control store owns Team membership,
+request receipts, Session bindings and the cloud token ledger. Each API instance
+can claim outstanding Session streams to meter. The cursor advances after the
+usage facts are durable. Re-reading a stream after a crash preserves the original
+token count. [Super Agent setup](../../apps/super-agent/README.md) describes
+runtime configuration and the API, and [billing](identity-billing.md#super-agent-token-allowance)
+defines the allowance.
+
 ### Multiple API instances
 
 API instances share one PostgreSQL database and the same public service origin.

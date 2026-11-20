@@ -15,14 +15,15 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
   account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
-- Sell platform subscriptions. AI credentials and execution remain on user
-  machines. AI token resale, credit purchases, and DeskFleet-managed wallets are
-  outside this release; Stripe may apply native invoice credits from proration.
+- Platform subscriptions can include a monthly Team token allowance for the
+  hosted Super Agent. The service operator supplies the cloud model credential.
+  Agents on enrolled Machines continue to use the Machine's configured providers.
+  Stripe may apply native invoice credits from subscription proration.
 - Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
-  only in monthly TURN allowance and are sold as monthly or yearly Stripe
-  subscriptions. Enterprise remains a Site Admin grant; Plans & Usage can also
-  show a configurable Contact us mailbox (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`)
-  when operators want inbound sales mail.
+  in monthly TURN allowance and can have distinct Super Agent token allowances.
+  They are sold as monthly or yearly Stripe subscriptions. A Site Admin grants
+  Enterprise. Plans & Usage can show a configurable Contact us mailbox
+  (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`) when operators want inbound sales mail.
 - Self-hosted installations use the same account system, unlimited product
   allowances, and no payment integration. Operators supply their own TURN when
   needed. Self-hosting is a deployment setting, not a hosted client's plan choice.
@@ -33,6 +34,26 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 - Preserve Team -> Machine -> Workspace -> Session-owned Worktree ownership,
   the Rust/Actix server, and the TypeScript daemon. Keep `PROTOCOL_VERSION = 1`.
 
+## Super Agent token allowance
+
+The server meters cloud model use per Team. Each root eve Session is registered
+to one Team before it receives a prompt. The collector reads that Session's
+durable stream and records each `usage.recorded` fact once by Session, line
+and index. Parent-reported usage includes its delegated calls. The billed unit
+is one input or output token. Cached reads and writes are breakdowns of the
+input count. Model spend from ACP Sessions on a user's Machine has its own
+usage projection.
+
+The Team's effective plan selects a configurable included token amount. Usage is
+attributed to the monthly billing period containing the event timestamp, including
+on yearly subscriptions. New hosted messages require remaining allowance. Admission
+uses recorded consumption. Concurrent or already accepted work can take the final
+total above the allowance. The ledger retains that full total. Replaying the same
+accepted operation returns its receipt. Monetary pricing and overage collection
+are separate commercial decisions.
+Self-hosted operators can enable the service with their own model credentials and
+unlimited tokens. See [Super Agent setup](../../apps/super-agent/README.md).
+
 ## Plan matrix
 
 | Allowance | Free | Go | Pro | Enterprise | Self-hosted |
@@ -41,6 +62,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
+| Monthly Super Agent tokens | Configurable | Configurable | Configurable | Configurable | Unlimited with operator model credentials |
 | Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
@@ -51,8 +73,7 @@ TURN usage periods remain calendar months anchored to the subscription even when
 the Stripe billing interval is yearly. Prices and currency come from the four
 configured Stripe Prices. No paid trial or DeskFleet-managed wallet is offered.
 
-Free has the four restrictions above; no additional feature exclusions have been
-selected. Direct connectivity remains available. Plans never confer Team
+Direct connectivity is available on Free. Plans never confer Team
 membership, resource access, or Site Admin authority.
 
 ## Accounts and authentication

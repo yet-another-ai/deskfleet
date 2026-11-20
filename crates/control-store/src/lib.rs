@@ -1,6 +1,8 @@
 //! PostgreSQL control-plane storage. Independent from each daemon's SQLite catalog.
 mod ai_usage;
 pub mod billing;
+mod cloud_agent_requests;
+mod cloud_sessions;
 mod cloudflare_turn;
 pub(crate) mod entities;
 mod github_app;
@@ -25,6 +27,7 @@ mod teams;
 mod turn_settings;
 mod turn_usage;
 
+pub use cloud_sessions::CloudMeterCursor;
 pub use cloudflare_turn::{
     CloudflareTurnConfig, CloudflareTurnDailyUsage, CloudflareTurnUsageQuery,
 };

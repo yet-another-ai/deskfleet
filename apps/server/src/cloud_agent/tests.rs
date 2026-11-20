@@ -1,0 +1,259 @@
+use super::*;
+use actix_web::{App, HttpServer, test};
+use serde_json::Value;
+use std::{
+    net::TcpListener,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+#[derive(Default)]
+struct Calls {
+    creates: AtomicUsize,
+    sends: AtomicUsize,
+}
+
+fn check_secret(req: &HttpRequest) {
+    assert_eq!(
+        req.headers().get("authorization").unwrap(),
+        "Bearer fixture-secret"
+    );
+}
+
+#[actix_web::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let session_id = format!("wrun_{}", uuid::Uuid::new_v4().simple());
+    let calls = web::Data::new(Calls::default());
+    let upstream_calls = calls.clone();
+    let id = session_id.clone();
+    let server = HttpServer::new(move || {
+        let stream_route = format!("/eve/v1/session/{id}/stream");
+        let id = id.clone();
+        App::new()
+            .app_data(upstream_calls.clone())
+            .route(
+                "/eve/v1/session",
+                web::post().to(
+                    move |req: HttpRequest, body: web::Json<Value>, calls: web::Data<Calls>| {
+                        let id = id.clone();
+                        async move {
+                            check_secret(&req);
+                            assert_eq!(body["operationId"].as_str().unwrap().len(), 43);
+                            assert!(body.get("message").is_none());
+                            calls.creates.fetch_add(1, Ordering::SeqCst);
+                            HttpResponse::Accepted().json(json!({"ok":true,"sessionId":id}))
+                        }
+                    },
+                ),
+            )
+            .route(
+                "/eve/v1/session/{id}",
+                web::post().to(
+                    |req: HttpRequest, body: web::Json<Value>, calls: web::Data<Calls>| async move {
+                        check_secret(&req);
+                        calls.sends.fetch_add(1, Ordering::SeqCst);
+                        assert_eq!(body["message"], "hello");
+                        assert_eq!(body["idempotencyKey"].as_str().unwrap().len(), 43);
+                        HttpResponse::Accepted().json(json!({"ok":true, "deliveryId":"delivery_1"}))
+                    },
+                ),
+            )
+            .route(
+                &stream_route,
+                web::get().to(|req: HttpRequest, calls: web::Data<Calls>| async move {
+                    check_secret(&req);
+                    let mut response = HttpResponse::Ok();
+                    response.insert_header(("x-eve-stream-version", "27"));
+                    if req.query_string() == "startIndex=7&follow=false" {
+                        return response
+                            .insert_header(("x-eve-stream-tail-index", "7"))
+                            .body("{\"at\":\"2026-11-20T00:00:00Z\",\"facts\":[]}\n");
+                    }
+                    assert_eq!(req.query_string(), "startIndex=0&follow=false");
+                    if calls.sends.load(Ordering::SeqCst) == 0 {
+                        return response
+                            .insert_header(("x-eve-stream-tail-index", "-1"))
+                            .finish();
+                    }
+                    let line = json!({"at":chrono::Utc::now(), "facts":[
+                        {"type":"usage.recorded","data":{"usage":{"inputTokens":5,"outputTokens":3,
+                          "cacheReadTokens":1,"cacheWriteTokens":0}}},
+                        {"type":"session.ended","data":{"outcome":"completed"}}
+                    ]});
+                    response
+                        .insert_header(("x-eve-stream-tail-index", "0"))
+                        .body(format!("{line}\n"))
+                }),
+            )
+    })
+    .workers(1)
+    .listen(listener)
+    .unwrap()
+    .run();
+    let handle = server.handle();
+    actix_web::rt::spawn(server);
+
+    let mut state = AppState::new(crate::config::ServerConfig {
+        bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
+        database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
+        public_url: "https://control.test".into(),
+        web_origins: vec![],
+        auth: crate::auth::config::AuthConfig::development("https://control.test"),
+        billing: crate::billing::BillingConfig {
+            hosted: true,
+            ..Default::default()
+        },
+        github_app: None,
+        stun_urls: vec![],
+        turn_urls: vec![],
+        turn_secret: None,
+        turn_usage_redis_url: None,
+    })
+    .await
+    .unwrap();
+    let eve = EveClient::new(&format!("http://{address}"), "fixture-secret".into()).unwrap();
+    state._cloud_meter = Some(crate::cloud_meter::start(state.store.clone(), eve.clone()));
+    state.eve = Some(eve);
+    state.cloud_allowance.free = Some(8);
+    let store = state.store.clone();
+    let user = store
+        .verified_user(&format!("super-{session_id}@fixture.test"), "Super Agent")
+        .await
+        .unwrap();
+    let login = store.new_session(&user.id).await.unwrap();
+    let token = format!("Bearer {}", login["token"].as_str().unwrap());
+    let team = store
+        .create_team(&user.id, "Super Agent API")
+        .await
+        .unwrap();
+    let other = store.create_team(&user.id, "Separate Team").await.unwrap();
+    let outsider = store
+        .verified_user(&format!("outside-{session_id}@fixture.test"), "Outside")
+        .await
+        .unwrap();
+    let outside_login = store.new_session(&outsider.id).await.unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(state))
+            .configure(crate::configure),
+    )
+    .await;
+    let path = format!("/api/teams/{}/super-agent/sessions", team.id);
+    let create = json!({"operationId":uuid::Uuid::new_v4().to_string()});
+    let post = |url: &str, body: Value| {
+        test::TestRequest::post()
+            .uri(url)
+            .insert_header(("Authorization", token.as_str()))
+            .set_json(body)
+            .to_request()
+    };
+    let get = |url: &str| {
+        test::TestRequest::get()
+            .uri(url)
+            .insert_header(("Authorization", token.as_str()))
+            .to_request()
+    };
+    let unauth = test::TestRequest::post()
+        .uri(&path)
+        .insert_header(("Authorization", "Bearer invalid-fixture-token"))
+        .set_json(&create)
+        .to_request();
+    assert_eq!(
+        test::call_service(&app, unauth).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let forbidden = test::TestRequest::post()
+        .uri(&path)
+        .insert_header((
+            "Authorization",
+            format!("Bearer {}", outside_login["token"].as_str().unwrap()),
+        ))
+        .set_json(&create)
+        .to_request();
+    assert_eq!(
+        test::call_service(&app, forbidden).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    let (first, second) = futures_util::join!(
+        test::call_service(&app, post(&path, create.clone())),
+        test::call_service(&app, post(&path, create.clone())),
+    );
+    let statuses = [first.status(), second.status()];
+    assert!(statuses.contains(&StatusCode::ACCEPTED));
+    assert!(
+        statuses
+            .into_iter()
+            .all(|status| matches!(status, StatusCode::ACCEPTED | StatusCode::CONFLICT))
+    );
+    let response: Value = test::call_and_read_body_json(&app, post(&path, create)).await;
+    assert_eq!(response, json!({"sessionId":session_id}));
+    assert!(
+        store
+            .owns_cloud_session(&team.id, &session_id)
+            .await
+            .unwrap()
+    );
+    let send_path = format!("{path}/{session_id}/messages");
+    let body = json!({"operationId":uuid::Uuid::new_v4().to_string(),"message":"hello"});
+    let cross_team = format!("/api/teams/{}/super-agent/sessions/{session_id}", other.id);
+    assert_eq!(
+        test::call_service(&app, post(&format!("{cross_team}/messages"), body.clone()))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        test::call_service(&app, get(&format!("{cross_team}/stream")))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let delivery: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
+    assert_eq!(delivery["deliveryId"], "delivery_1");
+    let usage_path = format!("/api/teams/{}/super-agent/usage", team.id);
+    tokio::time::timeout(Duration::from_secs(25), async {
+        loop {
+            let usage: Value = test::call_and_read_body_json(&app, get(&usage_path)).await;
+            if usage["usedTokens"] == 8 {
+                assert_eq!(usage["admitted"], false);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("metered the Eve usage line");
+    let repeated: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
+    assert_eq!(delivery, repeated);
+    let mut changed = body.clone();
+    changed["message"] = json!("different");
+    assert_eq!(
+        test::call_service(&app, post(&send_path, changed))
+            .await
+            .status(),
+        StatusCode::CONFLICT
+    );
+    let mut next = body;
+    next["operationId"] = json!(uuid::Uuid::new_v4().to_string());
+    assert_eq!(
+        test::call_service(&app, post(&send_path, next))
+            .await
+            .status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    let stream = test::call_service(
+        &app,
+        get(&format!("{path}/{session_id}/stream?startIndex=7")),
+    )
+    .await;
+    assert_eq!(
+        stream.headers().get("x-eve-stream-tail-index").unwrap(),
+        "7"
+    );
+    assert!(test::read_body(stream).await.ends_with(b"\n"));
+    assert_eq!(calls.creates.load(Ordering::SeqCst), 1);
+    assert_eq!(calls.sends.load(Ordering::SeqCst), 1);
+    handle.stop(true).await;
+}

@@ -40,6 +40,21 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_checkout_attempts mapping");
+    cp_cloud_sessions::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_cloud_sessions mapping");
+    cp_cloud_token_usage::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_cloud_token_usage mapping");
+    cp_cloud_agent_requests::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_cloud_agent_requests mapping");
     cp_cloudflare_turn_collector::Entity::find()
         .limit(0)
         .all(db)
