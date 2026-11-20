@@ -961,6 +961,35 @@ test.each([false, true])("archives from ticket details and restores from an empt
   expect(api.send).not.toHaveBeenCalled()
 })
 
+test.each([false, true])("archives the chosen collapsed ticket from its own button (mobile=%s)", async mobile => {
+  const first = ticket("First task")
+  const second = { ...ticket("Second task with a long title"), sessionId: "7", workerContext: "directory" as const }
+  const { api } = await setup(room({ supportsTicketArchive: true, tickets: [first, second] }), "team", mobile)
+  const header = wrapper.get("header button")
+  const openList = async () => {
+    await header.trigger("click")
+    await flushPromises()
+    return new DOMWrapper(document.getElementById(header.attributes("aria-controls")!)!)
+  }
+  const panel = await openList()
+  const buttons = panel.findAll("button[aria-label]")
+  const label = i18n.global.t("superAgent.archiveTicket")
+  expect(buttons.map(button => button.attributes("aria-label"))).toEqual([`${label} · ${first.title}`, `${label} · ${second.title}`])
+  const disclosure = panel.findAll("details")[1]!.element
+  expect(disclosure.open).toBe(false)
+  expect(buttons[1]!.element.closest("details")).toBeNull()
+  await buttons[1]!.trigger("click")
+  await flushPromises()
+  expect(disclosure.open).toBe(false)
+  const dialog = new DOMWrapper(document.body).get('[role="dialog"]')
+  expect(dialog.text()).toContain(second.title)
+  expect(api.archiveTicket).not.toHaveBeenCalled()
+  await dialog.findAll("button").at(-1)!.trigger("click")
+  await flushPromises()
+  expect(api.archiveTicket).toHaveBeenCalledExactlyOnceWith({ workspaceId: "A", ticketId: second.id, sessionId: "7", archived: true, operationId: expect.any(String) })
+  expect((await openList()).findAll("button[aria-label]").map(button => button.attributes("aria-label"))).toEqual([`${label} · ${first.title}`])
+})
+
 test("a result from an older machine has no review badge and its Worker details still open", async () => {
   const job = { ...ticket("repair"), sessionId: "4" }
   Reflect.set(job, "status", "review") // Old daemon wire value.
@@ -976,6 +1005,7 @@ test("a result from an older machine has no review badge and its Worker details 
   await flushPromises()
   const panel = new DOMWrapper(document.getElementById(trigger.attributes("aria-controls")!)!)
   expect(panel.get("summary").text()).toBe("repair")
+  expect(panel.find("button[aria-label]").exists()).toBe(false)
 })
 
 async function projectRow(id: string) {

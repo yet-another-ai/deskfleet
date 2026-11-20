@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Folder, MessagesSquare, X } from "@lucide/vue"
+import { Archive, ArrowRight, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Folder, MessagesSquare, X } from "@lucide/vue"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { useOnline, useResizeObserver } from "@vueuse/core"
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
@@ -77,6 +77,9 @@ const activeTickets = computed(() => (snapshot.value?.tickets ?? []).filter(tick
 const archivedTickets = computed(() => (snapshot.value?.tickets ?? []).filter(ticket => ticket.archiveState))
 const ticketMenuOpen = ref(false)
 const confirmingArchive = ref<{ ticket: SuperTicket; archive: boolean; operationId: string }>()
+function canChangeTicketArchive(ticket: SuperTicket) {
+  return !!snapshot.value?.supportsTicketArchive && !!props.api.archiveTicket && (!ticket.sessionId || !!ticket.workerContext)
+}
 function chooseArchive(ticket: SuperTicket) {
   confirmingArchive.value = { ticket, archive: ticket.archiveState !== "archived", operationId: crypto.randomUUID() }
   ticketMenuOpen.value = false
@@ -295,18 +298,25 @@ function canCorrect(message: SuperMessage) {
             <template v-for="group in [{ archived: false, items: activeTickets }, { archived: true, items: archivedTickets }]" :key="String(group.archived)">
               <component :is="group.archived ? 'details' : 'div'" v-if="group.items.length">
                 <summary v-if="group.archived" :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer py-1.5 text-sm text-ui-text-muted">{{ t("superAgent.archivedTickets", { count: group.items.length }) }}</summary>
-                <details v-for="ticket in group.items" :key="ticket.id" class="break-words py-1.5">
-                  <summary :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="ticket.archiveState === 'archiving'" class="text-ui-text-muted">{{ t('superAgent.archivingTicket') }}</small><small v-else-if="!ticket.archiveState && hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
-                  <p class="my-1.5 whitespace-pre-wrap text-sm">{{ ticket.scope }}</p>
-                  <p v-if="ticket.latestAcceptance" class="my-1 select-text whitespace-pre-wrap text-sm">{{ t('superAgent.acceptance', { text: ticket.latestAcceptance }) }}</p>
-                  <p v-if="ticket.summary && ticket.summary !== ticket.scope" class="my-1.5 whitespace-pre-wrap text-sm text-ui-text-muted">{{ progressText(ticket.summary) }}</p>
-                  <p v-if="ticket.referenceTicketId && tickets.has(ticket.referenceTicketId)" class="my-1 text-xs text-ui-text-muted">{{ t('superAgent.reference', { name: tickets.get(ticket.referenceTicketId)?.title }) }}</p>
-                  <div class="flex flex-wrap items-center gap-x-3 text-xs text-ui-accent" :class="touchWorkspace && 'workspace-touch-actions'">
-                    <RouterLink v-if="ticket.sessionId && (!snapshot?.supportsTicketArchive || ticket.workerContext)" :to="sessionRoute(ticket.sessionId)" class="inline-flex items-center">{{ t('superAgent.openSession') }}</RouterLink>
-                    <button v-if="snapshot?.supportsTicketArchive && api.archiveTicket && (!ticket.sessionId || ticket.workerContext)" type="button" :disabled="busy" @click="chooseArchive(ticket)">{{ t(ticket.archiveState === 'archived' ? 'superAgent.restoreTicket' : 'superAgent.archiveTicket') }}</button>
-                    <span v-else-if="ticket.archiveState && ticket.sessionId && !ticket.workerContext" class="text-ui-text-muted">{{ t('superAgent.workerUnavailable') }}</span>
-                  </div>
-                </details>
+                <div v-for="ticket in group.items" :key="ticket.id" class="relative">
+                  <details class="break-words py-1.5">
+                    <summary :class="[touchWorkspace && 'min-h-11 py-2', !group.archived && canChangeTicketArchive(ticket) && (touchWorkspace ? 'pr-12' : 'pr-8')]" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="ticket.archiveState === 'archiving'" class="text-ui-text-muted">{{ t('superAgent.archivingTicket') }}</small><small v-else-if="!ticket.archiveState && hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
+                    <p class="my-1.5 whitespace-pre-wrap text-sm">{{ ticket.scope }}</p>
+                    <p v-if="ticket.latestAcceptance" class="my-1 select-text whitespace-pre-wrap text-sm">{{ t('superAgent.acceptance', { text: ticket.latestAcceptance }) }}</p>
+                    <p v-if="ticket.summary && ticket.summary !== ticket.scope" class="my-1.5 whitespace-pre-wrap text-sm text-ui-text-muted">{{ progressText(ticket.summary) }}</p>
+                    <p v-if="ticket.referenceTicketId && tickets.has(ticket.referenceTicketId)" class="my-1 text-xs text-ui-text-muted">{{ t('superAgent.reference', { name: tickets.get(ticket.referenceTicketId)?.title }) }}</p>
+                    <div class="flex flex-wrap items-center gap-x-3 text-xs text-ui-accent" :class="touchWorkspace && 'workspace-touch-actions'">
+                      <RouterLink v-if="ticket.sessionId && (!snapshot?.supportsTicketArchive || ticket.workerContext)" :to="sessionRoute(ticket.sessionId)" class="inline-flex items-center">{{ t('superAgent.openSession') }}</RouterLink>
+                      <button v-if="canChangeTicketArchive(ticket)" type="button" :disabled="busy" @click="chooseArchive(ticket)">{{ t(ticket.archiveState === 'archived' ? 'superAgent.restoreTicket' : 'superAgent.archiveTicket') }}</button>
+                      <span v-else-if="ticket.archiveState && ticket.sessionId && !ticket.workerContext" class="text-ui-text-muted">{{ t('superAgent.workerUnavailable') }}</span>
+                    </div>
+                  </details>
+                  <UiButton v-if="!group.archived && canChangeTicketArchive(ticket)" variant="ghost" size="icon"
+                    class="absolute right-0 top-0.5" :class="touchWorkspace && 'min-h-11 min-w-11'"
+                    :label="t('superAgent.archiveTicket') + ' · ' + ticket.title" :disabled="busy" @click="chooseArchive(ticket)">
+                    <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  </UiButton>
+                </div>
               </component>
             </template>
           </PopoverContent>

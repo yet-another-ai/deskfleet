@@ -50,10 +50,12 @@ linked Worker session when one exists. A successful Worker turn clears the
 ticket's status. Its result stays in the conversation and the ticket can be
 continued, including by quoting that result.
 
-Expand a ticket to archive it. The header's collapsed **Archived** group lets
-you restore it even if the active count is zero. Each ticket owns at most one
-Worker. Once bound, both entries use the original Session archive and restore
-commands, including worktree cleanup, and changes made in either UI appear in
+On desktop and iOS, the archive button beside an active ticket title opens the
+same confirmation as the archive action in its expanded details. The header's
+collapsed **Archived** group lets you restore it even if the active count is
+zero. Each ticket owns at most one Worker. Once bound, both entries use the
+original Session archive and restore commands, including worktree cleanup,
+and changes made in either UI appear in
 both. A ticket with no Worker yet stores its archive flag in the existing ticket
 record. Assignment must settle or be stopped first. Archived tickets keep their
 messages, leave scheduling and foreground focus, and must be restored before
