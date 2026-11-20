@@ -39,13 +39,15 @@ export function useDesktopInput(
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
-  const pendingPasteKeys = new Set<string>()
   const pointers = new Set<number>()
   const macClient = navigator.platform.startsWith("Mac")
   let lastPoint: Point = { x: 0, y: 0 }
   let lastObservedLocal: string | null = null
   let lastRemoteSynced: string | null = null
   let baselineSeeded = false
+  let pasteBarrierQueue: (() => void)[] | null = null
+  let pasteBarrierGeneration = 0
+  let pasteBarrierTimer: ReturnType<typeof setTimeout> | null = null
   const textEncoder = new TextEncoder()
 
   function clipboardAllowed(): boolean {
@@ -117,11 +119,47 @@ export function useDesktopInput(
     if (text) sendClipboardText(text)
   }
 
+  function clearPasteBarrier(): void {
+    pasteBarrierGeneration += 1
+    pasteBarrierQueue = null
+    if (pasteBarrierTimer !== null) {
+      clearTimeout(pasteBarrierTimer)
+      pasteBarrierTimer = null
+    }
+  }
+
+  function flushPasteBarrier(generation: number): void {
+    if (generation !== pasteBarrierGeneration || pasteBarrierQueue === null) return
+    const queue = pasteBarrierQueue
+    pasteBarrierQueue = null
+    if (pasteBarrierTimer !== null) {
+      clearTimeout(pasteBarrierTimer)
+      pasteBarrierTimer = null
+    }
+    for (const action of queue) {
+      if (!enabled.value || generation !== pasteBarrierGeneration) break
+      action()
+    }
+  }
+
+  function isPasteShortcut(event: KeyboardEvent): boolean {
+    if (event.repeat) return false
+    if (event.code === "KeyV") {
+      return event.ctrlKey || event.metaKey
+        || keys.has("ControlLeft") || keys.has("ControlRight")
+        || keys.has("MetaLeft") || keys.has("MetaRight")
+    }
+    if (event.code === "Insert") {
+      return event.shiftKey || keys.has("ShiftLeft") || keys.has("ShiftRight")
+    }
+    return false
+  }
+
   function release(): void {
+    clearPasteBarrier()
     if (buttons.size || keys.size) send({ type: "releaseAll" })
     buttons.clear()
     keys.clear()
-    pendingPasteKeys.clear()
     const releasingPointers = [...pointers]
     pointers.clear()
     for (const pointerId of releasingPointers) {
@@ -206,53 +244,60 @@ export function useDesktopInput(
     }
   }
 
+  function deliverKeyDown(code: string, repeat: boolean): void {
+    if (!enabled.value) return
+    if (send({ type: "key", code, pressed: true, repeat })) keys.add(code)
+  }
+
+  function deliverKeyUp(code: string): void {
+    if (!keys.has(code)) return
+    send({ type: "key", code, pressed: false, repeat: false })
+    keys.delete(code)
+    if (macClient && (code === "MetaLeft" || code === "MetaRight")) {
+      // macOS browsers can omit key-up events for keys used while Command is held.
+      for (const held of [...keys]) {
+        if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(held)) continue
+        send({ type: "key", code: held, pressed: false, repeat: false })
+        keys.delete(held)
+      }
+    }
+  }
+
   function keyDown(event: KeyboardEvent): void {
     if (!enabled.value || event.isComposing || !event.code || event.code === "Unidentified") return
     event.preventDefault()
     event.stopPropagation()
+    const { code, repeat } = event
+    if (pasteBarrierQueue !== null) {
+      pasteBarrierQueue.push(() => deliverKeyDown(code, repeat))
+      return
+    }
     if (
-      !event.repeat
-      && (event.code === "KeyV" || event.code === "Insert")
+      isPasteShortcut(event)
       && clipboardAllowed()
       && typeof navigator.clipboard?.readText === "function"
     ) {
-      const code = event.code
-      keys.add(code)
-      pendingPasteKeys.add(code)
-      void syncLocalClipboardForPaste().finally(() => {
-        if (!pendingPasteKeys.delete(code) || !enabled.value) return
-        const stillHeld = keys.has(code)
-        if (!send({ type: "key", code, pressed: true, repeat: false })) {
-          keys.delete(code)
-          return
-        }
-        if (!stillHeld) {
-          send({ type: "key", code, pressed: false, repeat: false })
-        }
-      })
+      const generation = ++pasteBarrierGeneration
+      pasteBarrierQueue = [() => deliverKeyDown(code, false)]
+      pasteBarrierTimer = setTimeout(() => flushPasteBarrier(generation), 150)
+      void syncLocalClipboardForPaste().finally(() => flushPasteBarrier(generation))
       return
     }
-    if (send({ type: "key", code: event.code, pressed: true, repeat: event.repeat })) keys.add(event.code)
+    deliverKeyDown(code, repeat)
   }
 
   function keyUp(event: KeyboardEvent): void {
-    if (!keys.has(event.code)) return
+    const { code } = event
+    if (pasteBarrierQueue !== null) {
+      event.preventDefault()
+      event.stopPropagation()
+      pasteBarrierQueue.push(() => deliverKeyUp(code))
+      return
+    }
+    if (!keys.has(code)) return
     event.preventDefault()
     event.stopPropagation()
-    keys.delete(event.code)
-    if (!pendingPasteKeys.has(event.code)) {
-      send({ type: "key", code: event.code, pressed: false, repeat: false })
-    }
-    if (macClient && (event.code === "MetaLeft" || event.code === "MetaRight")) {
-      // macOS browsers can omit key-up events for keys used while Command is held.
-      for (const code of [...keys]) {
-        if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(code)) continue
-        keys.delete(code)
-        if (!pendingPasteKeys.has(code)) {
-          send({ type: "key", code, pressed: false, repeat: false })
-        }
-      }
-    }
+    deliverKeyUp(code)
   }
 
   function contextMenu(event: MouseEvent): void {

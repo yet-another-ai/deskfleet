@@ -41,8 +41,8 @@ function fixture(platform = "Win32") {
     video.dispatchEvent(event)
     return event
   }
-  function key(type: string, code: string, repeat = false) {
-    const event = new KeyboardEvent(type, { code, repeat, cancelable: true })
+  function key(type: string, code: string, repeat = false, init: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent(type, { code, repeat, cancelable: true, ...init })
     video.dispatchEvent(event)
     return event
   }
@@ -249,15 +249,36 @@ test("synchronizes local and remote clipboard text while seeding baseline, order
   await nextTick()
   expect(f.send).not.toHaveBeenCalled()
 
-  // Pressing KeyV syncs the clipboard before delivering the key-down and key-up events.
+  // Plain KeyV typing sends immediately in order without waiting on clipboard reads.
   f.key("keydown", "KeyV")
+  f.key("keydown", "KeyE")
   f.key("keyup", "KeyV")
+  f.key("keyup", "KeyE")
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyE", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+    [{ type: "key", code: "KeyE", pressed: false, repeat: false }],
+  ])
+  f.send.mockClear()
+
+  // Ctrl+V syncs the clipboard before KeyV and preserves modifier release and subsequent key ordering.
+  f.key("keydown", "ControlLeft", false, { ctrlKey: true })
+  f.key("keydown", "KeyV", false, { ctrlKey: true })
+  f.key("keyup", "KeyV", false, { ctrlKey: true })
+  f.key("keyup", "ControlLeft")
+  f.key("keydown", "KeyA")
+  f.key("keyup", "KeyA")
   await nextTick()
   await nextTick()
   expect(f.send.mock.calls).toEqual([
+    [{ type: "key", code: "ControlLeft", pressed: true, repeat: false }],
     [{ type: "clipboard", text: "initial baseline" }],
     [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
     [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+    [{ type: "key", code: "ControlLeft", pressed: false, repeat: false }],
+    [{ type: "key", code: "KeyA", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyA", pressed: false, repeat: false }],
   ])
   f.send.mockClear()
 
