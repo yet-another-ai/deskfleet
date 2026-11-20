@@ -10,9 +10,36 @@ Session belongs to one Team.
 Use the locked mise toolchain from the repository root. Install the workspace
 with `mise run install`. Supply `WORKFLOW_POSTGRES_URL` for the eve workflow
 database. The database role needs permission to bootstrap the workflow schema.
-Configure the eve process with `AI_GATEWAY_API_KEY` and
-`DESKFLEET_SUPER_AGENT_SECRET`. Set the same private bearer secret on the API.
-Choose the model with `DESKFLEET_SUPER_AGENT_MODEL` in the runtime environment.
+Set the same private `DESKFLEET_SUPER_AGENT_SECRET` on Eve and the Rust API.
+Configure model access in the Eve service's runtime environment.
+
+**Vercel AI Gateway.** Set `AI_GATEWAY_API_KEY` and leave
+`DESKFLEET_SUPER_AGENT_BASE_URL` unset. The default model is
+`openai/gpt-5.4-mini`. To change it, set `DESKFLEET_SUPER_AGENT_MODEL` to the
+model's Gateway ID.
+
+**OpenAI-compatible endpoint.** For a service that implements streaming Chat
+Completions, set its API base URL, the model ID it serves and its API key.
+For example, an Eve container can reach a model service named `inference`
+on the same network with the following settings:
+
+```dotenv
+DESKFLEET_SUPER_AGENT_BASE_URL=http://inference:8000/v1
+DESKFLEET_SUPER_AGENT_MODEL=my-served-model
+DESKFLEET_SUPER_AGENT_API_KEY=<inference-service-key>
+DESKFLEET_SUPER_AGENT_CONTEXT_WINDOW_TOKENS=32768
+```
+
+Use the base path up to `/v1` if your service exposes
+`/v1/chat/completions`. The provider appends `/chat/completions`. Omit
+`DESKFLEET_SUPER_AGENT_API_KEY` for an endpoint that accepts unauthenticated
+requests. For a private model ID, set the context window to the number of
+tokens allocated by your inference server. Eve uses this to compact long
+conversations. The endpoint must return usage in its stream for DeskFleet to
+charge credits. The Chat Completions adapter maps
+`usage.prompt_tokens_details.cached_tokens` to cache reads. Its usage format
+leaves cache writes unspecified, so remaining input uses the uncached rate.
+Restart the Eve replicas with the updated environment to apply a change.
 
 ```sh
 mise exec -- pnpm --filter @deskfleet/super-agent db:setup
