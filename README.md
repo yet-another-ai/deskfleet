@@ -282,6 +282,12 @@ mise run skills:install
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow guidelines and instructions on signing the [Contributor License Agreement](CLA.md).
 
+## Contributors
+
+<a href="https://github.com/yet-another-ai/deskfleet/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=yet-another-ai/deskfleet" />
+</a>
+
 ## License
 
 The DeskFleet client, daemon, and server are licensed under the [Apache-2.0 License](LICENSE). Vendored agent skills in `.agents/skills/` retain their upstream licenses.
