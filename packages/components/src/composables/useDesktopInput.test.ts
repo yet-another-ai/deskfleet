@@ -315,3 +315,43 @@ test("synchronizes local and remote clipboard text while seeding baseline, order
   expect(f.send).not.toHaveBeenCalled()
   expect(writeText).toHaveBeenCalledTimes(1)
 })
+
+test("stale paste clipboard read resolving after barrier timeout is discarded", async () => {
+  vi.useFakeTimers()
+  try {
+    let resolveRead!: (value: string) => void
+    const readText = vi.fn()
+      .mockResolvedValueOnce("initial baseline")
+      .mockImplementationOnce(() => new Promise<string>(resolve => { resolveRead = resolve }))
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText, writeText },
+    })
+    const f = fixture()
+    await nextTick()
+    f.send.mockClear()
+
+    f.key("keydown", "ControlLeft", false, { ctrlKey: true })
+    f.key("keydown", "KeyV", false, { ctrlKey: true })
+    f.key("keyup", "KeyV", false, { ctrlKey: true })
+    f.key("keyup", "ControlLeft")
+
+    vi.advanceTimersByTime(150)
+    expect(f.send.mock.calls).toEqual([
+      [{ type: "key", code: "ControlLeft", pressed: true, repeat: false }],
+      [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+      [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+      [{ type: "key", code: "ControlLeft", pressed: false, repeat: false }],
+    ])
+    f.send.mockClear()
+
+    // Late resolution of the timed-out read must not send stale clipboard text.
+    resolveRead("stale late clipboard")
+    await nextTick()
+    await nextTick()
+    expect(f.send).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})

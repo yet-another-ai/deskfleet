@@ -45,6 +45,7 @@ export function useDesktopInput(
   let lastObservedLocal: string | null = null
   let lastRemoteSynced: string | null = null
   let baselineSeeded = false
+  let clipboardSeq = 0
   let pasteBarrierQueue: (() => void)[] | null = null
   let pasteBarrierGeneration = 0
   let pasteBarrierTimer: ReturnType<typeof setTimeout> | null = null
@@ -74,8 +75,10 @@ export function useDesktopInput(
 
   async function seedLocalClipboardBaseline(): Promise<void> {
     if (baselineSeeded || !clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
     try {
       const text = sanitizeClipboard(await navigator.clipboard.readText())
+      if (seq !== clipboardSeq) return
       baselineSeeded = true
       if (text && lastObservedLocal === null) {
         lastObservedLocal = text
@@ -87,8 +90,10 @@ export function useDesktopInput(
 
   async function syncLocalClipboardOnFocus(): Promise<void> {
     if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
     try {
       const text = sanitizeClipboard(await navigator.clipboard.readText())
+      if (seq !== clipboardSeq) return
       if (!baselineSeeded) {
         baselineSeeded = true
         if (text && lastObservedLocal === null) {
@@ -103,10 +108,12 @@ export function useDesktopInput(
     }
   }
 
-  async function syncLocalClipboardForPaste(): Promise<void> {
+  async function syncLocalClipboardForPaste(generation: number): Promise<void> {
     if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    const seq = ++clipboardSeq
     try {
       const text = await navigator.clipboard.readText()
+      if (generation !== pasteBarrierGeneration || pasteBarrierQueue === null || seq !== clipboardSeq) return
       sendClipboardText(text)
     } catch {
       // Browsers may reject unpermitted clipboard reads.
@@ -116,11 +123,15 @@ export function useDesktopInput(
   function handlePaste(event: ClipboardEvent): void {
     if (!clipboardAllowed()) return
     const text = event.clipboardData?.getData("text/plain")
-    if (text) sendClipboardText(text)
+    if (text) {
+      clipboardSeq += 1
+      sendClipboardText(text)
+    }
   }
 
   function clearPasteBarrier(): void {
     pasteBarrierGeneration += 1
+    clipboardSeq += 1
     pasteBarrierQueue = null
     if (pasteBarrierTimer !== null) {
       clearTimeout(pasteBarrierTimer)
@@ -130,14 +141,17 @@ export function useDesktopInput(
 
   function flushPasteBarrier(generation: number): void {
     if (generation !== pasteBarrierGeneration || pasteBarrierQueue === null) return
+    pasteBarrierGeneration += 1
+    clipboardSeq += 1
     const queue = pasteBarrierQueue
     pasteBarrierQueue = null
     if (pasteBarrierTimer !== null) {
       clearTimeout(pasteBarrierTimer)
       pasteBarrierTimer = null
     }
+    const flushedGeneration = pasteBarrierGeneration
     for (const action of queue) {
-      if (!enabled.value || generation !== pasteBarrierGeneration) break
+      if (!enabled.value || flushedGeneration !== pasteBarrierGeneration) break
       action()
     }
   }
@@ -280,7 +294,7 @@ export function useDesktopInput(
       const generation = ++pasteBarrierGeneration
       pasteBarrierQueue = [() => deliverKeyDown(code, false)]
       pasteBarrierTimer = setTimeout(() => flushPasteBarrier(generation), 150)
-      void syncLocalClipboardForPaste().finally(() => flushPasteBarrier(generation))
+      void syncLocalClipboardForPaste(generation).finally(() => flushPasteBarrier(generation))
       return
     }
     deliverKeyDown(code, repeat)
@@ -333,6 +347,7 @@ export function useDesktopInput(
       if (!entry || !clipboardAllowed()) return
       const text = sanitizeClipboard(entry.text)
       if (!text || text === lastRemoteSynced) return
+      clipboardSeq += 1
       lastObservedLocal = text
       lastRemoteSynced = text
       baselineSeeded = true
