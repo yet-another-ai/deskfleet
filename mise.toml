@@ -34,6 +34,13 @@ run = "apm install --frozen"
 description = "Run the central API and Web client, including desktop login pages"
 depends = ["backend:dev", "web:dev"]
 
+[tasks."super-agent:build"]
+description = "Type-check and build the private eve Super Agent service"
+run = [
+  "pnpm --filter @deskfleet/super-agent typecheck",
+  "pnpm --filter @deskfleet/super-agent build",
+]
+
 [tasks."backend:dev"]
 description = "Run the Actix Web backend"
 run = "cargo run -p deskfleet-server --locked"
@@ -91,7 +98,7 @@ run = "cargo run -p deskfleet-migration --features cli --locked --"
 
 [tasks.check]
 description = "Run TypeScript and Rust checks, tests, and debug builds"
-depends = ["check:static", "test", "rust:build", "desktop:build", "web:build", "docs:build"]
+depends = ["check:static", "test", "rust:build", "desktop:build", "web:build", "docs:build", "super-agent:build"]
 
 [tasks."check-fast"]
 description = "Run the Rust edit-loop checks"

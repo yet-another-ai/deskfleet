@@ -1,6 +1,7 @@
 packages:
   - apps/daemon
   - apps/desktop
+  - apps/super-agent
   - crates/node
   - apps/web
   - packages/agents/*
@@ -12,6 +13,8 @@ packages:
   - docs
 
 allowBuilds:
+  # cbor-x has a JavaScript implementation when its optional accelerator is absent.
+  cbor-extract: false
   # DSH native subprocess helpers and FFI; the other hooks are optional notices.
   '@deepseek-ai/dsh-subprocess-local': true
   '@google/genai': false
