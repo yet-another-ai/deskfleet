@@ -29,7 +29,8 @@ type SuperAgentActions = {
   [Name in keyof SuperMethods as Name extends `_deskfleet/super-agent/${infer Action}` ? Action : never]:
     (params: SuperMethods[Name]["params"]) => Promise<SuperMethods[Name]["result"]>
 }
-export type SuperAgentApi = Omit<SuperAgentActions, "stop"> & {
+export type SuperAgentApi = Omit<SuperAgentActions, "stop" | "archiveTicket"> & {
+  archiveTicket?: SuperAgentActions["archiveTicket"]
   stop?: SuperAgentActions["stop"]
   history?: (params: SuperHistoryRequest) => Promise<SuperHistory>
 }

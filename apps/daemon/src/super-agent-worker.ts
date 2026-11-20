@@ -93,7 +93,7 @@ export async function deliverSuperIntent(ctx: DispatchContext): Promise<void> {
       }
       if (operation.operation === "steer" && !snapshot.session.capabilities?.steering) throw new Error("This worker cannot be steered in its active turn. Open the session to take over.")
     }
-    if (ctx.suspended?.()) return
+    if (ctx.suspended?.() || ctx.current()?.phase === "withdrawn") return
     if (operation.operation === "stop") {
       result = await workers.handle("_deskfleet/turn/cancel", {
         sessionId, turnId: operation.turnId, operationId: operation.submitId,

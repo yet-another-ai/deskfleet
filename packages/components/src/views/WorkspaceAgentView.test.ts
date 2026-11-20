@@ -30,6 +30,10 @@ async function setup(initial: SuperSnapshot, teamId?: string, ios = false, share
   const api = {
     snapshot: vi.fn<SuperAgentApi["snapshot"]>(async () => state),
     stop: vi.fn<NonNullable<SuperAgentApi["stop"]>>(async () => state),
+    archiveTicket: vi.fn<NonNullable<SuperAgentApi["archiveTicket"]>>(async ({ ticketId, archived }) => {
+      state = { ...state, tickets: state.tickets.map(item => item.id === ticketId ? { ...item, archiveState: archived ? "archived" : undefined } : item) }
+      return state
+    }),
     send: vi.fn<SuperAgentApi["send"]>(async request => {
       state = { ...state, messages: [...state.messages, message(request.messageId, { text: request.text, replyTo: request.replyTo, state: "routing" })] }
       return state
@@ -914,6 +918,47 @@ test("the header opens ticket details outside the scrolling conversation and tog
   await flushPromises()
   expect(trigger.attributes("aria-expanded")).toBe("false")
   expect(panel.element.isConnected).toBe(false)
+})
+
+test.each([false, true])("archives from ticket details and restores from an empty active list (mobile=%s)", async mobile => {
+  const job = { ...ticket("Inspect export"), sessionId: "4", workerContext: "worktree" as const }
+  const { api } = await setup(room({ supportsTicketArchive: true, tickets: [job], messages: [message("Original request", { ticketId: job.id })] }), "team", mobile)
+  const doc = new DOMWrapper(document.body)
+  const header = wrapper.get("header button")
+  const openList = async () => {
+    await header.trigger("click")
+    await flushPromises()
+    return new DOMWrapper(document.getElementById(header.attributes("aria-controls")!)!)
+  }
+  const choose = async (item: Pick<DOMWrapper<Element>, "get">) => {
+    await item.get("summary").trigger("click")
+    await item.get("button").trigger("click")
+    await flushPromises()
+    return doc.get('[role="dialog"]')
+  }
+  expect(header.text()).toBe(i18n.global.t("superAgent.tickets", { count: 1 }))
+  let dialog = await choose((await openList()).get("details"))
+  expect(dialog.text()).toContain(i18n.global.t("agent.archiveWorktreeQuestion"))
+  await dialog.get("[data-confirm-cancel]").trigger("click")
+  await flushPromises()
+  expect(api.archiveTicket).not.toHaveBeenCalled()
+  dialog = await choose((await openList()).get("details"))
+  await dialog.findAll("button").at(-1)!.trigger("click")
+  await flushPromises()
+  expect(api.archiveTicket).toHaveBeenCalledExactlyOnceWith({ workspaceId: "A", ticketId: job.id, sessionId: "4", archived: true, operationId: expect.any(String) })
+  expect(header.text()).toBe(i18n.global.t("superAgent.tickets", { count: 0 }))
+  expect(wrapper.get('[data-super-message="Original request"]').text()).toContain("Original request")
+  const group = (await openList()).get("details")
+  expect(group.attributes("open")).toBeUndefined()
+  expect(group.get("summary").text()).toBe(i18n.global.t("superAgent.archivedTickets", { count: 1 }))
+  await group.get("summary").trigger("click")
+  dialog = await choose(group.get("details"))
+  expect(dialog.text()).toContain(i18n.global.t("agent.restoreWorktreeQuestion"))
+  await dialog.findAll("button").at(-1)!.trigger("click")
+  await flushPromises()
+  expect(api.archiveTicket).toHaveBeenLastCalledWith({ workspaceId: "A", ticketId: job.id, sessionId: "4", archived: false, operationId: expect.any(String) })
+  expect(header.text()).toBe(i18n.global.t("superAgent.tickets", { count: 1 }))
+  expect(api.send).not.toHaveBeenCalled()
 })
 
 test("a result from an older machine has no review badge and its Worker details still open", async () => {

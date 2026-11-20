@@ -96,7 +96,7 @@ export function missingWorkerDispatch(intent: DispatchIntent): boolean {
 export function dispatchRecovery(room: SuperRoom, intents: DispatchIntent[]) {
   const last = new Map<string, DispatchIntent>()
   const byMessage = new Map<string, DispatchIntent[]>()
-  const tickets = new Map(room.tickets.map(ticket => [ticket.id, ticket]))
+  const tickets = new Map(room.tickets.filter(ticket => !ticket.archiveState).map(ticket => [ticket.id, ticket]))
   for (const intent of intents) {
     if (intent.roomId !== room.workspaceId || intent.phase === "withdrawn") continue
     last.set(intent.ticketId, intent)

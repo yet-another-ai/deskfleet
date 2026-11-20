@@ -1,12 +1,13 @@
 import type { ComposerMention } from "./composer-reference-protocol.ts"
 import type { AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
-import type { AgentActor, AgentElicitation, AgentInput, AgentPermission } from "./agent-protocol.ts"
+import type { AgentActor, AgentElicitation, AgentInput, AgentPermission, AgentSessionContext } from "./agent-protocol.ts"
 
 /** Wire types for the personal, machine-local workspace front desk. null denotes the default conversation. */
 export type SuperWorkspaceId = string | null
 /** Configured provider instance ID within this machine registration. */
 export type SuperCoordinator = string
 export type SuperTicketStatus = "queued" | "working" | "attention" | "stopped" | "blocked"
+export const archivedTicketError = "This ticket is archived. Restore it in the ticket list before continuing."
 export type SuperMessageState = "routing" | "assigned" | "answered" | "failed" | "uncertain" | "transferred" | "stopped"
 export type SuperStopState = "stopping" | "stopped" | "unconfirmed" | "finished"
 
@@ -67,6 +68,9 @@ export interface SuperTicket {
   provider: string
   sessionId?: string
   referenceTicketId?: string
+  /** Bound tickets reflect the native Session lifecycle. Unbound tickets keep only their own archive flag. */
+  archiveState?: "archiving" | "archived"
+  workerContext?: AgentSessionContext
   historySources?: SuperHistorySource[]
   updatedAt: string
 }
@@ -94,6 +98,7 @@ export type SuperHistoryRequest = { view: "links" } | { view: "groups"; assign?:
 export interface SuperWorkspace { id: string; name: string; roots: string[] }
 
 export interface SuperSnapshot {
+  supportsTicketArchive?: boolean
   supportsStop?: boolean
   pendingRequests?: (SuperWorkerRequest & { ticketId: string })[]
   coordinatorUsage?: SuperCoordinatorUsage
@@ -129,7 +134,7 @@ export function superWorkerCommandTarget(room: Pick<SuperSnapshot, "messages" | 
   const sourceId = quote?.role === "assistant" && !quote.ticketId ? quote.sourceMessageId : undefined
   const ticketId = replyTo ? quote?.ticketId ?? (sourceId && room.messages.find(message => message.id === sourceId)?.ticketId) : room.focusTicketId
   const ticket = ticketId ? room.tickets.find(item => item.id === ticketId) : undefined
-  if (!replyTo && ticket?.status === "stopped") return { provider: room.provider }
+  if (ticket?.archiveState || !replyTo && ticket?.status === "stopped") return { provider: room.provider }
   return ticket ? { provider: ticket.provider || room.provider, ticketId: ticket.id, ...(ticket.sessionId && { sessionId: ticket.sessionId }) } : { provider: room.provider }
 }
 
@@ -171,6 +176,7 @@ export interface SuperSettings {
   provider?: string
 }
 export interface SuperMethods {
+  "_deskfleet/super-agent/archiveTicket": { params: { workspaceId: SuperWorkspaceId; ticketId: string; sessionId: string | null; archived: boolean; operationId: string }; result: SuperSnapshot }
   "_deskfleet/super-agent/snapshot": { params: { workspaceId: SuperWorkspaceId; attachment?: SuperAttachmentRequest }; result: SuperSnapshot }
   "_deskfleet/super-agent/send": { params: SuperSend; result: SuperSnapshot }
   "_deskfleet/super-agent/stop": { params: SuperStop; result: SuperSnapshot }

@@ -43,12 +43,21 @@ A host that lacks this capability cannot accept an addressed draft.
 
 An Antigravity execution provider exposes the standard Gemini model table in the project execution model menu. Selections apply to new Workers in the project. Opening an existing Worker uses its own model controls.
 
-The conversation header shows the number of tickets in the current workspace.
+The conversation header counts active tickets in the current workspace.
 Its button opens a popover at the header, independent of the conversation's scroll
 position. Expanding a ticket shows its scope, latest result or progress, and
 linked Worker session when one exists. A successful Worker turn clears the
 ticket's status. Its result stays in the conversation and the ticket can be
 continued, including by quoting that result.
+
+Expand a ticket to archive it. The header's collapsed **Archived** group lets
+you restore it even if the active count is zero. Each ticket owns at most one
+Worker. Once bound, both entries use the original Session archive and restore
+commands, including worktree cleanup, and changes made in either UI appear in
+both. A ticket with no Worker yet stores its archive flag in the existing ticket
+record. Assignment must settle or be stopped first. Archived tickets keep their
+messages, leave scheduling and foreground focus, and must be restored before
+they can receive another instruction. Restoration does not dispatch work.
 
 Project and Worker navigation carries machine and team identity so equal numeric
 IDs on two machines are independent. On an older remote daemon, ordinary catalog
@@ -153,6 +162,7 @@ A literal filesystem path can still be sent as text.
 | Scoped renderer API | `packages/components/src/composables/useMachineRuntimes.ts`, `packages/client/src/desktop-api.ts` |
 | Granted peer RPC and wire contract | `apps/daemon/src/authorized-peers.ts`, `agent-channel.ts`, `super-agent-protocol.ts` |
 | Host decisions, focus, private state and worker receipts | `apps/daemon/src/super-agent-service.ts`, `super-agent-state.ts`, `super-agent-worker.ts` |
+| Ticket archive projection and native Worker lifecycle | `apps/daemon/src/super-agent-archive.ts`, `apps/daemon/src/agent-sessions.ts` |
 | Stop a request or one of its branches | `apps/daemon/src/super-agent-stop.ts`, `packages/components/src/components/session/WorkspaceReplyProgress.vue` |
 | Worker address format, origin and explicit routing | `packages/client/src/worker-reference.ts`, `packages/client/src/desktop-api.ts` (machine target), `apps/daemon/src/super-agent-target.ts` |
 | Candidate selection, bounded file/history evidence and inference | `apps/daemon/src/super-agent-router.ts`, `super-agent-evidence.ts`, `super-agent-model.ts`, `super-agent-codex.ts` |

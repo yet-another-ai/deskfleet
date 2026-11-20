@@ -7,7 +7,8 @@ import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
 import type { GithubRepositoryItem } from "@deskfleet/client/central"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
-import type { SuperMessage, SuperWorkerRequest, SuperWorkspaceId } from "../../../../apps/daemon/src/super-agent-protocol.ts"
+import type { SuperMessage, SuperTicket, SuperWorkerRequest, SuperWorkspaceId } from "../../../../apps/daemon/src/super-agent-protocol.ts"
+import ConfirmDialog from "../components/common/ConfirmDialog.vue"
 import GithubIcon from "../components/common/GithubIcon.vue"
 import GithubPanel from "../components/details/GithubPanel.vue"
 import { withGithubReference } from "../services/github-composer-reference.ts"
@@ -66,12 +67,31 @@ const offlineMachine = computed(() => {
   const machine = machinePresence.value
   if (deviceOnline?.value === false || machine?.online === false) return machine ?? location.value?.machine
 })
-const { snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, refresh, canRefresh, commandMenu, canSendPlain, send, retry, correct, saveSettings, stop, localStops } = useWorkspaceConversation(props.api, props.workspaceId, goToProject, () => !!offlineMachine.value)
+const { snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, refresh, canRefresh, commandMenu, canSendPlain, send, retry, correct, saveSettings, stop, localStops, archiveTicket } = useWorkspaceConversation(props.api, props.workspaceId, goToProject, () => !!offlineMachine.value)
 if (touchWorkspace) useConnectionResume(() => { void refresh() })
 const workers = computed(() => snapshot.value?.workerProviders ?? providers.providers)
 const providerName = (id: string) => workers.value.find(provider => provider.id === id)?.name ?? id
 const messages = computed(() => snapshot.value?.messages ?? [])
 const tickets = computed(() => new Map(snapshot.value?.tickets.map(ticket => [ticket.id, ticket]) ?? []))
+const activeTickets = computed(() => (snapshot.value?.tickets ?? []).filter(ticket => !ticket.archiveState))
+const archivedTickets = computed(() => (snapshot.value?.tickets ?? []).filter(ticket => ticket.archiveState))
+const ticketMenuOpen = ref(false)
+const confirmingArchive = ref<{ ticket: SuperTicket; archive: boolean; operationId: string }>()
+function chooseArchive(ticket: SuperTicket) {
+  confirmingArchive.value = { ticket, archive: ticket.archiveState !== "archived", operationId: crypto.randomUUID() }
+  ticketMenuOpen.value = false
+}
+const archiveDescription = computed(() => {
+  const choice = confirmingArchive.value
+  if (!choice) return ""
+  if (!choice.ticket.sessionId) return t(choice.archive ? "superAgent.archiveUnbound" : "superAgent.restoreUnbound")
+  if (choice.ticket.workerContext === "worktree") return t(choice.archive ? "agent.archiveWorktreeQuestion" : "agent.restoreWorktreeQuestion")
+  return t(choice.archive ? "agent.archiveQuestion" : "agent.restoreQuestion")
+})
+async function confirmArchive() {
+  const choice = confirmingArchive.value
+  if (choice) await archiveTicket(choice.ticket.id, choice.ticket.sessionId ?? null, choice.archive, choice.operationId)
+}
 const requestKey = (request: SuperWorkerRequest) => JSON.stringify([request.item.sessionId, request.kind, request.item.id])
 watch(() => snapshot.value?.pendingRequests, (current, previous) => {
   if (!current || !previous?.length) return
@@ -153,7 +173,7 @@ function correctionSource(message?: SuperMessage) {
 const original = computed(() => correcting.value ? correctionSource(byId.value.get(correcting.value)) : undefined)
 const correctionChoices = computed(() => {
   const current = original.value?.ticketId
-  return [...tickets.value.values()].filter(ticket => ticket.id !== current)
+  return activeTickets.value.filter(ticket => ticket.id !== current)
 })
 const outline = computed(() => {
   const items = new Map<string, { id: string; label: string; reply?: string }>()
@@ -248,7 +268,7 @@ function openFork(sessionId: string, turnId: string) {
 }
 function canCorrect(message: SuperMessage) {
   const source = correctionSource(message)
-  return !!source && !source.command && tickets.value.size > (source.ticketId && tickets.value.has(source.ticketId) ? 1 : 0)
+  return !!source && !source.command && activeTickets.value.some(ticket => ticket.id !== source.ticketId)
 }
 </script>
 
@@ -266,25 +286,37 @@ function canCorrect(message: SuperMessage) {
           </PopoverContent>
         </PopoverPortal>
       </PopoverRoot>
-      <PopoverRoot v-if="tickets.size">
+      <PopoverRoot v-if="tickets.size" v-model:open="ticketMenuOpen">
         <PopoverTrigger type="button" :class="touchWorkspace && 'min-h-11'" class="app-no-drag ui-button-ghost h-7 px-2 data-[state=open]:bg-ui-hover">
-          <ClipboardList :size="15" aria-hidden="true" />{{ t("superAgent.tickets", { count: tickets.size }) }}
+          <ClipboardList :size="15" aria-hidden="true" />{{ t("superAgent.tickets", { count: activeTickets.length }) }}
         </PopoverTrigger>
         <PopoverPortal>
           <PopoverContent :as="SpringSurface" align="end" :side-offset="6" :collision-padding="8" :aria-label="t('superAgent.ticketList')" class="ui-menu z-50 w-96 max-w-[calc(100vw-1rem)] max-h-[min(60dvh,var(--reka-popover-content-available-height))] overflow-y-auto overscroll-contain p-3">
-            <details v-for="ticket in tickets.values()" :key="ticket.id" class="break-words py-1.5">
-              <summary :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
-              <p class="my-1.5 whitespace-pre-wrap text-sm">{{ ticket.scope }}</p>
-              <p v-if="ticket.latestAcceptance" class="my-1 select-text whitespace-pre-wrap text-sm">{{ t('superAgent.acceptance', { text: ticket.latestAcceptance }) }}</p>
-              <p v-if="ticket.summary && ticket.summary !== ticket.scope" class="my-1.5 whitespace-pre-wrap text-sm text-ui-text-muted">{{ progressText(ticket.summary) }}</p>
-              <p v-if="ticket.referenceTicketId && tickets.has(ticket.referenceTicketId)" class="my-1 text-xs text-ui-text-muted">{{ t('superAgent.reference', { name: tickets.get(ticket.referenceTicketId)?.title }) }}</p>
-              <RouterLink v-if="ticket.sessionId" :to="sessionRoute(ticket.sessionId)" class="text-xs text-ui-accent">{{ t('superAgent.openSession') }}</RouterLink>
-            </details>
+            <template v-for="group in [{ archived: false, items: activeTickets }, { archived: true, items: archivedTickets }]" :key="String(group.archived)">
+              <component :is="group.archived ? 'details' : 'div'" v-if="group.items.length">
+                <summary v-if="group.archived" :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer py-1.5 text-sm text-ui-text-muted">{{ t("superAgent.archivedTickets", { count: group.items.length }) }}</summary>
+                <details v-for="ticket in group.items" :key="ticket.id" class="break-words py-1.5">
+                  <summary :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="ticket.archiveState === 'archiving'" class="text-ui-text-muted">{{ t('superAgent.archivingTicket') }}</small><small v-else-if="!ticket.archiveState && hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
+                  <p class="my-1.5 whitespace-pre-wrap text-sm">{{ ticket.scope }}</p>
+                  <p v-if="ticket.latestAcceptance" class="my-1 select-text whitespace-pre-wrap text-sm">{{ t('superAgent.acceptance', { text: ticket.latestAcceptance }) }}</p>
+                  <p v-if="ticket.summary && ticket.summary !== ticket.scope" class="my-1.5 whitespace-pre-wrap text-sm text-ui-text-muted">{{ progressText(ticket.summary) }}</p>
+                  <p v-if="ticket.referenceTicketId && tickets.has(ticket.referenceTicketId)" class="my-1 text-xs text-ui-text-muted">{{ t('superAgent.reference', { name: tickets.get(ticket.referenceTicketId)?.title }) }}</p>
+                  <div class="flex flex-wrap items-center gap-x-3 text-xs text-ui-accent" :class="touchWorkspace && 'workspace-touch-actions'">
+                    <RouterLink v-if="ticket.sessionId && (!snapshot?.supportsTicketArchive || ticket.workerContext)" :to="sessionRoute(ticket.sessionId)" class="inline-flex items-center">{{ t('superAgent.openSession') }}</RouterLink>
+                    <button v-if="snapshot?.supportsTicketArchive && api.archiveTicket && (!ticket.sessionId || ticket.workerContext)" type="button" :disabled="busy" @click="chooseArchive(ticket)">{{ t(ticket.archiveState === 'archived' ? 'superAgent.restoreTicket' : 'superAgent.archiveTicket') }}</button>
+                    <span v-else-if="ticket.archiveState && ticket.sessionId && !ticket.workerContext" class="text-ui-text-muted">{{ t('superAgent.workerUnavailable') }}</span>
+                  </div>
+                </details>
+              </component>
+            </template>
           </PopoverContent>
         </PopoverPortal>
       </PopoverRoot>
     </template>
   </PaneHeader>
+  <ConfirmDialog v-if="confirmingArchive" :title="t(confirmingArchive.archive ? 'superAgent.archiveTicket' : 'superAgent.restoreTicket') + ' · ' + confirmingArchive.ticket.title"
+    :description="archiveDescription" :confirm-label="t(confirmingArchive.archive ? 'superAgent.archiveTicket' : 'superAgent.restoreTicket')" :confirm-disabled="busy"
+    :tone="confirmingArchive.archive && confirmingArchive.ticket.workerContext === 'worktree' ? 'danger' : 'primary'" :confirm="confirmArchive" @close="confirmingArchive = undefined" />
   <div class="relative flex min-h-0 flex-1">
     <UiScrollArea ref="scrollArea" fade="top" class="min-h-0 min-w-0 flex-1" content-class="flex min-h-full flex-col" data-session-scroll-area
       :viewport-attrs="{ 'data-session-scroll-viewport': '', onScroll: followScroll }">

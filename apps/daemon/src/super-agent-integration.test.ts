@@ -139,6 +139,76 @@ test("Agent channel, SQLite, real AgentSessions permissions and result projectio
   assert.deepEqual(backend.prompts, ["Read README\n\nTicket scope:\nRead only", "Read the second file"])
 })
 
+test("ticket and native Worker archive and restore share one lifecycle, across devices and restarts", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "df-ticket-archive-"))
+  const project = join(directory, "project"); await mkdir(project)
+  const machine = await open(directory, new BackendAgent(), async ctx => {
+    if (ctx.text === "Unrelated question") {
+      assert.equal(ctx.focusTicketId, undefined)
+      assert.deepEqual(ctx.tickets, [])
+      assert.deepEqual(ctx.recentTicketIds, [])
+      assert.deepEqual(ctx.history, [])
+      return { reason: "direct answer", actions: [{ kind: "answer", text: "An independent answer" }] }
+    }
+    return { reason: "dispatch", actions: ctx.quote?.ticketId ? [{ kind: "continue", ticketId: ctx.quote.ticketId, prompt: ctx.text }]
+      : [{ kind: "create", title: "Check project", scope: "Read files", prompt: ctx.text }] }
+  })
+  t.after(async () => { try { await machine.close() } finally { await rm(directory, { recursive: true, force: true }) } })
+  const workspaceId = (await machine.catalog.native.createWorkspace("Archive", [{ path: project }])).id
+  await machine.providers.create({ template: "codex", name: "Fixture", env: {}, inheritShellEnvironment: false })
+  const snap = () => machine.call<SuperSnapshot>("_deskfleet/super-agent/snapshot", { workspaceId })
+  const send = (text: string, replyTo?: string) => machine.call("_deskfleet/super-agent/send", { workspaceId, messageId: text, text, replyTo })
+  await send("Inspect project")
+  const original = await eventually(snap, view => !!view.pendingRequests?.length)
+  const ticket = original.tickets[0]!
+  const sessionId = ticket.sessionId!
+  const params = { workspaceId, ticketId: ticket.id, sessionId, operationId: randomUUID(), archived: true }
+  const archive = (args: Omit<typeof params, "workspaceId"> & { workspaceId: string | null }) =>
+    machine.call<SuperSnapshot>("_deskfleet/super-agent/archiveTicket", args)
+  await assert.rejects(archive({ ...params, workspaceId: null }), /Unknown ticket/)
+  await assert.rejects(archive({ ...params, sessionId: "unrelated" }), /Worker has changed/)
+  const first = await archive(params)
+  assert.equal(first.supportsTicketArchive, true)
+  assert.equal(first.tickets[0]?.archiveState, "archived")
+  assert.equal(first.tickets[0]?.workerContext, "directory")
+  assert.equal(first.focusTicketId, undefined)
+  assert.deepEqual(first.pendingRequests, [])
+  assert.equal((await machine.workers.journal.read(sessionId)).session.archiveState, "archived")
+  assert.equal((await archive(params)).tickets[0]?.archiveState, "archived")
+  assert.equal(machine.store.get("member")?.rooms[0]?.tickets[0]?.archiveState, undefined)
+  assert.ok(first.messages.some(message => message.id === "Inspect project" && message.ticketId === ticket.id))
+  // Older hosts could have stored foreground focus after the regular Session UI had archived the Worker.
+  await machine.store.update("member", () => assert.fail(), state => {
+    const room = state.rooms.find(room => room.workspaceId === workspaceId)!
+    room.focusTicketId = ticket.id
+    room.recentTicketIds = [ticket.id]
+    room.pendingQuestion = { ticketId: ticket.id, options: ["continue"] }
+  })
+  await machine.restartFront()
+  await assert.rejects(send("Old quote", "Inspect project"), /Restore it in the ticket list/)
+  await send("Unrelated question")
+  await eventually(snap, view => view.messages.some(message => message.text === "An independent answer"))
+
+  const sessionAction = (action: "restore" | "archive") => machine.call(`_deskfleet/session/${action}`, { sessionId, operationId: randomUUID() })
+  await sessionAction("restore")
+  assert.equal((await snap()).tickets[0]?.archiveState, undefined)
+  await sessionAction("archive")
+  assert.equal((await snap()).tickets[0]?.archiveState, "archived")
+  const restored = await archive({ ...params, operationId: randomUUID(), archived: false })
+  assert.equal(restored.tickets[0]?.archiveState, undefined)
+  assert.equal(restored.focusTicketId, undefined)
+  const storedRoom = machine.store.get("member")!.rooms.find(room => room.workspaceId === workspaceId)!
+  assert.deepEqual(storedRoom.recentTicketIds, [])
+  assert.equal(storedRoom.pendingQuestion, undefined)
+  assert.equal(restored.tickets[0]?.sessionId, sessionId)
+  assert.equal((await machine.workers.journal.read(sessionId)).inputs.length, 1)
+  await send("Resume inspection", "Inspect project")
+  const follow = await eventually(snap, view => view.messages.some(message => message.id === "Resume inspection" && message.state !== "routing"))
+  assert.equal(follow.messages.find(message => message.id === "Resume inspection")?.state, "assigned")
+  await eventually(() => machine.workers.journal.read(sessionId), value => value.inputs.length === 2)
+  assert.equal((await machine.workers.journal.list()).length, 1)
+})
+
 test("project stop withdraws only the queued input, ignores a late click and cancels the next turn's outstanding permission", async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-stop-"))
   const backend = new BackendAgent()

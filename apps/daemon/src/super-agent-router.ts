@@ -293,6 +293,8 @@ export function ticketOfQuote(room: SuperRoom, quoted: StoredSuperMessage | unde
 export function frontendContext(room: SuperRoom, message: StoredSuperMessage, catalog: SuperWorkspace[], providers: SuperRouteContext["providers"], history: AgentSessionRecord[]): SuperRouteContext {
   const quoted = room.messages.find(item => item.id === message.replyTo)
   const quotedTicket = ticketOfQuote(room, quoted)
+  const archived = new Set(room.tickets.filter(ticket => ticket.archiveState).map(ticket => ticket.id))
+  const archivedWorkers = new Set(room.tickets.filter(ticket => ticket.archiveState).map(ticket => ticket.sessionId))
   const limit = room.messages.findIndex(item => item.id === message.id)
   // A second window can append its user message while the previous route is still pending.
   // Include replies to preceding user messages even if their rows were appended after this one.
@@ -301,7 +303,7 @@ export function frontendContext(room: SuperRoom, message: StoredSuperMessage, ca
   for (const item of room.messages) {
     if (item.role === "assistant" && item.sourceMessageId) replies.get(item.sourceMessageId)?.push(item)
   }
-  const recent = preceding.flatMap(user => [user, ...replies.get(user.id)!]).slice(-12)
+  const recent = preceding.flatMap(user => [user, ...replies.get(user.id)!]).filter(item => !item.ticketId || !archived.has(item.ticketId)).slice(-12)
   // Only duplicate project names need a folder hint. The workspace ID still owns the conversation
   // when even the folder is shared; never coalesce projects by name or directory.
   const names = new Set<string>()
@@ -321,8 +323,8 @@ export function frontendContext(room: SuperRoom, message: StoredSuperMessage, ca
       : quoted ? { ticketId: quotedTicket, text: quoted.text } : undefined,
     focusTicketId: room.focusTicketId, recentTicketIds: room.recentTicketIds, pendingQuestion: room.pendingQuestion,
     recent: [...recent.map(({ role, text, ticketId }) => ({ role, text, ticketId })), ...(message.context ? [{ role: "assistant" as const, text: message.context }] : [])],
-    tickets: room.tickets.map(({ id, title, scope, latestAcceptance, status, summary, sessionId }) => ({ id, title, scope, latestAcceptance, status, summary, sessionId })),
+    tickets: room.tickets.filter(ticket => !ticket.archiveState).map(({ id, title, scope, latestAcceptance, status, summary, sessionId }) => ({ id, title, scope, latestAcceptance, status, summary, sessionId })),
     workspaces, providers,
-    history: history.map(({ id, title, archiveState }) => ({ id, title, archiveState })),
+    history: history.filter(session => !archivedWorkers.has(session.id)).map(({ id, title, archiveState }) => ({ id, title, archiveState })),
   }
 }

@@ -72,6 +72,11 @@ export function observeWorkerInputs(intents: DispatchIntent[], snapshot: AgentSn
   let changed = false
   for (const intent of intents) {
     if (intent.sessionId !== snapshot.session.id) continue
+    if (intent.phase === "withdrawn" && !intent.stop && !intent.inputId) {
+      // An archive can land after native acceptance but before the front desk records the receipt.
+      const accepted = snapshot.inputs.find(input => input.submissionCommandId === intent.submitId)
+      if (accepted) { intent.inputId = accepted.id; intent.phase = "sent"; changed = true }
+    }
     if (!intent.inputId) continue
     const input = inputs.get(intent.inputId)
     if (!input?.turnId || !input.actualDelivery) continue

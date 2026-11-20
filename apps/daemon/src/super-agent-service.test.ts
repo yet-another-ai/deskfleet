@@ -769,6 +769,81 @@ test("an unconfigured Worker can be dispatched from an old message without repea
   } finally { await service.close() }
 })
 
+test("unbound tickets can be filed and restored without creating a Worker or replaying their failed request", async t => {
+  const providers = [{ id: "codex", name: "Codex" }]
+  const f = fixture(providers)
+  let service = f.service()
+  await service.init()
+  t.after(() => service.close())
+  f.route(async ({ text }) => {
+    providers.length = 0
+    return { reason: "dispatch", actions: [{ kind: "create", title: "Check", scope: "Read only", prompt: text }] }
+  })
+  await f.send(service, "source", "Check it")
+  await until(() => f.store.get("user")?.intents[0]?.phase === "failed")
+  const ticketId = (await f.snap(service)).tickets[0]!.id
+  const args = { workspaceId, ticketId, sessionId: null, operationId: "archive", archived: true }
+  const archive = (archived: boolean) => service.handle("_deskfleet/super-agent/archiveTicket", { ...args, archived }, actor)
+  await assert.rejects(service.handle("_deskfleet/super-agent/archiveTicket", args, { ...actor, userId: "elsewhere" }), /Unknown ticket/)
+  await archive(true)
+  await service.close()
+  providers.push({ id: "codex", name: "Codex" })
+  service = f.service(); await service.init()
+  const archived = await f.snap(service)
+  assert.equal(archived.tickets[0]?.archiveState, "archived")
+  assert.equal(archived.messages[0]?.retryable, false)
+  await assert.rejects(service.handle("_deskfleet/super-agent/send", { workspaceId, messageId: "source", text: "Check it", retry: true }, actor), /safely retried/)
+  await assert.rejects(f.send(service, "reply", "Continue", workspaceId, "source"), /Restore it/)
+  await assert.rejects(service.handle("_deskfleet/super-agent/correct", { workspaceId, messageId: "source", ticketId }, actor), /Restore it/)
+  const restored = await archive(false)
+  assert.equal(restored.tickets[0]?.archiveState, undefined)
+  assert.equal(restored.tickets[0]?.id, ticketId)
+  assert.equal(restored.messages[0]?.retryable, true)
+  let release!: () => void
+  const resume = new Promise<void>(resolve => { release = resolve })
+  f.route(async ctx => {
+    await resume
+    return { reason: "late decision", actions: [{ kind: "continue", ticketId, prompt: ctx.text }] }
+  })
+  await f.send(service, "next", "Inspect the same area")
+  await until(() => f.routeCalls.some(ctx => ctx.text === "Inspect the same area"))
+  try { await archive(true) } finally { release() }
+  await until(async () => (await f.snap(service)).messages.find(message => message.id === "next")?.state === "failed")
+  assert.match((await f.snap(service)).messages.find(message => message.id === "next")!.reason!, /archived/)
+  assert.equal(f.calls.length, 0)
+})
+
+test("restoring while a pre-submit Worker read is outstanding never replays the archived instruction", async t => {
+  const f = fixture(), service = f.service()
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  await service.init()
+  t.after(async () => { release(); await service.close() })
+  await f.send(service, "one", "First job")
+  await until(() => f.store.get("user")?.intents[0]?.phase === "sent")
+  const ticket = (await f.snap(service)).tickets[0]!
+  const session = f.sessions.get(ticket.sessionId!)!
+  const read = f.workers.journal.read.bind(f.workers.journal)
+  let waiting = false
+  f.workers.journal.read = async id => {
+    const result = await read(id)
+    if (!waiting && f.store.get("user")?.intents[1]?.phase === "working") { waiting = true; await gate }
+    return result
+  }
+  f.route(async ctx => ({ reason: "follow up", actions: [{ kind: "continue", ticketId: ticket.id, prompt: ctx.text }] }))
+  await f.send(service, "two", "Follow up")
+  await until(() => waiting)
+  for (const archiveState of ["archived", "active"] as const) {
+    session.session = { ...session.session, archiveState }
+    f.emit(session.session.id, "session", session.session)
+  }
+  await until(() => f.store.get("user")?.intents[1]?.phase === "withdrawn")
+  release()
+  await f.send(service, "three", "New work after restoring", workspaceId, "one")
+  await until(() => f.store.get("user")?.intents[2]?.phase === "sent")
+  assert.equal(f.calls.filter(call => call.method === "_deskfleet/input/submit").length, 2)
+})
+
 test("a later dispatch for the same ticket supersedes an old preflight retry", async () => {
   const providers = [{ id: "codex", name: "Codex" }]
   const f = fixture(providers)

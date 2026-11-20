@@ -3,7 +3,7 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import { parseWorkerReference } from "@deskfleet/client/worker-reference"
-import { superWorkerCommandName, type SuperMessage, type SuperSettings, type SuperSnapshot, type SuperWorkerCommandTarget, type SuperWorkspaceId } from "../../../../apps/daemon/src/super-agent-protocol.ts"
+import { archivedTicketError, superWorkerCommandName, type SuperMessage, type SuperSettings, type SuperSnapshot, type SuperWorkerCommandTarget, type SuperWorkspaceId } from "../../../../apps/daemon/src/super-agent-protocol.ts"
 import { useWorkspaceCommands } from "./useWorkspaceCommands.ts"
 import { workspacePromptAttachments, type ComposerAttachment } from "../services/composer-attachments.ts"
 import { validComposerMentions, type ComposerMention } from "../services/composer-mentions.ts"
@@ -18,6 +18,10 @@ export function useWorkspaceConversation(
   offline: () => boolean = () => false,
 ) {
   const { t } = useI18n()
+  function messageOf(reason: unknown): string {
+    const message = reason instanceof Error ? reason.message : String(reason)
+    return message === archivedTicketError ? t("superAgent.restoreBeforeReply") : message
+  }
   const snapshot = shallowRef<SuperSnapshot>()
   const drafts = useWorkspaceAgentDrafts()
   const draft = drafts.get(workspaceId)
@@ -176,13 +180,17 @@ export function useWorkspaceConversation(
     catch (reason) { if (active) actionError.value = messageOf(reason) }
     finally { sending.value = false }
   }
-  async function change(operation: () => Promise<SuperSnapshot>, reportError = true) {
-    if (offline() || saving.value || sending.value) return false
+  async function change(operation: () => Promise<SuperSnapshot>, reportError: boolean | "dialog" = true) {
+    if (offline() || saving.value || sending.value) {
+      if (reportError === "dialog") throw new Error(t("superAgent.archiveUnavailable"))
+      return false
+    }
     saving.value = true
     generation++
     actionError.value = ""
     try { accept(await operation()); return true }
     catch (reason) {
+      if (reportError === "dialog") throw reason
       if (active && reportError) actionError.value = messageOf(reason)
       return false
     }
@@ -204,6 +212,11 @@ export function useWorkspaceConversation(
   }
   return {
     stop, localStops,
+    archiveTicket: async (ticketId: string, sessionId: string | null, archived: boolean, operationId: string) => {
+      const archive = api.archiveTicket
+      if (!archive || !snapshot.value?.supportsTicketArchive) throw new Error(t("superAgent.archiveUnavailable"))
+      await change(() => archive({ workspaceId, ticketId, sessionId, archived, operationId }), "dialog")
+    },
     snapshot, draft, attachments, mentions, missingAttachments, discardMissing, error, sending, saving, send, refresh, commandMenu: commands.menu, canSendPlain, canRefresh: computed(() => !!readingError.value && !actionError.value),
     retry: (message: SuperMessage) => canRoute(message.text, !!message.attachments?.length, !message.command && !missingWorker(message)) && change(() => {
       lastSentId = message.id
@@ -216,4 +229,3 @@ export function useWorkspaceConversation(
 function sameTarget(a: SuperWorkerCommandTarget, b: SuperWorkerCommandTarget): boolean {
   return a.provider === b.provider && a.ticketId === b.ticketId && a.sessionId === b.sessionId
 }
-function messageOf(reason: unknown): string { return reason instanceof Error ? reason.message : String(reason) }

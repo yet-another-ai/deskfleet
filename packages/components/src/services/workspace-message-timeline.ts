@@ -77,7 +77,7 @@ export function workspaceMessageRows(messages: SuperMessage[], tickets: Map<stri
     const detailSummary = summary && summary !== ticket?.scope && summary !== message.reason && !(workerMissing && summary === legacyMissingWorker) ? summary : undefined
     // DeskFleet forks the current session. A past turn or a coordinator reply is not a fork point.
     const fork = message.workerEvent === "result" && message.sessionId && message.turnId
-      && latestWorkerEvent.get(message.sessionId) === message.id && !hasTicketStatus(ticket?.status)
+      && latestWorkerEvent.get(message.sessionId) === message.id && !ticket?.archiveState && !hasTicketStatus(ticket?.status)
       ? { sessionId: message.sessionId, turnId: message.turnId } : undefined
     const sessions = sessionLinks(message.sessionId ?? onlyJob?.delivery?.sessionId ?? onlyJob?.marker.sessionId ?? ticket?.sessionId, jobs)
     return { message, fork, progress: progress.get(message.id), ticket, sessions, detailSummary, jobs, workerMissing, workerFailure, perTicketFailures }
@@ -205,7 +205,7 @@ function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicke
       for (const id of assigned) {
         const ticket = tickets.get(id)
         const dispatch = jobs?.get(id)
-        if (!ticket || index.completed.has(scopedId(id, source.id))) continue
+        if (!ticket || ticket.archiveState || index.completed.has(scopedId(id, source.id))) continue
         const marker = dispatch?.marker
         const target = { ticketId: id, title: assigned.length > 1 ? ticket.title : undefined, canStop: marker?.canStop, sharedTurn: marker?.sharedTurn, turnId: marker?.turnId }
         if (marker?.stopState) {
