@@ -971,7 +971,7 @@ test("reverse mouse scrolling flips wheel deltas without reconnecting", async ()
 })
 
 test("clipboard sharing syncs in both directions when control is active and can be toggled in stream settings", async () => {
-  const readText = vi.fn(async () => "from browser")
+  const readText = vi.fn(async () => "initial baseline")
   const writeText = vi.fn(async () => {})
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -979,6 +979,11 @@ test("clipboard sharing syncs in both directions when control is active and can 
   })
   const { wrapper, peer } = await connectDesktop()
   peer.input.ready()
+  await flushPromises()
+  expect(peer.input.send).not.toHaveBeenCalledWith(JSON.stringify({ type: "clipboard", text: "initial baseline" }))
+
+  readText.mockResolvedValue("from browser")
+  window.dispatchEvent(new Event("focus"))
   await flushPromises()
   expect(peer.input.send).toHaveBeenCalledWith(JSON.stringify({ type: "clipboard", text: "from browser" }))
 

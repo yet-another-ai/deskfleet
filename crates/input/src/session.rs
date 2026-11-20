@@ -118,9 +118,13 @@ impl<B: Backend> Controller<B> {
                         self.last_clipboard = Some(text);
                         Ok(())
                     }
-                    // Backends without clipboard integration should not drop held keys.
+                    // Clipboard sync is best-effort; a contended or unsupported
+                    // clipboard must not drop held keys or tear down control.
                     Err(InputError::Unsupported(_)) => Ok(()),
-                    Err(error) => Err(error),
+                    Err(error) => {
+                        tracing::debug!(%error, "desktop clipboard update failed");
+                        Ok(())
+                    }
                 }
             }
             InputEvent::ReleaseAll => self.release_all(),

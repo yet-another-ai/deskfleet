@@ -19,8 +19,8 @@ use windows::Win32::System::Ole::CF_UNICODETEXT;
 use crate::{InputError, MAX_CLIPBOARD_BYTES, Result};
 
 const UNICODE_FORMAT: u32 = CF_UNICODETEXT.0 as u32;
-const OPEN_ATTEMPTS: usize = 5;
-const OPEN_RETRY_DELAY: Duration = Duration::from_millis(2);
+const OPEN_ATTEMPTS: usize = 10;
+const OPEN_RETRY_DELAY: Duration = Duration::from_millis(5);
 
 pub(super) struct WindowsClipboard {
     sequence: u32,

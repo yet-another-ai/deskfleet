@@ -732,62 +732,81 @@ impl Backend for ScrcpyInput {
     }
 
     fn poll_clipboard(&mut self) -> Result<Option<String>, InputError> {
-        let mut kind = [0u8; 1];
-        match self.socket.read_some(&mut kind) {
-            Ok(0) => return Ok(None),
-            Ok(_) => {}
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                ) =>
-            {
-                return Ok(None);
+        let mut latest = None;
+        loop {
+            let mut kind = [0u8; 1];
+            match self.socket.read_some(&mut kind) {
+                Ok(0) => return Ok(latest),
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                            | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    return Ok(latest);
+                }
+                Err(e) => return Err(InputError::Platform(e.to_string())),
             }
-            Err(e) => return Err(InputError::Platform(e.to_string())),
-        }
-        let _ = self.socket.set_timeout(Some(Duration::from_secs(1)));
-        let res = (|| -> io::Result<Option<String>> {
-            match kind[0] {
-                0 => {
-                    let mut len_bytes = [0u8; 4];
-                    self.socket.read_all(&mut len_bytes)?;
-                    let len = u32::from_be_bytes(len_bytes) as usize;
-                    if len > deskfleet_input::MAX_CLIPBOARD_BYTES * 4 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "oversized scrcpy clipboard",
-                        ));
+            let _ = self.socket.set_timeout(Some(Duration::from_secs(1)));
+            let res = (|| -> io::Result<Option<String>> {
+                match kind[0] {
+                    0 => {
+                        let mut len_bytes = [0u8; 4];
+                        self.socket.read_all(&mut len_bytes)?;
+                        let len = u32::from_be_bytes(len_bytes) as usize;
+                        if len > deskfleet_input::MAX_CLIPBOARD_BYTES {
+                            let mut scratch = [0u8; 4096];
+                            let mut remaining = len;
+                            while remaining > 0 {
+                                let chunk = remaining.min(scratch.len());
+                                self.socket.read_all(&mut scratch[..chunk])?;
+                                remaining -= chunk;
+                            }
+                            return Ok(None);
+                        }
+                        let mut payload = vec![0u8; len];
+                        self.socket.read_all(&mut payload)?;
+                        Ok(String::from_utf8(payload)
+                            .ok()
+                            .map(|s| s.replace('\0', ""))
+                            .filter(|s| {
+                                !s.is_empty() && s.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES
+                            }))
                     }
-                    let mut payload = vec![0u8; len];
-                    self.socket.read_all(&mut payload)?;
-                    Ok(String::from_utf8(payload)
-                        .ok()
-                        .map(|s| s.replace('\0', ""))
-                        .filter(|s| {
-                            !s.is_empty() && s.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES
-                        }))
+                    1 => {
+                        let mut seq = [0u8; 8];
+                        self.socket.read_all(&mut seq)?;
+                        Ok(None)
+                    }
+                    2 => {
+                        let mut hdr = [0u8; 4];
+                        self.socket.read_all(&mut hdr)?;
+                        let len = u16::from_be_bytes([hdr[2], hdr[3]]) as usize;
+                        let mut scratch = [0u8; 4096];
+                        let mut remaining = len;
+                        while remaining > 0 {
+                            let chunk = remaining.min(scratch.len());
+                            self.socket.read_all(&mut scratch[..chunk])?;
+                            remaining -= chunk;
+                        }
+                        Ok(None)
+                    }
+                    other => Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unknown scrcpy device message type {other}"),
+                    )),
                 }
-                1 => {
-                    let mut seq = [0u8; 8];
-                    self.socket.read_all(&mut seq)?;
-                    Ok(None)
-                }
-                2 => {
-                    let mut hdr = [0u8; 4];
-                    self.socket.read_all(&mut hdr)?;
-                    let len = u16::from_be_bytes([hdr[2], hdr[3]]) as usize;
-                    let mut discard = vec![0u8; len];
-                    self.socket.read_all(&mut discard)?;
-                    Ok(None)
-                }
-                _ => Ok(None),
+            })();
+            let _ = self.socket.set_timeout(Some(POLL_TIMEOUT));
+            match res {
+                Ok(Some(text)) => latest = Some(text),
+                Ok(None) => {}
+                Err(e) => return Err(InputError::Platform(e.to_string())),
             }
-        })();
-        let _ = self.socket.set_timeout(Some(POLL_TIMEOUT));
-        res.map_err(|e| InputError::Platform(e.to_string()))
+        }
     }
 }
 
@@ -974,21 +993,9 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let client = TcpStream::connect(addr).unwrap();
         let (mut server, _) = listener.accept().unwrap();
-        let mut session = InputSession::with_backend(|| {
-            Ok(ScrcpyInput::from_socket(
-                None,
-                Socket::Tcp(client),
-                1080,
-                2400,
-            ))
-        })
-        .unwrap();
+        let mut input = ScrcpyInput::from_socket(None, Socket::Tcp(client), 1080, 2400);
 
-        session
-            .handle(InputEvent::Clipboard {
-                text: "hello".into(),
-            })
-            .unwrap();
+        deskfleet_input::Backend::set_clipboard(&mut input, "hello").unwrap();
         let mut sent = [0u8; 19];
         server.read_exact(&mut sent).unwrap();
         assert_eq!(sent[0], 9);
@@ -997,13 +1004,20 @@ mod tests {
         assert_eq!(u32::from_be_bytes(sent[10..14].try_into().unwrap()), 5);
         assert_eq!(&sent[14..19], b"hello");
 
+        // An oversized clipboard packet is drained without desynchronizing later packets.
+        let oversized = vec![b'x'; deskfleet_input::MAX_CLIPBOARD_BYTES + 128];
         let mut device_msg = Vec::new();
+        device_msg.put_u8(0);
+        device_msg.put_u32(oversized.len() as u32);
+        device_msg.extend_from_slice(&oversized);
         device_msg.put_u8(0);
         device_msg.put_u32(7);
         device_msg.extend_from_slice(b"android");
         server.write_all(&device_msg).unwrap();
         assert_eq!(
-            session.poll_clipboard().unwrap().as_deref(),
+            deskfleet_input::Backend::poll_clipboard(&mut input)
+                .unwrap()
+                .as_deref(),
             Some("android")
         );
     }

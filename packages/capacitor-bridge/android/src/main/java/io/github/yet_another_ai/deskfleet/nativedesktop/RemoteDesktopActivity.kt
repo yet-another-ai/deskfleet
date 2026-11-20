@@ -143,7 +143,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             hideSystemBars()
-            window.decorView.post { syncLocalClipboardToRemote() }
+            window.decorView.post { syncLocalClipboardToRemote(onFocus = true) }
         } else {
             dragging = false
             DeskFleetBridge.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
@@ -159,12 +159,15 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun syncLocalClipboardToRemote() {
+    private fun syncLocalClipboardToRemote(onFocus: Boolean = false) {
         runCatching {
-            val clip = clipboardManager?.primaryClip ?: return
-            if (clip.itemCount <= 0) return
-            val text = clip.getItemAt(0).text ?: return
-            val command = clipboardSync.takeOutgoingCommand(text) ?: return
+            val clip = clipboardManager?.primaryClip
+            val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
+            val command = if (onFocus) {
+                clipboardSync.takeFocusCommand(text)
+            } else {
+                clipboardSync.takeOutgoingCommand(text)
+            } ?: return
             DeskFleetBridge.nativeSendCommand(command)
         }
     }

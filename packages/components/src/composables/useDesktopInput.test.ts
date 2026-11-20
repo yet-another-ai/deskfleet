@@ -234,15 +234,35 @@ test("replacing the video releases held input and follows the new surface", asyn
   next.remove()
 })
 
-test("synchronizes local and remote clipboard text while deduplicating echoes and honoring the toggle", async () => {
-  const f = fixture()
-  const readText = vi.fn(async () => "local clip")
+test("synchronizes local and remote clipboard text while seeding baseline, ordering paste before KeyV, deduplicating echoes, and honoring the toggle", async () => {
+  const readText = vi.fn(async () => "initial baseline")
   const writeText = vi.fn(async () => {})
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { readText, writeText },
   })
+  const f = fixture()
+  await nextTick()
 
+  // Initial connect and first focus with unchanged baseline do not overwrite the remote clipboard.
+  window.dispatchEvent(new Event("focus"))
+  await nextTick()
+  expect(f.send).not.toHaveBeenCalled()
+
+  // Pressing KeyV syncs the clipboard before delivering the key-down and key-up events.
+  f.key("keydown", "KeyV")
+  f.key("keyup", "KeyV")
+  await nextTick()
+  await nextTick()
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "clipboard", text: "initial baseline" }],
+    [{ type: "key", code: "KeyV", pressed: true, repeat: false }],
+    [{ type: "key", code: "KeyV", pressed: false, repeat: false }],
+  ])
+  f.send.mockClear()
+
+  // Copying new text while unfocused sends it on window focus.
+  readText.mockResolvedValue("local clip")
   window.dispatchEvent(new Event("focus"))
   await nextTick()
   expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "clipboard", text: "local clip" })

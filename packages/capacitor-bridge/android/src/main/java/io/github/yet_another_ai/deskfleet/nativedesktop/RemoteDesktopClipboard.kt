@@ -1,27 +1,56 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
 internal class RemoteDesktopClipboard {
-    private var lastSynced: String? = null
+    private var lastObservedLocal: String? = null
+    private var lastRemoteSynced: String? = null
+    private var baselineSeeded = false
+
+    @Synchronized
+    fun takeFocusCommand(rawText: CharSequence?): String? {
+        val text = sanitize(rawText)
+        if (!baselineSeeded) {
+            baselineSeeded = true
+            if (text != null && lastObservedLocal == null) {
+                lastObservedLocal = text
+            }
+            return null
+        }
+        if (text == null || text == lastObservedLocal) {
+            return null
+        }
+        return takeOutgoingCommand(text)
+    }
 
     @Synchronized
     fun takeOutgoingCommand(rawText: CharSequence?): String? {
-        val text = rawText?.toString()?.replace("\u0000", "") ?: return null
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        if (text.isEmpty() || bytes.size > MAX_CLIPBOARD_BYTES || text == lastSynced) {
+        val text = sanitize(rawText) ?: return null
+        baselineSeeded = true
+        lastObservedLocal = text
+        if (text == lastRemoteSynced) {
             return null
         }
-        lastSynced = text
+        lastRemoteSynced = text
         return encodeClipboardCommand(text)
     }
 
     @Synchronized
     fun acceptIncomingEvent(payload: String): String? {
-        val text = decodeClipboardEvent(payload)?.replace("\u0000", "") ?: return null
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        if (text.isEmpty() || bytes.size > MAX_CLIPBOARD_BYTES || text == lastSynced) {
+        val text = sanitize(decodeClipboardEvent(payload)) ?: return null
+        if (text == lastRemoteSynced) {
             return null
         }
-        lastSynced = text
+        baselineSeeded = true
+        lastObservedLocal = text
+        lastRemoteSynced = text
+        return text
+    }
+
+    private fun sanitize(rawText: CharSequence?): String? {
+        val text = rawText?.toString()?.replace("\u0000", "") ?: return null
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (text.isEmpty() || bytes.size > MAX_CLIPBOARD_BYTES) {
+            return null
+        }
         return text
     }
 

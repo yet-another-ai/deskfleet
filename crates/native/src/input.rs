@@ -76,7 +76,7 @@ impl Session {
             #[cfg(target_os = "linux")]
             Self::Android(session) => {
                 session.refresh_desktop()?;
-                Ok(session.poll_clipboard().unwrap_or(None))
+                session.poll_clipboard()
             }
             #[cfg(windows)]
             Self::Service { client, .. } => client.refresh_input().map_err(service_error),

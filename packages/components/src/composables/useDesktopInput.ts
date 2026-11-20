@@ -39,10 +39,13 @@ export function useDesktopInput(
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
+  const pendingPasteKeys = new Set<string>()
   const pointers = new Set<number>()
   const macClient = navigator.platform.startsWith("Mac")
   let lastPoint: Point = { x: 0, y: 0 }
-  let lastSyncedClipboard: string | null = null
+  let lastObservedLocal: string | null = null
+  let lastRemoteSynced: string | null = null
+  let baselineSeeded = false
   const textEncoder = new TextEncoder()
 
   function clipboardAllowed(): boolean {
@@ -58,19 +61,53 @@ export function useDesktopInput(
   function sendClipboardText(raw: string): void {
     if (!clipboardAllowed()) return
     const text = sanitizeClipboard(raw)
-    if (!text || text === lastSyncedClipboard) return
+    if (!text) return
+    lastObservedLocal = text
+    baselineSeeded = true
+    if (text === lastRemoteSynced) return
     if (send({ type: "clipboard", text })) {
-      lastSyncedClipboard = text
+      lastRemoteSynced = text
     }
   }
 
-  async function syncLocalClipboard(): Promise<void> {
+  async function seedLocalClipboardBaseline(): Promise<void> {
+    if (baselineSeeded || !clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    try {
+      const text = sanitizeClipboard(await navigator.clipboard.readText())
+      baselineSeeded = true
+      if (text && lastObservedLocal === null) {
+        lastObservedLocal = text
+      }
+    } catch {
+      // Browser denied unprompted or unfocused clipboard read; retry baseline seed on focus.
+    }
+  }
+
+  async function syncLocalClipboardOnFocus(): Promise<void> {
+    if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
+    try {
+      const text = sanitizeClipboard(await navigator.clipboard.readText())
+      if (!baselineSeeded) {
+        baselineSeeded = true
+        if (text && lastObservedLocal === null) {
+          lastObservedLocal = text
+        }
+        return
+      }
+      if (!text || text === lastObservedLocal) return
+      sendClipboardText(text)
+    } catch {
+      // Browsers may reject background or unpermitted clipboard reads.
+    }
+  }
+
+  async function syncLocalClipboardForPaste(): Promise<void> {
     if (!clipboardAllowed() || typeof navigator.clipboard?.readText !== "function") return
     try {
       const text = await navigator.clipboard.readText()
       sendClipboardText(text)
     } catch {
-      // Browsers may reject background or unpermitted clipboard reads.
+      // Browsers may reject unpermitted clipboard reads.
     }
   }
 
@@ -84,6 +121,7 @@ export function useDesktopInput(
     if (buttons.size || keys.size) send({ type: "releaseAll" })
     buttons.clear()
     keys.clear()
+    pendingPasteKeys.clear()
     const releasingPointers = [...pointers]
     pointers.clear()
     for (const pointerId of releasingPointers) {
@@ -172,8 +210,27 @@ export function useDesktopInput(
     if (!enabled.value || event.isComposing || !event.code || event.code === "Unidentified") return
     event.preventDefault()
     event.stopPropagation()
-    if (!event.repeat && (event.code === "KeyV" || event.code === "Insert")) {
-      void syncLocalClipboard()
+    if (
+      !event.repeat
+      && (event.code === "KeyV" || event.code === "Insert")
+      && clipboardAllowed()
+      && typeof navigator.clipboard?.readText === "function"
+    ) {
+      const code = event.code
+      keys.add(code)
+      pendingPasteKeys.add(code)
+      void syncLocalClipboardForPaste().finally(() => {
+        if (!pendingPasteKeys.delete(code) || !enabled.value) return
+        const stillHeld = keys.has(code)
+        if (!send({ type: "key", code, pressed: true, repeat: false })) {
+          keys.delete(code)
+          return
+        }
+        if (!stillHeld) {
+          send({ type: "key", code, pressed: false, repeat: false })
+        }
+      })
+      return
     }
     if (send({ type: "key", code: event.code, pressed: true, repeat: event.repeat })) keys.add(event.code)
   }
@@ -182,14 +239,18 @@ export function useDesktopInput(
     if (!keys.has(event.code)) return
     event.preventDefault()
     event.stopPropagation()
-    send({ type: "key", code: event.code, pressed: false, repeat: false })
     keys.delete(event.code)
+    if (!pendingPasteKeys.has(event.code)) {
+      send({ type: "key", code: event.code, pressed: false, repeat: false })
+    }
     if (macClient && (event.code === "MetaLeft" || event.code === "MetaRight")) {
       // macOS browsers can omit key-up events for keys used while Command is held.
-      for (const code of keys) {
+      for (const code of [...keys]) {
         if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(code)) continue
-        send({ type: "key", code, pressed: false, repeat: false })
         keys.delete(code)
+        if (!pendingPasteKeys.has(code)) {
+          send({ type: "key", code, pressed: false, repeat: false })
+        }
       }
     }
   }
@@ -215,23 +276,25 @@ export function useDesktopInput(
   useEventListener(video, "contextmenu", contextMenu)
   useEventListener(video, "paste", handlePaste)
   useEventListener(video, "blur", release)
-  watch(enabled, value => {
+  watchImmediate(enabled, value => {
     if (!value) release()
-    else void syncLocalClipboard()
+    else void seedLocalClipboardBaseline()
   }, { flush: "sync" })
   if (clipboardSharing) {
-    watch(clipboardSharing, value => { if (value) void syncLocalClipboard() })
+    watch(clipboardSharing, value => { if (value) void seedLocalClipboardBaseline() })
   }
   if (remoteClipboard) {
     watch(remoteClipboard, entry => {
       if (!entry || !clipboardAllowed()) return
       const text = sanitizeClipboard(entry.text)
-      if (!text || text === lastSyncedClipboard) return
-      lastSyncedClipboard = text
+      if (!text || text === lastRemoteSynced) return
+      lastObservedLocal = text
+      lastRemoteSynced = text
+      baselineSeeded = true
       void navigator.clipboard?.writeText?.(text)?.catch(() => {})
     })
   }
-  useEventListener(window, "focus", () => { void syncLocalClipboard() })
+  useEventListener(window, "focus", () => { void syncLocalClipboardOnFocus() })
   useEventListener(window, "blur", release)
   watch(useDocumentVisibility(), state => { if (state === "hidden") release() })
   onScopeDispose(release)

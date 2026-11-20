@@ -13,6 +13,7 @@ struct Fake {
     fail_prepare: Rc<Cell<bool>>,
     clipboard: Rc<RefCell<Option<String>>>,
     clipboard_unsupported: Rc<Cell<bool>>,
+    clipboard_busy: Rc<Cell<bool>>,
 }
 
 impl Backend for Fake {
@@ -54,6 +55,9 @@ impl Backend for Fake {
     fn set_clipboard(&mut self, text: &str) -> Result<()> {
         if self.clipboard_unsupported.get() {
             return Err(InputError::Unsupported("clipboard sharing"));
+        }
+        if self.clipboard_busy.get() {
+            return Err(InputError::Platform("open clipboard failed".into()));
         }
         self.events.borrow_mut().push(format!("clipboard {text}"));
         *self.clipboard.borrow_mut() = Some(text.to_owned());
@@ -505,6 +509,21 @@ fn clipboard_deduplicates_echoes_and_ignores_unsupported_backends_without_releas
     );
     assert_eq!(controller.poll_clipboard().unwrap(), None);
 
+    // Contended clipboard writes preserve held keys and allow a retry.
+    fake.clipboard_busy.set(true);
+    controller
+        .handle(InputEvent::Clipboard {
+            text: "retry after contention".into(),
+        })
+        .unwrap();
+    assert_eq!(controller.keys, ["ControlLeft"]);
+    fake.clipboard_busy.set(false);
+    controller
+        .handle(InputEvent::Clipboard {
+            text: "retry after contention".into(),
+        })
+        .unwrap();
+
     // Unsupported clipboard backends preserve held keys.
     fake.clipboard_unsupported.set(true);
     controller
@@ -515,6 +534,10 @@ fn clipboard_deduplicates_echoes_and_ignores_unsupported_backends_without_releas
     assert_eq!(controller.keys, ["ControlLeft"]);
     assert_eq!(
         *fake.events.borrow(),
-        ["key ControlLeft true false", "clipboard copied text"]
+        [
+            "key ControlLeft true false",
+            "clipboard copied text",
+            "clipboard retry after contention",
+        ]
     );
 }
