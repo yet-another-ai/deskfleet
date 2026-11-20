@@ -230,6 +230,8 @@ Configure these environment variables:
 | `SENTRY_URL` | Optional self-hosted Sentry URL; defaults to `https://sentry.io/`. |
 | `IOS_APP_PROFILE_NAME` | Exact name of the existing App Store Connect provisioning profile for `ai.yetanother.deskfleet`. |
 | `IOS_BROADCAST_PROFILE_NAME` | Exact name of the existing App Store Connect provisioning profile for `ai.yetanother.deskfleet.BroadcastUpload`. |
+| `DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS` | Optional comma-separated `<keyId>:<base64>` Ed25519 public keys compiled into `deskfleet-maintenance-service.exe` for verifying silent Windows desktop service updates. Generate with `node scripts/windows-service-signing.ts keygen`. |
+| `WINDOWS_SERVICE_SIGNING_KEY_ID` | Optional key ID matching `WINDOWS_SERVICE_SIGNING_KEY` (defaults to `v1`). |
 
 The reusable Build workflow binds its packaging job to `production` only when
 Publish requests a production release. The caller passes the signing secret
@@ -270,6 +272,7 @@ Configure these secrets in the same environment:
 | `ANDROID_GOOGLE_SERVICES_JSON` | Optional `google-services.json` (plain JSON or base64) staged into `apps/web/android/app/google-services.json` during production Android builds and removed afterward. |
 | `IOS_GOOGLE_SERVICE_INFO_PLIST` | Optional `GoogleService-Info.plist` (plain XML or base64) staged into `apps/web/ios/App/App/GoogleService-Info.plist` during signed iOS builds and removed afterward. |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Google Play Developer API service account JSON credentials for publishing to the `internal` track. |
+| `WINDOWS_SERVICE_SIGNING_KEY` | Optional base64-encoded PKCS#8 Ed25519 private key used during Windows packaging to sign `deskfleet-desktop-service.manifest.json` for silent `DeskFleetMaintenance` updates. |
 
 The release overlay requires signing and notarization; missing credentials or a
 failure prevents publication. PR, main, and ordinary manual Build runs package

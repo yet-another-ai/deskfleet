@@ -744,6 +744,8 @@
     "windowsLockControlWorking": "正在检查或应用设置…",
     "windowsLockControlStopped": "已安装，但未运行",
     "windowsLockControlStart": "启动",
+    "windowsLockControlUpdateAvailable": "有可用更新",
+    "windowsLockControlUpdate": "更新",
     "worktreeRoot": "工作树根目录",
     "worktreeRootDescription": "本机新建会话的工作树将存储在此目录。已有文件保留在原位置。",
     "chooseWorktreeRoot": "选择文件夹…",

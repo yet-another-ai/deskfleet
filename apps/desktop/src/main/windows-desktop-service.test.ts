@@ -10,7 +10,11 @@ import { BUNDLED_RENDERER_URL } from "../shared/renderer-security.ts"
 
 test("only the registered main renderer may request fixed service setup operations", async () => {
   const state = { available: true, installed: false, running: false }
-  const controller = { get: vi.fn(async () => state), setEnabled: vi.fn(async () => ({ ...state, installed: true, running: true })) }
+  const controller = {
+    get: vi.fn(async () => state),
+    setEnabled: vi.fn(async () => ({ ...state, installed: true, running: true })),
+    update: vi.fn(async () => ({ ...state, installed: true, running: true, maintenanceInstalled: true, updateAvailable: false })),
+  }
   installWindowsDesktopServiceIpc(controller as unknown as WindowsDesktopServiceController)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
   const mainFrame = { url: BUNDLED_RENDERER_URL }
@@ -25,6 +29,8 @@ test("only the registered main renderer may request fixed service setup operatio
   expect(await invoke(event, "get")).toEqual({ ok: true, value: state })
   expect(await invoke(event, "setEnabled", true)).toMatchObject({ ok: true, value: { installed: true, running: true } })
   expect(controller.setEnabled).toHaveBeenCalledExactlyOnceWith(true)
+  expect(await invoke(event, "update")).toMatchObject({ ok: true, value: { maintenanceInstalled: true, updateAvailable: false } })
+  expect(controller.update).toHaveBeenCalledTimes(1)
   controller.setEnabled.mockRejectedValueOnce(new Error("Administrator approval was cancelled"))
   expect(await invoke(event, "setEnabled", false)).toEqual({ ok: false, error: "Administrator approval was cancelled" })
   sender.emit("destroyed")

@@ -56,6 +56,8 @@ on:
         required: false
       IOS_GOOGLE_SERVICE_INFO_PLIST:
         required: false
+      WINDOWS_SERVICE_SIGNING_KEY:
+        required: false
 
 permissions:
   contents: read
@@ -118,6 +120,7 @@ jobs:
         if: ${{ inputs.production_release }}
         env:
           DESKFLEET_SOURCEMAPS: "1"
+          DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS: ${{ vars.DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS }}
           VITE_SENTRY_DIST: web
           VITE_STATSIG_CLIENT_KEY: ${{ vars.VITE_STATSIG_CLIENT_KEY }}
           VITE_STATSIG_ENVIRONMENT: ${{ vars.VITE_STATSIG_ENVIRONMENT }}
@@ -172,6 +175,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           DESKFLEET_NATIVE_PREBUILT: "1"
+          DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS: ${{ inputs.production_release && vars.DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS || '' }}
+          WINDOWS_SERVICE_SIGNING_KEY: ${{ inputs.production_release && secrets.WINDOWS_SERVICE_SIGNING_KEY || '' }}
+          WINDOWS_SERVICE_SIGNING_KEY_ID: ${{ inputs.production_release && vars.WINDOWS_SERVICE_SIGNING_KEY_ID || '' }}
         # Linux smoke builds produce only the tar.gz payload that Linux packages
         # and Nix consume. Full builds keep every configured target.
         run: >-

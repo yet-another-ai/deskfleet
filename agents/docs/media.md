@@ -200,14 +200,33 @@ requires hardware acceleration and `x264` requires the optional runtime.
 ### Windows locked-desktop access
 
 The Windows welcome page and Settings → Permissions → **Remote control while
-locked** install the optional `DeskFleetDesktop` Windows service after explicit
-administrator approval. Welcome checks service status silently and uses the same
-installation controller as Permissions. Users can skip the step or retry after
-canceling approval; completed setup is not repeated. The NSIS app
-remains a per-user installation. The service and its desktop workers run from
-`Program Files/DeskFleet Desktop Service/deskfleet-desktop-service.exe`, with
+locked** install the optional `DeskFleetDesktop` Windows service and its
+on-demand `DeskFleetMaintenance` companion service after explicit administrator
+approval. Welcome checks service status silently and uses the same installation
+controller as Permissions. Users can skip the step or retry after canceling
+approval; completed setup is not repeated. The NSIS app remains a per-user
+installation. Both services run from `Program Files/DeskFleet Desktop Service/`
+(`deskfleet-desktop-service.exe` and `deskfleet-maintenance-service.exe`), with
 write access restricted to administrators and SYSTEM. No additional display or
 input driver is installed.
+
+NSIS application updates never prompt for UAC or block on service maintenance so
+remote desktop users do not lose access during an unattended upgrade. Instead,
+`DeskFleetMaintenance` stays stopped (`SERVICE_DEMAND_START`) with its SCM DACL
+permitting interactive users only `SERVICE_QUERY_STATUS | SERVICE_START`. On
+startup (or from Settings), the updated app streams a newer bundled
+`deskfleet-desktop-service.exe` and its signed manifest over an authenticated
+local named pipe (`\\.\pipe\deskfleet-maintenance-service`) directly into the
+protected staging directory without passing any caller filesystem paths to
+`LocalSystem`. `DeskFleetMaintenance` verifies the SHA-256 digest, checks the
+Ed25519 signature against its compile-time trusted public keys
+(`DESKFLEET_WINDOWS_SERVICE_PUBLIC_KEYS`), enforces a monotonic SemVer floor
+against `desktop-service.installed.json` and its own version to prevent
+downgrades, atomically swaps and restarts `DeskFleetDesktop` with recovery
+rollback, and exits. Unsigned development builds and legacy installations that
+predate `DeskFleetMaintenance` never elevate automatically on startup; instead,
+Settings offers an online **Update** action that runs while DeskFleet remains
+connected so remote users can approve UAC directly.
 
 When installed, display discovery, codec probing, capture/encoding, and input use
 the service. A missing service preserves the user-process backend. A stopped or

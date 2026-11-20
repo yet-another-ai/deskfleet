@@ -9,9 +9,12 @@ import { pathToFileURL } from "node:url"
 const stages = [
   ...["linux", "darwin", "win32"].map(platform => ({
     script: "stage-native-viewer.ts", platform, output: "native",
-    binary: platform === "win32" ? "deskfleet-viewer.exe" : "deskfleet-viewer",
+    binaries: [platform === "win32" ? "deskfleet-viewer.exe" : "deskfleet-viewer"],
   })),
-  { script: "stage-windows-service.ts", platform: "win32", output: "windows", binary: "deskfleet-desktop-service.exe" },
+  {
+    script: "stage-windows-service.ts", platform: "win32", output: "windows",
+    binaries: ["deskfleet-desktop-service.exe", "deskfleet-maintenance-service.exe"],
+  },
 ]
 
 for (const stage of stages) {
@@ -25,9 +28,11 @@ for (const stage of stages) {
       mkdirSync(release, { recursive: true })
       const script = join(scripts, stage.script)
       copyFileSync(join(import.meta.dirname, "../apps/desktop/scripts", stage.script), script)
-      const binary = join(release, stage.binary)
+      const binaries = stage.binaries.map(name => join(release, name))
       const calls = join(root, "cargo-calls")
-      if (mode !== "missing") writeFileSync(binary, "existing binary")
+      if (mode !== "missing") {
+        for (const binary of binaries) writeFileSync(binary, "existing binary")
+      }
 
       // Run the real staging entry point with a fake compiler, without compiling
       // Rust or changing this checkout's build output. Each OS branch is isolated.
@@ -40,23 +45,25 @@ for (const stage of stages) {
           if (command === "rustc") return "fixture-target\\n"
           if (command !== "cargo") throw new Error("Unexpected command: " + command)
           writeFileSync(${JSON.stringify(calls)}, JSON.stringify(args))
-          writeFileSync(${JSON.stringify(binary)}, "freshly compiled binary")
+          for (const binary of ${JSON.stringify(binaries)}) writeFileSync(binary, "freshly compiled binary")
         }
         syncBuiltinESMExports()
         await import(${JSON.stringify(pathToFileURL(script).href)})
       `], {
         encoding: "utf8",
-        env: { ...process.env, DESKFLEET_NATIVE_PREBUILT: mode === "local" ? undefined : "1" },
+        env: { ...process.env, DESKFLEET_NATIVE_PREBUILT: mode === "local" ? undefined : "1", WINDOWS_SERVICE_SIGNING_KEY: "" },
       })
       assert.ifError(result.error)
-      const output = join(root, "apps/desktop/out", stage.output, stage.binary)
+      const outputs = stage.binaries.map(name => join(root, "apps/desktop/out", stage.output, name))
       if (mode === "missing") {
         assert.notEqual(result.status, 0)
         assert.match(result.stderr, /ENOENT/)
-        assert.equal(existsSync(output), false)
+        for (const output of outputs) assert.equal(existsSync(output), false)
       } else {
         assert.equal(result.status, 0, result.stderr)
-        assert.equal(readFileSync(output, "utf8"), mode === "local" ? "freshly compiled binary" : "existing binary")
+        for (const output of outputs) {
+          assert.equal(readFileSync(output, "utf8"), mode === "local" ? "freshly compiled binary" : "existing binary")
+        }
       }
       assert.equal(existsSync(calls), mode === "local")
     })
