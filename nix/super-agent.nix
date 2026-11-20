@@ -23,6 +23,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       (source + /pnpm-workspace.yaml)
       (source + /patches)
       (source + /tsconfig.json)
+      (source + /nix/super-agent-model-catalog.json)
       (source + /apps/super-agent/package.json)
       (source + /apps/super-agent/tsconfig.json)
       (source + /apps/super-agent/agent)
@@ -46,14 +47,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   buildPhase = ''
     runHook preBuild
     pnpm --filter @deskfleet/super-agent typecheck
-    # Eve refreshes stale model catalogues during compilation. The locked
-    # registry proxy keeps it on the supplied snapshot even outside a sandbox.
-    install -Dm644 ${source + /nix/super-agent-model-catalog.json} apps/super-agent/.eve/cache/model-catalog.json
-    NODE_USE_ENV_PROXY=1 http_proxy="http://$MITM_CACHE_ADDRESS" https_proxy="http://$MITM_CACHE_ADDRESS" \
-      pnpm --filter @deskfleet/super-agent build
-    node -e 'const { models } = require("./apps/super-agent/.output/.eve/compile/model-metadata.json");
-      const model = models.find(entry => entry.slug === "openai/gpt-5.4-mini");
-      if (!model?.providers.some(provider => provider.contextWindowTokens > 0)) throw Error("Missing Gateway context window for openai/gpt-5.4-mini")'
+    # An in-place production install leaves orphaned dev packages in .pnpm.
+    rm -rf node_modules apps/super-agent/node_modules
     CI=true pnpm --filter @deskfleet/super-agent install --prod --offline --ignore-scripts --frozen-lockfile
     runHook postBuild
   '';
@@ -65,7 +60,20 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     mkdir -p "$agent" "$out/bin"
     # Preserve pnpm's relative links from the app to the workspace virtual store.
     cp -a node_modules tsconfig.json "$workspace/"
-    cp -a apps/super-agent/{agent,package.json,tsconfig.json,node_modules,.output} "$agent/"
+    cp -a apps/super-agent/{agent,package.json,tsconfig.json,node_modules} "$agent/"
+    # Eve embeds absolute paths to the authored agent in its server bundle.
+    # Compile at the installed location so those paths survive the build.
+    install -Dm644 nix/super-agent-model-catalog.json "$agent/.eve/cache/model-catalog.json"
+    pushd "$agent"
+    # Eve refreshes stale model catalogues. Node's fetch uses the locked registry
+    # proxy so that even an unsandboxed build consumes the pinned snapshot.
+    NODE_USE_ENV_PROXY=1 http_proxy="http://$MITM_CACHE_ADDRESS" https_proxy="http://$MITM_CACHE_ADDRESS" \
+      node node_modules/eve/bin/eve.js build
+    node -e 'const { models } = require("./.output/.eve/compile/model-metadata.json");
+      const model = models.find(entry => entry.slug === "openai/gpt-5.4-mini");
+      if (!model?.providers.some(provider => provider.contextWindowTokens > 0)) throw Error("Missing Gateway context window for openai/gpt-5.4-mini")'
+    rm -rf .eve
+    popd
     makeWrapper ${nodejs}/bin/node "$out/bin/deskfleet-super-agent" \
       --chdir "$agent" --add-flags "$agent/node_modules/eve/bin/eve.js" --prefix PATH : ${nodejs}/bin
     makeWrapper ${nodejs}/bin/node "$out/bin/bootstrap" \
