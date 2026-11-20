@@ -28,8 +28,8 @@ product website and user manual.
   a global Project abstraction spanning machines.
 - The central backend is open-source Rust using Actix Web. Native capabilities
   live in Rust libraries, exposed through thin napi-rs bindings.
-- The machine daemon is a TypeScript/Node.js library. Headless machines run it as
-  a standalone SEA process. The Electron app hosts it in the app's main process:
+- The machine daemon is a TypeScript library. Headless machines run it as a
+  standalone Bun executable. The Electron app hosts it in the app's main process:
   it outlives the app's windows, which close to the tray, and stops when the app
   quits. One daemon hosts all registered Team runtimes concurrently; selecting a
   Team changes the client view, not the running registration. Do not spawn a

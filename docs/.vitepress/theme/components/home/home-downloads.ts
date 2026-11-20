@@ -1,6 +1,6 @@
 export type InstallMode = "desktop" | "headless"
 export type InstallPlatform = "macos" | "windows" | "linux"
-export type LinuxArchitecture = "x64" | "arm64"
+type InstallArchitecture = "x64" | "arm64"
 export type LinuxPackageFormat = "deb" | "rpm"
 export type DesktopInstallMethod = "homebrew" | "installer" | "archive" | "nix" | "aur" | LinuxPackageFormat
 
@@ -49,17 +49,17 @@ export function findDownload(
   release: LatestRelease | undefined,
   mode: InstallMode,
   platform: InstallPlatform,
-  linuxArchitecture: LinuxArchitecture,
+  architecture: InstallArchitecture,
   format: "installer" | "archive" = "installer",
 ): ReleaseFile | undefined {
   if (!release) return undefined
   if (format === "archive") {
     if (mode !== "desktop" || platform !== "linux") return undefined
-    const name = `deskfleet-${release.version}-linux-${linuxArchitecture}.tar.gz`
+    const name = `deskfleet-${release.version}-linux-${architecture}.tar.gz`
     return release.files.find(file => file.name === name)
   }
-  const target = platform === "macos" ? "macos-arm64" : platform === "windows" ? "windows-x64" : `linux-${linuxArchitecture}`
-  const appImageArchitecture = linuxArchitecture === "x64" ? "x86_64" : linuxArchitecture
+  const target = platform === "windows" ? "windows-x64" : `${platform}-${architecture}`
+  const appImageArchitecture = architecture === "x64" ? "x86_64" : architecture
   const installer = platform === "macos" ? "mac-arm64.dmg" : platform === "windows" ? "win-x64.exe" : `linux-${appImageArchitecture}.AppImage`
   const name = mode === "headless" ? `deskfleet-${target}.tar.gz` : `deskfleet-${release.version}-${installer}`
   return release.files.find(file => file.name === name)
@@ -68,7 +68,7 @@ export function findDownload(
 export function findLinuxPackage(
   release: LatestRelease | undefined,
   format: LinuxPackageFormat,
-  architecture: LinuxArchitecture,
+  architecture: InstallArchitecture,
 ): ReleaseFile | undefined {
   if (!release) return undefined
   const nativeArchitecture = format === "deb"

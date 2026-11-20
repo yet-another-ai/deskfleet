@@ -1,14 +1,22 @@
 import assert from "node:assert/strict"
 import { execFileSync, spawn } from "node:child_process"
 import { once } from "node:events"
-import { chmodSync, copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
-const output = join(root, "apps/daemon/dist")
+const [target, ...extra] = process.argv.slice(2)
+if (extra.length || (target !== undefined && target !== "macos-x64")) {
+  throw new Error("Usage: node scripts/smoke-daemon.ts [macos-x64]")
+}
+
+const macIntel = target === "macos-x64"
+if (macIntel && process.platform !== "darwin") throw new Error("The macOS x64 daemon smoke test must run on macOS")
+
+const output = join(root, "apps/daemon/dist", target ?? "")
 const directory = mkdtempSync(join(tmpdir(), "deskfleet-smoke-"))
 const executableName = process.platform === "win32" ? "deskfleet-daemon.exe" : "deskfleet-daemon"
 const command = join(directory, executableName)
@@ -22,7 +30,6 @@ environment.DESKFLEET_DAEMON_DIRECTORY = join(directory, "control")
 try {
   copyFileSync(join(output, executableName), command)
   chmodSync(command, 0o755)
-  cpSync(join(output, "dsh"), join(directory, "dsh"), { recursive: true })
 
   const manifest = JSON.parse(readFileSync(join(root, "apps/daemon/package.json"), "utf8")) as {
     version: string
@@ -37,17 +44,20 @@ try {
   const piManifest = JSON.parse(readFileSync(join(root, "packages/agents/pi/package.json"), "utf8")) as {
     dependencies: Record<string, string>
   }
+  const arch = macIntel ? "x64" : process.arch
   const expectedNative = {
     version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
-    arch: process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch,
+    arch: arch === "arm64" ? "aarch64" : arch === "x64" ? "x86_64" : arch,
   }
+  // Rosetta may need to translate the standalone executable on first launch.
+  const firstLaunchTimeout = macIntel && process.arch === "arm64" ? 90_000 : 15_000
   const info = JSON.parse(execFileSync(command, ["--info"], {
-    cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
-  })) as { native: typeof expectedNative; runtime: { node: string; sea: boolean } }
+    cwd: directory, env: environment, encoding: "utf8", timeout: firstLaunchTimeout,
+  })) as { native: typeof expectedNative; runtime: { name: string; version: string } }
   assert.deepEqual(info.native, expectedNative)
-  assert.equal(info.runtime.sea, true)
-  assert.equal(info.runtime.node, process.versions.node)
+  const bunVersion = execFileSync("bun", ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }).trim()
+  assert.deepEqual(info.runtime, { name: "bun", version: bunVersion })
 
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6nWQAAAAASUVORK5CYII=", "base64")
   const imageOutput = execFileSync(command, ["--deskfleet-icat"], {
@@ -76,13 +86,6 @@ try {
   })) as { agentInfo: { name: string; version: string } }
   assert.equal(piInitialization.agentInfo.name, "pi-acp")
   assert.equal(piInitialization.agentInfo.version, piManifest.dependencies["pi-acp"])
-
-  const deepseek = JSON.parse(execFileSync(command, ["agent", "deepseek-harness", "--check"], {
-    cwd: directory, env: { ...environment, HOME: directory, USERPROFILE: directory,
-      DSH_HOME: join(directory, ".dsh"), DSH_AGENTS_HOME: join(directory, ".agents"),
-      DEEPSEEK_API_KEY: "", DEEPSEEK_BASE_URL: "https://api.deepseek.com" }, encoding: "utf8", timeout: 30_000,
-  })) as { agentInfo: { name: string } }
-  assert.match(deepseek.agentInfo.name, /dsh|deepseek/iu)
 
   const child = spawn(command, ["--port", "0"], {
     cwd: directory, env: environment, stdio: ["ignore", "pipe", "pipe"],
@@ -132,7 +135,7 @@ try {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await closed.catch(() => {})
   }
-  console.log("Standalone SEA: native bridge, icat, bundled ACP adapter, readiness, health, and shutdown passed")
+  console.log("Standalone Bun: native bridge, icat, bundled ACP adapters, readiness, health, and shutdown passed")
 } finally {
   rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

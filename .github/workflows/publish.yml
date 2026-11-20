@@ -126,7 +126,7 @@ jobs:
       - name: Download server and daemon archives
         uses: actions/download-artifact@v8
         with:
-          pattern: deskfleet-{linux-x64,linux-arm64,macos-arm64,windows-x64}
+          pattern: deskfleet-{linux-x64,linux-arm64,macos-arm64,macos-x64,windows-x64}
           path: release-assets
           merge-multiple: true
 
@@ -178,6 +178,7 @@ jobs:
             deskfleet-linux-x64.tar.gz
             deskfleet-linux-arm64.tar.gz
             deskfleet-macos-arm64.tar.gz
+            deskfleet-macos-x64.tar.gz
             deskfleet-windows-x64.tar.gz
           )
           # DMG blockmaps can be generated alongside the ZIP used by the updater.

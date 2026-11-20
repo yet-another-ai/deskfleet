@@ -93,7 +93,7 @@ const packageFormat = computed(() => {
 const primary = computed(() => {
   const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
     ? findLinuxPackage(release.value, method.value, "x64")
-    : findDownload(release.value, mode.value, platform.value, "x64", downloadFormat.value)
+    : findDownload(release.value, mode.value, platform.value, platform.value === "macos" ? "arm64" : "x64", downloadFormat.value)
   return {
     title: downloadTitle.value,
     detail: `${packageFormat.value} · ${platform.value === "macos" ? "Apple Silicon" : "x64"}`,
@@ -102,18 +102,18 @@ const primary = computed(() => {
   }
 })
 const alternatives = computed(() => {
-  if (platform.value === "linux") {
-    const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
-      ? findLinuxPackage(release.value, method.value, "arm64")
-      : findDownload(release.value, mode.value, "linux", "arm64", downloadFormat.value)
-    return [{
-      title: downloadTitle.value,
-      detail: `${packageFormat.value} · arm64`,
-      href: file?.url ?? releasesPage,
-      file: file && formatSize(file.size, formatLocale.value),
-    }]
-  }
-  return []
+  const macos = platform.value === "macos"
+  if (platform.value !== "linux" && !(macos && mode.value === "headless")) return []
+  const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
+    ? findLinuxPackage(release.value, method.value, "arm64")
+    : findDownload(release.value, mode.value, platform.value, macos ? "x64" : "arm64", downloadFormat.value)
+  if (macos && !file) return []
+  return [{
+    title: downloadTitle.value,
+    detail: `${packageFormat.value} · ${macos ? "Intel" : "arm64"}`,
+    href: file?.url ?? releasesPage,
+    file: file && formatSize(file.size, formatLocale.value),
+  }]
 })
 onMounted(() => {
   void loadRelease()

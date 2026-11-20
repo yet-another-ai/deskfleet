@@ -6,7 +6,8 @@ import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { configureDshRuntime, sourceDshRuntime } from "@deskfleet/dsh-runtime"
 import { AgentProviders } from "./agent-providers.ts"
-import { deepseekHarnessProcess } from "@deskfleet/agent-deepseek-harness"
+import { configureExternalDeepSeekHarness, deepseekHarnessEnvironment, deepseekHarnessProcess } from "@deskfleet/agent-deepseek-harness"
+import { probeProvider } from "./provider-setup.ts"
 
 test("bundled DeepSeek provider loads the session workspace dotenv before ACP initialization", { timeout: 45_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-deepseek-workspace-"))
@@ -61,7 +62,52 @@ test("bundled DeepSeek provider loads the session workspace dotenv before ACP in
   } finally { await connection.close() }
 })
 
-test("an explicit DeepSeek executable retains its existing launch directory behavior", () => {
+test("an explicit DeepSeek executable starts in the session worktree", async () => {
   const config = { name: "External", binaryPath: "/tools/dsh", cwd: "/workspace", env: {} }
-  assert.deepEqual(deepseekHarnessProcess(config), { command: "/tools/dsh", args: ["--profile", "acp"], env: {} })
+  assert.deepEqual(await deepseekHarnessProcess(config), { command: "/tools/dsh", args: ["--profile", "acp"], env: {}, cwd: "/workspace" })
+})
+
+test("headless DeepSeek discovers the installed Desktop launchers and scopes the default Harness home", async t => {
+  configureExternalDeepSeekHarness()
+  t.after(() => configureExternalDeepSeekHarness(false))
+
+  const registration = join("registration", "team")
+  assert.deepEqual(deepseekHarnessEnvironment({ env: {} }, registration), { DSH_HOME: join(registration, "deepseek-harness") })
+  assert.deepEqual(deepseekHarnessEnvironment({ binaryPath: "/custom/dsh", env: {} }, registration), {})
+  assert.deepEqual(deepseekHarnessEnvironment({ env: { DSH_HOME: "/custom/home" } }, registration), { DSH_HOME: "/custom/home" })
+
+  const input = { template: "deepseek-harness" as const, name: "DeepSeek", inheritShellEnvironment: false, env: {} }
+  for (const [platform, arch, home, launcher, pathLauncher] of [
+    ["darwin", "arm64", "/Users/operator", "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh", "/tools/dsh"],
+    ["win32", "x64", "C:\\Users\\operator", "C:\\Agent Tools\\DeepSeek Harness\\resources\\runtime\\cli\\bin\\dsh.cmd", "C:\\Tools\\dsh.cmd"],
+  ] as const) {
+    const probe = await probeProvider(input, {
+      platform, arch, home, cwd: home,
+      env: { PATH: platform === "win32" ? "C:\\Tools" : "/tools" },
+      executable: async path => path === launcher || path === pathLauncher,
+      run: async (command, args) => {
+        if (command.endsWith("powershell.exe")) {
+          assert.match(args.join(" "), /InstallLocation/u)
+          return { code: 0, stdout: "C:\\Agent Tools\\DeepSeek Harness\r\n", stderr: "" }
+        }
+        assert.equal(command, launcher, "prefer the official Desktop launcher to a command on PATH")
+        return { code: 0, stdout: args[0] === "--version" ? "0.2.2-rc.5" : "Usage: dsh", stderr: "" }
+      },
+    })
+    assert.equal(probe.status, "found")
+    assert.equal(probe.binaryPath, undefined, "keep discovered launchers as the scoped default when saving settings")
+    assert.equal(probe.loginAvailable, false)
+    assert.equal(probe.version, "0.2.2-rc.5")
+  }
+  const missing = await probeProvider(input, { platform: "linux", env: { PATH: "" }, executable: async () => false })
+  assert.equal(missing.status, "missing")
+  assert.match(missing.installMessage ?? "", /npm install -g @deepseek-ai\/dsh@0\.2\.2-rc\.5/u)
+
+  const fallback = await probeProvider(input, {
+    platform: "darwin", arch: "arm64", home: "/Users/operator", cwd: "/Users/operator",
+    env: { PATH: "/tools" }, executable: async path => path.startsWith("/Applications/") || path === "/tools/dsh",
+    run: async command => ({ code: command === "/tools/dsh" ? 0 : 1, stdout: "dsh 0.2.2-rc.5", stderr: "" }),
+  })
+  assert.equal(fallback.status, "found", "an unusable Desktop launcher must not mask a working dsh on PATH")
+  assert.equal(fallback.version, "dsh 0.2.2-rc.5")
 })

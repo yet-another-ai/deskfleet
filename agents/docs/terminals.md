@@ -303,9 +303,9 @@ terminal ID and transcript; transport selection never creates another shell.
 ## Inline images
 
 New interactive shells receive an `icat` command through a daemon-managed
-directory on their `PATH`. The launcher uses the bundled runtime in source,
-standalone SEA, and Electron installations; it does not require another Node.js
-installation. For Zsh, including the default macOS shell, daemon-managed
+directory on their `PATH`. The launcher uses Node.js for source builds, the
+standalone Bun executable for headless installations, and Electron for Desktop.
+For Zsh, including the default macOS shell, daemon-managed
 `ZDOTDIR` wrappers load the user's startup files in their normal order and
 move the helper directory to the front of `PATH` after startup, keeping a single
 entry even when system startup reorders the inherited path. This keeps `icat` available when

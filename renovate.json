@@ -43,7 +43,7 @@
       "enabled": false
     },
     {
-      "description": "The standalone daemon targets Node 24; update its runtime and SEA target together.",
+      "description": "Keep Node types aligned with the Node 24 source and Electron runtime baseline.",
       "matchDatasources": ["npm"],
       "matchPackageNames": ["@types/node"],
       "allowedVersions": ">=24 <25"

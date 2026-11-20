@@ -13,7 +13,7 @@ backend APIs. Remote Agent interaction, Git, files, terminals, and desktop
 streams use WebRTC. Electron uses a direct authenticated channel for Agent, Git,
 and terminal messages on its registered local machine.
 
-The daemon runs from source, as a SEA executable, or inside the Electron main
+The daemon runs from source, as a standalone Bun executable, or inside the Electron main
 process. It owns ACP providers, the shared backlog, steering, permissions,
 Session archive/restore, and native media. Electron retains a sandboxed renderer
 and stays in the tray after its windows close. The local discovery socket serves
@@ -25,7 +25,7 @@ transports to the account client and hosted daemon's backend connections. Both
 follow the system proxy configuration, including PAC, without proxy environment
 variables. Account and machine authentication remain bearer-based in the main
 process; these connections do not use the renderer's session cookies. Web clients
-use browser networking, and the standalone daemon uses Node's networking stack.
+use browser networking, and the standalone daemon uses Bun's networking stack.
 
 The Linux, Windows, and macOS desktop clients open remote desktops in a separate
 native viewer process by default. Native Android/iOS clients use their native
@@ -67,7 +67,7 @@ flowchart LR
 | Component | Responsibility | Implementation |
 | --- | --- | --- |
 | Central server | Team membership, machine registration, catalog, stored session history, presence, access control, signaling, and optional Web static hosting | Rust / Actix Web |
-| Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; Node.js SEA or bundled Electron host |
+| Machine daemon | Workspace configuration, agent supervision, ACP clients, terminals, Git access, and history synchronization | TypeScript library; standalone Bun or bundled Electron host |
 | Native libraries | OS integration and performance-sensitive transport, capture, input, and media work | Rust with napi-rs bindings |
 | Desktop application | User interface, platform integration, and daemon installation/management | Electron / TypeScript |
 | Native desktop viewer | Default independent remote desktop window for desktop clients, receiving media, input forwarding, and bounded decoded-frame queue | Rust / NSH / GPUI; platform H.264, HEVC, and AV1 decoding |
@@ -960,7 +960,7 @@ Existing installs retain their saved preference. The app bundles
 `@deskfleet/daemon` and starts it in its own main process, with the bundled native addon and runtime. The daemon's lifetime is the
 app's: it keeps running while the app sits in the tray with no windows, and the
 app waits for its cleanup before exiting. The app never spawns a separate daemon
-process. The standalone Node.js SEA is the headless distribution of the same
+process. The standalone Bun executable is the headless distribution of the same
 daemon and runs independently of any desktop app.
 
 On Windows, an optional Rust desktop service supplies access to an already
@@ -1230,14 +1230,17 @@ method during startup. Settings uses Tencent's standalone installer and a
 separate login terminal, so installation does not require system Node.js/npm.
 The CodeBuddy edition switch writes the existing provider environment setting:
 `internal` for China and `public` for international, shared by setup and sessions.
-The DeepSeek Harness template launches the bundled CLI as `dsh --profile acp`;
-an explicit binary path selects an external CLI. `packages/dsh-runtime` owns
-source and packaged launch resolution, deployment, and runtime smoke checks.
-Source launches resolve its installed dependency tree without staging. Desktop
-runs dsh in an Electron Node-mode child process and ships the complete pinned
-package tree in resources; standalone releases carry that tree and a private
-Node executable beside the SEA daemon. The immutable runtime is shared by
-registrations, while provider environment overrides remain registration-owned.
+The DeepSeek Harness template launches `dsh --profile acp`. The headless
+daemon discovers an installed CLI on the executing machine. An explicit binary
+path selects a specific external CLI. DeskFleet Desktop runs bundled dsh in an
+Electron Node-mode child process and ships the pinned package tree in resources.
+`packages/dsh-runtime` owns the Desktop launch, deployment, and runtime smoke
+checks. The immutable runtime is shared by registrations, while provider
+environment overrides remain registration-owned.
+Automatic discovery on headless daemons supplies a registration-local
+`DSH_HOME` unless the provider has configured one explicitly. An explicit
+binary path leaves the external CLI's environment and credentials under
+operator control.
 Bundled login, credential detection, and ACP launches share a credential file
 under the registration directory. Their Harness home, profiles, and persisted
 session history stay in their existing locations. An explicit provider `DSH_HOME`
@@ -1264,9 +1267,9 @@ initialization, session creation and forking, prompts, cancellation, and session
 The SDK's unstable profile supplies `session/fork`; the negotiated ACP protocol
 version remains `1`, and forking requires the provider's advertised capability.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
-child processes; the SEA executable reuses its bundled Node runtime.
+child processes; the headless executable reuses its embedded Bun runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the bundled DeepSeek runtime or the template default (`codex`, `claude`,
+paths use the host's DeepSeek runtime selection or the template default (`codex`, `claude`,
 `agent`, `grok`, `pi`, `omp`, `codebuddy`, `agy`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
@@ -1820,11 +1823,11 @@ core-crate, binding, and TypeScript-service structure. Native operations must
 avoid blocking Node's event loop. Keep capture and encoding data in native code
 where passing frames through JavaScript would add unnecessary copies.
 
-Node.js SEA packages the daemon and native addon with the pinned Node runtime.
-The addon is extracted to a private temporary directory before loading. See the
+Bun packages the daemon and native addon with the pinned runtime.
+Bun loads the embedded addon through Node-API. See the
 [daemon guide](../../apps/daemon/README.md) for packaging and platform support.
 Desktop builds bundle the same daemon library with Electron and an unpacked
-native addon. Neither distribution requires an external Node installation.
+native addon. Both distributions include their JavaScript runtime.
 Agent adapters and external tools may have their own runtime requirements.
 
 Desktop capability is optional and initialized on demand. Missing displays or
@@ -1911,7 +1914,7 @@ work. Linux Wayland and X11 capture share the existing GStreamer encoding path.
 - [ACP capabilities](https://agentclientprotocol.com/protocol/v1/initialization)
 - [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup)
 - [WebRTC connectivity](https://webrtc.org/getting-started/peer-connections)
-- [Node.js SEA native addons](https://nodejs.org/api/single-executable-applications.html#using-native-addons-in-the-injected-main-script)
+- [Bun embedded Node-API addons](https://bun.com/docs/compiler/executables#embed-n-api-addons)
 - [Node-API ABI boundaries](https://nodejs.org/api/n-api.html#implications-of-abi-stability)
 - [Electron sandboxing](https://www.electronjs.org/docs/latest/tutorial/sandbox)
 - [Heron napi crate](https://github.com/minori-live/heron/blob/main/crates/dsp-node/Cargo.toml)

@@ -62,7 +62,10 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 对于没有桌面环境的远程工作站、虚拟机或构建服务器，可以运行独立的 `deskfleet-daemon` 单文件可执行程序（Windows 上为 `deskfleet-daemon.exe`，建议使用 PowerShell 7 `pwsh`）。
 
-1. 从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载对应平台的无桌面 daemon 压缩包（`deskfleet-macos-arm64.tar.gz`、`deskfleet-linux-x64.tar.gz`、`deskfleet-linux-arm64.tar.gz` 或 `deskfleet-windows-x64.tar.gz`），或从源码打包：
+1. 从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载对应平台的无桌面 daemon 压缩包。
+   Apple Silicon Mac 使用 `deskfleet-macos-arm64.tar.gz`，Intel Mac 使用 `deskfleet-macos-x64.tar.gz`。
+   Linux 版本为 `deskfleet-linux-x64.tar.gz` 和 `deskfleet-linux-arm64.tar.gz`，Windows 版本为 `deskfleet-windows-x64.tar.gz`。
+   也可以运行以下命令从源码打包。
    ```sh
    mise run daemon:pack
    ```

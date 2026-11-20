@@ -55,9 +55,9 @@ The napi-rs CLI builds `deskfleet.node` and generates `bindings.d.ts`. Keep the
 declarations in source control and regenerate them when the Rust exports change;
 the binary is ignored.
 
-The TypeScript loader calls `process.dlopen()` on the built addon. For a SEA
-executable it instead extracts the embedded `deskfleet.node` asset into a private
-temporary directory before loading.
+The TypeScript loader calls `process.dlopen()` on the built addon for Node.js and
+Electron. The Bun standalone build embeds the same `deskfleet.node` addon and
+loads it through Bun's Node-API support.
 
 See the [daemon guide](../../apps/daemon/README.md) for packaging and the
 [CI workflow](../../agents/docs/ci.md) for platform checks.

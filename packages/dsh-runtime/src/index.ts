@@ -1,6 +1,5 @@
 import { createRequire } from "node:module"
 import { dirname, join } from "node:path"
-import { isSea } from "node:sea"
 
 export interface DshHost {
   command: string
@@ -21,9 +20,7 @@ export function sourceDshRuntime(resolveFrom: string | URL = import.meta.url, ho
 }
 
 /** Packaged applications keep the upstream plugin tree outside their code bundle. */
-export function bundledDshRuntime(directory: string, host: DshHost = {
-  command: join(directory, "bin", process.platform === "win32" ? "node.exe" : "node"),
-}): DshRuntime {
+export function bundledDshRuntime(directory: string, host: DshHost): DshRuntime {
   return { ...host, entryPoint: join(directory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
     helperEntryPoint: join(directory, "helper.js") }
 }
@@ -55,7 +52,7 @@ export function dshAcpProcess(env?: NodeJS.ProcessEnv): DshHost {
 }
 
 function runtimeProcess(action: "login" | "status" | "acp" | undefined, args: readonly string[], env?: NodeJS.ProcessEnv): DshHost {
-  const runtime = configuredRuntime ?? (isSea() ? bundledDshRuntime(join(dirname(process.execPath), "dsh")) : sourceDshRuntime())
+  const runtime = configuredRuntime ?? sourceDshRuntime()
   return {
     command: runtime.command,
     args: [...runtime.args ?? [], ...action ? [runtime.helperEntryPoint, action, runtime.entryPoint] : [runtime.entryPoint, ...args]],

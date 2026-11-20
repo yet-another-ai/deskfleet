@@ -30,9 +30,6 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
-      postject:
-        specifier: 1.0.0-alpha.6
-        version: 1.0.0-alpha.6
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -17708,7 +17705,8 @@ snapshots:
 
   commander@7.2.0: {}
 
-  commander@9.5.0: {}
+  commander@9.5.0:
+    optional: true
 
   compare-version@0.1.2: {}
 
@@ -19799,6 +19797,7 @@ snapshots:
   postject@1.0.0-alpha.6:
     dependencies:
       commander: 9.5.0
+    optional: true
 
   potpack@1.0.2: {}
 

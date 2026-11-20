@@ -1,7 +1,7 @@
 # DeskFleet daemon
 
 `@deskfleet/daemon` is a TypeScript library, hosted inside Electron's main process
-or packaged as a standalone SEA executable for headless machines. It owns local
+or packaged as a standalone Bun executable for headless machines. It owns local
 Workspace configuration, ACP providers, Session execution, terminals, native
 WebRTC, and the authoritative SQLite journal. The central backend authorizes
 management operations and stores queryable catalog/history replicas. The daemon's
@@ -183,7 +183,7 @@ Wayland access never falls back to Xwayland. See
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and
 closes windows to the tray; quitting the application stops its daemon. Standalone
-SEA installations run independently. SIGINT/SIGTERM close listeners, providers,
+Standalone installations run independently. SIGINT/SIGTERM close listeners, providers,
 peers, and PTYs, preserve history, and release discovery after cleanup.
 
 Local IPC clients treat an end-of-stream as a disconnect even when outgoing
@@ -214,7 +214,7 @@ The daemon connects installed CLIs to ACP through the
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp),
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp),
 and [Pi ACP adapter](https://github.com/svkozak/pi-acp). These are pinned pnpm
-dependencies and ship inside the SEA executable. Install and authenticate the
+dependencies and ship inside the headless executable. Install and authenticate the
 CLI before sending prompts; the daemon uses that CLI's credentials.
 
 The desktop **New session** flow creates a persistent Session and its isolated
@@ -267,7 +267,7 @@ Agent configuration uses these common options:
 | Option | Meaning |
 | --- | --- |
 | `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `CodeBuddy Code`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `codebuddy`, or `agy` on PATH |
+| `--binary-path <executable>` | Provider executable; omitted or empty discovers an installed DeepSeek Harness CLI, or uses `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `codebuddy`, or `agy` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -314,9 +314,23 @@ on for China or off for international accounts; it sets
 session operations. The one-shot CLI can set the same variable through `--env`.
 Detection leaves credential status unknown, and **Test Connection** checks
 session creation without invoking interactive ACP authentication.
-DeepSeek Harness is native ACP: the daemon runs the bundled CLI, or an explicit
-external binary, using `--profile acp`
-(`dsh acp` is the same launch). The bundle's **Log in** action opens a terminal
+DeepSeek Harness speaks ACP over stdio through `dsh --profile acp`.
+On standalone machines, install the
+[official DeepSeek Harness desktop application](https://www.deepseek.com/en/download/)
+on macOS or Windows, or install the CLI on Linux with Node.js 24.9+ and
+`npm install -g @deepseek-ai/dsh@0.2.2-rc.5`. Install it on the machine running the
+daemon. The official application's launcher works while its window is closed.
+On macOS, the standard launcher is
+`/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh`.
+On Windows, it is `resources\runtime\cli\bin\dsh.cmd` under the
+application's installation directory. Set an explicit executable path in
+**Advanced** for a custom installation or a CLI outside the daemon's PATH.
+An automatically discovered CLI uses a registration-local Harness home unless
+the provider sets `DSH_HOME`. The installed application's default home is
+separate. Configure `DEEPSEEK_API_KEY` in **Advanced**, or set up an account and
+select the account model in that CLI's ACP profile.
+
+DeskFleet Desktop bundles Harness on its Electron Node host. Its **Log in** action opens a terminal
 with a browser authorization URL. On a remote machine, paste the browser's full
 loopback callback URL into that terminal if the browser cannot reach it directly.
 The official Harness account services own the PKCE exchange and credential save.
@@ -327,19 +341,12 @@ a configured `DEEPSEEK_API_KEY` takes precedence and keeps `deepseek-official`
 (with optional `DEEPSEEK_BASE_URL`). Discovery checks credential availability,
 not remote validity. Discovery and login read provider environment overrides,
 inherited variables, the Harness-home `.env`, and saved credentials. Project
-`.env` files are loaded only when launching bundled ACP in the session's primary
+`.env` files are loaded when launching ACP in the session's primary
 worktree directory, which is supplied before ACP initialization. Connection tests
 use an empty temporary directory.
-The ACP server does not advertise interactive authenticate
-methods. Node.js, npm, and a global dsh installation are unnecessary. External
-executables retain their own credential setup; clear the path to use bundled
-login. Source launches use
-the installed dependency tree with the running Node executable, without staging.
-Desktop uses Electron's Node mode; standalone releases include a private Node
-runtime. `packages/dsh-runtime` owns launch resolution, deployment, and smoke
-checks. `mise run dsh:stage` prepares `apps/daemon/dist/dsh` for standalone
-distribution; `mise run dsh:smoke` verifies that payload. To check the installed
-source runtime, run `mise exec -- node packages/dsh-runtime/smoke.ts`.
+The ACP server does not advertise interactive authenticate methods.
+An explicit external executable uses its own credential configuration.
+`packages/dsh-runtime` owns DeskFleet Desktop's bundled runtime and smoke checks.
 
 Antigravity uses native ACP: the daemon runs `` `<binary> acp` `` with `agy` as
 the default executable. Settings installs the CLI through Google's official
@@ -372,18 +379,18 @@ the pinned adapter provides its corresponding behavior upstream.
 
 The Pi adapter is pinned to `0.0.34` with
 [`patches/pi-acp@0.0.34.patch`](../../patches/pi-acp@0.0.34.patch). The patch reuses
-its static `spawnSync` import instead of top-level await so it can be bundled for
-SEA, and imports its package metadata statically to preserve its identity in
-bundles. It also retains the agent handler directly so closing the adapter
+its static `spawnSync` import instead of top-level await and imports its package
+metadata statically to preserve its identity in bundles. It also retains the
+agent handler directly so closing the adapter
 terminates its Pi subprocesses; the upstream shutdown code accesses a handler
 that the ACP SDK does not expose. The patch hands the session's MCP configuration
 to a Pi extension through a private temporary directory and removes it when the
 Pi subprocess or adapter exits.
 
-Source and SEA launches route adapter subprocesses through `--codex-acp`,
-`--claude-agent-acp`, or `--pi-acp` on their own entry point. The Claude adapter's published
-entry uses top-level await, which the CommonJS SEA bundle cannot contain, so
-`--claude-agent-acp` starts its exported stdio server directly. The Electron daemon configures its bundled main entry as the
+Source and standalone launches route adapter subprocesses through `--codex-acp`,
+`--claude-agent-acp`, or `--pi-acp` on their own entry point.
+`--claude-agent-acp` starts the adapter's exported stdio server directly.
+The Electron daemon configures its bundled main entry as the
 adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.
 That entry routes to the bundled adapter before loading Electron UI or daemon
 lifecycle code. Adapter processes use the same installed binary selection and
@@ -404,9 +411,7 @@ mise run daemon:smoke
 
 The build embeds JavaScript and the native addon in
 `apps/daemon/dist/deskfleet-daemon` (`deskfleet-daemon.exe` on Windows). This file
-runs without a system Node installation or adjacent addon. Keep the generated
-`apps/daemon/dist/dsh/` directory beside it to use bundled DeepSeek Harness;
-release archives include that directory and its licenses:
+runs without a system Node installation or adjacent addon.
 
 ```sh
 ./apps/daemon/dist/deskfleet-daemon --info
@@ -415,13 +420,21 @@ release archives include that directory and its licenses:
 
 Use `mise run daemon:pack` to build just the standalone daemon.
 
-Packaging uses the mise-selected Node executable, esbuild, and postject. macOS
-builds receive an ad-hoc signature; release signing and notarization are not
-configured.
+Packaging uses the mise-selected Bun to compile the headless entry point and
+embed the native addon. macOS builds receive an ad-hoc signature.
 
 The native addon is extracted into a private temporary directory before loading.
 Unix removes it after loading. Windows attempts removal on exit, but mapped DLLs
 may remain until the temporary directory is cleaned.
 
-Supported platforms are Linux x64/arm64, macOS arm64, and Windows x64. See the
-[CI guide](../../agents/docs/ci.md) for build artifacts and smoke tests.
+Supported platforms are Linux x64/arm64, macOS arm64/x64, and Windows x64.
+On Apple Silicon, use the following commands to cross-compile the Intel server
+and daemon and smoke-test the daemon with Rosetta installed:
+
+```sh
+mise run build:macos-x64
+mise run daemon:smoke macos-x64
+```
+
+The Intel daemon is written to `apps/daemon/dist/macos-x64/deskfleet-daemon`.
+See the [CI guide](../../agents/docs/ci.md) for build artifacts and smoke tests.

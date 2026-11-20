@@ -5,8 +5,15 @@ import {
   type ProviderSetupContext,
 } from "@deskfleet/agent-core"
 import { dshAccountProcess, dshAcpProcess, dshRuntimeProcess } from "@deskfleet/dsh-runtime"
+import { DEEPSEEK_HARNESS_IDENTITY, externalDshInstallMessage, externalDshLaunchContext, findExternalDsh } from "./external.ts"
 
 const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
+let externalDefault = false
+
+/** The standalone daemon uses the machine's Harness installation. */
+export function configureExternalDeepSeekHarness(enabled = true): void {
+  externalDefault = enabled
+}
 
 /**
  * DeepSeek Harness starts its automation-only ACP server with this profile.
@@ -14,9 +21,15 @@ const BUNDLED_DSH_PROBE_TIMEOUT_MS = 30_000
  */
 export const DEEPSEEK_HARNESS_ACP_ARGUMENTS = ["--profile", "acp"] as const
 
-export function deepseekHarnessProcess(config: AgentConfig): AgentProcess {
-  return config.binaryPath
-    ? launchProviderCommand(config.binaryPath, [...DEEPSEEK_HARNESS_ACP_ARGUMENTS], config.env)
+export async function deepseekHarnessProcess(config: AgentConfig, signal?: AbortSignal): Promise<AgentProcess> {
+  let binary = config.binaryPath
+  if (!binary && externalDefault) {
+    const ctx = externalDshLaunchContext(config, signal)
+    binary = (await findExternalDsh(ctx, signal)).binary
+    if (!binary) throw new Error(`DeepSeek Harness is unavailable. ${externalDshInstallMessage(ctx)}`)
+  }
+  return binary
+    ? { ...launchProviderCommand(binary, [...DEEPSEEK_HARNESS_ACP_ARGUMENTS], config.env), cwd: config.cwd }
     : { ...dshAcpProcess(config.env), cwd: config.cwd }
 }
 
@@ -27,12 +40,12 @@ export function deepseekHarnessProcess(config: AgentConfig): AgentProcess {
  */
 export const deepseekHarnessProvider: AgentProvider = {
   id: "deepseek-harness",
-  connect(config, client) {
-    return connectAcpProcess(deepseekHarnessProcess(config), client)
+  async connect(config, client) {
+    return connectAcpProcess(await deepseekHarnessProcess(config, client.signal), client)
   },
 }
 
-/** Scope new credentials without relocating Harness's existing profiles and session history. */
+/** Give each registration its own credentials when DeskFleet chooses the launcher. */
 export function deepseekHarnessEnvironment(
   provider: { binaryPath?: string; env: Record<string, string> },
   directory?: string,
@@ -41,7 +54,9 @@ export function deepseekHarnessEnvironment(
   if (provider.binaryPath || !directory) return { ...provider.env }
   const value = (name: string) => Object.entries(provider.env).findLast(([key]) => platform === "win32" ? key.toUpperCase() === name : key === name)?.[1]
   if (value("DSH_HOME")) return { ...provider.env }
-  return { ...provider.env, DESKFLEET_DSH_CREDENTIALS_PATH: value("DESKFLEET_DSH_CREDENTIALS_PATH") || join(directory, "deepseek-harness", ".credentials.yaml") }
+  const home = join(directory, "deepseek-harness")
+  if (externalDefault) return { ...provider.env, DSH_HOME: home }
+  return { ...provider.env, DESKFLEET_DSH_CREDENTIALS_PATH: value("DESKFLEET_DSH_CREDENTIALS_PATH") || join(home, ".credentials.yaml") }
 }
 
 async function deepseekBundledAuthentication(ctx: ProviderSetupContext): Promise<ProviderProbeResult["auth"]> {
@@ -64,11 +79,20 @@ export const deepseekHarnessPlugin: AgentProviderPlugin<"deepseek-harness"> = {
   resolveEnvironment: deepseekHarnessEnvironment,
   setup: {
     probeTimeoutMs: input => (!input.binaryPath ? BUNDLED_DSH_PROBE_TIMEOUT_MS : undefined),
-    identityPattern: /\bdsh\b|DeepSeek Harness/iu,
+    identityPattern: DEEPSEEK_HARNESS_IDENTITY,
     // An explicit external dsh keeps its own launch and authentication contract.
     loginAvailableForBinary: false,
     async probeCustom(input, ctx, base) {
       if (input.binaryPath) return undefined
+      if (externalDefault) {
+        const { binary, version, invalid } = await findExternalDsh(ctx)
+        // Saving a discovered path would turn the default into an explicit override and lose registration scoping.
+        return binary
+          ? { ...base, status: "found", version, auth: ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown" }
+          : invalid
+            ? { ...base, status: "invalid", message: "No detected executable identified itself as DeepSeek Harness. Check the installation or select its dsh launcher." }
+            : { ...base, status: "missing" }
+      }
       const launch = dshRuntimeProcess(["--version"], ctx.env)
       try {
         // Both read-only checks must fit within the same detection deadline.
@@ -89,10 +113,12 @@ export const deepseekHarnessPlugin: AgentProviderPlugin<"deepseek-harness"> = {
       // DeepSeek Harness authenticates through DEEPSEEK_API_KEY (or a stored credential the CLI resolves).
       return ctx.env.DEEPSEEK_API_KEY ? "authenticated" : "unknown"
     },
-    async resolveInstaller() {
+    async resolveInstaller(ctx) {
+      if (externalDefault) return externalDshInstallMessage(ctx)
       return "DeepSeek Harness is included with DeskFleet. Reinstall DeskFleet to repair its runtime, or select your own executable."
     },
     resolveLogin(_binary, input, probeResult, ctx) {
+      if (externalDefault) throw new Error("Configure authentication in the external DeepSeek Harness or set DEEPSEEK_API_KEY for this provider.")
       if (input.binaryPath) throw new Error("Use the bundled DeepSeek Harness to sign in, or configure credentials for your external CLI.")
       if (probeResult.status !== "found") throw new Error("The bundled DeepSeek runtime is unavailable. Reinstall DeskFleet before signing in.")
       return interactiveProviderProcess(dshAccountProcess("login", ctx.env), ctx.platform, true)

@@ -71,7 +71,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   only Electron a fixed API origin.
   Its shared Rust task runs one napi-driven Cargo workspace build for the server,
   native addon, desktop viewer, and Windows service, using the host target.
-  SEA and Electron bundling consume that addon without compiling it again.
+  Bun and Electron bundling consume that addon without compiling it again.
   CI packaging sets `DESKFLEET_NATIVE_PREBUILT=1` so staging copies the viewer
   and service from that same workspace build instead of invoking Cargo again.
   A missing executable fails packaging. Local packaging builds these executables
@@ -92,7 +92,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
   overriding rustc's `/DEBUG` default so vendored OpenSSL does not require a PDB
   during release linking. Each target packages and verifies the
-  standalone SEA daemon.
+  standalone Bun daemon.
   Build runs on `ubuntu-24.04` and `ubuntu-24.04-arm`, while every other Linux
   job uses the newest hosted image, `ubuntu-26.04` or `ubuntu-26.04-arm`. The
   build image sets the glibc floor of the released binaries, and
@@ -145,6 +145,11 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
 server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
 `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+Full builds run a separate `Build (macos-x64)` job on Apple Silicon in parallel
+with `Build (macos-arm64)`. The Intel job cross-compiles the x86_64 Rust server
+and a Bun daemon that embeds the x86_64 native addon. It checks the binary
+architectures and runs the Intel daemon smoke test under Rosetta before
+uploading `deskfleet-macos-x64.tar.gz` for Publish.
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
 Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
 The Linux desktop archive names include the app version, such as
@@ -157,22 +162,20 @@ as described in the Web guide. Publish includes this same-run Web artifact in
 both server image architectures. The artifact remains available for independent
 static hosting for 14 days; it is not added to the GitHub Release archives.
 
-The standalone archive includes `dsh/` beside the daemon executable, containing
-the pinned DeepSeek Harness package tree, private Node executable, and licenses.
-The build task prepares this payload separately from SEA bundling through
-`dsh:stage`. Desktop builds prepare the package tree in `out/dsh` and smoke-test
-it with Electron before Vite runs; packaging places that tree in resources
-without a private Node executable. Desktop launches dsh using Electron's Node
-mode. `packages/dsh-runtime` owns both deployment paths and smoke checks.
+Headless agents use the DeepSeek Harness CLI installed on the executing machine.
+Desktop builds prepare the pinned package tree in `out/dsh` and smoke-test it
+with Electron before Vite runs. Packaging places that tree in resources, and
+Desktop launches dsh using Electron's Node mode. `packages/dsh-runtime` owns
+this deployment and its smoke checks.
 Staging uses an offline production deploy from the workspace lockfile and
 preserves upstream plugins, native modules, and subprocess helpers.
 After desktop packaging, `desktop:smoke-packaged-dsh` runs the installed
 executable against its resources with the configured Electron fuses. This
 also checks that the package tree was copied and no private Node was included.
 
-Smoke tests copy the daemon executable and `dsh/` to an unrelated temporary directory,
-clear Node's environment overrides and PATH, then check native information,
-the bundled ACP adapter, the DeepSeek ACP handshake, startup, and the health
+Smoke tests copy the daemon executable to an unrelated temporary directory,
+clear Node's environment overrides and PATH, then check the embedded Bun version, native information,
+the bundled ACP adapters, startup, and the health
 endpoint. Unix tests also require clean signal-driven shutdown; Windows tests terminate the process forcibly.
 
 ## Product website deployment

@@ -12,6 +12,7 @@ apm = "0.35.0"
 java = "temurin-21.0.13+9.0.LTS"
 rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"], targets = ["aarch64-linux-android"] }
 node = "24.22.1"
+bun = "1.4.5"
 pnpm = "12.15.0"
 "npm:@informalsystems/quint" = "0.33.1"
 "cargo:cargo-shear" = "1.14.0"
@@ -118,8 +119,20 @@ depends = ["check:scripts", "check:daemon", "ci:check:desktop-main", "check:rust
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
-depends = ["rust:release", "web:build", "dsh:stage"]
-run = "node scripts/build-sea.ts"
+depends = ["rust:release", "web:build"]
+run = "node scripts/build-daemon.ts"
+
+[tasks."build:macos-x64"]
+description = "Cross-compile the Intel macOS server and standalone daemon on Apple Silicon"
+depends = ["install"]
+run = [
+  'test "$(uname -sm)" = "Darwin arm64"',
+  "rustup target add x86_64-apple-darwin",
+  "cargo build --release --locked --target x86_64-apple-darwin --target-dir target -p deskfleet-node -p deskfleet-server",
+  "mkdir -p apps/daemon/dist/macos-x64",
+  "cp target/x86_64-apple-darwin/release/libdeskfleet_node.dylib apps/daemon/dist/macos-x64/deskfleet.node",
+  "node scripts/build-daemon.ts macos-x64",
+]
 
 [tasks."rust:release"]
 hide = true
@@ -152,16 +165,6 @@ description = "Run the standalone headless daemon from TypeScript"
 depends = ["native:debug"]
 run = "node apps/daemon/src/main.ts"
 
-[tasks."dsh:stage"]
-description = "Prepare DeepSeek Harness and private Node for the standalone distribution"
-depends = ["install"]
-run = "node packages/dsh-runtime/stage.ts node apps/daemon/dist/dsh"
-
-[tasks."dsh:smoke"]
-description = "Verify bundled DeepSeek Harness without system Node, npm, or dsh"
-depends = ["dsh:stage"]
-run = "node packages/dsh-runtime/smoke.ts apps/daemon/dist/dsh"
-
 [tasks."desktop:smoke-dsh"]
 description = "Verify DeepSeek Harness on Electron's Node host without staging or system Node"
 depends = ["install"]
@@ -172,12 +175,12 @@ description = "Verify the packaged Electron executable and DeepSeek resources af
 run = "node apps/desktop/scripts/smoke-dsh.ts --packaged"
 
 [tasks."daemon:pack"]
-description = "Package the daemon as a Node.js single executable"
-depends = ["native:release", "dsh:stage"]
-run = "node scripts/build-sea.ts"
+description = "Package the daemon as a Bun single executable"
+depends = ["native:release"]
+run = "node scripts/build-daemon.ts"
 
 [tasks."daemon:smoke"]
-description = "Verify an isolated SEA executable without an installed Node.js"
+description = "Verify the daemon executable without an installed JavaScript runtime"
 run = "node scripts/smoke-daemon.ts"
 
 [tasks."files:benchmark"]
