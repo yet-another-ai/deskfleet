@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { setTimeout as delay } from "node:timers/promises"
-import type { PromptRequest, PromptResponse } from "@agentclientprotocol/sdk/unstable"
+import type { PromptRequest, PromptResponse, SessionNotification } from "@agentclientprotocol/sdk/unstable"
 import { supportsSteering, type AgentConnection } from "@deskfleet/agent-core"
 import { AntigravityWork, wrapAntigravityConnection } from "./index.ts"
 
@@ -131,6 +131,60 @@ test("wrapAntigravityConnection keeps end_turn open while background tools and s
   assert.deepEqual(await turn, { stopReason: "end_turn" })
   assert.equal(resolved, true)
   assert.equal(prompts, 1)
+})
+
+test("wrapAntigravityConnection keeps subagent liveness across patches without state", async () => {
+  const sessionId = "session-subagent-patch"
+  const child = `${sessionId}-child`
+  const work = new AntigravityWork()
+  const conn = wrapAntigravityConnection(stubConnection({
+    async prompt() {
+      work.observe({ sessionId, update: {
+        sessionUpdate: "subagent_update", sessionId: child, title: "Explorer", state: { state: "running" },
+      } })
+      return { stopReason: "end_turn" }
+    },
+  }), undefined, work)
+
+  let resolved = false
+  const turn = conn.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] }).finally(() => { resolved = true })
+  await delay(20)
+  work.observe({ sessionId, update: { sessionUpdate: "subagent_update", sessionId: child, title: "Renamed explorer" } })
+  await delay(10)
+  assert.equal(resolved, false, "a title patch must not settle a running child")
+  work.observe({ sessionId, update: { sessionUpdate: "subagent_update", sessionId: child, state: null } })
+  await delay(10)
+  assert.equal(resolved, false, "a cleared state is unconfirmed, not idle")
+  work.observe({ sessionId, update: {
+    sessionUpdate: "subagent_update", sessionId: child, state: { state: "idle", stopReason: "end_turn" },
+  } })
+  assert.deepEqual(await turn, { stopReason: "end_turn" })
+})
+
+test("wrapAntigravityConnection releases inactive tool states", async () => {
+  const sessionId = "session-tool-states"
+  const work = new AntigravityWork()
+  const conn = wrapAntigravityConnection(stubConnection({
+    async prompt() {
+      // The pinned ACP v1 types omit later wire states such as paused and cancelled.
+      work.observe({ sessionId, update: {
+        sessionUpdate: "tool_call", toolCallId: "paused", title: "Suspended", status: "paused",
+      } } as unknown as SessionNotification)
+      work.observe({ sessionId, update: {
+        sessionUpdate: "tool_call", toolCallId: "build", title: "Build", status: "in_progress",
+      } })
+      return { stopReason: "end_turn" }
+    },
+  }), undefined, work)
+
+  let resolved = false
+  const turn = conn.prompt({ sessionId, prompt: [{ type: "text", text: "go" }] }).finally(() => { resolved = true })
+  await delay(20)
+  assert.equal(resolved, false, "a paused tool must not add work, but in-progress must hold")
+  work.observe({ sessionId, update: {
+    sessionUpdate: "tool_call_update", toolCallId: "build", status: "cancelled",
+  } } as unknown as SessionNotification)
+  assert.deepEqual(await turn, { stopReason: "end_turn" })
 })
 
 test("wrapAntigravityConnection delivers steering while background work holds the turn", async () => {

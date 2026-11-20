@@ -12,6 +12,10 @@ export { LEGACY_ANTIGRAVITY_BINARY, normalizeAntigravityBinaryPath }
 /** Upper bound for keeping a finished foreground turn open while its background work runs. */
 const WORK_WAIT_MS = 30 * 60_000
 
+const INACTIVE_TOOL_STATUSES: Readonly<Record<string, true>> = {
+  completed: true, failed: true, cancelled: true, paused: true,
+}
+
 /**
  * Tracks work that outlives `agy`'s foreground turn: non-daemon tool calls and
  * child sessions. Antigravity answers `session/prompt` before that work settles,
@@ -32,17 +36,17 @@ export class AntigravityWork {
         children.add(update.sessionId)
         this.#children.set(sessionId, children)
       }
-      this.#set(sessionId, `subagent:${update.sessionId}`,
-        update.state?.state === "running" || update.state?.state === "requires_action")
+      if (update.state) {
+        this.#set(sessionId, `subagent:${update.sessionId}`, update.state.state !== "idle")
+      }
     } else if (update.sessionUpdate === "tool_call") {
       const rawInput = update.rawInput
       const daemon = typeof rawInput === "object" && rawInput !== null && "IsDaemon" in rawInput
         && (rawInput.IsDaemon === true || rawInput.IsDaemon === "true")
       this.#set(sessionId, `tool:${update.toolCallId}`, !daemon
-        && (update.status == null || update.status === "pending" || update.status === "in_progress"))
-    } else if (update.sessionUpdate === "tool_call_update"
-      && (update.status === "completed" || update.status === "failed")) {
-      this.#set(sessionId, `tool:${update.toolCallId}`, false)
+        && !INACTIVE_TOOL_STATUSES[update.status ?? "pending"])
+    } else if (update.sessionUpdate === "tool_call_update" && update.status !== undefined) {
+      this.#set(sessionId, `tool:${update.toolCallId}`, !INACTIVE_TOOL_STATUSES[update.status ?? "pending"])
     } else return
     for (const resolve of [...this.#waiters]) resolve()
     this.#waiters.clear()
