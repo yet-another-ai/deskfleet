@@ -1,5 +1,7 @@
 # Machine-scoped workspace agents
 
+In **Settings → Preferences**, turn on **Super Agent** to use project conversations on this viewing device. An upgrade opens the existing session interface by default. Switching the mode off restores that interface.
+
 On Electron and the native Workspace Agent iOS client, each compatible registered machine exposes a personal default conversation and
 one conversation for each catalog workspace. Sending a message (including an explicit
 reply) is the only user trigger. A workspace has no idle supervisor process. A
@@ -21,7 +23,7 @@ projects and omit personal default Worker directories, including when addressed 
 already scoped to its own default workspace keeps its normal delegation scope.
 Unassigned sessions retain their session composer. Project windows use the project name for their
 title; opening the Worker uses its session title.
-Archived sessions remain in the existing archive.
+Archived sessions remain in the existing archive. In Preferences, **Organize by directory** previews the signed-in user’s active, unassigned directory sessions on the selected machine. Confirm a group to link it to a project with the same directory bindings, or create a project there. If multiple projects share the directories, choose one explicitly. Skipping keeps the original sessions accessible. Links belong to the signed-in user on the original machine registration. Directory contents, journal records, provider session IDs, message history, and archive flags are preserved. The project sidebar displays the registration ID beside duplicate machine names. Independent app installations retain separate histories even when their hostnames match.
 
 On iOS, home opens the selected machine’s default workspace. On first use,
 choose a machine if several compatible registrations are available. The choice
@@ -146,6 +148,7 @@ A literal filesystem path can still be sent as text.
 | Coordinator and execution model menu | `packages/components/src/components/composer/ProjectModelMenu.vue`, `apps/daemon/src/super-agent-profiles.ts` |
 | Registered coordinator adapters and DeepSeek inference | `apps/daemon/src/super-agent-provider.ts`, `packages/dsh-runtime/src/helper.ts` |
 | Coordinator usage measurements | `apps/daemon/src/super-agent-usage.ts`, `packages/components/src/components/composer/AgentUsage.vue` |
+| Device mode, optional directory grouping and authenticated ownership | `packages/components/src/components/settings/WorkspaceAgentSettings.vue`, `apps/daemon/src/super-agent-history.ts` |
 | Machine-scoped project entry, folder selection and navigation | `packages/components/src/views/WorkspaceEntryView.vue`, `NewProjectView.vue`, `components/sidebar/MachineSection.vue` |
 | Scoped renderer API | `packages/components/src/composables/useMachineRuntimes.ts`, `packages/client/src/desktop-api.ts` |
 | Granted peer RPC and wire contract | `apps/daemon/src/authorized-peers.ts`, `agent-channel.ts`, `super-agent-protocol.ts` |

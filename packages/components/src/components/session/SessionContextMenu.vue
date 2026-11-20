@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import SpringSurface from "../common/SpringSurface.ts"
 import { Archive, ArchiveRestore, Copy, ExternalLink, Mail, Pencil, Pin, PinOff } from "@lucide/vue"
 import { useTimeoutFn } from "@vueuse/core"
@@ -26,7 +27,9 @@ const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const pins = usePinnedSessionsStore()
 const machineId = computed(() => props.machineId ?? fleet.findSession(props.sessionId)?.machine.id ?? account?.machineId.value ?? fleet.targetId)
+const workspaceMode = useWorkspaceAgentMode()
 const workerRegistration = computed(() => {
+  if (!workspaceMode.value) return
   if (!props.projectWorker || props.archiveState !== "active" || !props.machineId) return
   // Target IDs name server registrations. The native catalog's numeric machine ID is local to its database.
   const target = client.target

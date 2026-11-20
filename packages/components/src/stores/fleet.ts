@@ -1,6 +1,7 @@
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { useWorkspaceAgentMode } from "../services/workspace-agent-navigation.ts"
 import { defineStore } from "pinia"
-import { computed, hasInjectionContext, onScopeDispose, ref } from "vue"
+import { computed, hasInjectionContext, onScopeDispose, ref, watch } from "vue"
 import type { CatalogDirectory, CatalogSnapshot, CatalogWorktree, CatalogWorkspace } from "../../../client/src/catalog.ts"
 import type { LocalDesktopTarget } from "../../../client/src/desktop-media.ts"
 import type { AgentSessionRecord } from "../../../../apps/daemon/src/agent-protocol.ts"
@@ -79,6 +80,25 @@ function workspaceSummary(value: CatalogWorkspace): WorkspaceSummary {
 export const useFleetStore = defineStore("fleet", () => {
   const platformClient = usePlatformClient()
   const account = hasInjectionContext() ? useAccountSession() : undefined
+  const workspaceMode = useWorkspaceAgentMode()
+  const historyLinks = ref<Record<string, string>>({})
+  let historyRevision = 0
+  function setHistoryLinks(links: Record<string, string>) {
+    ++historyRevision
+    historyLinks.value = links
+  }
+  async function refreshHistoryLinks() {
+    const revision = ++historyRevision
+    if (!workspaceMode.value || !platformClient.superAgent?.history) return
+    try {
+      const { links } = await platformClient.superAgent.history({ view: "links" })
+      if (revision === historyRevision && workspaceMode.value) historyLinks.value = links
+    } catch { /* Offline and older hosts keep the original session list. */ }
+  }
+  watch(workspaceMode, enabled => {
+    if (enabled && catalogReady.value) void refreshHistoryLinks()
+    if (!enabled) setHistoryLinks({})
+  })
   const target = platformClient.target
   const targetId = target?.id ?? "local-daemon"
   const localDesktopTarget = ref<LocalDesktopTarget>({ id: targetId, name: "localhost", online: false, desktop: false })
@@ -113,10 +133,19 @@ export const useFleetStore = defineStore("fleet", () => {
     }
     return owners
   })
+  const importedWorktrees = computed(() => {
+    const trees = new Map<string, CatalogWorktree>()
+    if (!workspaceMode.value) return trees
+    const projects = new Set(catalog.value?.workspaces.map(project => project.id))
+    for (const tree of catalog.value?.sessions ?? []) {
+      if (tree.sessionId && projects.has(historyLinks.value[tree.sessionId]!)) trees.set(tree.sessionId, tree)
+    }
+    return trees
+  })
   const sessionsByWorkspace = computed(() => {
     const groups = new Map<string | undefined, AgentSessionRecord[]>()
     for (const session of Object.values(agents.sessions)) {
-      const id = session.workspaceId || catalogSessionOwners.value.get(session.id)
+      const id = session.workspaceId || catalogSessionOwners.value.get(session.id) || (importedWorktrees.value.has(session.id) ? historyLinks.value[session.id] : undefined)
       const group = groups.get(id)
       if (group) group.push(session)
       else groups.set(id, [session])
@@ -135,8 +164,9 @@ export const useFleetStore = defineStore("fleet", () => {
     }).map(session => [session.id, session]))
     for (const metadata of sessionsByWorkspace.value.get(workspace.id) ?? []) {
       const provider = providersById.value.get(metadata.provider)
+      const imported = importedWorktrees.value.get(metadata.id)
       summaries.set(metadata.id, {
-        ...summaries.get(metadata.id), id: metadata.id,
+        ...summaries.get(metadata.id), ...(imported && { worktree: worktreeSummary(imported) }), id: metadata.id,
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
         providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
         context: metadata.context, archiveState: metadata.archiveState,
@@ -155,7 +185,7 @@ export const useFleetStore = defineStore("fleet", () => {
     if (!catalog.value) return []
     const summaries = new Map<string, AgentSessionSummary>()
     for (const worktree of catalog.value?.sessions ?? []) {
-      if (!worktree.sessionId || catalogSessionOwners.value.has(worktree.sessionId) || agents.sessions[worktree.sessionId]?.workspaceId) continue
+      if (!worktree.sessionId || importedWorktrees.value.has(worktree.sessionId) || catalogSessionOwners.value.has(worktree.sessionId) || agents.sessions[worktree.sessionId]?.workspaceId) continue
       summaries.set(worktree.sessionId, { id: worktree.sessionId, worktree: worktreeSummary(worktree) })
     }
     for (const metadata of sessionsByWorkspace.value.get(undefined) ?? []) {
@@ -236,7 +266,10 @@ export const useFleetStore = defineStore("fleet", () => {
           refreshRequested = false
           try {
             const snapshot = await platformClient.catalog.list()
-            if (!refreshRequested) applySnapshot(snapshot)
+            if (!refreshRequested) {
+              applySnapshot(snapshot)
+              if (workspaceMode.value) void refreshHistoryLinks()
+            }
           } catch (error) {
             // A newer notification still needs a read when this request fails.
             if (!refreshRequested) {
@@ -300,7 +333,7 @@ export const useFleetStore = defineStore("fleet", () => {
   async function deleteWorkspace(id: string, options?: { deleteSessions?: boolean }): Promise<void> {
     requireWorkspace(id)
     // Other rejection reasons, such as scheduled tasks, must leave Sessions in place.
-    const sessionIds = options?.deleteSessions ? findWorkspace(id)?.workspace.sessions.map(session => session.id) ?? [] : []
+    const sessionIds = options?.deleteSessions ? findWorkspace(id)?.workspace.sessions.filter(session => !importedWorktrees.value.has(session.id)).map(session => session.id) ?? [] : []
     try {
       await platformClient.catalog.deleteWorkspace(id)
     } catch (error) {
@@ -346,7 +379,7 @@ export const useFleetStore = defineStore("fleet", () => {
   return {
     targetId, machines, catalog, catalogIdentity, catalogError, catalogLoading, catalogReady, canManageCatalog,
     localDesktopTarget, refreshLocalDesktop, refreshLocalCatalog, refreshLocal,
-    createWorkspace, updateWorkspace, deleteWorkspace,
+    createWorkspace, updateWorkspace, deleteWorkspace, setHistoryLinks,
     newSessionTarget, findMachine, findWorkspace, findWorktree, findSession, findTerminal,
     collapsedMachineIds, isCollapsed, toggleMachine, targetWorkspaceId, targetWorkspace,
   }

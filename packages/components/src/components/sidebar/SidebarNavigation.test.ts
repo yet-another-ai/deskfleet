@@ -1,3 +1,4 @@
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
@@ -78,6 +79,7 @@ test("keeps New session available alongside the section capsules", async () => {
 })
 
 test.each(["darwin", "web"] as const)("the project-aware %s host puts project actions under their machine", async platform => {
+  useWorkspaceAgentMode().value = true
   const machine = machineFixture("remote", "team-1", "Existing Mac")
   const { central } = fakeCentral({ machines: [machine] })
   const account = createAccountSession(central)
@@ -263,3 +265,5 @@ test("localizes both section links and the New session action", async () => {
   expect(sectionLink("对话").attributes("href")).toBe("/")
   expect(sectionLink("远程桌面").attributes("href")).toBe("/desktops")
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

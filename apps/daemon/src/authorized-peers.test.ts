@@ -402,6 +402,12 @@ test("a remote workspace agent uses the granted identity and checks read and exe
       else assert.match(response.error.message, /does not allow/)
     }
     assert.deepEqual(f.calls.map(call => call.method), writable ? methods : methods.slice(0, 1))
+    await f.rpc(10, "_deskfleet/super-agent/history", { view: "groups" })
+    await f.rpc(11, "_deskfleet/super-agent/history", { view: "groups", assign: { workspaceId: "proj", sessionIds: ["1"] } })
+    const history = f.sent.map(packet => JSON.parse(packet))
+    assert.ok(history.find(packet => packet.id === 10)?.result)
+    if (writable) assert.ok(history.find(packet => packet.id === 11)?.result)
+    else assert.match(history.find(packet => packet.id === 11)?.error.message, /does not allow/)
     for (const call of f.calls) assert.deepEqual(call.actor, { kind: "user", userId: "alice", deviceId: "login" })
   }
 })

@@ -62,6 +62,7 @@ export interface DispatchIntent {
   error?: string
 }
 export interface SuperUserState {
+  historyProjects?: Record<string, string>
   coordinatorProviderId?: string
   coordinatorOverrides?: Partial<Record<SuperCoordinator, SuperModelSelection>>
   rooms: SuperRoom[]

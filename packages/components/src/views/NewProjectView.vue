@@ -7,7 +7,7 @@ import ErrorNotice from "../components/common/ErrorNotice.vue"
 import FolderPickerDialog from "../components/common/FolderPickerDialog.vue"
 import UiButton from "../components/common/UiButton.vue"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
-import { workspaceAgentRoute } from "../services/workspace-agent-navigation.ts"
+import { projectDirectoryName, workspaceAgentRoute } from "../services/workspace-agent-navigation.ts"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 
@@ -39,9 +39,7 @@ async function create(path: string) {
   try {
     if (!fleet.canManageCatalog) await fleet.refreshLocal()
     if (!active) return
-    // The picker returns an absolute path on its own host, which may run another OS.
-    const separator = /^(?:[a-z]:[\\/]|\\\\)/iu.test(path) ? /[\\/]/u : "/"
-    const name = path.split(separator).filter(Boolean).at(-1) ?? path
+    const name = projectDirectoryName(path)
     const project = await fleet.createWorkspace(name, [{ path }])
     if (active && router.currentRoute.value.name === "new-project") {
       await router.replace(projectRoute(project.id))

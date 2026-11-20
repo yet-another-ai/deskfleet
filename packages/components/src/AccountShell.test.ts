@@ -1,3 +1,4 @@
+import { useWorkspaceAgentMode } from "./services/workspace-agent-navigation.ts"
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, type Pinia } from "pinia"
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest"
@@ -728,6 +729,7 @@ test("standalone Session window selects its Team and Machine and opens focused w
 })
 
 test("the iOS first-use screen checks the computer roster and lets the user choose between same-name computers", async () => {
+  useWorkspaceAgentMode().value = true
   const f = fakeCentral()
   withEmptyCatalogs(f)
   mountShell(f.central, "web", true, true)
@@ -743,3 +745,5 @@ test("the iOS first-use screen checks the computer roster and lets the user choo
   expect(page().find("[data-machine-picker]").exists()).toBe(false)
   localStorage.removeItem("deskfleet.workspace-agent.recent-machines")
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

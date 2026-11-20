@@ -1,3 +1,4 @@
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia, setActivePinia } from "pinia"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
@@ -54,6 +55,7 @@ test.each([false, true])("right-click opens a session menu without navigating (s
 })
 
 test("registered project sessions copy a scoped Worker ID only while active and on the bound machine", async () => {
+  useWorkspaceAgentMode().value = true
   const { row } = await render(false, false, "active", true)
   const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
   try {
@@ -238,3 +240,5 @@ test.each([
   expect(router.currentRoute.value.params.sessionId).toBe("31")
   await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

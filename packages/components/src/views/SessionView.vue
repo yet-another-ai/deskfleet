@@ -53,7 +53,7 @@ import { createAgentUsageSelector } from "../services/agent-usage.ts"
 import { hasIncompleteAttachmentUploads } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
-import { isPrivateAgentWorkspace, workspaceAgentRoute, workspaceSessionRoute } from "../services/workspace-agent-navigation.ts"
+import { useWorkspaceAgentMode, isPrivateAgentWorkspace, workspaceAgentRoute, workspaceSessionRoute } from "../services/workspace-agent-navigation.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
 import { scrollSpring, type SpringScroll } from "../services/spring-scroll.ts"
 
@@ -99,10 +99,12 @@ const view = computed(() => agents.views[props.sessionId])
 const snapshot = computed(() => view.value?.snapshot)
 // A confirmed machine-only Session keeps its original composer. A project
 // Project Workers receive task instructions through the Super Agent.
-const projectWorker = computed(() => !!client.superAgent && (
+const workspaceMode = useWorkspaceAgentMode()
+const projectWorker = computed(() => workspaceMode.value && !!client.superAgent && (
   !snapshot.value || !!snapshot.value.session.workspaceId || !!location.value?.workspace || !fleet.catalog
 ))
 const returnToWorkspace = computed(() => {
+  if (!workspaceMode.value) return
   const machineId = fleet.targetId
   const teamId = account?.teamId.value
   const sameTeam = route.query.team === undefined || route.query.team === teamId

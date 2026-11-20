@@ -1,3 +1,4 @@
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import { getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
@@ -159,6 +160,7 @@ test("does not mount a retained runtime after another machine is selected during
 })
 
 test("reloading a PC project with the same ID selects the PC before any wrong runtime mounts", async () => {
+  useWorkspaceAgentMode().value = true
   const path = "/workspaces/17/agent?machine=m2&team=team-1"
   const current = await fixture(undefined, path)
   expect(current.session.machineId.value).toBe("m2")
@@ -167,9 +169,12 @@ test("reloading a PC project with the same ID selects the PC before any wrong ru
 })
 
 test("a Worker history link for a different team cannot open the selected machine's equal ID", async () => {
+  useWorkspaceAgentMode().value = true
   const current = await fixture(undefined, "/desktops")
   await router.push("/sessions/17?superMachine=m1&team=other")
   expect(router.currentRoute.value.name).toBe("new-session")
   expect(router.currentRoute.value.query).toEqual({ machine: "m1", team: "other" })
   expect(current.session.machineId.value).toBe("m1")
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

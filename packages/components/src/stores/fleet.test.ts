@@ -5,6 +5,7 @@ import { createPinia, getActivePinia, setActivePinia } from "pinia"
 import { createApp } from "vue"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import { catalogFixture, sessionId, sessionWorktreeId, mainWorktreeId, workspaceId } from "../test/catalog.ts"
+import { useWorkspaceAgentMode } from "../services/workspace-agent-navigation.ts"
 import { useFleetStore } from "./fleet.ts"
 import { useAgentSessionsStore } from "./agent-sessions.ts"
 import { usePinnedSessionsStore } from "./pinned-sessions.ts"
@@ -587,4 +588,28 @@ test("legacy metadata without an owner takes its catalog worktree's project; onl
   expect(store.findSession(sessionId)?.workspace?.id).toBe(workspaceId)
   expect(store.findSession(sessionId)?.session.title).toBe(session.title)
   expect(store.findSession("premapped")?.workspace?.id).toBe(workspaceId)
+})
+
+test("a personal history link keeps its worktree and restores the original machine location in classic mode", async () => {
+  const mode = useWorkspaceAgentMode()
+  const catalog = catalogFixture()
+  catalog.sessions.push({ id: "legacy-tree", sessionId: "legacy", directories: [{ path: "/code/web" }] })
+  vi.mocked(platformClient.catalog.list).mockResolvedValue(catalog)
+  const history = vi.fn(async () => ({ links: { legacy: workspaceId } }))
+  configureClient({ ...getClient(), superAgent: { history, snapshot: vi.fn(), settings: vi.fn(), send: vi.fn(), correct: vi.fn() } })
+  try {
+    const store = setup()
+    useAgentSessionsStore().sessions.legacy = { ...agentSnapshot().session, id: "legacy", workspaceId: undefined }
+    await store.refreshLocalCatalog()
+    expect(history).not.toHaveBeenCalled()
+    expect(store.findSession("legacy")?.workspace).toBeUndefined()
+    mode.value = true
+    await vi.waitFor(() => expect(store.findSession("legacy")?.workspace?.id).toBe(workspaceId))
+    expect(store.findSession("legacy")?.worktree?.id).toBe("legacy-tree")
+    expect(store.machines[0]!.sessions.some(s => s.id === "legacy")).toBe(false)
+    mode.value = false
+    expect(store.findSession("legacy")?.workspace).toBeUndefined()
+    expect(store.findSession("legacy")?.worktree?.id).toBe("legacy-tree")
+    expect(useAgentSessionsStore().sessions.legacy!.workspaceId).toBeUndefined()
+  } finally { mode.value = false }
 })

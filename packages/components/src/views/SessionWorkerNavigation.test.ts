@@ -1,8 +1,9 @@
+import { useWorkspaceAgentMode } from "../services/workspace-agent-navigation.ts"
 import { getClient } from "@deskfleet/client/platform"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { createApp } from "vue"
-import { expect, test, vi } from "vitest"
+import { beforeEach, afterEach, expect, test, vi } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { platformClientKey } from "../composables/usePlatformClient.ts"
 import { i18n } from "../i18n/index.ts"
@@ -149,3 +150,7 @@ test.each([
     expect(router.currentRoute.value.query).toEqual({ superFrom: workspaceId, superMachine: "pc" })
   } finally { wrapper.unmount(); disposePinia(pinia) }
 })
+
+beforeEach(() => { useWorkspaceAgentMode().value = true })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

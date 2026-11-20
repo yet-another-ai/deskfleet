@@ -1,6 +1,7 @@
+import { useWorkspaceAgentMode } from "../services/workspace-agent-navigation.ts"
 import { getClient } from "@deskfleet/client/platform"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
-import { afterEach, expect, test, vi } from "vitest"
+import { beforeEach, afterEach, expect, test, vi } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { accountSessionKey, createAccountSession, type AccountSession } from "../composables/useAccountSession.ts"
 import { platformClientKey } from "../composables/usePlatformClient.ts"
@@ -151,4 +152,22 @@ test("iOS offers a reconnect for an initially offline project and retains the li
   machine.online = false
   await flushPromises()
   expect(page.find("workspace-agent-view-stub").exists()).toBe(true)
+})
+
+beforeEach(() => { useWorkspaceAgentMode().value = true })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })
+
+test("an upgrade opens the session composer and switching project mode twice preserves the selected machine", async () => {
+  useWorkspaceAgentMode().value = false
+  const { page, openMachineRoute } = await openHome({ onLocal: true, enrolled: true })
+  expect(page.findComponent({ name: "NewSessionView" }).exists()).toBe(true)
+  expect(openMachineRoute).not.toHaveBeenCalled()
+  useWorkspaceAgentMode().value = true
+  await flushPromises()
+  expect(page.findComponent({ name: "WorkspaceAgentView" }).exists()).toBe(true)
+  useWorkspaceAgentMode().value = false
+  await flushPromises()
+  expect(page.findComponent({ name: "NewSessionView" }).exists()).toBe(true)
+  expect(openMachineRoute).not.toHaveBeenCalled()
 })

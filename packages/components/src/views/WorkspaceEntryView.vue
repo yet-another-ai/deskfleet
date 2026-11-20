@@ -6,6 +6,7 @@ import UiButton from "../components/common/UiButton.vue"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { useWorkspaceAgentMode } from "../services/workspace-agent-navigation.ts"
 import NewSessionView from "./NewSessionView.vue"
 import WorkspaceAgentSetupView from "./WorkspaceAgentSetupView.vue"
 const WorkspaceAgentView = defineAsyncComponent(() => import("./WorkspaceAgentView.vue"))
@@ -13,6 +14,7 @@ const NewProjectView = defineAsyncComponent(() => import("./NewProjectView.vue")
 
 const props = defineProps<{ workspaceId?: string; createProject?: boolean }>()
 const client = usePlatformClient()
+const enabled = useWorkspaceAgentMode()
 const account = useAccountSession()
 const route = useRoute()
 const { t } = useI18n()
@@ -30,7 +32,7 @@ const localHome = computed(() => {
   return id && account.machines.value.some(item => item.id === id) ? id : undefined
 })
 const switchTo = computed(() => {
-  if (!account || missing.value) return
+  if (!enabled.value || !account || missing.value) return
   const id = machine.value ?? localHome.value
   if (id && id !== account.machineId.value) return id
 })
@@ -55,7 +57,8 @@ async function checkAgain() {
 </script>
 
 <template>
-  <template v-if="missing">
+  <NewSessionView v-if="!enabled" />
+  <template v-else-if="missing">
     <PaneHeader />
     <p role="alert" class="m-auto px-6 text-sm text-ui-text-muted">{{ t("superAgent.machineNav.missing") }}</p>
   </template>

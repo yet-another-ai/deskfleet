@@ -15,7 +15,8 @@ import { AgentSessions } from "./agent-sessions.ts"
 import { DaemonCatalog } from "./catalog.ts"
 import { TestAgentQuotas } from "./fixtures/agent-quotas.ts"
 import type { routeSuperMessage } from "./super-agent-router.ts"
-import type { SuperSnapshot } from "./super-agent-protocol.ts"
+import type { SuperHistory, SuperSnapshot } from "./super-agent-protocol.ts"
+import { organizeHistory } from "./super-agent-history.ts"
 import { SuperAgentService, type SuperUserState } from "./super-agent-service.ts"
 import { LocalSuperStore } from "./super-agent-store.ts"
 import { superWorkspaces } from "./super-agent-workspaces.ts"
@@ -423,4 +424,60 @@ test("a copied historical Worker ID adopts the correct real session among two pr
   assert.deepEqual(adopted.tickets.map(ticket => ticket.sessionId), [session.id])
   assert.equal(routes, 0)
   assert.equal((await machine.workers.journal.list()).length, 1)
+})
+
+test("organizing directory history links only the chosen sessions and reuses the original Worker across restarts", async t => {
+  const root = await mkdtemp(join(tmpdir(), "deskfleet-old-history-"))
+  const cwd = join(root, "legacy")
+  await mkdir(cwd)
+  let workerId: string
+  const machine = await open(root, new BackendAgent(), async ctx => {
+    assert.ok(ctx.history?.some(worker => worker.id === workerId))
+    return { reason: "reuse the organized history", actions: [{ kind: "create", title: "Continue", scope: "Read", sessionId: workerId, prompt: ctx.text }] }
+  })
+  t.after(async () => { try { await machine.close() } finally { await rm(root, { recursive: true, force: true }) } })
+  const provider = (await machine.providers.create({ template: "codex", name: "Fixture", env: {}, inheritShellEnvironment: false })).id
+  const create = () => machine.call<AgentSnapshot>("_deskfleet/session/create", { cwd, context: "directory", provider, operationId: randomUUID() })
+  workerId = (await create()).session.id
+  const archived = (await create()).session.id
+  await machine.call("_deskfleet/session/archive", { sessionId: archived, operationId: randomUUID() })
+  const makeProject = (name: string, path: string) => machine.catalog.handle({ method: "workspaceCreate", params: { name, directories: [{ path }] } })
+  await makeProject("One", cwd)
+  await makeProject("Two", cwd)
+  await makeProject("Other directory", root)
+  const history = (assign?: { workspaceId: string; sessionIds: string[] }) => machine.call<SuperHistory>("_deskfleet/super-agent/history", { view: "groups", assign })
+  const first = await history()
+  assert.deepEqual(first.links, {})
+  assert.equal(first.groups?.length, 1)
+  const group = first.groups![0]!
+  assert.deepEqual(group.paths, [cwd])
+  assert.deepEqual(group.sessionIds, [workerId])
+  assert.deepEqual(group.projects.map(p => p.name).sort(), ["One", "Two"])
+  assert.equal(machine.store.get(actor.userId!), undefined)
+  const workspaceId = group.projects.find(p => p.name === "Two")!.id
+  const other = (await machine.catalog.native.snapshot()).workspaces.find(p => p.name === "Other directory")!.id
+  await assert.rejects(history({ workspaceId: other, sessionIds: [workerId] }), /group has changed/)
+  await assert.rejects(history({ workspaceId, sessionIds: [workerId, archived] }), /group has changed/)
+  assert.deepEqual((await history()).links, {})
+  const assign = { workspaceId, sessionIds: [workerId] }
+  const saved = await history(assign)
+  assert.deepEqual(saved, { links: { [workerId]: workspaceId }, groups: [] })
+  assert.deepEqual(await history(assign), saved)
+  const otherUser = { ...actor, userId: "another-member" }
+  const source = { agents: machine.workers, store: machine.store, ...superWorkspaces(machine.catalog, root) }
+  assert.deepEqual(await organizeHistory(source, otherUser, { view: "groups" }), { groups: [], links: {} })
+  await assert.rejects(organizeHistory(source, otherUser, { view: "groups", assign }), /group has changed/)
+  await assert.rejects(history({ workspaceId: group.projects.find(p => p.name === "One")!.id, sessionIds: [workerId] }), /group has changed/)
+  await machine.restartFront()
+  assert.deepEqual(await history(), saved)
+  const original = (await machine.workers.journal.read(workerId)).session
+  assert.equal(original.workspaceId, undefined)
+  assert.equal((await machine.workers.journal.read(archived)).session.archiveState, "archived")
+  await machine.call("_deskfleet/super-agent/send", { workspaceId, messageId: "resume-history", text: "Continue this review" })
+  const snapshot = await eventually(() => machine.call<SuperSnapshot>("_deskfleet/super-agent/snapshot", { workspaceId }),
+    value => value.tickets.some(ticket => ticket.sessionId === workerId))
+  assert.equal(snapshot.tickets.length, 1)
+  await eventually(() => machine.workers.journal.read(workerId), state => state.inputs.length > 0)
+  assert.equal((await machine.workers.journal.read(workerId)).session.workspaceId, undefined)
+  assert.equal((await machine.workers.journal.list()).length, 2)
 })

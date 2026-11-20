@@ -30,7 +30,7 @@ export async function inspectHistoricalWorker(workers: SuperWorkers, sessionId: 
   }
   return snapshot.session
 }
-async function ownedByActor(workers: SuperWorkers, sessionId: string, actor: AgentActor) {
+export async function ownedByActor(workers: SuperWorkers, sessionId: string, actor: AgentActor) {
   const creation = (await workers.journal.commands(sessionId)).find(command =>
     command.isCanonical && (command.method === "_deskfleet/session/create" || command.method === "_deskfleet/session/fork"))
   return actor.kind === "user" && !!actor.userId && creation?.actor.kind === "user" && creation.actor.userId === actor.userId

@@ -1,3 +1,6 @@
+import { organizeHistory, projectWorkers } from "./super-agent-history.ts"
+import type { CatalogSnapshot } from "@deskfleet/native"
+import type { SuperHistory } from "./super-agent-protocol.ts"
 import { effectiveCoordinatorProfile, validateCoordinatorProfile } from "./super-agent-profiles.ts"
 import { attachmentInfo, previewSuperAttachments, superAttachments, type SuperAttachmentStore } from "./super-agent-attachments.ts"
 import { isDeepStrictEqual } from "node:util"
@@ -19,6 +22,8 @@ import { routeWorkerCommand, sameCommandTarget } from "./super-agent-command.ts"
 export type { SuperUserState } from "./super-agent-state.ts"
 import type { SuperWorkspace } from "./super-agent-protocol.ts"
 interface Dependencies {
+  historyCatalog?: () => Promise<CatalogSnapshot>
+  historyChanged?: () => void
   agents: SuperWorkers
   registration?: () => WorkerRegistration | undefined
   attachments?: SuperAttachmentStore
@@ -137,9 +142,12 @@ export class SuperAgentService {
     while (this.#live.size) await Promise.allSettled([...this.#live])
   }
 
-  async handle(method: string, value: unknown, actor: AgentActor): Promise<SuperSnapshot> {
+  handle(method: "_deskfleet/super-agent/history", value: unknown, actor: AgentActor): Promise<SuperHistory>
+  handle(method: string, value: unknown, actor: AgentActor): Promise<SuperSnapshot>
+  async handle(method: string, value: unknown, actor: AgentActor): Promise<SuperSnapshot | SuperHistory> {
     if (this.#stop.signal.aborted) throw new Error("Workspace agent is stopping")
     if (actor.kind !== "user" || !actor.userId || !actor.deviceId) throw new Error("A verified user and device are required")
+    if (method === "_deskfleet/super-agent/history") return organizeHistory(this.#deps, object(value).assign === undefined ? actor : await this.#deps.authorize(actor), value)
     const uid = actor.userId
     const arg = object(value)
     const workspaceId = arg.workspaceId === null ? null : identifier(arg.workspaceId)
@@ -366,11 +374,12 @@ export class SuperAgentService {
       let measurement: SuperRoom["coordinatorMeasurement"]
       try {
         const actor = await this.#deps.authorize(message.actor)
+        const workers = await projectWorkers(this.#deps, uid)
         const workspaces = await this.#deps.workspaces(uid)
         if (workspaceId !== null) knownWorkspace(workspaces, workspaceId)
         if (message.command) {
           const providers = this.#deps.providers()
-          const decision = await routeWorkerCommand(this.#deps.agents, actor, room, message, message.command, providers)
+          const decision = await routeWorkerCommand(workers, actor, room, message, message.command, providers)
           if (!this.#stop.signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces, providers, new Map(), new Map(), [])
           return
         }
@@ -381,18 +390,18 @@ export class SuperAgentService {
           const quoted = room.messages.find(item => item.id === message.replyTo)
           const providers = this.#deps.providers()
           const { decision, historicalWorkspace } = await resolveWorkerTarget({
-            target: reference.target, prompt, actor, providers, registration: this.#deps.registration?.(), workers: this.#deps.agents, room,
+            target: reference.target, prompt, actor, providers, registration: this.#deps.registration?.(), workers: workers, room,
             projects: workspaces, workspaces: workspaceId === null ? await this.#deps.workspaces(uid, true) : workspaces,
             quotedTicketId: ticketOfQuote(room, quoted), correctedTicketId: message.correctedTicketId, quoteText: quoted?.text,
           })
           const historical = new Map<string, AgentSessionRecord>()
           const sessionId = reference.target.sessionId
-          if (historicalWorkspace) historical.set(sessionId, await inspectHistoricalWorker(this.#deps.agents, sessionId, historicalWorkspace, actor))
+          if (historicalWorkspace) historical.set(sessionId, await inspectHistoricalWorker(workers, sessionId, historicalWorkspace, actor))
           if (!this.#stop.signal.aborted) await this.#apply(uid, workspaceId, messageId, revision, decision, actor, workspaces,
             providers, historical, new Map(), [], undefined, { sessionId, prompt })
           return
         }
-        const history = workspaceId === null ? [] : (await this.#deps.agents.journal.list()).filter(item => item.workspaceId === workspaceId)
+        const history = workspaceId === null ? [] : (await workers.journal.list()).filter(item => item.workspaceId === workspaceId)
         const providers = this.#deps.providers()
         const context = frontendContext(room, message, workspaces, providers, history)
         const keys = attachedKeys(room, message)
@@ -400,7 +409,7 @@ export class SuperAgentService {
         if (keys.length || references.length) {
           if (keys.length && !this.#deps.attachments) throw new Error("Stored workspace attachments are unavailable")
           const files = keys.length ? await this.#deps.attachments!.load(uid, keys) : []
-          const { evidence, files: selectedFiles } = await workspaceReferenceEvidence(this.#deps.agents, actor, room, references, historySources)
+          const { evidence, files: selectedFiles } = await workspaceReferenceEvidence(workers, actor, room, references, historySources)
           context.attachments = await previewSuperAttachments([...files, ...evidence], selectedFiles)
         }
         const state = this.#deps.store.get(uid)
@@ -418,13 +427,13 @@ export class SuperAgentService {
             return JSON.stringify({ title, scope, latestAcceptance, summary, status, sessionId, lastEventSeq, historySources, referenceTicketId })
           },
           readHistory: async (id, after) => {
-            const snapshot = await this.#deps.agents.journal.read(id)
+            const snapshot = await workers.journal.read(id)
             const expected = workspaceId ?? room.tickets.find(t => t.sessionId === id)?.executionWorkspaceId
             if (!expected || snapshot.session.workspaceId !== expected) throw new Error("Session is outside this workspace")
             const end = BigInt(snapshot.session.lastEventSeq)
             const from = after ?? (end > 100n ? end - 100n : 0n).toString()
             if (!/^\d+$/u.test(from)) throw new Error("Invalid history cursor")
-            const page = await this.#deps.agents.journal.history(id, from, 100)
+            const page = await workers.journal.history(id, from, 100)
             const excerpt = superHistoryExcerpt(page)
             const shown = JSON.parse(excerpt) as { nextAfterSeq?: string; messages: unknown[] }
             if (shown.messages.length && shown.nextAfterSeq) historySources.push({ sessionId: id, afterSeq: from, throughSeq: shown.nextAfterSeq })
@@ -442,12 +451,12 @@ export class SuperAgentService {
           if (action.kind === "create" && action.sessionId) {
             if (!workspaceId) throw new Error("Historical worker is outside this workspace")
             const workspace = knownWorkspace(workspaces, workspaceId)
-            legacy.set(action.sessionId, await inspectHistoricalWorker(this.#deps.agents, action.sessionId, workspace, actor))
+            legacy.set(action.sessionId, await inspectHistoricalWorker(workers, action.sessionId, workspace, actor))
           }
           if (action.kind === "stop" || action.kind === "continue" && action.delivery === "steer") {
             const ticket = room.tickets.find(item => item.id === action.ticketId)
             if (!ticket?.sessionId) throw new Error("Ticket has no active worker to interrupt")
-            const snapshot = await this.#deps.agents.journal.read(ticket.sessionId)
+            const snapshot = await workers.journal.read(ticket.sessionId)
             if (snapshot.session.workspaceId !== ticket.executionWorkspaceId) throw new Error("Worker workspace changed")
             const active = snapshot.turns.findLast(activeTurn)
             if (!active) throw new HistoricalSessionUnavailable(ticket.sessionId, "The worker has no active turn to interrupt")
@@ -593,7 +602,7 @@ export class SuperAgentService {
     if (!command || command.sessionId !== intent.sessionId || command.actor.userId !== uid) return
     const expected = intent.operation === "stop" ? "_deskfleet/turn/cancel" : "_deskfleet/input/submit"
     if (command.method !== expected) return
-    const snapshot = await this.#deps.agents.journal.read(intent.sessionId)
+    const snapshot = await (await projectWorkers(this.#deps, uid)).journal.read(intent.sessionId)
     if (snapshot.session.workspaceId !== intent.workspaceId) return
     const input = snapshot.inputs.find(item => item.submissionCommandId === command.id)
     const receipt = command.result as AgentReceipt | undefined
@@ -644,12 +653,13 @@ export class SuperAgentService {
         }
         if (!live.sessionId && ticket.sessionId) live.sessionId = ticket.sessionId
       })
+      const workers = await projectWorkers(this.#deps, uid)
       await deliverSuperIntent({
-        workers: this.#deps.agents, current, authorize: this.#deps.authorize, suspended: () => this.#stop.signal.aborted,
+        workers, current, authorize: this.#deps.authorize, suspended: () => this.#stop.signal.aborted,
         autoApproveNewWorker: () => this.#room(uid, intent.roomId).workerAutoApprove === true,
         inspectHistory: async (sessionId, authority) => {
           const workspace = knownWorkspace(await this.#deps.workspaces(uid, intent.roomId === null), intent.workspaceId || intent.roomId || "")
-          await inspectHistoricalWorker(this.#deps.agents, sessionId, workspace, authority)
+          await inspectHistoricalWorker(workers, sessionId, workspace, authority)
         },
         workspace: async () => {
           const selected = current()
@@ -723,7 +733,7 @@ export class SuperAgentService {
           const room = state?.rooms.find(r => r.tickets.some(t => t.sessionId === sessionId))
           const bound = room?.tickets.find(t => t.sessionId === sessionId)
           if (!room || !bound) { this.#pendingRequests.delete(key); return }
-          const snapshot = await this.#deps.agents.journal.read(sessionId)
+          const snapshot = await (await projectWorkers(this.#deps, uid)).journal.read(sessionId)
           if (snapshot.session.workspaceId !== bound.executionWorkspaceId) { this.#pendingRequests.delete(key); return }
           // Rebuild even at a current journal cursor. Polling a room does not read its Workers' histories.
           const requests: SuperWorkerRequest[] = [

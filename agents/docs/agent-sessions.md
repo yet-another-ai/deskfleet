@@ -12,11 +12,11 @@ the current journal and execution behavior below are not proof of enforcement.
 
 ## Machine-scoped workspace conversations
 
-Electron groups projects and Worker Sessions under their owning Machine.
+After the user enables Super Agent in Preferences, Electron and native iOS group projects and Worker Sessions under their owning Machine.
 New project opens that Machine's folder picker. Selecting a project opens its
 Super Agent on a compatible daemon. Expanding the project reveals its Sessions,
 including earlier Sessions with that project ID. Unassigned Sessions are folded
-under their Machine and retain their own composer. Browsers retain the existing Session entry.
+under their Machine and retain their own composer. The optional directory organizer links a user’s prior Sessions to projects on that registration. Upgrading opens the original Session entry until this viewing device opts in.
 
 `packages/components/src/views/WorkspaceAgentView.vue` renders the front-desk
 timeline, Ticket details and Worker links. A quote identifies one displayed

@@ -104,15 +104,16 @@ export VITE_DESKFLEET_SERVER_URL=https://deskfleet.yetanother.ai
 mise run ios:sync
 ```
 
-For this Mac's prepared checkout, the Rust viewer XCFramework, local Swift
-packages and Capacitor assets are already staged. To rebuild the interface
-after a Vue change, the following commands also work with the staged FFI.
-Use the full sync above when modifying the Rust viewer or native plugins.
+After a successful full sync, reuse the staged Rust viewer XCFramework and
+Swift packages when rebuilding a Vue-only change. Run the full sync again
+when the Rust viewer or native plugins change.
 
 ```sh
 pnpm --filter @deskfleet/web build
 pnpm --filter @deskfleet/web exec cap copy ios
 ```
+
+The existing session list opens by default. Switch on **Settings → Preferences → Enable Super Agent** to use project conversations on this device. You can organize history on the selected machine from the same settings page.
 
 On iOS, **Settings → Appearance → Text size** adjusts interface text from 85% to 150%
 and saves the selection on the device. Choose 100% to restore the default.

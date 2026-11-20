@@ -1,5 +1,18 @@
 {
   "superAgent": {
+    "mode": {
+      "heading": "プロジェクトの会話",
+      "label": "Super Agent を有効にする",
+      "description": "この端末ではプロジェクト単位で会話し、Super Agent が Worker を選択・作成します。いつでも元のセッション一覧に戻せます。",
+      "history": "{machine} のセッション履歴",
+      "historyHint": "既存のプロジェクトに属するセッションは自動的に表示されます。他のセッションはそのまま残すか、作業ディレクトリごとに整理できます。",
+      "organize": "ディレクトリ別に整理",
+      "empty": "整理するディレクトリセッションはありません。",
+      "count": "{count} 件のセッション",
+      "choose": "プロジェクトを選択",
+      "assign": "プロジェクトに追加",
+      "create": "この場所にプロジェクトを作成して追加"
+    },
     "attachmentPreviewLimit": "この添付ファイルはプレビューの上限（16 MiB）を超えています。",
     "hostUpdateRequired": "更新が必要",
     "updateHostForProviders": "このマシンの DeskFleet を更新すると、各プロバイダーが調整に対応しているかを確認できます。",

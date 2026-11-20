@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router"
 import { client } from "@deskfleet/client/platform"
-import { usesWorkspaceNavigation } from "../services/workspace-agent-navigation.ts"
+import { supportsWorkspaceNavigation, usesWorkspaceNavigation } from "../services/workspace-agent-navigation.ts"
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -68,7 +68,7 @@ export const router = createRouter({
       path: "/",
       name: "new-session",
       // Only project-aware clients load the workspace entry bundle.
-      component: () => usesWorkspaceNavigation(client)
+      component: () => supportsWorkspaceNavigation(client)
         ? import("../views/WorkspaceEntryView.vue") : import("../views/NewSessionView.vue"),
     },
     {

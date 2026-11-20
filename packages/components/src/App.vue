@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useWorkspaceAgentMode } from "./services/workspace-agent-navigation.ts"
 import { usePlatformClient } from "./composables/usePlatformClient.ts"
 import { provideNavigationMotion } from "./composables/useNavigationMotion.ts"
 import { useAccountSession } from "./composables/useAccountSession.ts"
@@ -21,6 +22,7 @@ import { useTerminalsStore } from "./stores/terminals.ts"
 import { useAgentSessionsStore } from "./stores/agent-sessions.ts"
 import { useProvidersStore } from "./stores/providers.ts"
 
+const workspaceMode = useWorkspaceAgentMode()
 const platformClient = usePlatformClient()
 
 const layout = useLayoutStore()
@@ -36,7 +38,7 @@ const account = useAccountSession()
 const sessionLabel = useSessionLabel()
 const defaultTitle = () => account?.site.value?.siteName ?? "DeskFleet"
 useTitle(() => {
-  if (platformClient.superAgent && (!route.query.team || route.query.team === account?.teamId.value)
+  if (workspaceMode.value && platformClient.superAgent && (!route.query.team || route.query.team === account?.teamId.value)
     && (!route.query.machine || route.query.machine === fleet.targetId)) {
     if (route.name === "new-session") return t("superAgent.defaultWorkspace")
     if (route.name === "workspace-agent") return fleet.findWorkspace(String(route.params.workspaceId))?.workspace.name ?? defaultTitle()
@@ -84,7 +86,7 @@ onBeforeUnmount(() => {
     <WindowManager v-if="!compact && route.name === 'session'" :key="String(route.params.sessionId)" :session-id="String(route.params.sessionId)" />
     <MobileWindowManager v-else-if="compact && route.name === 'session'" :key="`mobile:${route.params.sessionId}`" :session-id="String(route.params.sessionId)" />
     <AppMainWindow v-else />
-    <BottomSheet v-if="compact && !route.meta.fullWindow && !standaloneSession" :open="sidebarOpen" :title="t(platformClient.remoteWorkspaceAgent ? 'superAgent.machineNav.machines' : 'catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
+    <BottomSheet v-if="compact && !route.meta.fullWindow && !standaloneSession" :open="sidebarOpen" :title="t(workspaceMode && platformClient.remoteWorkspaceAgent ? 'superAgent.machineNav.machines' : 'catalog.workspaces')" background="sidebar" @close="layout.closeCompactPanel()">
       <AppSidebar class="h-full" />
     </BottomSheet>
   </div>

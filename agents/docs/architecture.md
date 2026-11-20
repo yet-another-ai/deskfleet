@@ -13,7 +13,7 @@ backend APIs. Remote Agent interaction, Git, files, terminals, and desktop
 streams use WebRTC. Electron uses a direct authenticated channel for Agent, Git,
 and terminal messages on its registered local machine.
 
-Electron exposes each compatible registered machine’s projects and default
+With Super Agent enabled in Preferences, Electron and native iOS expose each compatible registered machine’s projects and default
 conversation through its authenticated local or remote Agent channel. Each registration stores its users’ messages,
 tickets and dispatch receipts in its SQLite catalog. Existing Worker sessions and
 quota enforcement stay in the daemon and central API. The [workspace agent guide](workspace-agent.md)

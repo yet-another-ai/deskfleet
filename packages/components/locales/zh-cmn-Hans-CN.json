@@ -1,5 +1,18 @@
 {
   "superAgent": {
+    "mode": {
+      "heading": "项目对话",
+      "label": "启用 Super Agent",
+      "description": "在这台设备上按项目对话，由 Super Agent 选择或创建 Worker 会话。随时可以切回原会话列表。",
+      "history": "{machine} 的历史会话",
+      "historyHint": "已有项目的会话会自动显示。其他会话可以保留原位，也可以按工作目录整理到项目。",
+      "organize": "按目录整理",
+      "empty": "没有需要整理的目录会话。",
+      "count": "{count} 个会话",
+      "choose": "选择项目",
+      "assign": "归入项目",
+      "create": "用此目录新建项目并归入"
+    },
     "attachmentPreviewLimit": "这个附件超过了 16 MiB 的预览上限。",
     "hostUpdateRequired": "需更新机器端",
     "updateHostForProviders": "更新这台机器上的 DeskFleet 后，即可检查这些 Provider 是否支持调度。",

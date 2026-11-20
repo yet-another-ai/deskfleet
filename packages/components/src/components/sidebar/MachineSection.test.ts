@@ -1,10 +1,11 @@
+import { useWorkspaceAgentMode } from "../../services/workspace-agent-navigation.ts"
 import { createHash } from "node:crypto"
 import { getClient } from "@deskfleet/client/platform"
 import type { SuperAgentApi } from "@deskfleet/client/desktop-api"
 import { platformClientKey } from "../../composables/usePlatformClient.ts"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia, setActivePinia } from "pinia"
-import { expect, test, vi } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import { reactive, ref } from "vue"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { i18n } from "../../i18n/index.ts"
@@ -499,6 +500,7 @@ test.each(["machine", "workspace"] as const)("%s hover Archive confirms before a
 })
 
 test("local workspace agents separate opening the project from expanding existing Sessions", async () => {
+  useWorkspaceAgentMode().value = true
   const project = {
     id: "workspace", name: "Project", directories: [{ path: "/project" }], terminals: [{ id: "workspace-shell", title: "Task shell", cwd: "/project" }],
     sessions: [{ id: "old", title: "Existing Session", archiveState: "active" as const, provider: "codex" }],
@@ -535,6 +537,7 @@ test("local workspace agents separate opening the project from expanding existin
 })
 
 test("Copy ID uses the clicked project Worker's registration and leaves unassigned sessions out", async () => {
+  useWorkspaceAgentMode().value = true
   const machineId = "second-machine"
   const account = createAccountSession(fakeCentral({ machines: [
     machineFixture("first-machine", "team-1", "Mac"),
@@ -579,6 +582,7 @@ test("Copy ID uses the clicked project Worker's registration and leaves unassign
 })
 
 test("projects sharing a name and folder show a distinct ID on each project row", async () => {
+  useWorkspaceAgentMode().value = true
   const example = { name: "A", directories: [{ path: "/code/A" }], sessions: [], terminals: [] }
   const { wrapper, router } = await setup({ workspaces: [{ ...example, id: "20" }, { ...example, id: "21" }] }, undefined, undefined, { snapshot: vi.fn(), send: vi.fn(), settings: vi.fn(), correct: vi.fn() })
   for (const id of ["20", "21"]) {
@@ -595,6 +599,7 @@ test("projects sharing a name and folder show a distinct ID on each project row"
 })
 
 test("remote project actions and unassigned history stay scoped to the machine even with equal project IDs elsewhere", async () => {
+  useWorkspaceAgentMode().value = true
   const account = createAccountSession(fakeCentral({ machines: [machineFixture("mac", "team-1", "Mac"), machineFixture("pc", "team-1", "Windows PC")] }).central)
   await flushPromises()
   vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
@@ -634,6 +639,7 @@ test("remote project actions and unassigned history stay scoped to the machine e
 })
 
 test("the default workspace opens independently of its trailing Worker disclosure", async () => {
+  useWorkspaceAgentMode().value = true
   const account = createAccountSession(fakeCentral().central)
   await flushPromises()
   const navigate = vi.spyOn(account, "openMachineRoute").mockImplementation(() => {})
@@ -659,3 +665,5 @@ test("the default workspace opens independently of its trailing Worker disclosur
     account.dispose()
   }
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

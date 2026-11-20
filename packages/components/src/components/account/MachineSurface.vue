@@ -5,18 +5,20 @@ import type { Machine } from "@deskfleet/client/central"
 import App from "../../App.vue"
 import type { AccountSession } from "../../composables/useAccountSession.ts"
 import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
-import { workspaceRouteMachine } from "../../services/workspace-agent-navigation.ts"
+import { useWorkspaceAgentMode, workspaceRouteMachine } from "../../services/workspace-agent-navigation.ts"
 import { router } from "../../router/index.ts"
 
 // Route views remount on selection; the account retains each machine's runtime.
 const props = defineProps<{ session: AccountSession; machine: Machine }>()
 const emit = defineEmits<{ ready: [machineId: string] }>()
+const workspaceMode = useWorkspaceAgentMode()
 const runtimes = useMachineRuntimes()!
 const root = useTemplateRef<HTMLElement>("root")
 let unmount: (() => void) | undefined
 let disposed = false
 
 function enterOwner(route: Pick<RouteLocationNormalizedLoaded, "name" | "query" | "fullPath">): false | RouteLocationRaw | undefined {
+  if (!workspaceMode.value) return
   const id = workspaceRouteMachine(route)
   if (!id) return
   const session = props.session
@@ -49,7 +51,7 @@ onMounted(async () => {
     // Cross-machine results and desktop previews keep their overview in history for Back.
     if (route.name === "search" || route.name === "remote-desktops") await router.push(destination)
     else await router.replace(destination)
-  } else if (workspaceRouteMachine(route)) {
+  } else if (workspaceMode.value && workspaceRouteMachine(route)) {
     const redirect = enterOwner(route)
     if (redirect === false) return
     if (redirect) await router.replace(redirect)

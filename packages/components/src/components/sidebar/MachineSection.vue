@@ -49,6 +49,7 @@ const account = useAccountSession()
 const route = useRoute()
 const client = usePlatformClient()
 const projectHome = computed(() => usesWorkspaceNavigation(client, !!account))
+const duplicateMachine = computed(() => projectHome.value && account?.machines?.value.some(other => other.id !== props.machine.id && other.name === props.machine.name))
 const looseSessionsOpen = ref(false)
 
 function sessionRoute(sessionId: string, workspaceId: string | null) {
@@ -178,7 +179,8 @@ const machineIndicator = computed(() => {
         type="button"
         class="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-[13px] font-medium text-ui-text-muted ui-motion hover:text-ui-text"
       >
-        <span class="truncate">{{ machine.name }}</span>
+        <span class="truncate" :title="duplicateMachine ? machine.name + ' #' + machine.id : undefined">{{ machine.name }}</span>
+        <small v-if="duplicateMachine" class="shrink-0 text-xs text-ui-text-muted">#{{ machine.id }}</small>
         <span v-if="machine.local" class="inline-flex shrink-0 items-center text-ui-text-muted" :title="t('machine.local')">
           <LocateFixed :size="14" :stroke-width="1.75" aria-hidden="true" />
           <span class="sr-only">{{ t("machine.local") }}</span>

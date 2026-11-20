@@ -74,7 +74,7 @@ export interface AccountSession {
 
 const message = (reason: unknown) => reason instanceof Error ? reason.message : String(reason)
 
-export function createAccountSession(central: CentralApi, initialNotice?: string, remoteWorkspaceAgent = false): AccountSession {
+export function createAccountSession(central: CentralApi, initialNotice?: string, remoteWorkspaceAgent = false, workspaceMode = () => true): AccountSession {
   const hashTarget = typeof window !== "undefined" ? parseSessionWindowHash(window.location.hash) : undefined
   const route = router.currentRoute.value
   const queryTarget = route.name === "session" && route.query.window === "session"
@@ -115,7 +115,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     ? useLocalStorage<Record<string, string>>("deskfleet.workspace-agent.recent-machines", {}, { writeDefaults: false })
     : undefined
   function rememberMachine(id: string): void {
-    if (recentMachines) recentMachines.value[resourceScope()] = id
+    if (recentMachines && workspaceMode()) recentMachines.value[resourceScope()] = id
   }
 
   async function background(work: () => Promise<void>): Promise<void> {
@@ -138,12 +138,13 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     machines.value = list
     machineRosterVersion.value = revision
     // A native cold start can load its roster while the initial lazy route is still resolving.
-    const currentRoute = remoteWorkspaceAgent && !router.currentRoute.value.name && window.location.hash.startsWith("#/")
+    const preferProjects = remoteWorkspaceAgent && workspaceMode()
+    const currentRoute = preferProjects && !router.currentRoute.value.name && window.location.hash.startsWith("#/")
       ? router.resolve(window.location.hash.slice(1)) : router.currentRoute.value
-    const scopedOwner = remoteWorkspaceAgent && !machineId.value && (!currentRoute.query.team || currentRoute.query.team === selected)
+    const scopedOwner = preferProjects && !machineId.value && (!currentRoute.query.team || currentRoute.query.team === selected)
       ? workspaceRouteMachine(currentRoute) : undefined
-    const candidates = [preferred, machineId.value, scopedOwner, recentMachines?.value[resourceScope()], localMachineId.value]
-    const compatible = remoteWorkspaceAgent ? list.filter(value => value.capabilities?.superAgent === true) : []
+    const candidates = [preferred, machineId.value, scopedOwner, preferProjects ? recentMachines?.value[resourceScope()] : undefined, localMachineId.value]
+    const compatible = preferProjects ? list.filter(value => value.capabilities?.superAgent === true) : []
     // More than one compatible computer needs a choice the first time. A selected
     // computer stays selected even if it goes offline or temporarily loses its capability.
     const available = compatible.length ? compatible[0] : (list.find(value => value.online) ?? list[0])

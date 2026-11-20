@@ -20,6 +20,13 @@ export async function machineMcpCatalog(catalog: DaemonCatalog) {
 /** Only an actual default-room Worker needs a catalog workspace and filesystem root. */
 export function superWorkspaces(catalog: DaemonCatalog, registrationDirectory: string) {
   const privateRoot = resolve(registrationDirectory, "super-agent-files")
+  let snapshot: ReturnType<DaemonCatalog["native"]["snapshot"]> | undefined
+  catalog.onChange(() => { snapshot = undefined })
+  function historyCatalog() {
+    const read = snapshot ??= catalog.native.snapshot()
+    void read.catch(() => { if (snapshot === read) snapshot = undefined })
+    return read
+  }
   const directoryFor = (userId: string) => join(privateRoot, createHash("sha256").update(userId).digest("hex"))
   const creating = new Map<string, Promise<string>>()
   async function workspaces(userId: string, includeDefaultWorker = false) {
@@ -47,5 +54,5 @@ export function superWorkspaces(catalog: DaemonCatalog, registrationDirectory: s
     creating.set(userId, result)
     try { return await result } finally { creating.delete(userId) }
   }
-  return { workspaces, ensureDefaultWorkspace }
+  return { workspaces, ensureDefaultWorkspace, historyCatalog, historyChanged: () => catalog.changed() }
 }

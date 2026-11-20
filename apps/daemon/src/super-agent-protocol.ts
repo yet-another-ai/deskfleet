@@ -79,6 +79,10 @@ export interface SuperCoordinatorOptions {
   defaultReasoningEfforts: string[]
 }
 
+export interface SuperHistoryGroup { paths: string[]; sessionIds: string[]; projects: { id: string; name: string }[] }
+export interface SuperHistory { links: Record<string, string>; groups?: SuperHistoryGroup[] }
+export type SuperHistoryRequest = { view: "links" } | { view: "groups"; assign?: { workspaceId: string; sessionIds: string[] } }
+
 export interface SuperWorkspace { id: string; name: string; roots: string[] }
 
 export interface SuperSnapshot {

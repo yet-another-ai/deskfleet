@@ -1,8 +1,17 @@
 import type { RouteLocationResolved } from "vue-router"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 
-/** The shell can show projects before any selected machine advertises its agent. */
+import { createGlobalState, useStorage } from "@vueuse/core"
+
+/** The viewing device owns the navigation preference. Machine data stays in its registration. */
+export const useWorkspaceAgentMode = createGlobalState(() => useStorage("deskfleet.workspace-agent.enabled", false, undefined, { writeDefaults: false, flush: "sync" }))
+
 export function usesWorkspaceNavigation(client: DeskfleetDesktopApi, accountAvailable = true): boolean {
+  return useWorkspaceAgentMode().value && supportsWorkspaceNavigation(client, accountAvailable)
+}
+
+/** The shell can show projects before any selected machine advertises its agent. */
+export function supportsWorkspaceNavigation(client: DeskfleetDesktopApi, accountAvailable = true): boolean {
   return !!(client.remoteWorkspaceAgent || client.superAgent || (accountAvailable && client.localChannels))
 }
 
@@ -17,6 +26,12 @@ export function workspaceRouteMachine(route: Pick<RouteLocationResolved, "name" 
   if (route.name === "new-project" || route.name === "new-session" || route.name === "workspace-agent") {
     return typeof route.query.machine === "string" ? route.query.machine : undefined
   }
+}
+
+/** The host can run a different OS than the viewing device. */
+export function projectDirectoryName(path: string): string {
+  const separator = /^(?:[a-z]:[\\/]|\\\\)/iu.test(path) ? /[\\/]/u : "/"
+  return path.split(separator).filter(Boolean).at(-1) ?? path
 }
 
 /** Workspace IDs are scoped to one machine in the current Team. */

@@ -1,3 +1,4 @@
+import { useWorkspaceAgentMode } from "./services/workspace-agent-navigation.ts"
 import { client as platformClient, configureClient, getClient } from "@deskfleet/client/platform"
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
@@ -112,6 +113,7 @@ test("Pinned sessions appear above Workspaces while retaining their workspace en
 })
 
 test("the project sidebar offers a collapsed Pinned group only after a Worker is pinned", async () => {
+  useWorkspaceAgentMode().value = true
   configureClient({ ...host, remoteWorkspaceAgent: true })
   const pinia = createPinia()
   hydrateSession(pinia, "Pinned Worker")
@@ -683,6 +685,7 @@ test("the Chat window tab uses the Session title and exposes its location as a t
 })
 
 test("titles follow the project, its Worker and the personal default conversation", async () => {
+  useWorkspaceAgentMode().value = true
   const snapshot = async ({ workspaceId }: { workspaceId: string | null }) => ({ workspaceId, provider: "codex", tickets: [], messages: [] })
   configureClient({ ...host, superAgent: { snapshot, send: vi.fn(), correct: vi.fn(), settings: vi.fn() } })
   const pinia = createPinia()
@@ -775,3 +778,5 @@ test("desktop Session menus open a focused standalone window while web and mobil
   await new DOMWrapper(document.body).get('[aria-label="Session actions"]').trigger("click"); await flushPromises()
   expect(new DOMWrapper(document.body).find('[data-session-action="open-in-new-window"]').exists()).toBe(false)
 })
+
+afterEach(() => { useWorkspaceAgentMode().value = false })

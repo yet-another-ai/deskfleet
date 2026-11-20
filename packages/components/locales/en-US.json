@@ -1,5 +1,18 @@
 {
   "superAgent": {
+    "mode": {
+      "heading": "Project conversations",
+      "label": "Enable Super Agent",
+      "description": "On this device, talk to a project and let its agent choose or start a Worker. You can switch back to the session list anytime.",
+      "history": "Session history on {machine}",
+      "historyHint": "Sessions with a project appear automatically. Keep other sessions where they are or organize them by working directory.",
+      "organize": "Organize by directory",
+      "empty": "There are no directory sessions to organize.",
+      "count": "{count} sessions",
+      "choose": "Choose a project",
+      "assign": "Add to project",
+      "create": "Create project here and add sessions"
+    },
     "attachmentPreviewLimit": "This attachment exceeds the 16 MiB preview limit.",
     "hostUpdateRequired": "Update required",
     "updateHostForProviders": "Update DeskFleet on this machine to check which of these agents can coordinate.",

@@ -23,9 +23,9 @@ import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
 import type { SpeechApi } from "./speech.ts"
 
-import type { SuperMethods } from "../../../apps/daemon/src/super-agent-protocol.ts"
+import type { SuperMethods, SuperHistory, SuperHistoryRequest } from "../../../apps/daemon/src/super-agent-protocol.ts"
 
-export type SuperAgentApi = {
+export type SuperAgentApi = { history?: (params: SuperHistoryRequest) => Promise<SuperHistory> } & {
   [Name in keyof SuperMethods as Name extends `_deskfleet/super-agent/${infer Action}` ? Action : never]:
     (params: SuperMethods[Name]["params"]) => Promise<SuperMethods[Name]["result"]>
 }

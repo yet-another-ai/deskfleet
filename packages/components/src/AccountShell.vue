@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useWorkspaceAgentMode } from "./services/workspace-agent-navigation.ts"
 import UiButton from "./components/common/UiButton.vue"
 import UiScrollArea from "./components/common/UiScrollArea.vue"
 import { computed, defineAsyncComponent, onBeforeUnmount, provide, ref, watch } from "vue"
@@ -70,7 +71,8 @@ async function refreshNotificationPermission(): Promise<void> {
 }
 watch(notificationsEnabled, () => { void refreshNotificationPermission() }, { immediate: true })
 const { t } = useI18n()
-const session = createAccountSession(props.host.central!, props.host.initialError, props.host.remoteWorkspaceAgent)
+const workspaceMode = useWorkspaceAgentMode()
+const session = createAccountSession(props.host.central!, props.host.initialError, props.host.remoteWorkspaceAgent, () => workspaceMode.value)
 useErrorReportingUser(() => session.account.value.user)
 provide(platformClientKey, props.host)
 provide(accountSessionKey, session)
@@ -177,8 +179,8 @@ if (props.host.onboarding) void loadOnboarding()
         </aside>
         <main class="flex min-w-0 flex-1 flex-col py-6 md:py-0">
           <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
-          <WorkspaceAgentSetupView v-if="team && host.localChannels" :key="team.id" />
-          <MachineOnboarding v-else-if="team" :remote-workspace-agent="host.remoteWorkspaceAgent" />
+          <WorkspaceAgentSetupView v-if="team && host.localChannels && workspaceMode" :key="team.id" />
+          <MachineOnboarding v-else-if="team" :remote-workspace-agent="host.remoteWorkspaceAgent && workspaceMode" />
           <TeamOnboarding v-else-if="!teams.length" />
         </main>
       </div>

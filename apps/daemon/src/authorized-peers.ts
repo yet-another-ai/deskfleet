@@ -235,7 +235,8 @@ export class AuthorizedPeers {
         journal: this.#agents.journal,
         ...(this.#superAgent ? {
           superAgent: (method: string, params: unknown) => {
-            this.#live(id, method === "_deskfleet/super-agent/snapshot" ? "agent:read" : "agent:execute")
+            const readingHistory = method === "_deskfleet/super-agent/history" && !!params && typeof params === "object" && !("assign" in params && params.assign !== undefined)
+            this.#live(id, method === "_deskfleet/super-agent/snapshot" || readingHistory ? "agent:read" : "agent:execute")
             return this.#superAgent!(method, params, owned.authorization.actor)
           },
         } : {}),
