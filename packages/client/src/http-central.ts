@@ -247,8 +247,9 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if (query.cursor) params.set("cursor", query.cursor)
     return this.request<AdminTeamBillingPage>("GET", `/api/admin/teams?${params}`)
   }
-  registrationPolicy() { return this.request<{ registrationEnabled: boolean }>("GET", "/api/auth/config") }
+  registrationPolicy() { return this.request<import("./account-security.ts").PublicAuthenticationPolicy>("GET", "/api/auth/config") }
   async updateRegistration(enabled: boolean) { await this.request("PATCH", "/api/auth/registration", { enabled }) }
+  async updateCaptcha(enabled: boolean) { await this.request("PATCH", "/api/auth/captcha", { enabled }) }
   users(query: string) { return this.request<AdminAccount[]>("GET", `/api/admin/users?query=${encodeURIComponent(query)}`) }
   createUser(input: CreateAccountInput) { return this.request<AdminAccount>("POST", "/api/admin/users", input) }
   async disableUser(userId: string, disabled: boolean) { await this.request("PATCH", `/api/admin/users/${encodeURIComponent(userId)}/disabled`, { disabled }) }

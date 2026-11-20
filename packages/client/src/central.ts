@@ -95,8 +95,9 @@ export interface SiteAdministrationApi {
   setManualGrant(teamId: string, plan: "free" | "go" | "pro" | "enterprise" | null, expiresAt: number | null, reason: string): Promise<void>
   deletionRequests(query?: AccountDeletionRequestQuery): Promise<AccountDeletionRequestPage>
   reviewDeletionRequest(id: string, approve: boolean, note?: string): Promise<void>
-  registrationPolicy(): Promise<{ registrationEnabled: boolean }>
+  registrationPolicy(): Promise<import("./account-security.ts").PublicAuthenticationPolicy>
   updateRegistration(enabled: boolean): Promise<void>
+  updateCaptcha(enabled: boolean): Promise<void>
   users(query: string): Promise<AdminAccount[]>
   createUser(input: CreateAccountInput): Promise<AdminAccount>
   disableUser(userId: string, disabled: boolean): Promise<void>

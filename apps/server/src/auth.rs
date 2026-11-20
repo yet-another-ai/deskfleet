@@ -1,6 +1,7 @@
 //! DeskFleet-owned identity. Browsers use HttpOnly sessions; native clients keep
 //! one-use browser exchange credentials in their secure main-process store.
 mod account;
+mod captcha;
 pub mod config;
 mod desktop;
 mod email;
@@ -65,6 +66,11 @@ pub fn configure(config: &mut web::ServiceConfig) {
             web::post().to(email::verify),
         )
         .route("/auth/config", web::get().to(public_config))
+        .route("/auth/captcha", web::patch().to(account::captcha))
+        .route(
+            "/auth/captcha/challenge",
+            web::post().to(captcha::challenge),
+        )
         .route("/auth/register", web::post().to(passwords::register))
         .route("/auth/verify", web::post().to(passwords::verify))
         .route("/auth/login", web::post().to(passwords::login))
@@ -342,6 +348,7 @@ async fn public_config(req: HttpRequest, state: web::Data<AppState>) -> Result<H
             "githubEnabled": state.auth.config.github.is_some(),
             "googleEnabled": state.auth.config.google.is_some(),
             "registrationEnabled": state.store.registration_enabled().await?,
+            "captchaEnabled": state.store.captcha_enabled().await?,
             "termsOfServiceUrl": settings.terms_of_service_url,
             "privacyTermsUrl": settings.privacy_terms_url,
             "telemetryEnabled": settings.telemetry_enabled,

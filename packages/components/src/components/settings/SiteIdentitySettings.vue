@@ -44,7 +44,13 @@ async function run(key: string, action: () => Promise<void>): Promise<void> {
 function setRegistration(enabled: boolean): void {
   void run("registration", async () => {
     await props.confirmed(() => props.api.updateRegistration(enabled))
-    policy.value = { registrationEnabled: enabled }
+    if (policy.value) policy.value = { ...policy.value, registrationEnabled: enabled }
+  })
+}
+function setCaptcha(enabled: boolean): void {
+  void run("captcha", async () => {
+    await props.confirmed(() => props.api.updateCaptcha(enabled))
+    if (policy.value) policy.value = { ...policy.value, captchaEnabled: enabled }
   })
 }
 async function search(): Promise<void> {
@@ -91,6 +97,10 @@ async function createAccount(): Promise<void> {
       <SettingsRow :label="t('siteAdmin.registration')" :label-id="`${id}-registration`">
         <template #description>{{ policyError ? failureMessage(policyError) : t("siteAdmin.registrationDescription") }}</template>
         <UiSwitch v-if="policy" :model-value="policy.registrationEnabled" :aria-labelledby="`${id}-registration`" name="public-registration" :disabled="!!pending" @update:model-value="setRegistration" />
+      </SettingsRow>
+      <SettingsRow :label="t('siteAdmin.captcha')" :label-id="`${id}-captcha`" :description-id="`${id}-captcha-description`">
+        <template #description>{{ t("siteAdmin.captchaDescription") }}</template>
+        <UiSwitch v-if="policy" :model-value="policy.captchaEnabled" :aria-labelledby="`${id}-captcha`" :aria-describedby="`${id}-captcha-description`" name="auth-captcha" :disabled="!!pending" @update:model-value="setCaptcha" />
       </SettingsRow>
     </div>
     <div class="mt-4 flex flex-wrap items-start justify-between gap-3">

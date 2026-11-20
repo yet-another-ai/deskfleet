@@ -456,10 +456,8 @@ async fn postgres_team_usage_counts_current_members_and_retained_sessions() {
     store.close().await.unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
-async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
-    use sea_orm::{ConnectOptions, ConnectionTrait, Database, DbBackend, Statement};
+async fn isolated_migration_schema() -> (sea_orm::DatabaseConnection, String) {
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database};
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL to PostgreSQL");
     let mut options = ConnectOptions::new(url);
     options.max_connections(1).min_connections(1);
@@ -471,6 +469,88 @@ async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
     db.execute_unprepared(&format!("SET search_path TO {schema}"))
         .await
         .unwrap();
+    (db, schema)
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_migration_upgrades_both_version_37_layouts() {
+    use deskfleet_control_store::schema::{applied_versions, migrate};
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+    let (db, schema) = isolated_migration_schema().await;
+    migrate(&db).await.unwrap();
+    // Reconstruct main at v37, including an administrator's CAPTCHA setting.
+    db.execute_unprepared(include_str!("../src/plan_limits_down.sql"))
+        .await
+        .unwrap();
+    db.execute_unprepared(
+        "DROP TABLE cp_cloud_token_usage, cp_cloud_agent_requests, cp_cloud_sessions;
+         DELETE FROM cp_migrations WHERE version BETWEEN 38 AND 42;
+         UPDATE cp_site_settings SET captcha_enabled = true WHERE singleton",
+    )
+    .await
+    .unwrap();
+    migrate(&db).await.unwrap();
+    let settings = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT captcha_enabled FROM cp_site_settings WHERE singleton",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(settings.try_get::<bool>("", "captcha_enabled").unwrap());
+
+    // The preview used v37 for the ledger and had v38–41 but no CAPTCHA column.
+    db.execute_unprepared(
+        "ALTER TABLE cp_site_settings DROP COLUMN captcha_enabled;
+         DELETE FROM cp_migrations WHERE version = 42;
+         UPDATE cp_plan_limits SET super_agent_tokens = 175 WHERE plan = 'go';
+         WITH team AS (INSERT INTO cp_teams(name) VALUES ('Existing team') RETURNING id)
+         INSERT INTO cp_cloud_sessions(session_id, team_id, title)
+             SELECT 'existing-session', id, 'Existing conversation' FROM team;
+         INSERT INTO cp_cloud_token_usage(team_id, session_id, line, event_index,
+                                          occurred_at, input_tokens, output_tokens)
+             SELECT team_id, session_id, 2, 1, 1000, 7, 3 FROM cp_cloud_sessions",
+    )
+    .await
+    .unwrap();
+    migrate(&db).await.unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT captcha_enabled, super_agent_tokens, title, input_tokens, output_tokens
+             FROM cp_cloud_token_usage JOIN cp_cloud_sessions USING (team_id, session_id)
+             CROSS JOIN cp_plan_limits CROSS JOIN cp_site_settings
+             WHERE session_id = 'existing-session' AND line = 2 AND event_index = 1
+               AND plan = 'go' AND singleton",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!row.try_get::<bool>("", "captcha_enabled").unwrap());
+    assert_eq!(row.try_get::<i64>("", "super_agent_tokens").unwrap(), 175);
+    assert_eq!(
+        row.try_get::<String>("", "title").unwrap(),
+        "Existing conversation"
+    );
+    assert_eq!(row.try_get::<i64>("", "input_tokens").unwrap(), 7);
+    assert_eq!(row.try_get::<i64>("", "output_tokens").unwrap(), 3);
+    let versions = applied_versions(&db).await.unwrap().unwrap();
+    assert!((37..=42).all(|version| versions.contains(&version)));
+
+    db.execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    db.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
+async fn postgres_migration_can_revert_and_reapply_in_isolated_schema() {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let (db, schema) = isolated_migration_schema().await;
     db.execute_unprepared("CREATE TABLE cp_migrations (version INTEGER PRIMARY KEY)")
         .await
         .unwrap();

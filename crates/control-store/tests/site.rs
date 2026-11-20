@@ -42,7 +42,7 @@ async fn audit(store: &ControlStore) -> Vec<Value> {
 
 #[tokio::test]
 #[ignore = "requires a real PostgreSQL TEST_DATABASE_URL"]
-async fn legal_url_migration_preserves_existing_site_settings() {
+async fn site_settings_migrations_preserve_existing_values() {
     let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
     let database = Database::connect(&url).await.unwrap();
     let schema = format!("site_upgrade_{}", uuid::Uuid::new_v4().simple());
@@ -56,8 +56,8 @@ async fn legal_url_migration_preserves_existing_site_settings() {
     // Restore the previous schema shape with a configured installation to exercise upgrade defaults.
     store.database().execute_unprepared(
         "UPDATE cp_site_settings SET site_name='Existing fleet', announcement='Existing announcement', allow_team_creation=FALSE;
-         ALTER TABLE cp_site_settings DROP COLUMN terms_of_service_url, DROP COLUMN privacy_terms_url;
-         DELETE FROM cp_migrations WHERE version=7",
+         ALTER TABLE cp_site_settings DROP COLUMN terms_of_service_url, DROP COLUMN privacy_terms_url, DROP COLUMN captcha_enabled;
+         DELETE FROM cp_migrations WHERE version IN (7, 37)",
     ).await.unwrap();
     store.close().await.unwrap();
     let upgraded = ControlStore::connect(&scoped_url).await.unwrap();
@@ -72,6 +72,7 @@ async fn legal_url_migration_preserves_existing_site_settings() {
             telemetry_enabled: false,
         }
     );
+    assert!(!upgraded.captcha_enabled().await.unwrap());
     // The central teardown must understand the added migration as well.
     deskfleet_control_store::schema::down(upgraded.database())
         .await
@@ -121,6 +122,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         telemetry_enabled: false,
     };
     assert_eq!(store.site_settings().await.unwrap(), defaults);
+    assert!(!store.captcha_enabled().await.unwrap());
     assert!(!store.is_site_admin(&admin.id).await.unwrap());
     assert!(store.site_admins().await.unwrap().is_empty());
     assert!(matches!(
@@ -129,6 +131,10 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
     ));
     assert!(matches!(
         store.update_site_settings(&member.id, &defaults).await,
+        Err(Error::Forbidden)
+    ));
+    assert!(matches!(
+        store.set_captcha_enabled(&member.id, true).await,
         Err(Error::Forbidden)
     ));
     assert!(matches!(
@@ -165,6 +171,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         Err(Error::Forbidden)
     ));
     assert_eq!(store.read_site_settings(&admin.id).await.unwrap(), defaults);
+    store.set_captcha_enabled(&admin.id, true).await.unwrap();
 
     let mut changed = SiteSettings {
         site_name: "  Research fleet  ".into(),
@@ -185,6 +192,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
     // Read from a new connection, so persistence and per-request grants are tested.
     let second = ControlStore::connect(&scoped_url).await.unwrap();
     assert_eq!(second.site_settings().await.unwrap(), changed);
+    assert!(second.captcha_enabled().await.unwrap());
     assert!(matches!(
         store.create_team(&member.id, "Disabled").await,
         Err(Error::Forbidden)
@@ -223,7 +231,7 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         ));
     }
     let entries = audit(&store).await;
-    assert_eq!(entries.len(), 2);
+    assert_eq!(entries.len(), 3);
     assert_eq!(entries[0]["source"], "cli");
     assert_eq!(entries[0]["action"], "admin.grant");
     assert_eq!(entries[0]["actor_user_id"], Value::Null);
@@ -232,8 +240,11 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
     assert_eq!(entries[0]["after_value"], json!({"siteAdmin": true}));
     assert_eq!(entries[1]["source"], "user");
     assert_eq!(entries[1]["actor_user_id"], admin.id);
-    assert_eq!(entries[1]["before_value"], json!(defaults));
-    assert_eq!(entries[1]["after_value"], json!(changed));
+    assert_eq!(entries[1]["action"], "settings.update");
+    assert_eq!(entries[1]["before_value"], json!({"captchaEnabled": false}));
+    assert_eq!(entries[1]["after_value"], json!({"captchaEnabled": true}));
+    assert_eq!(entries[2]["before_value"], json!(defaults));
+    assert_eq!(entries[2]["after_value"], json!(changed));
 
     // An audit write failure must roll back both kinds of administrative changes.
     store.database().execute_unprepared(
@@ -247,6 +258,8 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
             .is_err()
     );
     assert_eq!(second.site_settings().await.unwrap(), changed);
+    assert!(store.set_captcha_enabled(&admin.id, false).await.is_err());
+    assert!(second.captcha_enabled().await.unwrap());
     assert!(store.grant_site_admin(&member.id).await.is_err());
     assert!(!second.is_site_admin(&member.id).await.unwrap());
     assert!(store.revoke_site_admin(&admin.id).await.is_err());
@@ -297,14 +310,18 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
         second.update_site_settings(&admin.id, &defaults).await,
         Err(Error::Forbidden)
     ));
+    assert!(matches!(
+        second.set_captcha_enabled(&admin.id, false).await,
+        Err(Error::Forbidden)
+    ));
     let entries = audit(&store).await;
-    assert_eq!(entries.len(), 4);
-    assert_eq!(entries[2]["action"], "settings.update");
-    assert_eq!(entries[2]["before_value"], json!(changed));
-    assert_eq!(entries[2]["after_value"], json!(defaults));
-    assert_eq!(entries[3]["action"], "admin.revoke");
-    assert_eq!(entries[3]["before_value"], json!({"siteAdmin": true}));
-    assert_eq!(entries[3]["after_value"], json!({"siteAdmin": false}));
+    assert_eq!(entries.len(), 5);
+    assert_eq!(entries[3]["action"], "settings.update");
+    assert_eq!(entries[3]["before_value"], json!(changed));
+    assert_eq!(entries[3]["after_value"], json!(defaults));
+    assert_eq!(entries[4]["action"], "admin.revoke");
+    assert_eq!(entries[4]["before_value"], json!({"siteAdmin": true}));
+    assert_eq!(entries[4]["after_value"], json!({"siteAdmin": false}));
     // Explicit CLI recovery still works after revoking the last administrator.
     assert!(second.grant_site_admin(&member.id).await.unwrap());
     let go = store.plan_limits(Plan::Go).await.unwrap();
@@ -335,6 +352,8 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
     assert_eq!(quota_audit[0]["actor_user_id"], member.id);
     assert_eq!(quota_audit[0]["before_value"], json!(previous));
     assert_eq!(quota_audit[0]["after_value"], json!(updated));
+    second.set_captcha_enabled(&member.id, false).await.unwrap();
+    assert!(!store.captcha_enabled().await.unwrap());
     second
         .update_site_settings(&member.id, &defaults)
         .await

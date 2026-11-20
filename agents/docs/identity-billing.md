@@ -145,6 +145,15 @@ Public registration and Team creation are separate site policies. Site Admin
 grants remain explicit operator actions on an existing account; the first user
 or a special email address does not automatically receive that authority.
 
+Site administrators can enable ALTCHA for public authentication after recent
+authentication. The policy defaults to disabled. When enabled, the server
+requires proof of work before checking a login password, starting a Passkey or
+OAuth sign-in, or sending or resending a registration email. Registration then
+continues with the one-time mailbox link. The browser solves each challenge
+locally. The server signs challenges for one action, checks their expiry, and
+consumes validated proofs once in the shared identity store. Challenge issuance
+and authentication attempts are rate-limited.
+
 Site administrators may configure Terms of Service and Privacy Terms URLs
 independently in runtime site settings. When either is present, registration
 requires an initially unchecked agreement checkbox with links to the configured
