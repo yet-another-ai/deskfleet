@@ -27,6 +27,7 @@ mod teams;
 mod turn_settings;
 mod turn_usage;
 
+pub use cloud_agent_requests::CloudPrewarm;
 pub use cloud_sessions::{CloudMeterCursor, CloudSessionSummary};
 pub use cloudflare_turn::{
     CloudflareTurnConfig, CloudflareTurnDailyUsage, CloudflareTurnUsageQuery,

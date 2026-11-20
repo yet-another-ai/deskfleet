@@ -152,8 +152,9 @@ rollout removal. The server uses a private service credential for the runtime.
 The cloud service owns conversation execution and replay. The control store owns Team membership,
 request receipts, Session bindings and the cloud token ledger. Each API instance
 can claim outstanding Session streams to meter. The cursor advances after the
-usage facts are durable. Re-reading a stream after a crash preserves the original
-token count. [Super Agent setup](../../apps/super-agent/README.md) describes
+usage facts are durable. Each fact retains its raw token counts and the credits
+charged at first settlement, including when the stream is replayed after a rate
+change. [Super Agent setup](../../apps/super-agent/README.md) describes
 runtime configuration and the API, and [billing](identity-billing.md#monthly-credits)
 defines the allowance.
 

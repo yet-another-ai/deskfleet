@@ -14,7 +14,7 @@ use actix_web::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
 use content::Message;
-use deskfleet_control_store::{billing::CloudTokenPeriod, policies::TeamAction};
+use deskfleet_control_store::{CloudPrewarm, billing::CloudTokenPeriod, policies::TeamAction};
 pub(crate) use rollout::Rollout;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -200,38 +200,19 @@ async fn create(
     let eve = runtime(&state)?;
     let key = request_key(&actor, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
-    let saved = state
+    let claim = state
         .store
-        .cloud_agent_request(&team, &key, &fingerprint, None, admitted)
+        .claim_cloud_prewarm(&team, &key, &fingerprint, admitted)
         .await?;
-    let session = match saved {
-        Some(session) => session,
-        None => {
-            // A prewarm is empty. If replicas race, only the winning handle is
-            // returned and authorized to receive a paid message.
-            let response = client::send(
-                eve.post(&["eve", "v1", "session"])?
-                    .json(&json!({"operationId":key})),
-            )
-            .await?;
-            let created: Created = response.json().await.map_err(|_| client::unavailable())?;
-            if !client::valid_segment(&created.session_id) {
-                return Err(client::unavailable());
+    let session = match claim {
+        CloudPrewarm::Completed(session) => session,
+        CloudPrewarm::Claimed { until } => match prewarm(&state, eve, &key).await {
+            Ok(session) => session,
+            Err(error) => {
+                state.store.release_cloud_prewarm(&key, until).await?;
+                return Err(error);
             }
-            let winner = state
-                .store
-                .finish_cloud_agent_request(&key, &created.session_id)
-                .await?;
-            if winner != created.session_id {
-                let close = eve
-                    .post(&["eve", "v1", "session", &created.session_id, "end"])?
-                    .timeout(Duration::from_secs(5));
-                if client::send(close).await.is_err() {
-                    tracing::warn!(session_id = %created.session_id, "could not close unused Super Agent prewarm");
-                }
-            }
-            winner
-        }
+        },
     };
     state.store.bind_cloud_session(&team, &session).await?;
     if let Some(message) = body.message {
@@ -244,6 +225,33 @@ async fn create(
         );
     }
     Ok(HttpResponse::Accepted().json(json!({"sessionId":session})))
+}
+
+async fn prewarm(state: &AppState, eve: &EveClient, key: &str) -> Result<String> {
+    // A retry after a lost response uses the same upstream create key. If replicas
+    // race, only the winning handle is authorized to receive a paid message.
+    let response = client::send(
+        eve.post(&["eve", "v1", "session"])?
+            .json(&json!({"operationId":key})),
+    )
+    .await?;
+    let created: Created = response.json().await.map_err(|_| client::unavailable())?;
+    if !client::valid_segment(&created.session_id) {
+        return Err(client::unavailable());
+    }
+    let winner = state
+        .store
+        .finish_cloud_agent_request(key, &created.session_id)
+        .await?;
+    if winner != created.session_id {
+        let close = eve
+            .post(&["eve", "v1", "session", &created.session_id, "end"])?
+            .timeout(Duration::from_secs(5));
+        if client::send(close).await.is_err() {
+            tracing::warn!(session_id = %created.session_id, "could not close unused Super Agent prewarm");
+        }
+    }
+    Ok(winner)
 }
 
 async fn message(
@@ -275,7 +283,7 @@ async fn deliver(
     let fingerprint = message.fingerprint("message", session);
     let saved = state
         .store
-        .cloud_agent_request(team, key, &fingerprint, Some(session), admitted)
+        .cloud_message_request(team, key, &fingerprint, session, admitted)
         .await?;
     let delivery = match saved {
         Some(delivery) => delivery,

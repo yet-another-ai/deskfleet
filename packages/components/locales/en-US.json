@@ -325,9 +325,20 @@
     "dataNote": "Days use UTC. Today is still in progress. Conversation turns and site-managed relay traffic update as usage is synchronized.",
     "relayHistoryIncomplete": "Some older relay data is not available yet."
   },
+  "creditRates": {
+    "title": "Credit rates",
+    "description": "Credits charged per token across all hosted plans. Changes apply to newly recorded usage.",
+    "input": "Uncached input",
+    "output": "Output",
+    "cacheRead": "Cache read",
+    "cacheWrite": "Cache write",
+    "invalid": "Enter a nonnegative rate with up to 12 whole digits and 6 decimal places.",
+    "save": "Save rates",
+    "saved": "Credit rates saved."
+  },
   "planQuotas": {
     "title": "Plan quotas",
-    "description": "Changes apply to every Team on the selected plan.",
+    "description": "Plan limits apply to every Team on the selected plan.",
     "plan": "Plan",
     "hint": "Leave a limit empty for unlimited use. Enter 0 to disallow new use.",
     "selfHosted": "Self-hosted installations have unlimited product quotas.",

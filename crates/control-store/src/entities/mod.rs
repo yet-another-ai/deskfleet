@@ -7,6 +7,7 @@ pub(crate) mod cp_billing_profiles;
 pub(crate) mod cp_catalogs;
 pub(crate) mod cp_checkout_attempts;
 pub(crate) mod cp_cloud_agent_requests;
+pub(crate) mod cp_cloud_credit_rates;
 pub(crate) mod cp_cloud_sessions;
 pub(crate) mod cp_cloud_token_usage;
 pub(crate) mod cp_cloudflare_turn_collector;

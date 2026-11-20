@@ -40,10 +40,31 @@ The server meters cloud model use per Team. Each root eve Session is registered
 to one Team before it receives a prompt. The collector reads that Session's
 durable stream and records each `usage.recorded` fact once by Session, line
 and index. Parent-reported usage includes its delegated calls. The ledger stores
-the model's input and output token counts. The current meter counts each input
-or output token as one credit toward the Team's allowance. Cached reads and
-writes are already included in the input count. Model spend from ACP Sessions
-on a user's Machine has its own usage projection.
+the model's raw token counts and the credits charged when the collector first
+records the event. Changing rates preserves charges already in the ledger.
+Model spend from ACP Sessions on a user's Machine has its own usage projection.
+
+Site administrators set four site-wide rates in **Site administration → Plan
+quotas**. Each rate is measured in credits per token, defaults to 1, accepts
+up to six decimal places and can be zero. Eve includes cache reads and cache
+writes in its input total. The meter subtracts both from total input before
+applying the uncached input rate. Missing cache counts contribute zero. If
+the reported cache counts exceed total input, the meter charges all input at
+the uncached rate and keeps the original counts in the ledger.
+Site administrators can read the rates with `GET /api/admin/credit-rates`.
+A recently authenticated administrator can replace all four rates with
+`PUT /api/admin/credit-rates`. Both routes use the same JSON object, with
+decimal strings to preserve fractional rates.
+
+```json
+{ "input": "0.5", "output": "2", "cacheRead": "0.1", "cacheWrite": "1.25" }
+```
+
+For example, a call reports 100 input tokens (30 cache reads and 10 cache
+writes) and 20 output tokens. At the rates above, it uses
+`60 × 0.5 + 20 × 2 + 30 × 0.1 + 10 × 1.25 = 85.5` credits. The raw usage
+remains 120 tokens. Admission compares accumulated credits with the plan's
+monthly credit allowance, including fractional charges.
 
 A new delivery schedules another read while the current collector keeps its
 lease. Committing the cursor preserves that pending read. If the collector

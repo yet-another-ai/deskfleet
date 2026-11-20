@@ -6,7 +6,7 @@ struct EveFixture {
     store: ControlStore,
     team: String,
     admin: String,
-    prewarms: AtomicUsize,
+    prewarms: Mutex<Vec<String>>,
     deliveries: Mutex<Vec<Value>>,
 }
 
@@ -19,7 +19,13 @@ async fn prewarm(
 ) -> HttpResponse {
     check_secret(&req);
     assert!(body.get("message").is_none());
-    eve.prewarms.fetch_add(1, Ordering::SeqCst);
+    {
+        let mut attempts = eve.prewarms.lock().unwrap();
+        attempts.push(body["operationId"].as_str().unwrap().to_owned());
+        if attempts.len() == 1 {
+            return HttpResponse::ServiceUnavailable().finish();
+        }
+    }
     // The operation was admitted, but capacity changes before binding and delivery.
     let mut limits = eve.store.plan_limits(Plan::Free).await.unwrap();
     limits.super_agent_tokens = Some(0);
@@ -87,7 +93,7 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
         store: store.clone(),
         team: team.id.clone(),
         admin: user.id.clone(),
-        prewarms: AtomicUsize::default(),
+        prewarms: Mutex::default(),
         deliveries: Mutex::default(),
     });
     let fixture = eve.clone();
@@ -150,7 +156,15 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
         test::call_service(&app, oversized).await.status(),
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    assert_eq!(eve.prewarms.load(Ordering::SeqCst), 0);
+    assert!(eve.prewarms.lock().unwrap().is_empty());
+    assert_eq!(
+        test::call_service(&app, post(&path, &create))
+            .await
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert!(eve.deliveries.lock().unwrap().is_empty());
+    // Retry the failed prewarm immediately. The first delivery then loses its acknowledgement.
     assert_eq!(
         test::call_service(&app, post(&path, &create))
             .await
@@ -213,7 +227,11 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
             .status(),
         StatusCode::CONFLICT
     );
-    assert_eq!(eve.prewarms.load(Ordering::SeqCst), 1);
+    {
+        let attempts = eve.prewarms.lock().unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0], attempts[1]);
+    }
     {
         let calls = eve.deliveries.lock().unwrap();
         assert_eq!(calls.len(), 3);

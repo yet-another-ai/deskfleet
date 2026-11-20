@@ -6,9 +6,7 @@ use deskfleet_control_store::{
 
 use sea_orm::{ConnectionTrait, Database};
 
-#[tokio::test]
-#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
-async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
+async fn hosted_store() -> (ControlStore, sea_orm::DatabaseConnection, String) {
     let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
     let admin = Database::connect(&url).await.unwrap();
     let schema = format!("cloud_tokens_{}", uuid::Uuid::new_v4().simple());
@@ -21,6 +19,13 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
         .await
         .unwrap()
         .with_hosted_mode(true);
+    (store, admin, schema)
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
+    let (store, admin, schema) = hosted_store().await;
     let email = format!("cloud-tokens-{}@fixture.test", uuid::Uuid::new_v4());
     let owner = store.verified_user(&email, "Owner").await.unwrap();
     let team = store.create_team(&owner.id, "Cloud test").await.unwrap().id;
@@ -166,6 +171,121 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
         .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
         .await
         .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn credits_price_each_bucket_once_and_keep_the_first_charge_on_replay() {
+    use serde_json::json;
+    let (store, admin, schema) = hosted_store().await;
+    let owner = store
+        .verified_user("credits@example.test", "Owner")
+        .await
+        .unwrap();
+    let team = store
+        .create_team(&owner.id, "Credit test")
+        .await
+        .unwrap()
+        .id;
+    store.grant_site_admin(&owner.id).await.unwrap();
+    let mut limits = store.plan_limits(Plan::Free).await.unwrap();
+    limits.super_agent_tokens = Some(1);
+    store
+        .update_plan_limits(&owner.id, Plan::Free, limits)
+        .await
+        .unwrap();
+    let configure = |input: &str, output: &str, read: &str, write: &str| {
+        let rates = serde_json::from_value(json!({
+            "input": input, "output": output, "cacheRead": read, "cacheWrite": write
+        }))
+        .unwrap();
+        store.update_credit_rates(&owner.id, rates)
+    };
+    let before = store.admin_credit_rates(&owner.id).await.unwrap();
+    let rates = configure("0.1", "0.2", "0.000001", "0.03").await.unwrap();
+    configure("0.100000", "0.200", "0.000001", "0.030")
+        .await
+        .unwrap();
+    let audits = store.database().query_all_raw(sea_orm::Statement::from_string(
+        sea_orm::DbBackend::Postgres,
+        "SELECT before_value, after_value FROM cp_site_audit WHERE action = 'settings.update' AND after_value ? 'creditRates'",
+    )).await.unwrap();
+    assert_eq!(audits.len(), 1);
+    assert_eq!(
+        audits[0]
+            .try_get::<serde_json::Value>("", "before_value")
+            .unwrap(),
+        json!({"creditRates": before})
+    );
+    assert_eq!(
+        audits[0]
+            .try_get::<serde_json::Value>("", "after_value")
+            .unwrap(),
+        json!({"creditRates": rates})
+    );
+    let event = CloudTokenEvent {
+        session_id: "credit-session".into(),
+        line: 0,
+        index: 0,
+        occurred_at: chrono::Utc::now().timestamp_millis(),
+        model: None,
+        input_tokens: 7,
+        output_tokens: 3,
+        cached_read_tokens: Some(4),
+        cached_write_tokens: Some(1),
+    };
+    let (first, concurrent) = tokio::join!(
+        store.record_cloud_token_usage(&team, &event),
+        store.record_cloud_token_usage(&team, &event)
+    );
+    assert_ne!(first.unwrap(), concurrent.unwrap());
+    let period = store.cloud_token_period(&team).await.unwrap();
+    assert_eq!(period.included_credits, Some(1));
+    assert_eq!(period.used_tokens, 10);
+    assert_eq!(period.used_credits, "0.830004");
+    assert!(period.admitted);
+
+    configure("0", "0", "0", "0").await.unwrap();
+    assert!(!store.record_cloud_token_usage(&team, &event).await.unwrap());
+    assert!(
+        store
+            .record_cloud_token_usage(
+                &team,
+                &CloudTokenEvent {
+                    line: 1,
+                    ..event.clone()
+                }
+            )
+            .await
+            .unwrap()
+    );
+    let free = store.cloud_token_period(&team).await.unwrap();
+    assert_eq!(free.used_tokens, 20);
+    assert_eq!(free.used_credits, "0.830004");
+
+    configure("0.1", "0.01", "10", "10").await.unwrap();
+    // A provider's inconsistent breakdown cannot make uncached input negative.
+    let invalid_breakdown = CloudTokenEvent {
+        line: 2,
+        cached_read_tokens: Some(i64::MAX),
+        ..event
+    };
+    assert!(
+        store
+            .record_cloud_token_usage(&team, &invalid_breakdown)
+            .await
+            .unwrap()
+    );
+    let exhausted = store.cloud_token_period(&team).await.unwrap();
+    assert_eq!(exhausted.used_tokens, 30);
+    assert_eq!(exhausted.used_credits, "1.560004");
+    assert!(!exhausted.admitted);
+    store.close().await.unwrap();
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+    admin.close().await.unwrap();
 }
 
 #[tokio::test]

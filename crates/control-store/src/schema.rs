@@ -258,6 +258,11 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 42).await?;
     }
+    if !version_present(&tx, 43).await? {
+        tx.execute_unprepared(include_str!("cloud_credit_rates.sql"))
+            .await?;
+        record_version(&tx, 43).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -270,6 +275,11 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 43).await? {
+        tx.execute_unprepared(include_str!("cloud_credit_rates_down.sql"))
+            .await?;
+        remove_version(&tx, 43).await?;
+    }
     if version_present(&tx, 42).await? {
         tx.execute(Table::drop().table(crate::entities::cp_cloud_token_usage::Entity))
             .await?;

@@ -146,8 +146,9 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
                             .finish();
                     }
                     let line = json!({"at":chrono::Utc::now(), "facts":[
-                        {"type":"usage.recorded","data":{"usage":{"inputTokens":5,"outputTokens":3,
-                          "cacheReadTokens":1,"cacheWriteTokens":0}}},
+                        {"type":"usage.recorded","data":{"usage":{"inputTokens":2,"outputTokens":1}}},
+                        {"type":"usage.recorded","data":{"usage":{"inputTokens":3,"outputTokens":2,
+                          "cacheReadTokens":1,"cacheWriteTokens":1}}},
                         {"type":"session.ended","data":{"outcome":"completed"}}
                     ]});
                     response
@@ -175,9 +176,14 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
         .unwrap();
     store.grant_site_admin(&user.id).await.unwrap();
     let mut free = store.plan_limits(Plan::Free).await.unwrap();
-    free.super_agent_tokens = Some(8);
+    free.super_agent_tokens = Some(12);
     store
         .update_plan_limits(&user.id, Plan::Free, free)
+        .await
+        .unwrap();
+    let rates = json!({"input":"1","output":"2","cacheRead":"0.25","cacheWrite":"3"});
+    store
+        .update_credit_rates(&user.id, serde_json::from_value(rates).unwrap())
         .await
         .unwrap();
     store.revoke_site_admin(&user.id).await.unwrap();
@@ -324,6 +330,8 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     sdk.override_gate(rollout::GATE, true, Some(&team.id));
     let usage: Value = test::call_and_read_body_json(&app, get(&format!("{base}/usage"))).await;
     assert_eq!(usage["usedTokens"], 8);
+    assert_eq!(usage["usedCredits"], "12.25");
+    assert_eq!(usage["includedCredits"], 12);
     assert_eq!(usage["admitted"], false);
     let repeated: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery, repeated);
@@ -332,13 +340,7 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     let old_key = hash(&[&user.id, &team.id, &operation_id]);
     let old_fingerprint = hash(&["message", &session_id, "previous message"]);
     store
-        .cloud_agent_request(
-            &team.id,
-            &old_key,
-            &old_fingerprint,
-            Some(&session_id),
-            true,
-        )
+        .cloud_message_request(&team.id, &old_key, &old_fingerprint, &session_id, true)
         .await
         .unwrap();
     store

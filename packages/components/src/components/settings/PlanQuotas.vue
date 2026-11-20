@@ -8,10 +8,11 @@ import { failureMessage, type RecentAuthentication } from "../../composables/use
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
+import CreditRatesSettings from "./CreditRatesSettings.vue"
 import SettingsRow from "./SettingsRow.vue"
 
 const props = defineProps<{
-  api: Pick<SiteAdministrationApi, "planQuotas" | "updatePlanQuota">
+  api: Pick<SiteAdministrationApi, "planQuotas" | "updatePlanQuota" | "creditRates" | "updateCreditRates">
   confirmed: RecentAuthentication["confirmed"]
 }>()
 const { t } = useI18n()
@@ -101,4 +102,5 @@ async function save(): Promise<void> {
     <p v-else-if="current.saved && !changed" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("planQuotas.saved") }}</p>
     <UiButton v-if="selected !== 'selfHosted'" type="submit" variant="primary" class="self-start" :disabled="!changed || saving">{{ t(saving ? "catalog.saving" : "catalog.save") }}</UiButton>
   </form>
+  <CreditRatesSettings v-if="account?.superAgentEnabled.value" :api="api" :confirmed="confirmed" />
 </template>

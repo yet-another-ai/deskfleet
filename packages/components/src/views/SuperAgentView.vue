@@ -33,7 +33,8 @@ const teamName = computed(() => account?.team.value?.name ?? "")
 const blocked = computed(() => {
   if (!usage.value || usage.value.admitted) return undefined
   if (!usage.value.runtimeConfigured) return "runtimeOffline"
-  return usage.value.includedTokens === 0 ? "noAllowance" : "quotaReached"
+  const allowance = usage.value.includedCredits === undefined ? usage.value.includedTokens : usage.value.includedCredits
+  return allowance === 0 ? "noAllowance" : "quotaReached"
 })
 const suggestions = [{ label: "plan", prompt: "planPrompt", icon: Layers3 }, { label: "breakdown", prompt: "breakdownPrompt", icon: ListTree }] as const
 

@@ -2,8 +2,9 @@
 use super::{Plan, period_at};
 use crate::entities::cp_cloud_token_usage as ledger;
 use crate::{ControlStore, Error, Result, now_ms, one_query, resource_id, timestamp};
+use sea_orm::prelude::BigDecimal;
 use sea_orm::sea_query::{Expr, ExprTrait, Func, OnConflict, Query};
-use sea_orm::{DbErr, EntityTrait};
+use sea_orm::{ActiveModelTrait, DbErr, EntityTrait, NotSet, Set};
 use serde::Serialize;
 
 /// An incremental usage record at an immutable position in the root eve session stream.
@@ -30,6 +31,9 @@ pub struct CloudTokenPeriod {
     pub plan: Plan,
     pub included_tokens: Option<u64>,
     pub used_tokens: u64,
+    pub included_credits: Option<u64>,
+    /// Total credits charged in this period, as an exact decimal.
+    pub used_credits: String,
     pub admitted: bool,
 }
 
@@ -55,19 +59,20 @@ impl ControlStore {
         {
             return Err(Error::Invalid("invalid cloud token usage event"));
         }
-        let record = ledger::Model {
-            team_id: team,
-            session_id: event.session_id.clone(),
-            line: event.line,
-            event_index: event.index,
-            occurred_at: event.occurred_at,
-            model: event.model.clone(),
-            input_tokens: event.input_tokens,
-            output_tokens: event.output_tokens,
-            cached_read_tokens: event.cached_read_tokens,
-            cached_write_tokens: event.cached_write_tokens,
+        let record = ledger::ActiveModel {
+            team_id: Set(team),
+            session_id: Set(event.session_id.clone()),
+            line: Set(event.line),
+            event_index: Set(event.index),
+            occurred_at: Set(event.occurred_at),
+            model: Set(event.model.clone()),
+            input_tokens: Set(event.input_tokens),
+            output_tokens: Set(event.output_tokens),
+            cached_read_tokens: Set(event.cached_read_tokens),
+            cached_write_tokens: Set(event.cached_write_tokens),
+            charged_credits: NotSet,
         };
-        let inserted = ledger::Entity::insert(ledger::ActiveModel::from(record.clone()))
+        let inserted = ledger::Entity::insert(record.clone())
             .on_conflict(
                 OnConflict::columns([
                     ledger::Column::TeamId,
@@ -88,6 +93,9 @@ impl ControlStore {
                 .one(&self.db)
                 .await?
                 .ok_or(Error::NotFound)?;
+        // The charge belongs to the first insert; replay identity covers the provider's facts.
+        let mut stored = ledger::ActiveModel::from(stored).reset_all();
+        stored.charged_credits = NotSet;
         if stored != record {
             return Err(Error::Conflict("cloud_token_event_conflict"));
         }
@@ -108,17 +116,25 @@ impl ControlStore {
             .sum()
             .add(Expr::col(ledger::Column::OutputTokens).sum());
         // PostgreSQL returns numeric for SUM(bigint). Decode the exact integral value.
-        let used: sea_orm::prelude::Decimal = one_query(
+        let row = one_query(
             &self.db,
             Query::select()
                 .expr_as(Func::coalesce([total, Expr::val(0)]), "tokens")
+                .expr_as(
+                    Func::coalesce([
+                        Expr::col(ledger::Column::ChargedCredits).sum(),
+                        Expr::val(0),
+                    ]),
+                    "credits",
+                )
                 .from(ledger::Entity)
                 .and_where(Expr::col(ledger::Column::TeamId).eq(resource_id(team_id)?))
                 .and_where(Expr::col(ledger::Column::OccurredAt).gte(start))
                 .and_where(Expr::col(ledger::Column::OccurredAt).lt(end)),
         )
-        .await?
-        .try_get("", "tokens")?;
+        .await?;
+        let used: sea_orm::prelude::Decimal = row.try_get("", "tokens")?;
+        let used_credits: BigDecimal = row.try_get("", "credits")?;
         let used_tokens = u64::try_from(used)
             .map_err(|_| DbErr::Type("cloud token total exceeds the supported range".into()))?;
         let included_tokens = self
@@ -128,13 +144,16 @@ impl ControlStore {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| DbErr::Type("negative monthly credit allowance".into()))?;
+        let admitted = included_tokens.is_none_or(|limit| used_credits < BigDecimal::from(limit));
         Ok(CloudTokenPeriod {
             start: timestamp(start),
             end: timestamp(end),
             plan,
             used_tokens,
             included_tokens,
-            admitted: included_tokens.is_none_or(|limit| used_tokens < limit),
+            included_credits: included_tokens,
+            used_credits: used_credits.normalized().to_plain_string(),
+            admitted,
         })
     }
 }

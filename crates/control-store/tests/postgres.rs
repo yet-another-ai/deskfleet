@@ -481,12 +481,15 @@ async fn postgres_migration_upgrades_both_version_37_layouts() {
     let (db, schema) = isolated_migration_schema().await;
     migrate(&db).await.unwrap();
     // Reconstruct main at v37, including an administrator's CAPTCHA setting.
+    db.execute_unprepared(include_str!("../src/cloud_credit_rates_down.sql"))
+        .await
+        .unwrap();
     db.execute_unprepared(include_str!("../src/plan_limits_down.sql"))
         .await
         .unwrap();
     db.execute_unprepared(
         "DROP TABLE cp_cloud_token_usage, cp_cloud_agent_requests, cp_cloud_sessions;
-         DELETE FROM cp_migrations WHERE version BETWEEN 38 AND 42;
+         DELETE FROM cp_migrations WHERE version BETWEEN 38 AND 43;
          UPDATE cp_site_settings SET captcha_enabled = true WHERE singleton",
     )
     .await
@@ -503,9 +506,12 @@ async fn postgres_migration_upgrades_both_version_37_layouts() {
     assert!(settings.try_get::<bool>("", "captcha_enabled").unwrap());
 
     // The preview used v37 for the ledger and had v38–41 but no CAPTCHA column.
+    db.execute_unprepared(include_str!("../src/cloud_credit_rates_down.sql"))
+        .await
+        .unwrap();
     db.execute_unprepared(
         "ALTER TABLE cp_site_settings DROP COLUMN captcha_enabled;
-         DELETE FROM cp_migrations WHERE version = 42;
+         DELETE FROM cp_migrations WHERE version IN (42,43);
          UPDATE cp_plan_limits SET super_agent_tokens = 175 WHERE plan = 'go';
          WITH team AS (INSERT INTO cp_teams(name) VALUES ('Existing team') RETURNING id)
          INSERT INTO cp_cloud_sessions(session_id, team_id, title)
@@ -520,7 +526,7 @@ async fn postgres_migration_upgrades_both_version_37_layouts() {
     let row = db
         .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
-            "SELECT captcha_enabled, super_agent_tokens, title, input_tokens, output_tokens
+            "SELECT captcha_enabled, super_agent_tokens, title, input_tokens, output_tokens, charged_credits::text
              FROM cp_cloud_token_usage JOIN cp_cloud_sessions USING (team_id, session_id)
              CROSS JOIN cp_plan_limits CROSS JOIN cp_site_settings
              WHERE session_id = 'existing-session' AND line = 2 AND event_index = 1
@@ -538,7 +544,8 @@ async fn postgres_migration_upgrades_both_version_37_layouts() {
     assert_eq!(row.try_get::<i64>("", "input_tokens").unwrap(), 7);
     assert_eq!(row.try_get::<i64>("", "output_tokens").unwrap(), 3);
     let versions = applied_versions(&db).await.unwrap().unwrap();
-    assert!((37..=42).all(|version| versions.contains(&version)));
+    assert_eq!(row.try_get::<String>("", "charged_credits").unwrap(), "10");
+    assert!((37..=43).all(|version| versions.contains(&version)));
 
     db.execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
         .await

@@ -17,6 +17,7 @@ pub struct Model {
     pub output_tokens: i64,
     pub cached_read_tokens: Option<i64>,
     pub cached_write_tokens: Option<i64>,
+    pub charged_credits: BigDecimal,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

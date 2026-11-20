@@ -32,9 +32,12 @@ application network. Direct public traffic to the DeskFleet API. The package
 disables built-in execution tools. Its model calls use the operator's credential.
 
 In Site administration, open **Plan quotas** and set **Monthly credits** for
-each hosted plan. PostgreSQL stores the allowance per plan.
-Changes apply to existing Teams on their next request and preserve the
-current billing period's usage. The initial hosted allowance is zero. Select
+each hosted plan. On the same page, set the site-wide **credits per token** for
+uncached input, output, cache reads and cache writes. The rates default to 1
+and apply when a usage event is first recorded. Existing charges retain their
+original value. During a rolling upgrade, set custom rates after all API
+replicas use credits for admission. Changes to a plan's allowance apply to
+existing Teams on their next request. The initial hosted allowance is zero. Select
 unlimited to allow new work without a credit cap. Self-hosted deployments can
 use their own model account with unlimited credits.
 
@@ -59,7 +62,7 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 | POST `/sessions` | Send `{"operationId":"<uuid>"}` to create an empty Session and receive `{sessionId}`. Include `message` to deliver the first message and receive `{sessionId, deliveryId}`. |
 | POST `/sessions/{sessionId}/messages` | Send `operationId` and `message` to receive `{sessionId, deliveryId}`. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
-| GET `/usage` | Read the effective plan, billing period, monthly credit allowance (`includedTokens`), recorded model tokens (`usedTokens`), runtime availability and admission decision. |
+| GET `/usage` | Read the effective plan, billing period, credit allowance (`includedCredits`, an integer or `null` for unlimited), credits charged (`usedCredits`, a decimal string), raw model tokens (`usedTokens`), runtime availability and admission decision. `includedTokens` is the legacy name for the allowance. |
 
 Both writes accept a plain string (including Markdown) or an ordered array of
 1–64 text and file parts. A file can be the entire message. This request opens

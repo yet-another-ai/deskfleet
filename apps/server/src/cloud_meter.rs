@@ -46,8 +46,8 @@ pub(crate) fn start(store: ControlStore, eve: EveClient) -> Collector {
 struct Tokens {
     input_tokens: i64,
     output_tokens: i64,
-    cache_read_tokens: i64,
-    cache_write_tokens: i64,
+    cache_read_tokens: Option<i64>,
+    cache_write_tokens: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -115,8 +115,8 @@ fn parse_line(bytes: &[u8], session_id: &str, line: i64) -> Result<StreamLine> {
                     model: None,
                     input_tokens: usage.usage.input_tokens,
                     output_tokens: usage.usage.output_tokens,
-                    cached_read_tokens: Some(usage.usage.cache_read_tokens),
-                    cached_write_tokens: Some(usage.usage.cache_write_tokens),
+                    cached_read_tokens: usage.usage.cache_read_tokens,
+                    cached_write_tokens: usage.usage.cache_write_tokens,
                 });
             }
             "session.ended" => stored.ended = true,
@@ -224,6 +224,24 @@ async fn collect(store: &ControlStore, eve: &EveClient, cursor: &CloudMeterCurso
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usage_preserves_optional_cache_breakdowns() {
+        let line = br#"{"at":"2026-11-21T00:00:00Z","facts":[
+            {"type":"usage.recorded","data":{"usage":{"inputTokens":8,"outputTokens":2}}},
+            {"type":"usage.recorded","data":{"usage":{"inputTokens":8,"outputTokens":2,"cacheReadTokens":null,"cacheWriteTokens":0}}},
+            {"type":"usage.recorded","data":{"usage":{"inputTokens":8,"outputTokens":2,"cacheReadTokens":5,"cacheWriteTokens":2}}}
+        ]}"#;
+        let StreamLine::Stored(record) = parse_line(line, "s", 7).unwrap() else {
+            panic!("expected stored usage")
+        };
+        let caches: Vec<_> = record
+            .events
+            .iter()
+            .map(|event| (event.cached_read_tokens, event.cached_write_tokens))
+            .collect();
+        assert_eq!(caches, [(None, None), (None, Some(0)), (Some(5), Some(2))]);
+    }
 
     #[test]
     fn stream_positions_count_progress_and_multiple_facts_but_exclude_transport() {

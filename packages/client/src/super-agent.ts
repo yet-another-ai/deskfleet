@@ -11,6 +11,8 @@ export interface SuperAgentUsage {
   start: string
   end: string
   plan: BillingPlan
+  usedCredits?: string
+  includedCredits?: number | null
   usedTokens: number
   includedTokens: number | null
   runtimeConfigured: boolean

@@ -1,5 +1,7 @@
 import type { BillingPlan, PlanCatalogEntry, PlanQuota } from "@deskfleet/client/billing"
 
+export const creditRatesFixture = { input: "1", output: "1", cacheRead: "1", cacheWrite: "1" }
+
 export const quotaFixture: Record<BillingPlan, PlanQuota> = {
   free: { maxActiveSessions: 3, maxTurnsPerSession: 30, maxMembers: 3, turnBytes: 0, superAgentTokens: 0, teamTurnServers: false },
   go: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 2_147_483_648, superAgentTokens: 0, teamTurnServers: false },

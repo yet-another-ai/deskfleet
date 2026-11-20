@@ -4,7 +4,7 @@ import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, Githu
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
-import type { BillingInterval, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { BillingInterval, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import { readSuperAgentHistory, superAgentPath, type SuperAgentSession, type SuperAgentHistory, type SuperAgentMessageContent, type SuperAgentUsage } from "./super-agent.ts"
@@ -279,6 +279,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     })
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
+  creditRates() { return this.request<CreditRates>("GET", "/api/admin/credit-rates") }
+  updateCreditRates(rates: CreditRates) { return this.request<CreditRates>("PUT", "/api/admin/credit-rates", rates) }
   planQuotas() { return this.request<AdminPlanQuota[]>("GET", "/api/admin/plan-quotas") }
   updatePlanQuota(plan: HostedPlan, limits: PlanQuota) { return this.request<AdminPlanQuota>("PUT", `/api/admin/plan-quotas/${encodeURIComponent(plan)}`, limits) }
   usageTrends(period: SiteUsagePeriod) { return this.request<SiteUsageTrends>("GET", `/api/admin/usage-trends?${new URLSearchParams({ period })}`) }

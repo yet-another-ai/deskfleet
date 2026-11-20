@@ -145,6 +145,36 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
         test::read_body_json(call!(get, quota_path, admin_token, &json!({}))).await;
     assert_eq!(quotas.len(), 5);
     assert!(quotas.contains(&expected));
+
+    let rates_path = "/api/admin/credit-rates";
+    let rates = json!({"input":"0.5","output":"2","cacheRead":"0","cacheWrite":"0.125"});
+    assert_eq!(
+        call!(get, rates_path, member_token, &json!({})).status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call!(put, rates_path, member_token, &rates).status(),
+        StatusCode::FORBIDDEN
+    );
+    let initial: Value =
+        test::read_body_json(call!(get, rates_path, admin_token, &json!({}))).await;
+    assert_eq!(
+        initial,
+        json!({"input":"1","output":"1","cacheRead":"1","cacheWrite":"1"})
+    );
+    let response = call!(put, rates_path, admin_token, &rates);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(test::read_body_json::<Value, _>(response).await, rates);
+    let mut invalid = rates.clone();
+    invalid["input"] = json!("0.1234567");
+    assert_eq!(
+        call!(put, rates_path, admin_token, &invalid).status(),
+        StatusCode::BAD_REQUEST
+    );
+    let persisted: Value =
+        test::read_body_json(call!(get, rates_path, admin_token, &json!({}))).await;
+    assert_eq!(persisted, rates);
+
     state
         .store
         .database()
@@ -152,6 +182,12 @@ async fn site_routes_enforce_roles_validate_settings_and_recheck_revocations() {
         .await
         .unwrap();
     let response = call!(put, pro_path, admin_token, &limits);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await["error"]["code"],
+        "recent_authentication_required"
+    );
+    let response = call!(put, rates_path, admin_token, &initial);
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
         test::read_body_json::<Value, _>(response).await["error"]["code"],

@@ -86,7 +86,7 @@ test("keeps the draft and reuses each operation ID when a create or a delivery a
 
 test("a Team at its limit can read an existing conversation without creating or sending", async () => {
   const { wrapper, central } = await setup(central => {
-    const usage: SuperAgentUsage = { runtimeConfigured: true, admitted: false, includedTokens: 100, usedTokens: 100, start: at, end: at, plan: "go" }
+    const usage: SuperAgentUsage = { runtimeConfigured: true, admitted: false, includedCredits: 100, usedCredits: "100", includedTokens: 0, usedTokens: 200, start: at, end: at, plan: "go" }
     central.superAgentUsage.mockResolvedValue(usage)
     central.superAgentSessions.mockResolvedValue([{ sessionId: "existing", title: "Review", lastActiveAt: Date.parse(at) }])
     central.superAgentHistory.mockResolvedValue({ nextIndex: 1, messages: [{ id: "reply", role: "assistant", text: "Previous reply", at }] })

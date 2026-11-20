@@ -1,6 +1,6 @@
-import { adminPlanQuotasFixture, planCatalogFixture, quotaFixture } from "./plan-quotas.ts"
+import { adminPlanQuotasFixture, creditRatesFixture, planCatalogFixture, quotaFixture } from "./plan-quotas.ts"
 import { vi } from "vitest"
-import type { HostedPlan, PlanQuota } from "../../../client/src/billing.ts"
+import type { CreditRates, HostedPlan, PlanQuota } from "../../../client/src/billing.ts"
 import type { AdminPlanQuota } from "../../../client/src/central.ts"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
@@ -45,6 +45,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const state = {
     planQuotas: adminPlanQuotasFixture(),
+    creditRates: { ...creditRatesFixture },
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
     site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
@@ -68,6 +69,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     site: vi.fn(async () => ({ ...state.site })),
     updateTelemetryConsent: vi.fn(async () => {}),
     siteSettings: vi.fn(async () => ({ ...state.site })),
+    creditRates: vi.fn(async () => ({ ...state.creditRates })),
+    updateCreditRates: vi.fn(async (next: CreditRates) => { state.creditRates = { ...next }; return { ...next } }),
     planQuotas: vi.fn(async () => state.planQuotas.map(row => ({ ...row }))),
     updatePlanQuota: vi.fn(async (plan: HostedPlan, limits: PlanQuota): Promise<AdminPlanQuota> => {
       const updated = { plan, ...limits }
@@ -136,7 +139,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     superAgentAvailability: vi.fn(async (_teamId: string) => ({ enabled: false })),
     superAgentSessions: vi.fn(async (_teamId: string): Promise<SuperAgentSession[]> => []),
     superAgentUsage: vi.fn(async (_teamId: string): Promise<SuperAgentUsage> => ({
-      runtimeConfigured: true, admitted: true, usedTokens: 0, includedTokens: null, plan: "selfHosted",
+      runtimeConfigured: true, admitted: true, usedCredits: "0", includedCredits: null, usedTokens: 0, includedTokens: null, plan: "selfHosted",
       start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
     })),
     createSuperAgentSession: vi.fn<CentralApi["createSuperAgentSession"]>(async (_teamId, operationId, message) => ({

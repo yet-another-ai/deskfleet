@@ -5,16 +5,23 @@ use crate::{
 use sea_orm::sea_query::{Cond, Expr, OnConflict, Query};
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect};
 
+/// A Session creation claim or the saved Session ID from an earlier attempt.
+#[derive(Debug)]
+pub enum CloudPrewarm {
+    Claimed { until: i64 },
+    Completed(String),
+}
+
 impl ControlStore {
     /// Reserve an admitted operation, or load its original receipt for a replay.
-    pub async fn cloud_agent_request(
+    async fn reserve_cloud_request(
         &self,
         team: &str,
         key: &str,
         fingerprint: &str,
         session: Option<&str>,
         admitted: bool,
-    ) -> Result<Option<String>> {
+    ) -> Result<requests::Model> {
         let team = resource_id(team)?;
         if admitted {
             self.db
@@ -46,13 +53,23 @@ impl ControlStore {
                 "operation ID already used for another request",
             ));
         }
-        if session.is_none() && row.result_id.is_none() {
-            return self.claim_cloud_prewarm(key).await;
-        }
+        Ok(row)
+    }
+
+    pub async fn cloud_message_request(
+        &self,
+        team: &str,
+        key: &str,
+        fingerprint: &str,
+        session: &str,
+        admitted: bool,
+    ) -> Result<Option<String>> {
+        let row = self
+            .reserve_cloud_request(team, key, fingerprint, Some(session), admitted)
+            .await?;
         // Eve remembers 1,024 message keys. A retry lacking a saved response can
         // no longer rely on that window if enough newer messages were admitted.
-        if let Some(session) = session
-            && row.result_id.is_none()
+        if row.result_id.is_none()
             && requests::Entity::find()
                 .filter(requests::Column::SessionId.eq(session))
                 .filter(requests::Column::Position.gt(row.position))
@@ -71,10 +88,23 @@ impl ControlStore {
 
     /// Upstream create keys resolve to their active Session after startup.
     /// Serialize simultaneous prewarms while permitting recovery by another API process.
-    async fn claim_cloud_prewarm(&self, key: &str) -> Result<Option<String>> {
+    pub async fn claim_cloud_prewarm(
+        &self,
+        team: &str,
+        key: &str,
+        fingerprint: &str,
+        admitted: bool,
+    ) -> Result<CloudPrewarm> {
+        let row = self
+            .reserve_cloud_request(team, key, fingerprint, None, admitted)
+            .await?;
+        if let Some(session) = row.result_id {
+            return Ok(CloudPrewarm::Completed(session));
+        }
         let now = now_ms();
+        let until = now + 90_000;
         let claim = requests::Entity::update_many()
-            .col_expr(requests::Column::PrewarmClaimUntil, Expr::val(now + 90_000))
+            .col_expr(requests::Column::PrewarmClaimUntil, Expr::val(until))
             .filter(requests::Column::Id.eq(key))
             .filter(requests::Column::ResultId.is_null())
             .filter(
@@ -85,16 +115,28 @@ impl ControlStore {
             .exec(&self.db)
             .await?;
         if claim.rows_affected == 1 {
-            return Ok(None);
+            return Ok(CloudPrewarm::Claimed { until });
         }
         requests::Entity::find_by_id(key)
             .one(&self.db)
             .await?
             .and_then(|row| row.result_id)
-            .map(Some)
+            .map(CloudPrewarm::Completed)
             .ok_or(Error::Conflict(
                 "Super Agent session creation is in progress; retry the same operation",
             ))
+    }
+
+    /// Release only this attempt's lease, even if it expired during the upstream request.
+    pub async fn release_cloud_prewarm(&self, key: &str, until: i64) -> Result<()> {
+        requests::Entity::update_many()
+            .col_expr(requests::Column::PrewarmClaimUntil, Expr::val(None::<i64>))
+            .filter(requests::Column::Id.eq(key))
+            .filter(requests::Column::PrewarmClaimUntil.eq(until))
+            .filter(requests::Column::ResultId.is_null())
+            .exec(&self.db)
+            .await?;
+        Ok(())
     }
 
     /// Keep the first successful result when requests on different replicas race.

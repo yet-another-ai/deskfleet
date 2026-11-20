@@ -1,4 +1,4 @@
-import { adminPlanQuotasFixture, planCatalogFixture } from "../src/test/plan-quotas.ts"
+import { adminPlanQuotasFixture, creditRatesFixture, planCatalogFixture } from "../src/test/plan-quotas.ts"
 import { computed, type ComputedRef } from "vue"
 import { createPinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
@@ -595,6 +595,7 @@ export const storybookArchivedSessionRecord: AgentSessionRecord = {
 
 export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
   let planQuotas = adminPlanQuotasFixture()
+  let rates = { ...creditRatesFixture }
   const listeners = new Set<(event: CentralEvent) => void>()
   let site: SiteSettings = {
     siteName: "DeskFleet Cloud",
@@ -657,6 +658,8 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       return { ...site }
     },
     turnSettings: async () => ({ ...turn, urls: [...turn.urls] }),
+    creditRates: async () => ({ ...rates }),
+    updateCreditRates: async next => { rates = { ...next }; return { ...rates } },
     planQuotas: async () => planQuotas.map(row => ({ ...row })),
     updatePlanQuota: async (plan, limits) => {
       const updated = { plan, ...limits }
@@ -713,7 +716,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     superAgentAvailability: async () => ({ enabled: false }),
     superAgentSessions: async () => [],
     superAgentUsage: async () => ({
-      runtimeConfigured: true, admitted: true, usedTokens: 0, includedTokens: null, plan: "selfHosted",
+      runtimeConfigured: true, admitted: true, usedCredits: "0", includedCredits: null, usedTokens: 0, includedTokens: null, plan: "selfHosted",
       start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
     }),
     createSuperAgentSession: async (_teamId, operationId, message) => ({

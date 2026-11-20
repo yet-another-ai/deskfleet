@@ -1,7 +1,7 @@
 import type { RelayDeniedReason } from "./relay.ts"
 import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { BillingInterval, BillingPlan, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { BillingInterval, BillingPlan, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { SuperAgentHistory, SuperAgentMessageContent, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
@@ -82,6 +82,8 @@ export type AdminPlanQuota = PlanQuota & { plan: BillingPlan }
 
 /** Site management is available to the Web host, separately from the desktop bridge. */
 export interface SiteAdministrationApi {
+  creditRates(): Promise<CreditRates>
+  updateCreditRates(rates: CreditRates): Promise<CreditRates>
   planQuotas(): Promise<AdminPlanQuota[]>
   updatePlanQuota(plan: HostedPlan, limits: PlanQuota): Promise<AdminPlanQuota>
   usageTrends(period: SiteUsagePeriod): Promise<SiteUsageTrends>
