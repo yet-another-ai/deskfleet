@@ -434,10 +434,14 @@ methods are not passed to `authenticate`. DeskFleet does not add
 The Pi Coding Agent template runs the installed `pi` CLI through the bundled
 [`pi-acp`](https://github.com/svkozak/pi-acp) adapter, which starts Pi in RPC mode.
 It supports model and thinking-level selection and loading saved sessions.
-Pi executes its tools locally; the adapter does not delegate filesystem or
-terminal operations, forward client-provided MCP servers, or expose additional
-Workspace directories. Pi extension select/confirm requests use the permission
-UI; extension free-text input requests are unsupported.
+Pi executes its tools locally. Additional Workspace directories and ACP
+filesystem and terminal delegation are unsupported. The adapter registers
+client-provided stdio and Streamable HTTP MCP servers as direct tools when
+creating or loading a session. Enable Pi's built-in MCP support, introduced in
+0.99.0, to connect these servers. Legacy SSE is unsupported. An entry in Pi's own
+`mcp.json` takes precedence over an injected server with the same name.
+Pi extension select/confirm requests use the permission UI. Extension free-text
+input requests are unsupported.
 The Oh My Pi template runs the installed [`omp` CLI](https://omp.sh/docs/acp)
 directly as `omp acp`, using its existing provider keys or OAuth credentials.
 Its native ACP server advertises model and thinking configuration, Default and
