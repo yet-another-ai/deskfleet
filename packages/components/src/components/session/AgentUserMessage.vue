@@ -12,14 +12,16 @@ import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ input: AgentInput; animateSend?: boolean }>()
+type DisplayInput = Pick<AgentInput, "author" | "content" | "state" | "createdAt" | "deliveredAt" | "actualDelivery" | "dispatcher">
+const props = defineProps<{ input: DisplayInput; copyContent?: AgentInput["content"]; animateSend?: boolean; canQuote?: boolean; alwaysShowActions?: boolean }>()
+const emit = defineEmits<{ quote: [] }>()
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
 const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.input.createdAt, intlLocale(locale.value as AppLocale)))
 // An initial prompt is already running once it is claimed; only steering waits for confirmation.
 const state = computed(() => props.input.state === "delivered" || props.input.state === "pending" ? undefined : props.input.state === "dispatching" && props.input.actualDelivery === "turn_start" ? t("agent.inputInProgress") : t(`agent.inputState.${props.input.state}`))
 const steered = computed(() => props.input.state === "delivered" && props.input.actualDelivery === "steer")
-const text = computed(() => props.input.content.flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
+const text = computed(() => (props.copyContent ?? props.input.content).flatMap(block => block.type === "text" ? [block.text] : block.type === "resource" && "text" in block.resource ? [block.resource.text] : []).join("\n\n"))
 const root = useTemplateRef<HTMLElement>("root")
 const reducedMotion = usePreferredReducedMotion()
 let animations: SentMessageTransition[] = []
@@ -34,7 +36,8 @@ onScopeDispose(() => { for (const anim of animations) anim.cancel() })
 <template>
   <div ref="root" class="group flex justify-end gap-3 pl-12">
     <div class="flex min-w-0 flex-col items-end gap-1.5">
-      <div data-user-message-meta class="flex items-center gap-1.5 text-xs text-ui-text-muted">
+      <div data-user-message-meta :class="$slots.heading && 'flex-wrap justify-end'" class="flex items-center gap-1.5 text-xs text-ui-text-muted">
+        <slot name="heading" />
         <template v-if="input.author.userId"><AgentActor :actor="input.author" class="font-medium text-ui-text" /><span aria-hidden="true">·</span></template>
         <span v-if="steered">{{ t('agent.steered') }}<template v-if="input.dispatcher && input.dispatcher.userId !== input.author.userId"> · <AgentActor :actor="input.dispatcher" /></template></span>
         <LoaderCircle v-if="input.state === 'dispatching'" :size="14" :stroke-width="2" class="animate-spin" aria-hidden="true" />
@@ -43,11 +46,14 @@ onScopeDispose(() => { for (const anim of animations) anim.cancel() })
         <span v-if="state">{{ state }}</span>
         <time v-if="time" :datetime="input.deliveredAt ?? input.createdAt">{{ time }}</time>
       </div>
+      <slot name="before" />
       <div data-user-message-bubble class="max-w-full rounded-2xl bg-ui-accent/8 px-4 py-2.5">
         <AgentContent :content="input.content" />
+        <slot name="attachments" />
       </div>
       <p v-if="input.state === 'uncertain'" class="m-0 max-w-md text-right text-xs text-ui-warning">{{ t('agent.uncertainInput') }}</p>
-      <AgentMessageActions :text="text" />
+      <slot name="after" />
+      <AgentMessageActions :text="text" :can-quote="canQuote" :always-visible="alwaysShowActions" @quote="emit('quote')" />
     </div>
     <UserAvatar v-if="input.author.userId" data-user-message-avatar :name="name" :email="email" :size="32" :title="name" class="mt-6 text-xs" />
     <span v-else data-user-message-avatar class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="name" aria-hidden="true">

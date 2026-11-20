@@ -5,6 +5,7 @@ import { composerTrigger, reconcileComposerMentions, validComposerMentions, type
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import type { SessionTarget } from "../../stores/fleet.ts"
 import { useProvidersStore } from "../../stores/providers.ts"
+import type { WorkspaceCommandMenu } from "../../composables/useWorkspaceCommands.ts"
 
 export interface ComposerCandidate {
   key: string
@@ -21,6 +22,7 @@ export function useComposerCompletions(options: {
   textarea: Readonly<Ref<HTMLTextAreaElement | null>>
   location(): SessionTarget | null
   disabled(): boolean
+  workspace?(): WorkspaceCommandMenu | undefined
   configuration: Ref<AgentConfiguration | null>
   discover(): Promise<void>
 }) {
@@ -39,12 +41,19 @@ export function useComposerCompletions(options: {
   let discoveryKey = ""
   let discovery: Promise<void> | undefined
   const targetKey = computed(() => {
+    const workspace = options.workspace?.()
+    if (workspace) return workspace.key
     const target = options.location()
     const provider = target?.session ? agents.sessions[target.session.id]?.provider : providers.selectedId
     return `${target?.machine.id}:${target?.workspace?.id}:${target?.session?.id}:${provider}:${providers.revision}`
   })
-  const detected = computed(() => focused.value && !composing.value && !options.disabled()
-    ? composerTrigger(options.draft.value, caret.value, options.mentions.value) : null)
+  const detected = computed(() => {
+    if (!focused.value || composing.value || options.disabled()) return null
+    const current = composerTrigger(options.draft.value, caret.value, options.mentions.value)
+    const workspace = options.workspace?.()
+    if (workspace && current && current.kind !== "command" && (!workspace.supportsMentions || current.kind === "reference" && !workspace.referenceScope)) return null
+    return current
+  })
   const triggerKey = computed(() => detected.value ? `${targetKey.value}:${JSON.stringify(detected.value)}` : "")
   const trigger = computed(() => triggerKey.value !== dismissed.value ? detected.value : null)
   const candidates = computed<ComposerCandidate[]>(() => {
@@ -67,8 +76,8 @@ export function useComposerCompletions(options: {
     const current = trigger.value
     const target = options.location()
     if (request !== generation || current?.kind !== "reference") return
-    if (!target?.session && !target?.workspace) { loading.value = false; return }
-    const scope = target.session ? { sessionId: target.session.id } : { workspaceId: target.workspace!.id }
+    const scope = options.workspace?.()?.referenceScope ?? (target?.session ? { sessionId: target.session.id } : target?.workspace ? { workspaceId: target.workspace.id } : undefined)
+    if (!scope) { loading.value = false; return }
     const results = await Promise.allSettled((["file", "session"] as const).map(kind => agents.composerReferences({ ...scope, kind, query: current.query, limit: 12 })))
     if (request !== generation) return
     references.value = results.flatMap(result => result.status === "fulfilled" ? result.value.items.map(item => ({
@@ -132,6 +141,8 @@ export function useComposerCompletions(options: {
     if (candidate.reference) retained.push({ id: crypto.randomUUID(), start: current.start, end: current.start + candidate.token.length, token: candidate.token, reference: candidate.reference })
     options.draft.value = after
     options.mentions.value = retained
+    if (candidate.kind === "command") options.workspace?.()?.select("command", candidate.token.slice(1))
+    if (candidate.reference?.kind === "skill") options.workspace?.()?.select("skill", candidate.reference.id)
     caret.value = current.start + inserted.length
     await nextTick()
     options.textarea.value?.focus()

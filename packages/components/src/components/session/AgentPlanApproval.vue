@@ -12,6 +12,7 @@ import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 
 const props = defineProps<{ elicitation: AgentElicitation; plan: CursorPlanApproval; disabled?: boolean }>()
+const emit = defineEmits<{ answered: [] }>()
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
 const pending = computed(() => props.elicitation.state === "pending")
@@ -28,7 +29,10 @@ const planMarkdown = computed(() => [{ type: "text" as const, text: props.plan.p
 async function respond(action: "accept" | "decline" | "cancel"): Promise<void> {
   if (disabled.value) return
   failed.value = false
-  try { await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, action === "accept" ? { action, content: {} } : { action }) }
+  try {
+    await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, action === "accept" ? { action, content: {} } : { action })
+    emit("answered")
+  }
   catch { failed.value = true }
 }
 </script>

@@ -17,6 +17,7 @@ import UiCheckbox from "../common/UiCheckbox.vue"
 import { RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from "reka-ui"
 
 const props = defineProps<{ elicitation: AgentElicitation; disabled?: boolean }>()
+const emit = defineEmits<{ answered: [] }>()
 const { t } = useI18n()
 const agents = useAgentSessionsStore()
 const plan = computed(() => cursorPlanApproval(props.elicitation.request))
@@ -71,7 +72,7 @@ async function respond(action: "accept" | "decline" | "cancel"): Promise<void> {
       return
     }
   }
-  try { await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, response) }
+  try { await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, response); emit("answered") }
   catch { failed.value = true }
 }
 function openUrl(event: MouseEvent): void {
@@ -86,6 +87,7 @@ async function interviewAction(outcome: "chat_about_this" | "skip_interview"): P
     await agents.respondToElicitation(props.elicitation.sessionId, props.elicitation.id, {
       action: "accept", _meta: { deskfleet: { grokOutcome: outcome } },
     })
+    emit("answered")
   } catch { failed.value = true }
 }
 const status = computed(() => props.elicitation.state === "cancelled" || props.elicitation.response?.action === "cancel" ? "cancelled"
@@ -105,7 +107,7 @@ function displayAnswer(field: ElicitationField, value: unknown): string {
 </script>
 
 <template>
-  <AgentPlanApproval v-if="plan" :elicitation="elicitation" :plan="plan" :disabled="disabled" />
+  <AgentPlanApproval v-if="plan" :elicitation="elicitation" :plan="plan" :disabled="disabled" @answered="emit('answered')" />
   <section v-spring-enter v-else class="ui-rise-in rounded-xl border border-ui-border bg-ui-surface p-4 text-sm shadow-ui-card" data-testid="agent-elicitation" :data-elicitation-id="elicitation.id" :aria-label="t('agent.questions.title')">
     <p class="m-0 mb-2 flex items-center gap-2 font-medium"><CircleHelp :size="16" :stroke-width="1.75" class="shrink-0 text-ui-text-muted" aria-hidden="true" /><span>{{ t(pending ? url ? 'agent.questions.urlTitle' : 'agent.questions.title' : `agent.questions.${status}`) }}<template v-if="!pending && elicitation.actor"> · <AgentActor :actor="elicitation.actor" /></template></span></p>
     <p class="m-0 whitespace-pre-wrap break-words">{{ elicitation.request.message }}</p>

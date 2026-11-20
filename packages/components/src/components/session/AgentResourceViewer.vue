@@ -21,7 +21,9 @@ import PreviewViewer from "./PreviewViewer.vue"
 
 const props = withDefaults(defineProps<{
   api?: FilesApi
-  request: FileResourceRequest
+  request?: FileResourceRequest
+  /** A message attachment already read from its authenticated workspace. */
+  file?: { name: string; mimeType: string; data: Uint8Array }
   title?: string
   source?: PreviewSource
   mode?: "dialog" | "tab"
@@ -29,11 +31,12 @@ const props = withDefaults(defineProps<{
   mode: "dialog",
 })
 // Vue proxies cannot cross Electron's context bridge, including nested targets.
-const request: FileResourceRequest = { ...props.request, target: { ...props.request.target } }
+const request = props.request && { ...props.request, target: { ...props.request.target } }
+const uri = request?.uri ?? props.file?.name ?? ""
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
 const client = usePlatformClient()
-const filesApi = computed(() => props.api ?? client.files)
+const filesApi = computed(() => props.file ? undefined : props.api ?? client.files)
 const entry = ref<FileResource>()
 const canOpenResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.openResource))
 const canRevealResource = computed(() => Boolean(entry.value?.canOpen && filesApi.value?.revealResource))
@@ -60,7 +63,7 @@ const highlightedLines = computed(() => {
     }).tokens
   } catch { return undefined }
 })
-const requestedLines = fileResourceLines(request.uri)
+const requestedLines = request && fileResourceLines(request.uri)
 const lineElement = ref<HTMLElement>()
 const imageUrl = ref<string>()
 let htmlPreviewSent = false
@@ -73,18 +76,20 @@ const loading = ref(true)
 let disposed = false
 async function open(): Promise<void> {
   const api = filesApi.value
-  if (!api) {
+  if (!props.file && !(api && request)) {
     error.value = t("files.resourceUnavailable")
     loading.value = false
     return
   }
   try {
-    const result = await api.resolveResource(request)
+    const result: FileResource = props.file ? {
+      kind: "file", name: props.file.name, path: "", size: props.file.data.byteLength, modifiedAt: 0,
+    } : await api!.resolveResource(request!)
     if (disposed) return
     entry.value = result
     if (result.kind === "file") {
       if (typeof result.size === "number") loadPercent.value = 0
-      const file = await api.readResource(request, {
+      const file = props.file ?? await api!.readResource(request!, {
         onProgress: ({ transferredBytes, totalBytes }) => {
           if (!disposed) loadPercent.value = totalBytes ? Math.min(100, Math.floor(transferredBytes / totalBytes * 100)) : 100
         },
@@ -120,8 +125,9 @@ async function runAction(task: () => Promise<unknown>): Promise<void> {
 }
 async function fileAction(): Promise<void> {
   if (entry.value?.kind !== "file") return
-  if (canOpenResource.value) return runAction(() => filesApi.value!.openResource!(request))
-  if (!previewBytes.value) return runAction(() => filesApi.value?.saveResource(request) ?? Promise.resolve())
+  if (request && canOpenResource.value) return runAction(() => filesApi.value!.openResource!(request))
+  if (request && !previewBytes.value) return runAction(() => filesApi.value?.saveResource(request) ?? Promise.resolve())
+  if (!previewBytes.value) return
   imageUrl.value ??= URL.createObjectURL(new Blob([new Uint8Array(previewBytes.value)], { type: previewMime.value }))
   const link = document.createElement("a")
   link.href = imageUrl.value
@@ -129,15 +135,15 @@ async function fileAction(): Promise<void> {
   link.click()
 }
 function revealResource(): Promise<void> | undefined {
-  if (entry.value?.kind === "file" && canRevealResource.value) return runAction(() => filesApi.value!.revealResource!(request))
+  if (request && entry.value?.kind === "file" && canRevealResource.value) return runAction(() => filesApi.value!.revealResource!(request))
 }
 function locateOriginal(): void {
   const pinia = getActivePinia()
   if (props.mode === "tab" && pinia) useLayoutStore(pinia).closeCompactPanel()
-  void locatePreviewInMainView(request.uri, {
+  void locatePreviewInMainView(uri, {
     ...props.source,
-    sessionId: props.source?.sessionId ?? request.sessionId,
-    itemId: request.uri,
+    sessionId: props.source?.sessionId ?? request?.sessionId,
+    itemId: uri,
   })
 }
 function sendHtmlPreview(event: Event): void {
@@ -164,7 +170,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     v-if="mode === 'tab'"
     data-resource-viewer
     data-resource-viewer-mode="tab"
-    :data-resource-uri="request.uri"
+    :data-resource-uri="uri"
     class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-ui-surface text-ui-text"
   >
     <PreviewViewer
@@ -174,7 +180,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       :data="previewBytes"
       :mime-type="previewMime"
       :title="entry?.name ?? title"
-      :source="{ ...source, sessionId: source?.sessionId ?? request.sessionId, itemId: request.uri }"
+      :source="{ ...source, sessionId: source?.sessionId ?? request?.sessionId, itemId: uri }"
       :resource-request="request"
       :api="filesApi"
       :can-open="entry?.canOpen"
@@ -183,8 +189,8 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     />
     <template v-else>
       <header class="flex shrink-0 items-center justify-between gap-2 border-b border-ui-border px-4 py-1.5">
-        <span class="min-w-0 truncate text-xs font-medium text-ui-text-muted" :title="entry?.path ?? request.uri">
-          {{ entry?.name ?? title ?? request.uri }}
+        <span class="min-w-0 truncate text-xs font-medium text-ui-text-muted" :title="entry?.path ?? uri">
+          {{ entry?.name ?? title ?? uri }}
         </span>
         <div class="flex shrink-0 items-center gap-0.5">
           <UiButton v-if="isHtmlContent" type="button" variant="ghost" size="sm" :data-preview-action="renderingHtml ? 'source' : 'preview-html'" @click="toggleHtmlPreview">{{ t(renderingHtml ? 'files.viewSource' : 'files.previewHtml') }}</UiButton>
@@ -203,10 +209,10 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
             <div class="h-full bg-ui-accent" v-spring.enter="{ width: `${loadPercent}%` }" />
           </div>
         </div>
-        <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
+        <UiScrollArea v-else-if="entry?.kind === 'directory' && filesApi && request" orientation="both" class="min-h-0 flex-1" viewport-class="p-4">
           <FileBrowserPane :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
         </UiScrollArea>
-        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? request.uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
+        <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? title ?? uri" class="min-h-0 w-full flex-1 border-0 bg-white" @load="sendHtmlPreview" />
         <UiScrollArea v-else-if="content !== undefined" orientation="both" class="min-h-0 flex-1">
           <pre class="m-0 p-4 whitespace-pre text-xs select-text"><code><span
             v-for="(line, index) in lines"
@@ -228,7 +234,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
     </template>
   </div>
   <UiDialog v-else v-slot="{ close }" class="w-[48rem] max-w-[calc(100vw-2rem)]" @close="emit('close')">
-    <DialogTitle class="ui-dialog-title mb-3 break-all">{{ entry?.name ?? request.uri }}</DialogTitle>
+    <DialogTitle class="ui-dialog-title mb-3 break-all">{{ entry?.name ?? uri }}</DialogTitle>
     <div v-if="loading" class="flex flex-col gap-2 text-sm text-ui-text-muted" role="status">
       <div class="flex items-center justify-between gap-2">
         <span>{{ t('folderPicker.loading') }}</span>
@@ -238,7 +244,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
         <div class="h-full bg-ui-accent" v-spring.enter="{ width: `${loadPercent}%` }" />
       </div>
     </div>
-    <FileBrowserPane v-else-if="entry?.kind === 'directory' && filesApi" :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
+    <FileBrowserPane v-else-if="entry?.kind === 'directory' && filesApi && request" :api="filesApi" :target="request.target" :name="entry.name" :initial-path="entry.path" :revision="0" :reset-key="0" :selection="[]" :selectable="false" />
     <PreviewViewer
       v-else-if="imageUrl && previewKind"
       :kind="previewKind"
@@ -252,7 +258,7 @@ onBeforeUnmount(() => { disposed = true; if (imageUrl.value) URL.revokeObjectURL
       mode="inline"
       class="max-h-[60vh]"
     />
-    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? request.uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
+    <iframe v-else-if="isHtmlContent && renderingHtml" data-html-preview src="./html-preview.html" sandbox="allow-scripts allow-forms" :title="entry?.name ?? uri" class="h-[60vh] w-full rounded border border-ui-border bg-white" @load="sendHtmlPreview" />
     <UiScrollArea v-else-if="content !== undefined" orientation="both" fade-size="sm" class="max-h-[60vh]">
       <pre class="m-0 whitespace-pre text-xs select-text"><code><span
         v-for="(line, index) in lines"

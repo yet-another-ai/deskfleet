@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest"
 import { MAX_GENERATED_TITLE_LENGTH } from "../../../../apps/daemon/src/titles.ts"
 import type { FilesApi, FileTarget } from "../../../client/src/files.ts"
-import { cancelAttachmentUpload, getAttachmentUploadState, hasIncompleteAttachmentUploads, retryAttachmentUpload, sessionTitleFromDraft, syncAttachmentUploads, type ComposerAttachment } from "./composer-attachments.ts"
+import { createMachineFileAttachment, previewPromptContent, workspacePromptAttachments, cancelAttachmentUpload, getAttachmentUploadState, hasIncompleteAttachmentUploads, retryAttachmentUpload, sessionTitleFromDraft, syncAttachmentUploads, type ComposerAttachment } from "./composer-attachments.ts"
 
 const pasted = (text: string): ComposerAttachment => ({
   id: "paste-1", kind: "pasted_text", text, lines: text.split(/\r\n|\r|\n/u).length,
@@ -67,4 +67,12 @@ test("synchronous upload startup failures become retryable instead of remaining 
   } finally {
     cancelAttachmentUpload(item.id)
   }
+})
+
+test("only workspace submissions include the private files-channel authorization for each selected attachment", () => {
+  const picked = createMachineFileAttachment({ name: "report.txt", path: "/project/report.txt", size: 15, attachmentGrant: "picker-grant" })
+  const upload: ComposerAttachment = { id: "upload", kind: "local_file", name: "clip.mp4", bytes: new Uint8Array(), size: 0,
+    uploadedUri: "file:///uploads/clip.mp4", attachmentGrant: "upload-grant" }
+  expect(workspacePromptAttachments([picked, upload]).map(block => block._meta?.["deskfleet/attachmentGrant"])).toEqual(["picker-grant","upload-grant"])
+  expect(previewPromptContent("", [picked, upload]).every(block => !block._meta)).toBe(true)
 })

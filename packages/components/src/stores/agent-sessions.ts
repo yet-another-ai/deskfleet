@@ -16,7 +16,7 @@ import type { ComposerMention } from "../services/composer-mentions.ts"
 import type { ComposerReference, ComposerReferenceSearch } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
 import { agentComposerCatalog, agentConfiguration as normalizeAgentConfiguration } from "../../../../apps/daemon/src/agent-configuration-protocol.ts"
 import { isSnapshotReference } from "../../../../apps/daemon/src/agent-command-results.ts"
-import type { AgentConfiguration } from "../../../client/src/agent-configuration.ts"
+import type { AgentConfiguration, AgentConfigurationParams } from "../../../client/src/agent-configuration.ts"
 import { RelayConnectionError, type RelayDeniedReason } from "../../../client/src/relay.ts"
 import type { GitChangedNotification, GitDiffRequest } from "../../../../apps/daemon/src/git-protocol.ts"
 import { useProvidersStore } from "./providers.ts"
@@ -184,12 +184,14 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   function resolveElicitations(snapshot: AgentSnapshot): void {
     for (const elicitation of snapshot.elicitations) {
       if (elicitation.state === "pending") continue
-      delete elicitationDrafts.value[elicitation.id]
-      // A committed decision, including another viewer's, finishes this form.
-      // Drop transient response payloads so secret answers are not retained.
-      for (const operation of Object.values(operations.value)) {
-        if (operation.sessionId === snapshot.session.id && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === elicitation.id) delete operations.value[operation.operationId]
-      }
+      clearWorkerRequest(snapshot.session.id, "elicitation", elicitation.id)
+    }
+  }
+  // A decision on any device ends the form and releases its transient response, including secret fields.
+  function clearWorkerRequest(sessionId: string, kind: "permission" | "elicitation", requestId: string): void {
+    if (kind === "elicitation") delete elicitationDrafts.value[requestId]
+    for (const op of Object.values(operations.value)) {
+      if (op.sessionId === sessionId && op.method === `_deskfleet/${kind}/respond` && op.params[`${kind}Id`] === requestId) delete operations.value[op.operationId]
     }
   }
   function completeOperation(operationId: string): void {
@@ -704,7 +706,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   async function resolveCommandResult(result: unknown): Promise<unknown> {
     return isSnapshotReference(result) ? call("_deskfleet/session/subscribe", { sessionId: result.sessionId }) : result
   }
-  async function checkOperation(operationId: string): Promise<unknown> {
+  async function checkOperation(operationId: string, { refreshSession = true } = {}): Promise<unknown> {
     const pending = operations.value[operationId]
     if (!pending) return
     const received = async (result: unknown): Promise<unknown> => {
@@ -729,11 +731,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       const result = await call(pending.method, pending.params as AgentMethods[typeof pending.method]["params"])
       return await received(result)
     } finally {
-      if (pending.sessionId && state.value === "connected") await open(pending.sessionId)
+      if (refreshSession && pending.sessionId && state.value === "connected") await open(pending.sessionId)
     }
   }
 
-  async function agentConfiguration(params: AgentSelection & { workspaceId?: string; probeId?: string; composer?: boolean; cache?: boolean; refresh?: boolean; restore?: Omit<AgentSelection, "provider"> }): Promise<AgentConfiguration> {
+  async function agentConfiguration(params: Omit<AgentConfigurationParams, "release">): Promise<AgentConfiguration> {
     const result = await call("_deskfleet/agent/configuration", params)
     if (!result) throw new Error("Agent configuration is unavailable")
     return result
@@ -851,11 +853,11 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     snapshotReceived(snapshot)
     return snapshot
   }
-  async function fork(sessionId: string, context: AgentSessionContext): Promise<AgentSnapshot> {
+  async function fork(sessionId: string, context: AgentSessionContext, expectedTurnId?: string): Promise<AgentSnapshot> {
     const track = captureAnalyticsContext()
     const pending = Object.values(operations.value).find(operation => operation.method === "_deskfleet/session/fork" && operation.sessionId === sessionId)
     const source = sessions.value[sessionId]
-    const snapshot = await capacityAction("fork", { context, ...(source ? { scope: source.workspaceId ? "workspace" : "machine" } as const : {}) }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/fork", { sessionId, context }), track)
+    const snapshot = await capacityAction("fork", { context, ...(source ? { scope: source.workspaceId ? "workspace" : "machine" } as const : {}) }, () => pending ? checkOperation(pending.operationId) as Promise<AgentSnapshot> : mutation("_deskfleet/session/fork", { sessionId, context, ...(expectedTurnId && { expectedTurnId }) }), track)
     snapshotReceived(snapshot)
     return snapshot
   }
@@ -881,15 +883,18 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const cancel = (sessionId: string, turnId: string) => mutation("_deskfleet/turn/cancel", { sessionId, turnId })
   async function respond(sessionId: string, permissionId: string, optionId: string): Promise<void> {
     const permission = await mutation("_deskfleet/permission/respond", { sessionId, permissionId, optionId })
-    const snapshot = view(sessionId).snapshot
+    const snapshot = views.value[sessionId]?.snapshot
     if (snapshot) replace(snapshot.permissions, permission, value => value.id)
     resolvePermissions()
   }
   async function respondToElicitation(sessionId: string, elicitationId: string, response: NonNullable<AgentElicitation["response"]>): Promise<void> {
-    if (view(sessionId).snapshot?.elicitations.find(item => item.id === elicitationId)?.state !== "pending") return
+    // The project can receive the same question without opening a Session view.
+    const known = views.value[sessionId]?.snapshot?.elicitations.find(item => item.id === elicitationId)
+    if (known && known.state !== "pending") return
     if (Object.values(operations.value).some(operation => operation.sessionId === sessionId && operation.method === "_deskfleet/elicitation/respond" && operation.params.elicitationId === elicitationId)) return
     const elicitation = await mutation("_deskfleet/elicitation/respond", { sessionId, elicitationId, response })
-    const snapshot = view(sessionId).snapshot
+    const snapshot = views.value[sessionId]?.snapshot
+    delete elicitationDrafts.value[elicitationId]
     if (snapshot) {
       const current = snapshot.elicitations.find(item => item.id === elicitation.id && item.runGeneration === elicitation.runGeneration)
       if (current?.completedAt && !elicitation.completedAt) elicitation.completedAt = current.completedAt
@@ -1008,5 +1013,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, clearWorkerRequest, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

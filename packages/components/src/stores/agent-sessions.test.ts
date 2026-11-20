@@ -885,6 +885,27 @@ test("a question decision from another viewer closes the form and clears transie
   expect(mock.call.mock.calls.filter(([method]) => method === "_deskfleet/elicitation/respond")).toHaveLength(1)
 })
 
+test("a project can answer a Worker it never opened using the original journal commands", async () => {
+  const store = useAgentSessionsStore()
+  const normal = mock.call.getMockImplementation()!
+  mock.call.mockImplementation(async (method: string, params: unknown) => {
+    if (method === "_deskfleet/permission/respond") return agentPermission({ state: "resolved", optionId: "deny" })
+    if (method === "_deskfleet/elicitation/respond") return agentElicitation({ state: "resolved", response: { action: "accept" } })
+    return normal(method, params)
+  })
+  await store.respond("30", "60", "deny")
+  store.elicitationDrafts["80"] = { target: "staging" }
+  await store.respondToElicitation("30", "80", { action: "accept", content: { target: "staging" } })
+  for (const [method, params] of mock.call.mock.calls.filter(([name]) => name.endsWith("/respond"))) {
+    expect(params).toMatchObject({ sessionId: "30", operationId: expect.any(String), ...(method.includes("/permission/")
+      ? { permissionId: "60", optionId: "deny" } : { elicitationId: "80", response: { action: "accept", content: { target: "staging" } } }) })
+  }
+  expect(mock.call.mock.calls.filter(([name]) => name.endsWith("/respond"))).toHaveLength(2)
+  expect(mock.call.mock.calls.some(([name]) => name === "_deskfleet/session/subscribe" || name === "_deskfleet/session/history")).toBe(false)
+  expect(store.elicitationDrafts).toEqual({})
+  expect(store.views["30"]).toBeUndefined()
+})
+
 test("a URL completion event outranks an earlier elicitation acceptance response", async () => {
   const store = useAgentSessionsStore(); await store.open("30")
   const question = agentElicitation({ request: { sessionId: "provider-session", mode: "url", elicitationId: "login", url: "https://example.com/authorize", message: "Connect your account" } })

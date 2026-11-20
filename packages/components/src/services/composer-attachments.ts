@@ -12,8 +12,8 @@ export type ComposerAttachment =
   | { id: string; kind: "github"; item: GithubRepositoryItem }
   | { id: string; kind: "image"; name: string; mimeType: string; data: string; size: number }
   | { id: string; kind: "pasted_text"; text: string; lines: number; label?: string; uri?: string; diff?: { key: string; startIndex: number; endIndex: number } }
-  | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string }
-  | { id: string; kind: "machine_file"; name: string; path: string; uri: string; size?: number }
+  | { id: string; kind: "local_file"; name: string; mimeType?: string; size: number; bytes: Uint8Array; uploadedUri?: string; uploadedTargetKey?: string; attachmentGrant?: string }
+  | { id: string; kind: "machine_file"; name: string; path: string; uri: string; size?: number; attachmentGrant?: string }
 
 export interface AttachmentUploadState {
   status: "uploading" | "uploaded" | "error"
@@ -22,6 +22,7 @@ export interface AttachmentUploadState {
   progress: number
   targetKey: string
   uri?: string
+  attachmentGrant?: string
   error?: string
 }
 
@@ -40,6 +41,7 @@ export function isAttachmentUploadedForTarget(
   const key = attachmentTargetKey(target)
   const tracked = uploadStates.get(item.id)
   if (tracked && (!key || tracked.targetKey === key) && tracked.status === "uploaded" && tracked.uri) {
+    item.attachmentGrant ??= tracked.attachmentGrant
     item.uploadedUri ??= tracked.uri
     item.uploadedTargetKey ??= tracked.targetKey
     return true
@@ -111,10 +113,11 @@ async function startAttachmentUpload(
       },
     )
     if (controller.signal.aborted) return
+    item.attachmentGrant = uploaded.attachmentGrant
     item.uploadedUri = uploaded.uri
     item.uploadedTargetKey = targetKey
     if (uploadStates.get(item.id) === state) {
-      Object.assign(state, { status: "uploaded", transferredBytes: item.size, totalBytes: item.size, progress: 1, uri: uploaded.uri })
+      Object.assign(state, { status: "uploaded", transferredBytes: item.size, totalBytes: item.size, progress: 1, uri: uploaded.uri, attachmentGrant: uploaded.attachmentGrant })
     }
   } catch (reason) {
     if (controller.signal.aborted || uploadStates.get(item.id) !== state) return
@@ -171,8 +174,8 @@ export function pathToFileUri(filePath: string): string {
   return /^file:\/\//iu.test(filePath) ? filePath : filePathToUri(filePath)
 }
 
-export function createMachineFileAttachment(entry: Pick<FileEntry, "name" | "path" | "size">): ComposerAttachment {
-  return { id: crypto.randomUUID(), kind: "machine_file", name: entry.name, path: entry.path, uri: pathToFileUri(entry.path), size: entry.size }
+export function createMachineFileAttachment(entry: Pick<FileEntry, "name" | "path" | "size" | "attachmentGrant">): ComposerAttachment {
+  return { id: crypto.randomUUID(), kind: "machine_file", name: entry.name, path: entry.path, uri: pathToFileUri(entry.path), size: entry.size, ...(entry.attachmentGrant && { attachmentGrant: entry.attachmentGrant }) }
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -228,6 +231,17 @@ function attachmentToBlock(item: ComposerAttachment, uri?: string): AgentInput["
     ...(item.mimeType ? { mimeType: item.mimeType } : {}),
     size: item.size,
   }
+}
+
+/** Pass files-channel grants only to the workspace host that validates them. */
+export function workspacePromptAttachments(attachments: readonly ComposerAttachment[]): AgentInput["content"] {
+  return attachments.map(item => {
+    const block = attachmentToBlock(item, item.kind === "local_file" ? item.uploadedUri : undefined)
+    if (block.type === "resource_link" && (item.kind === "local_file" || item.kind === "machine_file") && item.attachmentGrant) {
+      block._meta = { "deskfleet/attachmentGrant": item.attachmentGrant }
+    }
+    return block
+  })
 }
 
 export function previewPromptContent(draft: string, attachments: readonly ComposerAttachment[]): AgentInput["content"] {

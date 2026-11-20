@@ -37,7 +37,7 @@ test("literal translation keys in the source exist", () => {
     (file) => /\.(ts|vue)$/u.test(file) && !/\.test\.ts$/u.test(file),
   )
   const keys = files.flatMap((file) =>
-    [...readFileSync(resolve(sourceRoot, file), "utf8").matchAll(/\bt\(\s*["']([\w.]+)["']/gu)].map(
+    [...readFileSync(resolve(sourceRoot, file), "utf8").matchAll(/\bt\(\s*["']([\w.]+)["']\s*(?=[,)])/gu)].map(
       (match) => match[1]!,
     ),
   )

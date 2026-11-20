@@ -50,6 +50,7 @@ const props = withDefaults(defineProps<{
   maxWidth?: number
   decayMs?: number
   active?: string
+  entries?: OutlineItem[]
   events?: AgentEvent[]
   snapshot?: AgentSnapshot
   projection?: ConversationEntry[]
@@ -97,6 +98,7 @@ function plainText(content: AgentInput["content"]): string {
 
 const projection = useConversationProjection(() => props.events ?? [], () => props.snapshot)
 const items = computed<OutlineItem[]>(previous => {
+  if (props.entries) return props.entries
   if (!props.events || !props.snapshot) return PREVIEW_ITEMS
   const result: OutlineItem[] = []
   for (const entry of props.projection ?? projection.value) {
@@ -115,7 +117,7 @@ const items = computed<OutlineItem[]>(previous => {
   }) ? previous : result
 })
 
-const currentActive = computed(() => props.active || (!props.events ? selectedPreview.value : undefined))
+const currentActive = computed(() => props.active || (!props.events && !props.entries ? selectedPreview.value : undefined))
 const pointedId = computed(() => scrub.value?.item.id ?? hovered.value)
 const pointedIndex = computed(() => items.value.findIndex(item => item.id === pointedId.value))
 const activeId = computed(() => scrub.value?.item.id ?? currentActive.value)
@@ -133,7 +135,7 @@ function tickWidth(index: number, label: string): number {
 }
 
 function onSelect(id: string): void {
-  if (!props.events) selectedPreview.value = id
+  if (!props.events && !props.entries) selectedPreview.value = id
   emit("select", id)
 }
 

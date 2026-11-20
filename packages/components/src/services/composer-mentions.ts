@@ -1,25 +1,7 @@
-import type { ComposerReference } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+import { validComposerMentions, type ComposerMention } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
+export { validComposerMentions, type ComposerMention, type ComposerSkillReference } from "../../../../apps/daemon/src/composer-reference-protocol.ts"
 
-export interface ComposerSkillReference { kind: "skill"; id: string; name: string; invocation: string; providerId: string }
-export interface ComposerMention {
-  id: string
-  /** UTF-16 offsets into the textarea value; end is exclusive. */
-  start: number
-  end: number
-  token: string
-  reference: ComposerReference | ComposerSkillReference
-}
 export interface ComposerTrigger { kind: "reference" | "skill" | "command"; start: number; end: number; query: string }
-
-export function validComposerMentions(text: string, mentions: readonly ComposerMention[]): ComposerMention[] {
-  let end = 0
-  return [...mentions].sort((left, right) => left.start - right.start).filter(mention => {
-    if (mention.start < end || mention.start < 0 || mention.end <= mention.start || text.slice(mention.start, mention.end) !== mention.token) return false
-    if (mention.start > 0 && !/\s/u.test(text[mention.start - 1]!) || mention.end < text.length && !/\s/u.test(text[mention.end]!)) return false
-    end = mention.end
-    return true
-  })
-}
 
 /** Keep identities through surrounding edits; editing a selected token turns it into plain text. */
 export function reconcileComposerMentions(before: string, after: string, mentions: readonly ComposerMention[]): ComposerMention[] {
