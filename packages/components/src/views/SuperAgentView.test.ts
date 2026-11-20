@@ -93,7 +93,7 @@ test("a Team at its limit can read an existing conversation without creating or 
   })
   expect(wrapper.get('[data-message-role="assistant"]').text()).toContain("Previous reply")
   expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
-  expect(wrapper.text()).toContain("Your team has used all its tokens for this billing period.")
+  expect(wrapper.text()).toContain("Your team has used all its credits for this billing period.")
   await wrapper.get("form").trigger("submit")
   expect(central.sendSuperAgentMessage).not.toHaveBeenCalled()
 })

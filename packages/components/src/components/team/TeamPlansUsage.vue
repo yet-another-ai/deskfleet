@@ -167,7 +167,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           <UsageMeter data-team-usage="sessions" class="border-t border-ui-border-strong" :label="t('team.activeSessions')" :hint="t('team.activeSessionsHint')" :used="state.usage.activeSessionCount" :limit="state.limits.maxActiveSessions" :format="count" />
           <UsageMeter data-team-usage="members" class="border-t border-ui-border-strong" :label="t('team.usageMembers')" :hint="t('team.usageMembersHint')" :used="state.usage.memberCount" :limit="state.limits.maxMembers" :format="count" />
           <div v-if="account.superAgentEnabled.value && state.plan !== 'selfHosted'" data-team-usage="tokens" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border-strong px-4 py-3.5">
-            <h3 class="m-0 text-sm font-normal">{{ t("billing.comparison.monthlyTokens") }}</h3>
+            <h3 class="m-0 text-sm font-normal">{{ t("billing.comparison.monthlyCredits") }}</h3>
             <span class="text-sm tabular-nums">{{ state.limits.superAgentTokens ?? t("team.unlimited") }}</span>
           </div>
           <div data-team-usage="turns" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border-strong px-4 py-3.5">

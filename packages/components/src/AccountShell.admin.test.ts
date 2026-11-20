@@ -102,6 +102,8 @@ test("site admins can edit a hosted plan's quotas and inspect self-hosted limits
   await choose("go")
   await input("maxMembers").setValue("7")
   await choose("pro")
+  const creditLabelId = input("superAgentTokens").attributes("aria-labelledby")
+  expect(page().get(`[id="${creditLabelId}"]`).text()).toBe("Monthly credits")
   await input("superAgentTokens").setValue("9007199254740992")
   expect(button("Save").attributes("disabled")).toBeDefined()
   await input("superAgentTokens").setValue("250")
@@ -120,7 +122,7 @@ test("site admins can edit a hosted plan's quotas and inspect self-hosted limits
   expect(page().find('button[type="submit"]').exists()).toBe(false)
 })
 
-test("editing other quotas preserves the hidden Super Agent allowance", async () => {
+test("editing other quotas preserves the hidden monthly credit allowance", async () => {
   const fake = fakeCentral({ siteAdmin: true })
   fake.state.planQuotas.find(plan => plan.plan === "free")!.superAgentTokens = 375
   await router.push("/admin/plan-quotas")

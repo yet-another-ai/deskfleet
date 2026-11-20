@@ -31,19 +31,19 @@ server's `DATABASE_URL` and use `mise run backend:dev`. Keep eve on the private
 application network. Direct public traffic to the DeskFleet API. The package
 disables built-in execution tools. Its model calls use the operator's credential.
 
-In Site administration, open **Plan quotas** and set **Monthly tokens** for
+In Site administration, open **Plan quotas** and set **Monthly credits** for
 each hosted plan. PostgreSQL stores the allowance per plan.
 Changes apply to existing Teams on their next request and preserve the
 current billing period's usage. The initial hosted allowance is zero. Select
-unlimited to allow new work without a token cap. Self-hosted deployments can
-use their own model account with unlimited tokens.
+unlimited to allow new work without a credit cap. Self-hosted deployments can
+use their own model account with unlimited credits.
 
 ## Team API
 
 Team members in the rollout can open **Super Agent** from the sidebar in Web
 or Desktop, including before connecting their first Machine. Sending the first
 message starts a conversation. The conversation list reopens the Team's saved
-history. Reaching the token allowance pauses new messages and keeps history
+history. Reaching the monthly credit allowance pauses new messages and keeps history
 available to members in the rollout.
 
 All routes are relative to `/api/teams/{teamId}/super-agent` and use the
@@ -59,7 +59,7 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 | POST `/sessions` | Send `{"operationId":"<uuid>"}` to create an empty Session and receive `{sessionId}`. Include `message` to deliver the first message and receive `{sessionId, deliveryId}`. |
 | POST `/sessions/{sessionId}/messages` | Send `operationId` and `message` to receive `{sessionId, deliveryId}`. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
-| GET `/usage` | Read the effective plan, billing period, configured allowance, recorded tokens, runtime availability and admission decision. |
+| GET `/usage` | Read the effective plan, billing period, monthly credit allowance (`includedTokens`), recorded model tokens (`usedTokens`), runtime availability and admission decision. |
 
 Both writes accept a plain string (including Markdown) or an ordered array of
 1–64 text and file parts. A file can be the entire message. This request opens

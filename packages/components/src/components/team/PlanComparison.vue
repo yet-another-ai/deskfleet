@@ -24,7 +24,7 @@ const quotaFeatures = [
   { key: "maxActiveSessions", label: "team.activeSessions" },
   { key: "maxTurnsPerSession", label: "billing.turnsPerSession" },
   { key: "maxMembers", label: "team.usageMembers" },
-  { key: "superAgentTokens", label: "billing.comparison.monthlyTokens" },
+  { key: "superAgentTokens", label: "billing.comparison.monthlyCredits" },
 ] as const
 const features = computed(() => quotaFeatures.filter(feature => feature.key !== "superAgentTokens" || props.showSuperAgent))
 function price(plan: string) {

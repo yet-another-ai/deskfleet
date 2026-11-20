@@ -345,8 +345,8 @@ test("comparison uses server allowances for the current plan and stays visible t
   expect(current.text()).toContain("4 GiB")
   const pro = usage().get('[data-plan-comparison="pro"]')
   expect(pro.get("[data-plan-team-turn]").attributes("data-plan-team-turn")).toBe("false")
-  expect(metric("tokens").get("h3").text()).toBe("Monthly tokens")
-  expect(pro.findAll("dt").map(term => term.text())).toContain("Monthly tokens")
+  expect(metric("tokens").get("h3").text()).toBe("Monthly credits")
+  expect(pro.findAll("dt").map(term => term.text())).toContain("Monthly credits")
   expect(pro.text()).toContain("98765")
   expect(pro.text()).toContain("512 B")
   expect(current.text()).toContain("Unlimited")
@@ -355,10 +355,10 @@ test("comparison uses server allowances for the current plan and stays visible t
   expect(button("Manage billing")).toBeDefined()
 })
 
-test("a closed rollout hides token allowances across usage and the catalog", async () => {
+test("a closed rollout hides credit allowances across usage and the catalog", async () => {
   await setup(fake => fake.central.billing.mockResolvedValue(free()))
   expect(usage().find("[data-team-usage=tokens]").exists()).toBe(false)
-  expect(usage().text()).not.toContain("Monthly tokens")
+  expect(usage().text()).not.toContain("Monthly credits")
   expect(usage().findAll("[data-plan-comparison]")).toHaveLength(3)
 })
 

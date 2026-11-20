@@ -40,7 +40,7 @@ impl ControlStore {
             .filter(requests::Column::TeamId.eq(team))
             .one(&self.db)
             .await?
-            .ok_or(Error::Limited("monthly token allowance exhausted"))?;
+            .ok_or(Error::Limited("monthly credit allowance exhausted"))?;
         if row.fingerprint != fingerprint || row.session_id.as_deref() != session {
             return Err(Error::Conflict(
                 "operation ID already used for another request",

@@ -15,12 +15,12 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
   account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
-- Platform subscriptions can include a monthly Team token allowance. The hosted
+- Platform subscriptions can include a monthly Team credit allowance. The hosted
   Super Agent draws from this allowance using the operator's cloud model credential.
   Agents on enrolled Machines continue to use the Machine's configured providers.
   Stripe may apply native invoice credits from subscription proration.
 - Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
-  in monthly TURN allowance and can have distinct monthly token allowances.
+  in monthly TURN allowance and can have distinct monthly credit allowances.
   They are sold as monthly or yearly Stripe subscriptions. A Site Admin grants
   Enterprise. Plans & Usage can show a configurable Contact us mailbox
   (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`) when operators want inbound sales mail.
@@ -34,21 +34,22 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 - Preserve Team -> Machine -> Workspace -> Session-owned Worktree ownership,
   the Rust/Actix server, and the TypeScript daemon. Keep `PROTOCOL_VERSION = 1`.
 
-## Monthly tokens
+## Monthly credits
 
 The server meters cloud model use per Team. Each root eve Session is registered
 to one Team before it receives a prompt. The collector reads that Session's
 durable stream and records each `usage.recorded` fact once by Session, line
-and index. Parent-reported usage includes its delegated calls. The billed unit
-is one input or output token. Cached reads and writes are breakdowns of the
-input count. Model spend from ACP Sessions on a user's Machine has its own
-usage projection.
+and index. Parent-reported usage includes its delegated calls. The ledger stores
+the model's input and output token counts. The current meter counts each input
+or output token as one credit toward the Team's allowance. Cached reads and
+writes are already included in the input count. Model spend from ACP Sessions
+on a user's Machine has its own usage projection.
 
 A new delivery schedules another read while the current collector keeps its
 lease. Committing the cursor preserves that pending read. If the collector
 exits first, a replica can resume from the last committed cursor after expiry.
 
-The Team's effective plan selects a configurable included token amount. Usage is
+The Team's effective plan sets its monthly credit allowance. Usage is
 attributed to the monthly billing period containing the event timestamp, including
 on yearly subscriptions. New hosted messages require remaining allowance. Admission
 uses recorded consumption. Concurrent or already accepted work can take the final
@@ -56,7 +57,7 @@ total above the allowance. The ledger retains that full total. Replaying the sam
 accepted operation returns its receipt. Monetary pricing and overage collection
 are separate commercial decisions.
 Self-hosted operators can enable the service with their own model credentials and
-unlimited tokens. See [Super Agent setup](../../apps/super-agent/README.md).
+unlimited credits. See [Super Agent setup](../../apps/super-agent/README.md).
 
 ## Plan matrix
 
@@ -78,7 +79,7 @@ installations retain unrestricted product quotas.
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
-| Monthly tokens | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
+| Monthly credits | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
 | Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
