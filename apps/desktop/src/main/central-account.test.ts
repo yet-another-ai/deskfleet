@@ -176,6 +176,21 @@ test("an async encryption failure preserves the saved account and rejects login"
   expect(await readFile(f.path, "utf8")).toBe(saved)
 })
 
+test("a failed async decryption starts signed out without aborting startup or overwriting account.json", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  try {
+    const f = await setup({ encryptedToken: Buffer.from("saved-encrypted-token").toString("base64"), user })
+    const saved = await readFile(f.path, "utf8")
+    vi.mocked(safeStorage.decryptStringAsync).mockRejectedValueOnce(new Error("Keyring unlock cancelled"))
+    const client = await f.install()
+    expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+    expect(await readFile(f.path, "utf8")).toBe(saved)
+    expect(warn).toHaveBeenCalledOnce()
+  } finally {
+    warn.mockRestore()
+  }
+})
+
 test("desktop GitHub settings bridge keeps authorization in the host transport", async () => {
   const f = await setup({ encryptedToken: Buffer.from("saved-token").toString("base64"), user })
   await f.install()

@@ -10,6 +10,7 @@ import { validateNotificationSettings, type NotificationSettingsController } fro
 import type { UpdateSettingsController } from "./update-settings.ts"
 import type { WorktreeRootSettingsController } from "./worktree-root-settings.ts"
 import type { RemoteAgentSettingsController } from "./remote-agent-settings.ts"
+import type { LinuxKeyringSettingsController } from "./linux-keyring-settings.ts"
 import { remoteAgentSettings } from "../../../daemon/src/remote-agent-settings.ts"
 import { validateWorktreePreferences } from "../../../daemon/src/worktree-preferences.ts"
 import { t } from "./i18n.ts"
@@ -35,6 +36,7 @@ export function installSettings(
   worktrees: WorktreeRootSettingsController,
   updates?: Pick<UpdateSettingsController, "get" | "setEnabled" | "setPauseOnMetered">,
   remoteAgents?: RemoteAgentSettingsController,
+  linuxKeyring?: Pick<LinuxKeyringSettingsController, "get" | "setUseSystemKeyring">,
 ): void {
   ipcMain.handle(SETTINGS_CHANNEL, async (event, method: unknown, enabled: unknown) => {
     if (!renderers.has(event.sender) || !isDesktopMediaSender(event)) {
@@ -60,6 +62,13 @@ export function installSettings(
         case "setKeepAwake":
           if (typeof enabled !== "boolean") throw new Error("Keep Awake setting must be a boolean")
           return { ok: true, value: keepAwake.setEnabled(enabled) }
+        case "getLinuxKeyring":
+          if (!linuxKeyring) throw new Error("Linux keyring settings are unavailable")
+          return { ok: true, value: linuxKeyring.get() }
+        case "setLinuxKeyring":
+          if (typeof enabled !== "boolean") throw new Error("Linux keyring setting must be a boolean")
+          if (!linuxKeyring) throw new Error("Linux keyring settings are unavailable")
+          return { ok: true, value: linuxKeyring.setUseSystemKeyring(enabled) }
         case "getAutoDownloadUpdates":
           if (!updates) throw new Error("Automatic update settings are unavailable")
           return { ok: true, value: updates.get() }

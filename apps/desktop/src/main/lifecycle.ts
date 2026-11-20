@@ -15,7 +15,7 @@ export interface BackgroundLifecycle {
   /** Ends the client process. Only explicit application commands, the OS session, and signals call it. */
   quit(): void
   /** Schedules a fresh client process, then exits through the same graceful shutdown path. */
-  restart(): void
+  restart(): void | Promise<void>
   /** Let the updater close windows and quit after hosted services have stopped. */
   setInstallingUpdate(installing: boolean): void
 }
@@ -28,9 +28,11 @@ export interface BackgroundLifecycle {
 export function keepRunningInBackground(
   application: BackgroundApplication,
   hideWindows: () => void,
+  relaunch?: () => void | Promise<unknown>,
 ): BackgroundLifecycle {
   let quitting = false
   let installingUpdate = false
+  let restarting = false
 
   // Without a listener, Electron quits once the last window closes.
   application.on("window-all-closed", () => {})
@@ -49,10 +51,23 @@ export function keepRunningInBackground(
       application.quit()
     },
     restart() {
-      if (quitting || installingUpdate) return
-      application.relaunch()
-      quitting = true
-      application.quit()
+      if (quitting || installingUpdate || restarting) return
+      if (!relaunch) {
+        application.relaunch()
+        quitting = true
+        application.quit()
+        return
+      }
+      restarting = true
+      return Promise.resolve().then(relaunch).then(() => {
+        restarting = false
+        if (quitting || installingUpdate) return
+        quitting = true
+        application.quit()
+      }, error => {
+        restarting = false
+        throw error
+      })
     },
     setInstallingUpdate(installing) {
       installingUpdate = installing
