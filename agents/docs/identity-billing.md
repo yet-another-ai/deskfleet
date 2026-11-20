@@ -15,12 +15,12 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
   account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
-- Platform subscriptions can include a monthly Team token allowance for the
-  hosted Super Agent. The service operator supplies the cloud model credential.
+- Platform subscriptions can include a monthly Team token allowance. The hosted
+  Super Agent draws from this allowance using the operator's cloud model credential.
   Agents on enrolled Machines continue to use the Machine's configured providers.
   Stripe may apply native invoice credits from subscription proration.
 - Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
-  in monthly TURN allowance and can have distinct Super Agent token allowances.
+  in monthly TURN allowance and can have distinct monthly token allowances.
   They are sold as monthly or yearly Stripe subscriptions. A Site Admin grants
   Enterprise. Plans & Usage can show a configurable Contact us mailbox
   (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`) when operators want inbound sales mail.
@@ -34,7 +34,7 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 - Preserve Team -> Machine -> Workspace -> Session-owned Worktree ownership,
   the Rust/Actix server, and the TypeScript daemon. Keep `PROTOCOL_VERSION = 1`.
 
-## Super Agent token allowance
+## Monthly tokens
 
 The server meters cloud model use per Team. Each root eve Session is registered
 to one Team before it receives a prompt. The collector reads that Session's
@@ -78,7 +78,7 @@ installations retain unrestricted product quotas.
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
-| Monthly Super Agent tokens | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
+| Monthly tokens | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
 | Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 

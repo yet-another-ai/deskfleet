@@ -154,7 +154,7 @@ request receipts, Session bindings and the cloud token ledger. Each API instance
 can claim outstanding Session streams to meter. The cursor advances after the
 usage facts are durable. Re-reading a stream after a crash preserves the original
 token count. [Super Agent setup](../../apps/super-agent/README.md) describes
-runtime configuration and the API, and [billing](identity-billing.md#super-agent-token-allowance)
+runtime configuration and the API, and [billing](identity-billing.md#monthly-tokens)
 defines the allowance.
 
 ### Multiple API instances

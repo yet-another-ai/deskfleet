@@ -127,7 +127,7 @@ impl ControlStore {
             .super_agent_tokens
             .map(u64::try_from)
             .transpose()
-            .map_err(|_| DbErr::Type("negative Super Agent token allowance".into()))?;
+            .map_err(|_| DbErr::Type("negative monthly token allowance".into()))?;
         Ok(CloudTokenPeriod {
             start: timestamp(start),
             end: timestamp(end),
