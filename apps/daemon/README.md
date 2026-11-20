@@ -267,7 +267,7 @@ Agent configuration uses these common options:
 | Option | Meaning |
 | --- | --- |
 | `--name <label>` | User-facing label, defaulting to `Codex`, `Claude Code`, `Cursor`, `Grok`, `Pi Coding Agent`, `Oh My Pi`, `CodeBuddy Code`, `DeepSeek Harness`, or `Antigravity`, separate from the provider ID |
-| `--binary-path <executable>` | Provider executable; omitted or empty uses bundled DeepSeek Harness, or `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `codebuddy`, or `agy` on PATH |
+| `--binary-path <executable>` | Provider executable; omitted or empty discovers an installed DeepSeek Harness CLI, or uses `codex`, `claude`, `agent`, `grok`, `pi`, `omp`, `codebuddy`, or `agy` on PATH |
 | `--env KEY=value` | Add or override an environment variable; repeat for multiple keys |
 
 The selected binary path takes precedence over `CODEX_PATH` or
@@ -312,9 +312,23 @@ on for China or off for international accounts; it sets
 session operations. The one-shot CLI can set the same variable through `--env`.
 Detection leaves credential status unknown, and **Test Connection** checks
 session creation without invoking interactive ACP authentication.
-DeepSeek Harness is native ACP: the daemon runs the bundled CLI, or an explicit
-external binary, using `--profile acp`
-(`dsh acp` is the same launch). The bundle's **Log in** action opens a terminal
+DeepSeek Harness speaks ACP over stdio through `dsh --profile acp`.
+On standalone machines, install the
+[official DeepSeek Harness desktop application](https://www.deepseek.com/en/download/)
+on macOS or Windows, or install the CLI on Linux with Node.js 24.9+ and
+`npm install -g @deepseek-ai/dsh@0.2.2-rc.5`. Install it on the machine running the
+daemon. The official application's launcher works while its window is closed.
+On macOS, the standard launcher is
+`/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh`.
+On Windows, it is `resources\runtime\cli\bin\dsh.cmd` under the
+application's installation directory. Set an explicit executable path in
+**Advanced** for a custom installation or a CLI outside the daemon's PATH.
+An automatically discovered CLI uses a registration-local Harness home unless
+the provider sets `DSH_HOME`. The installed application's default home is
+separate. Configure `DEEPSEEK_API_KEY` in **Advanced**, or set up an account and
+select the account model in that CLI's ACP profile.
+
+DeskFleet Desktop bundles Harness on its Electron Node host. Its **Log in** action opens a terminal
 with a browser authorization URL. On a remote machine, paste the browser's full
 loopback callback URL into that terminal if the browser cannot reach it directly.
 The official Harness account services own the PKCE exchange and credential save.
@@ -325,19 +339,12 @@ a configured `DEEPSEEK_API_KEY` takes precedence and keeps `deepseek-official`
 (with optional `DEEPSEEK_BASE_URL`). Discovery checks credential availability,
 not remote validity. Discovery and login read provider environment overrides,
 inherited variables, the Harness-home `.env`, and saved credentials. Project
-`.env` files are loaded only when launching bundled ACP in the session's primary
+`.env` files are loaded when launching ACP in the session's primary
 worktree directory, which is supplied before ACP initialization. Connection tests
 use an empty temporary directory.
-The ACP server does not advertise interactive authenticate
-methods. Node.js, npm, and a global dsh installation are unnecessary. External
-executables retain their own credential setup; clear the path to use bundled
-login. Source launches use
-the installed dependency tree with the running Node executable, without staging.
-Desktop uses Electron's Node mode; standalone releases include a private Node
-runtime. `packages/dsh-runtime` owns launch resolution, deployment, and smoke
-checks. `mise run dsh:stage` prepares `apps/daemon/dist/dsh` for standalone
-distribution; `mise run dsh:smoke` verifies that payload. To check the installed
-source runtime, run `mise exec -- node packages/dsh-runtime/smoke.ts`.
+The ACP server does not advertise interactive authenticate methods.
+An explicit external executable uses its own credential configuration.
+`packages/dsh-runtime` owns DeskFleet Desktop's bundled runtime and smoke checks.
 
 Antigravity uses native ACP: the daemon runs `` `<binary> acp` `` with `agy` as
 the default executable. Settings installs the CLI through Google's official
@@ -400,9 +407,7 @@ mise run daemon:smoke
 
 The build embeds JavaScript and the native addon in
 `apps/daemon/dist/deskfleet-daemon` (`deskfleet-daemon.exe` on Windows). This file
-runs without a system Node installation or adjacent addon. Keep the generated
-`apps/daemon/dist/dsh/` directory beside it to use bundled DeepSeek Harness;
-release archives include that directory and its licenses:
+runs without a system Node installation or adjacent addon.
 
 ```sh
 ./apps/daemon/dist/deskfleet-daemon --info

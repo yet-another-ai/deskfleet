@@ -118,7 +118,7 @@ depends = ["check:scripts", "check:daemon", "ci:check:desktop-main", "check:rust
 
 [tasks.build]
 description = "Build the release server and standalone daemon"
-depends = ["rust:release", "web:build", "dsh:stage"]
+depends = ["rust:release", "web:build"]
 run = "node scripts/build-sea.ts"
 
 [tasks."rust:release"]
@@ -152,16 +152,6 @@ description = "Run the standalone headless daemon from TypeScript"
 depends = ["native:debug"]
 run = "node apps/daemon/src/main.ts"
 
-[tasks."dsh:stage"]
-description = "Prepare DeepSeek Harness and private Node for the standalone distribution"
-depends = ["install"]
-run = "node packages/dsh-runtime/stage.ts node apps/daemon/dist/dsh"
-
-[tasks."dsh:smoke"]
-description = "Verify bundled DeepSeek Harness without system Node, npm, or dsh"
-depends = ["dsh:stage"]
-run = "node packages/dsh-runtime/smoke.ts apps/daemon/dist/dsh"
-
 [tasks."desktop:smoke-dsh"]
 description = "Verify DeepSeek Harness on Electron's Node host without staging or system Node"
 depends = ["install"]
@@ -173,7 +163,7 @@ run = "node apps/desktop/scripts/smoke-dsh.ts --packaged"
 
 [tasks."daemon:pack"]
 description = "Package the daemon as a Node.js single executable"
-depends = ["native:release", "dsh:stage"]
+depends = ["native:release"]
 run = "node scripts/build-sea.ts"
 
 [tasks."daemon:smoke"]

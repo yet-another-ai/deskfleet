@@ -2,10 +2,10 @@ import assert from "node:assert/strict"
 import { execFileSync, spawn } from "node:child_process"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join } from "node:path"
 import { Readable, Writable } from "node:stream"
 import * as acp from "@agentclientprotocol/sdk/unstable"
-import { bundledDshRuntime, configureDshRuntime, dshAccountProcess, dshAcpProcess, sourceDshRuntime, type DshRuntime } from "./src/index.ts"
+import { configureDshRuntime, dshAccountProcess, dshAcpProcess, sourceDshRuntime, type DshRuntime } from "./src/index.ts"
 
 /** Exercise the selected host with no system Node/npm/dsh, credentials, or model request. */
 export async function smokeDsh(runtime: DshRuntime): Promise<void> {
@@ -112,4 +112,4 @@ async function smokeAcp(runtime: DshRuntime, env: NodeJS.ProcessEnv, cwd: string
   }
 }
 
-if (import.meta.main) await smokeDsh(process.argv[2] ? bundledDshRuntime(resolve(process.argv[2])) : sourceDshRuntime())
+if (import.meta.main) await smokeDsh(sourceDshRuntime())

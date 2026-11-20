@@ -33,6 +33,16 @@ automatically. Then use **Test connection** to check session creation.
 In the login terminal, follow CodeBuddy's startup prompts or enter `/login`,
 then `/exit` to return to setup.
 
+For **DeepSeek Harness** on a standalone machine, install Harness on that
+machine. On macOS or Windows, use the
+[official desktop installer](https://www.deepseek.com/en/download/).
+On Linux, install Node.js 24.9 or newer and run
+`npm install -g @deepseek-ai/dsh@0.2.2-rc.5`. If DeskFleet cannot find the CLI, set its
+absolute path in **Advanced**. Set `DEEPSEEK_API_KEY` there for API-key
+authentication and use **Test connection** to check session creation.
+Automatically detected installations use a Harness home for the current Team
+registration. Manage an external account through the CLI's ACP profile.
+
 ### Import existing project directories
 
 After adding **Codex** or **Claude Code**, you can select their recorded project

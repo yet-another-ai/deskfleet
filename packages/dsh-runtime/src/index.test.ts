@@ -23,15 +23,6 @@ test("source runtime resolves dsh from its owning package, anchored at the embed
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test("standalone runtime uses its relocated private Node and package tree", () => {
-  const directory = join(tmpdir(), "relocated deskfleet", "dsh")
-  assert.deepEqual(bundledDshRuntime(directory), {
-    command: join(directory, "bin", process.platform === "win32" ? "node.exe" : "node"),
-    entryPoint: join(directory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"),
-    helperEntryPoint: join(directory, "helper.js"),
-  })
-})
-
 test("Electron supplies the host without changing the packaged dependency entry", () => {
   const directory = join(tmpdir(), "DeskFleet.app", "Contents", "Resources", "dsh")
   const executable = join(tmpdir(), "DeskFleet.app", "Contents", "MacOS", "DeskFleet")

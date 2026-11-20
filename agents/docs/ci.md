@@ -157,22 +157,20 @@ as described in the Web guide. Publish includes this same-run Web artifact in
 both server image architectures. The artifact remains available for independent
 static hosting for 14 days; it is not added to the GitHub Release archives.
 
-The standalone archive includes `dsh/` beside the daemon executable, containing
-the pinned DeepSeek Harness package tree, private Node executable, and licenses.
-The build task prepares this payload separately from SEA bundling through
-`dsh:stage`. Desktop builds prepare the package tree in `out/dsh` and smoke-test
-it with Electron before Vite runs; packaging places that tree in resources
-without a private Node executable. Desktop launches dsh using Electron's Node
-mode. `packages/dsh-runtime` owns both deployment paths and smoke checks.
+Headless agents use the DeepSeek Harness CLI installed on the executing machine.
+Desktop builds prepare the pinned package tree in `out/dsh` and smoke-test it
+with Electron before Vite runs. Packaging places that tree in resources, and
+Desktop launches dsh using Electron's Node mode. `packages/dsh-runtime` owns
+this deployment and its smoke checks.
 Staging uses an offline production deploy from the workspace lockfile and
 preserves upstream plugins, native modules, and subprocess helpers.
 After desktop packaging, `desktop:smoke-packaged-dsh` runs the installed
 executable against its resources with the configured Electron fuses. This
 also checks that the package tree was copied and no private Node was included.
 
-Smoke tests copy the daemon executable and `dsh/` to an unrelated temporary directory,
+Smoke tests copy the daemon executable to an unrelated temporary directory,
 clear Node's environment overrides and PATH, then check native information,
-the bundled ACP adapter, the DeepSeek ACP handshake, startup, and the health
+the bundled ACP adapters, startup, and the health
 endpoint. Unix tests also require clean signal-driven shutdown; Windows tests terminate the process forcibly.
 
 ## Product website deployment

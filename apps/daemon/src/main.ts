@@ -1,5 +1,6 @@
 import { isSea } from "node:sea"
 import { parseArgs } from "node:util"
+import { configureExternalDeepSeekHarness } from "@deskfleet/agent-deepseek-harness"
 import { nativeInfo } from "@deskfleet/native"
 import { startDaemon } from "./daemon.ts"
 import { daemonControlDirectory } from "./control-discovery.ts"
@@ -8,6 +9,7 @@ import { bundledAdapter, configureAdapterHost } from "./agents/adapters.ts"
 import { runMachineCli } from "./machine-cli.ts"
 import { ICAT_ARGUMENT, runIcat } from "./terminal-images.ts"
 
+configureExternalDeepSeekHarness()
 configureAdapterHost({
   command: process.execPath,
   args: isSea() ? [] : [process.argv[1]!],

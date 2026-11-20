@@ -1230,14 +1230,17 @@ method during startup. Settings uses Tencent's standalone installer and a
 separate login terminal, so installation does not require system Node.js/npm.
 The CodeBuddy edition switch writes the existing provider environment setting:
 `internal` for China and `public` for international, shared by setup and sessions.
-The DeepSeek Harness template launches the bundled CLI as `dsh --profile acp`;
-an explicit binary path selects an external CLI. `packages/dsh-runtime` owns
-source and packaged launch resolution, deployment, and runtime smoke checks.
-Source launches resolve its installed dependency tree without staging. Desktop
-runs dsh in an Electron Node-mode child process and ships the complete pinned
-package tree in resources; standalone releases carry that tree and a private
-Node executable beside the SEA daemon. The immutable runtime is shared by
-registrations, while provider environment overrides remain registration-owned.
+The DeepSeek Harness template launches `dsh --profile acp`. The headless
+daemon discovers an installed CLI on the executing machine. An explicit binary
+path selects a specific external CLI. DeskFleet Desktop runs bundled dsh in an
+Electron Node-mode child process and ships the pinned package tree in resources.
+`packages/dsh-runtime` owns the Desktop launch, deployment, and runtime smoke
+checks. The immutable runtime is shared by registrations, while provider
+environment overrides remain registration-owned.
+Automatic discovery on headless daemons supplies a registration-local
+`DSH_HOME` unless the provider has configured one explicitly. An explicit
+binary path leaves the external CLI's environment and credentials under
+operator control.
 Bundled login, credential detection, and ACP launches share a credential file
 under the registration directory. Their Harness home, profiles, and persisted
 session history stay in their existing locations. An explicit provider `DSH_HOME`
@@ -1266,7 +1269,7 @@ version remains `1`, and forking requires the provider's advertised capability.
 Each bundled adapter uses the installed CLI and its credentials. Adapters run as
 child processes; the SEA executable reuses its bundled Node runtime.
 The generic ACP template launches a stdio ACP executable directly. Empty binary
-paths use the bundled DeepSeek runtime or the template default (`codex`, `claude`,
+paths use the host's DeepSeek runtime selection or the template default (`codex`, `claude`,
 `agent`, `grok`, `pi`, `omp`, `codebuddy`, `agy`, or `acp-agent`), and configured environment
 values extend the executing daemon's inherited environment. New installations
 start with no configured providers; users add them in Settings → Agents using
