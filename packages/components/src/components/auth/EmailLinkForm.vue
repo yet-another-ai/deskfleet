@@ -4,6 +4,7 @@ import { useTimeoutFn } from "@vueuse/core"
 import { computed, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import type { AccountAuthentication, AuthConfig } from "@deskfleet/client/account-security"
+import { useAuthCaptcha } from "../../composables/useAuthCaptcha.ts"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import { setUserTelemetryConsent, trackEvent, userTelemetryConsent } from "../../services/analytics.ts"
 import UiButton from "../common/UiButton.vue"
@@ -13,6 +14,7 @@ import AuthLayout from "./AuthLayout.vue"
 /** Registration and recovery both start by mailing a one-hour link; sending again is the resend. */
 const props = defineProps<{ account: AccountAuthentication; purpose: "register" | "recovery"; config: AuthConfig }>()
 const { t } = useI18n()
+const { required: captchaRequired, checking: checkingCaptcha, proof: captchaProof, failure: captchaFailure } = useAuthCaptcha(props.account, () => props.purpose === "register" && props.config.captchaEnabled)
 const id = useId()
 const email = ref("")
 const acceptedTerms = ref(false)
@@ -33,12 +35,13 @@ async function send(again = false): Promise<void> {
   error.value = undefined
   try {
     const address = again ? sentTo.value! : email.value
-    await (props.purpose === "register" ? props.account.register(address, acceptedTerms.value) : props.account.requestRecovery(address))
+    if (props.purpose === "register") await props.account.register(address, acceptedTerms.value, await captchaProof("register"))
+    else await props.account.requestRecovery(address)
     if (props.purpose === "register" && !again) trackEvent("account_registered", { method: "password" })
     sentTo.value = address
     resent.value = again
     cool()
-  } catch (reason) { error.value = failureMessage(reason) }
+  } catch (reason) { error.value = captchaFailure(reason) ?? failureMessage(reason) }
   finally { pending.value = false }
 }
 function restart(): void { sentTo.value = undefined; resent.value = false; error.value = undefined }
@@ -53,6 +56,7 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
     <div class="flex flex-col gap-3">
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <p v-else-if="resent" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("auth.sentAgain") }}</p>
+      <p v-if="captchaRequired" role="status" class="m-0 text-xs text-ui-text-muted">{{ t(checkingCaptcha ? "auth.captchaChecking" : "auth.captchaNotice") }}</p>
       <UiButton class="h-9 text-sm" :loading="pending" :disabled="cooling" @click="send(true)">{{ t("auth.resend") }}</UiButton>
       <UiButton variant="ghost" class="h-9 text-sm" :disabled="pending" @click="restart">{{ t("auth.differentEmail") }}</UiButton>
     </div>
@@ -87,6 +91,7 @@ function restart(): void { sentTo.value = undefined; resent.value = false; error
           <span class="mt-1 block text-xs leading-relaxed text-ui-text-muted">{{ t("welcome.telemetryConsentDescription") }}</span>
         </span>
       </label>
+      <p v-if="captchaRequired" role="status" class="m-0 text-xs text-ui-text-muted">{{ t(checkingCaptcha ? "auth.captchaChecking" : "auth.captchaNotice") }}</p>
       <p v-if="error" role="alert" class="m-0 text-sm text-ui-danger">{{ error }}</p>
       <UiButton type="submit" variant="primary" class="h-9 text-sm" :loading="pending" :disabled="requiresTerms && !acceptedTerms">{{ t(copy.submit) }}</UiButton>
     </form>

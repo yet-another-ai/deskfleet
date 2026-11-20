@@ -76,6 +76,7 @@ pub(super) struct Start {
     return_to: String,
     #[serde(default)]
     accepted_terms: bool,
+    altcha: Option<String>,
 }
 #[derive(Deserialize)]
 pub(super) struct Callback {
@@ -111,6 +112,11 @@ pub(super) async fn start(
             "Accept the terms before signing in.",
         ));
     }
+    let action = match provider {
+        Provider::Github => captcha::Action::Github,
+        Provider::Google => captcha::Action::Google,
+    };
+    captcha::require(&state, action, body.altcha.as_deref()).await?;
     let nonce = secret();
     let verifier = secret();
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));

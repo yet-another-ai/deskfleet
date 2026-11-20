@@ -5,7 +5,9 @@ import { authenticatePasskey, registerPasskey } from "./passkeys.ts"
 
 type Transport = Pick<HttpCentralClient, "request">
 export interface AuthenticationMethods { password: boolean; passkey: boolean }
-export interface AuthConfig { webUrl: string; registrationEnabled: boolean; githubEnabled: boolean; googleEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string; telemetryEnabled?: boolean }
+export interface PublicAuthenticationPolicy { registrationEnabled: boolean; captchaEnabled: boolean }
+export interface AuthConfig extends PublicAuthenticationPolicy { webUrl: string; githubEnabled: boolean; googleEnabled: boolean; termsOfServiceUrl: string; privacyTermsUrl: string; telemetryEnabled?: boolean }
+export type CaptchaAction = "login" | "register" | "passkey" | "github" | "google"
 export interface LoginSession { id: string; deviceId: string; createdAt: string; expiresAt: string; current: boolean }
 export interface Passkey { id: string; name: string; createdAt: number }
 
@@ -21,12 +23,13 @@ export function accountAuthentication(api: Transport) {
     verifyEmailCode: (challengeId: string, code: string) => post("reauthenticate/email/verify", { challengeId, code }),
     authenticationMethods: () => api.request<AuthenticationMethods>("GET", "/api/auth/reauthenticate/methods"),
     config: () => api.request<AuthConfig>("GET", "/api/auth/config"),
-    login: (email: string, password: string) => post("login", { email, password }),
-    loginWithPasskey: (email: string) => authenticatePasskey(api, "login", email),
-    startGithub: (returnTo: string, acceptedTerms: boolean) => post<{ authorizationUrl: string }>("github/start", { returnTo, acceptedTerms }),
-    startGoogle: (returnTo: string, acceptedTerms: boolean) => post<{ authorizationUrl: string }>("google/start", { returnTo, acceptedTerms }),
+    captchaChallenge: (action: CaptchaAction) => post<unknown>("captcha/challenge", { action }),
+    login: (email: string, password: string, altcha?: string) => post("login", { email, password, ...(altcha ? { altcha } : {}) }),
+    loginWithPasskey: (email: string, altcha?: string) => authenticatePasskey(api, "login", email, altcha),
+    startGithub: (returnTo: string, acceptedTerms: boolean, altcha?: string) => post<{ authorizationUrl: string }>("github/start", { returnTo, acceptedTerms, ...(altcha ? { altcha } : {}) }),
+    startGoogle: (returnTo: string, acceptedTerms: boolean, altcha?: string) => post<{ authorizationUrl: string }>("google/start", { returnTo, acceptedTerms, ...(altcha ? { altcha } : {}) }),
     /** Sending again is the resend action; known addresses receive the same response. */
-    register: (email: string, acceptedTerms: boolean) => post("register", { email, acceptedTerms }),
+    register: (email: string, acceptedTerms: boolean, altcha?: string) => post("register", { email, acceptedTerms, ...(altcha ? { altcha } : {}) }),
     verify: (token: string, name: string, password: string) => post("verify", { token, name, password }),
     requestRecovery: (email: string) => post("recovery", { email }),
     completeRecovery: (token: string, password: string) => post("recovery/complete", { token, password }),

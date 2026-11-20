@@ -26,6 +26,17 @@ impl ControlStore {
         .await?;
         Ok(token)
     }
+    /// Read an unexpired challenge to validate its response before consuming it.
+    pub async fn read_identity_challenge(&self, token: &str, purpose: &str) -> Result<Value> {
+        let row = challenges::Entity::find_by_id(secret_hash(token))
+            .filter(challenges::Column::Purpose.eq(purpose))
+            .filter(challenges::Column::ExpiresAt.gt(now_ms()))
+            .one(&self.db)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        Ok(json!({"userId":row.user_id,"email":row.email,"record":row.record}))
+    }
+
     pub async fn consume_identity_challenge(&self, token: &str, purpose: &str) -> Result<Value> {
         let row = challenges::Entity::delete_many()
             .filter(challenges::Column::TokenHash.eq(secret_hash(token)))

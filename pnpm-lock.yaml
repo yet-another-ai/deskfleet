@@ -514,6 +514,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      altcha:
+        specifier: 3.6.0
+        version: 3.6.0
       animejs:
         specifier: ^4.5.0
         version: 4.5.0(@types/three@0.187.0)(three@0.187.0)
@@ -6840,6 +6843,9 @@ packages:
   alien-signals@3.2.1:
     resolution: {integrity: sha512-I8FjmltrfnDFoZedi5CG8DghVYNhzb/Ijluz7tCSJH0xpd0484Kowhbb1XDYOxfJpU1p5wnM2X54dA+IfGyD1g==}
 
+  altcha@3.6.0:
+    resolution: {integrity: sha512-Q219oO6EbpXm6yZv5E1aprDaiYea76tQFTc/IqlzRgdCyWhyGPR5x/PcEeOyp2fR8sCMON/FTnhwb9tjVYmpAA==}
+
   animejs@4.5.0:
     resolution: {integrity: sha512-NQimYX+lz8WaXonGS9zVVoviCIAjONeJayxacUditaivYLqyXgGjFKjuyl0aUUhFKm5MriX9ty1TGovNzoJQWA==}
     peerDependencies:
@@ -8071,6 +8077,9 @@ packages:
 
   hash-sum@2.0.0:
     resolution: {integrity: sha512-WdZTbAByD+pHfl/g9QSsBIIwy8IT+EsPiKDs0KNX+zSHhdDLFKdZu0BQHljvO+0QI/BasbMSUa8wYNCZTvhslg==}
+
+  hash-wasm@4.13.0:
+    resolution: {integrity: sha512-GrWl7wsV46fKIXQZB5ebskLZLAmKL6d9RS0fspCxDeQyjoNu1AfTJTMLPOJyfzaQm0ldFiwFN21/w+sE/kgEFQ==}
 
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
@@ -17320,6 +17329,10 @@ snapshots:
 
   alien-signals@3.2.1: {}
 
+  altcha@3.6.0:
+    dependencies:
+      hash-wasm: 4.13.0
+
   animejs@4.5.0(@types/three@0.187.0)(three@0.187.0):
     optionalDependencies:
       '@types/three': 0.187.0
@@ -18755,6 +18768,8 @@ snapshots:
       has-symbols: 1.1.0
 
   hash-sum@2.0.0: {}
+
+  hash-wasm@4.13.0: {}
 
   hasown@2.0.4:
     dependencies:
