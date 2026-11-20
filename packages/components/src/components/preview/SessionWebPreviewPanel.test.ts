@@ -1,5 +1,6 @@
 import { getClient } from "@deskfleet/client/platform"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { PortForward } from "@deskfleet/client/ports"
 import type { WebPreviewDesktopApi } from "@deskfleet/client/web-preview"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
@@ -47,22 +48,27 @@ async function setup(options: SetupOptions = {}) {
     id: `fwd-${++forwardSeq}`,
     localPort: 41233 + forwardSeq,
   }))
-  const stopMock = vi.fn(async () => {})
+  const activeForwards = new Map<string, PortForward>()
+  const retireForward = (id: string) => activeForwards.delete(id)
+  const stopMock = vi.fn(async (id?: string) => {
+    if (id) activeForwards.delete(id)
+  })
   const portsMock: NonNullable<DeskfleetDesktopApi["ports"]> = options.ports ?? {
     start: async input => {
       const created = await startMock(input)
-      return {
+      const forward: PortForward = {
         id: created.id,
         target: input.target,
         targetHost: input.targetHost ?? "127.0.0.1",
         targetPort: input.targetPort,
         localHost: "127.0.0.1",
         localPort: created.localPort,
-        createdAt: "2026-11-16T00:00:00.000Z",
       }
+      activeForwards.set(forward.id, forward)
+      return forward
     },
     stop: stopMock,
-    list: async () => [],
+    list: async () => [...activeForwards.values()],
   }
 
   const allowOriginMock = vi.fn(async () => `grant-${++grantSeq}`)
@@ -137,6 +143,7 @@ async function setup(options: SetupOptions = {}) {
     setActive(next: boolean) { panelActive.value = next },
     fleet,
     startMock,
+    retireForward,
     stopMock,
     allowOriginMock,
     revokeOriginMock,
@@ -377,4 +384,65 @@ test("shows offline state when remote machine is offline and connects once it re
   expect(wrapper.find("[data-web-preview-offline]").exists()).toBe(false)
   expect(startMock).toHaveBeenCalledTimes(1)
   expect(wrapper.find("webview").exists()).toBe(true)
+})
+
+test("address bar shows submit button when edited and commits dirty target on go click or reload", async () => {
+  const { wrapper, startMock } = await setup({
+    platform: "web",
+    mobile: true,
+    local: false,
+    online: true,
+    withWebPreview: false,
+    initialTarget: { displayHost: "localhost", targetHost: "localhost", targetPort: 5173, path: "/" },
+  })
+
+  expect(wrapper.find("[data-web-preview-go]").exists()).toBe(false)
+  expect(startMock).toHaveBeenCalledTimes(1)
+
+  const addressInput = wrapper.get("[data-web-preview-address]")
+  await addressInput.setValue("http://127.0.0.1:8080")
+  await flushPromises()
+  const goButton = wrapper.get("[data-web-preview-go]")
+  await goButton.trigger("click")
+  await flushPromises()
+
+  expect(startMock).toHaveBeenCalledTimes(2)
+  expect(startMock).toHaveBeenLastCalledWith({
+    target: { teamId: "1", machineId: "remote-machine-1" },
+    targetHost: "127.0.0.1",
+    targetPort: 8080,
+  })
+  expect(wrapper.find("[data-web-preview-go]").exists()).toBe(false)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41235/")
+
+  await addressInput.setValue("http://127.0.0.1:8080/counter")
+  await flushPromises()
+  expect(wrapper.find("[data-web-preview-go]").exists()).toBe(true)
+  await wrapper.get("[data-web-preview-reload]").trigger("click")
+  await flushPromises()
+
+  expect(startMock).toHaveBeenCalledTimes(2)
+  expect(wrapper.find("[data-web-preview-go]").exists()).toBe(false)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41235/counter")
+})
+
+test("re-establishes retired port forward on reload instead of hitting dead local port", async () => {
+  const { wrapper, startMock, retireForward } = await setup({
+    platform: "web",
+    mobile: true,
+    local: false,
+    online: true,
+    withWebPreview: false,
+    initialTarget: { displayHost: "127.0.0.1", targetHost: "127.0.0.1", targetPort: 8080, path: "/" },
+  })
+
+  expect(startMock).toHaveBeenCalledTimes(1)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41234/")
+
+  expect(retireForward("fwd-1")).toBe(true)
+  await wrapper.get("[data-web-preview-reload]").trigger("click")
+  await flushPromises()
+
+  expect(startMock).toHaveBeenCalledTimes(2)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41235/")
 })

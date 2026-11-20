@@ -118,6 +118,8 @@ const canGoForward = computed(() =>
 const canReload = computed(() => Boolean(resolvedOrigin.value && committedTarget.value))
 const canOpenExternal = computed(() => Boolean(actualUrl.value))
 const canOpenDevTools = computed(() => Boolean(isDesktopWebview.value && guestWebContentsId.value !== null))
+const committedLogicalUrl = computed(() => (committedTarget.value ? formatLogicalPreviewUrl(committedTarget.value) : ""))
+const addressDirty = computed(() => addressInput.value.trim() !== committedLogicalUrl.value)
 
 function emitTitle(): void {
   emit("title", formatWebPreviewTabTitle(committedTarget.value, pageTitle.value, t("webPreview.title")))
@@ -144,11 +146,13 @@ const endpointKey = computed(() => {
 })
 
 let endpointRevision = 0
+let activeForwardId: string | undefined
 watchImmediate(endpointKey, (key, _previous, onCleanup) => {
   const revision = ++endpointRevision
   let cancelled = false
   let forwardId: string | undefined
   let grantId: string | undefined
+  activeForwardId = undefined
 
   resolvedOrigin.value = null
   connectError.value = null
@@ -165,6 +169,7 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
     cancelled = true
     if (forwardId) {
       const id = forwardId
+      if (activeForwardId === id) activeForwardId = undefined
       forwardId = undefined
       void client.ports?.stop(id).catch(() => {})
     }
@@ -202,6 +207,7 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
           return
         }
         forwardId = forward.id
+        activeForwardId = forward.id
         origin = buildActualPreviewOrigin("127.0.0.1", forward.localPort)
       }
 
@@ -324,7 +330,35 @@ watch(
 
 onScopeDispose(() => {
   endpointRevision++
+  activeForwardId = undefined
 })
+
+async function isActiveForwardRetired(): Promise<boolean> {
+  if (useDirectLocal.value || !client.ports || !activeForwardId) return false
+  const currentId = activeForwardId
+  try {
+    const active = await client.ports.list()
+    return !active.some(entry => entry.id === currentId)
+  } catch {
+    return false
+  }
+}
+
+function reloadCurrentTarget(): void {
+  if (isDesktopWebview.value) webviewEl?.reload?.()
+  else iframeKey.value++
+}
+
+function navigateResolvedUrl(url: string, nextPath: string): void {
+  if (isDesktopWebview.value && webviewEl) {
+    if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(url)
+    else webviewEl.setAttribute("src", url)
+  } else if (!isDesktopWebview.value) {
+    mobileHistory.value = [...mobileHistory.value.slice(0, mobileHistoryIndex.value + 1), nextPath]
+    mobileHistoryIndex.value = mobileHistory.value.length - 1
+    iframeKey.value++
+  }
+}
 
 function applyTarget(raw: string): void {
   const parsed = parseWebPreviewInput(raw)
@@ -348,14 +382,19 @@ function applyTarget(raw: string): void {
 
   if (sameOrigin && resolvedOrigin.value) {
     const nextActualUrl = buildActualPreviewUrl(resolvedOrigin.value, parsed.path)
-    if (isDesktopWebview.value && webviewEl) {
-      if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(nextActualUrl)
-      else webviewEl.setAttribute("src", nextActualUrl)
-    } else if (!isDesktopWebview.value) {
-      mobileHistory.value = [...mobileHistory.value.slice(0, mobileHistoryIndex.value + 1), parsed.path]
-      mobileHistoryIndex.value = mobileHistory.value.length - 1
-      iframeKey.value++
+    if (!useDirectLocal.value && activeForwardId) {
+      const currentForwardId = activeForwardId
+      void isActiveForwardRetired().then(retired => {
+        if (activeForwardId !== currentForwardId || !resolvedOrigin.value) return
+        if (retired) {
+          retryNonce.value++
+          return
+        }
+        navigateResolvedUrl(buildActualPreviewUrl(resolvedOrigin.value, parsed.path), parsed.path)
+      })
+      return
     }
+    navigateResolvedUrl(nextActualUrl, parsed.path)
   }
 }
 
@@ -389,13 +428,28 @@ function goForward(): void {
 }
 
 function reload(): void {
+  if (addressDirty.value && addressInput.value.trim()) {
+    submitAddress()
+    return
+  }
   loadError.value = null
   if (connectError.value) {
     retryNonce.value++
     return
   }
-  if (isDesktopWebview.value) webviewEl?.reload?.()
-  else iframeKey.value++
+  if (!useDirectLocal.value && activeForwardId) {
+    const currentForwardId = activeForwardId
+    void isActiveForwardRetired().then(retired => {
+      if (activeForwardId !== currentForwardId) return
+      if (retired) {
+        retryNonce.value++
+        return
+      }
+      reloadCurrentTarget()
+    })
+    return
+  }
+  reloadCurrentTarget()
 }
 
 function openExternal(): void {
@@ -426,20 +480,29 @@ function openDevTools(): void {
         <LoaderCircle v-if="connecting || pageLoading" :size="15" :stroke-width="1.75" class="animate-spin" aria-hidden="true" />
         <RotateCw v-else :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <form class="min-w-0 flex-1" @submit.prevent="submitAddress">
+      <form class="flex min-w-0 flex-1 items-center gap-1" @submit.prevent="submitAddress">
         <input
           ref="addressInputEl"
           v-model="addressInput"
           type="text"
+          enterkeyhint="go"
           spellcheck="false"
           autocomplete="off"
           autocapitalize="off"
           :aria-label="t('webPreview.addressLabel')"
           :placeholder="t('webPreview.addressPlaceholder')"
           data-web-preview-address
-          class="ui-input h-8 w-full px-2.5 text-xs"
+          class="ui-input h-8 min-w-0 flex-1 px-2.5 text-xs"
           @input="addressError = null"
         />
+        <UiButton
+          v-if="addressDirty && addressInput.trim()"
+          type="submit"
+          size="sm"
+          variant="primary"
+          data-web-preview-go
+          class="h-8 shrink-0 px-2.5 text-xs"
+        >{{ t('webPreview.open') }}</UiButton>
       </form>
       <UiButton variant="ghost" size="icon" :label="t('webPreview.openExternal')" :disabled="!canOpenExternal" data-web-preview-external @click="openExternal">
         <ExternalLink :size="15" :stroke-width="1.75" aria-hidden="true" />
@@ -461,6 +524,7 @@ function openDevTools(): void {
         <input
           v-model="emptyInput"
           type="text"
+          enterkeyhint="go"
           spellcheck="false"
           autocomplete="off"
           autocapitalize="off"
