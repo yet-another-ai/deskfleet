@@ -54,6 +54,15 @@ function fakeProvider(overrides: Partial<AgentConnection> = {}) {
   return { provider, changes, sessions, configs, get closed() { return closed }, get connections() { return connections } }
 }
 
+test("DSH grouped models retain their route when multiple providers advertise the same model", () => {
+  const groups = ["openai-codex", "custom"].map(group => ({
+    group, name: group, options: [{ value: JSON.stringify([group, "same"]), name: "Same model" }],
+  }))
+  const option = { id: "model", category: "model", name: "Model", type: "select" as const, currentValue: groups[0]!.options[0]!.value, options: groups }
+  assert.deepEqual(agentConfiguration([option]).models?.options.map(item => item.name), ["openai-codex / Same model", "custom / Same model"])
+  assert.equal(agentConfiguration([{ ...option, options: [groups[0]!] }]).models?.options[0]?.name, "Same model")
+})
+
 test("agent configuration comes from ACP, flattens groups, and applies model before effort", async () => {
   const fake = fakeProvider()
   const result = await readAgentConfiguration({ provider: "codex", model: "second", reasoningEffort: "medium" }, process.cwd(), fake)

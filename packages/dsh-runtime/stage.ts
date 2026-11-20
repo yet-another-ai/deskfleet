@@ -24,6 +24,17 @@ export async function pruneDshArtifacts(directory: string): Promise<void> {
   }
 }
 
+export async function stageDshHelpers(destination: string): Promise<void> {
+  // Node does not strip TypeScript beneath an installed node_modules tree.
+  for (const name of ["helper", "desktop-routes", "desktop-acp"]) {
+    const source = await readFile(join(import.meta.dirname, `src/${name}.ts`), "utf8")
+    const js = stripTypeScriptTypes(source, { mode: "strip" }).replace(/(from "\.\/[^"]+)\.ts"/g, '$1.js"')
+    await writeFile(join(destination, `${name}.js`), js)
+  }
+  await copyFile(join(import.meta.dirname, "src/account-acp.yml"), join(destination, "account-acp.yml"))
+  await copyFile(join(import.meta.dirname, "src/credentials-acp.yml"), join(destination, "credentials-acp.yml"))
+}
+
 /** Preserve dynamic plugins and native helpers; standalone releases also need a Node host. */
 export async function stageDsh(destination: string, host: "node" | "electron"): Promise<void> {
   const root = resolve(import.meta.dirname, "../..")
@@ -37,12 +48,7 @@ export async function stageDsh(destination: string, host: "node" | "electron"): 
     "--node-linker=hoisted", "--offline", "--frozen-lockfile", "--trust-lockfile", destination,
   ], { cwd: root, env: { ...process.env, PNPM_CONFIG_ALLOW_UNUSED_PATCHES: "true" }, stdio: "inherit" })
   await pruneDshArtifacts(destination)
-  // The helper must work outside source checkouts, including hosts that cannot strip
-  // TypeScript beneath node_modules. Keep its executable and static overlay at the runtime root.
-  await writeFile(join(destination, "helper.js"), stripTypeScriptTypes(
-    await readFile(join(import.meta.dirname, "src/helper.ts"), "utf8"), { mode: "strip" }))
-  await copyFile(join(import.meta.dirname, "src/account-acp.yml"), join(destination, "account-acp.yml"))
-  await copyFile(join(import.meta.dirname, "src/credentials-acp.yml"), join(destination, "credentials-acp.yml"))
+  await stageDshHelpers(destination)
   if (host === "electron") return
   const bin = join(destination, "bin")
   await mkdir(bin, { recursive: true })

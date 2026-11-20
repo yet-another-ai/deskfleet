@@ -20,6 +20,8 @@
     "package.json",
     "src/index.ts",
     "src/helper.ts",
+    "src/desktop-routes.ts",
+    "src/desktop-acp.ts",
     "src/account-acp.yml",
     "src/credentials-acp.yml",
     "stage.ts",

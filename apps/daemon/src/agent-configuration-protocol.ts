@@ -96,6 +96,8 @@ export interface AgentConfigurationParams extends AgentConfigurationSelection {
   composer?: boolean
   /** Use the registration's prewarmed, immutable draft configuration matrix. */
   cache?: boolean
+  /** Omit the transition matrix when only this selection's configuration is needed. */
+  includeMatrix?: boolean
   /** Discard this provider/Workspace matrix and discover fresh defaults. */
   refresh?: boolean
 }
@@ -109,6 +111,7 @@ export function validateAgentConfigurationParams(params: Record<string, unknown>
   if (params.release !== undefined && typeof params.release !== "boolean") throw new Error("Invalid Agent configuration release")
   if (params.composer !== undefined && typeof params.composer !== "boolean") throw new Error("Invalid Agent composer discovery")
   if (params.cache !== undefined && typeof params.cache !== "boolean") throw new Error("Invalid Agent configuration cache flag")
+  if (params.includeMatrix !== undefined && typeof params.includeMatrix !== "boolean") throw new Error("Invalid Agent configuration matrix flag")
   if (params.refresh !== undefined && typeof params.refresh !== "boolean") throw new Error("Invalid Agent configuration refresh flag")
   if (params.release && !params.probeId) throw new Error("Agent configuration release requires a probe ID")
   if (params.restore !== undefined) {
@@ -177,7 +180,14 @@ export function normalizeAgentConfigurationSelection(selection: AgentConfigurati
 export const REASONING_CONFIG_IDS = ["reasoning_effort", "effort", "thinking_intensity", "thinking_level"] as const
 
 function selectChoices(option: acp.SessionConfigOption & { type: "select" }): Array<{ value: string; name: string; description?: string | null }> {
-  return option.options.flatMap(value => "group" in value ? value.options : [value])
+  // DSH uses [provider, model] selection IDs. Preserve the route when flattening its provider groups.
+  const groupedModels = (option.category === "model" || option.id === "model") && option.options.filter(item => "group" in item && item.options.length).length > 1
+  return option.options.flatMap(group => {
+    if (!("group" in group)) return [group]
+    if (!groupedModels) return group.options
+    const prefix = `[${JSON.stringify(group.group)},`
+    return group.options.map(choice => choice.value.startsWith(prefix) ? { ...choice, name: `${group.group} / ${choice.name}` } : choice)
+  })
 }
 
 function toAgentOption(option: acp.SessionConfigOption & { type: "select" }): AgentConfigOption {

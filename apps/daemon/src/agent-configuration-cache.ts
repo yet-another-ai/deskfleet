@@ -20,6 +20,7 @@ interface Entry {
   matrixGeneration: number
   identities: Map<string, number>
   initial?: Promise<AgentConfigurationSnapshot>
+  initialComposer?: Promise<AgentConfigurationSnapshot>
   probeId: string
   probes: Set<string>
   queued: boolean
@@ -140,7 +141,7 @@ export class AgentConfigurationCache {
     else entry.matrix.complete = false
   }
 
-  #observeDefault(entry: Entry, configuration: AgentConfigurationSnapshot, generation: number): number | undefined {
+  #observeDefault(entry: Entry, configuration: AgentConfigurationSnapshot, generation: number, warm: boolean): number | undefined {
     this.#check(entry)
     if (generation !== entry.matrixGeneration) return undefined
     const previous = entry.matrix.configurations[0]
@@ -151,16 +152,17 @@ export class AgentConfigurationCache {
       entry.matrix = { configurations: [], transitions: [], complete: false }
       entry.identities.clear()
       entry.initial = Promise.resolve(structuredClone(configuration))
+      entry.initialComposer = entry.initial
       entry.explored = false
     }
     this.#remember(entry, configuration)
-    this.#queueWarm(entry)
+    if (warm) this.#queueWarm(entry)
     return entry.matrixGeneration
   }
 
-  #result(entry: Entry, configuration: AgentConfigurationSnapshot): AgentConfiguration {
+  #result(entry: Entry, configuration: AgentConfigurationSnapshot, includeMatrix: boolean): AgentConfiguration {
     this.#check(entry)
-    return structuredClone({ ...configuration, matrix: entry.matrix })
+    return structuredClone(includeMatrix ? { ...configuration, matrix: entry.matrix } : configuration)
   }
 
   #readProbe(entry: Entry, probeId: string, selection: AgentConfigurationSelection = {}, composer = false, launch = entry.launch): Promise<AgentConfiguration> {
@@ -168,18 +170,30 @@ export class AgentConfigurationCache {
     return this.#probes.read(this.#scope, { ...entry.params, probeId, ...selection, ...(composer ? { composer: true } : {}) }, entry.cwd, launch)
   }
 
-  #initialize(entry: Entry): Promise<AgentConfigurationSnapshot> {
-    if (entry.initial) return entry.initial
-    const initial = this.#readProbe(entry, entry.probeId, {}, true).then(configuration => {
-      this.#remember(entry, configuration)
-      return configuration
-    }).catch(async error => {
-      entry.initial = undefined
-      await this.#probes.release(this.#scope, entry.probeId).catch(() => {})
+  #initialize(entry: Entry, composer = true): Promise<AgentConfigurationSnapshot> {
+    if (!entry.initial) {
+      entry.initial = this.#readProbe(entry, entry.probeId).then(configuration => {
+        this.#remember(entry, configuration)
+        return configuration
+      }).catch(async error => {
+        await this.#probes.release(this.#scope, entry.probeId).catch(() => {})
+        entry.initial = undefined
+        throw error
+      })
+    }
+    if (!composer) return entry.initial
+    // The model picker can use session/new immediately. Composer consumers
+    // share the same probe while waiting for its optional command notification.
+    return entry.initialComposer ??= entry.initial.then(async configuration => {
+      if (configuration.commands !== undefined || configuration.skills !== undefined) return configuration
+      const generation = entry.matrixGeneration
+      const enriched = await this.#readProbe(entry, entry.probeId, {}, true)
+      this.#observeDefault(entry, enriched, generation, false)
+      return enriched
+    }).catch(error => {
+      entry.initialComposer = undefined
       throw error
     })
-    entry.initial = initial
-    return initial
   }
 
   warm(params: Target, cwd: string, launch: Launch): void {
@@ -295,17 +309,18 @@ export class AgentConfigurationCache {
     request.signal.throwIfAborted()
     const entry = this.#entry(params, cwd, launch)
     const initialized = entry.matrix.configurations.length > 0
-    this.#queueWarm(entry)
-    await this.#initialize(entry)
+    const includeMatrix = params.includeMatrix !== false
+    if (includeMatrix) this.#queueWarm(entry)
+    await this.#initialize(entry, includeMatrix || params.composer === true)
     request.signal.throwIfAborted()
     this.#check(entry)
-    if (!initialized && !entry.exploring) {
+    if (includeMatrix && !initialized && !entry.exploring) {
       entry.explored = false
       this.#queueWarm(entry)
     }
     const source = cachedAgentConfiguration(entry.matrix, undefined, params.restore ?? {})
     const cached = source && cachedAgentConfiguration(entry.matrix, source, params)
-    if (cached && (!params.composer || cached.commands !== undefined || cached.skills !== undefined || !initialized)) return this.#result(entry, cached)
+    if (cached && (!params.composer || cached.commands !== undefined || cached.skills !== undefined || !initialized)) return this.#result(entry, cached, includeMatrix)
     // Discovery of an uncached transition has its own process, so a foreground
     // click never queues behind background traversal of other configurations.
     const probeId = randomUUID()
@@ -326,7 +341,7 @@ export class AgentConfigurationCache {
       let generation: number | undefined = entry.matrixGeneration
       let current = await this.#readProbe(entry, probeId, {}, params.composer === true, privateLaunch)
       request.signal.throwIfAborted()
-      generation = this.#observeDefault(entry, current, generation)
+      generation = this.#observeDefault(entry, current, generation, includeMatrix)
       for (const selection of [params.restore ?? {}, params]) {
         for (const step of selectionSteps(selection, current)) {
           request.signal.throwIfAborted()
@@ -339,7 +354,7 @@ export class AgentConfigurationCache {
       this.#check(entry)
       // Keep this private selection, but do not pair an older process's catalog
       // with a matrix replaced by another reader while discovery was pending.
-      return generation === entry.matrixGeneration ? this.#result(entry, current) : structuredClone(current)
+      return generation === entry.matrixGeneration ? this.#result(entry, current, includeMatrix) : structuredClone(current)
     } finally {
       await this.#probes.release(this.#scope, probeId).catch(() => {})
       entry.probes.delete(probeId)

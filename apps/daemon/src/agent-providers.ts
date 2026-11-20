@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { watchFile, unwatchFile } from "node:fs"
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -32,6 +33,7 @@ export class AgentProviders {
   readonly #providerByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #shellProviderByTemplate: Record<AgentProviderTemplateId, AgentProvider>
   readonly #listeners = new Set<() => void>()
+  #desktopRouteFiles = new Set<string>()
   #providers: AgentProviderConfig[] = []
   #revision = randomUUID()
   #queue: Promise<unknown> = Promise.resolve()
@@ -121,6 +123,15 @@ export class AgentProviders {
     return this.#launch(this.get(id))
   }
 
+  /** Reuse the configured binary, login environment and scoped credentials for a non-ACP coordinator. */
+  async coordinatorConfig(id: string, signal?: AbortSignal): Promise<AgentConfig> {
+    const record = this.get(id)
+    const { config } = this.#launch(record)
+    if (!shellEnvironmentEnabled(record.inheritShellEnvironment)) return config
+    const shell = await loadShellEnvironment(undefined, signal)
+    return { ...config, env: commandEnvironment({ ...shell, ...config.env }, this.#commandDirectory) }
+  }
+
   /**
    * Starts possibly unsaved settings and opens one session in an empty temporary
    * directory without sending a prompt, so a check costs no inference.
@@ -167,7 +178,32 @@ export class AgentProviders {
 
   onChanged(listener: () => void): () => void {
     this.#listeners.add(listener)
-    return () => this.#listeners.delete(listener)
+    this.#watchDesktopRoutes()
+    return () => {
+      this.#listeners.delete(listener)
+      if (!this.#listeners.size) this.#watchDesktopRoutes()
+    }
+  }
+
+  #notify = () => {
+    this.#revision = randomUUID()
+    for (const listener of this.#listeners) listener()
+  }
+
+  // DSH edits its desktop overlay outside DeskFleet, including by atomic replacement.
+  #watchDesktopRoutes(): void {
+    const paths = new Set<string>()
+    if (this.#listeners.size) for (const provider of this.#providers) {
+      if (provider.template !== "deepseek-harness" || provider.binaryPath) continue
+      const env = providerEnvironment(provider, this.#directory)
+      if (env.DESKFLEET_DSH_DESKTOP_ROUTES === "1" && env.DSH_HOME) {
+        paths.add(join(env.DSH_HOME, "profiles", "desktop", "cordis.patch.yml"))
+        paths.add(join(env.DSH_HOME, "cordis.patch.yml"))
+      }
+    }
+    for (const path of this.#desktopRouteFiles) if (!paths.has(path)) unwatchFile(path, this.#notify)
+    for (const path of paths) if (!this.#desktopRouteFiles.has(path)) watchFile(path, { interval: 1500, persistent: false }, this.#notify)
+    this.#desktopRouteFiles = paths
   }
 
   create(input: AgentProviderInput): Promise<AgentProviderConfig> {
@@ -204,8 +240,8 @@ export class AgentProviders {
   async #commit(providers: AgentProviderConfig[]): Promise<void> {
     await this.#save(providers)
     this.#providers = providers
-    this.#revision = randomUUID()
-    for (const listener of this.#listeners) listener()
+    this.#watchDesktopRoutes()
+    this.#notify()
   }
 
   async #save(providers: AgentProviderConfig[]): Promise<void> {

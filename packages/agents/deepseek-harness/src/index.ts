@@ -1,4 +1,5 @@
-import { join } from "node:path"
+import { homedir } from "node:os"
+import { join, resolve } from "node:path"
 import {
   connectAcpProcess, interactiveProviderProcess, launchProviderCommand, stripAnsiText,
   type AgentConfig, type AgentProcess, type AgentProvider, type AgentProviderPlugin, type ProviderProbeResult,
@@ -40,8 +41,16 @@ export function deepseekHarnessEnvironment(
 ): Record<string, string> {
   if (provider.binaryPath || !directory) return { ...provider.env }
   const value = (name: string) => Object.entries(provider.env).findLast(([key]) => platform === "win32" ? key.toUpperCase() === name : key === name)?.[1]
-  if (value("DSH_HOME")) return { ...provider.env }
-  return { ...provider.env, DESKFLEET_DSH_CREDENTIALS_PATH: value("DESKFLEET_DSH_CREDENTIALS_PATH") || join(directory, "deepseek-harness", ".credentials.yaml") }
+  const home = value("DSH_HOME")?.trim()
+  const routes = value("DESKFLEET_DSH_DESKTOP_ROUTES") ?? (home ? "1" : "0")
+  // Only this registration can authorize reuse of a desktop login. Pin the choice before loading shell and project environments.
+  const env: Record<string, string> = { ...provider.env, DESKFLEET_DSH_DESKTOP_ROUTES: routes === "1" ? "1" : "0" }
+  if (routes === "1") {
+    const path = home || join(homedir(), ".dsh")
+    env.DSH_HOME = path === "~" ? homedir() : /^[~][\\/]/u.test(path) ? join(homedir(), path.slice(2)) : resolve(path)
+  }
+  if (home) return env
+  return { ...env, DESKFLEET_DSH_CREDENTIALS_PATH: value("DESKFLEET_DSH_CREDENTIALS_PATH") || join(directory, "deepseek-harness", ".credentials.yaml") }
 }
 
 async function deepseekBundledAuthentication(ctx: ProviderSetupContext): Promise<ProviderProbeResult["auth"]> {
