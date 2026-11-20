@@ -5,6 +5,7 @@ import type { AgentSignalingApi } from "../../../client/src/agent.ts"
 import { LocalDataChannel, type LocalChannelsApi } from "../../../client/src/local-channels.ts"
 import { PEER_DISCONNECT_GRACE_MS } from "../../../client/src/peer-lifecycle.ts"
 import { deferred } from "../test/desktop-media.ts"
+import { createWorkspaceAgentClient } from "./workspace-agent-client.ts"
 import { AgentClient } from "./agent-client.ts"
 import { AgentMessageDecoder } from "./agent-stream.ts"
 class TestChannel extends EventTarget {
@@ -176,4 +177,57 @@ test("agent authorization errors do not inherit the grant's relay denial", async
   vi.mocked(api.offer).mockRejectedValue(new Error("Permission denied"))
   await expect(client.connect()).rejects.toThrow("Permission denied")
   expect(state).toHaveBeenLastCalledWith("error", "Permission denied")
+})
+
+test("the front desk initializes once for concurrent sends and again for each new local connection", async () => {
+  const { api } = setup()
+  const channels: TestChannel[] = []
+  api.connectChannel = () => {
+    const channel = new TestChannel()
+    channels.push(channel)
+    return channel as unknown as RTCDataChannel
+  }
+  let local = true
+  const desk = createWorkspaceAgentClient(api, () => local)
+  const args = { workspaceId: "A", text: "Continue", messageId: "id-one" }
+  const first = desk.api.send(args)
+  const second = desk.api.send({ ...args, messageId: "id-two" })
+  await flushPromises()
+  expect(channels).toHaveLength(1)
+  const connection = channels[0]!
+  connection.open(); await flushPromises()
+  expect(connection.sent().map(call => call.method)).toEqual(["initialize"])
+  connection.message({ jsonrpc: "2.0", id: connection.sent()[0]!.id, result: { protocolVersion: 1 } })
+  await flushPromises()
+  expect(connection.sent().slice(1).map(call => call.params)).toEqual([args, { ...args, messageId: "id-two" }])
+  const rejects = Promise.all([expect(first).rejects.toThrow(), expect(second).rejects.toThrow()])
+  connection.onclose!()
+  await rejects
+
+  const read = desk.api.snapshot({ workspaceId: "A" })
+  await flushPromises()
+  const recovered = channels[1]!
+  recovered.open(); await flushPromises()
+  expect(recovered.sent().map(call => call.method)).toEqual(["initialize"])
+  recovered.message({ jsonrpc: "2.0", id: recovered.sent()[0]!.id, result: { protocolVersion: 1 } })
+  await flushPromises()
+  expect(recovered.sent().map(call => call.method)).toEqual(["initialize", "_deskfleet/super-agent/snapshot"])
+  recovered.message({ jsonrpc: "2.0", id: recovered.sent()[1]!.id, result: { workspaceId: "A" } })
+  await read
+
+  local = false
+  desk.close()
+  await expect(desk.api.send(args)).rejects.toThrow("unavailable on this machine")
+  expect(channels).toHaveLength(2)
+  local = true
+  const pending = desk.api.send(args)
+  await flushPromises()
+  const changed = channels[2]!
+  changed.open(); await flushPromises()
+  local = false
+  const stopped = expect(pending).rejects.toThrow("changed before dispatch")
+  changed.message({ jsonrpc: "2.0", id: changed.sent()[0]!.id, result: { protocolVersion: 1 } })
+  await stopped
+  expect(changed.sent().map(call => call.method)).toEqual(["initialize"])
+  desk.close()
 })
