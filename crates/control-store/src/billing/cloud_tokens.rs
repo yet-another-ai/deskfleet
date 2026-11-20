@@ -144,7 +144,7 @@ impl ControlStore {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| DbErr::Type("negative monthly credit allowance".into()))?;
-        let admitted = included_tokens.is_none_or(|limit| used_credits < BigDecimal::from(limit));
+        let admitted = included_tokens.is_none_or(|limit| used_credits < limit);
         Ok(CloudTokenPeriod {
             start: timestamp(start),
             end: timestamp(end),
