@@ -1139,8 +1139,8 @@ try {
 ## Builds and checks
 
 The locked CMake 4.4 toolchain builds the bundled Opus source. Opus 0.4 uses
-`opusic-sys`'s bundled static library by default, so the SEA addon does not depend
-on a separately installed libopus. Windows NVENC loads the NVIDIA driver at runtime;
+`opusic-sys`'s bundled static library by default, so the native addon carries its
+own Opus library. Windows NVENC loads the NVIDIA driver at runtime;
 building its bundled header bindings requires LLVM/libclang and the Windows SDK.
 CI sets `LIBCLANG_PATH` to the hosted runner's LLVM installation. No NVIDIA SDK
 binary is redistributed.

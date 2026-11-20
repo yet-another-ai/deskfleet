@@ -349,10 +349,10 @@ to check module initialization order as well as file sizes.
 | `mise run check-fast` | Run Rust formatting, dependency usage, Clippy, and tests |
 | `mise run test` | Run repository script, daemon, desktop, and Rust tests |
 | `mise run ci:test:platform` | Run the CI platform suites with desktop main/shared/client tests; Linux CI runs the renderer through `test` |
-| `mise run build` | Build the release server and standalone SEA daemon |
+| `mise run build` | Build the release server and standalone Bun daemon |
 | `mise run ci:build` | Build all release bundles with one shared Rust workspace build |
-| `mise run daemon:pack` | Package the daemon as a standalone SEA executable |
-| `mise run daemon:smoke` | Run the SEA release payload with no Node on PATH |
+| `mise run daemon:pack` | Package the daemon as a standalone Bun executable |
+| `mise run daemon:smoke` | Run the standalone daemon with an empty PATH |
 | `mise run native:debug` / `native:release` | Build the napi-rs addon and regenerate TypeScript declarations |
 | `mise run format` | Apply Rust formatting |
 | `mise run format-check` | Check Rust formatting |
@@ -404,7 +404,7 @@ For mise tasks that invoke installation again, set `npm_config_registry` to that
 URL in the task's environment, or update the user's pnpm registry configuration.
 
 The ACP SDK, Codex adapter, Claude Agent adapter, and Pi ACP adapter are pinned daemon
-dependencies in pnpm. The SEA build embeds those adapters. Running a session
+dependencies in pnpm. The Bun build embeds those adapters. Running a session
 still requires the installed CLI: Codex, Claude Code, Cursor (`agent acp`),
 Grok (`grok agent stdio`), Pi (`pi --mode rpc`), Oh My Pi (`omp acp`), or
 CodeBuddy Code (`codebuddy --acp`).
@@ -464,7 +464,7 @@ repository's tools.
 The `renovate-config` manager's `tool-constraint` updates are disabled so these
 constraints change only with the locked toolchain; configuration migrations remain
 enabled.
-Node types stay on 24 because the standalone daemon's SEA build targets Node 24.
+Node types stay on 24 to match the pinned Node toolchain used for development.
 PostgreSQL major updates use a separate group and require Dependency Dashboard
 approval so the development volume migration or reset can be reviewed explicitly.
 
@@ -499,7 +499,7 @@ upstream package and patch notes.
 Toolchain and APM updates remain manual. Renovate supports mise lockfiles, but
 [lock regeneration requires host support](https://docs.renovatebot.com/modules/manager/mise/#trust-model-for-lock-file-updates)
 that repository configuration cannot grant. Enable the mise rule only after the
-host can refresh `mise.lock`, and review Node runtime/SEA target changes together.
+host can refresh `mise.lock`. Review Bun updates with the daemon packaging smoke.
 APM updates must include the installed skill tree; Renovate ignores that tree
 and leaves the pinned sources to the workflow below.
 

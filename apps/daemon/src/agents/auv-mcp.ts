@@ -35,7 +35,7 @@ function handshakeTransform(
   })
 }
 
-/** Uses the embedding Electron/SEA runtime, while the native executable owns every AUV operation. */
+/** Uses the daemon's runtime for the bridge and the native executable for every AUV operation. */
 export async function runAuvMcp(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const binary = env.DESKFLEET_AUV_PATH
   if (!binary) throw new Error("DESKFLEET_AUV_PATH is required")

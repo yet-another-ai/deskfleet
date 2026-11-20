@@ -43,10 +43,10 @@ try {
   }
   const info = JSON.parse(execFileSync(command, ["--info"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,
-  })) as { native: typeof expectedNative; runtime: { node: string; sea: boolean } }
+  })) as { native: typeof expectedNative; runtime: { name: string; version: string } }
   assert.deepEqual(info.native, expectedNative)
-  assert.equal(info.runtime.sea, true)
-  assert.equal(info.runtime.node, process.versions.node)
+  const bunVersion = execFileSync("bun", ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }).trim()
+  assert.deepEqual(info.runtime, { name: "bun", version: bunVersion })
 
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6nWQAAAAASUVORK5CYII=", "base64")
   const imageOutput = execFileSync(command, ["--deskfleet-icat"], {
@@ -124,7 +124,7 @@ try {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await closed.catch(() => {})
   }
-  console.log("Standalone SEA: native bridge, icat, bundled ACP adapter, readiness, health, and shutdown passed")
+  console.log("Standalone Bun: native bridge, icat, bundled ACP adapters, readiness, health, and shutdown passed")
 } finally {
   rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

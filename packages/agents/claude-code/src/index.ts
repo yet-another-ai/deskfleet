@@ -55,9 +55,8 @@ export function parseClaudeCodeUsage(payload: unknown): AgentQuotaItem[] {
 }
 
 /**
- * Shared by source, SEA, and Electron's Node-mode adapter host. The published
- * entry uses top-level await, which the CommonJS SEA bundle cannot contain, so
- * this starts the same stdio server through the adapter's exported modules.
+ * Shared by the standalone CLI and Electron's Node-mode adapter host.
+ * Starts the stdio server through the adapter's exported modules.
  */
 export async function runClaudeCodeAdapter(): Promise<void> {
   if (process.argv.includes("--version")) {

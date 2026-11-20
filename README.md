@@ -138,7 +138,7 @@ The Electron desktop app includes an embedded machine daemon in its main process
 
 ### Headless Machine Daemon
 
-For remote workstations, VMs, and build servers without a desktop session, DeskFleet packages `@deskfleet/daemon` as a standalone Node.js Single Executable Application (`deskfleet-daemon`, or `deskfleet-daemon.exe` on Windows).
+For remote workstations, VMs, and build servers without a desktop session, DeskFleet packages `@deskfleet/daemon` as a standalone Bun executable (`deskfleet-daemon`, or `deskfleet-daemon.exe` on Windows).
 
 1. Download the daemon archive for your platform from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) (or build it from source with `mise run daemon:pack`).
 2. Prepare enrollment on the headless machine for your backend and team, paste the bundle into **Add machine → Another machine** in the desktop or web client, and import the issued credential.
@@ -146,7 +146,7 @@ For remote workstations, VMs, and build servers without a desktop session, DeskF
 
 ## Architecture
 
-DeskFleet is a Rust and TypeScript monorepo. The central control plane is built with **Rust** and **Actix Web** backed by **PostgreSQL**. Each machine runs a **TypeScript** daemon (inside Electron's main process or as a standalone SEA binary) backed by local **SQLite** and **Rust native libraries** via **napi-rs** for WebRTC transport, PTY terminals, screen capture, hardware video encoding, and input forwarding. The **Electron** and **Web** clients share a **Vue** component library.
+DeskFleet is a Rust and TypeScript monorepo. The central control plane is built with **Rust** and **Actix Web** backed by **PostgreSQL**. Each machine runs a **TypeScript** daemon (inside Electron's main process or as a standalone Bun executable) backed by local **SQLite** and **Rust native libraries** via **napi-rs** for WebRTC transport, PTY terminals, screen capture, hardware video encoding, and input forwarding. The **Electron** and **Web** clients share a **Vue** component library.
 
 ```mermaid
 flowchart LR
@@ -165,7 +165,7 @@ flowchart LR
 | --- | --- |
 | [`apps/desktop`](apps/desktop) | Electron desktop client hosting the local machine daemon in its main process |
 | [`apps/web`](apps/web) | Installable PWA web client sharing UI components with the desktop app |
-| [`apps/daemon`](apps/daemon) | Machine daemon library and standalone Node.js SEA executable |
+| [`apps/daemon`](apps/daemon) | Machine daemon library and standalone Bun executable |
 | [`apps/server`](apps/server) | Actix Web control-plane API, authentication, signaling, and static web host |
 | [`apps/desktop-service`](apps/desktop-service) | Native desktop service helper |
 | [`packages/components`](packages/components) | Shared Vue UI components, styles, and localization catalogs (`en-US`, `zh-CN`, `ja-JP`) |
@@ -241,7 +241,7 @@ Run any of the following in another terminal from the repository root:
 | --- | --- | --- |
 | **Desktop app (Electron)** | `mise run desktop:dev` | Starts Electron with hot reload. Use the system tray menu to quit. |
 | **Standalone daemon (source)** | `mise run daemon:dev` | Runs `@deskfleet/daemon` in the foreground and prints its loopback health address. |
-| **Standalone daemon (SEA binary)** | `mise run daemon:pack && mise run daemon:smoke` | Packages `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows) and smoke-tests it. |
+| **Standalone daemon (Bun executable)** | `mise run daemon:pack && mise run daemon:smoke` | Packages `apps/daemon/dist/deskfleet-daemon` (`.exe` on Windows) and smoke-tests it. |
 | **Product website & demos** | `mise run docs:dev` | Starts VitePress at `http://127.0.0.1:5175/` with interactive browser-local demos (`en`, `zh`, `ja`). Build static output to `docs/.vitepress/dist/` with `mise run docs:build`. |
 
 ### 5. Run Checks & Restore Agent Skills

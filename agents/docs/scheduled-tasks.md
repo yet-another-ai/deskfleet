@@ -100,9 +100,9 @@ credential.
 
 The daemon injects its built-in `deskfleet` server through ACP `mcpServers` on
 each managed Session creation or resume. Its executable entry is bundled into
-both the headless SEA and Electron runtime as `--deskfleet-mcp`; no separately
-installed Node runtime is required for packaged applications. ACP requires
-stdio MCP support. Configuration probes do not receive execution authority.
+the standalone Bun executable and Electron runtime as `--deskfleet-mcp`.
+ACP requires stdio MCP support. Configuration probes do not receive execution
+authority.
 
 Each built-in grant binds the initiating user, machine, Workspace, and Session.
 Calls recheck current Team membership and the issuing Session's active state.

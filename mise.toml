@@ -12,6 +12,7 @@ apm = "0.35.0"
 java = "temurin-21.0.13+9.0.LTS"
 rust = { version = "1.99.1", profile = "minimal", components = ["clippy", "rustfmt"], targets = ["aarch64-linux-android"] }
 node = "24.22.1"
+bun = "1.4.5"
 pnpm = "12.15.0"
 "npm:@informalsystems/quint" = "0.33.1"
 "cargo:cargo-shear" = "1.14.0"
@@ -119,7 +120,7 @@ depends = ["check:scripts", "check:daemon", "ci:check:desktop-main", "check:rust
 [tasks.build]
 description = "Build the release server and standalone daemon"
 depends = ["rust:release", "web:build"]
-run = "node scripts/build-sea.ts"
+run = "node scripts/build-daemon.ts"
 
 [tasks."rust:release"]
 hide = true
@@ -162,12 +163,12 @@ description = "Verify the packaged Electron executable and DeepSeek resources af
 run = "node apps/desktop/scripts/smoke-dsh.ts --packaged"
 
 [tasks."daemon:pack"]
-description = "Package the daemon as a Node.js single executable"
+description = "Package the daemon as a Bun single executable"
 depends = ["native:release"]
-run = "node scripts/build-sea.ts"
+run = "node scripts/build-daemon.ts"
 
 [tasks."daemon:smoke"]
-description = "Verify an isolated SEA executable without an installed Node.js"
+description = "Verify the daemon executable without an installed JavaScript runtime"
 run = "node scripts/smoke-daemon.ts"
 
 [tasks."files:benchmark"]

@@ -71,7 +71,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   only Electron a fixed API origin.
   Its shared Rust task runs one napi-driven Cargo workspace build for the server,
   native addon, desktop viewer, and Windows service, using the host target.
-  SEA and Electron bundling consume that addon without compiling it again.
+  Bun and Electron bundling consume that addon without compiling it again.
   CI packaging sets `DESKFLEET_NATIVE_PREBUILT=1` so staging copies the viewer
   and service from that same workspace build instead of invoking Cargo again.
   A missing executable fails packaging. Local packaging builds these executables
@@ -92,7 +92,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   passes `/DEBUG:NONE` to the MSVC linker through target-specific Rust flags,
   overriding rustc's `/DEBUG` default so vendored OpenSSL does not require a PDB
   during release linking. Each target packages and verifies the
-  standalone SEA daemon.
+  standalone Bun daemon.
   Build runs on `ubuntu-24.04` and `ubuntu-24.04-arm`, while every other Linux
   job uses the newest hosted image, `ubuntu-26.04` or `ubuntu-26.04-arm`. The
   build image sets the glibc floor of the released binaries, and
@@ -169,7 +169,7 @@ executable against its resources with the configured Electron fuses. This
 also checks that the package tree was copied and no private Node was included.
 
 Smoke tests copy the daemon executable to an unrelated temporary directory,
-clear Node's environment overrides and PATH, then check native information,
+clear Node's environment overrides and PATH, then check the embedded Bun version, native information,
 the bundled ACP adapters, startup, and the health
 endpoint. Unix tests also require clean signal-driven shutdown; Windows tests terminate the process forcibly.
 

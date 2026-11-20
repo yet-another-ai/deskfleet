@@ -1,7 +1,7 @@
 # DeskFleet daemon
 
 `@deskfleet/daemon` is a TypeScript library, hosted inside Electron's main process
-or packaged as a standalone SEA executable for headless machines. It owns local
+or packaged as a standalone Bun executable for headless machines. It owns local
 Workspace configuration, ACP providers, Session execution, terminals, native
 WebRTC, and the authoritative SQLite journal. The central backend authorizes
 management operations and stores queryable catalog/history replicas. The daemon's
@@ -183,7 +183,7 @@ Wayland access never falls back to Xwayland. See
 The library exports `startDaemon()`, `close()`, and a `closed` promise. Importing
 it does not launch the CLI. Electron hosts the daemon in its main process and
 closes windows to the tray; quitting the application stops its daemon. Standalone
-SEA installations run independently. SIGINT/SIGTERM close listeners, providers,
+Standalone installations run independently. SIGINT/SIGTERM close listeners, providers,
 peers, and PTYs, preserve history, and release discovery after cleanup.
 
 Local IPC clients treat an end-of-stream as a disconnect even when outgoing
@@ -214,7 +214,7 @@ The daemon connects installed CLIs to ACP through the
 [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp),
 [Claude Agent ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp),
 and [Pi ACP adapter](https://github.com/svkozak/pi-acp). These are pinned pnpm
-dependencies and ship inside the SEA executable. Install and authenticate the
+dependencies and ship inside the headless executable. Install and authenticate the
 CLI before sending prompts; the daemon uses that CLI's credentials.
 
 The desktop **New session** flow creates a persistent Session and its isolated
@@ -377,16 +377,16 @@ the pinned adapter provides its corresponding behavior upstream.
 
 The Pi adapter is pinned to `0.0.34` with
 [`patches/pi-acp@0.0.34.patch`](../../patches/pi-acp@0.0.34.patch). The patch reuses
-its static `spawnSync` import instead of top-level await so it can be bundled for
-SEA, and imports its package metadata statically to preserve its identity in
-bundles. It also retains the agent handler directly so closing the adapter
+its static `spawnSync` import instead of top-level await and imports its package
+metadata statically to preserve its identity in bundles. It also retains the
+agent handler directly so closing the adapter
 terminates its Pi subprocesses; the upstream shutdown code accesses a handler
 that the ACP SDK does not expose.
 
-Source and SEA launches route adapter subprocesses through `--codex-acp`,
-`--claude-agent-acp`, or `--pi-acp` on their own entry point. The Claude adapter's published
-entry uses top-level await, which the CommonJS SEA bundle cannot contain, so
-`--claude-agent-acp` starts its exported stdio server directly. The Electron daemon configures its bundled main entry as the
+Source and standalone launches route adapter subprocesses through `--codex-acp`,
+`--claude-agent-acp`, or `--pi-acp` on their own entry point.
+`--claude-agent-acp` starts the adapter's exported stdio server directly.
+The Electron daemon configures its bundled main entry as the
 adapter host and starts it with `ELECTRON_RUN_AS_NODE=1`, including from ASAR.
 That entry routes to the bundled adapter before loading Electron UI or daemon
 lifecycle code. Adapter processes use the same installed binary selection and
@@ -416,9 +416,8 @@ runs without a system Node installation or adjacent addon.
 
 Use `mise run daemon:pack` to build just the standalone daemon.
 
-Packaging uses the mise-selected Node executable, esbuild, and postject. macOS
-builds receive an ad-hoc signature; release signing and notarization are not
-configured.
+Packaging uses the mise-selected Bun to compile the headless entry point and
+embed the native addon. macOS builds receive an ad-hoc signature.
 
 The native addon is extracted into a private temporary directory before loading.
 Unix removes it after loading. Windows attempts removal on exit, but mapped DLLs

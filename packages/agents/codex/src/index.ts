@@ -69,7 +69,7 @@ export function parseCodexUsage(payload: unknown): AgentQuotaItem[] {
   return items
 }
 
-/** Shared by source, SEA, and Electron's Node-mode adapter host. */
+/** Shared by the standalone CLI and Electron's Node-mode adapter host. */
 export async function runCodexAdapter(): Promise<void> {
   process.env.CODEX_PATH ||= "codex"
   await import("@agentclientprotocol/codex-acp")
