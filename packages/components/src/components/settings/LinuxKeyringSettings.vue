@@ -60,16 +60,17 @@ onMounted(load)
     <SettingsRow :label="t('settings.linuxKeyring')" label-id="linux-keyring-label" description-id="linux-keyring-description">
       <template #description>{{ t("settings.linuxKeyringDescription") }}</template>
       <span v-if="loading || saving" role="status" class="text-[13px] text-ui-text-muted">{{ loading ? t("settings.loading") : t("catalog.saving") }}</span>
+      <span v-else-if="state?.overriddenExternally" role="status" class="text-[13px] text-ui-text-muted">{{ t("settings.linuxKeyringOverridden") }}</span>
       <span v-else-if="state?.restartRequired" role="status" class="text-[13px] text-ui-text-muted">{{ t("settings.linuxKeyringRestartRequired") }}</span>
       <UiButton v-if="!state && requestError" type="button" :disabled="busy" @click="load">{{ t("settings.retryLoad") }}</UiButton>
-      <UiButton v-else-if="state?.restartRequired && platformClient.application?.restart" type="button" :disabled="busy" @click="restartApplication">
+      <UiButton v-else-if="!state?.overriddenExternally && state?.restartRequired && platformClient.application?.restart" type="button" :disabled="busy" @click="restartApplication">
         <RotateCcw :size="14" aria-hidden="true" />{{ t("common.restartDeskFleet") }}
       </UiButton>
       <UiSwitch
         aria-labelledby="linux-keyring-label"
         aria-describedby="linux-keyring-description"
         :model-value="state?.useSystemKeyring ?? true"
-        :disabled="busy || !state"
+        :disabled="busy || !state || state.overriddenExternally"
         class="ml-2 disabled:cursor-default"
         @update:model-value="setUseSystemKeyring"
       />

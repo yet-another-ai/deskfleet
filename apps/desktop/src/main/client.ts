@@ -49,7 +49,7 @@ import { installGoogleTag } from "./google-tag.ts"
 
 function start(): void {
   const linuxKeyringPath = join(app.getPath("userData"), "linux-keyring.json")
-  const { appliedUseSystemKeyring } = configureLinuxPasswordStore({
+  const { appliedUseSystemKeyring, overriddenExternally } = configureLinuxPasswordStore({
     platform: process.platform,
     path: linuxKeyringPath,
     commandLine: app.commandLine,
@@ -196,7 +196,7 @@ function start(): void {
       resolveDesktopInstallSource(),
     )
     const linuxKeyring = process.platform === "linux"
-      ? new LinuxKeyringSettingsController(linuxKeyringPath, appliedUseSystemKeyring)
+      ? new LinuxKeyringSettingsController(linuxKeyringPath, appliedUseSystemKeyring, overriddenExternally)
       : undefined
     installSettings(
       localAgent,

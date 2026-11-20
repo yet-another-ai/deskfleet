@@ -77,3 +77,13 @@ test("surfaces load failures with retry and write failures inline", async () => 
   await flushPromises()
   expect(view.get('[role="alert"]').text()).toContain("Disk full")
 })
+
+test("disables the switch and omits the restart banner when overridden by CLI or env", async () => {
+  getLinuxKeyring.mockResolvedValueOnce({ useSystemKeyring: false, restartRequired: false, overriddenExternally: true })
+  const view = await render()
+  const toggle = view.get('[role="switch"]')
+  expect(toggle.attributes("aria-checked")).toBe("false")
+  expect(toggle.attributes("disabled")).toBeDefined()
+  expect(view.get('[role="status"]').text()).toBe("Controlled by command-line or environment setting")
+  expect(view.find("button.ui-button").exists()).toBe(false)
+})

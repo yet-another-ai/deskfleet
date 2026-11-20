@@ -20,6 +20,7 @@ export interface KeepAwakeState {
 export interface LinuxKeyringState {
   useSystemKeyring: boolean
   restartRequired: boolean
+  overriddenExternally?: boolean
 }
 
 export type UpdateInstallSource =

@@ -736,6 +736,7 @@
     "linuxKeyring": "Use system keyring",
     "linuxKeyringDescription": "Store the desktop account token in the Linux system keyring. Turn off to avoid keyring unlock prompts during remote updates or restarts; you may need to sign in again after restarting.",
     "linuxKeyringRestartRequired": "Restart DeskFleet to apply",
+    "linuxKeyringOverridden": "Controlled by command-line or environment setting",
     "autoDownloadUpdates": "Automatically download updates",
     "autoDownloadUpdatesDescription": "Download new versions in the background and wait for your confirmation before installing and restarting.",
     "pauseUpdatesOnMetered": "Pause on metered networks",

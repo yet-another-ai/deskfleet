@@ -27,6 +27,11 @@ export interface LinuxPasswordStoreOptions {
   warn?: (message: string, error?: unknown) => void
 }
 
+export interface LinuxPasswordStoreResult {
+  appliedUseSystemKeyring: boolean
+  overriddenExternally: boolean
+}
+
 function isLinuxPasswordStore(value: string): value is LinuxPasswordStore {
   return (VALID_LINUX_PASSWORD_STORES as readonly string[]).includes(value)
 }
@@ -48,20 +53,20 @@ function parseSavedPreference(raw: string): boolean {
  * 2. `DESKFLEET_PASSWORD_STORE` environment variable
  * 3. Persisted `linux-keyring.json` preference (`useSystemKeyring: false` -> `basic`)
  */
-export function configureLinuxPasswordStore(options: LinuxPasswordStoreOptions): { appliedUseSystemKeyring: boolean } {
-  if (options.platform !== "linux") return { appliedUseSystemKeyring: true }
+export function configureLinuxPasswordStore(options: LinuxPasswordStoreOptions): LinuxPasswordStoreResult {
+  if (options.platform !== "linux") return { appliedUseSystemKeyring: true, overriddenExternally: false }
   const warn = options.warn ?? ((message, error) => console.warn(message, error))
 
   if (options.commandLine.hasSwitch("password-store")) {
     const value = options.commandLine.getSwitchValue("password-store").trim().toLowerCase()
-    return { appliedUseSystemKeyring: value !== "basic" }
+    return { appliedUseSystemKeyring: value !== "basic", overriddenExternally: true }
   }
 
   const envValue = options.env?.DESKFLEET_PASSWORD_STORE?.trim().toLowerCase()
   if (envValue) {
     if (isLinuxPasswordStore(envValue)) {
       options.commandLine.appendSwitch("password-store", envValue)
-      return { appliedUseSystemKeyring: envValue !== "basic" }
+      return { appliedUseSystemKeyring: envValue !== "basic", overriddenExternally: true }
     }
     warn(`Ignoring unsupported DESKFLEET_PASSWORD_STORE value: ${envValue}`)
   }
@@ -70,28 +75,37 @@ export function configureLinuxPasswordStore(options: LinuxPasswordStoreOptions):
     const useSystemKeyring = parseSavedPreference(readFileSync(options.path, "utf8"))
     if (!useSystemKeyring) {
       options.commandLine.appendSwitch("password-store", "basic")
-      return { appliedUseSystemKeyring: false }
+      return { appliedUseSystemKeyring: false, overriddenExternally: false }
     }
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
       warn("Could not read Linux keyring preference; keeping system keyring", error)
     }
   }
-  return { appliedUseSystemKeyring: true }
+  return { appliedUseSystemKeyring: true, overriddenExternally: false }
 }
 
 /** Owns the Linux opt-out preference for system keyring unlock prompts. */
 export class LinuxKeyringSettingsController {
   readonly #path: string
   readonly #appliedUseSystemKeyring: boolean
+  readonly #overriddenExternally: boolean
   #useSystemKeyring: boolean | undefined
 
-  constructor(path: string, appliedUseSystemKeyring: boolean) {
+  constructor(path: string, appliedUseSystemKeyring: boolean, overriddenExternally = false) {
     this.#path = path
     this.#appliedUseSystemKeyring = appliedUseSystemKeyring
+    this.#overriddenExternally = overriddenExternally
   }
 
   get(): LinuxKeyringState {
+    if (this.#overriddenExternally) {
+      return {
+        useSystemKeyring: this.#appliedUseSystemKeyring,
+        restartRequired: false,
+        overriddenExternally: true,
+      }
+    }
     if (this.#useSystemKeyring === undefined) {
       let useSystemKeyring = true
       try {
@@ -105,6 +119,9 @@ export class LinuxKeyringSettingsController {
   }
 
   setUseSystemKeyring(useSystemKeyring: boolean): LinuxKeyringState {
+    if (this.#overriddenExternally) {
+      throw new Error("Linux keyring setting is controlled by --password-store or DESKFLEET_PASSWORD_STORE")
+    }
     mkdirSync(dirname(this.#path), { recursive: true })
     const temporary = `${this.#path}.tmp`
     writeFileSync(temporary, JSON.stringify({ useSystemKeyring }, null, 2) + "\n", { mode: 0o600 })
@@ -117,6 +134,7 @@ export class LinuxKeyringSettingsController {
     return {
       useSystemKeyring,
       restartRequired: useSystemKeyring !== this.#appliedUseSystemKeyring,
+      overriddenExternally: false,
     }
   }
 }

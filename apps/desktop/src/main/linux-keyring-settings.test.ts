@@ -33,19 +33,28 @@ test("non-Linux platforms never modify password-store switches", () => {
   const path = tempPath()
   writeFileSync(path, JSON.stringify({ useSystemKeyring: false }))
   const commandLine = fakeCommandLine()
-  expect(configureLinuxPasswordStore({ platform: "win32", path, commandLine, env: { DESKFLEET_PASSWORD_STORE: "basic" } })).toEqual({ appliedUseSystemKeyring: true })
+  expect(configureLinuxPasswordStore({ platform: "win32", path, commandLine, env: { DESKFLEET_PASSWORD_STORE: "basic" } })).toEqual({
+    appliedUseSystemKeyring: true,
+    overriddenExternally: false,
+  })
   expect(commandLine.switches.size).toBe(0)
 })
 
 test("Linux startup applies basic password-store when persisted preference disables system keyring", () => {
   const path = tempPath()
   const missingCmd = fakeCommandLine()
-  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine: missingCmd })).toEqual({ appliedUseSystemKeyring: true })
+  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine: missingCmd })).toEqual({
+    appliedUseSystemKeyring: true,
+    overriddenExternally: false,
+  })
   expect(missingCmd.switches.has("password-store")).toBe(false)
 
   writeFileSync(path, JSON.stringify({ useSystemKeyring: false }))
   const disabledCmd = fakeCommandLine()
-  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine: disabledCmd })).toEqual({ appliedUseSystemKeyring: false })
+  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine: disabledCmd })).toEqual({
+    appliedUseSystemKeyring: false,
+    overriddenExternally: false,
+  })
   expect(disabledCmd.switches.get("password-store")).toBe("basic")
 })
 
@@ -59,7 +68,7 @@ test("CLI --password-store takes precedence over DESKFLEET_PASSWORD_STORE and sa
     path,
     commandLine: cliCmd,
     env: { DESKFLEET_PASSWORD_STORE: "basic" },
-  })).toEqual({ appliedUseSystemKeyring: true })
+  })).toEqual({ appliedUseSystemKeyring: true, overriddenExternally: true })
   expect(cliCmd.switches.get("password-store")).toBe("gnome-libsecret")
 
   const envCmd = fakeCommandLine()
@@ -68,8 +77,17 @@ test("CLI --password-store takes precedence over DESKFLEET_PASSWORD_STORE and sa
     path,
     commandLine: envCmd,
     env: { DESKFLEET_PASSWORD_STORE: "kwallet6" },
-  })).toEqual({ appliedUseSystemKeyring: true })
+  })).toEqual({ appliedUseSystemKeyring: true, overriddenExternally: true })
   expect(envCmd.switches.get("password-store")).toBe("kwallet6")
+
+  const basicEnvCmd = fakeCommandLine()
+  expect(configureLinuxPasswordStore({
+    platform: "linux",
+    path: tempPath("missing.json"),
+    commandLine: basicEnvCmd,
+    env: { DESKFLEET_PASSWORD_STORE: "basic" },
+  })).toEqual({ appliedUseSystemKeyring: false, overriddenExternally: true })
+  expect(basicEnvCmd.switches.get("password-store")).toBe("basic")
 
   const warn = vi.fn()
   const invalidEnvCmd = fakeCommandLine()
@@ -79,7 +97,7 @@ test("CLI --password-store takes precedence over DESKFLEET_PASSWORD_STORE and sa
     commandLine: invalidEnvCmd,
     env: { DESKFLEET_PASSWORD_STORE: "bogus" },
     warn,
-  })).toEqual({ appliedUseSystemKeyring: false })
+  })).toEqual({ appliedUseSystemKeyring: false, overriddenExternally: false })
   expect(warn).toHaveBeenCalledOnce()
   expect(invalidEnvCmd.switches.get("password-store")).toBe("basic")
 })
@@ -89,22 +107,38 @@ test("corrupt saved preference falls back to system keyring without crashing sta
   writeFileSync(path, "{not-json")
   const warn = vi.fn()
   const commandLine = fakeCommandLine()
-  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine, warn })).toEqual({ appliedUseSystemKeyring: true })
+  expect(configureLinuxPasswordStore({ platform: "linux", path, commandLine, warn })).toEqual({
+    appliedUseSystemKeyring: true,
+    overriddenExternally: false,
+  })
   expect(warn).toHaveBeenCalledOnce()
   expect(commandLine.switches.has("password-store")).toBe(false)
 })
 
 test("controller persists useSystemKeyring and reports restartRequired against applied startup state", () => {
   const path = tempPath()
-  const controller = new LinuxKeyringSettingsController(path, true)
-  expect(controller.get()).toEqual({ useSystemKeyring: true, restartRequired: false })
-  expect(controller.setUseSystemKeyring(false)).toEqual({ useSystemKeyring: false, restartRequired: true })
+  const controller = new LinuxKeyringSettingsController(path, true, false)
+  expect(controller.get()).toEqual({ useSystemKeyring: true, restartRequired: false, overriddenExternally: false })
+  expect(controller.setUseSystemKeyring(false)).toEqual({ useSystemKeyring: false, restartRequired: true, overriddenExternally: false })
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ useSystemKeyring: false })
-  expect(controller.setUseSystemKeyring(true)).toEqual({ useSystemKeyring: true, restartRequired: false })
+  expect(controller.setUseSystemKeyring(true)).toEqual({ useSystemKeyring: true, restartRequired: false, overriddenExternally: false })
 
   // After restarting with basic storage applied, reading the saved false value requires no restart.
   controller.setUseSystemKeyring(false)
-  const restarted = new LinuxKeyringSettingsController(path, false)
-  expect(restarted.get()).toEqual({ useSystemKeyring: false, restartRequired: false })
-  expect(restarted.setUseSystemKeyring(true)).toEqual({ useSystemKeyring: true, restartRequired: true })
+  const restarted = new LinuxKeyringSettingsController(path, false, false)
+  expect(restarted.get()).toEqual({ useSystemKeyring: false, restartRequired: false, overriddenExternally: false })
+  expect(restarted.setUseSystemKeyring(true)).toEqual({ useSystemKeyring: true, restartRequired: true, overriddenExternally: false })
+})
+
+test("CLI or env overrides reflect active backend without falsely requiring a restart", () => {
+  const path = tempPath()
+  // Even when linux-keyring.json is missing (default true), an external basic
+  // override must report useSystemKeyring=false and restartRequired=false.
+  const controller = new LinuxKeyringSettingsController(path, false, true)
+  expect(controller.get()).toEqual({
+    useSystemKeyring: false,
+    restartRequired: false,
+    overriddenExternally: true,
+  })
+  expect(() => controller.setUseSystemKeyring(true)).toThrow("--password-store")
 })
