@@ -447,7 +447,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     initialized ??= (async () => {
       await client.connect()
       await client.call("initialize", {
-        protocolVersion: 1, clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.19.0" }, clientCapabilities: {},
+        protocolVersion: 1, clientInfo: { name: "deskfleet", title: "DeskFleet", version: "0.20.0" }, clientCapabilities: {},
       })
     })().catch(reason => { initialized = null; throw reason })
     return initialized
