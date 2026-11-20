@@ -62,7 +62,10 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 デスクトップ環境のないリモートワークステーション、VM、ビルドサーバーでは、単一実行ファイルの `deskfleet-daemon`（Windows では `deskfleet-daemon.exe`、PowerShell 7 `pwsh` を使用）を実行します。
 
-1. [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から対象プラットフォーム向けのヘッドレスデーモンアーカイブ（`deskfleet-macos-arm64.tar.gz`、`deskfleet-linux-x64.tar.gz`、`deskfleet-linux-arm64.tar.gz`、または `deskfleet-windows-x64.tar.gz`）をダウンロードするか、ソースコードからパッケージ化します：
+1. [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から対象プラットフォーム向けのヘッドレスデーモンアーカイブをダウンロードします。
+   Apple Silicon Mac では `deskfleet-macos-arm64.tar.gz`、Intel Mac では `deskfleet-macos-x64.tar.gz` を使用します。
+   Linux 向けには `deskfleet-linux-x64.tar.gz` と `deskfleet-linux-arm64.tar.gz`、Windows 向けには `deskfleet-windows-x64.tar.gz` があります。
+   以下のコマンドでソースコードからパッケージ化することもできます。
    ```sh
    mise run daemon:pack
    ```

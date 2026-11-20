@@ -8,7 +8,15 @@ import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
-const output = join(root, "apps/daemon/dist")
+const [target, ...extra] = process.argv.slice(2)
+if (extra.length || (target !== undefined && target !== "macos-x64")) {
+  throw new Error("Usage: node scripts/smoke-daemon.ts [macos-x64]")
+}
+
+const macIntel = target === "macos-x64"
+if (macIntel && process.platform !== "darwin") throw new Error("The macOS x64 daemon smoke test must run on macOS")
+
+const output = join(root, "apps/daemon/dist", target ?? "")
 const directory = mkdtempSync(join(tmpdir(), "deskfleet-smoke-"))
 const executableName = process.platform === "win32" ? "deskfleet-daemon.exe" : "deskfleet-daemon"
 const command = join(directory, executableName)
@@ -36,10 +44,11 @@ try {
   const piManifest = JSON.parse(readFileSync(join(root, "packages/agents/pi/package.json"), "utf8")) as {
     dependencies: Record<string, string>
   }
+  const arch = macIntel ? "x64" : process.arch
   const expectedNative = {
     version: manifest.version,
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : process.platform,
-    arch: process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch,
+    arch: arch === "arm64" ? "aarch64" : arch === "x64" ? "x86_64" : arch,
   }
   const info = JSON.parse(execFileSync(command, ["--info"], {
     cwd: directory, env: environment, encoding: "utf8", timeout: 15_000,

@@ -267,6 +267,32 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Cross-compile the Intel macOS server and daemon
+        if: matrix.platform == 'macos-arm64'
+        run: mise run build:macos-x64
+
+      - name: Verify and stage the Intel macOS archive
+        if: matrix.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          server_dir=target/x86_64-apple-darwin/release
+          daemon_dir=apps/daemon/dist/macos-x64
+          test "$(lipo -archs "$server_dir/deskfleet-server")" = x86_64
+          "$server_dir/deskfleet-server" --help
+          mise run daemon:smoke macos-x64
+          tar -czf deskfleet-macos-x64.tar.gz \
+            -C "$PWD/$server_dir" deskfleet-server \
+            -C "$PWD/$daemon_dir" deskfleet-daemon
+
+      - name: Upload Intel macOS server and daemon artifacts
+        if: matrix.platform == 'macos-arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-macos-x64
+          path: deskfleet-macos-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload desktop installers
         uses: actions/upload-artifact@v7
         with:

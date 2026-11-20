@@ -67,7 +67,10 @@ Closing the desktop window keeps DeskFleet in the system tray so running agent s
 
 For remote workstations, VMs, or build servers without a desktop session, run the standalone `deskfleet-daemon` single-executable binary (`deskfleet-daemon.exe` on Windows; use PowerShell 7 `pwsh`).
 
-1. Download the headless daemon archive (`deskfleet-macos-arm64.tar.gz`, `deskfleet-linux-x64.tar.gz`, `deskfleet-linux-arm64.tar.gz`, or `deskfleet-windows-x64.tar.gz`) from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases), or package it from source:
+1. Download the headless daemon archive for your machine from [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases).
+   On macOS, use `deskfleet-macos-arm64.tar.gz` for Apple Silicon or `deskfleet-macos-x64.tar.gz` for Intel.
+   For Linux and Windows, choose `deskfleet-linux-x64.tar.gz`, `deskfleet-linux-arm64.tar.gz`, or `deskfleet-windows-x64.tar.gz`.
+   You can also package the daemon from source with the command below.
    ```sh
    mise run daemon:pack
    ```

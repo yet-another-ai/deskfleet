@@ -423,5 +423,14 @@ The native addon is extracted into a private temporary directory before loading.
 Unix removes it after loading. Windows attempts removal on exit, but mapped DLLs
 may remain until the temporary directory is cleaned.
 
-Supported platforms are Linux x64/arm64, macOS arm64, and Windows x64. See the
-[CI guide](../../agents/docs/ci.md) for build artifacts and smoke tests.
+Supported platforms are Linux x64/arm64, macOS arm64/x64, and Windows x64.
+On Apple Silicon, use the following commands to cross-compile the Intel server
+and daemon and smoke-test the daemon with Rosetta installed:
+
+```sh
+mise run build:macos-x64
+mise run daemon:smoke macos-x64
+```
+
+The Intel daemon is written to `apps/daemon/dist/macos-x64/deskfleet-daemon`.
+See the [CI guide](../../agents/docs/ci.md) for build artifacts and smoke tests.

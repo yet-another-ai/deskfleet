@@ -122,6 +122,18 @@ description = "Build the release server and standalone daemon"
 depends = ["rust:release", "web:build"]
 run = "node scripts/build-daemon.ts"
 
+[tasks."build:macos-x64"]
+description = "Cross-compile the Intel macOS server and standalone daemon on Apple Silicon"
+depends = ["install"]
+run = [
+  'test "$(uname -sm)" = "Darwin arm64"',
+  "rustup target add x86_64-apple-darwin",
+  "cargo build --release --locked --target x86_64-apple-darwin --target-dir target -p deskfleet-node -p deskfleet-server",
+  "mkdir -p apps/daemon/dist/macos-x64",
+  "cp target/x86_64-apple-darwin/release/libdeskfleet_node.dylib apps/daemon/dist/macos-x64/deskfleet.node",
+  "node scripts/build-daemon.ts macos-x64",
+]
+
 [tasks."rust:release"]
 hide = true
 depends = ["install"]

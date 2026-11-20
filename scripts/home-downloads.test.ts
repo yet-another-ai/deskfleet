@@ -12,17 +12,16 @@ const assetNames = [
   "deskfleet-0.2.0-linux-x86_64.AppImage", "deskfleet-0.2.0-linux-arm64.AppImage",
   "deskfleet-0.2.0-linux-amd64.deb", "deskfleet-0.2.0-linux-arm64.deb",
   "deskfleet-0.2.0-linux-x86_64.rpm", "deskfleet-0.2.0-linux-aarch64.rpm", "deskfleet-0.2.0-android-arm64.apk",
-  "deskfleet-macos-arm64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
+  "deskfleet-macos-arm64.tar.gz", "deskfleet-macos-x64.tar.gz", "deskfleet-windows-x64.tar.gz", "deskfleet-linux-x64.tar.gz", "deskfleet-linux-arm64.tar.gz",
 ]
 const release: LatestRelease = {
   version: "0.2.0", publishedAt: "2026-10-27T10:00:00Z",
   files: assetNames.map(name => ({ name, size: 100_000, url: `https://github.com/yet-another-ai/deskfleet/releases/download/v0.2.0/${name}` })),
 }
 
-test("download selection distinguishes installers, archives, and Linux architectures", () => {
+test("download selection distinguishes installers, archives, and architectures", () => {
   assert.equal(findDownload(release, "desktop", "macos", "x64")?.name, "deskfleet-0.2.0-mac-arm64.dmg")
   assert.equal(findDownload(release, "desktop", "windows", "arm64")?.name, "deskfleet-0.2.0-win-x64.exe")
-  assert.equal(findDownload(release, "headless", "macos", "x64")?.name, "deskfleet-macos-arm64.tar.gz")
   assert.equal(findDownload(release, "headless", "windows", "arm64")?.name, "deskfleet-windows-x64.tar.gz")
   for (const arch of ["x64", "arm64"] as const) {
     const appImageArchitecture = arch === "x64" ? "x86_64" : "arm64"
@@ -30,6 +29,7 @@ test("download selection distinguishes installers, archives, and Linux architect
     const rpmArchitecture = arch === "x64" ? "x86_64" : "aarch64"
     assert.equal(findDownload(release, "desktop", "linux", arch)?.name, `deskfleet-0.2.0-linux-${appImageArchitecture}.AppImage`)
     assert.equal(findDownload(release, "headless", "linux", arch)?.name, `deskfleet-linux-${arch}.tar.gz`)
+    assert.equal(findDownload(release, "headless", "macos", arch)?.name, `deskfleet-macos-${arch}.tar.gz`)
     assert.equal(findLinuxPackage(release, "deb", arch)?.name, `deskfleet-0.2.0-linux-${debArchitecture}.deb`)
     assert.equal(findLinuxPackage(release, "rpm", arch)?.name, `deskfleet-0.2.0-linux-${rpmArchitecture}.rpm`)
   }
@@ -70,7 +70,7 @@ test("release verification requires installers, packaging archives, and update m
       `deskfleet-${version}-linux-x86_64.AppImage`, "latest-linux-arm64.yml", `deskfleet-${version}-mac-arm64.zip.blockmap`,
       `deskfleet-${version}-linux-amd64.deb`, `deskfleet-${version}-linux-aarch64.rpm`,
       `deskfleet-${version}-linux-x64.tar.gz`, `deskfleet-${version}-linux-arm64.tar.gz`, "deskfleet-nix.tar.gz",
-      `deskfleet-${version}-android-arm64.apk`,
+      `deskfleet-${version}-android-arm64.apk`, "deskfleet-macos-x64.tar.gz",
     ]) {
       const path = join(directory, "release-assets", required)
       unlinkSync(path)
@@ -142,8 +142,10 @@ test("partial Linux releases expose available methods without substituting archi
 })
 
 test("missing packages fall back to the release page without selecting another architecture", () => {
-  const incomplete = { ...release, files: release.files.filter(file => file.name !== "deskfleet-0.2.0-linux-arm64.AppImage") }
+  const missing = ["deskfleet-0.2.0-linux-arm64.AppImage", "deskfleet-macos-x64.tar.gz"]
+  const incomplete = { ...release, files: release.files.filter(file => !missing.includes(file.name)) }
   assert.equal(findDownload(incomplete, "desktop", "linux", "arm64")?.url ?? releasesPage, releasesPage)
+  assert.equal(findDownload(incomplete, "headless", "macos", "x64")?.url ?? releasesPage, releasesPage)
   assert.equal(findDownload(undefined, "headless", "macos", "x64")?.url ?? releasesPage, releasesPage)
   assert.equal(findDownload({ ...release, version: "0.3.0" }, "desktop", "windows", "x64"), undefined)
 })

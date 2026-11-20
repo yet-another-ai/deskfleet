@@ -145,6 +145,10 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 The build matrix covers Linux x64/arm64, macOS arm64, and Windows x64. Each
 server/daemon archive, such as `deskfleet-linux-x64.tar.gz`, contains
 `deskfleet-server` and `deskfleet-daemon` (`.exe` on Windows).
+The Apple Silicon job also cross-compiles `deskfleet-macos-x64.tar.gz` with an
+x86_64 Rust server and a Bun daemon that embeds the x86_64 native addon. It
+checks the binary architectures and runs the Intel daemon smoke test under
+Rosetta before uploading the archive for Publish.
 Separate desktop artifacts contain macOS arm64 DMG/ZIP, Windows x64 NSIS, and
 Linux x64/arm64 AppImages and desktop archives, plus updater YAML and blockmaps.
 The Linux desktop archive names include the app version, such as

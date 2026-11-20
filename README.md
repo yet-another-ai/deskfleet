@@ -102,6 +102,7 @@ DeskFleet supervises any ACP-compatible agent installed on an enrolled machine:
 | Platform | Architecture | Desktop App | Headless Daemon | Web Client (PWA) | Packages & Installers |
 | --- | --- | :---: | :---: | :---: | --- |
 | **macOS** | Apple Silicon (`arm64`) | ✅ | ✅ | ✅ | Homebrew Cask, `.dmg`, `.tar.gz`, Nix (nix-darwin) |
+| **macOS** | Intel (`x64`) | — | ✅ | ✅ | `deskfleet-macos-x64.tar.gz` |
 | **Windows** | `x64` | ✅ | ✅ | ✅ | `.exe` installer, standalone `.tar.gz` |
 | **Linux** | `x86_64`, `arm64` | ✅ | ✅ | ✅ | AppImage, `.deb`, `.rpm`, `.tar.gz`, [AUR (`deskfleet-bin`)](https://aur.archlinux.org/packages/deskfleet-bin), [Nix flake](agents/docs/ci.md#nix-distribution) |
 
