@@ -23,7 +23,9 @@ actix-files = "0.7.2"
 futures-util = "0.3"
 socket2.workspace = true
 redis = { version = "1.8.0", default-features = false, features = ["tokio-rustls-comp"] }
+altcha = "1.1.0"
 argon2 = "0.6"
+rand.workspace = true
 webauthn-rs = { version = "0.6", features = ["danger-allow-state-serialisation", "conditional-ui"] }
 # WebAuthn uses OpenSSL; build its crypto library without a host installation.
 openssl = { version = "0.10", features = ["vendored"] }

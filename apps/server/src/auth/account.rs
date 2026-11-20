@@ -9,7 +9,7 @@ pub(super) struct Token {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Registration {
+pub(super) struct Enabled {
     enabled: bool,
 }
 #[derive(Deserialize)]
@@ -142,12 +142,24 @@ pub(super) async fn revoke_all(
 pub(super) async fn registration(
     req: HttpRequest,
     state: web::Data<AppState>,
-    body: web::Json<Registration>,
+    body: web::Json<Enabled>,
 ) -> Result<HttpResponse> {
     let auth = recent(&req, &state).await?;
     state
         .store
         .set_registration_enabled(&auth.user.id, body.enabled)
+        .await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+pub(super) async fn captcha(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    body: web::Json<Enabled>,
+) -> Result<HttpResponse> {
+    let auth = recent(&req, &state).await?;
+    state
+        .store
+        .set_captcha_enabled(&auth.user.id, body.enabled)
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }

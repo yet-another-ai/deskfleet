@@ -85,7 +85,7 @@ impl ControlStore {
         )?;
         self.site_settings().await
     }
-    /// Replace all runtime settings and record their previous and new values.
+    /// Replace general site settings and record their previous and new values.
     pub async fn update_site_settings(
         &self,
         user_id: &str,
@@ -159,6 +159,54 @@ impl ControlStore {
         tx.commit().await?;
         Ok(after)
     }
+    /// Read the installation-wide proof-of-work requirement for public authentication.
+    pub async fn captcha_enabled(&self) -> Result<bool> {
+        site::Entity::find_by_id(true)
+            .select_only()
+            .column(site::Column::CaptchaEnabled)
+            .into_tuple::<bool>()
+            .one(&self.db)
+            .await?
+            .ok_or(Error::NotFound)
+    }
+
+    /// Update the proof-of-work requirement with an administrator audit entry.
+    pub async fn set_captcha_enabled(&self, actor: &str, enabled: bool) -> Result<()> {
+        let tx = self.db.begin().await?;
+        let is_admin = admins::Entity::find_by_id(actor)
+            .lock_shared()
+            .one(&tx)
+            .await?
+            .is_some();
+        authorize(&SitePolicy::new(is_admin), SiteAction::UpdateSettings)?;
+        let previous = site::Entity::find_by_id(true)
+            .select_only()
+            .column(site::Column::CaptchaEnabled)
+            .lock_exclusive()
+            .into_tuple::<bool>()
+            .one(&tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+        site::Entity::update_many()
+            .col_expr(site::Column::CaptchaEnabled, Expr::val(enabled))
+            .filter(site::Column::Singleton.eq(true))
+            .exec(&tx)
+            .await?;
+        audit::Entity::insert(audit::ActiveModel {
+            actor_user_id: Set(Some(actor.into())),
+            source: Set("user".into()),
+            action: Set("settings.update".into()),
+            before_value: Set(json!({"captchaEnabled": previous})),
+            after_value: Set(json!({"captchaEnabled": enabled})),
+            occurred_at: Set(now_ms()),
+            ..Default::default()
+        })
+        .exec_without_returning(&tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Persist or revoke a user's opt-in telemetry consent and first-touch marketing attribution.
     pub async fn update_user_telemetry_consent(
         &self,

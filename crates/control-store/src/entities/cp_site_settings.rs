@@ -12,6 +12,7 @@ pub struct Model {
     pub terms_of_service_url: String,
     pub privacy_terms_url: String,
     pub telemetry_enabled: bool,
+    pub captcha_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

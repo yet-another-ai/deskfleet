@@ -158,6 +158,18 @@ test("an ordinary Team admin has no site menu entry and direct navigation never 
   expect(fake.central.turnSettings).not.toHaveBeenCalled()
 })
 
+test("site administrators can toggle ALTCHA without changing public registration", async () => {
+  const fake = fakeCentral({ siteAdmin: true, teams: [] })
+  await router.push("/admin/accounts")
+  mountShell(fake)
+  const captcha = () => page().findAll('[role="switch"]').find(control => page().get(`[id="${control.attributes("aria-labelledby")}"]`).text() === "ALTCHA verification")!
+  await settled(() => expect(captcha().attributes("aria-checked")).toBe("false"))
+  await captcha().trigger("click")
+  await settled(() => expect(captcha().attributes("aria-checked")).toBe("true"))
+  expect(fake.central.updateCaptcha).toHaveBeenCalledExactlyOnceWith(true)
+  expect(fake.central.updateRegistration).not.toHaveBeenCalled()
+})
+
 test("direct usage trends navigation never loads aggregates for ordinary members", async () => {
   const fake = fakeCentral()
   await router.push("/admin/usage")

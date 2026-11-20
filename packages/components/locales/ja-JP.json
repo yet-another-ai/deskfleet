@@ -319,6 +319,8 @@
     "searchUsers": "メールアドレスまたは名前で検索", "search": "検索",
     "enableUser": "アカウントを有効化", "disableUser": "アカウントを無効化",
     "registration": "一般ユーザーの登録", "registrationDescription": "メールアドレスを認証したユーザーは誰でもアカウントを作成できます。",
+    "captcha": "ALTCHA 認証",
+    "captchaDescription": "ログインと一般ユーザーの登録時にブラウザー認証を求めます。",
     "disabled": "無効", "noAccounts": "「{query}」に一致するアカウントはありません。",
     "resultLimit": "最初の {count} 件を表示しています。検索条件を絞り込んでください。", "disableTitle": "{name} のアカウントを無効にしますか？",
     "disableDescription": "このユーザーのログインセッションとピアアクセスは失効し、スケジュールされたタスクの実行も許可されなくなります。チームのマシンとデータは保持されます。",
@@ -1397,6 +1399,9 @@
   "auth": {
     "signIn": "ログイン",
     "invalidCredentials": "ユーザー名またはパスワードが正しくありません。",
+    "captchaNotice": "続行するとブラウザー認証が行われます。",
+    "captchaChecking": "ブラウザーを認証しています…",
+    "captchaRetry": "ブラウザー認証に失敗しました。もう一度お試しください。",
     "signInFailed": "ログインに失敗しました。もう一度お試しください。",
     "signInTitle": "DeskFleet にログイン",
     "accountSignInDescription": "ログインしてパスワード、パスキー、ログイン中のデバイスを管理します。", "emailSignInDescription": "新しいメールアドレスを確認するため、現在のメールアドレスでログインしてください。",

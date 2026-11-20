@@ -6,6 +6,17 @@ import { setErrorReportingUser } from "../../services/error-reporting.ts"
 import AuthPage from "./AuthPage.vue"
 
 vi.mock("../../services/error-reporting.ts", () => ({ setErrorReportingUser: vi.fn() }))
+vi.mock("altcha", () => {
+  customElements.define("altcha-widget", class extends HTMLElement {
+    connectedCallback() { this.dispatchEvent(new Event("load")) }
+    async verify() {
+      const config = JSON.parse(this.getAttribute("configuration")!)
+      expect(config.humanInteractionSignature).toBe(false)
+      return { payload: `proof-${config.challenge.id}` }
+    }
+  })
+  return {}
+})
 
 let view: VueWrapper | undefined
 afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -216,6 +227,53 @@ test("password sign-in shows a localized invalid-credentials message", async () 
   expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.invalidCredentials"))
 })
 
+test("sign-in refreshes its proof after a rejected attempt and handles a policy change", async () => {
+  let issued = 0
+  const request = mountAt("/auth/login", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true, captchaEnabled: false }
+    if (path === "/api/auth/captcha/challenge") return issued < 2 ? { id: ++issued } : undefined
+    if (path === "/api/auth/login") throw issued === 0
+      ? new HttpError(403, "Browser verification required", undefined, "captcha_required")
+      : new HttpError(401, "Wrong username or password.", undefined, "invalid_credentials")
+    return {}
+  })
+  await flushPromises()
+  const credentials = { email: "ada@example.test", password: "not-the-right-password" }
+  await view!.get('input[type="email"]').setValue(credentials.email)
+  await view!.get('input[type="password"]').setValue(credentials.password)
+  await view!.get("form").trigger("submit")
+  await flushPromises()
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.captchaRetry"))
+  for (const id of [1, 2]) {
+    await view!.get("form").trigger("submit")
+    await vi.waitFor(() => expect(request).toHaveBeenLastCalledWith("POST", "/api/auth/login", { ...credentials, altcha: `proof-${id}` }))
+  }
+  await view!.get("form").trigger("submit")
+  await flushPromises()
+  expect(request).toHaveBeenLastCalledWith("POST", "/api/auth/login", credentials)
+  expect(request.mock.calls.filter(([, path]) => path === "/api/auth/captcha/challenge").map(([, , body]) => body)).toEqual(Array(3).fill({ action: "login" }))
+  expect(view!.text()).not.toContain(i18n.global.t("auth.captchaNotice"))
+})
+
+test.each([
+  { action: "passkey", label: "auth.signInWithPasskey", path: "/api/auth/passkeys/login/options", body: { email: "ada@example.test" } },
+  ...oauthProviders.map(({ provider, label }) => ({ action: provider, label, path: `/api/auth/${provider}/start`, body: { returnTo: "/", acceptedTerms: false } })),
+])("$action sign-in submits its proof before starting authentication", async ({ action, label, path, body }) => {
+  vi.stubGlobal("PublicKeyCredential", { parseCreationOptionsFromJSON() {} })
+  const request = mountAt("/auth/login", async (_method, endpoint) => {
+    if (endpoint === "/api/auth/config") return { captchaEnabled: true, githubEnabled: true, googleEnabled: true }
+    if (endpoint === "/api/auth/captcha/challenge") return { id: 1 }
+    if (endpoint === path) throw new HttpError(403, "Browser verification failed", undefined, "captcha_invalid")
+    return {}
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await button(view!, i18n.global.t(label)).trigger("click")
+  await vi.waitFor(() => expect(request).toHaveBeenLastCalledWith("POST", path, { ...body, altcha: "proof-1" }))
+  expect(request).toHaveBeenCalledWith("POST", "/api/auth/captcha/challenge", { action })
+  expect(view!.get('[role="alert"]').text()).toBe(i18n.global.t("auth.captchaRetry"))
+})
+
 test("password sign-in falls back to a safe message for unexpected server failures", async () => {
   mountAt("/auth/login", async (_method, path) => {
     if (path === "/api/auth/config") return { registrationEnabled: true }
@@ -283,9 +341,13 @@ test("closed registration presents the site policy without an email submission f
   expect(view!.get('[role="status"]').text()).toBe(i18n.global.t("auth.registrationClosed"))
 })
 
-test("registration confirms the mailed link and resends to the same address after a pause", async () => {
+test.each([false, true])("registration resends to the same address after a pause (ALTCHA enabled: %s)", async captchaEnabled => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-  const request = mountAt("/auth/register", async () => ({ registrationEnabled: true, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" }))
+  let issued = 0
+  const request = mountAt("/auth/register", async (_method, path) => path === "/api/auth/captcha/challenge" ? { id: ++issued }
+    : { registrationEnabled: true, captchaEnabled, termsOfServiceUrl: "https://example.test/terms", privacyTermsUrl: "https://example.test/privacy" })
+  // Preload the widget mock so the case uses fake timers only for the resend clock.
+  if (captchaEnabled) await import("altcha")
   await flushPromises()
   await view!.get('input[type="email"]').setValue("grace@example.test")
   await view!.get('[role="checkbox"]').trigger("click")
@@ -297,9 +359,10 @@ test("registration confirms the mailed link and resends to the same address afte
   vi.advanceTimersByTime(30_000); await flushPromises()
   await resend.trigger("click"); await flushPromises()
   expect(request.mock.calls.filter(([, path]) => path === "/api/auth/register")).toEqual([
-    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true }],
-    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true }],
+    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true, ...(captchaEnabled ? { altcha: "proof-1" } : {}) }],
+    ["POST", "/api/auth/register", { email: "grace@example.test", acceptedTerms: true, ...(captchaEnabled ? { altcha: "proof-2" } : {}) }],
   ])
+  expect(issued).toBe(captchaEnabled ? 2 : 0)
   expect(view!.get('[role="status"]').text()).toBe(i18n.global.t("auth.sentAgain"))
 })
 

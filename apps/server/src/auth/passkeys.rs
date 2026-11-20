@@ -1,9 +1,15 @@
 //! WebAuthn ceremonies remain server-side, purpose- and session-bound.
-use super::passwords::{Email, field};
+use super::passwords::field;
 use super::*;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct LoginOptions {
+    email: String,
+    altcha: Option<String>,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Registration {
@@ -172,11 +178,12 @@ async fn options(
 pub(super) async fn login_options(
     req: HttpRequest,
     state: web::Data<AppState>,
-    body: web::Json<Email>,
+    body: web::Json<LoginOptions>,
 ) -> Result<web::Json<Value>> {
     browser_mutation(&req, &state)?;
     let email = deskfleet_control_store::normalize_email(&body.email)?;
     limit(&req, &state, "login", Some(&email)).await?;
+    captcha::require(&state, captcha::Action::Passkey, body.altcha.as_deref()).await?;
     // Bind the ceremony to this email and its current credential version, but
     // never expose whether it belongs to an active account or has any keys.
     let record = state.store.password_credentials(&email).await?;

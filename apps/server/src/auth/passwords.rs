@@ -13,6 +13,7 @@ pub(super) struct Registration {
     email: String,
     #[serde(default)]
     accepted_terms: bool,
+    altcha: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,6 +27,7 @@ pub(super) struct Verification {
 pub(super) struct Login {
     email: String,
     password: String,
+    altcha: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -143,6 +145,7 @@ pub(super) async fn register(
             "Accept the terms before creating an account.",
         ));
     }
+    captcha::require(&state, captcha::Action::Register, body.altcha.as_deref()).await?;
     if state.store.password_credentials(&email).await?.is_none() {
         let token = state
             .store
@@ -181,6 +184,7 @@ pub(super) async fn login(
     browser_mutation(&req, &state)?;
     let email = deskfleet_control_store::normalize_email(&body.email)?;
     limit(&req, &state, "login", Some(&email)).await?;
+    captcha::require(&state, captcha::Action::Login, body.altcha.as_deref()).await?;
     let record = state.store.password_credentials(&email).await?;
     if !verify_password(
         &state,

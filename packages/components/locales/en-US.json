@@ -349,6 +349,8 @@
     "disableUser": "Disable account",
     "registration": "Public registration",
     "registrationDescription": "Anyone with a verified email can create an account.",
+    "captcha": "ALTCHA verification",
+    "captchaDescription": "Require a browser check for sign-in and public registration.",
     "disabled": "Disabled",
     "noAccounts": "No accounts match “{query}”.",
     "resultLimit": "Showing the first {count} matches. Refine the search to narrow them down.",
@@ -1897,6 +1899,9 @@
   "auth": {
     "signIn": "Sign in",
     "invalidCredentials": "Wrong username or password.",
+    "captchaNotice": "A browser check runs when you continue.",
+    "captchaChecking": "Checking your browser…",
+    "captchaRetry": "The browser check could not be verified. Try again.",
     "signInFailed": "Sign-in failed. Please try again.",
     "signInTitle": "Sign in to DeskFleet",
     "accountSignInDescription": "Sign in to manage your password, Passkeys, and signed-in devices.",

@@ -601,6 +601,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     privacyTermsUrl: "https://deskfleet.dev/privacy",
   }
   let registrationEnabled = true
+  let captchaEnabled = false
   let turn: TurnSettings = { urls: ["turn:turn.example.com:3478?transport=udp"], allowTeamServers: true }
   let cloudflareTurn = { enabled: false, accountId: "", keyId: "", apiTokenConfigured: false, analyticsTokenConfigured: false }
   let teamTurn: TeamTurnSettings = { availability: "available", urls: [], secretConfigured: false }
@@ -677,8 +678,9 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     setManualGrant: async () => {},
     deletionRequests: async () => ({ requests: [], nextCursor: null }),
     reviewDeletionRequest: async () => {},
-    registrationPolicy: async () => ({ registrationEnabled }),
+    registrationPolicy: async () => ({ registrationEnabled, captchaEnabled }),
     updateRegistration: async (enabled: boolean) => { registrationEnabled = enabled },
+    updateCaptcha: async (enabled: boolean) => { captchaEnabled = enabled },
     users: async () => [
       { id: "user-1", name: "Ada Lovelace", email: "ada@deskfleet.dev", disabled: false },
       { id: "user-2", name: "Grace Hopper", email: "grace@deskfleet.dev", disabled: false },
