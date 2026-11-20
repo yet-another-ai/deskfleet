@@ -7,6 +7,8 @@ export declare class DesktopStreamPool {
 }
 
 export declare class NativeCatalog {
+  superAgentStates(): Promise<Array<SuperAgentStateRecord>>
+  saveSuperAgentState(userId: string, revision: number, stateJson: string): Promise<void>
   snapshot(): Promise<CatalogSnapshot>
   createWorkspace(name: string, directories: Array<CatalogDirectory>): Promise<CatalogWorkspace>
   updateWorkspace(workspaceId: string, name: string, directories: Array<CatalogDirectory>): Promise<CatalogWorkspace>
@@ -321,6 +323,12 @@ export declare function scanLocalApplications(): Promise<Array<LocalApplication>
 export declare function secureAttentionSupported(): Promise<boolean>
 
 export declare function speechStatus(locale: string): Promise<NativeSpeechStatus>
+
+export interface SuperAgentStateRecord {
+  userId: string
+  revision: number
+  stateJson: string
+}
 
 /** Probe the selected display's encoders on a worker thread. */
 export declare function supportedVideoCodecs(displayId: number): Promise<Array<string>>

@@ -1,6 +1,7 @@
 //! SeaORM records for the machine-owned resource catalog.
 
 pub mod machine;
+pub mod super_agent_state;
 pub mod team;
 pub mod workspace;
 pub mod workspace_session;

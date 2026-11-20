@@ -17,6 +17,8 @@ mod m20261028_000005_agent_query_indexes;
 /// migration remains outside a transaction so its foreign-key PRAGMAs work.
 pub struct Migrator;
 
+mod m20261119_000001_super_agent;
+
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
@@ -27,6 +29,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261025_000003_session_archive::Migration),
             Box::new(m20261027_000004_optional_session_workspace::Migration),
             Box::new(m20261028_000005_agent_query_indexes::Migration),
+            Box::new(m20261119_000001_super_agent::Migration),
         ]
     }
 }

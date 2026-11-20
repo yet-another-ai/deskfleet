@@ -91,6 +91,13 @@ impl From<LocalSnapshot> for CatalogSnapshot {
     }
 }
 
+#[napi(object)]
+pub struct SuperAgentStateRecord {
+    pub user_id: String,
+    pub revision: i32,
+    pub state_json: String,
+}
+
 #[napi]
 pub struct NativeCatalog {
     catalog: LocalCatalog,
@@ -114,6 +121,35 @@ pub async fn open_in_memory_catalog(machine_name: String) -> Result<NativeCatalo
 
 #[napi]
 impl NativeCatalog {
+    #[napi]
+    pub async fn super_agent_states(&self) -> Result<Vec<SuperAgentStateRecord>> {
+        Ok(self
+            .catalog
+            .super_agent_states()
+            .await
+            .map_err(native_error)?
+            .into_iter()
+            .map(|row| SuperAgentStateRecord {
+                user_id: row.user_id,
+                revision: row.revision,
+                state_json: row.state_json,
+            })
+            .collect())
+    }
+
+    #[napi]
+    pub async fn save_super_agent_state(
+        &self,
+        user_id: String,
+        revision: i32,
+        state_json: String,
+    ) -> Result<()> {
+        self.catalog
+            .save_super_agent_state(user_id, revision, state_json)
+            .await
+            .map_err(native_error)
+    }
+
     #[napi]
     pub async fn snapshot(&self) -> Result<CatalogSnapshot> {
         self.catalog

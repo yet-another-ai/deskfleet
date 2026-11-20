@@ -4,6 +4,7 @@ mod agent;
 mod catalog;
 pub mod entities;
 mod local;
+mod super_agent;
 
 pub use catalog::{Catalog, CatalogWorkspace};
 pub use local::{LocalCatalog, LocalSnapshot};

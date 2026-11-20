@@ -91,7 +91,7 @@ async fn failed_query_index_upgrade_rolls_back_schema_and_history() {
     );
     assert_eq!(
         Migrator::get_pending_migrations(&db).await.unwrap().len(),
-        1
+        2
     );
     assert_eq!(
         query(&db, "SELECT record_json FROM agent_commands WHERE id = 1")
@@ -162,7 +162,7 @@ async fn populated_catalog_upgrade_preserves_foreign_keys_and_durability() {
     let db = file.connect().await;
     assert_eq!(
         Migrator::get_applied_migrations(&db).await.unwrap().len(),
-        6
+        7
     );
     assert!(
         Migrator::get_pending_migrations(&db)
