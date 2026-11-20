@@ -1383,3 +1383,23 @@ test("workspace inputs use the original account, delivery indicator, localized t
   }
   expect(wrapper.findAll("[data-conversation-entry]")).toHaveLength(2)
 })
+
+test("progress reports dispatched only after worker delivery succeeds, not while dispatching or after failure", async () => {
+  const job = { ...ticket("verify"), status: "queued" as const }
+  const source = message("ask", { state: "assigned", ticketId: job.id })
+  const dispatching = message("dispatch", { role: "assistant", kind: "dispatch", sourceMessageId: source.id, ticketId: job.id, canStop: true, dispatching: true })
+  const poll = await setupProgress(room({ supportsStop: true, tickets: [job], messages: [source, dispatching] }))
+  expect(progressFor(source.id).text()).toContain(i18n.global.t("superAgent.progress.dispatching"))
+  expect(progressFor(source.id).text()).not.toContain(i18n.global.t("superAgent.progress.queued"))
+  expect(progressFor(source.id).find(`button[aria-label="${i18n.global.t("superAgent.stop.request")}"]`).exists()).toBe(true)
+
+  const sent = { ...dispatching, dispatching: undefined, inputId: "input-1" }
+  await poll(room({ supportsStop: true, tickets: [job], messages: [source, sent] }))
+  expect(progressFor(source.id).text()).toContain(i18n.global.t("superAgent.progress.queued"))
+
+  const failedSource = { ...source, state: "failed" as const, reason: "Worker unavailable" }
+  const delivery = message("fail", { role: "worker", kind: "delivery", sourceMessageId: source.id, ticketId: job.id, text: "Worker unavailable" })
+  await poll(room({ supportsStop: true, tickets: [{ ...job, status: "blocked" }], messages: [failedSource, { ...dispatching, dispatching: undefined, canStop: false }, delivery] }))
+  expect(progressFor(source.id).exists()).toBe(false)
+  expect(wrapper.get('[data-super-message="ask"]').text()).toContain(i18n.global.t("superAgent.actions.workerFailed"))
+})

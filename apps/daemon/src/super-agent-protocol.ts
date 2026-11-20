@@ -32,6 +32,8 @@ export interface SuperMessage {
   revision?: number
   stopState?: SuperStopState
   canStop?: boolean
+  /** This dispatch intent has not yet been durably accepted by its Worker. */
+  dispatching?: boolean
   /** This input was delivered into an existing turn along with another input. */
   sharedTurn?: boolean
   replyTo?: string
@@ -127,6 +129,7 @@ export function superWorkerCommandTarget(room: Pick<SuperSnapshot, "messages" | 
   const sourceId = quote?.role === "assistant" && !quote.ticketId ? quote.sourceMessageId : undefined
   const ticketId = replyTo ? quote?.ticketId ?? (sourceId && room.messages.find(message => message.id === sourceId)?.ticketId) : room.focusTicketId
   const ticket = ticketId ? room.tickets.find(item => item.id === ticketId) : undefined
+  if (!replyTo && ticket?.status === "stopped") return { provider: room.provider }
   return ticket ? { provider: ticket.provider || room.provider, ticketId: ticket.id, ...(ticket.sessionId && { sessionId: ticket.sessionId }) } : { provider: room.provider }
 }
 

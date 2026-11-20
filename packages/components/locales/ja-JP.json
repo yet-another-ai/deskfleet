@@ -76,8 +76,9 @@
     "progress": {
       "stopping": "停止中…",
       "unconfirmed": "停止を確認できていません",
+      "dispatching": "ワーカーに依頼中…",
       "waiting": "実行結果を待っています…",
-      "queued": "実行を待っています…",
+      "queued": "依頼済み、実行を待っています…",
       "working": "タスクを実行しています…",
       "attention": "承認または返信を待っています…"
     },

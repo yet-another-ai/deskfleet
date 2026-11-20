@@ -1061,3 +1061,96 @@ test("@file reads the selected project file for a direct answer without allocati
   await until(async () => (await f.snap(service, project)).messages.some(m => m.text === "Found the notes"))
   assert.equal(f.sessions.size, 0)
 })
+
+test("stopped tickets block implicit continuation across shortcuts and service apply, allow explicit resume, and mark dispatching until sent", async t => {
+  const f = fixture(), service = f.service()
+  const originalHandle = f.workers.handle
+  let releaseSubmit: (() => void) | undefined
+  let holdNextSubmit = false
+  f.workers.handle = async (method, value, who) => {
+    if (method === "_deskfleet/session/configuration" || method === "_deskfleet/agent/configuration") {
+      return { provider: { id: "codex" }, commands: [{ name: "status" }, { name: "plan" }], skills: [] }
+    }
+    if (method === "_deskfleet/input/submit" && holdNextSubmit) {
+      holdNextSubmit = false
+      await new Promise<void>(resolve => { releaseSubmit = resolve })
+    }
+    return originalHandle(method, value, who)
+  }
+  await service.init(); t.after(() => { releaseSubmit?.(); return service.close() })
+
+  // Hold initial submit to verify snapshot distinguishes dispatching vs confirmed sent.
+  holdNextSubmit = true
+  await f.send(service, "first", "Investigate login")
+  await until(() => f.store.get("user")?.intents[0]?.phase === "working")
+  const inFlight = await f.snap(service)
+  const firstMarker = inFlight.messages.find(m => m.kind === "dispatch" && m.sourceMessageId === "first")!
+  assert.equal(firstMarker.dispatching, true)
+  assert.equal(firstMarker.inputId, undefined)
+  releaseSubmit!()
+  await until(() => f.store.get("user")?.intents[0]?.phase === "sent")
+  const dispatched = await f.snap(service)
+  const confirmedMarker = dispatched.messages.find(m => m.kind === "dispatch" && m.sourceMessageId === "first")!
+  assert.equal(confirmedMarker.dispatching, undefined)
+  assert.ok(confirmedMarker.inputId)
+
+  const ticket = dispatched.tickets[0]!, sessionId = ticket.sessionId!
+  const submits = () => f.calls.filter(c => c.method === "_deskfleet/input/submit")
+  assert.equal(submits().length, 1)
+
+  // Arm a pending foreground question, then cancel the turn so the ticket becomes stopped.
+  await f.store.update("user", () => assert.fail(), state => {
+    state.rooms[0]!.pendingQuestion = { ticketId: ticket.id, optionDisposition: "continue", options: ["令牌缓存", "延迟获取"] }
+  })
+  f.emit(sessionId, "turn", { id: "t1", sessionId, runGeneration: 1, dispatchCommandId: "c1", initialInputId: confirmedMarker.inputId!, startedAt: time(), state: "cancelled" })
+  await until(async () => (await f.snap(service)).tickets[0]?.status === "stopped")
+  assert.equal(f.store.get("user")!.rooms[0]!.pendingQuestion, undefined)
+
+  // 1) Regular route / service #apply backstop blocks ordinary discussion from reopening the stopped ticket.
+  f.route(async ctx => ({ reason: "wrongly continue", actions: [{ kind: "continue", ticketId: ticket.id, prompt: ctx.text }] }))
+  await f.send(service, "discuss", "刚才为什么停了？")
+  await until(async () => (await f.snap(service)).messages.find(m => m.id === "discuss")?.state === "failed")
+  assert.match((await f.snap(service)).messages.find(m => m.id === "discuss")!.reason!, /stopped/i)
+  assert.equal((await f.snap(service)).tickets[0]?.status, "stopped")
+  assert.equal(submits().length, 1)
+
+  // 2) Direct @worker[...] shortcut blocks non-resume text on the stopped ticket.
+  await f.send(service, "addr-blocked", `@worker[team/machine/${sessionId}] 顺便解释一下原因`)
+  await until(async () => (await f.snap(service)).messages.find(m => m.id === "addr-blocked")?.state === "failed")
+  assert.match((await f.snap(service)).messages.find(m => m.id === "addr-blocked")!.reason!, /stopped/i)
+  assert.equal(submits().length, 1)
+
+  // 3) Quoted slash command without explicit resume intent is blocked on the stopped ticket.
+  await service.handle("_deskfleet/super-agent/send", {
+    workspaceId, messageId: "cmd-quoted-blocked", text: "/status", replyTo: "first",
+    command: { provider: "codex", ticketId: ticket.id, sessionId },
+  }, actor)
+  await until(async () => (await f.snap(service)).messages.find(m => m.id === "cmd-quoted-blocked")?.state === "failed")
+  assert.match((await f.snap(service)).messages.find(m => m.id === "cmd-quoted-blocked")!.reason!, /stopped/i)
+  assert.equal(submits().length, 1)
+
+  // 4) Unquoted slash command skips the stopped focus ticket and creates a fresh worker instead of reopening it.
+  await service.handle("_deskfleet/super-agent/send", {
+    workspaceId, messageId: "cmd-unquoted-fresh", text: "/plan new work", command: { provider: "codex" },
+  }, actor)
+  await until(() => f.store.get("user")?.intents.some(i => i.messageId === "cmd-unquoted-fresh" && i.phase === "sent") === true)
+  const afterCmd = await f.snap(service)
+  assert.equal(afterCmd.tickets.length, 2)
+  assert.equal(afterCmd.tickets[0]?.status, "stopped")
+  assert.notEqual(submits().at(-1)!.args.sessionId, sessionId)
+
+  // 5) Explicit resume via @worker[...] reopens the stopped ticket on its original Worker.
+  await f.send(service, "addr-resume", `@worker[team/machine/${sessionId}] 恢复刚才停掉的排查`)
+  await until(() => f.store.get("user")?.intents.some(i => i.messageId === "addr-resume" && i.phase === "sent") === true)
+  assert.equal(submits().at(-1)!.args.sessionId, sessionId)
+  assert.equal((await f.snap(service)).tickets[0]?.status, "queued")
+
+  // 6) Complete the resumed turn normally, then verify normal follow-up still works without resume keywords.
+  const resumedInputId = f.store.get("user")!.intents.find(i => i.messageId === "addr-resume")!.inputId!
+  f.emit(sessionId, "turn", { id: "t2", sessionId, runGeneration: 1, dispatchCommandId: "c2", initialInputId: resumedInputId, startedAt: time(), state: "completed" })
+  await until(async () => (await f.snap(service)).tickets[0]?.status === undefined)
+  f.route(async ctx => ({ reason: "normal follow-up", actions: [{ kind: "continue", ticketId: ticket.id, prompt: ctx.text }] }))
+  await f.send(service, "after-complete", "再补一条日志", workspaceId, "first")
+  await until(() => f.store.get("user")?.intents.some(i => i.messageId === "after-complete" && i.phase === "sent") === true)
+  assert.equal(submits().at(-1)!.args.sessionId, sessionId)
+})

@@ -200,6 +200,7 @@ export function projectSuperEvents(room: SuperRoom, ticket: StoredSuperTicket, e
       else {
         if (room.messages.some(m => m.workerEvent === "result" && m.sessionId === ticket.sessionId && m.turnId === turn.id)) continue
         ticket.status = turn.state === "completed" ? undefined : turn.state === "cancelled" ? "stopped" : "blocked"
+        if (ticket.status === "stopped" && room.pendingQuestion?.ticketId === ticket.id) room.pendingQuestion = undefined
         const output = ticket.output?.turnId === turn.id ? ticket.output.text.trim() : ""
         const message = turn.state === "completed" ? output || "The worker finished its turn. Its session contains the execution details."
           : turn.state === "cancelled" ? output : turn.error || `Worker turn ${turn.state}.`

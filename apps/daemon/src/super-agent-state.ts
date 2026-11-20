@@ -156,6 +156,7 @@ export function publicRoom(room: SuperRoom, coordinator: SuperCoordinator | unde
     const marker = markers.get(markerKey(intent.messageId, intent.ticketId))
     if (!marker) continue
     marker.canStop = intent.operation !== "stop" && intent.phase !== "failed" && intent.phase !== "withdrawn"
+    if (intent.operation !== "stop" && (intent.phase === "planned" || intent.phase === "working")) marker.dispatching = true
     if (intent.stop) marker.stopState = visibleStopState(intent.stop)
     if (intent.sharedTurn) marker.sharedTurn = true
     if (intent.inputId) marker.inputId = intent.inputId

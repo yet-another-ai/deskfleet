@@ -1,7 +1,7 @@
 import { resolve } from "node:path"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { GitStatusSnapshot } from "./git-protocol.ts"
-import type { SuperRouteResult } from "./super-agent-router.ts"
+import { hasExplicitResumeIntent, stoppedTicketContinuationError, type SuperRouteResult } from "./super-agent-router.ts"
 import type { SuperWorkspace } from "./super-agent-protocol.ts"
 import { errorText, type SuperRoom } from "./super-agent-state.ts"
 import { activeTurn, type SuperWorkers } from "./super-agent-worker.ts"
@@ -66,7 +66,8 @@ export async function resolveWorkerTarget({ target, prompt, actor, registration,
   }
   if (ticket) {
     if (ticket.executionWorkspaceId && ticket.executionWorkspaceId !== workspace.id) throw new Error("The ticket's execution workspace has changed.")
-    return { decision: { reason, actions: [{ kind: "continue", ticketId: ticket.id, prompt, delivery: "backlog" }] } }
+    if (ticket.status === "stopped" && !hasExplicitResumeIntent(prompt)) throw new Error(stoppedTicketContinuationError)
+    return { decision: { reason, actions: [{ kind: "continue", ticketId: ticket.id, prompt, delivery: "backlog", ...(ticket.status === "stopped" && { resumeStopped: true }) }] } }
   }
   return { decision: { reason, actions: [{ kind: "create", sessionId: session.id, title: session.title || prompt.slice(0, 100), scope: prompt, prompt }] }, historicalWorkspace: workspace }
 }

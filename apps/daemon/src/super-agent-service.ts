@@ -13,7 +13,7 @@ import { HistoricalSessionUnavailable, inspectHistoricalWorker, resolveWorkerTar
 import type { AgentActor, AgentReceipt, AgentSessionRecord } from "./agent-protocol.ts"
 import type { AgentConfiguration } from "./agent-configuration-protocol.ts"
 import { createSuperEvidence, superHistoryExcerpt } from "./super-agent-evidence.ts"
-import { attachedKeys, frontendContext, quotedAttachmentSource, ticketOfQuote, routeSuperMessage, type SuperDecisionModel, type SuperRouteResult } from "./super-agent-router.ts"
+import { allowsStoppedResume, attachedKeys, frontendContext, quotedAttachmentSource, stoppedTicketContinuationError, ticketOfQuote, routeSuperMessage, type SuperDecisionModel, type SuperRouteResult } from "./super-agent-router.ts"
 import { superRequestObject as object, superResourceId as identifier, parseSuperCommandTarget as commandTarget, superMessageText as text, superWorkerCommandName, superWorkerCommandTarget, type SuperCoordinatorOptions, type SuperHistorySource, type SuperSend, type SuperSnapshot, type SuperWorkerRequest, type SuperWorkspaceId } from "./super-agent-protocol.ts"
 import { dispatchRecovery, emptyState, errorText, missingCoordinatorProvider, missingWorkerProvider, note, publicRoom, roomFor, userFocus, type DispatchIntent, type SuperRoom, type SuperStateStore, type SuperUserState } from "./super-agent-state.ts"
 import { activeTurn, deliverSuperIntent, projectSuperEvents, type SuperWorkers } from "./super-agent-worker.ts"
@@ -563,6 +563,14 @@ export class SuperAgentService {
         if (!ticket.sessionId && !source.command && !providers.some(p => p.id === ticket.provider)) ticket.provider = this.#defaultProvider(room)
         if (source.correctedTicketId && ticket.id !== source.correctedTicketId) throw new Error("Routing disagreed with the user's correction. No work was sent.")
         if (chosen.has(ticket.id) && schedule.intents.some(intent => intent.ticketId === ticket!.id)) throw new Error("Duplicate worker action for a ticket")
+        const originalText = direct?.prompt ?? source.text
+        const quoted = source.replyTo ? room.messages.find(m => m.id === source.replyTo) : undefined
+        if (action.kind === "continue" && ticket.status === "stopped") {
+          const quote = source.correctedTicketId ? { ticketId: source.correctedTicketId } : quoted ? { ticketId: ticketOfQuote(room, quoted) } : undefined
+          if (!allowsStoppedResume(originalText, room.pendingQuestion, room.focusTicketId, quote, ticket.id)) {
+            throw new Error(stoppedTicketContinuationError)
+          }
+        }
         chosen.add(ticket.id)
         const priorAcceptance = ticket.latestAcceptance
         const priorAcceptanceMessageId = ticket.acceptanceMessageId
@@ -572,12 +580,10 @@ export class SuperAgentService {
         }
         const workerPrompt = text(action.prompt)
         // Preserve the original instruction and constraints even if the router paraphrased them.
-        const originalText = direct?.prompt ?? source.text
         const prompt = split ? [workerPrompt, source.context].filter(Boolean).join("\n\n") : action.kind === "stop" || workerPrompt === originalText && !source.context ? workerPrompt
           : [originalText, source.context ? `Handoff context:\n${source.context}` : "", workerPrompt !== originalText ? `Task details:\n${workerPrompt}` : ""].filter(Boolean).join("\n\n")
         // New workers cannot see the front desk. Carry the selected scope and the specific
         // quoted result (or cited ticket summary) alongside their assigned instruction.
-        const quoted = source.replyTo ? room.messages.find(m => m.id === source.replyTo) : undefined
         const reference = action.kind === "create" && ticket.referenceTicketId ? room.tickets.find(t => t.id === ticket!.referenceTicketId) : undefined
         const relevantQuote = !split || quoted?.ticketId === ticket.id || (reference && quoted?.ticketId === reference.id)
         const background = ((relevantQuote && quoted?.text) || reference?.summary || "").slice(0, 5000)
@@ -841,6 +847,7 @@ export class SuperAgentService {
               if (!t || t.status !== "queued" || t.lastEventSeq !== from || current.intents.some(i => i.ticketId === t.id && (i.phase === "planned" || i.phase === "working"))) return
               if (r.messages.some(m => m.workerEvent === "result" && m.sessionId === sessionId && m.turnId === last.id)) {
                 t.status = last.state === "completed" ? undefined : last.state === "cancelled" ? "stopped" : "blocked"
+                if (t.status === "stopped" && r.pendingQuestion?.ticketId === t.id) r.pendingQuestion = undefined
               }
             })
           }

@@ -76,8 +76,9 @@
     "progress": {
       "stopping": "Stopping…",
       "unconfirmed": "Stop not confirmed",
+      "dispatching": "Dispatching to Worker…",
       "waiting": "Waiting for the result…",
-      "queued": "Waiting to start…",
+      "queued": "Dispatched, waiting to start…",
       "working": "Working on this task…",
       "attention": "Waiting for your approval or reply…"
     },

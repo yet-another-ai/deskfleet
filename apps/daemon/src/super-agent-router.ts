@@ -31,7 +31,7 @@ export interface SuperRouteContext {
 export type SuperRouteAction =
   | { kind: "answer" | "clarify"; text: string; ticketId?: string; options?: string[]; optionDisposition?: "continue" }
   | { kind: "create"; title: string; scope: string; prompt: string; ticketId?: string; sessionId?: string; provider?: string; context?: "directory" }
-  | { kind: "continue"; ticketId: string; prompt: string; acceptanceUpdate?: string; delivery?: "backlog" | "steer" }
+  | { kind: "continue"; ticketId: string; prompt: string; acceptanceUpdate?: string; delivery?: "backlog" | "steer"; resumeStopped?: boolean }
   | { kind: "stop"; ticketId: string; prompt: string }
   | { kind: "handoff"; workspaceId: string; prompt: string; context: string }
 export interface SuperRouteResult { actions: SuperRouteAction[]; reason: string }
@@ -86,6 +86,49 @@ function requestFor(value: unknown, ctx: SuperRouteContext): SuperEvidenceReques
   return { kind, workspaceId, rootIndex, path, query, line: line as number | undefined }
 }
 
+export const stoppedTicketContinuationError = "This ticket was stopped. Explicitly ask to resume or rerun it before continuing."
+
+const resumeClauses = /[\r\n。！？!?;；，,]+/u
+const zhNegatedResume = /(?:不要|不用|不必|不再|不需要|不想|不打算|不准备|不准|不许|不得|(?<![能可])不(?:能|可以)?|别|勿|无需|无须|没必要|暂不|先不|还未|还没|没有|尚未|未|并非|不是|已经|已)\s*(?:去|再|继续|接着|帮我|给我|自动|直接|顺便|偷偷|擅自|隐式|把[^，,。！？!?]{1,16})?\s*$/u
+const enNegatedResume = /\b(?:don['’]?t|do\s+not|doesn['’]?t|does\s+not|didn['’]?t|did\s+not|never|not|no\s+need\s+to|without|avoid|stop|cancel|haven['’]?t|hasn['’]?t|won['’]?t|cannot|can['’]?t)\s+(?:[\w'-]+\s+){0,2}$/iu
+const nonCommandResumeClause = /(?:为什么|为何|为啥|怎么(?:没|还没|不)|要不要|是否(?:要|需要)|需不需要|该不该|应该.{0,12}吗|要(?:恢复|重跑|重启|重开|重新).{0,12}吗)|\b(?:why\b|should\s+(?:i|we)\b|do\s+(?:i|we)\s+need\s+to\b|has\s+it\s+(?:resumed|restarted|reopened)\b|is\s+it\s+(?:resumed|restarted|reopened)\b)/iu
+const resumeSignal = /恢复(?!正常|了(?:吗|没|没有)?(?:\s|$))|重跑|重新(?:跑|运行|执行|开始|启动|做|排查|检查|测试|验证|处理|试|打开|开启)|重启|重开|再(?:跑|运行|执行)(?:一[遍次下])?|再试一[次遍下]|(?:停掉|已停止|停止|暂停)(?:的|了)?.{0,8}(?:继续|接着)(?:跑|执行|运行|做|查|处理|完成)?|(?:继续|接着)(?:跑|执行|运行).{0,8}(?:停掉|已停止|停止|暂停)|\b(?:resume|re-?run|re-?start|re-?open|re-?execute|unpause)\b|\b(?:run|execute|start|try)\b(?:\s+[\w-]+){0,4}\s+\bagain\b|\bcontinue\s+(?:the\s+|this\s+)?stopped\b|\bpick\s+(?:this|it|that)\s+back\s+up\b/giu
+
+/** Require an explicit, non-negated user request to resume or rerun a stopped ticket. */
+export function hasExplicitResumeIntent(text: string): boolean {
+  for (const raw of text.split(resumeClauses)) {
+    const clause = raw.trim()
+    if (!clause || nonCommandResumeClause.test(clause)) continue
+    for (const match of clause.matchAll(resumeSignal)) {
+      const before = clause.slice(0, match.index)
+      if (!zhNegatedResume.test(before) && !enNegatedResume.test(before)) return true
+    }
+  }
+  return false
+}
+
+function matchPendingOption(question: SuperRouteContext["pendingQuestion"], text: string): string | undefined {
+  if (!question?.options.length) return
+  const trimmed = text.trim()
+  const index = /^[1-9]\d?$/u.test(trimmed) ? Number(trimmed) - 1 : question.options.findIndex(option => option.trim() === trimmed)
+  return question.options[index]
+}
+
+export function allowsStoppedResume(
+  text: string,
+  pendingQuestion: SuperRouteContext["pendingQuestion"] | undefined,
+  focusTicketId: string | undefined,
+  quote: { ticketId?: string } | undefined,
+  ticketId: string,
+): boolean {
+  if (hasExplicitResumeIntent(text)) return true
+  if (pendingQuestion?.ticketId === ticketId && (quote?.ticketId === ticketId || (!quote && focusTicketId === ticketId))) {
+    const selected = matchPendingOption(pendingQuestion, text)
+    if (selected && hasExplicitResumeIntent(selected)) return true
+  }
+  return false
+}
+
 function parseAction(value: unknown, ctx: SuperRouteContext, readSessions: Set<string>): ModelAction {
   const obj = record(value)
   const ticketId = obj.ticketId === undefined ? undefined : known(obj.ticketId, ctx.tickets, "ticket")
@@ -95,6 +138,9 @@ function parseAction(value: unknown, ctx: SuperRouteContext, readSessions: Set<s
       if (obj.options !== undefined && (!Array.isArray(obj.options) || !obj.options.length || obj.options.length > 12)) throw new Error("Invalid options")
       const options = (obj.options as unknown[] | undefined)?.map(item => string(item, "option", 1000))
       if (obj.optionDisposition !== undefined && (obj.optionDisposition !== "continue" || !ticketId || !options?.length)) throw new Error("Option continuation requires a ticket and in-scope choices")
+      if (obj.optionDisposition === "continue" && ctx.tickets.find(item => item.id === ticketId)?.status === "stopped") {
+        throw new Error("Stopped tickets cannot pre-authorize option continuation")
+      }
       return { kind: obj.kind, text: string(obj.text, "reply"), ticketId, options, optionDisposition: obj.optionDisposition }
     }
     case "create": {
@@ -107,8 +153,18 @@ function parseAction(value: unknown, ctx: SuperRouteContext, readSessions: Set<s
     case "continue": {
       if (!ticketId) throw new Error("Continuation requires a ticket")
       if (obj.delivery !== undefined && obj.delivery !== "backlog" && obj.delivery !== "steer") throw new Error("Unknown delivery")
+      if (obj.resumeStopped !== undefined && typeof obj.resumeStopped !== "boolean") throw new Error("Invalid resumeStopped")
+      const ticket = ctx.tickets.find(item => item.id === ticketId)!
+      if (ticket.status === "stopped") {
+        if (!allowsStoppedResume(ctx.text, ctx.pendingQuestion, ctx.focusTicketId, ctx.quote, ticketId)) {
+          throw new Error("Cannot reopen a stopped ticket unless the user explicitly asks to resume or rerun it. Answer, clarify, or create a new ticket instead.")
+        }
+        if (obj.resumeStopped !== true) {
+          throw new Error("Resuming a stopped ticket requires resumeStopped: true when the user explicitly asked to resume or rerun it.")
+        }
+      }
       const acceptanceUpdate = obj.acceptanceUpdate === undefined ? undefined : string(obj.acceptanceUpdate, "updated acceptance", 6000)
-      return { kind: "continue", ticketId, prompt: string(obj.prompt, "worker prompt"), acceptanceUpdate, delivery: obj.delivery }
+      return { kind: "continue", ticketId, prompt: string(obj.prompt, "worker prompt"), acceptanceUpdate, delivery: obj.delivery, ...(obj.resumeStopped ? { resumeStopped: true } : {}) }
     }
     case "stop":
       if (!ticketId) throw new Error("Stopping requires a ticket")
@@ -149,11 +205,10 @@ export function superCandidateCards(ctx: SuperRouteContext): SuperRouteTicket[] 
 
 function exactOption(ctx: SuperRouteContext): SuperRouteResult | undefined {
   const question = ctx.pendingQuestion
+  const ticket = question ? ctx.tickets.find(item => item.id === question.ticketId) : undefined
   if (!question || question.optionDisposition !== "continue" || !question.options.length || question.ticketId !== ctx.focusTicketId
-    || ctx.quote && ctx.quote.ticketId !== question.ticketId || !ctx.tickets.some(ticket => ticket.id === question.ticketId)) return
-  const text = ctx.text.trim()
-  const index = /^[1-9]\d?$/u.test(text) ? Number(text) - 1 : question.options.findIndex(option => option.trim() === text)
-  const selected = question.options[index]
+    || ctx.quote && ctx.quote.ticketId !== question.ticketId || !ticket || ticket.status === "stopped") return
+  const selected = matchPendingOption(question, ctx.text)
   if (selected === undefined) return
   return { reason: "The user selected an option from the foreground question.", actions: [{
     kind: "continue", ticketId: question.ticketId, prompt: `${ctx.text}\n\nSelected option: ${selected}`, delivery: "backlog",

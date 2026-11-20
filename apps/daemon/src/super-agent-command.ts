@@ -3,7 +3,7 @@ import type { ComposerSkillReference } from "./composer-reference-protocol.ts"
 import { selectedSkills } from "./super-agent-mentions.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import { superWorkerCommandName, type SuperWorkerCommandTarget } from "./super-agent-protocol.ts"
-import type { SuperRouteResult } from "./super-agent-router.ts"
+import { hasExplicitResumeIntent, stoppedTicketContinuationError, type SuperRouteResult } from "./super-agent-router.ts"
 import type { StoredSuperMessage, SuperRoom } from "./super-agent-state.ts"
 import type { SuperWorkers } from "./super-agent-worker.ts"
 
@@ -49,7 +49,10 @@ export async function routeWorkerCommand(workers: SuperWorkers, actor: AgentActo
       ...(target.provider === room.provider && room.workerSelection),
     })
   }
+  if (ticket?.status === "stopped" && !hasExplicitResumeIntent(source.text)) {
+    throw new Error(stoppedTicketContinuationError)
+  }
   return { reason: "Worker command", actions: [ticket
-    ? { kind: "continue", ticketId: ticket.id, prompt: source.text, delivery: "backlog" }
+    ? { kind: "continue", ticketId: ticket.id, prompt: source.text, delivery: "backlog", ...(ticket.status === "stopped" && { resumeStopped: true }) }
     : { kind: "create", title: name ? `/${name}` : `$${skills[0]!.name}`, scope: source.text, prompt: source.text, provider: target.provider }] }
 }

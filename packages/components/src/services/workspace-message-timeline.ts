@@ -134,7 +134,7 @@ export function groupWorkspaceApprovals(rows: WorkspaceRow[]): TranscriptGroup[]
 }
 
 interface ProgressStep {
-  state: "routing" | "queued" | "working" | "attention" | "waiting" | "stopping" | "stopped" | "unconfirmed"
+  state: "routing" | "dispatching" | "queued" | "working" | "attention" | "waiting" | "stopping" | "stopped" | "unconfirmed"
   title?: string
   ticketId?: string
   canStop?: boolean
@@ -210,6 +210,10 @@ function replyProgress(messages: SuperMessage[], tickets: Map<string, SuperTicke
         const target = { ticketId: id, title: assigned.length > 1 ? ticket.title : undefined, canStop: marker?.canStop, sharedTurn: marker?.sharedTurn, turnId: marker?.turnId }
         if (marker?.stopState) {
           if (marker.stopState !== "finished") steps.push({ ...target, state: marker.stopState })
+          continue
+        }
+        if (marker?.dispatching) {
+          steps.push({ ...target, state: "dispatching" })
           continue
         }
         if (source.state === "uncertain" && marker?.canStop && dispatch?.delivery) {
