@@ -52,6 +52,31 @@ async function render() {
   return view
 }
 
+test("changes iOS interface text size live, restores it on restart, and can reset it", async () => {
+  const applyScale = vi.fn()
+  configureClient({ ...host, platform: "web", mobile: true, appearance: undefined, setInterfaceTextScale: applyScale })
+  const selector = '[data-control-name="appearance-text-size"]'
+  const wrapper = await render()
+  expect(wrapper.get(selector).text()).toContain("100% (default)")
+  await selectOption(wrapper, selector, "130%")
+  expect(applyScale).toHaveBeenLastCalledWith(130)
+  wrapper.unmount()
+  disposePinia(pinia)
+  pinia = createPinia()
+  setActivePinia(pinia)
+  applyScale.mockClear()
+  const reopened = await render()
+  expect(applyScale).toHaveBeenCalledWith(130)
+  expect(reopened.get(selector).text()).toContain("130%")
+  await selectOption(reopened, selector, "100% (default)")
+  expect(applyScale).toHaveBeenLastCalledWith(100)
+})
+
+test("hides the text size picker on clients without native text scaling", async () => {
+  const wrapper = await render()
+  expect(wrapper.find('[data-control-name="appearance-text-size"]').exists()).toBe(false)
+})
+
 test("changes theme through preview radios and translates their labels live", async () => {
   const wrapper = await render()
   const theme = (value: string) => wrapper.get(`[data-appearance-theme="${value}"]`)

@@ -12,6 +12,7 @@ export function isReadingSpotlightStyle(value: unknown): value is ReadingSpotlig
 }
 
 export const DEFAULT_THEME_HUE = 272
+export const INTERFACE_TEXT_SCALES = [85, 100, 115, 130, 150] as const
 
 export interface AppearanceSettings {
   language: "system" | AppLocale
@@ -22,6 +23,8 @@ export interface AppearanceSettings {
   themeHueDynamic: boolean
   /** Empty uses the application default; otherwise a CSS font-family list. */
   interfaceFont: string
+  /** Device-local percentage on clients supporting interface text scaling. */
+  interfaceTextScale?: number
   terminalFont: string
   terminalLigatures: boolean
   /** Whether light and dark UI modes use separate terminal presets and color overrides. */
@@ -105,6 +108,8 @@ export function validateAppearanceSettings(value: unknown): AppearanceSettings {
     themeHue: "themeHue" in value && typeof value.themeHue === "number" ? value.themeHue : null,
     themeHueDynamic: "themeHueDynamic" in value && value.themeHueDynamic === true,
     interfaceFont: value.interfaceFont,
+    ...("interfaceTextScale" in value && INTERFACE_TEXT_SCALES.some(scale => scale === value.interfaceTextScale)
+      ? { interfaceTextScale: value.interfaceTextScale as number } : {}),
     terminalFont: value.terminalFont,
     terminalLigatures: "terminalLigatures" in value && value.terminalLigatures === true,
     terminalSeparateThemes: "terminalSeparateThemes" in value && value.terminalSeparateThemes === true,

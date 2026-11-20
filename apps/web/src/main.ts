@@ -35,6 +35,10 @@ if (Capacitor.isNativePlatform()) {
   adapter.haptic = kind => { void DeskFleetBridge.haptic({ kind }) }
 }
 if (Capacitor.getPlatform() === "ios") {
+  adapter.remoteWorkspaceAgent = true
+  adapter.setInterfaceTextScale = percent => {
+    document.documentElement.style.setProperty("-webkit-text-size-adjust", `${percent}%`)
+  }
   adapter.outlineAudio = createCapacitorOutlineAudioApi()
 }
 if (Capacitor.isNativePlatform() && adapter.central) {
