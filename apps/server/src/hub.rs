@@ -136,58 +136,73 @@ impl Hub {
     ) -> Result<()> {
         // Serialize local registration with its SQL claim, so two local
         // reconnects cannot leave the database pointing at a replaced sender.
-        let _registration = self.registration.lock().await;
+        let registration = self.registration.lock().await;
         // Install locally before publishing the route: once another node sees it,
         // its requests must already have a local destination.
         if let Some(cluster) = &self.cluster {
             cluster.ensure_ready()?;
         }
-        let previous = self.inner.lock().await.daemons.insert(
-            registration_id.into(),
-            Daemon {
-                team_id: team_id.into(),
-                public_machine_id: public_machine_id.into(),
-                connection_id: connection_id.into(),
-                sender,
-                shutdown,
-            },
-        );
-        if let Some(previous) = previous {
-            let _ = previous.shutdown.send(Some(1012));
-        }
-        if let Some(cluster) = &self.cluster {
-            let claimed = cluster
-                .store
-                .claim_machine_route(registration_id, &cluster.id, connection_id)
-                .await;
-            let previous = match claimed {
-                Ok(previous) => previous,
-                Err(error) => {
-                    self.remove_local_daemon(registration_id, connection_id)
-                        .await;
-                    return Err(error.into());
-                }
-            };
-            if let Some(previous) = previous.filter(|r| r.node_id != cluster.id) {
-                self.publish(
-                    &previous.node_id,
-                    &Envelope::Replace {
-                        registration_id: registration_id.into(),
-                        connection_id: previous.connection_id,
-                    },
-                )
-                .await?;
-            }
-            // A concurrent reconnect may have won while this registration awaited SQL.
-            if !self.is_current(registration_id, connection_id).await {
+        let forwarded = {
+            let mut routes = self.inner.lock().await;
+            let previous = routes.daemons.insert(
+                registration_id.into(),
+                Daemon {
+                    team_id: team_id.into(),
+                    public_machine_id: public_machine_id.into(),
+                    connection_id: connection_id.into(),
+                    sender,
+                    shutdown,
+                },
+            );
+            // Replacing the local entry fences the old socket immediately.
+            // Retire its requests here, before its later cleanup sees the replacement.
+            previous.map_or_else(Vec::new, |daemon| {
+                routes.retire_daemon(registration_id, daemon)
+            })
+        };
+        let result = self
+            .claim_daemon_route(registration_id, connection_id)
+            .await;
+        drop(registration);
+        self.fail_forwarded_requests(forwarded).await;
+        result
+    }
+
+    async fn claim_daemon_route(&self, registration_id: &str, connection_id: &str) -> Result<()> {
+        let Some(cluster) = &self.cluster else {
+            return Ok(());
+        };
+        let claimed = cluster
+            .store
+            .claim_machine_route(registration_id, &cluster.id, connection_id)
+            .await;
+        let previous = match claimed {
+            Ok(previous) => previous,
+            Err(error) => {
                 self.remove_local_daemon(registration_id, connection_id)
                     .await;
-                cluster
-                    .store
-                    .release_machine_route(registration_id, &cluster.id, connection_id)
-                    .await?;
-                return Err(ApiError::unavailable());
+                return Err(error.into());
             }
+        };
+        if let Some(previous) = previous.filter(|r| r.node_id != cluster.id) {
+            self.publish(
+                &previous.node_id,
+                &Envelope::Replace {
+                    registration_id: registration_id.into(),
+                    connection_id: previous.connection_id,
+                },
+            )
+            .await?;
+        }
+        // A concurrent reconnect may have won while this registration awaited SQL.
+        if !self.is_current(registration_id, connection_id).await {
+            self.remove_local_daemon(registration_id, connection_id)
+                .await;
+            cluster
+                .store
+                .release_machine_route(registration_id, &cluster.id, connection_id)
+                .await?;
+            return Err(ApiError::unavailable());
         }
         Ok(())
     }

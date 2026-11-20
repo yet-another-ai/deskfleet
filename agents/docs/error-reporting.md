@@ -134,11 +134,18 @@ This reporting path does not retry requests or change proxy/network selection.
 `withCentralRequestTrigger` creates immutable API views with `user`, `background`,
 or `unknown` attribution; concurrent requests do not share mutable trigger state.
 Automatic account/startup/reconnect loads, GitHub status polling, pinned-session
-metadata, scheduled-task polling, and session-read acknowledgements opt into
-`background`. Account actions, machine/workspace/provider/session mutations,
-terminal actions, and manual scheduled-task refreshes opt into `user`. Calls that
-can serve both automatic and interactive reads keep `unknown`; a GET or RPC name
-alone does not establish that a request runs in the background.
+metadata, terminal list refreshes, scheduled-task polling, and session-read
+acknowledgements opt into `background`. Account actions,
+machine/workspace/provider/session mutations, terminal actions, and manual
+scheduled-task refreshes opt into `user`. Calls that can serve both automatic
+and interactive reads keep `unknown`; a GET or RPC name alone does not establish
+that a request runs in the background.
+
+A background `terminalList` HTTP 503 with the application code `machine_offline`
+is a normal refresh outcome when the control route disappears. It produces no
+Sentry event. HTTP 503 without that code, `machine_busy`, and HTTP 504 follow
+normal reporting. The caller still receives the failure and retains its cached
+terminal list until the next successful refresh.
 
 Only handled background network/timeouts, HTTP 429, and HTTP 5xx are collapsed.
 The first error is sent immediately. Matching failures within the next minute

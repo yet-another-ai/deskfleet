@@ -5,7 +5,7 @@ import type { AccountUser, CentralApi } from "@deskfleet/client/central"
 import type { DesktopErrorReportingContext } from "@deskfleet/client/error-reporting-context"
 import { CentralRequestError } from "@deskfleet/client/request-diagnostics"
 import { parseSentryDsn } from "@deskfleet/client/sentry-config"
-import { prepareCentralRequest } from "./central-request-event.ts"
+import { isBackgroundTerminalOffline, prepareCentralRequest } from "./central-request-event.ts"
 import { CentralRequestReports } from "./central-request-reports.ts"
 
 // One SDK per document, including the independently mounted MachineSurface apps.
@@ -89,6 +89,7 @@ export function setErrorReportingUser(user?: Pick<AccountUser, "id" | "email">):
 /** Report handled transport failures while the original, bounded diagnostics still exist. */
 export function captureCentralRequestError(error: unknown): void {
   if (!client || !(error instanceof CentralRequestError)) return
+  if (isBackgroundTerminalOffline(error.diagnostics)) return
   // Expected HTTP rejections belong to their UI handlers. Unhandled ones still
   // reach the global integration with the same diagnostics.
   if (error.diagnostics.kind === "cancelled" || error.diagnostics.kind === "http" && error.diagnostics.status! < 500 && error.diagnostics.status !== 429) return

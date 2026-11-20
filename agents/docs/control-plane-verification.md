@@ -75,6 +75,7 @@ identical.
 | --- | --- | --- |
 | `specs/grant_lifecycle.qnt` | 1 client, 1 daemon, 2 peers | 6 steps |
 | `specs/route_fence.qnt` | 2 API nodes, 1 registration, 2 peers | 6 steps |
+| `specs/rpc_replacement.qnt` | 1 registration, 2 sockets on one API node, 2 RPCs with local or forwarded callers | 10 steps |
 | `specs/mux_streams.qnt` | 1 peer, 2 logical streams | 6 steps |
 | `specs/link_liveness.qnt` | 1 client socket, 1 daemon socket, 1 peer, 2 identities each | 6 steps |
 | `specs/credential_close.qnt` | 1 daemon socket, 1 peer, 2 credential generations | 6 steps |
@@ -271,6 +272,27 @@ Named runs: `stale_identity_cannot_fence_the_new_route`,
 The identity, lease, and lost-inbox runs are model runs until a trace shows
 the hub or peer routes can apply a stale identity, use a socket after lease
 loss, or rewrite a binding after a dropped inbox message.
+
+## In-flight RPCs during socket replacement
+
+`specs/rpc_replacement.qnt` checks a successful daemon reconnect to the same
+API instance. It separates selecting a route, admitting the RPC under the
+registration gate, replacing the local socket, publishing the new route, and
+delivering the failure to a forwarded caller. A request that selected the old
+route and reaches the gate after replacement gets `machine_offline`. A request
+already delivered to the old socket leaves the pending set during replacement.
+Old-socket cleanup can unpublish the old route before the new claim completes.
+After publication, late replies and cleanup leave the new route and its requests
+alone.
+Node and inbox failures are covered by the route model and the RPC deadline.
+
+| Run | Implementation evidence |
+| --- | --- |
+| `replacement_retires_local_and_forwarded_rpcs` | `same_node_replacement_retires_old_rpc_before_socket_cleanup` in `apps/server/src/hub/cleanup_tests.rs` and `postgres_same_node_replacement_retires_forwarded_rpc_before_socket_cleanup` in `apps/server/src/realtime_tests.rs`. |
+| `registration_gate_blocks_admission_during_replacement`, `stale_route_admission_rejects_when_gate_opens` | `Hub::add_daemon` holds the registration gate through the new route claim. `Hub::send_current` checks the connection under that gate before enqueueing. |
+| `old_cleanup_can_unpublish_displaced_route_before_claim`, `no_route_can_be_selected_in_the_gap` | `Hub::remove_daemon` releases the matching connection in PostgreSQL. A request that observes no route gets `machine_offline`. |
+| `late_old_replies_and_cleanup_preserve_new_rpc` | The local replacement test attempts to deliver replies from the old connection to both requests and checks that the new request succeeds after old-socket cleanup. |
+| `completed_rpc_survives_replacement` | `Hub::response` removes a completed request from the pending set before sending its result. Replacement acts on the remaining entries. |
 
 ## Mux streams
 

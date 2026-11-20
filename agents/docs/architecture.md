@@ -152,11 +152,16 @@ client events, and revocation notices use the same routing. An HTTP request and
 the daemon or client socket it addresses can land on different instances, without
 load-balancer affinity or a separate message broker.
 
-Machine reconnection atomically replaces the route. Connection identities fence
-late responses and disconnect cleanup from the old socket. A database failure
-or expired process lease stops that process from using its local sockets as
-authority. Closing signaling for recovery does not revoke an already authorized
-WebRTC connection or stop the daemon's execution.
+Machine reconnection atomically replaces the route. When an API instance
+replaces its own daemon socket, it retires RPCs already bound to the old
+connection as `503 machine_offline`, including requests forwarded by other API
+instances. The replacement accepts fresh work immediately after it becomes
+current. Connection identities fence late responses and disconnect cleanup from
+the old socket. The daemon may already have applied a command when its connection
+is replaced. Callers use operation receipts for commands that support them.
+A database failure or expired process lease stops that process from using its
+local sockets as authority. Closing signaling for recovery does not revoke an
+already authorized WebRTC connection or stop the daemon's execution.
 
 Control-plane congestion is scoped to its work, not interpreted as Machine
 offline. Each socket coalesces catalog, roster, and presence invalidations

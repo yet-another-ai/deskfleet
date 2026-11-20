@@ -479,6 +479,9 @@ quint verify specs/route_fence.qnt --max-steps 6 --invariants \
   inv_route_identity inv_authority_follows_lease inv_snapshot_before_grant \
   inv_reconcile_closes_captured inv_one_snapshot inv_queue_bounded \
   inv_offer_stable inv_route_survives inv_inbox
+quint verify specs/rpc_replacement.qnt --max-steps 10 --invariants \
+  inv_pending_on_current_socket inv_reply_matches_admission \
+  inv_forwarded_failure_belongs_to_displaced_socket inv_old_close_keeps_new_route
 quint verify specs/mux_streams.qnt --max-steps 6 --invariants \
   inv_grant_stable inv_release_closes_streams inv_legacy_before_business \
   inv_accepted_work_survives

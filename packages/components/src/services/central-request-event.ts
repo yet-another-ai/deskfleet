@@ -11,11 +11,15 @@ export function centralRequestFingerprint(diagnostics: CentralRequestDiagnostics
   return ["central-request", transport, method, route, rpcMethod ?? "", kind, phase, failureIdentity(diagnostics).failure]
 }
 
+export function isBackgroundTerminalOffline({ trigger, rpcMethod, kind, status, apiErrorCode }: CentralRequestDiagnostics): boolean {
+  return trigger === "background" && rpcMethod === "terminalList" && kind === "http" && status === 503 && apiErrorCode === "machine_offline"
+}
+
 export function prepareCentralRequest(event: Event, hint: EventHint): Event | null {
   const error = hint.originalException
   if (!(error instanceof CentralRequestError)) return event
   const { method, route, rpcMethod, elapsedMs, causes, kind, phase, status, apiErrorCode, transport, trigger = "unknown", online, visibility } = error.diagnostics
-  if (kind === "cancelled") return null
+  if (kind === "cancelled" || isBackgroundTerminalOffline(error.diagnostics)) return null
   const { codes, failure } = failureIdentity(error.diagnostics)
   const exception = event.exception?.values?.at(-1)
   if (exception) {
