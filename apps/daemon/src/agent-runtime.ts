@@ -14,7 +14,7 @@ import { withRestoredSessionMode } from "@deskfleet/agent-core"
 import { AgentElicitations } from "./agent-elicitations.ts"
 import type { AgentMcp, AgentMcpLease } from "./agent-mcp.ts"
 import type { TerminalSessions } from "./terminals.ts"
-import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
+import { consumeTurn, settleUndispatchedTurn, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
 import { subagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
 import { prepareWorktreeBranchPrompt, providerPromptContent } from "./worktree-branch-naming.ts"
@@ -606,10 +606,17 @@ export class AgentRuntime {
       if (!supportsSteering(connection.initialization)) throw new Error("This agent does not support steering")
       const input = await this.journal.serial(this.sessionId, async () => {
         const snapshot = await this.journal.read(this.sessionId)
+        if (snapshot.turns.find(turn => turn.id === active.turn.id)?.state === "cancelling") return
         const input = this.#claim(snapshot, inputId, command, true)
         await this.journal.commit(snapshot, { inputs: [input], command, events: [this.journal.event(this.sessionId, "input", input)] })
         return input
       })
+      if (!input) {
+        // A stop was committed before this steer could join. Use the normal inactive-turn fallback.
+        await active.completion
+        await this.#launch(inputId, command, true)
+        return
+      }
       const session = await this.journal.session(this.sessionId)
       requireActiveSession(session)
       if (!this.running) throw new Error("Agent stopped before delivery")
@@ -695,10 +702,9 @@ export class AgentRuntime {
     })().then(
       result => this.#finish(turn, inputId, command, result),
       async error => {
-        if (error instanceof TurnAdmissionBlocked) {
-          this.#quotaPaused = true
-          await pauseTurn(this.journal, turn, command, error)
-        } else await this.#finish(turn, inputId, command, undefined, error, sent)
+        const outcome = sent ? undefined : await settleUndispatchedTurn(this.journal, turn, command, error)
+        if (outcome === "paused") this.#quotaPaused = true
+        if (!outcome) await this.#finish(turn, inputId, command, undefined, error, sent)
       },
     ).catch(error => console.error("Could not persist Agent turn completion", error)).finally(() => {
       if (this.#active?.turn.id === turn.id) this.#active = undefined

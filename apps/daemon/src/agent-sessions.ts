@@ -26,7 +26,7 @@ import { prepareGitWorkspace } from "./git-preparation.ts"
 import type { GitPreparedRevision } from "./git-protocol.ts"
 import { ComposerReferences } from "./composer-references.ts"
 import {
-  autoApprovePermission,
+  autoApprovePermission, turnSteering,
   type AgentActor, type AgentCommand, type AgentEvent, type AgentInput, type AgentMethod, type AgentPermission, type AgentPreview, type AgentReceipt, type AgentSnapshot,
 } from "./agent-protocol.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
@@ -938,6 +938,9 @@ export class AgentSessions {
       requireActiveSession(snapshot.session)
       const previous = snapshot.turns.find(turn => turn.id === turnId)
       if (!previous) throw new Error("Turn was not found")
+      if (command.params.requireUnshared === true && liveTurn(previous.state) && turnSteering(snapshot.inputs, turnId)) {
+        throw new Error("Another input is joining or sharing this turn")
+      }
       const turn = liveTurn(previous.state) ? { ...previous, state: "cancelling" as const } : previous
       await this.journal.commit(snapshot, { turns: [turn], command: { ...command, status: "completed", result: receipt, completedAt: timestamp() }, events: [this.journal.event(sessionId, "turn", turn)] })
     })

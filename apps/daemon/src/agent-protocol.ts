@@ -104,6 +104,13 @@ export interface AgentInput {
   error?: string
 }
 
+/** A steer on the wire may still join this turn or fall back to its own turn. */
+export function turnSteering(inputs: AgentInput[], turnId: string): "shared" | "pending" | undefined {
+  if (inputs.some(input => input.turnId === turnId && input.actualDelivery === "steer")) return "shared"
+  if (inputs.some(input => input.state === "dispatching" && input.requestedDelivery === "steer" && !input.turnId &&
+    (!input.requestedTurnId || input.requestedTurnId === turnId))) return "pending"
+}
+
 export interface AgentTurn {
   id: string
   sessionId: string
@@ -231,7 +238,7 @@ export interface AgentMethods {
   "_deskfleet/input/steer": { params: AgentMutation & { inputId: string; turnId: string }; result: AgentReceipt }
   "_deskfleet/input/withdraw": { params: AgentMutation & { inputId: string }; result: AgentReceipt }
   "_deskfleet/input/retry": { params: AgentMutation & { inputId: string }; result: AgentReceipt }
-  "_deskfleet/turn/cancel": { params: AgentMutation & { turnId: string }; result: AgentReceipt }
+  "_deskfleet/turn/cancel": { params: AgentMutation & { turnId: string; requireUnshared?: boolean }; result: AgentReceipt }
   "_deskfleet/permission/respond": { params: AgentMutation & { permissionId: string; optionId: string }; result: AgentPermission }
   "_deskfleet/elicitation/respond": { params: AgentMutation & { elicitationId: string; response: CreateElicitationResponse }; result: AgentElicitation }
   "_deskfleet/session/resume": { params: AgentMutation; result: AgentSnapshot }

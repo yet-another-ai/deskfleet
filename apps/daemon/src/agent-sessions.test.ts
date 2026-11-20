@@ -1050,10 +1050,32 @@ test("steering consumes a selected candidate once and keeps its author separate 
   assert.equal(input.turnId, turn.id)
   assert.deepEqual(f.provider.steers, ["change direction"])
   assert.equal(state.turns.filter(turn => turn.consumed).length, 1, "current-turn steering does not consume another turn")
+  await assert.rejects(f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId: turn.id, requireUnshared: true }, f.actor), /sharing this turn/)
+  assert.equal(f.provider.cancelCount, 0)
   f.provider.finish()
   await until(f.read, state => state.turns.every(turn => turn.state === "completed"))
   await delay(30)
   assert.deepEqual(f.provider.prompts, ["hold"])
+})
+
+test("a steer arriving after an exclusive stop starts its own turn", async t => {
+  const f = await setup(t)
+  await f.submit("original").result
+  const started = await until(f.read, () => f.provider.prompts.length === 1)
+  const turnId = started.turns[0]!.id
+  const finish = f.provider.finish.bind(f.provider)
+  f.provider.finish = () => {} // The provider acknowledges cancellation before ending the prompt.
+  try {
+    await f.service.handle("_deskfleet/turn/cancel", { sessionId: f.sessionId, operationId: randomUUID(), turnId, requireUnshared: true }, f.actor)
+    const second = await f.submit("independent follow-up", f.bob, "steer", turnId).result
+    await until(f.read, state => state.inputs.some(input => input.id === second.inputId && input.state === "dispatching"))
+    finish("cancelled")
+    const next = await until(f.read, () => f.provider.prompts.length === 2)
+    assert.equal(next.turns[0]?.state, "cancelled")
+    assert.equal(next.turns[1]?.initialInputId, second.inputId)
+    assert.deepEqual(f.provider.steers, [])
+    assert.deepEqual(f.provider.prompts, ["original", "independent follow-up"])
+  } finally { f.provider.finish = finish; finish() }
 })
 
 for (const direct of [false, true]) {
