@@ -297,6 +297,24 @@ pub fn check_version_floor(
     Ok(true)
 }
 
+/// Returns `true` when `desktop-service.installed.json` is missing, unreadable,
+/// has a different digest, or records an older version than the verified
+/// installed binary so retries always lock in the latest anti-downgrade floor.
+#[must_use]
+pub fn should_update_installed_record(
+    existing: Option<&InstalledRecord>,
+    candidate: &SemVer,
+    candidate_sha256: &str,
+) -> bool {
+    let Some(record) = existing else {
+        return true;
+    };
+    if record.sha256 != candidate_sha256 {
+        return true;
+    }
+    SemVer::from_str(&record.version).map_or(true, |recorded| recorded < *candidate)
+}
+
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -434,6 +452,56 @@ mod tests {
                 .kind(),
             io::ErrorKind::PermissionDenied
         );
+    }
+
+    #[test]
+    fn installed_record_is_healed_when_missing_mismatched_or_behind_verified_version() {
+        let v_old = SemVer::from_str("0.20.0").unwrap();
+        let v_new = SemVer::from_str("0.21.0").unwrap();
+        let old_hash = "a".repeat(64);
+        let new_hash = "b".repeat(64);
+
+        assert!(should_update_installed_record(None, &v_new, &new_hash));
+        assert!(should_update_installed_record(
+            Some(&InstalledRecord {
+                version: "0.20.0".to_owned(),
+                sha256: old_hash.clone(),
+            }),
+            &v_new,
+            &new_hash,
+        ));
+        assert!(should_update_installed_record(
+            Some(&InstalledRecord {
+                version: "0.20.0".to_owned(),
+                sha256: new_hash.clone(),
+            }),
+            &v_new,
+            &new_hash,
+        ));
+        assert!(should_update_installed_record(
+            Some(&InstalledRecord {
+                version: "not-semver".to_owned(),
+                sha256: new_hash.clone(),
+            }),
+            &v_new,
+            &new_hash,
+        ));
+        assert!(!should_update_installed_record(
+            Some(&InstalledRecord {
+                version: "0.21.0".to_owned(),
+                sha256: new_hash.clone(),
+            }),
+            &v_new,
+            &new_hash,
+        ));
+        assert!(!should_update_installed_record(
+            Some(&InstalledRecord {
+                version: "0.21.0".to_owned(),
+                sha256: new_hash.clone(),
+            }),
+            &v_old,
+            &new_hash,
+        ));
     }
 
     #[test]

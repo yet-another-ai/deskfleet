@@ -22,8 +22,8 @@ use windows::core::{PCWSTR, PWSTR};
 use super::identity::{pipe_client, require_console, require_system};
 use super::install::{
     SetupLock, configure_desktop_service, installed_version_floor, manager, open_named,
-    prepare_directory, protect, query, reject_reparse, setup_failure, start_service, stop,
-    wait_state, write_installed_record,
+    prepare_directory, protect, query, read_installed_record, reject_reparse, setup_failure,
+    start_service, stop, write_installed_record,
 };
 use super::{
     BUNDLED_MANIFEST_FILE, MAINTENANCE_PIPE, MAINTENANCE_SERVICE_NAME, Pipe, SERVICE_NAME, denied,
@@ -32,7 +32,7 @@ use super::{
 use crate::install_files::PreparedInstall;
 use crate::manifest::{
     InstalledRecord, MAX_SERVICE_BINARY_SIZE, ServiceManifest, check_version_floor, encode_hex,
-    sha256_file, trusted_public_keys, verify_manifest,
+    sha256_file, should_update_installed_record, trusted_public_keys, verify_manifest,
 };
 
 const MAX_MESSAGE: usize = 16 * 1024;
@@ -286,6 +286,17 @@ fn handle_request(pipe: &mut Pipe) -> io::Result<(bool, String)> {
     };
     if !needs_replace {
         let _ = fs::remove_file(&staging);
+        let existing_record = read_installed_record().ok().flatten();
+        if should_update_installed_record(
+            existing_record.as_ref(),
+            &candidate_version,
+            &actual_sha256,
+        ) {
+            write_installed_record(&InstalledRecord {
+                version: manifest.version.clone(),
+                sha256: actual_sha256,
+            })?;
+        }
         return Ok((false, manifest.version));
     }
 
@@ -304,6 +315,12 @@ fn handle_request(pipe: &mut Pipe) -> io::Result<(bool, String)> {
         if was_running {
             start_service(&desktop_service)?;
         }
+        // Persist the new anti-downgrade floor before deleting the recovery
+        // copy so a record write failure rolls back the binary cleanly.
+        write_installed_record(&InstalledRecord {
+            version: manifest.version.clone(),
+            sha256: actual_sha256,
+        })?;
         Ok(())
     })();
     if let Err(failure) = replace_result {
@@ -318,10 +335,6 @@ fn handle_request(pipe: &mut Pipe) -> io::Result<(bool, String)> {
         return Err(setup_failure(failure, recovery));
     }
     files.commit()?;
-    write_installed_record(&InstalledRecord {
-        version: manifest.version.clone(),
-        sha256: actual_sha256,
-    })?;
     Ok((true, manifest.version))
 }
 
@@ -377,8 +390,7 @@ pub(super) fn request_update() -> io::Result<()> {
     )?
     .ok_or_else(|| io::Error::other("Windows maintenance service is not installed"))?;
 
-    let pid = start_on_demand_service(&service)?;
-    let mut pipe = Pipe::open(MAINTENANCE_PIPE, pid)?;
+    let mut pipe = connect_on_demand_service(&service)?;
     pipe.write_all(&HANDSHAKE_MAGIC)?;
     write_json(&mut pipe, &MaintenanceRequest { manifest })?;
 
@@ -414,16 +426,79 @@ pub(super) fn request_update() -> io::Result<()> {
     Ok(())
 }
 
-fn start_on_demand_service(service: &super::install::ServiceHandle) -> io::Result<u32> {
-    let deadline = Instant::now() + Duration::from_secs(20);
+#[derive(Debug, PartialEq, Eq)]
+enum OnDemandAction {
+    Start,
+    Connect(u32),
+    Wait,
+    Failed(u32),
+}
+
+fn decide_on_demand_action(
+    state: SERVICE_STATUS_CURRENT_STATE,
+    pid: u32,
+    win32_exit_code: u32,
+    started_by_us: bool,
+) -> OnDemandAction {
+    match state {
+        SERVICE_RUNNING if pid != 0 => OnDemandAction::Connect(pid),
+        SERVICE_STOPPED if started_by_us && win32_exit_code != 0 => {
+            OnDemandAction::Failed(win32_exit_code)
+        }
+        SERVICE_STOPPED => OnDemandAction::Start,
+        _ => OnDemandAction::Wait,
+    }
+}
+
+fn connect_on_demand_service(service: &super::install::ServiceHandle) -> io::Result<Pipe> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut started_by_us = false;
     loop {
         let state = query(service)?;
-        if state.dwCurrentState == SERVICE_STOPPED {
-            // SAFETY: The handle owns SERVICE_START and accepts no arguments.
-            match unsafe { StartServiceW(service.0, None) }.map_err(error) {
-                Ok(()) => break,
-                Err(error) if error.raw_os_error() == Some(1056) => {}
-                Err(error) => return Err(error),
+        match decide_on_demand_action(
+            state.dwCurrentState,
+            state.dwProcessId,
+            state.dwWin32ExitCode,
+            started_by_us,
+        ) {
+            OnDemandAction::Connect(pid) => match Pipe::open(MAINTENANCE_PIPE, pid) {
+                Ok(pipe) => return Ok(pipe),
+                Err(error) => {
+                    // The single-shot service may have just finished serving
+                    // another per-user caller and exited (or restarted with a
+                    // new PID). Retry within the shared deadline when the
+                    // service state moved on; surface hard access errors.
+                    let latest = query(service)?;
+                    let service_moved_on =
+                        latest.dwCurrentState != SERVICE_RUNNING || latest.dwProcessId != pid;
+                    let retryable = service_moved_on
+                        || matches!(error.raw_os_error(), Some(2 | 231 | 232 | 233));
+                    if !retryable {
+                        return Err(error);
+                    }
+                    started_by_us = false;
+                }
+            },
+            OnDemandAction::Start => {
+                // SAFETY: The handle owns SERVICE_START and accepts no arguments.
+                match unsafe { StartServiceW(service.0, None) }.map_err(error) {
+                    Ok(()) => {
+                        started_by_us = true;
+                    }
+                    Err(error) if error.raw_os_error() == Some(1056) => {
+                        // Another instance is already running or starting; the
+                        // next iteration observes SERVICE_RUNNING and connects.
+                        started_by_us = false;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            OnDemandAction::Wait => {}
+            OnDemandAction::Failed(code) => {
+                return Err(io::Error::other(format!(
+                    "Windows maintenance service failed to start (Windows error {code})"
+                )));
             }
         }
         if Instant::now() >= deadline {
@@ -434,14 +509,6 @@ fn start_on_demand_service(service: &super::install::ServiceHandle) -> io::Resul
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    wait_state(service, SERVICE_RUNNING, None)?;
-    let state = query(service)?;
-    if state.dwProcessId == 0 {
-        return Err(io::Error::other(
-            "Windows maintenance service did not report a process ID",
-        ));
-    }
-    Ok(state.dwProcessId)
 }
 
 fn read_ack(pipe: &mut Pipe) -> io::Result<()> {
@@ -493,6 +560,40 @@ mod tests {
     use std::path::PathBuf;
     use windows::Win32::Security::TOKEN_QUERY;
     use windows::Win32::System::Threading::GetCurrentProcessId;
+
+    #[test]
+    fn on_demand_state_machine_connects_to_running_service_and_reports_start_failures() {
+        assert_eq!(
+            decide_on_demand_action(SERVICE_RUNNING, 4242, 0, false),
+            OnDemandAction::Connect(4242)
+        );
+        assert_eq!(
+            decide_on_demand_action(SERVICE_RUNNING, 0, 0, true),
+            OnDemandAction::Wait
+        );
+        assert_eq!(
+            decide_on_demand_action(SERVICE_START_PENDING, 0, 0, false),
+            OnDemandAction::Wait
+        );
+        assert_eq!(
+            decide_on_demand_action(SERVICE_STOP_PENDING, 4242, 0, false),
+            OnDemandAction::Wait
+        );
+        assert_eq!(
+            decide_on_demand_action(SERVICE_STOPPED, 0, 0, false),
+            OnDemandAction::Start
+        );
+        // Clean exit (code 0) after another caller raced in permits a fresh start.
+        assert_eq!(
+            decide_on_demand_action(SERVICE_STOPPED, 0, 0, true),
+            OnDemandAction::Start
+        );
+        // Non-zero exit after our StartServiceW fails immediately.
+        assert_eq!(
+            decide_on_demand_action(SERVICE_STOPPED, 0, 1066, true),
+            OnDemandAction::Failed(1066)
+        );
+    }
 
     #[test]
     fn streamed_binary_over_named_pipe_verifies_digest_and_signature() {

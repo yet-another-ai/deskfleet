@@ -68,7 +68,14 @@ export class WindowsDesktopServiceController {
       const current = await this.get()
       if (!current.installed) return current
       if (current.silentUpdateAvailable) {
-        await this.#run("maintenance-update")
+        try {
+          await this.#run("maintenance-update")
+        } catch {
+          // The installed DeskFleetMaintenance binary may predate a key
+          // rotation or protocol change, or fail locally. Fall back to online
+          // UAC elevation so an explicit Update action refreshes both services.
+          await this.#run("elevate-install")
+        }
       } else if (current.updateAvailable || !current.running || !current.maintenanceInstalled) {
         await this.#run("elevate-install")
       }

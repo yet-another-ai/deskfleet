@@ -64,9 +64,25 @@ test("startup reconciliation applies signed maintenance updates silently and nev
   run.mockClear()
   await controller.reconcileOnStartup()
   expect(run.mock.calls.map(([command]) => command)).toEqual(["status"])
+
+  // A failing silent maintenance update during startup must never escalate to UAC.
+  state = {
+    installed: true,
+    running: true,
+    maintenanceInstalled: true,
+    updateAvailable: true,
+    silentUpdateAvailable: true,
+  }
+  const failingStartupRun = vi.fn(async (command: WindowsDesktopServiceCommand) => {
+    if (command === "maintenance-update") throw new Error("untrusted signing key")
+    return JSON.stringify(state)
+  })
+  const failingController = new WindowsDesktopServiceController(true, failingStartupRun)
+  await expect(failingController.reconcileOnStartup()).rejects.toThrow("untrusted signing key")
+  expect(failingStartupRun.mock.calls.map(([command]) => command)).toEqual(["status", "maintenance-update"])
 })
 
-test("explicit update uses maintenance-update when signed and falls back to elevate-install otherwise", async () => {
+test("explicit update uses maintenance-update when signed and falls back to elevate-install on failure or legacy hosts", async () => {
   let state = {
     installed: true,
     running: true,
@@ -90,6 +106,33 @@ test("explicit update uses maintenance-update when signed and falls back to elev
   const controller = new WindowsDesktopServiceController(true, run)
   expect(await controller.update()).toMatchObject({ updateAvailable: false, maintenanceInstalled: true })
   expect(run.mock.calls.map(([command]) => command)).toEqual(["status", "maintenance-update", "status"])
+
+  // When the installed maintenance service rejects the update (e.g. after key
+  // rotation), explicit update() falls back to elevate-install to refresh both.
+  state = {
+    installed: true,
+    running: true,
+    maintenanceInstalled: true,
+    updateAvailable: true,
+    silentUpdateAvailable: true,
+  }
+  const fallbackRun = vi.fn(async (command: WindowsDesktopServiceCommand) => {
+    if (command === "maintenance-update") throw new Error("desktop service manifest uses an untrusted signing key")
+    if (command === "elevate-install") {
+      state = {
+        installed: true,
+        running: true,
+        maintenanceInstalled: true,
+        updateAvailable: false,
+        silentUpdateAvailable: false,
+      }
+      return ""
+    }
+    return JSON.stringify(state)
+  })
+  const fallbackController = new WindowsDesktopServiceController(true, fallbackRun)
+  expect(await fallbackController.update()).toMatchObject({ updateAvailable: false, maintenanceInstalled: true })
+  expect(fallbackRun.mock.calls.map(([command]) => command)).toEqual(["status", "maintenance-update", "elevate-install", "status"])
 
   // Legacy host missing DeskFleetMaintenance falls back to in-app UAC migration.
   state = {
