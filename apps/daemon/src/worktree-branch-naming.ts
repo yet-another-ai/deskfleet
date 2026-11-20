@@ -3,7 +3,24 @@ import type { AgentSnapshot } from "./agent-protocol.ts"
 import { executeGit } from "./git-execution.ts"
 import type { WorktreePreferences } from "./worktree-preferences.ts"
 
-/** Apply the naming preference once, before the first generated-checkout turn. */
+const providerMarker = "deskfleet/composerProvider"
+
+function hasComposerInvocation(content: ContentBlock[]): boolean {
+  return content.some(block => block.type === "text" && typeof block._meta?.[providerMarker] === "string")
+}
+
+/** Queued provider-specific inputs must still target the same provider at delivery. */
+export function providerPromptContent(content: ContentBlock[], provider: string): ContentBlock[] {
+  return content.map(block => {
+    if (block.type !== "text" || !block._meta || !(providerMarker in block._meta)) return block
+    const { [providerMarker]: selectedProvider, ...metadata } = block._meta
+    if (selectedProvider !== provider) throw new Error("The Worker Agent has changed. Select the command or skill again.")
+    const { _meta, ...text } = block
+    return Object.keys(metadata).length ? { ...text, _meta: metadata } : text
+  })
+}
+
+/** Apply the naming preference to the first ordinary task in a generated checkout. */
 export async function prepareWorktreeBranchPrompt(
   snapshot: AgentSnapshot,
   currentTurnId: string,
@@ -13,7 +30,12 @@ export async function prepareWorktreeBranchPrompt(
   prompt: ContentBlock[],
 ): Promise<ContentBlock[]> {
   if (snapshot.session.context !== "worktree" || snapshot.session.inheritedTurnCount
-    || snapshot.turns.some(turn => turn.id !== currentTurnId && turn.consumed !== false)) return prompt
+    || hasComposerInvocation(prompt)) return prompt
+  const completed = snapshot.turns.filter(turn => turn.id !== currentTurnId && turn.consumed !== false)
+  if (completed.length) {
+    const commands = new Set(snapshot.inputs.filter(input => hasComposerInvocation(input.content)).map(input => input.id))
+    if (completed.some(turn => !commands.has(turn.initialInputId))) return prompt
+  }
   const roots = new Set<string>()
   for (const directory of directories) {
     const result = await executeGit(["-C", directory.path, "rev-parse", "--show-toplevel"])

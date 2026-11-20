@@ -212,7 +212,7 @@ export interface AgentMethods {
   "_deskfleet/session/switch-agent": { params: AgentMutation & { provider: string }; result: AgentSnapshot }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
   "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; /** Absolute directory used as the Session's primary cwd; only with `directory` context. */ cwd?: string; baseBranch?: string; baseRevisions?: GitPreparedRevision[]; deferStartup?: boolean; yolo?: boolean } & AgentConfigurationSelection; result: AgentSnapshot }
-  "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
+  "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string; expectedTurnId?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }
   "_deskfleet/session/read": { params: AgentMutation & { throughSeq: string }; result: AgentSnapshot }

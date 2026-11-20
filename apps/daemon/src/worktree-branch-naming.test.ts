@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import test, { type TestContext } from "node:test"
 import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
 import type { AgentSnapshot } from "./agent-protocol.ts"
-import { prepareWorktreeBranchPrompt } from "./worktree-branch-naming.ts"
+import { prepareWorktreeBranchPrompt, providerPromptContent } from "./worktree-branch-naming.ts"
 
 const exec = promisify(execFile)
 const prompt: ContentBlock[] = [{ type: "text", text: "Fix the login timeout" }]
@@ -100,4 +100,21 @@ test("distinct checkouts of one repository receive separate session branches", a
   await prepareWorktreeBranchPrompt(snapshot(), "1", [...f.directories, { path: second }], "session", origin, prompt)
   assert.equal(await f.git(f.checkout, "branch", "--show-current"), "deskfleet/session-a1234567-7")
   assert.equal(await f.git(second, "branch", "--show-current"), "deskfleet/session-a1234567-7-2")
+})
+
+test("provider invocations stay literal and defer naming until the next ordinary task", async t => {
+  const f = await setup(t)
+  const command: ContentBlock[] = [{ type: "text", text: "/status", _meta: { "deskfleet/composerProvider": "codex", other: "keep" } }]
+  const room = snapshot()
+  for (const mode of ["session", "semantic"] as const) {
+    assert.equal(await prepareWorktreeBranchPrompt(room, "1", f.directories, mode, origin, command), command)
+    assert.equal(await f.git(f.checkout, "branch", "--show-current"), "")
+  }
+  assert.deepEqual(providerPromptContent(command, "codex"), [{ type: "text", text: "/status", _meta: { other: "keep" } }])
+  assert.throws(() => providerPromptContent(command, "other"), /Worker Agent has changed/)
+  room.inputs.push({ id: "input", sessionId: "7", submissionCommandId: "7", author: {kind: "user"},
+    content: command, acceptedSeq: "1", state: "delivered", requestedDelivery: "backlog", createdAt: room.session.createdAt })
+  room.turns.push({ id: "1", sessionId: "7", initialInputId: "input", dispatchCommandId: "7", runGeneration: 1,
+    state: "completed", consumed: true, startedAt: room.session.createdAt })
+  assert.equal((await prepareWorktreeBranchPrompt(room, "2", f.directories, "semantic", origin, prompt)).length, 2)
 })

@@ -17,7 +17,7 @@ import type { TerminalSessions } from "./terminals.ts"
 import { consumeTurn, pauseTurn, TurnAdmissionBlocked, unavailableAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
 import { truncateGeneratedTitle } from "./titles.ts"
 import { subagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
-import { prepareWorktreeBranchPrompt } from "./worktree-branch-naming.ts"
+import { prepareWorktreeBranchPrompt, providerPromptContent } from "./worktree-branch-naming.ts"
 
 const liveTurn = (turn: AgentTurn) => ["starting", "running", "cancelling"].includes(turn.state)
 export type ResolveAgentProvider = (providerId: string) => { provider: AgentProvider; config: AgentConfig }
@@ -615,7 +615,7 @@ export class AgentRuntime {
       if (!this.running) throw new Error("Agent stopped before delivery")
       const prompt = await this.#catalog.attachments.preparePrompt(
         this.sessionId,
-        input.content,
+        providerPromptContent(input.content, session.provider),
         connection.initialization.agentCapabilities?.promptCapabilities ?? undefined,
       )
       sent = true
@@ -688,6 +688,7 @@ export class AgentRuntime {
           preferences.branchNaming, this.journal.identity.originId, prompt)
       }
       if (!this.running || this.#connection !== connection) throw new Error("Agent stopped before delivery")
+      prompt = providerPromptContent(prompt, session.provider)
       await consumeTurn(this.journal, this.#quotas, turn)
       sent = true
       return await connection.prompt({ sessionId: session.providerSessionId!, prompt })

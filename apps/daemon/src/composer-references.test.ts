@@ -154,11 +154,16 @@ test("file resolution rejects changed bindings, foreign scopes, traversal, ignor
   f.workspace("1", [root])
   f.session("10", "1", [root])
   const reference = file((await f.service.search({ workspaceId: "1", kind: "file", query: "file.txt" })).items[0])
+  assert.equal((await f.service.resolve({ workspaceId: "1", references: [reference] }))[0]?.type, "resource_link")
+  await assert.rejects(f.service.resolve({ references: [reference] }), /Select a reference Workspace or Session/)
   for (const changes of [
     { originId: "other-origin" }, { workspaceId: "2" }, { sessionId: "11" }, { directoryIndex: 9 },
     { sourceDirectory: outside }, { relativePath: "../outside/file.txt" }, { relativePath: "/etc/passwd" },
     { relativePath: "linked/file.txt" }, { relativePath: "hidden.txt" }, { relativePath: ".git/config" },
-  ]) await assert.rejects(f.service.resolve({ sessionId: "10", references: [{ ...reference, ...changes }] }))
+  ]) {
+    await assert.rejects(f.service.resolve({ sessionId: "10", references: [{ ...reference, ...changes }] }))
+    await assert.rejects(f.service.resolve({ workspaceId: "1", references: [{ ...reference, ...changes }] }))
+  }
   f.workspaces[0]!.worktrees[0]!.directories = [{ path: outside }]
   await assert.rejects(f.service.resolve({ sessionId: "10", references: [reference] }), /source directory has changed/u)
   const existing = file((await f.service.search({ sessionId: "10", kind: "file", query: "file.txt" })).items[0])

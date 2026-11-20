@@ -132,6 +132,41 @@ test("fork creates an independent conversation, history and owned context, and r
   assert.deepEqual((await f.sessions.journal.read(original.session.id)).inputs, original.inputs)
 })
 
+test("a fork from a project reply checks the source turn before allocating, including on retry", async t => {
+  const f = await setup(t)
+  const sessionId = f.source.session.id
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), content: [{ type: "text", text: "First" }], delivery: "backlog" }, f.actor)
+  const first = (await until(() => f.sessions.journal.read(sessionId), value => value.turns.at(-1)?.state === "completed")).turns[0]!
+  await f.sessions.handle("_deskfleet/input/submit", { sessionId, operationId: randomUUID(), content: [{ type: "text", text: "Second" }], delivery: "backlog" }, f.actor)
+  const latest = (await until(() => f.sessions.journal.read(sessionId), value => value.turns.length === 2 && value.turns.at(-1)?.state === "completed")).turns[1]!
+  const fork = (expectedTurnId: string, operationId: ReturnType<typeof randomUUID>) => f.sessions.handle("_deskfleet/session/fork", {
+    sessionId, operationId, context: "directory", expectedTurnId,
+  }, f.actor) as Promise<AgentSnapshot>
+  const { snapshot: child, operationId } = await forkAfterTurn(id => fork(latest.id, id))
+  assert.equal((await fork(latest.id, operationId)).session.id, child.session.id)
+  const stale = randomUUID()
+  await assert.rejects(fork(first.id, stale), /newer turn/)
+  await assert.rejects(fork(first.id, stale), /newer turn/)
+  assert.equal(f.provider.forks.length, 1)
+  assert.equal((await f.sessions.journal.list()).length, 2)
+})
+
+test("a legacy Worker fork retains its project by worktree ID when projects share a folder", async t => {
+  const f = await setup(t)
+  const owner = f.source.session.workspaceId!
+  await f.catalog.native.createWorkspace("Same directory", [{ path: f.repository }])
+  // Current writers forbid changing ownership. Read the historical metadata shape
+  // while leaving the native catalog and actual fork allocation intact.
+  const read = f.sessions.journal.read.bind(f.sessions.journal)
+  t.mock.method(f.sessions.journal, "read", async (id: string) => {
+    const value = await read(id)
+    return id === f.source.session.id ? { ...value, session: { ...value.session, workspaceId: undefined } } : value
+  })
+  const { snapshot: child } = await forkAfterTurn(id => f.fork("worktree", id))
+  assert.equal(child.session.workspaceId, owner)
+  assert.equal((await f.catalog.sessionWorktree(child.session.id))!.workspaceId, owner)
+})
+
 test("machine-scoped Sessions cannot fork into a worktree context", async t => {
   const directory = await mkdtemp(join(tmpdir(), "df-fork-home-"))
   const catalog = new DaemonCatalog(directory)

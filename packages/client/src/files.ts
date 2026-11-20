@@ -14,7 +14,7 @@ export interface FileResourceRequest { target: FileTarget; sessionId: string; ur
 /** Native hosts may open a resolved resource on this physical machine. */
 export interface FileResource extends FileEntry { canOpen?: boolean }
 export interface FileAttachmentUploadRequest { target: FileTarget; sessionId?: string; draftId?: string; name: string; data: Uint8Array }
-export interface FileAttachmentUploadResult { path: string; uri: string; name: string; size: number }
+export interface FileAttachmentUploadResult { path: string; uri: string; name: string; size: number; attachmentGrant?: string }
 
 export function filePathToUri(path: string): string {
   const normalized = path.replaceAll("\\", "/")

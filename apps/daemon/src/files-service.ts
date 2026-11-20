@@ -8,6 +8,7 @@ import { FileUploads } from "./files-uploads.ts"
 /** Machine-local file access shared by authorized peers and the local desktop host. */
 export class FilesService implements FileEndpoint {
   readonly #sessionDirectory?: (sessionId: string) => Promise<string>
+  readonly #attachmentGrant?: (path: string) => string
   readonly #uploads: FileUploads
   readonly #reads = new FileReads()
   #running: Promise<unknown> = Promise.resolve()
@@ -17,7 +18,9 @@ export class FilesService implements FileEndpoint {
     sessionDirectory?: (sessionId: string) => Promise<string>,
     sessionAttachmentDirectory?: (sessionId: string) => Promise<string>,
     draftAttachmentDirectory?: (draftId: string) => Promise<string>,
+    attachmentGrant?: (path: string) => string,
   ) {
+    this.#attachmentGrant = attachmentGrant
     this.#sessionDirectory = sessionDirectory
     this.#uploads = new FileUploads(sessionAttachmentDirectory, draftAttachmentDirectory)
   }
@@ -44,7 +47,11 @@ export class FilesService implements FileEndpoint {
         const path = directory.path
         const entries = []
         for (const item of await readdir(path, { withFileTypes: true })) {
-          try { entries.push(await fileEntry(join(path, item.name))) }
+          try {
+            const entry = await fileEntry(join(path, item.name))
+            if (this.#attachmentGrant && entry.kind === "file") entry.attachmentGrant = this.#attachmentGrant(entry.path)
+            entries.push(entry)
+          }
           catch (error) {
             if (request.strict) throw error
             if (["unsupported", "ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) continue
@@ -67,7 +74,11 @@ export class FilesService implements FileEndpoint {
       case "mkdir": return { value: await this.#uploads.mkdir(params as FileMethods["mkdir"]["params"]) }
       case "write": return { value: await this.#uploads.write(params as FileMethods["write"]["params"], data) }
       case "finish": return { value: await this.#uploads.finish(params as FileMethods["finish"]["params"]) }
-      case "commit": return { value: await this.#uploads.commit(params as FileMethods["commit"]["params"]) }
+      case "commit": {
+        const value = await this.#uploads.commit(params as FileMethods["commit"]["params"])
+        if (this.#attachmentGrant && !value.skipped) value.attachmentGrant = this.#attachmentGrant(value.path)
+        return { value }
+      }
       case "abort": return { value: await this.#uploads.abort(params as FileMethods["abort"]["params"]) }
       default: throw fileError("Unknown file operation", "invalid")
     }

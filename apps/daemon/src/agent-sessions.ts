@@ -1,3 +1,4 @@
+import { validateAgentContent } from "./agent-input-content.ts"
 import { homedir } from "node:os"
 import { isAbsolute } from "node:path"
 import { createHash } from "node:crypto"
@@ -7,8 +8,7 @@ import { AgentConfigurationCache } from "./agent-configuration-cache.ts"
 import { AgentUsageCache } from "./agent-usage.ts"
 import { validateAgentConfigurationParams, validateAgentConfigurationSelection, type AgentConfigurationParams, type AgentConfigurationSelection } from "./agent-configuration-protocol.ts"
 import { validateProviderId } from "./provider-protocol.ts"
-import type { ContentBlock } from "@agentclientprotocol/sdk/unstable"
-import { defaultAgentProvider as codexProvider } from "./agents/registry.ts"
+import { defaultAgentProvider } from "./agents/registry.ts"
 import type { AgentProvider } from "./agents/acp.ts"
 import type { DaemonCatalog } from "./catalog.ts"
 import { AgentJournal, errorMessage, requireActiveSession, timestamp, type AgentPersistence } from "./agent-store.ts"
@@ -46,50 +46,6 @@ function id(value: unknown, field: string): string {
   const result = string(value, field)
   if (!/^[1-9][0-9]*$/u.test(result)) throw new Error(`Invalid ${field}`)
   return result
-}
-function content(value: unknown): ContentBlock[] {
-  if (!Array.isArray(value) || !value.length || value.length > 100) throw new Error("A message is required")
-  let hasText = false
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("Only nonempty text messages are supported")
-    const block = item as Record<string, unknown>
-    if (block.type === "text") {
-      if (typeof block.text !== "string" || !block.text.trim()) throw new Error("Only nonempty text messages are supported")
-      hasText = true
-      continue
-    }
-    if (block.type === "image") {
-      if (typeof block.mimeType !== "string" || !/^image\/[a-z0-9.+-]+$/iu.test(block.mimeType)
-        || typeof block.data !== "string" || !block.data.length || !/^[A-Za-z0-9+/]+={0,2}$/u.test(block.data)) {
-        throw new Error("Invalid image attachment")
-      }
-      continue
-    }
-    if (block.type === "resource") {
-      const resource = block.resource
-      if (!resource || typeof resource !== "object" || Array.isArray(resource)) throw new Error("Invalid text resource attachment")
-      const record = resource as Record<string, unknown>
-      if (typeof record.uri !== "string" || !record.uri.length || record.uri.length > 2048 || record.uri.includes("\0")
-        || typeof record.text !== "string" || !record.text.trim()
-        || (record.mimeType !== undefined && record.mimeType !== null && (typeof record.mimeType !== "string" || !record.mimeType.length || record.mimeType.length > 256))) {
-        throw new Error("Invalid text resource attachment")
-      }
-      hasText = true
-      continue
-    }
-    if (block.type === "resource_link") {
-      if (typeof block.uri !== "string" || !/^file:\/\/\//iu.test(block.uri) || block.uri.length > 4096 || block.uri.includes("\0")
-        || typeof block.name !== "string" || !block.name.trim() || block.name.length > 512 || block.name.includes("\0")
-        || (block.mimeType !== undefined && block.mimeType !== null && (typeof block.mimeType !== "string" || !block.mimeType.length || block.mimeType.length > 256))
-        || (block.size !== undefined && block.size !== null && (typeof block.size !== "number" || !Number.isSafeInteger(block.size) || block.size < 0))) {
-        throw new Error("Invalid file attachment")
-      }
-      continue
-    }
-    throw new Error("Only nonempty text messages are supported")
-  }
-  if (!hasText) throw new Error("Only nonempty text messages are supported")
-  return value as ContentBlock[]
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
@@ -130,7 +86,7 @@ export class AgentSessions {
   #unsubscribeConfigurationCatalog?: () => void
   #closed = false
 
-  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = codexProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
+  constructor(catalog: DaemonCatalog, native: AgentPersistence, provider: AgentProvider = defaultAgentProvider, providers?: AgentProviders, mcp?: AgentMcp, terminals?: TerminalSessions, quotas: AgentQuotaAuthority = unavailableAgentQuotas) {
     this.#catalog = catalog
     this.journal = new AgentJournal(native)
     this.#references = new ComposerReferences(catalog, this.journal)
@@ -341,6 +297,9 @@ export class AgentSessions {
     requireActiveSession(session)
     if (session.lifecycle !== "ready") throw new Error("This Session has no usable execution context")
     return this.#catalog.attachments.directory(checkedId)
+  }
+  fileGrant(userId: string, path: string): string {
+    return this.#catalog.attachments.fileGrant(userId, path)
   }
   draftAttachmentDirectory(draftId: string): Promise<string> {
     return this.#catalog.attachments.draftDirectory(draftId)
@@ -754,15 +713,21 @@ export class AgentSessions {
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     const sourceId = command.sessionId!
-    const sourceSession = await this.journal.session(sourceId)
-    if (!sourceSession.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
     return this.#runtime(sourceId).withFork(async source => {
+      if (command.params.expectedTurnId !== undefined && source.turns.at(-1)?.id !== id(command.params.expectedTurnId, "Turn ID")) {
+        throw new Error("The worker has a newer turn. Open its latest reply to fork.")
+      }
+      // Older Session metadata can omit the owning Workspace, which is still recorded on its worktree.
+      const directoryFork = context === "directory" && source.session.context === "directory"
+      const sourceTree = directoryFork || !source.session.workspaceId ? await this.#catalog.sessionWorktree(sourceId) : undefined
+      const workspaceId = source.session.workspaceId ?? sourceTree?.workspaceId
+      if (!workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
       this.#resolveProvider(source.session.provider)
       const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : source.session.title
-      const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
+      const creation = { ...command, sessionId: undefined, workspaceId }
       const yoloFields = source.session.yolo ? { yolo: true, yoloActor: command.actor } : {}
       const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
-        this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider, {
+        this.journal.create(creation, workspaceId, title, context, source.session.provider, {
           admissionGeneration,
           inheritedTurnCount: consumedTurns(source),
           ...yoloFields,
@@ -772,9 +737,7 @@ export class AgentSessions {
       try {
         // Only directory→directory forks keep the source primary path. Forking
         // from a worktree Session must not attach the owned checkout as cwd.
-        const cwd = context === "directory" && source.session.context === "directory"
-          ? (await this.#catalog.sessionWorktree(sourceId))?.directories[0]?.path
-          : undefined
+        const cwd = directoryFork ? sourceTree?.directories[0]?.path : undefined
         await this.#catalog.provisionSession(child.id, child.workspaceId, context, undefined, undefined, cwd)
         await copyForkHistory(this.journal, source, child.id)
         await this.journal.serial(child.id, async () => {
@@ -801,7 +764,7 @@ export class AgentSessions {
 
   async #submit(command: AgentCommand): Promise<AgentReceipt> {
     const sessionId = command.sessionId!
-    const blocks = content(command.params.content)
+    const blocks = validateAgentContent(command.params.content)
     const delivery = command.params.delivery
     if (delivery !== "backlog" && delivery !== "steer") throw new Error("Invalid input delivery")
     const runtime = this.#runtime(sessionId)
