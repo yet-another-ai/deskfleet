@@ -44,6 +44,10 @@ is one input or output token. Cached reads and writes are breakdowns of the
 input count. Model spend from ACP Sessions on a user's Machine has its own
 usage projection.
 
+A new delivery schedules another read while the current collector keeps its
+lease. Committing the cursor preserves that pending read. If the collector
+exits first, a replica can resume from the last committed cursor after expiry.
+
 The Team's effective plan selects a configurable included token amount. Usage is
 attributed to the monthly billing period containing the event timestamp, including
 on yearly subscriptions. New hosted messages require remaining allowance. Admission

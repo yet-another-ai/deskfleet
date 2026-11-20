@@ -167,3 +167,53 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn delivery_wakes_preserve_the_active_meter_claim_and_committed_cursor() {
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
+    let db = Database::connect(&url).await.unwrap();
+    let schema = format!("cloud_meter_{}", uuid::Uuid::new_v4().simple());
+    db.execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let store = ControlStore::connect(&format!("{url}{separator}options=-csearch_path%3D{schema}"))
+        .await
+        .unwrap();
+    let owner = store
+        .verified_user("meter@example.test", "Owner")
+        .await
+        .unwrap();
+    let team = store.create_team(&owner.id, "Team").await.unwrap().id;
+    store.bind_cloud_session(&team, "s").await.unwrap();
+    store.wake_cloud_meter(&team, "s").await.unwrap();
+    let first = store.claim_cloud_meter(30_000).await.unwrap().unwrap();
+    store.wake_cloud_meter(&team, "s").await.unwrap();
+    store.wake_cloud_meter(&team, "s").await.unwrap();
+    assert!(store.claim_cloud_meter(30_000).await.unwrap().is_none());
+    store.finish_cloud_meter(&first, 42, None).await.unwrap();
+    let expired = store.claim_cloud_meter(0).await.unwrap().unwrap();
+    assert_eq!(expired.next_line, 42);
+    let recovered = store.claim_cloud_meter(30_000).await.unwrap().unwrap();
+    store.finish_cloud_meter(&expired, 50, None).await.unwrap();
+    store
+        .finish_cloud_meter(&recovered, 43, None)
+        .await
+        .unwrap();
+    assert!(store.claim_cloud_meter(30_000).await.unwrap().is_none());
+    store.wake_cloud_meter(&team, "s").await.unwrap();
+    assert_eq!(
+        store
+            .claim_cloud_meter(30_000)
+            .await
+            .unwrap()
+            .unwrap()
+            .next_line,
+        43
+    );
+    store.close().await.unwrap();
+    db.execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
+}

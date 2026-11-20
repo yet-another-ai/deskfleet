@@ -5,6 +5,7 @@ import type { AdminPlanQuota } from "../../../client/src/central.ts"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
+import type { SuperAgentHistory, SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
@@ -131,6 +132,15 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       return { ...team }
     }),
     members: vi.fn(async (_teamId: string) => state.members.map(member => ({ ...member }))),
+    superAgentAvailability: vi.fn(async (_teamId: string) => ({ enabled: false })),
+    superAgentSessions: vi.fn(async (_teamId: string): Promise<SuperAgentSession[]> => []),
+    superAgentUsage: vi.fn(async (_teamId: string): Promise<SuperAgentUsage> => ({
+      runtimeConfigured: true, admitted: true, usedTokens: 0, includedTokens: null, plan: "selfHosted",
+      start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
+    })),
+    createSuperAgentSession: vi.fn(async (_teamId: string, operationId: string) => ({ sessionId: `wrun_${operationId}` })),
+    sendSuperAgentMessage: vi.fn(async (_teamId: string, sessionId: string, operationId: string, _message: string) => ({ sessionId, deliveryId: `delivery_${operationId}` })),
+    superAgentHistory: vi.fn(async (_teamId: string, _sessionId: string, startIndex: number): Promise<SuperAgentHistory> => ({ messages: [], nextIndex: startIndex })),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     teamTurnSettings: vi.fn(async (_teamId: string) => teamTurnSettings()),
     updateTeamTurnSettings: vi.fn(async (_teamId: string, settings: TeamTurnSettingsUpdate) => {

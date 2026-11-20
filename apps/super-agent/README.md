@@ -21,6 +21,10 @@ mise exec -- pnpm --filter @deskfleet/super-agent start --host 127.0.0.1 --port 
 ```
 
 Set `DESKFLEET_SUPER_AGENT_URL=http://127.0.0.1:3100` on the Rust server.
+Configure its `DESKFLEET_STATSIG_SERVER_KEY` and `DESKFLEET_STATSIG_ENVIRONMENT`
+(default `production`). In that Statsig environment, enable the feature gate
+`super_agent` for the intended accounts or Teams. The feature defaults to off,
+including on self-hosted installations.
 For the repository's local setup, start the dependencies with `mise run infra:up`,
 then run `mise -E development run backend:dev`. For a custom database, set the
 server's `DATABASE_URL` and use `mise run backend:dev`. Keep eve on the private
@@ -36,6 +40,12 @@ use their own model account with unlimited tokens.
 
 ## Team API
 
+Team members in the rollout can open **Super Agent** from the sidebar in Web
+or Desktop, including before connecting their first Machine. Sending the first
+message starts a conversation. The conversation list reopens the Team's saved
+history. Reaching the token allowance pauses new messages and keeps history
+available to members in the rollout.
+
 All routes are relative to `/api/teams/{teamId}/super-agent` and use the
 existing DeskFleet account authentication. Writes take a client-generated
 UUID as `operationId`. Reuse it when retrying the same operation.
@@ -44,10 +54,15 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 
 | Method and path | Input or result |
 | --- | --- |
+| GET `/availability` | Read the boolean `enabled` for the authenticated account and selected Team. |
+| GET `/sessions` | List this Team's conversations by most recent activity, with `sessionId`, the first message's short `title` when available, and `lastActiveAt` in UTC milliseconds. |
 | POST `/sessions` | Send `{"operationId":"<uuid>"}` to create a Session and receive its `sessionId`. |
 | POST `/sessions/{sessionId}/messages` | Send `{"operationId":"<uuid>","message":"Plan the release"}` to receive a delivery receipt. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
 | GET `/usage` | Read the effective plan, billing period, configured allowance, recorded tokens, runtime availability and admission decision. |
+
+When rollout is disabled, the other routes return HTTP 404 with code
+`super_agent_disabled`. The usage collector continues settling accepted work.
 
 The stream exposes `x-eve-stream-version` and `x-eve-stream-tail-index` to
 clients, including browsers on configured Web origins. The tail index is the

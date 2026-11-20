@@ -7,6 +7,7 @@ import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import { readSuperAgentHistory, superAgentPath, type SuperAgentSession, type SuperAgentHistory, type SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
@@ -181,14 +182,14 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     if ((this.#account.token || this.#account.user) && (this.#account.token !== account.token || this.#account.user?.id !== account.user?.id)) this.#disconnect()
     this.#account = account
   }
-  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, options: Pick<ApiRequestOptions, "timeoutMs" | "totalTimeoutMs" | "retryStatusCodes" | "beforeFetch"> = {}): Promise<T> {
+  async request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, options: Pick<ApiRequestOptions, "timeoutMs" | "totalTimeoutMs" | "retryStatusCodes" | "beforeFetch" | "decodeBody"> & { accept?: string } = {}): Promise<T> {
     if (this.#options.cookieAuth && !["GET", "HEAD"].includes(method) && !this.#csrf) {
       await this.request("GET", "/api/auth/config", undefined, signal)
     }
     const result = await apiRequest<{ csrfToken?: string }>(`${this.#account.serverUrl}${path}`, {
       ...options,
       method, credentials: this.#options.cookieAuth ? "include" : "omit",
-      headers: { Accept: "application/json", ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { Accept: options.accept ?? "application/json", ...(this.#account.token ? { Authorization: `Bearer ${this.#account.token}` } : {}), ...(this.#options.cookieAuth && this.#csrf ? { "X-CSRF-Token": this.#csrf } : {}), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       json: body, signal, fetch: this.#options.fetch, transport: this.#options.transport,
     })
     if (result?.csrfToken) this.#csrf = result.csrfToken
@@ -293,6 +294,23 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   }
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
+  superAgentAvailability(teamId: string) { return this.request<{ enabled: boolean }>("GET", `${superAgentPath(teamId)}/availability`) }
+  superAgentSessions(teamId: string) { return this.request<SuperAgentSession[]>("GET", `${superAgentPath(teamId)}/sessions`) }
+  superAgentUsage(teamId: string) { return this.request<SuperAgentUsage>("GET", `${superAgentPath(teamId)}/usage`) }
+  createSuperAgentSession(teamId: string, operationId: string) {
+    return this.request<{ sessionId: string }>("POST", `${superAgentPath(teamId)}/sessions`, { operationId })
+  }
+  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: string) {
+    return this.request<{ sessionId: string; deliveryId: string }>("POST", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/messages`, { operationId, message })
+  }
+  superAgentHistory(teamId: string, sessionId: string, startIndex: number) {
+    if (!Number.isSafeInteger(startIndex) || startIndex < 0) throw new RangeError("Invalid Super Agent history position")
+    return this.request<SuperAgentHistory>("GET", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/stream?startIndex=${startIndex}`, undefined, undefined, {
+      // The gateway permits a 120-second finite read while eve replays a long conversation.
+      timeoutMs: 125_000, totalTimeoutMs: 135_000, accept: "application/x-ndjson",
+      decodeBody: (text, response) => readSuperAgentHistory(text, response, startIndex),
+    })
+  }
   teamTurnSettings(teamId: string) { return this.request<TeamTurnSettings>("GET", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`) }
   updateTeamTurnSettings(teamId: string, settings: TeamTurnSettingsUpdate) { return this.request<TeamTurnSettings>("PATCH", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`, settings) }
   aiUsage(teamId: string, query: AiUsageQuery) {

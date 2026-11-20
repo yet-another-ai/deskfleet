@@ -10,6 +10,7 @@ const meta = {
     interval: "month",
     billing: freeBilling,
     offers: true,
+    showSuperAgent: false,
   },
 } satisfies Meta<typeof PlanComparison>
 export default meta

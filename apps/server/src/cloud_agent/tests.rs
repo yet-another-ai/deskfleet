@@ -3,8 +3,10 @@ use actix_web::{App, HttpServer, test};
 use deskfleet_control_store::billing::Plan;
 use sea_orm::{ConnectionTrait, Database};
 use serde_json::Value;
+use statsig_rust::{Statsig, StatsigOptions};
 use std::{
     net::TcpListener,
+    sync::Arc,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -123,6 +125,15 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     })
     .await
     .unwrap();
+    let sdk = Arc::new(Statsig::new(
+        "secret-fixture",
+        Some(Arc::new(StatsigOptions {
+            disable_network: Some(true),
+            disable_all_logging: Some(true),
+            ..Default::default()
+        })),
+    ));
+    state.super_agent_rollout = Rollout::offline(Arc::clone(&sdk));
     let eve = EveClient::new(&format!("http://{address}"), "fixture-secret".into()).unwrap();
     state._cloud_meter = Some(crate::cloud_meter::start(state.store.clone(), eve.clone()));
     state.eve = Some(eve);
@@ -193,6 +204,34 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
         test::call_service(&app, forbidden).await.status(),
         StatusCode::FORBIDDEN
     );
+    let base = format!("/api/teams/{}/super-agent", team.id);
+    let availability_path = format!("{base}/availability");
+    let availability: Value = test::call_and_read_body_json(&app, get(&availability_path)).await;
+    assert_eq!(availability, json!({"enabled":false}));
+    let message_body = json!({"operationId":uuid::Uuid::new_v4().to_string(),"message":"hello"});
+    for request in [
+        post(&path, create.clone()),
+        get(&path),
+        post(&format!("{path}/{session_id}/messages"), message_body),
+        get(&format!("{path}/{session_id}/stream")),
+        get(&format!("{base}/usage")),
+    ] {
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+        let error: Value = test::read_body_json(response).await;
+        assert_eq!(error["error"]["code"], "super_agent_disabled");
+    }
+    assert_eq!(calls.creates.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.sends.load(Ordering::SeqCst), 0);
+    sdk.override_gate(rollout::GATE, true, Some(&team.id));
+    let availability: Value = test::call_and_read_body_json(&app, get(&availability_path)).await;
+    assert_eq!(availability, json!({"enabled":true}));
+    let other_availability = format!("/api/teams/{}/super-agent/availability", other.id);
+    let availability: Value = test::call_and_read_body_json(&app, get(&other_availability)).await;
+    assert_eq!(availability, json!({"enabled":false}));
+    sdk.override_gate(rollout::GATE, true, Some(&other.id));
+
     let (first, second) = futures_util::join!(
         test::call_service(&app, post(&path, create.clone())),
         test::call_service(&app, post(&path, create.clone())),
@@ -229,19 +268,32 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     );
     let delivery: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery["deliveryId"], "delivery_1");
-    let usage_path = format!("/api/teams/{}/super-agent/usage", team.id);
+    // Disabling the rollout blocks new reads/writes while the worker still
+    // records the provider's usage for the delivery that was already accepted.
+    sdk.override_gate(rollout::GATE, false, Some(&team.id));
+    assert_eq!(
+        test::call_service(&app, post(&send_path, body.clone()))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
     tokio::time::timeout(Duration::from_secs(25), async {
-        loop {
-            let usage: Value = test::call_and_read_body_json(&app, get(&usage_path)).await;
-            if usage["usedTokens"] == 8 {
-                assert_eq!(usage["admitted"], false);
-                break;
-            }
+        while store
+            .cloud_token_period(&team.id)
+            .await
+            .unwrap()
+            .used_tokens
+            != 8
+        {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
     .await
-    .expect("metered the Eve usage line");
+    .expect("metered the Eve usage line while rollout was disabled");
+    sdk.override_gate(rollout::GATE, true, Some(&team.id));
+    let usage: Value = test::call_and_read_body_json(&app, get(&format!("{base}/usage"))).await;
+    assert_eq!(usage["usedTokens"], 8);
+    assert_eq!(usage["admitted"], false);
     let repeated: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery, repeated);
     let mut changed = body.clone();
@@ -260,6 +312,14 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
             .status(),
         StatusCode::TOO_MANY_REQUESTS
     );
+    let listed: Value = test::call_and_read_body_json(&app, get(&path)).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["sessionId"], session_id);
+    assert_eq!(listed[0]["title"], "hello");
+    assert!(listed[0]["lastActiveAt"].as_i64().unwrap() > 0);
+    let other_sessions = format!("/api/teams/{}/super-agent/sessions", other.id);
+    let separate: Value = test::call_and_read_body_json(&app, get(&other_sessions)).await;
+    assert_eq!(separate, json!([]));
     let stream = test::call_service(
         &app,
         get(&format!("{path}/{session_id}/stream?startIndex=7")),

@@ -60,21 +60,37 @@ struct StoredLine {
     ended: bool,
 }
 
+enum StreamLine {
+    Stored(StoredLine),
+    Position(i64),
+    End,
+    OtherTransport,
+}
+
 // Transport frames have no durable position. Both progress and fact records occupy a line.
-fn parse_line(bytes: &[u8], session_id: &str, line: i64) -> Result<Option<StoredLine>> {
+fn parse_line(bytes: &[u8], session_id: &str, line: i64) -> Result<StreamLine> {
     fn invalid() -> ApiError {
         ApiError::bad("invalid eve metering stream record")
     }
     let record: Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
-    if record.get("$eve").is_some() {
-        return Ok(None);
+    if let Some(transport) = record.get("$eve") {
+        return match transport.as_str() {
+            Some("position") => record["next"]
+                .as_i64()
+                .filter(|next| *next >= 0)
+                .map(StreamLine::Position)
+                .ok_or_else(invalid),
+            Some("stream.ended" | "stream.lease-ended") => Ok(StreamLine::End),
+            Some(_) => Ok(StreamLine::OtherTransport),
+            None => Err(invalid()),
+        };
     }
     let mut stored = StoredLine {
         events: Vec::new(),
         ended: false,
     };
     if record.get("progress").is_some() {
-        return Ok(Some(stored));
+        return Ok(StreamLine::Stored(stored));
     }
     let at: DateTime<Utc> = record["at"]
         .as_str()
@@ -107,7 +123,7 @@ fn parse_line(bytes: &[u8], session_id: &str, line: i64) -> Result<Option<Stored
             _ => {}
         }
     }
-    Ok(Some(stored))
+    Ok(StreamLine::Stored(stored))
 }
 
 fn upstream_error(_: reqwest::Error) -> ApiError {
@@ -144,6 +160,7 @@ async fn collect(store: &ControlStore, eve: &EveClient, cursor: &CloudMeterCurso
         .ok_or_else(|| ApiError::bad("eve metering stream missing tail"))?;
     let mut line = cursor.next_line;
     let mut ended = false;
+    let mut terminated = false;
     let mut buffer = Vec::new();
     'chunks: while let Some(chunk) = response.chunk().await.map_err(upstream_error)? {
         for part in chunk.split_inclusive(|&b| b == b'\n') {
@@ -154,17 +171,27 @@ async fn collect(store: &ControlStore, eve: &EveClient, cursor: &CloudMeterCurso
             if !part.ends_with(b"\n") {
                 continue;
             }
-            if let Some(stored) = parse_line(&buffer, &cursor.session_id, line)? {
-                if line > tail {
-                    return Err(ApiError::bad("eve stream exceeded bounded tail"));
+            match parse_line(&buffer, &cursor.session_id, line)? {
+                StreamLine::Stored(stored) => {
+                    if line > tail {
+                        return Err(ApiError::bad("eve stream exceeded bounded tail"));
+                    }
+                    for event in stored.events {
+                        store
+                            .record_cloud_token_usage(&cursor.team_id, &event)
+                            .await?;
+                    }
+                    line += 1;
+                    ended |= stored.ended;
                 }
-                for event in stored.events {
-                    store
-                        .record_cloud_token_usage(&cursor.team_id, &event)
-                        .await?;
+                StreamLine::Position(next) => {
+                    if next > tail + 1 {
+                        return Err(ApiError::bad("eve stream exceeded bounded tail"));
+                    }
+                    line = line.max(next);
                 }
-                line += 1;
-                ended |= stored.ended;
+                StreamLine::End => terminated = true,
+                StreamLine::OtherTransport => {}
             }
             buffer.clear();
             if line - cursor.next_line >= BATCH_LINES {
@@ -172,7 +199,10 @@ async fn collect(store: &ControlStore, eve: &EveClient, cursor: &CloudMeterCurso
             }
         }
     }
-    if !buffer.is_empty() || (line <= tail && line - cursor.next_line < BATCH_LINES) {
+    // A finite reader can finish before its separately sampled tail, or its
+    // upstream lease can expire. Persist the prefix and claim the next read.
+    if !buffer.is_empty() || (!terminated && line <= tail && line - cursor.next_line < BATCH_LINES)
+    {
         return Err(ApiError::bad("incomplete eve metering stream"));
     }
     let next_poll = if ended && line > tail {
@@ -197,20 +227,30 @@ mod tests {
 
     #[test]
     fn stream_positions_count_progress_and_multiple_facts_but_exclude_transport() {
+        assert!(matches!(
+            parse_line(br#"{"$eve":"heartbeat"}"#, "s", 6).unwrap(),
+            StreamLine::OtherTransport
+        ));
+        assert!(matches!(
+            parse_line(br#"{"$eve":"position","next":12}"#, "s", 6).unwrap(),
+            StreamLine::Position(12)
+        ));
+        for bytes in [
+            br#"{"$eve":"stream.ended"}"#.as_slice(),
+            br#"{"$eve":"stream.lease-ended"}"#.as_slice(),
+        ] {
+            assert!(matches!(
+                parse_line(bytes, "s", 6).unwrap(),
+                StreamLine::End
+            ));
+        }
         assert!(
-            parse_line(br#"{"$eve":"heartbeat"}"#, "s", 6)
-                .unwrap()
-                .is_none()
-        );
-        assert!(
-            parse_line(br#"{"progress":{}}"#, "s", 6)
-                .unwrap()
-                .unwrap()
-                .events
-                .is_empty()
+            matches!(parse_line(br#"{"progress":{}}"#, "s", 6).unwrap(), StreamLine::Stored(line) if line.events.is_empty())
         );
         let line = br#"{"at":"2026-11-21T00:00:00Z","facts":[{"type":"model.settled"},{"type":"usage.recorded","data":{"usage":{"inputTokens":10,"outputTokens":4,"cacheReadTokens":3,"cacheWriteTokens":1}}},{"type":"session.ended"}]}"#;
-        let record = parse_line(line, "s", 7).unwrap().unwrap();
+        let StreamLine::Stored(record) = parse_line(line, "s", 7).unwrap() else {
+            panic!("expected stored usage")
+        };
         assert!(record.ended);
         let event = &record.events[0];
         assert_eq!(

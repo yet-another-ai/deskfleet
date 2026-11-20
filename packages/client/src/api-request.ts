@@ -22,6 +22,8 @@ export interface ApiRequestOptions {
   retryStatusCodes?: number[]
   /** Operation context for responses without an API error message. */
   errorPrefix?: string
+  /** Decode a successful non-JSON response with the same authentication and failure handling. */
+  decodeBody?: (text: string, response: Response) => unknown
 }
 
 function errorEnvelope(data: unknown): { message?: string; code?: string; reason?: string } {
@@ -77,7 +79,11 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
         statusCodes: options.retryStatusCodes ?? [...API_RETRY_STATUS_CODES],
         retryOnTimeout: true,
       },
-      parseJson: (text, { response }) => response.status === 204 || method === "HEAD" ? undefined : JSON.parse(text),
+      parseJson: (text, { response }) => {
+        if (response.status === 204 || method === "HEAD") return undefined
+        if (response.ok && options.decodeBody) return options.decodeBody(text, response)
+        return JSON.parse(text)
+      },
       hooks: {
         beforeRetry: [() => { phase = "fetch"; status = undefined }],
         afterResponse: [({ response }) => { phase = "response_body"; status = response.status }],

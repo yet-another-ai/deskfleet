@@ -93,6 +93,7 @@ test("a site administrator without any Team opens administration from the accoun
 
 test("site admins can edit a hosted plan's quotas and inspect self-hosted limits", async () => {
   const fake = fakeCentral({ siteAdmin: true })
+  fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
   await router.push("/admin/plan-quotas")
   mountShell(fake)
   await settled(() => expect(page().find('select[name="plan"]').exists()).toBe(true))
@@ -117,6 +118,19 @@ test("site admins can edit a hosted plan's quotas and inspect self-hosted limits
   await choose("selfHosted")
   expect(input("superAgentTokens").attributes("disabled")).toBeDefined()
   expect(page().find('button[type="submit"]').exists()).toBe(false)
+})
+
+test("editing other quotas preserves the hidden Super Agent allowance", async () => {
+  const fake = fakeCentral({ siteAdmin: true })
+  fake.state.planQuotas.find(plan => plan.plan === "free")!.superAgentTokens = 375
+  await router.push("/admin/plan-quotas")
+  mountShell(fake)
+  await settled(() => expect(page().find('input[name="maxMembers"]').exists()).toBe(true))
+  expect(page().find('input[name="superAgentTokens"]').exists()).toBe(false)
+  await page().get('input[name="maxMembers"]').setValue("7")
+  await page().get("form").trigger("submit")
+  await flushPromises()
+  expect(fake.central.updatePlanQuota).toHaveBeenCalledWith("free", expect.objectContaining({ maxMembers: 7, superAgentTokens: 375 }))
 })
 
 test("terms URLs can be configured independently and cleared without changing other site settings", async () => {

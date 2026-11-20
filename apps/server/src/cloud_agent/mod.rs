@@ -1,14 +1,16 @@
 //! Authenticated Team gateway to the private Super Agent runtime.
 mod client;
+mod rollout;
 
 use crate::{
     AppState, auth,
     error::{ApiError, Result},
 };
-use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
+use actix_web::{HttpRequest, HttpResponse, http::StatusCode, middleware::DefaultHeaders, web};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
 use deskfleet_control_store::{billing::CloudTokenPeriod, policies::TeamAction};
+pub(crate) use rollout::Rollout;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -17,6 +19,7 @@ use std::time::Duration;
 pub(crate) fn configure(config: &mut web::ServiceConfig) {
     config.service(
         web::scope("/teams/{teamId}/super-agent")
+            .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
             .app_data(
                 web::JsonConfig::default()
                     .limit(256 * 1024)
@@ -24,6 +27,8 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
                         ApiError::bad("invalid or oversized Super Agent request").into()
                     }),
             )
+            .route("/availability", web::get().to(availability))
+            .route("/sessions", web::get().to(list))
             .route("/sessions", web::post().to(create))
             .route("/sessions/{sessionId}/messages", web::post().to(message))
             .route("/sessions/{sessionId}/stream", web::get().to(stream))
@@ -63,18 +68,46 @@ struct StreamQuery {
     start_index: u64,
 }
 
+async fn rollout_for_member(
+    req: &HttpRequest,
+    state: &AppState,
+    team: &str,
+    action: TeamAction,
+) -> Result<(String, bool)> {
+    let actor = auth::user(req, state).await?;
+    state
+        .store
+        .authorize_team(&actor.user.id, team, action)
+        .await?;
+    let team_id = deskfleet_control_store::resource_id(team)?;
+    let enabled = state.super_agent_rollout.enabled(&actor.user, team_id);
+    Ok((actor.user.id, enabled))
+}
+
+async fn availability(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    team: web::Path<String>,
+) -> Result<HttpResponse> {
+    let (_, enabled) = rollout_for_member(&req, &state, &team, TeamAction::Read).await?;
+    Ok(HttpResponse::Ok().json(json!({ "enabled": enabled })))
+}
+
 async fn authorize(
     req: &HttpRequest,
     state: &AppState,
     team: &str,
     action: TeamAction,
 ) -> Result<String> {
-    let actor = auth::user(req, state).await?;
-    state
-        .store
-        .authorize_team(&actor.user.id, team, action)
-        .await?;
-    Ok(actor.user.id)
+    let (user_id, enabled) = rollout_for_member(req, state, team, action).await?;
+    if !enabled {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "super_agent_disabled",
+            "Super Agent is disabled",
+        ));
+    }
+    Ok(user_id)
 }
 
 fn runtime(state: &AppState) -> Result<&EveClient> {
@@ -110,6 +143,16 @@ async fn require_session(state: &AppState, team: &str, session: &str) -> Result<
         ));
     }
     Ok(())
+}
+
+async fn list(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    team: web::Path<String>,
+) -> Result<HttpResponse> {
+    authorize(&req, &state, &team, TeamAction::Read).await?;
+    let sessions = state.store.cloud_sessions(&team).await?;
+    Ok(HttpResponse::Ok().json(sessions))
 }
 
 async fn create(
@@ -200,6 +243,10 @@ async fn message(
                 .await?
         }
     };
+    state
+        .store
+        .name_cloud_session(&team, &session, &body.message)
+        .await?;
     Ok(HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery})))
 }
 
@@ -223,8 +270,7 @@ async fn stream(
     )
     .await?;
     let mut out = HttpResponse::Ok();
-    out.content_type("application/x-ndjson")
-        .insert_header(("Cache-Control", "no-store"));
+    out.content_type("application/x-ndjson");
     for name in ["x-eve-stream-version", "x-eve-stream-tail-index"] {
         if let Some(value) = response.headers().get(name).and_then(|h| h.to_str().ok()) {
             out.insert_header((name, value));
@@ -261,12 +307,10 @@ async fn usage(
     let runtime_configured = state.eve.is_some();
     let mut period = period(&state, &team).await?;
     period.admitted &= runtime_configured;
-    Ok(HttpResponse::Ok()
-        .insert_header(("Cache-Control", "no-store"))
-        .json(Usage {
-            runtime_configured,
-            period,
-        }))
+    Ok(HttpResponse::Ok().json(Usage {
+        runtime_configured,
+        period,
+    }))
 }
 
 #[cfg(test)]

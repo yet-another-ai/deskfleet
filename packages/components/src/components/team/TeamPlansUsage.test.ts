@@ -330,13 +330,16 @@ test("an earlier account's pending Checkout is not attributed to its replacement
 })
 
 test("comparison uses server allowances for the current plan and stays visible to subscribers", async () => {
-  await setup(fake => fake.central.billing.mockResolvedValue({
-    ...free(), plan: "go", canManageBilling: true,
-    limits: { ...quotaFixture.go, turnBytes: 4_294_967_296 },
-    planCatalog: planCatalogFixture().map(entry => entry.plan === "go" ? { ...entry, turnBytes: 4_294_967_296 }
-      : entry.plan === "pro" ? { ...entry, teamTurnServers: false, superAgentTokens: 98765, turnBytes: 512 } : entry),
-    subscription: { plan: "go", status: "active", paidThrough: "2026-12-01T00:00:00Z", cancelAtPeriodEnd: false },
-  }))
+  await setup(fake => {
+    fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
+    fake.central.billing.mockResolvedValue({
+      ...free(), plan: "go", canManageBilling: true,
+      limits: { ...quotaFixture.go, turnBytes: 4_294_967_296 },
+      planCatalog: planCatalogFixture().map(entry => entry.plan === "go" ? { ...entry, turnBytes: 4_294_967_296 }
+        : entry.plan === "pro" ? { ...entry, teamTurnServers: false, superAgentTokens: 98765, turnBytes: 512 } : entry),
+      subscription: { plan: "go", status: "active", paidThrough: "2026-12-01T00:00:00Z", cancelAtPeriodEnd: false },
+    })
+  })
   const current = usage().get('[data-plan-comparison="go"]')
   expect(current.text()).toContain("Current plan")
   expect(current.text()).toContain("4 GiB")
@@ -348,6 +351,13 @@ test("comparison uses server allowances for the current plan and stays visible t
   expect(current.find("button").exists()).toBe(false)
   expect(usage().findAll("[data-plan-comparison]")).toHaveLength(3)
   expect(button("Manage billing")).toBeDefined()
+})
+
+test("a closed rollout hides token allowances across usage and the catalog", async () => {
+  await setup(fake => fake.central.billing.mockResolvedValue(free()))
+  expect(usage().find("[data-team-usage=tokens]").exists()).toBe(false)
+  expect(usage().text()).not.toContain("Super Agent")
+  expect(usage().findAll("[data-plan-comparison]")).toHaveLength(3)
 })
 
 test.each([

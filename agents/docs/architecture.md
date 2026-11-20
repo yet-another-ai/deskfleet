@@ -82,10 +82,10 @@ offline; clients show when that data was last observed.
 The backend is open source in this repository under Apache-2.0. Shared resource
 and protocol types remain independent of Actix Web and Node-API.
 
-Optional Statsig integration belongs to the shared JavaScript frontend. Web and
-Electron renderers use a build-time client-public key for behavioral events and
-UI gates/experiments; an absent key disables the integration. Electron permits
-only the configured Statsig origins through its renderer Content Security Policy.
+Web and Electron share the optional Statsig integration for behavioral events
+and UI experiments. A build-time client-public key enables the renderer SDK.
+Electron permits only the configured Statsig origins through its renderer
+Content Security Policy.
 Verified billing conversions originate in the Rust server; a transactional
 billing outbox delivers them independently from payment reconciliation. Frontend
 actions and server conversions share account and Team identifiers.
@@ -145,8 +145,11 @@ Caller cancellation and daemon shutdown stop active requests and backoff waits.
 The optional `apps/super-agent` Node service runs a conversational coordinator
 using eve and its PostgreSQL Workflow world. Actix authenticates clients,
 authorizes Team access and binds every root eve Session to its owning Team.
-The server uses a private service credential for the runtime. The cloud service
-owns conversation execution and replay. The control store owns Team membership,
+The API evaluates the Statsig `super_agent` rollout for the account and selected
+Team on every client request. Web and Electron discover the decision through
+the Team availability endpoint. The meter keeps settling accepted work after
+rollout removal. The server uses a private service credential for the runtime.
+The cloud service owns conversation execution and replay. The control store owns Team membership,
 request receipts, Session bindings and the cloud token ledger. Each API instance
 can claim outstanding Session streams to meter. The cursor advances after the
 usage facts are durable. Re-reading a stream after a crash preserves the original

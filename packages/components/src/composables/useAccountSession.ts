@@ -27,6 +27,9 @@ export interface AccountSession {
   teams: Ref<Team[]>
   teamId: Ref<string | undefined>
   team: ComputedRef<Team | undefined>
+  /** The server's rollout decision for the current account and Team. Undefined while loading. */
+  superAgentEnabled: ComputedRef<boolean | undefined>
+  refreshSuperAgentAvailability(): Promise<void>
   members: Ref<TeamMember[]>
   machines: Ref<Machine[]>
   /** Undefined while signaling needs reconciliation; advances after a complete roster read. */
@@ -108,6 +111,23 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
   let membersRevision = 0
   let machineDestination: { teamId: string; machineId: string; route: RouteLocationRaw } | undefined
   const resourceScope = () => JSON.stringify([account.value.serverUrl, account.value.user?.id, teamId.value])
+  const availability = ref<{ scope: string; enabled?: boolean }>()
+  let availabilityRevision = 0
+  const superAgentEnabled = computed(() => {
+    if (!account.value.user || !team.value) return false
+    return availability.value?.scope === resourceScope() ? availability.value.enabled : undefined
+  })
+  async function refreshSuperAgentAvailability(): Promise<void> {
+    const revision = ++availabilityRevision
+    const selected = team.value
+    const scope = resourceScope()
+    if (!selected || !account.value.user) { availability.value = undefined; return }
+    if (availability.value?.scope !== scope) availability.value = { scope }
+    let enabled = false
+    try { enabled = (await automatic.superAgentAvailability(selected.id)).enabled === true }
+    catch { /* Unavailable gates are closed. The next account refresh retries discovery. */ }
+    if (revision === availabilityRevision && scope === resourceScope()) availability.value = { scope, enabled }
+  }
 
   async function background(work: () => Promise<void>): Promise<void> {
     try { await work(); notice.value = undefined } catch (reason) { notice.value = message(reason) }
@@ -151,6 +171,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       dialog.value = undefined
       machineDestination = undefined
       searchPath.value = "/search"
+      void refreshSuperAgentAvailability()
       await loadSite
       return
     }
@@ -165,6 +186,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
       members.value = []
       machineDestination = undefined
     }
+    void refreshSuperAgentAvailability()
     await Promise.all([loadMachines(undefined, api), loadMembers(api)])
   }
   async function selectTeam(id: string): Promise<void> {
@@ -175,6 +197,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
     machineId.value = undefined
     machines.value = []
     members.value = []
+    void refreshSuperAgentAvailability()
     await background(async () => { await Promise.all([loadMachines(undefined, user), loadMembers(user)]) })
   }
   function openMachineRoute(targetMachineId: string, route: RouteLocationRaw): void {
@@ -261,7 +284,7 @@ export function createAccountSession(central: CentralApi, initialNotice?: string
 
   return {
     central, ready, account, site, teams, teamId, team, members, machines, machineRosterVersion, machineId, machine, searchPath, localStatus, enrollment, localMachineId, canEnrollLocal,
-    connected, notice, dialog, reload,
+    connected, notice, dialog, reload, superAgentEnabled, refreshSuperAgentAvailability,
     refreshMachines,
     async signIn() { await user.login(); await reload(user) },
     async signOut() {

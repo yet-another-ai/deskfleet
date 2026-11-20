@@ -75,6 +75,11 @@ export const router = createRouter({
       component: () => import("../views/NewSessionView.vue"),
     },
     {
+      path: "/super-agent",
+      name: "super-agent",
+      component: () => import("../views/SuperAgentRoute.vue"),
+    },
+    {
       path: "/search",
       name: "search",
       component: () => import("../views/SearchView.vue"),

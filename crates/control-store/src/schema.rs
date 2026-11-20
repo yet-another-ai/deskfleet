@@ -238,6 +238,11 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 40).await?;
     }
+    if !version_present(&tx, 41).await? {
+        tx.execute_unprepared(include_str!("cloud_session_inbox.sql"))
+            .await?;
+        record_version(&tx, 41).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -250,6 +255,11 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 41).await? {
+        tx.execute_unprepared(include_str!("cloud_session_inbox_down.sql"))
+            .await?;
+        remove_version(&tx, 41).await?;
+    }
     if version_present(&tx, 40).await? {
         tx.execute_unprepared(include_str!("plan_limits_down.sql"))
             .await?;

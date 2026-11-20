@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n"
 import type { BillingPlan, PlanQuota } from "@deskfleet/client/billing"
 import type { AdminPlanQuota, SiteAdministrationApi } from "@deskfleet/client/central"
 import { failureMessage, type RecentAuthentication } from "../../composables/useRecentAuthentication.ts"
+import { useAccountSession } from "../../composables/useAccountSession.ts"
 import UiButton from "../common/UiButton.vue"
 import UiSwitch from "../common/UiSwitch.vue"
 import SettingsRow from "./SettingsRow.vue"
@@ -16,6 +17,8 @@ const props = defineProps<{
 const { t } = useI18n()
 const id = useId()
 const fields = ["maxActiveSessions", "maxTurnsPerSession", "maxMembers", "turnBytes", "superAgentTokens"] as const
+const account = useAccountSession()
+const visibleFields = computed(() => fields.filter(key => key !== "superAgentTokens" || account?.superAgentEnabled.value))
 type Field = typeof fields[number]
 interface Draft {
   plan: BillingPlan
@@ -38,7 +41,7 @@ const limits = computed<PlanQuota | undefined>(() => {
   const row = current.value
   if (!row) return
   const result = { ...row.limits, teamTurnServers: row.teamTurnServers }
-  for (const key of fields) {
+  for (const key of visibleFields.value) {
     const input = row.inputs[key]
     if (input && (!/^\d+$/.test(input) || !Number.isSafeInteger(Number(input)))) return
     result[key] = input === "" ? null : Number(input)
@@ -86,7 +89,7 @@ async function save(): Promise<void> {
     </label>
     <p class="m-0 text-[13px] text-ui-text-muted">{{ t(selected === "selfHosted" ? "planQuotas.selfHosted" : "planQuotas.hint") }}</p>
     <div class="ui-card">
-      <SettingsRow v-for="field in fields" :key="field" :label="t(`planQuotas.${field}`)" :label-id="`${id}-${field}`">
+      <SettingsRow v-for="field in visibleFields" :key="field" :label="t(`planQuotas.${field}`)" :label-id="`${id}-${field}`">
         <input v-model="current.inputs[field]" class="ui-input w-44 text-end tabular-nums" type="text" inputmode="numeric" pattern="[0-9]*" :name="field" :aria-labelledby="`${id}-${field}`" :placeholder="t('team.unlimited')" :disabled="selected === 'selfHosted' || saving" />
       </SettingsRow>
       <SettingsRow :label="t('planQuotas.teamTurnServers')" :label-id="`${id}-team-turn`">

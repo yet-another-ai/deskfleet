@@ -228,13 +228,14 @@ explicitly when a build mode should report to a different Statsig environment.
 Local builds accept the same process environment variables. A change requires
 rebuilding and redistributing the affected clients, not restarting the API.
 
-For verified payment conversions, separately configure the API runtime with
+For verified payment conversions and the Super Agent rollout, configure the API with
 `DESKFLEET_STATSIG_SERVER_KEY` and `DESKFLEET_STATSIG_ENVIRONMENT` (default
 `production`) for the same Statsig project/tier. This server key is secret and
 must never enter a frontend build. Migration 10 adds the durable billing event
 outbox; its delivery worker is independent of Stripe reconciliation. The
 [analytics guide](analytics.md#payment-funnel) defines conversion metrics and
-delivery guarantees. Both frontend and backend analytics are optional.
+delivery guarantees. Super Agent uses the same server key to evaluate its
+`super_agent` gate locally for the authenticated account and selected Team.
 
 When enabled, allow `https://featureassets.org`, `https://prodregistryv2.org`, and
 `https://statsigapi.net` in the Web host's `connect-src` policy. The Electron

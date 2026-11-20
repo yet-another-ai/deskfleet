@@ -708,6 +708,15 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     },
     members: async () => structuredClone(members),
     teamUsage: async () => ({ relayedBytes: "3221225472", activeSessionCount: 8, memberCount: members.length }),
+    superAgentAvailability: async () => ({ enabled: false }),
+    superAgentSessions: async () => [],
+    superAgentUsage: async () => ({
+      runtimeConfigured: true, admitted: true, usedTokens: 0, includedTokens: null, plan: "selfHosted",
+      start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
+    }),
+    createSuperAgentSession: async (_teamId, operationId) => ({ sessionId: `wrun_${operationId}` }),
+    sendSuperAgentMessage: async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` }),
+    superAgentHistory: async (_teamId, _sessionId, startIndex) => ({ messages: [], nextIndex: startIndex }),
     teamTurnSettings: async () => structuredClone(teamTurn),
     updateTeamTurnSettings: async (_teamId: string, next: TeamTurnSettingsUpdate) => {
       teamTurn = { ...teamTurn, urls: [...next.urls], secretConfigured: next.urls.length > 0 && (teamTurn.secretConfigured || next.secret !== undefined) }

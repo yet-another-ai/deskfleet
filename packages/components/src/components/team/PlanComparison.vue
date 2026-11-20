@@ -11,6 +11,7 @@ const props = defineProps<{
   billing: TeamBilling
   interval: BillingInterval
   offers: boolean
+  showSuperAgent: boolean
   pending?: "go" | "pro" | "portal"
 }>()
 const emit = defineEmits<{ select: [plan: "go" | "pro"] }>()
@@ -19,12 +20,13 @@ const { t, locale } = useI18n()
 const plans = computed(() => props.billing.planCatalog.filter(
   (entry): entry is PlanCatalogEntry & { plan: "free" | "go" | "pro" } => entry.plan !== "enterprise",
 ))
-const features = [
+const quotaFeatures = [
   { key: "maxActiveSessions", label: "team.activeSessions" },
   { key: "maxTurnsPerSession", label: "billing.turnsPerSession" },
   { key: "maxMembers", label: "team.usageMembers" },
   { key: "superAgentTokens", label: "billing.comparison.monthlyTokens" },
 ] as const
+const features = computed(() => quotaFeatures.filter(feature => feature.key !== "superAgentTokens" || props.showSuperAgent))
 function price(plan: string) {
   return props.billing.prices?.find(value => value.plan === plan && value.interval === props.interval)
 }
