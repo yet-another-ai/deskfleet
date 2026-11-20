@@ -22,6 +22,12 @@ checksum = "sha256:cb2c54152e3bd39acfe2fbda4a2aa91d2af914e24859d3623423efd7b27e3
 url = "https://github.com/microsoft/apm/releases/download/v0.35.0/apm-darwin-arm64.tar.gz"
 url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/667315207"
 
+[tools.apm."platforms.macos-x64"]
+checksum = "sha256:ee17daf433c49ed481d9f2ddee31825cbced9390637cab9a5138815bbace327c"
+checksum_source = "mise-versions"
+url = "https://github.com/microsoft/apm/releases/download/v0.35.0/apm-darwin-x86_64.tar.gz"
+url_api = "https://api.github.com/repos/microsoft/apm/releases/assets/667315209"
+
 [tools.apm."platforms.windows-x64"]
 checksum = "sha256:9a0a912b3ba68ac154b940e1931425c85f03edcfcc2339661d3aa32d8fa17c2f"
 url = "https://github.com/microsoft/apm/releases/download/v0.35.0/apm-windows-x86_64.zip"
@@ -60,6 +66,14 @@ url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-x64
 checksum = "sha256:b5d6bc2e13caf14e57c89661e89efd073ff16165b41bfe43882616410609cd10"
 url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-darwin-aarch64.zip"
 
+[tools.bun."platforms.macos-x64"]
+checksum = "sha256:a4972e778cce4b6a194d7d289f326aa61576d71d80b7a53e9da2f3739566e5fd"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-darwin-x64.zip"
+
+[tools.bun."platforms.macos-x64-baseline"]
+checksum = "sha256:fb0121739a7e80e7511b6bfe4d2116422b48ba18a013acadef0c425348e95891"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-darwin-x64-baseline.zip"
+
 [tools.bun."platforms.windows-x64"]
 checksum = "sha256:815ab45ec7f549abf87e6869584b506eab088e24225683957b7e150b47d6de30"
 url = "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-windows-x64.zip"
@@ -93,6 +107,12 @@ checksum = "sha256:4b7b73704b1db9b374e5c9ab8e17ac6148b817b6396ee75cd94a852cbac9d
 url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-macos-universal.tar.gz"
 url_api = "https://api.github.com/repos/Kitware/CMake/releases/assets/605993514"
 
+[tools.cmake."platforms.macos-x64"]
+checksum = "sha256:4b7b73704b1db9b374e5c9ab8e17ac6148b817b6396ee75cd94a852cbac9d305"
+checksum_source = "mise-versions"
+url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-macos-universal.tar.gz"
+url_api = "https://api.github.com/repos/Kitware/CMake/releases/assets/605993514"
+
 [tools.cmake."platforms.windows-x64"]
 checksum = "sha256:bace36e94b31c68ab6fa295f26dfa11219e0701cf7c94b0284a7d1cb13dac536"
 url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip"
@@ -115,6 +135,10 @@ url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0
 checksum = "sha256:bf036b35b071bfb2f54f2c0af8ee8d88afa95ee6eb3dce02c0f94cfc2524d04a"
 url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz"
 
+[tools.java."platforms.macos-x64"]
+checksum = "sha256:9aa1d1c17ae5467a022679e7e0af5c00797d94ac462ed1a46f4db07a8a34a6dd"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_mac_hotspot_21.0.13_9.tar.gz"
+
 [tools.java."platforms.windows-x64"]
 checksum = "sha256:a4dbaa05fca4bd89d84584e58c459bd732efebb1722af80ab13c6516832004f9"
 url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip"
@@ -135,6 +159,10 @@ url = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.gz"
 [tools.node."platforms.macos-arm64"]
 checksum = "sha256:89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7"
 url = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz"
+
+[tools.node."platforms.macos-x64"]
+checksum = "sha256:d132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035"
+url = "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
 checksum = "sha256:d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5"
@@ -166,6 +194,12 @@ provenance = "github-attestations"
 checksum = "sha256:6a41a2877773e97f19832067187cc6fc82e186d8a2cf91fec4b4c1a5fbd6ef27"
 url = "https://github.com/pnpm/pnpm/releases/download/v12.15.0/pnpm-darwin-arm64.tar.gz"
 url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/662173343"
+provenance = "github-attestations"
+
+[tools.pnpm."platforms.macos-x64"]
+checksum = "sha256:2d7b336884574aee8a765bee48591212e9caf4fcf985fb3279588c1fb73fb47f"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.15.0/pnpm-darwin-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/662173347"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.windows-x64"]

@@ -4,17 +4,17 @@ DeskFleet は、ネイティブデスクトップアプリ（メインプロセ�
 
 ## デスクトップアプリをインストールする
 
-### macOS（Apple Silicon）
+### macOS
 
-公式の Homebrew Tap からインストールできます。
+[GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) からお使いの Mac に対応するディスクイメージをダウンロードします。Apple Silicon 搭載 Mac では `-mac-arm64.dmg`、Intel 搭載 Mac では `-mac-x64.dmg` で終わるファイルを選びます。ディスクイメージを開き、DeskFleet を「アプリケーション」フォルダーにドラッグします。
+
+Apple Silicon 搭載 Mac では、公式の Homebrew Tap からもインストールできます。
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-[GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から `.dmg` ディスクイメージを直接ダウンロードすることもできます。
-
-- **Nix（nix-darwin）**: リリース版 flake を入力に追加し、`deskfleet` overlay を適用して `environment.systemPackages` に `pkgs.deskfleet` を追加します。nix-darwin が署名済みのアプリバンドルを `/Applications/Nix Apps` に配置し、更新を管理します。詳細は [Nix 配布ガイド](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution) を参照してください。
+- **Nix（nix-darwin、Apple Silicon）**: リリース版 flake を入力に追加し、`deskfleet` overlay を適用して `environment.systemPackages` に `pkgs.deskfleet` を追加します。nix-darwin が署名済みのアプリバンドルを `/Applications/Nix Apps` に配置し、更新を管理します。詳細は [Nix 配布ガイド](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution) を参照してください。
 
 ### Windows（`x64`）
 

@@ -60,7 +60,7 @@ export function findDownload(
   }
   const target = platform === "windows" ? "windows-x64" : `${platform}-${architecture}`
   const appImageArchitecture = architecture === "x64" ? "x86_64" : architecture
-  const installer = platform === "macos" ? "mac-arm64.dmg" : platform === "windows" ? "win-x64.exe" : `linux-${appImageArchitecture}.AppImage`
+  const installer = platform === "macos" ? `mac-${architecture}.dmg` : platform === "windows" ? "win-x64.exe" : `linux-${appImageArchitecture}.AppImage`
   const name = mode === "headless" ? `deskfleet-${target}.tar.gz` : `deskfleet-${release.version}-${installer}`
   return release.files.find(file => file.name === name)
 }

@@ -103,10 +103,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install locked Node
+      - name: Install locked Node and pnpm
         uses: ./.github/actions/setup-mise
         with:
-          tools: node
+          tools: node pnpm
           github-token: ${{ github.token }}
 
       - name: Download desktop installers
@@ -150,6 +150,13 @@ jobs:
             "release-assets/deskfleet-$VERSION-linux-arm64.tar.gz" \
             "release-assets/deskfleet-$VERSION-mac-arm64.zip"
 
+      - name: Merge macOS update metadata
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          pnpm --filter deskfleet install --frozen-lockfile
+          mise exec node -- node scripts/merge-macos-updates.ts release-assets "$VERSION"
+
       - name: Verify release assets
         shell: bash
         env:
@@ -158,6 +165,8 @@ jobs:
           assets=(
             "deskfleet-$VERSION-mac-arm64.dmg"
             "deskfleet-$VERSION-mac-arm64.zip"
+            "deskfleet-$VERSION-mac-x64.dmg"
+            "deskfleet-$VERSION-mac-x64.zip"
             "deskfleet-$VERSION-win-x64.exe"
             "deskfleet-$VERSION-linux-x86_64.AppImage"
             "deskfleet-$VERSION-linux-arm64.AppImage"
@@ -170,6 +179,7 @@ jobs:
             "deskfleet-$VERSION-android-arm64.apk"
             deskfleet-nix.tar.gz
             "deskfleet-$VERSION-mac-arm64.zip.blockmap"
+            "deskfleet-$VERSION-mac-x64.zip.blockmap"
             "deskfleet-$VERSION-win-x64.exe.blockmap"
             latest.yml
             latest-mac.yml
@@ -182,9 +192,12 @@ jobs:
             deskfleet-windows-x64.tar.gz
           )
           # DMG blockmaps can be generated alongside the ZIP used by the updater.
-          if [[ -f "release-assets/deskfleet-$VERSION-mac-arm64.dmg.blockmap" ]]; then
-            assets+=("deskfleet-$VERSION-mac-arm64.dmg.blockmap")
-          fi
+          for arch in arm64 x64; do
+            blockmap="deskfleet-$VERSION-mac-$arch.dmg.blockmap"
+            if [[ -f "release-assets/$blockmap" ]]; then
+              assets+=("$blockmap")
+            fi
+          done
           for asset in "${assets[@]}"; do
             test -s "release-assets/$asset"
           done

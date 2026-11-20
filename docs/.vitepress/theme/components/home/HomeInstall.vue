@@ -103,7 +103,7 @@ const primary = computed(() => {
 })
 const alternatives = computed(() => {
   const macos = platform.value === "macos"
-  if (platform.value !== "linux" && !(macos && mode.value === "headless")) return []
+  if (platform.value === "windows") return []
   const file = mode.value === "desktop" && (method.value === "deb" || method.value === "rpm")
     ? findLinuxPackage(release.value, method.value, "arm64")
     : findDownload(release.value, mode.value, platform.value, macos ? "x64" : "arm64", downloadFormat.value)
