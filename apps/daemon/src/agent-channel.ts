@@ -235,15 +235,11 @@ export class AgentChannel {
       }
       const result = await this.#sessions.handle(method as AgentMethod, params, this.#actor)
       if (this.#closed) return
-      let response = result
-      if (method === "_deskfleet/session/history" && object(params) && params.responseEncoding === "gzip" && Array.isArray(result)) {
-        const json = Buffer.from(JSON.stringify(result))
-        if (json.byteLength >= 4096 && json.byteLength <= AGENT_MESSAGE_BYTES) {
-          const compressed = await gzipAsync(json, { level: 4 })
-          if (compressed.byteLength * 4 / 3 < json.byteLength) response = { encoding: "gzip", data: compressed.toString("base64") }
-        }
+      if (method === "_deskfleet/session/history" && Array.isArray(result)) {
+        await this.#queueHistory(id, result, object(params) && params.responseEncoding === "gzip")
+        return
       }
-      this.#queue({ jsonrpc: "2.0", id, result: response })
+      this.#queue({ jsonrpc: "2.0", id, result })
       if (this.#closed) return
       if (subscribing) {
         const { subscription } = subscribing
@@ -402,9 +398,39 @@ export class AgentChannel {
     this.#queue({ jsonrpc: "2.0", id, error: { code, message } })
   }
 
+  async #queueHistory(id: RpcId, events: AgentEvent[], compress: boolean): Promise<void> {
+    const prefix = `{"jsonrpc":"2.0","id":${JSON.stringify(id)},"result":`
+    const suffix = "}\n"
+    const limit = AGENT_MESSAGE_BYTES + 1 - Buffer.byteLength(prefix) - suffix.length
+    const encoded: string[] = []
+    let size = 2 // Array brackets
+    for (const event of events) {
+      const item = JSON.stringify(event)
+      const nextSize = size + Buffer.byteLength(item) + (encoded.length ? 1 : 0)
+      if (nextSize > limit) {
+        if (encoded.length) break
+        throw new Error(`Conversation event ${event.seq} exceeds the Agent message size limit. Ask the machine owner to inspect the Session journal.`)
+      }
+      size = nextSize
+      encoded.push(item)
+    }
+    // Continue with the last event's seq if the byte budget shortened this page.
+    let json = `[${encoded.join(",")}]`
+    if (compress && size >= 4096) {
+      const gzip = await gzipAsync(Buffer.from(json), { level: 4 })
+      const compressed = JSON.stringify({ encoding: "gzip", data: gzip.toString("base64") })
+      if (compressed.length < size) json = compressed
+    }
+    this.#queueBytes(Buffer.from(prefix + json + suffix))
+  }
+
   #queue(message: JsonObject): void {
     if (this.#closed) return
-    const bytes = Buffer.from(JSON.stringify(message) + "\n")
+    this.#queueBytes(Buffer.from(JSON.stringify(message) + "\n"))
+  }
+
+  #queueBytes(bytes: Uint8Array): void {
+    if (this.#closed) return
     if (bytes.byteLength > AGENT_MESSAGE_BYTES + 1 || this.#queuedBytes + bytes.byteLength > MAX_QUEUED_BYTES) {
       this.#fail(new Error("ACP viewer exceeded its output byte limit")); return
     }

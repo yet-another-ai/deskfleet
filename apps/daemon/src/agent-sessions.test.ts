@@ -208,6 +208,31 @@ test("streamed updates, receipt persistence, and history pages use session metad
   } finally { f.catalog.native.agentSnapshot = snapshot }
 })
 
+test("viewers can request larger history pages while the default stays at 100 events", async t => {
+  const f = await setup(t)
+  const session = await f.service.journal.session(f.sessionId)
+  const events = Array.from({ length: 1005 }, (_value, index) => f.service.journal.event(session.id, "acp", {
+    sessionId: "provider-conversation", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: String(index) } },
+  }))
+  const committed = await f.service.journal.commit(session, { events })
+  const nativeHistory = f.catalog.native.agentHistory.bind(f.catalog.native)
+  const nativePageSizes: number[] = []
+  f.catalog.native.agentHistory = async (id, afterSeq, limit) => {
+    nativePageSizes.push(limit)
+    return nativeHistory(id, afterSeq, limit)
+  }
+  try {
+    const read = (afterSeq: string, limit?: number) => f.service.handle("_deskfleet/session/history", {
+      sessionId: session.id, afterSeq, limit,
+    }, f.actor) as Promise<AgentEvent[]>
+    assert.deepEqual(await read(session.lastEventSeq), committed.slice(0, 100))
+    const page = await read(session.lastEventSeq, 2000)
+    assert.deepEqual(page, committed.slice(0, 1000))
+    assert.deepEqual(await read(page.at(-1)!.seq, 1000), committed.slice(1000))
+    assert.deepEqual(nativePageSizes, [100, 200, 200, 200, 200, 200, 200])
+  } finally { f.catalog.native.agentHistory = nativeHistory }
+})
+
 test("runtime boundaries persist an unawaited text burst before the turn ends without waiting five seconds", async t => {
   for (const boundary of ["finish", "cancel", "stop", "shutdown", "lost"] as const) await t.test(boundary, async t => {
     const f = await setup(t)

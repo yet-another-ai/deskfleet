@@ -807,11 +807,12 @@ test("history loading finishes at the durable watermark while a preview tail is 
 test("merges snapshot, history pages and concurrent live events once without regressing snapshot state", async () => {
   const snapshot = agentSnapshot(); snapshot.session.lastEventSeq = "3"; snapshot.inputs = [agentInput({ state: "delivered" })]
   const history = deferred<AgentEvent[]>()
+  const finalPage = deferred<AgentEvent[]>()
   mock.call.mockImplementation(async (method: string, params: { afterSeq?: string }) => {
     if (method === "initialize") return {}
     if (method === "_deskfleet/session/subscribe") return snapshot
     if (method === "_deskfleet/session/history" && params.afterSeq === "0") return history.promise
-    if (method === "_deskfleet/session/history") return [agentEvent(3, "input", snapshot.inputs[0]!)]
+    if (method === "_deskfleet/session/history") return finalPage.promise
   })
   const store = useAgentSessionsStore()
   const opening = store.open("30"); await flushPromises()
@@ -819,6 +820,9 @@ test("merges snapshot, history pages and concurrent live events once without reg
   receive(agentEvent(4, "permission", permission))
   receive(agentEvent(4, "permission", permission))
   history.resolve([agentEvent(1, "session", { ...snapshot.session, title: "Old title", lastEventSeq: "1" }), agentEvent(2, "input", agentInput())])
+  await flushPromises()
+  expect(store.views["30"]!.events.some(event => event.seq === "1" || event.seq === "2")).toBe(false)
+  finalPage.resolve([agentEvent(3, "input", snapshot.inputs[0]!)])
   await opening
   expect(store.views["30"]!.events.map(event => event.seq)).toEqual(["1", "2", "3", "4"])
   expect(store.views["30"]!.snapshot?.inputs[0]?.state).toBe("delivered")
@@ -827,6 +831,30 @@ test("merges snapshot, history pages and concurrent live events once without reg
   expect(store.views["30"]!.historySeq).toBe("4")
   mock.notification({ method: "session/update", params: { sessionId: "30", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "mirror" } } } })
   expect(store.views["30"]!.events).toHaveLength(4)
+})
+
+test("a failed history page keeps the loaded prefix and retries from its durable cursor", async () => {
+  const snapshot = agentSnapshot()
+  snapshot.session.lastEventSeq = "2"
+  const first = textChunk(1, "Saved ")
+  const second = textChunk(2, "response")
+  const remaining = vi.fn<() => Promise<AgentEvent[]>>()
+    .mockRejectedValueOnce(new Error("History request failed"))
+    .mockResolvedValueOnce([second])
+  mock.call.mockImplementation(async (method: string, { afterSeq }: { afterSeq?: string }) => {
+    if (method === "_deskfleet/session/subscribe") return snapshot
+    if (method === "_deskfleet/session/history") return afterSeq === "0" ? [first] : remaining()
+    return null
+  })
+  const store = useAgentSessionsStore()
+  await store.open("30")
+  expect(store.views["30"]).toMatchObject({ events: [first], historySeq: "1", error: "History request failed" })
+
+  mock.call.mockClear()
+  await store.open("30")
+  const requested = mock.call.mock.calls.filter(([method]) => method === "_deskfleet/session/history")
+  expect(requested.map(([, params]) => params.afterSeq)).toEqual(["1"])
+  expect(store.views["30"]).toMatchObject({ events: [first, second], historySeq: "2", error: null })
 })
 
 test("another viewer's permission decision resolves the original callback and no view teardown stops execution", async () => {
@@ -1559,27 +1587,32 @@ test("session creation unwraps reactive parameters for structuredClone and recov
 })
 
 
-test.each([false, true])("remote retained history renders before attachment and daemon replaces it (local: %s)", async local => {
+test.each([false, true])("remote retained history renders in one batch before attachment and daemon replaces it (local: %s)", async local => {
   const previous = platformClient.agent.history
   const attached = deferred<ReturnType<typeof agentSnapshot>>()
   const snapshot = agentSnapshot()
-  snapshot.session.lastEventSeq = "1"
+  snapshot.session.lastEventSeq = "2"
   const cached = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "cached" }] }))
   const authoritative = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "daemon" }] }))
-  const events = vi.fn(async () => [cached])
+  const tail = textChunk(2, "response")
+  const finalPage = deferred<AgentEvent[]>()
+  const events = vi.fn(async (_sessionId: string, after: string) => after === "0" ? [cached] : finalPage.promise)
   platformClient.agent.history = { parallel: () => !local, available: () => true, list: async () => [], snapshot: async () => snapshot, events }
-  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? attached.promise : method === "_deskfleet/session/history" ? [authoritative] : null)
+  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? attached.promise : method === "_deskfleet/session/history" ? [authoritative, tail] : null)
   try {
     const store = useAgentSessionsStore()
     const opening = store.open("30")
     await flushPromises()
-    expect(events).toHaveBeenCalledTimes(local ? 0 : 1)
-    expect(store.views["30"]!.events).toEqual(local ? [] : [cached])
+    expect(events).toHaveBeenCalledTimes(local ? 0 : 2)
+    expect(store.views["30"]!.events).toEqual([])
+    finalPage.resolve([tail])
+    await flushPromises()
+    expect(store.views["30"]!.events).toEqual(local ? [] : [cached, tail])
     expect(store.views["30"]!.historySeq).toBe("0")
     attached.resolve(snapshot)
     await opening
-    expect(store.views["30"]!.events).toEqual([authoritative])
-    expect(store.views["30"]!.historySeq).toBe("1")
+    expect(store.views["30"]!.events).toEqual([authoritative, tail])
+    expect(store.views["30"]!.historySeq).toBe("2")
   } finally { platformClient.agent.history = previous }
 })
 
@@ -1623,20 +1656,30 @@ test("returning to an opened conversation displays memory while subscription is 
   expect(store.views["30"]!.syncing).toBe(false)
 })
 
-test("disk history displays before connection and authoritative replay replaces cached sequences", async () => {
+test("disk history stays visible until the complete authoritative history replaces cached sequences", async () => {
   const stale = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "cached" }] }))
   const fresh = agentEvent(1, "input", agentInput({ content: [{ type: "text", text: "authoritative" }] }))
-  const snapshot = { ...agentSnapshot(), session: { ...agentSnapshot().session, lastEventSeq: "1" } }
+  const tail = textChunk(2, "response")
+  const snapshot = agentSnapshot()
+  snapshot.session.lastEventSeq = "2"
   const subscribed = deferred<typeof snapshot>()
-  mock.call.mockImplementation(async method => method === "_deskfleet/session/subscribe" ? subscribed.promise : method === "_deskfleet/session/history" ? [fresh] : {})
+  const finalPage = deferred<AgentEvent[]>()
+  mock.call.mockImplementation(async (method: string, params: { afterSeq?: string }) => {
+    if (method === "_deskfleet/session/subscribe") return subscribed.promise
+    if (method === "_deskfleet/session/history") return params.afterSeq === "0" ? [fresh] : finalPage.promise
+    return {}
+  })
   const { store } = cachedStore({ read: async () => ({ snapshot, events: [stale] }) })
   const pending = store.open("30")
   await flushPromises()
   expect(store.views["30"]).toMatchObject({ loading: false, syncing: true, historySeq: "0", snapshotSeq: "0", events: [stale] })
   subscribed.resolve(snapshot)
+  await flushPromises()
+  expect(store.views["30"]!.events).toEqual([stale])
+  finalPage.resolve([tail])
   await pending
-  expect(store.views["30"]).toMatchObject({ syncing: false, historySeq: "1", events: [fresh] })
-  expect(mock.call).toHaveBeenCalledWith("_deskfleet/session/history", { sessionId: "30", afterSeq: "0", limit: 100 })
+  expect(store.views["30"]).toMatchObject({ syncing: false, historySeq: "2", events: [fresh, tail] })
+  expect(mock.call).toHaveBeenCalledWith("_deskfleet/session/history", { sessionId: "30", afterSeq: "0", limit: 1000 })
 })
 
 test("late cache reads cannot overwrite a live snapshot or revive a deleted conversation", async () => {
