@@ -14,7 +14,7 @@ patchedDependencies:
   '@xterm/addon-ligatures@*': fa45e6baf79dcd885c76ac00ddc39740210fcaadc91ce8473481e5e443bf98f2
   '@xterm/addon-search@*': a3398047a9423d007abbb875aec542ed6f855cc861c4b69b46fd93b7c649c1a0
   '@xterm/addon-webgl@*': 1a508d3ac90a82a4554bc38cc74531bbfed499124186298d5562cb27968f875b
-  pi-acp@0.0.34: 5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024
+  pi-acp@0.0.34: a8b8b47c17af30401808cea156c2ba462fa4c55584e134f85cd2e4b29bd74d3a
   stream-markdown-parser@*: 809518af293a11f3e64b4b6bb6b7e985bfe5e58a5ce61132788a0e9bab3d0420
 
 importers:
@@ -406,7 +406,7 @@ importers:
         version: link:../core
       pi-acp:
         specifier: 0.0.34
-        version: 0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024)
+        version: 0.0.34(patch_hash=a8b8b47c17af30401808cea156c2ba462fa4c55584e134f85cd2e4b29bd74d3a)
 
   packages/capacitor-bridge:
     dependencies:
@@ -19728,7 +19728,7 @@ snapshots:
 
   perfect-debounce@2.1.0: {}
 
-  pi-acp@0.0.34(patch_hash=5a9bafdb36e0dc31ca2e242b9dd67f29cd8eec2d932bd49e6f04d5f4063f8024):
+  pi-acp@0.0.34(patch_hash=a8b8b47c17af30401808cea156c2ba462fa4c55584e134f85cd2e4b29bd74d3a):
     dependencies:
       '@agentclientprotocol/sdk': 0.26.0(zod@3.25.76)
       cross-spawn: 7.0.6

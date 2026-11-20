@@ -289,7 +289,9 @@ methods stay unrecognized.
 Pi uses the bundled `pi-acp` bridge to run `` `<binary> --mode rpc` ``; the
 selected path overrides `PI_ACP_PI_COMMAND`. It supports saved-session loading
 and model/thinking configuration. Pi executes tools locally, and the bridge does
-not forward client-provided MCP servers or additional Workspace directories.
+not expose additional Workspace directories. The bridge registers injected stdio
+and Streamable HTTP MCP servers when creating or loading a session, using Pi's
+built-in MCP support from 0.99.0 onward. Legacy SSE is unsupported.
 Settings installs Pi with the official `pi.dev` installer. For login, start `pi`,
 enter `/login`, then `/quit` when setup is complete. Executable discovery leaves
 its credential status unknown; **Test Connection** opens a session using existing
@@ -374,7 +376,9 @@ its static `spawnSync` import instead of top-level await so it can be bundled fo
 SEA, and imports its package metadata statically to preserve its identity in
 bundles. It also retains the agent handler directly so closing the adapter
 terminates its Pi subprocesses; the upstream shutdown code accesses a handler
-that the ACP SDK does not expose.
+that the ACP SDK does not expose. The patch hands the session's MCP configuration
+to a Pi extension through a private temporary directory and removes it when the
+Pi subprocess or adapter exits.
 
 Source and SEA launches route adapter subprocesses through `--codex-acp`,
 `--claude-agent-acp`, or `--pi-acp` on their own entry point. The Claude adapter's published

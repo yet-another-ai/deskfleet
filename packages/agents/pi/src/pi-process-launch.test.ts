@@ -42,10 +42,11 @@ test("Pi RPC launches stay hidden for executables and command shims while preser
         process: { env },
         spawn: captured.spawn,
         crossSpawn: captured.crossSpawn,
+        PiRpcSpawnError: Error,
       }) as (params: { piCommand?: string; cwd: string; sessionPath?: string }) => Promise<unknown>
       const cwd = "/workspace with spaces"
       const sessionPath = scenario.session ? "/sessions/saved session.jsonl" : undefined
-      await assert.rejects(start({ piCommand: scenario.binary, cwd, sessionPath }), error => error === captured.stopped)
+      await assert.rejects(start({ piCommand: scenario.binary, cwd, sessionPath }), error => (error as Error).cause === captured.stopped)
       assert.equal(captured.calls.length, 1)
       const call = captured.calls[0]!
       assert.equal(call.kind, scenario.kind)
