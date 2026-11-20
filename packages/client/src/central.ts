@@ -1,7 +1,7 @@
 import type { RelayDeniedReason } from "./relay.ts"
 import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { BillingInterval, BillingPlan, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
@@ -77,8 +77,12 @@ export type CentralEvent =
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 
+export type AdminPlanQuota = PlanQuota & { plan: BillingPlan }
+
 /** Site management is available to the Web host, separately from the desktop bridge. */
 export interface SiteAdministrationApi {
+  planQuotas(): Promise<AdminPlanQuota[]>
+  updatePlanQuota(plan: HostedPlan, limits: PlanQuota): Promise<AdminPlanQuota>
   usageTrends(period: SiteUsagePeriod): Promise<SiteUsageTrends>
   siteSettings(): Promise<SiteSettings>
   updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>

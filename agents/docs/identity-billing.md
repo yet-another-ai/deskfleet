@@ -56,17 +56,29 @@ unlimited tokens. See [Super Agent setup](../../apps/super-agent/README.md).
 
 ## Plan matrix
 
+PostgreSQL stores a site-wide quota row for each plan in `cp_plan_limits`.
+Migration 40 seeds the following defaults. Site administrators can change the
+four hosted plans in **Site administration → Plan quotas**. Changing a quota requires
+recent authentication and records an audit event. Team billing returns the
+current limits and the hosted plan catalog for comparison. The next admission
+reads the new limits, including for existing subscribers. Changing an allowance
+keeps usage, current billing periods, existing members and Sessions intact.
+
+Numeric limits use nonnegative integers. Zero blocks new consumption and
+`null` means unlimited. TURN traffic is measured in bytes. Self-hosted
+installations retain unrestricted product quotas.
+
 | Allowance | Free | Go | Pro | Enterprise | Self-hosted |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Non-deleted Agent Sessions per Team | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
-| Monthly Super Agent tokens | Configurable | Configurable | Configurable | Configurable | Unlimited with operator model credentials |
+| Monthly Super Agent tokens | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
 | Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
-One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
+One GiB is 1,073,741,824 bytes. The default Go allowance is 2,147,483,648 bytes and Pro allows
 21,474,836,480 bytes per monthly usage period. Compare integer bytes; round only
 for display. Checkout sells monthly and yearly recurring Prices for Go and Pro.
 TURN usage periods remain calendar months anchored to the subscription even when
@@ -265,15 +277,14 @@ A replacement subscription adopts its own anchor.
 
 **Over-limit fallback:** preserve existing members, Sessions, files, and
 history after a smaller allowance takes effect. Block growth while the relevant
-count is at or above its limit, and apply Free turn limits to subsequent starts.
+count is at or above its limit, and apply the new per-Session turn limit to subsequent starts.
 Allow reading, archiving, restoring, Session deletion, member removal, and billing
 recovery. Do not remove members or archive Sessions automatically.
 
 ### Manual plan grants
 
 Only a current Site Admin can grant or revoke Free, Go, Pro, or Enterprise for a hosted Team, with an optional expiry and a required internal reason.
-Enterprise unlocks every product allowance, including TURN. It is not sold via
-Checkout or selectable by Team owners. When
+Enterprise uses the allowances configured for that plan. A Site Admin grants it directly. When
 `DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set, Plans & Usage shows a Contact us
 mailto action for Teams that are not already on Enterprise; when unset, that
 offer is omitted.
@@ -325,7 +336,7 @@ removes the Session from the complete catalog inventory.
 
 ### Per-Session turns and fork inheritance
 
-Free permits at most 30 consumed turns over the Session lifetime. Archive,
+Free defaults to 30 consumed turns over the Session lifetime. Archive,
 restore, process restart, and reconnect do not reset usage. Unlimited plans also
 record consumption so later Free fallback has an accurate count.
 
@@ -335,8 +346,8 @@ Persist an immutable inherited baseline:
 `consumed turns = inherited baseline + turns consumed by this Session`
 
 Later parent activity does not change that baseline. Further forks inherit the
-full total, including inherited usage. A source at 24 leaves its child with
-6 Free turns; a source at 30 leaves none. Inherited display history must not
+full total, including inherited usage. With a 30-turn allowance, a source at
+24 leaves its child with six turns. A source at 30 leaves none. Inherited display history must not
 become executable input or synthetic local turn records.
 
 **Consumption definition:**
@@ -373,14 +384,14 @@ an upgrade resolves the failure.
 
 ### TURN relay allowance
 
-Free receives no TURN credentials. Direct connectivity and configured STUN stay
-available. Explain the plan restriction when direct connection fails, rather
-than reporting a reachable Machine as offline.
+With a zero relay allowance the server withholds site TURN credentials.
+Direct connectivity and configured STUN stay available. Explain the restriction
+when a direct connection fails.
 
-For Go/Pro, compare current-period usage when granting new relay authorization.
-At or above the limit, omit TURN while retaining direct connectivity. Both
-endpoints receive a consistent decision; offer/negotiation paths cannot issue
-credentials for a denied grant. Enterprise and self-hosted TURN are unlimited.
+For a finite positive allowance, compare current-period usage when granting new
+relay authorization. Both endpoints get the same decision. Reaching the limit
+blocks new site TURN credentials while direct connections remain available.
+A null allowance permits unlimited site relay traffic.
 
 Issued authorizations and existing connections retain their original bounded
 lifetime after exhaustion or paid expiry; reconnect does not extend it. Actual
@@ -424,13 +435,13 @@ first-release requirement.
 Continue recording during Enterprise. Revoking the override retains the period
 and usage, so Enterprise-period traffic consumes any restored paid allowance.
 The collector has a database lease and reports freshness/gaps; stale collection
-denies new metered Go/Pro relay grants. Enterprise and self-hosted grants remain
-unlimited. Redis Pub/Sub loss is still not reconstructable.
+denies new relay grants on plans with a finite allowance. Unlimited plans can
+continue to use the relay. Redis Pub/Sub loss is still not reconstructable.
 
 ### Team TURN servers
 
-Pro, Enterprise, and self-hosted Teams can relay through their own TURN REST
-server. Team owners and administrators manage its URLs and shared secret in Team
+Teams whose plan enables `teamTurnServers` can relay through their own TURN
+REST server. Team owners and administrators manage its URLs and shared secret in Team
 settings. While it is in use, new grants carry only the Team's TURN URLs, with
 credentials signed by the Team's secret. These grants bypass the relay allowance
 and are not metered, because the traffic never reaches the site's relay. They
@@ -528,7 +539,7 @@ names remain implementation details. Separate microservices are not required.
    start turn 31. Restart and archive/restore preserve usage.
 6. Fork at 24 inherits 24; later parent activity does not alter it. Fork at 30
    receives no fresh Free turns, including after a further fork.
-7. Free gets direct connectivity but no relay credentials. Go/Pro enforce exact
+7. With the default quotas, Free gets direct connectivity but no relay credentials. Go/Pro enforce exact
    integer-byte limits for new authorization on both endpoints while preserving
    the original lifetime of existing access.
 8. With the month-end convention, January 31 anchors clamp in February

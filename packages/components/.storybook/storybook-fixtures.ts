@@ -1,3 +1,4 @@
+import { adminPlanQuotasFixture, planCatalogFixture } from "../src/test/plan-quotas.ts"
 import { computed, type ComputedRef } from "vue"
 import { createPinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
@@ -185,7 +186,9 @@ export const storybookFileTransfers: FileTransfer[] = [
 
 export const storybookBilling: TeamBilling = {
   plan: "pro",
+  planCatalog: planCatalogFixture().map(entry => entry.plan === "pro" ? { ...entry, maxActiveSessions: 25, maxTurnsPerSession: 200, maxMembers: 10, turnBytes: 10_737_418_240 } : entry),
   limits: {
+    teamTurnServers: true, superAgentTokens: 0,
     maxActiveSessions: 25,
     maxTurnsPerSession: 200,
     maxMembers: 10,
@@ -591,6 +594,7 @@ export const storybookArchivedSessionRecord: AgentSessionRecord = {
 }
 
 export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
+  let planQuotas = adminPlanQuotasFixture()
   const listeners = new Set<(event: CentralEvent) => void>()
   let site: SiteSettings = {
     siteName: "DeskFleet Cloud",
@@ -652,6 +656,12 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       return { ...site }
     },
     turnSettings: async () => ({ ...turn, urls: [...turn.urls] }),
+    planQuotas: async () => planQuotas.map(row => ({ ...row })),
+    updatePlanQuota: async (plan, limits) => {
+      const updated = { plan, ...limits }
+      planQuotas = planQuotas.map(row => row.plan === plan ? updated : row)
+      return updated
+    },
     updateTurnSettings: async next => {
       turn = { ...next, urls: [...next.urls] }
       return { ...turn, urls: [...turn.urls] }

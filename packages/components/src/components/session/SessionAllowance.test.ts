@@ -1,3 +1,4 @@
+import { quotaFixture } from "../../test/plan-quotas.ts"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, beforeEach, expect, test, vi } from "vitest"
 import type { AgentSnapshot, TurnLimitCode } from "../../../../../apps/daemon/src/agent-protocol.ts"
@@ -18,7 +19,7 @@ afterEach(async () => { view?.unmount(); view = undefined; session?.dispose(); s
 
 async function mountWith(maxTurnsPerSession: number | null, inheritedTurnCount: number, consumed: number, turnLimitReason?: string, turnLimitCode?: TurnLimitCode, options?: { mobile?: boolean }) {
   const fake = fakeCentral()
-  fake.central.billing.mockResolvedValue({ ...billingFixture(), plan: "free", limits: { maxActiveSessions: 3, maxTurnsPerSession, maxMembers: 3, turnBytes: 0 } })
+  fake.central.billing.mockResolvedValue({ ...billingFixture(), plan: "free", limits: { ...quotaFixture.free, maxTurnsPerSession } })
   session = createAccountSession(fake.central)
   await flushPromises()
   const host = { ...usePlatformClient(), ...(options?.mobile ? { mobile: true } : {}) }
@@ -78,7 +79,7 @@ test("a confirmed limit offers plans even when the billing query fails", async (
   fake.central.billing.mockRejectedValue(new Error("Network unavailable"))
   window.dispatchEvent(new Event("focus"))
   await flushPromises()
-  expect(view!.text()).toContain("Retry it after the Team upgrades.")
+  expect(view!.text()).toContain("Retry when the Team has turns available.")
   expect(view!.get("button").text()).toBe("View plans")
 })
 

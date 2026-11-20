@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BadgeCheck, ChartNoAxesCombined, Cloud, RadioTower, Settings2, UserX, Users } from "@lucide/vue"
+import { BadgeCheck, ChartNoAxesCombined, Cloud, Gauge, RadioTower, Settings2, UserX, Users } from "@lucide/vue"
 import { useI18n } from "vue-i18n"
 import { RouterView, useRoute } from "vue-router"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
@@ -17,7 +17,6 @@ const route = useRoute()
 const motion = useNavigationMotion()
 const session = useAccountSession()
 const api = client.platform === "web" ? client.siteAdministration : undefined
-// Account policy and Enterprise changes need a fresh identity proof.
 const recent = useRecentAuthentication()
 const reauthenticate = (password?: string) => api!.reauthenticate(password)
 </script>
@@ -31,6 +30,7 @@ const reauthenticate = (password?: string) => api!.reauthenticate(password)
         <SidebarLink :to="{ name: 'site-admin-accounts' }" :icon="Users" :label="t('siteAdmin.accounts')" replace />
         <SidebarLink :to="{ name: 'site-admin-turn' }" :icon="RadioTower" :label="t('siteAdmin.turnTitle')" replace />
         <SidebarLink :to="{ name: 'site-admin-cloudflare-turn' }" :icon="Cloud" :label="t('siteAdmin.cloudflareTurnTitle')" replace />
+        <SidebarLink :to="{ name: 'site-admin-plan-quotas' }" :icon="Gauge" :label="t('planQuotas.title')" replace />
         <SidebarLink :to="{ name: 'site-admin-manual-grants' }" :icon="BadgeCheck" :label="t('billing.enterpriseTeams')" replace />
         <SidebarLink :to="{ name: 'site-admin-deletion-requests' }" :icon="UserX" :label="t('siteAdmin.deletionRequests')" replace />
       </template>

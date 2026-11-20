@@ -1,4 +1,7 @@
+import { adminPlanQuotasFixture, planCatalogFixture, quotaFixture } from "./plan-quotas.ts"
 import { vi } from "vitest"
+import type { HostedPlan, PlanQuota } from "../../../client/src/billing.ts"
+import type { AdminPlanQuota } from "../../../client/src/central.ts"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
@@ -6,7 +9,7 @@ import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
 export function billingFixture(usage = { relayedBytes: "0", activeSessionCount: 0, memberCount: 1 }): TeamBilling {
-  return { plan: "selfHosted", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: null }, usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
+  return { plan: "selfHosted", limits: quotaFixture.selfHosted, planCatalog: planCatalogFixture(), usage, period: null, nextResetAt: null, enterpriseOverride: false, subscription: null, paymentsAvailable: false, canManageBilling: false, enterpriseContactEmail: null }
 }
 
 export function aiUsageFixture(query: AiUsageQuery = { period: "30d", timeZone: "UTC" }): TeamAiUsage {
@@ -40,6 +43,7 @@ export function machineFixture(id: string, teamId: string, name: string, online 
 export function fakeCentral(options: FakeCentralOptions = {}) {
   const listeners = new Set<(event: CentralEvent) => void>()
   const state = {
+    planQuotas: adminPlanQuotasFixture(),
     signedIn: options.signedIn ?? true,
     siteAdmin: options.siteAdmin ?? false,
     site: { siteName: "DeskFleet", announcement: "", allowTeamCreation: true, telemetryEnabled: false, termsOfServiceUrl: "", privacyTermsUrl: "", ...options.site },
@@ -63,6 +67,12 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     site: vi.fn(async () => ({ ...state.site })),
     updateTelemetryConsent: vi.fn(async () => {}),
     siteSettings: vi.fn(async () => ({ ...state.site })),
+    planQuotas: vi.fn(async () => state.planQuotas.map(row => ({ ...row }))),
+    updatePlanQuota: vi.fn(async (plan: HostedPlan, limits: PlanQuota): Promise<AdminPlanQuota> => {
+      const updated = { plan, ...limits }
+      state.planQuotas = state.planQuotas.map(row => row.plan === plan ? updated : row)
+      return updated
+    }),
     usageTrends: vi.fn(async (period: SiteUsagePeriod): Promise<SiteUsageTrends> => ({
       period, timeZone: "UTC", from: "2026-10-16T00:00:00Z", to: "2026-11-14T12:00:00Z", generatedAt: "2026-11-14T12:00:00Z",
       relayHistoryIncomplete: false, totals: { users: 2, teams: state.teams.length, machines: 0, sessions: 0 }, buckets: [],

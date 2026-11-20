@@ -1,4 +1,15 @@
 export type BillingPlan = "free" | "go" | "pro" | "enterprise" | "selfHosted"
+export type HostedPlan = Exclude<BillingPlan, "selfHosted">
+export interface PlanQuota {
+  /** Null is unlimited. Zero prevents new use of this allowance. */
+  maxActiveSessions: number | null
+  maxTurnsPerSession: number | null
+  maxMembers: number | null
+  turnBytes: number | null
+  superAgentTokens: number | null
+  teamTurnServers: boolean
+}
+export type PlanCatalogEntry = PlanQuota & { plan: HostedPlan }
 export type BillingInterval = "month" | "year"
 export interface BillingPrice {
   plan: "go" | "pro"
@@ -10,7 +21,8 @@ export interface TeamBilling {
   /** Configured Stripe prices; null during another refresh or after a provider failure. */
   prices?: BillingPrice[] | null
   plan: BillingPlan
-  limits: { maxActiveSessions: number | null; maxTurnsPerSession: number | null; maxMembers: number | null; turnBytes: number | null }
+  limits: PlanQuota
+  planCatalog: PlanCatalogEntry[]
   usage: { activeSessionCount: number; memberCount: number; relayedBytes: string }
   period: { start: string; end: string } | null
   nextResetAt: string | null

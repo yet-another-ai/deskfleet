@@ -19,11 +19,10 @@ ownership and explicit Site Admin boundary.
 
 - Prioritize the officially hosted service and replace OIDC with owned accounts,
   public email/password registration, Passkeys, and optional GitHub and Google OAuth login.
-- Make Team the subscription boundary. Free limits members, non-deleted Sessions,
-  and per-Session turns and has no TURN. Go/Pro remove those quantity limits and
-  provide distinct monthly TURN allowances. Only Site Admin can assign the
-  unlimited Enterprise override. Exact rules are owned by the
-  [plan matrix](identity-billing.md#plan-matrix).
+- Make Team the subscription boundary. Site administrators manage hosted plan
+  quotas in PostgreSQL. The same catalog governs capacity, per-Session turns,
+  monthly relay and Super Agent allowances, and eligibility for Team TURN servers.
+  See the [plan matrix](identity-billing.md#plan-matrix) for the defaults.
 - Anchor monthly TURN periods to subscription dates and provide no payment grace
   period. Preserve the original lifetime of already-issued relay access.
 - Use the same account system with unlimited allowances and no payments for

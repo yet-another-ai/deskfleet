@@ -1,10 +1,10 @@
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { GithubRepositoryItemsPage, GithubRepositoryItemsQuery, PeerStartOptions } from "./central.ts"
+import type { AdminPlanQuota, GithubRepositoryItemsPage, GithubRepositoryItemsQuery, PeerStartOptions } from "./central.ts"
 import type { AccountState, AccountUser, AdminAccount, CreateAccountInput, GithubAppSettings, GithubPullRequest, GithubPullRequestQuery, AgentSessionSummary, CentralApi, CentralEvent, LocalPeerGrant, Machine, PeerGrant, PeerOfferOptions, PushSubscriptionInput, SiteAdministrationApi, SiteSettings, TelemetryConsentUpdate, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnSettings, TeamTurnSettingsUpdate, TeamUsage } from "./central.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
 import type { AgentEvent, AgentSnapshot } from "../../../apps/daemon/src/agent-protocol.ts"
 import type { IceCandidate } from "./desktop-media.ts"
-import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { BillingInterval, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
@@ -277,6 +277,8 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
     })
   }
   siteSettings() { return this.request<SiteSettings>("GET", "/api/admin/site-settings") }
+  planQuotas() { return this.request<AdminPlanQuota[]>("GET", "/api/admin/plan-quotas") }
+  updatePlanQuota(plan: HostedPlan, limits: PlanQuota) { return this.request<AdminPlanQuota>("PUT", `/api/admin/plan-quotas/${encodeURIComponent(plan)}`, limits) }
   usageTrends(period: SiteUsagePeriod) { return this.request<SiteUsageTrends>("GET", `/api/admin/usage-trends?${new URLSearchParams({ period })}`) }
   updateSiteSettings(settings: SiteSettings) { return this.request<SiteSettings>("PATCH", "/api/admin/site-settings", settings) }
   turnSettings() { return this.request<TurnSettings>("GET", "/api/admin/turn-settings") }

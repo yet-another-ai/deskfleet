@@ -22,27 +22,6 @@ pub struct CloudTokenEvent {
     pub cached_write_tokens: Option<i64>,
 }
 
-/// Monthly included input + output tokens per hosted plan. None disables the entitlement.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct CloudTokenAllowance {
-    pub free: Option<u64>,
-    pub go: Option<u64>,
-    pub pro: Option<u64>,
-    pub enterprise: Option<u64>,
-}
-
-impl CloudTokenAllowance {
-    fn for_plan(&self, plan: Plan) -> Option<u64> {
-        match plan {
-            Plan::Free => self.free,
-            Plan::Go => self.go,
-            Plan::Pro => self.pro,
-            Plan::Enterprise => self.enterprise,
-            Plan::SelfHosted => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudTokenPeriod {
@@ -120,11 +99,7 @@ impl ControlStore {
     ///
     /// # Errors
     /// Returns an error for an unknown Team or an unreadable ledger.
-    pub async fn cloud_token_period(
-        &self,
-        team_id: &str,
-        allowance: &CloudTokenAllowance,
-    ) -> Result<CloudTokenPeriod> {
+    pub async fn cloud_token_period(&self, team_id: &str) -> Result<CloudTokenPeriod> {
         let profile = self.billing_profile(team_id).await?;
         let now = now_ms();
         let plan = profile.effective_plan(self.hosted, now);
@@ -146,15 +121,20 @@ impl ControlStore {
         .try_get("", "tokens")?;
         let used_tokens = u64::try_from(used)
             .map_err(|_| DbErr::Type("cloud token total exceeds the supported range".into()))?;
-        let included_tokens = allowance.for_plan(plan);
+        let included_tokens = self
+            .plan_limits(plan)
+            .await?
+            .super_agent_tokens
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| DbErr::Type("negative Super Agent token allowance".into()))?;
         Ok(CloudTokenPeriod {
             start: timestamp(start),
             end: timestamp(end),
             plan,
             used_tokens,
             included_tokens,
-            admitted: plan == Plan::SelfHosted
-                || included_tokens.is_some_and(|limit| used_tokens < limit),
+            admitted: included_tokens.is_none_or(|limit| used_tokens < limit),
         })
     }
 }

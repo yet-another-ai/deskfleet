@@ -64,7 +64,7 @@ test("removal confirms first and deletes the URLs and secret", async () => {
 test("plans without the feature link to plans and still allow removing a saved server", async () => {
   const { central } = await render({ teamTurn: { availability: "planRequired", urls: ["turn:relay.example:3478"], secret: "north-secret" } })
   expect(view!.find("form").exists()).toBe(false)
-  expect(view!.text()).toContain("Your own TURN server requires the Pro or Enterprise plan.")
+  expect(view!.text()).toContain("Your Team’s plan does not include its own TURN server.")
   expect(view!.text()).toContain("Your saved server isn’t used: turn:relay.example:3478")
   await button("View plans")!.trigger("click")
   expect(view!.emitted("plans")).toHaveLength(1)

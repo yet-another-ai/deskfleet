@@ -8,18 +8,11 @@ use crate::{
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
-use deskfleet_control_store::{
-    billing::{CloudTokenAllowance, CloudTokenPeriod},
-    policies::TeamAction,
-};
+use deskfleet_control_store::{billing::CloudTokenPeriod, policies::TeamAction};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
-
-pub(crate) fn from_env() -> Result<(Option<EveClient>, CloudTokenAllowance)> {
-    Ok((EveClient::from_env()?, client::allowance_from_env()?))
-}
 
 pub(crate) fn configure(config: &mut web::ServiceConfig) {
     config.service(
@@ -105,10 +98,7 @@ fn request_key(user: &str, team: &str, operation: &str) -> Result<String> {
 }
 
 async fn period(state: &AppState, team: &str) -> Result<CloudTokenPeriod> {
-    Ok(state
-        .store
-        .cloud_token_period(team, &state.cloud_allowance)
-        .await?)
+    Ok(state.store.cloud_token_period(team).await?)
 }
 
 async fn require_session(state: &AppState, team: &str, session: &str) -> Result<()> {

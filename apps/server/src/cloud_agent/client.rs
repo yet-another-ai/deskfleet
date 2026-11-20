@@ -1,6 +1,5 @@
 use super::{ApiError, Result};
 use actix_web::http::StatusCode;
-use deskfleet_control_store::billing::CloudTokenAllowance;
 use reqwest::{Client, Method, RequestBuilder, Url};
 use std::{env, time::Duration};
 
@@ -12,7 +11,7 @@ pub(crate) struct EveClient {
 }
 
 impl EveClient {
-    pub(super) fn from_env() -> Result<Option<Self>> {
+    pub(crate) fn from_env() -> Result<Option<Self>> {
         let url = setting("DESKFLEET_SUPER_AGENT_URL");
         let secret = setting("DESKFLEET_SUPER_AGENT_SECRET");
         match (url, secret) {
@@ -80,23 +79,6 @@ pub(super) fn valid_segment(id: &str) -> bool {
 
 fn setting(key: &str) -> Option<String> {
     env::var(key).ok().filter(|value| !value.is_empty())
-}
-
-pub(super) fn allowance_from_env() -> Result<CloudTokenAllowance> {
-    fn tokens(key: &str) -> Result<Option<u64>> {
-        setting(key)
-            .map(|text| {
-                text.parse()
-                    .map_err(|_| ApiError::bad(format!("{key} must be a nonnegative integer")))
-            })
-            .transpose()
-    }
-    Ok(CloudTokenAllowance {
-        free: tokens("DESKFLEET_SUPER_AGENT_FREE_TOKENS")?,
-        go: tokens("DESKFLEET_SUPER_AGENT_GO_TOKENS")?,
-        pro: tokens("DESKFLEET_SUPER_AGENT_PRO_TOKENS")?,
-        enterprise: tokens("DESKFLEET_SUPER_AGENT_ENTERPRISE_TOKENS")?,
-    })
 }
 
 pub(super) fn unavailable() -> ApiError {

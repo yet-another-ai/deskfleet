@@ -27,12 +27,12 @@ server's `DATABASE_URL` and use `mise run backend:dev`. Keep eve on the private
 application network. Direct public traffic to the DeskFleet API. The package
 disables built-in execution tools. Its model calls use the operator's credential.
 
-Hosted deployments can configure monthly included tokens with
-`DESKFLEET_SUPER_AGENT_GO_TOKENS`, `DESKFLEET_SUPER_AGENT_PRO_TOKENS`,
-`DESKFLEET_SUPER_AGENT_ENTERPRISE_TOKENS` and
-`DESKFLEET_SUPER_AGENT_FREE_TOKENS`. An unset or zero hosted allowance
-disables new work for that plan. Self-hosted deployments with a configured
-runtime can use their own model account without a DeskFleet allowance.
+In Site administration, open **Plan quotas** and set the monthly Super Agent
+tokens for each hosted plan. PostgreSQL stores the allowance for the whole
+plan. Changes apply to existing Teams on their next request and preserve the
+current billing period's usage. The initial hosted allowance is zero. Select
+unlimited to allow new work without a token cap. Self-hosted deployments can
+use their own model account with unlimited tokens.
 
 ## Team API
 

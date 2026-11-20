@@ -1,5 +1,7 @@
 use super::*;
 use actix_web::{App, HttpServer, test};
+use deskfleet_control_store::billing::Plan;
+use sea_orm::{ConnectionTrait, Database};
 use serde_json::Value;
 use std::{
     net::TcpListener,
@@ -95,9 +97,17 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     let handle = server.handle();
     actix_web::rt::spawn(server);
 
+    let url = std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL");
+    let admin = Database::connect(&url).await.unwrap();
+    let schema = format!("cloud_agent_{}", uuid::Uuid::new_v4().simple());
+    admin
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
     let mut state = AppState::new(crate::config::ServerConfig {
         bind_addrs: vec!["127.0.0.1:0".parse().unwrap()],
-        database_url: std::env::var("TEST_DATABASE_URL").expect("set TEST_DATABASE_URL"),
+        database_url: format!("{url}{separator}options=-csearch_path%3D{schema}"),
         public_url: "https://control.test".into(),
         web_origins: vec![],
         auth: crate::auth::config::AuthConfig::development("https://control.test"),
@@ -116,12 +126,19 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     let eve = EveClient::new(&format!("http://{address}"), "fixture-secret".into()).unwrap();
     state._cloud_meter = Some(crate::cloud_meter::start(state.store.clone(), eve.clone()));
     state.eve = Some(eve);
-    state.cloud_allowance.free = Some(8);
     let store = state.store.clone();
     let user = store
         .verified_user(&format!("super-{session_id}@fixture.test"), "Super Agent")
         .await
         .unwrap();
+    store.grant_site_admin(&user.id).await.unwrap();
+    let mut free = store.plan_limits(Plan::Free).await.unwrap();
+    free.super_agent_tokens = Some(8);
+    store
+        .update_plan_limits(&user.id, Plan::Free, free)
+        .await
+        .unwrap();
+    store.revoke_site_admin(&user.id).await.unwrap();
     let login = store.new_session(&user.id).await.unwrap();
     let token = format!("Bearer {}", login["token"].as_str().unwrap());
     let team = store
@@ -255,5 +272,11 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     assert!(test::read_body(stream).await.ends_with(b"\n"));
     assert_eq!(calls.creates.load(Ordering::SeqCst), 1);
     assert_eq!(calls.sends.load(Ordering::SeqCst), 1);
+    drop(app);
     handle.stop(true).await;
+    store.close().await.unwrap();
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
 }

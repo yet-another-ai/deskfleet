@@ -1,14 +1,23 @@
 //! Immutable hosted usage and soft admission at the Team's billing boundary.
 use deskfleet_control_store::{
     ControlStore, Error,
-    billing::{CloudTokenAllowance, CloudTokenEvent, Plan},
+    billing::{CloudTokenEvent, Plan},
 };
+
+use sea_orm::{ConnectionTrait, Database};
 
 #[tokio::test]
 #[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
 async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
     let url = std::env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL");
-    let store = ControlStore::connect(&url)
+    let admin = Database::connect(&url).await.unwrap();
+    let schema = format!("cloud_tokens_{}", uuid::Uuid::new_v4().simple());
+    admin
+        .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let store = ControlStore::connect(&format!("{url}{separator}options=-csearch_path%3D{schema}"))
         .await
         .unwrap()
         .with_hosted_mode(true);
@@ -20,13 +29,19 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
         .await
         .unwrap()
         .id;
-    let allowance = CloudTokenAllowance {
-        free: Some(10),
-        go: Some(15),
-        pro: Some(75),
-        ..Default::default()
-    };
-    let period = store.cloud_token_period(&team, &allowance).await.unwrap();
+    store.grant_site_admin(&owner.id).await.unwrap();
+    let fresh = store.cloud_token_period(&team).await.unwrap();
+    assert_eq!(fresh.included_tokens, Some(0));
+    assert!(!fresh.admitted);
+    for (plan, tokens) in [(Plan::Free, 10), (Plan::Go, 15), (Plan::Pro, 75)] {
+        let mut limits = store.plan_limits(plan).await.unwrap();
+        limits.super_agent_tokens = Some(tokens);
+        store
+            .update_plan_limits(&owner.id, plan, limits)
+            .await
+            .unwrap();
+    }
+    let period = store.cloud_token_period(&team).await.unwrap();
     assert!(period.admitted);
     assert_eq!(period.plan, Plan::Free);
     assert_eq!(period.included_tokens, Some(10));
@@ -67,7 +82,7 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
                 .unwrap()
         );
     }
-    let period = store.cloud_token_period(&team, &allowance).await.unwrap();
+    let period = store.cloud_token_period(&team).await.unwrap();
     assert_eq!(period.used_tokens, 10);
     assert!(!period.admitted);
     assert!(matches!(
@@ -102,14 +117,9 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
             .unwrap()
     );
     assert_eq!(
-        store
-            .cloud_token_period(&team, &allowance)
-            .await
-            .unwrap()
-            .used_tokens,
+        store.cloud_token_period(&team).await.unwrap().used_tokens,
         20
     );
-    store.grant_site_admin(&owner.id).await.unwrap();
     for (plan, included, admitted) in [(Plan::Pro, 75, true), (Plan::Go, 15, false)] {
         store
             .set_manual_grant(
@@ -121,31 +131,39 @@ async fn cloud_token_events_deduplicate_and_meter_the_source_billing_period() {
             )
             .await
             .unwrap();
-        let changed = store.cloud_token_period(&team, &allowance).await.unwrap();
+        let changed = store.cloud_token_period(&team).await.unwrap();
         assert_eq!(changed.plan, plan);
         assert_eq!(changed.included_tokens, Some(included));
         assert_eq!(changed.used_tokens, 20);
         assert_eq!(changed.start, period.start);
         assert_eq!(changed.admitted, admitted);
     }
-    store.revoke_site_admin(&owner.id).await.unwrap();
-    let unconfigured = store
-        .cloud_token_period(&other, &CloudTokenAllowance::default())
+    let mut go = store.plan_limits(Plan::Go).await.unwrap();
+    go.super_agent_tokens = None;
+    store
+        .update_plan_limits(&owner.id, Plan::Go, go)
         .await
         .unwrap();
-    assert_eq!(unconfigured.used_tokens, 0);
-    assert_eq!(unconfigured.included_tokens, None);
-    assert!(!unconfigured.admitted);
+    let upgraded = store.cloud_token_period(&team).await.unwrap();
+    assert_eq!(upgraded.included_tokens, None);
+    assert_eq!(upgraded.used_tokens, 20);
+    assert!(upgraded.admitted);
+    let other = store.cloud_token_period(&other).await.unwrap();
+    assert_eq!(other.used_tokens, 0);
+    assert_eq!(other.included_tokens, Some(10));
     let unlimited = store
         .clone()
         .with_hosted_mode(false)
-        .cloud_token_period(&team, &allowance)
+        .cloud_token_period(&team)
         .await
         .unwrap();
     assert_eq!(unlimited.plan, Plan::SelfHosted);
     assert_eq!(unlimited.used_tokens, 20);
     assert_eq!(unlimited.included_tokens, None);
     assert!(unlimited.admitted);
-    store.delete_team(&owner.id, &team).await.unwrap();
-    store.delete_team(&owner.id, &other).await.unwrap();
+    store.close().await.unwrap();
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await
+        .unwrap();
 }

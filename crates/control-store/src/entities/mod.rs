@@ -33,6 +33,7 @@ pub(crate) mod cp_passkeys;
 pub(crate) mod cp_payment_events;
 pub(crate) mod cp_peer_negotiations;
 pub(crate) mod cp_peers;
+pub(crate) mod cp_plan_limits;
 pub(crate) mod cp_push_subscriptions;
 pub(crate) mod cp_realtime_messages;
 pub(crate) mod cp_realtime_nodes;

@@ -233,6 +233,11 @@ pub async fn migrate(db: &DatabaseConnection) -> Result<()> {
             .await?;
         record_version(&tx, 39).await?;
     }
+    if !version_present(&tx, 40).await? {
+        tx.execute_unprepared(include_str!("plan_limits.sql"))
+            .await?;
+        record_version(&tx, 40).await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -245,6 +250,11 @@ pub async fn down(db: &DatabaseConnection) -> Result<()> {
             .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(Expr::val(761946021_i64))),
     )
     .await?;
+    if version_present(&tx, 40).await? {
+        tx.execute_unprepared(include_str!("plan_limits_down.sql"))
+            .await?;
+        remove_version(&tx, 40).await?;
+    }
     if version_present(&tx, 39).await? {
         tx.execute_unprepared(include_str!("cloud_agent_requests_down.sql"))
             .await?;

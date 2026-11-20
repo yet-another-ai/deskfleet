@@ -3,7 +3,7 @@
 use crate::entities::{cp_team_turn_servers as servers, cp_turn_settings as turn};
 use crate::{
     ControlStore, Error, Result,
-    billing::effective_plan,
+    billing::team_limits,
     now_ms,
     policies::{TeamAction, authorize},
     resource_id,
@@ -50,9 +50,8 @@ async fn availability(
     if !allowed {
         return Ok(TeamTurnAvailability::DisabledBySite);
     }
-    if !effective_plan(db, team, hosted, now_ms())
+    if !team_limits(db, team, hosted, now_ms())
         .await?
-        .limits()
         .team_turn_servers
     {
         return Ok(TeamTurnAvailability::PlanRequired);
@@ -117,7 +116,7 @@ impl ControlStore {
                 TeamTurnAvailability::Available => {}
                 TeamTurnAvailability::PlanRequired => {
                     return Err(Error::Conflict(
-                        "Your own TURN server requires a Pro or Enterprise plan",
+                        "Your Team plan does not include custom TURN servers",
                     ));
                 }
                 TeamTurnAvailability::DisabledBySite => {

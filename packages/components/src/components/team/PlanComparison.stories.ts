@@ -1,3 +1,4 @@
+import { quotaFixture } from "../../test/plan-quotas.ts"
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { freeBilling } from "../../../.storybook/billing-fixtures.ts"
 import PlanComparison from "./PlanComparison.vue"
@@ -18,7 +19,7 @@ export const Member: Story = { args: { offers: false } }
 export const Subscribed: Story = {
   args: {
     offers: false,
-    billing: { ...meta.args.billing, plan: "go", limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 2_147_483_648 } },
+    billing: { ...meta.args.billing, plan: "go", limits: quotaFixture.go },
   },
 }
 

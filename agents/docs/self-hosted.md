@@ -602,8 +602,8 @@ be reachable by both peers.
 
 While a Team server is in use, it replaces the site list for that Team's new
 grants, with no fallback to the site relay. Its traffic isn't reported to this
-deployment's usage collection. Self-hosted Teams are eligible; on hosted plans,
-Pro and Enterprise are. Site administrators can turn the feature off with
+deployment's usage collection. Self-hosted Teams are eligible. Hosted Teams
+use their plan's **Own TURN server** setting. Site administrators can turn the feature off with
 **Allow teams to use their own TURN servers** in Site administration, or with
 `"allowTeamServers": false` in `PATCH /api/admin/turn-settings`. It is on by
 default. Turning it off keeps saved Team servers unused until it is turned back

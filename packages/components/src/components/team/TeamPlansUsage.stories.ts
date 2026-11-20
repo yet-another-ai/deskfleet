@@ -1,3 +1,4 @@
+import { quotaFixture } from "../../test/plan-quotas.ts"
 import type { Meta, StoryObj } from "@storybook/vue3-vite"
 import { provide } from "vue"
 import type { TeamBilling } from "@deskfleet/client/billing"
@@ -28,7 +29,7 @@ export const Owner: Story = {}
 export const Member: Story = { args: { billing: { ...freeBilling, canManageBilling: false } } }
 export const Subscribed: Story = { args: { billing: {
   ...freeBilling, plan: "go",
-  limits: { maxActiveSessions: null, maxTurnsPerSession: null, maxMembers: null, turnBytes: 2_147_483_648 },
+  limits: quotaFixture.go,
   subscription: { plan: "go", status: "active", paidThrough: "2026-12-01T00:00:00Z", cancelAtPeriodEnd: false },
 } } }
 export const UnavailablePrices: Story = { args: { billing: { ...freeBilling, prices: null } } }

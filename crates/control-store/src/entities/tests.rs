@@ -30,6 +30,11 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_billing_profiles mapping");
+    cp_plan_limits::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_plan_limits mapping");
     cp_catalogs::Entity::find()
         .limit(0)
         .all(db)

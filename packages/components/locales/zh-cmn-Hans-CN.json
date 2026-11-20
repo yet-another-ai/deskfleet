@@ -83,13 +83,13 @@
     },
     "free_plan": {
       "title": "此次连接需要中继服务",
-      "description": "无法建立直连。免费套餐不包含 TURN 中继流量，可前往账单页面比较套餐，或尝试支持直连的网络。",
+      "description": "无法建立直连。当前团队的套餐不包含 TURN 中继流量，可前往账单页面比较套餐，或尝试支持直连的网络。",
       "mobileDescription": "无法建立直连，且当前团队不可使用 TURN 中继流量。请尝试支持直连的网络。"
     },
     "turn_quota_exhausted": {
-      "title": "团队的中继流量已用尽",
-      "description": "无法建立直连，且本月的 TURN 中继流量已用尽。请前往账单页面查看用量和套餐，或尝试其他网络。",
-      "mobileDescription": "无法建立直连，且本月的 TURN 中继流量已用尽。请尝试其他网络。"
+      "title": "中继流量无可用额度",
+      "description": "无法建立直连，当前团队本月没有可用中继流量。请查看团队用量，或尝试其他网络。",
+      "mobileDescription": "无法建立直连，当前团队本月没有可用中继流量。请尝试其他网络。"
     },
     "metering_unavailable": {
       "title": "中继连接暂时不可用",
@@ -295,6 +295,21 @@
     "dataNote": "按 UTC 自然日统计，今天的数据仍在累积。对话轮数及站点管理的中继流量随用量同步更新。",
     "relayHistoryIncomplete": "部分较早的中继数据尚不可用。"
   },
+  "planQuotas": {
+    "title": "套餐额度",
+    "description": "修改将应用到使用所选套餐的所有团队。",
+    "plan": "套餐",
+    "hint": "留空表示不限量，填 0 表示停止新的使用。",
+    "selfHosted": "自托管部署的产品额度不限量。",
+    "maxActiveSessions": "每个团队的会话数",
+    "maxTurnsPerSession": "每个会话的轮数",
+    "maxMembers": "每个团队的成员数",
+    "turnBytes": "每月 TURN 中继流量（字节）",
+    "superAgentTokens": "每月 Super Agent token 数",
+    "teamTurnServers": "团队自管 TURN 服务器",
+    "invalid": "请输入 0 到 9,007,199,254,740,991 之间的整数，或将此项留空。",
+    "saved": "套餐额度已保存。"
+  },
   "siteAdmin": {
     "title": "站点管理",
     "generalTitle": "站点设置",
@@ -333,7 +348,7 @@
     "cloudflareTurnKeepTokens": "令牌字段留空将保留已保存的令牌。",
     "cloudflareTurnSaved": "Cloudflare TURN 设置已保存。",
     "allowTeamTurnServers": "允许团队使用自己的 TURN 服务器",
-    "allowTeamTurnServersDescription": "Pro 和 Enterprise 团队可以用自己的服务器替换这些服务器。关闭后，所有团队都使用这些服务器。",
+    "allowTeamTurnServersDescription": "已开通此权益的团队可以使用自己的 TURN 服务器。关闭后，所有团队都使用站点服务器。",
     "accounts": "账号管理",
     "createAccount": "创建账号",
     "createAccountDescription": "创建带密码的已验证账号。不会发送验证邮件；请通过安全渠道共享密码。",
@@ -1636,7 +1651,7 @@
     "usage": "用量",
     "turnTitle": "自有 TURN 服务器",
     "turnDescription": "通过你自己的 TURN 服务器而非站点的中继转发此团队的连接。DeskFleet 使用你的共享密钥签发短期凭据。经由你的服务器的流量不计入中继额度；服务器无法访问时，连接不会回退到站点的中继。修改对新连接生效。",
-    "turnPlanRequired": "自有 TURN 服务器需要 Pro 或 Enterprise 套餐。",
+    "turnPlanRequired": "当前团队的套餐未包含自有 TURN 服务器权益。",
     "turnUnavailable": "此团队不可使用自有 TURN 服务器，连接使用站点的中继。",
     "turnDisabledBySite": "站点管理员已关闭团队 TURN 服务器。连接使用站点的中继。",
     "turnSavedUnused": "已保存的服务器未被使用：{urls}",
@@ -2035,14 +2050,10 @@
       "title": "套餐权益对比",
       "subtitle": "额度由整个 Team 共享，所有套餐均支持直连。",
       "current": "当前套餐",
-      "description": {
-        "free": "适合通过直连开始使用。",
-        "go": "适合需要中继连接的日常工作。",
-        "pro": "适合中继连接用量较大的工作。"
-      },
       "freePrice": "免费",
       "priceUnavailable": "价格暂时无法加载",
       "per": { "month": "/ 月", "year": "/ 年" },
+      "monthlyTokens": "每月 Super Agent token",
       "monthlyRelay": "每月中继流量",
       "relayAmount": "{amount} GiB",
       "direct": "直连",
@@ -2057,17 +2068,9 @@
       "enterprise": "Enterprise",
       "selfHosted": "自托管"
     },
-    "planDescription": {
-      "free": "最多 3 个活跃 Session、每个 Session 30 轮、3 位成员，仅支持直连。",
-      "go": "Session、轮数和成员不限，每月含 2 GiB TURN 中继流量。",
-      "pro": "Session、轮数和成员不限，每月含 20 GiB TURN 中继流量。",
-      "enterprise": "由站点管理员授予，所有额度不限。",
-      "selfHosted": "此服务器不设产品限制，中继使用运营方的 TURN 服务器。"
-    },
+    "selfHostedDescription": "此服务器不设产品限制，中继使用运营方的 TURN 服务器。",
     "offer": {
-      "go": "每月 2 GiB TURN 中继 · Session、轮数和成员不限",
-      "pro": "每月 20 GiB TURN 中继 · Session、轮数和成员不限",
-      "enterprise": "额度不限，并由运营方提供部署支持。联系我们了解 Enterprise。"
+      "enterprise": "联系销售团队，了解企业套餐额度和部署支持。"
     },
     "offerInterval": {
       "month": "按月计费",
@@ -2093,14 +2096,14 @@
     "remaining": "剩余 {amount}",
     "resets": "{date} 重置",
     "trafficHint": "仅统计经 TURN 中继的流量，统计存在短暂延迟。达到额度后停止授权新的中继访问，已有连接保留原授权有效期。",
-    "trafficNotIncluded": "直连仍可使用。无法直连时，升级套餐即可使用中继。",
+    "trafficNotIncluded": "此套餐仍可使用直连。",
     "turnsPerSession": "每个 Session 的轮数",
     "turnsPerSessionHint": "每次向 Agent 发送提示消耗一轮。Fork 出的 Session 会保留 Fork 前已用的轮数。",
     "turnsPerSessionLimit": "每个 Session {count} 轮",
     "sessionTurns": "此 Session 已使用 {used} / {limit} 轮",
     "turnsLeft": "此 Session 已无剩余轮数 | 此 Session 剩余 1 / {limit} 轮 | 此 Session 剩余 {remaining} / {limit} 轮",
     "inheritedTurns": "其中 {count} 轮继承自来源 Session",
-    "resumeHint": "待发送内容已保留，Team 升级后可重试。",
+    "resumeHint": "待发送内容已保留，团队有可用轮数后可以重试。",
     "retryHint": "待发送内容已保留，请稍后重试。",
     "upgradePlan": "升级套餐", "plansAndBilling": "套餐与账单",
     "viewPlans": "查看套餐",

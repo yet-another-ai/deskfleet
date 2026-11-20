@@ -1,4 +1,4 @@
-use super::effective_plan;
+use super::team_limits;
 use crate::entities::{
     cp_machine_registrations as registrations, cp_session_admissions as admissions,
     cp_sessions as sessions, cp_teams as teams,
@@ -94,9 +94,8 @@ impl ControlStore {
         team: i64,
         registration: i64,
     ) -> Result<()> {
-        if let Some(limit) = effective_plan(db, team, self.hosted, now_ms())
+        if let Some(limit) = team_limits(db, team, self.hosted, now_ms())
             .await?
-            .limits()
             .max_active_sessions
         {
             let counts = one_query(
@@ -205,8 +204,8 @@ impl ControlStore {
             }
             return admission(row);
         }
-        let plan = effective_plan(&tx, team, self.hosted, now_ms()).await?;
-        if let Some(limit) = plan.limits().max_active_sessions {
+        let limits = team_limits(&tx, team, self.hosted, now_ms()).await?;
+        if let Some(limit) = limits.max_active_sessions {
             let count: i64 = one_query(
                 &tx,
                 occupied_sessions(Expr::val(team))

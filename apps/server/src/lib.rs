@@ -42,7 +42,6 @@ pub struct AppState {
     pub auth: auth::AuthService,
     pub billing: billing::BillingService,
     pub(crate) eve: Option<cloud_agent::EveClient>,
-    cloud_allowance: deskfleet_control_store::billing::CloudTokenAllowance,
     _cloud_meter: Option<crate::cloud_meter::Collector>,
     pub push: push::PushService,
     hub: hub::Hub,
@@ -73,7 +72,7 @@ impl AppState {
         let push_config = push::PushConfig::from_env()
             .map_err(|error| error::ApiError::bad(error.to_string()))?;
         let push = push::PushService::new(push_config).await?;
-        let (eve, cloud_allowance) = cloud_agent::from_env()?;
+        let eve = cloud_agent::EveClient::from_env()?;
         let cloud_meter = eve
             .clone()
             .map(|client| crate::cloud_meter::start(store.clone(), client));
@@ -99,7 +98,6 @@ impl AppState {
             cloudflare_turn,
             _billing_worker: billing_worker,
             eve,
-            cloud_allowance,
             _cloud_meter: cloud_meter,
         })
     }
