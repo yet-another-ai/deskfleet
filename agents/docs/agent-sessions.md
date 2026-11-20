@@ -469,6 +469,12 @@ terminal for interactive Google sign-in.
 The CLI uses the profile under `GEMINI_HOME`, with configuration at
 `~/.gemini/antigravity-cli/settings.json` by default. **Test Connection** uses
 existing credentials and reports authentication required when absent.
+`agy acp` can answer `session/prompt` with `end_turn` while non-daemon tool calls
+and child sessions still run. The provider wrapper keeps that turn open until
+those ACP-reported workers settle, so their approvals, live state, and input
+queue are not retired early, then completes with the foreground stop reason.
+The wait is bound to 30 minutes and ends immediately on cancellation or steering;
+daemon tool calls do not hold a turn.
 
 The ACP template
 runs an ACP-compatible executable directly over stdio, with `acp-agent` as its
