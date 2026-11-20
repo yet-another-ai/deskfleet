@@ -664,12 +664,21 @@ again.
 
 ### Super Agent image
 
-Each native Linux Build runner builds `apps/super-agent/Dockerfile` from the
-repository root using the locked workspace dependencies. The image smoke test
+Each native Linux Build runner builds the root flake's `super-agent-image`
+output. The package uses the same locked Node, pnpm and workspace dependency
+fetches as the Web build. Its image includes Eve and the PostgreSQL bootstrap
+command. The image smoke test
 bootstraps a disposable PostgreSQL database, starts Eve, checks its private
 channel authentication, and creates an empty Session and reads its history
 through the Rust Team API. The test uses a local Statsig gate override and
 requires no model credential.
+
+Eve uses Gateway model IDs and context windows to compile its dynamic model
+selector. `nix/super-agent-model-catalog.json` pins that input for offline
+builds. To refresh it, run `mise run super-agent:build` with access to the
+Gateway catalog, then run `mise exec -- node scripts/update-super-agent-model-catalog.ts`
+and review the snapshot. Model credentials and the operator's model selection
+are supplied at runtime.
 
 Tag builds publish the two tested architectures together under
 `ghcr.io/yet-another-ai/deskfleet-super-agent:<version>`. Stable releases also

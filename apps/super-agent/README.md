@@ -29,6 +29,13 @@ Set `DESKFLEET_SUPER_AGENT_URL=http://super-agent:3100` and the same
 API's public URL. All Eve replicas for this deployment share the workflow
 database and the same model configuration.
 
+To build the same image from source, use the root flake on a Linux builder:
+
+```sh
+nix build .#super-agent-image --out-link result-super-agent-image
+docker load --input result-super-agent-image
+```
+
 ## Run locally
 
 Use the locked mise toolchain from the repository root. Install the workspace

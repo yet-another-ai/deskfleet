@@ -45,8 +45,8 @@ let
     };
   });
 
-  # Use the same verified build tools as mise. These binaries only execute
-  # builds; neither the Node runtime nor pnpm enters the server image.
+  # Use the same verified tools as mise for Web and Super Agent builds.
+  # The Super Agent image also uses this Node binary at runtime.
   nodejs = stdenvNoCC.mkDerivation {
     pname = "deskfleet-nodejs";
     version = versions.node;

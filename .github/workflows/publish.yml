@@ -310,7 +310,7 @@ jobs:
         run: |
           podman manifest create deskfleet-super-agent
           for platform in linux-x64 linux-arm64; do
-            podman manifest add deskfleet-super-agent "docker-archive:$PWD/images/super-agent-$platform.tar"
+            podman manifest add deskfleet-super-agent "docker-archive:$PWD/images/super-agent-$platform.tar.gz"
           done
           podman manifest inspect deskfleet-super-agent | jq -e \
             '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]'

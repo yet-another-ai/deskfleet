@@ -1,5 +1,5 @@
 {
-  description = "DeskFleet server and Web source builds";
+  description = "DeskFleet server, Web and Super Agent source builds";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -34,20 +34,31 @@
             overlays = [ rust-overlay.overlays.default ];
           };
           toolchain = builtins.fromTOML (builtins.readFile ./mise.toml);
-          webToolchain = pkgs.callPackage ./nix/toolchain.nix { };
+          nodeToolchain = pkgs.callPackage ./nix/toolchain.nix { };
           pnpmLock = pkgs.callPackage ./nix/import-pnpm-lock { };
           rust = pkgs.rust-bin.stable.${toolchain.tools.rust.version}.minimal;
           craneLib = (crane.mkLib pkgs).overrideToolchain rust;
           server = pkgs.callPackage ./nix/server.nix { inherit craneLib; };
           web = pkgs.callPackage ./nix/web.nix {
             inherit webConfig;
-            inherit (webToolchain) nodejs pnpm;
+            inherit (nodeToolchain) nodejs pnpm;
             inherit (pnpmLock) importPnpmLock iplConfigHook;
           };
           server-image = pkgs.callPackage ./nix/server-image.nix { inherit server web; };
+          super-agent = pkgs.callPackage ./nix/super-agent.nix {
+            inherit (nodeToolchain) nodejs pnpm;
+            inherit (pnpmLock) importPnpmLock iplConfigHook;
+          };
+          super-agent-image = pkgs.callPackage ./nix/super-agent-image.nix { inherit super-agent; };
         in
         {
-          inherit server web server-image;
+          inherit
+            server
+            web
+            server-image
+            super-agent
+            super-agent-image
+            ;
         };
     in
     {
@@ -60,7 +71,13 @@
         packages // { default = packages.server-image; }
       );
       checks = forAllSystems (system: {
-        inherit (self.packages.${system}) server web server-image;
+        inherit (self.packages.${system})
+          server
+          web
+          server-image
+          super-agent
+          super-agent-image
+          ;
       });
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };

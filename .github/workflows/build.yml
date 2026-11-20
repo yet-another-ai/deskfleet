@@ -244,30 +244,39 @@ jobs:
           docker build --platform "linux/$arch" -f apps/server/Dockerfile -t deskfleet-server:smoke image-context
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
 
-      - name: Build and smoke test the Super Agent image
+      - name: Install Nix for the Super Agent image
+        if: runner.os == 'Linux'
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+        with:
+          github_access_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build the Super Agent image with Nix
+        if: runner.os == 'Linux'
+        run: nix build .#super-agent-image --print-build-logs --out-link "$RUNNER_TEMP/result-super-agent-image"
+
+      - name: Smoke test the Nix-built Super Agent image
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          version=$(mise exec node -- node -p 'require("./package.json").version')
-          docker build --file apps/super-agent/Dockerfile --tag deskfleet-super-agent:smoke \
-            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --label "org.opencontainers.image.version=$version" .
+          docker load --input "$RUNNER_TEMP/result-super-agent-image"
+          image_tag=$(nix eval --raw .#super-agent-image.imageTag)
           # Reuse the release dependencies compiled by napi for the explicit host target.
           host_target=$(mise exec -- rustc --print host-tuple)
-          CARGO_BUILD_TARGET="$host_target" mise exec -- node scripts/smoke-super-agent-image.ts deskfleet-super-agent:smoke --release
+          CARGO_BUILD_TARGET="$host_target" mise exec -- node scripts/smoke-super-agent-image.ts "deskfleet-super-agent:$image_tag" --release
 
-      - name: Save the tested Super Agent image for publishing
+      - name: Stage the tested Super Agent archive
         if: runner.os == 'Linux' && inputs.production_release
-        run: docker save --output "$RUNNER_TEMP/super-agent-${{ matrix.platform }}.tar" deskfleet-super-agent:smoke
+        run: cp "$RUNNER_TEMP/result-super-agent-image" "$RUNNER_TEMP/super-agent-${{ matrix.platform }}.tar.gz"
 
       - name: Upload the tested Super Agent image
         if: runner.os == 'Linux' && inputs.production_release
         uses: actions/upload-artifact@v7
         with:
           name: deskfleet-super-agent-image-${{ matrix.platform }}
-          path: ${{ runner.temp }}/super-agent-${{ matrix.platform }}.tar
-          compression-level: 1
+          path: ${{ runner.temp }}/super-agent-${{ matrix.platform }}.tar.gz
+          compression-level: 0
           if-no-files-found: error
           retention-days: 14
 
