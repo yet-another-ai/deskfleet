@@ -4,8 +4,10 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>DeskFleetAppGroupIdentifier</key>
+	<string>$(DESKFLEET_OUTLINE_AUDIO_GROUP)</string>
 	<key>CFBundleDisplayName</key>
-	<string>DeskFleet Audio</string>
+	<string>$(DESKFLEET_IOS_DISPLAY_NAME) Audio</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

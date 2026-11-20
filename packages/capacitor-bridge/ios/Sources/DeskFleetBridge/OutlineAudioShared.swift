@@ -3,7 +3,6 @@ import Foundation
 
 /// Cross-process 512-byte memory-mapped spectrum file inside the shared App Group container.
 final class OutlineAudioSharedStore {
-    static let appGroupId = "group.ai.yetanother.deskfleet"
     static let spectrumBins = 224
     static let stereoSpectrumBytes = spectrumBins * 2
     static let heartbeatTimeoutMs: UInt64 = 5_000
@@ -23,9 +22,10 @@ final class OutlineAudioSharedStore {
     }
 
     init?() {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: Self.appGroupId
-        ) else { return nil }
+        guard let appGroupId = Bundle.main.object(forInfoDictionaryKey: "DeskFleetAppGroupIdentifier") as? String,
+              !appGroupId.isEmpty,
+              let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId)
+        else { return nil }
         let caches = container.appendingPathComponent("Library/Caches", isDirectory: true)
         try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
         let url = caches.appendingPathComponent("outline-audio.bin", isDirectory: false)

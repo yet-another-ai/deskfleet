@@ -13,8 +13,8 @@ const signingType = env.ANDROID_SIGNING_TYPE === "apksigner"
       : undefined
 
 const config: CapacitorConfig = {
-  appId: "ai.yetanother.deskfleet",
-  appName: "DeskFleet",
+  appId: env.DESKFLEET_IOS_APP_ID ?? "ai.yetanother.deskfleet",
+  appName: env.DESKFLEET_IOS_DISPLAY_NAME ?? "DeskFleet",
   webDir: "dist",
   server: serverURL
     ? {

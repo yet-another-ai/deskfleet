@@ -90,7 +90,90 @@ mise run android:test
 mise run android:build
 ```
 
-On iOS, the audio-reactive outline uses the `BroadcastUpload` ReplayKit extension (`ai.yetanother.deskfleet.BroadcastUpload`). Both `App` and `BroadcastUpload` use the `group.ai.yetanother.deskfleet` App Group entitlement. Before you sign for a physical iOS device in Xcode, enable this App Group on both bundle identifiers. If the App Group is missing, the app reports the audio-reactive outline as unsupported.
+### Workspace Agent iOS development build
+
+Run these commands from the repository root. The standard App ID is
+`ai.yetanother.deskfleet`. The development build uses a separate identity for
+its app, ReplayKit extension, and App Group. It uses the registered native
+authentication callback and the same DeskFleet service.
+
+```sh
+export DESKFLEET_IOS_APP_ID=com.example.deskfleet.workspaceagent
+export DESKFLEET_IOS_DISPLAY_NAME="DeskFleet Workspace"
+export VITE_DESKFLEET_SERVER_URL=https://deskfleet.yetanother.ai
+mise run ios:sync
+```
+
+For this Mac's prepared checkout, the Rust viewer XCFramework, local Swift
+packages and Capacitor assets are already staged. To rebuild the interface
+after a Vue change, the following commands also work with the staged FFI.
+Use the full sync above when modifying the Rust viewer or native plugins.
+
+```sh
+pnpm --filter @deskfleet/web build
+pnpm --filter @deskfleet/web exec cap copy ios
+```
+
+On iOS, **Settings → Appearance → Text size** adjusts interface text from 85% to 150%
+and saves the selection on the device. Choose 100% to restore the default.
+
+Use the same ID and display name in Xcode. The SwiftPM lock is checked strictly:
+Firebase 13.2.0 requires GoogleAppMeasurement 13.2.x, App Check 12.x, and newer
+gRPC and Abseil than the earlier lockfile specified. GoogleAppMeasurement
+13.2.x requires Google Ads On Device Conversion 3.8.x. GTMSessionFetcher stays
+on the compatible 4.5.0 pin.
+
+```sh
+build_workspace_ios() {
+  xcodebuild -project apps/web/ios/App/App.xcodeproj -scheme App -configuration Debug \
+    -onlyUsePackageVersionsFromResolvedFile \
+    -clonedSourcePackagesDirPath "$PWD/target/ios-swift-packages" \
+    DESKFLEET_IOS_APP_ID="$DESKFLEET_IOS_APP_ID" \
+    DESKFLEET_IOS_DISPLAY_NAME="$DESKFLEET_IOS_DISPLAY_NAME" "$@" build
+}
+
+# Apple Silicon simulator; the Rust viewer provides an arm64 simulator slice.
+build_workspace_ios -destination 'generic/platform=iOS Simulator' ARCHS=arm64 \
+  -derivedDataPath "$PWD/target/ios-simulator" CODE_SIGNING_ALLOWED=NO
+```
+
+For a physical iPhone, set `DESKFLEET_DEVELOPMENT_TEAM` to your Apple
+development Team ID. Register the same `group.<app identifier>` App Group
+for the app and its `.BroadcastUpload` extension. Xcode can then sign both
+targets and enable the audio-reactive outline.
+
+```sh
+build_workspace_ios -destination 'generic/platform=iOS' \
+  -derivedDataPath "$PWD/target/ios-device" -allowProvisioningUpdates \
+  DEVELOPMENT_TEAM="${DESKFLEET_DEVELOPMENT_TEAM:?Set your Apple development team ID}"
+```
+
+For independent development profiles without the App Group and Push Notifications
+capabilities, point both targets at an explicit empty entitlements file. With
+Xcode 26 a blank build setting can still pick up the upstream push capability.
+This local signing variant supports workspace conversations and dictation. APNs
+delivery and the audio-reactive outline require matching entitlements and, for
+push, a backend configured for the independent app's APNs topic.
+
+```sh
+mkdir -p "$PWD/target"
+empty_entitlements="$PWD/target/ios-local-empty.entitlements"
+plutil -create xml1 -- "$empty_entitlements"
+build_workspace_ios -destination 'generic/platform=iOS' \
+  -derivedDataPath "$PWD/target/ios-device" \
+  DEVELOPMENT_TEAM="${DESKFLEET_DEVELOPMENT_TEAM:?Set your Apple development team ID}" \
+  DESKFLEET_OUTLINE_AUDIO_GROUP= CODE_SIGN_ENTITLEMENTS="$empty_entitlements"
+```
+
+The simulator app is in `target/ios-simulator/Build/Products/Debug-iphonesimulator/App.app`.
+To install the signed device app on a paired iPhone, set `DESKFLEET_IPHONE` to
+its name or UDID:
+
+```sh
+xcrun devicectl device install app --device "$DESKFLEET_IPHONE" \
+  target/ios-device/Build/Products/Debug-iphoneos/App.app
+xcrun devicectl device process launch --device "$DESKFLEET_IPHONE" "$DESKFLEET_IOS_APP_ID"
+```
 
 ### Mobile push notifications
 

@@ -6,7 +6,7 @@
 	<string>development</string>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.ai.yetanother.deskfleet</string>
+		<string>group.$(DESKFLEET_IOS_APP_ID)</string>
 	</array>
 </dict>
 </plist>
