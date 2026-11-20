@@ -24,7 +24,9 @@ async function fixture(t: TestContext) {
   const operations = {
     mcpServers: servers,
     catalog: {
-      native: { snapshot: async () => ({ machineId: "local-target", workspaces: [{ id: "workspace" }] }) },
+      registrationDirectory: directory,
+      native: { snapshot: async () => ({ machineId: "local-target", workspaces: [{ id: "workspace", worktrees: [] },
+        { id: "private", worktrees: [{ directories: [{ path: join(directory, "super-agent-files/private") }] }] }] }) },
       handle: async (request: unknown) => {
         calls.push(["catalog", request])
         return { id: "created-workspace", ...(request as { params: Record<string, unknown> }).params }
@@ -32,7 +34,8 @@ async function fixture(t: TestContext) {
     },
     providers: { metadata: () => ({ providers: [{ id: "agent", name: "Agent" }] }) },
     agents: {
-      journal: { list: async () => [{ id: "session", workspaceId: "workspace" }, { id: "standalone" }] },
+      journal: { list: async () => [{ id: "session", workspaceId: "workspace" }, { id: "private-session", workspaceId: "private" }, { id: "standalone" }],
+        session: async (id: string) => ({ id, workspaceId: id === "private-session" ? "private" : "workspace" }) },
       handle: async (method: string, params: Record<string, unknown>, ...args: unknown[]) => {
         calls.push([method, params, ...args])
         if (method === "_deskfleet/session/create") return { session: { id: "created-session", workspaceId: params.workspaceId, lifecycle: "ready" } }
@@ -66,6 +69,19 @@ test("remote access defaults off, persists across readers, and disabling immedia
   await assert.rejects(f.call("sessions"), /does not allow/)
   await writeFile(join(f.directory, "remote-agent-settings.json"), '{"allowRead":"true","allowOperate":false}')
   await assert.rejects(f.call("sessions"), /boolean/)
+})
+
+test("remote project discovery and direct operations omit personal default-room Workers", async t => {
+  const f = await fixture(t)
+  await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: false, allowSessions: true, allowWorkspaces: true })
+  assert.doesNotMatch(JSON.stringify(await f.call("machine")), /super-agent-files|private-session/)
+  assert.deepEqual(await f.call("sessions", { workspaceId: "private" }), [])
+  for (const [method, args] of [
+    ["session", { sessionId: "private-session" }], ["history", { sessionId: "private-session", afterSeq: "0" }],
+    ["sessionCreate", { workspaceId: "private", provider: "codex" }], ["sessionSend", { sessionId: "private-session", prompt: "hello" }],
+    ["workspaceCreate", { name: "Alias", directories: [{ path: join(f.directory, "super-agent-files/private") }] }],
+  ] as const) await assert.rejects(f.call(method, args), /outside this MCP delegation/)
+  assert.equal(f.calls.length, 0)
 })
 
 test("real MCP discovery paginates; even a read-only tool needs operate permission; results preserve errors", async t => {
@@ -114,7 +130,7 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
 
   await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: true })
   assert.deepEqual(await f.call("machine"), {
-    catalog: { machineId: "local-target", workspaces: [{ id: "workspace" }] },
+    catalog: { machineId: "local-target", workspaces: [{ id: "workspace", worktrees: [] }] },
     providers: { providers: [{ id: "agent", name: "Agent" }] },
     access: { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: true },
   })

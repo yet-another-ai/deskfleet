@@ -1,3 +1,4 @@
+import type { routeSuperMessage } from "./super-agent-router.ts"
 import type { AgentQuotaAuthority } from "./agent-quotas.ts"
 import type { CentralTransport } from "@deskfleet/client/central-transport"
 import { once } from "node:events"
@@ -27,6 +28,7 @@ export async function startDaemon(port = 0, options: {
   linuxDesktopAccess?: LinuxDesktopPermissionApi
   linuxDesktopBackend?: "wayland" | "x11" | null
   agentProvider?: AgentProvider
+  superRoute?: typeof routeSuperMessage
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
   workspaceDirectory?: string
@@ -89,7 +91,7 @@ export async function startDaemon(port = 0, options: {
   }
   try {
     control = await startControlServer(peers, controlDirectory, undefined, undefined, () => { void close() }, permissions, options.agentProvider, {
-      allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas,
+      allowLocalControlForTests: options.allowLocalControlForTests, openCatalog: options.openCatalog, agentQuotas: options.agentQuotas, superRoute: options.superRoute,
       centralTransport: options.centralTransport,
       ...(options.auvPath ? { auvPath: options.auvPath } : {}),
       ...(options.workspaceDirectory ? { workspaceDirectory: options.workspaceDirectory } : {}),

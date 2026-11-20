@@ -20,11 +20,12 @@ function fixture() {
     { id: "2", workspaceId: "20" },
     { id: "40" },
     { id: "41" },
+    { id: "99", workspaceId: "90" },
   ]
   const operations = {
     agents: {
       requireActive: async (id: string) => ({ session: sessions.find(session => session.id === id)! }),
-      journal: { list: async () => sessions, read: async (id: string) => ({ session: sessions.find(session => session.id === id)! }) },
+      journal: { list: async () => sessions, session: async (id: string) => sessions.find(session => session.id === id)! },
       handle: async (method: string, params: Record<string, unknown>, ...args: unknown[]) => {
         calls.push([method, params, ...args])
         if (method === "_deskfleet/session/create") return { session: { id: "50", workspaceId: params.workspaceId, lifecycle: "ready" } }
@@ -33,10 +34,12 @@ function fixture() {
       },
     },
     catalog: {
+      registrationDirectory: "/state",
       native: {
         snapshot: async () => ({
           teamId: "1", machineId: "1", machineName: "host",
-          workspaces: [{ id: "10" }, { id: "20" }],
+          workspaces: [{ id: "10", worktrees: [] }, { id: "20", worktrees: [] },
+            { id: "90", worktrees: [{ directories: [{ path: "/state/super-agent-files/private" }] }] }],
           sessions: [
             { id: "100", sessionId: "40", directories: [{ path: "/home/a" }] },
             { id: "101", sessionId: "41", directories: [{ path: "/home/b" }] },
@@ -57,11 +60,24 @@ function fixture() {
   return { calls, operations }
 }
 
+test("machine delegation keeps default-room Workers behind their project boundary", async () => {
+  const { operations } = fixture()
+  await assert.rejects(dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", workspaceId: "90" }, actor, machineScope), /Unknown Workspace/)
+  for (const method of ["_deskfleet/session/history", "_deskfleet/session/subscribe", "_deskfleet/input/submit"]) {
+    await assert.rejects(dispatchMcp(operations, method, { sessionId: "99" }, actor, machineScope), /outside this MCP delegation/)
+  }
+  await assert.rejects(dispatchMcp(operations, "workspaceCreate", {
+    name: "Private alias", directories: [{ path: "/state/super-agent-files/private/sub" }],
+  }, actor, machineScope), /outside this MCP delegation/)
+  const own = { sessionId: "99", workspaceId: "90" }
+  assert.deepEqual(await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, own), [{ id: "99", workspaceId: "90" }])
+})
+
 test("MCP discovery filters Workspace resources and never exposes provider launch secrets", async () => {
   const { operations } = fixture()
   assert.deepEqual(await dispatchMcp(operations, "catalogList", {}, actor, scope), {
     teamId: "1", machineId: "1", machineName: "host", sessionId: "1", workspaceId: "10",
-    workspaces: [{ id: "10" }], sessions: [],
+    workspaces: [{ id: "10", worktrees: [] }], sessions: [],
   })
   assert.deepEqual(await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, scope), [{ id: "1", workspaceId: "10" }])
   assert.deepEqual(await dispatchMcp(operations, "scheduleList", {}, actor, scope), [{ id: "a", workspaceId: "10" }])
@@ -72,7 +88,7 @@ test("machine-scoped MCP sees and delegates into Workspaces while isolating othe
   const { operations, calls } = fixture()
   assert.deepEqual(await dispatchMcp(operations, "catalogList", {}, actor, machineScope), {
     teamId: "1", machineId: "1", machineName: "host", sessionId: "40",
-    workspaces: [{ id: "10" }, { id: "20" }],
+    workspaces: [{ id: "10", worktrees: [] }, { id: "20", worktrees: [] }],
     sessions: [{ id: "100", sessionId: "40", directories: [{ path: "/home/a" }] }],
   })
   assert.deepEqual(await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, machineScope), [

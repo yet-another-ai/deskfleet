@@ -23,11 +23,23 @@ import type { OutlineAudioApi } from "./outline-audio.ts"
 import type { ApplicationApi } from "./application.ts"
 import type { SpeechApi } from "./speech.ts"
 
+import type { SuperMethods } from "../../../apps/daemon/src/super-agent-protocol.ts"
+
+export type SuperAgentApi = {
+  [Name in keyof SuperMethods as Name extends `_deskfleet/super-agent/${infer Action}` ? Action : never]:
+    (params: SuperMethods[Name]["params"]) => Promise<SuperMethods[Name]["result"]>
+}
+
 /** The host platform adapter configured for the shared application. */
 export interface DeskfleetDesktopApi {
+  superAgent?: SuperAgentApi
+  /** This client can navigate projects on enrolled remote machines without a local daemon. */
+  remoteWorkspaceAgent?: boolean
   platform: "darwin" | "linux" | "win32" | "web"
   /** True when running inside the native mobile client (Android / iOS). */
   mobile?: boolean
+  /** Adjust native interface text without zooming the viewport or scaling controls. */
+  setInterfaceTextScale?(percent: number): void
   central?: CentralApi
   /** Only the Web host exposes site administration. */
   siteAdministration?: SiteAdministrationApi
@@ -44,7 +56,7 @@ export interface DeskfleetDesktopApi {
   haptic?: (kind: "activate" | "tick") => void
   onOpenNotificationSession?: (listener: (target: { teamId: string; machineId: string; sessionId: string }) => void) => () => void
   initialError?: string
-  target?: { id: string; local: boolean; lastSeen?: string }
+  target?: { id: string; teamId?: string; local: boolean; lastSeen?: string }
   localChannels?: LocalChannelsApi
   muxChannels?: MuxChannelsApi
   locale: AppLocale

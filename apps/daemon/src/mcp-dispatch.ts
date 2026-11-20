@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { AgentActor, AgentSnapshot } from "./agent-protocol.ts"
 import { validateCatalogParams } from "./catalog-protocol.ts"
 import type { MachineOperations } from "./machine-operations.ts"
+import { isDefaultWorkerDirectory, machineMcpCatalog } from "./super-agent-workspaces.ts"
 import { dispatchRemoteFiles, dispatchRemoteFileTransfer } from "./mcp-files.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
 import type { RemoteMcpOperation, RemoteMcpRequest } from "../../../crates/protocol/control.ts"
@@ -44,6 +45,9 @@ function validateWorkspaceCreate(params: Record<string, unknown>) {
 
 export async function createMcpWorkspace(catalog: MachineOperations["catalog"], params: Record<string, unknown>): Promise<unknown> {
   const validated = validateWorkspaceCreate(params)
+  if (validated.directories.some(entry => isDefaultWorkerDirectory(catalog.registrationDirectory, entry.path))) {
+    throw new Error("Workspace is outside this MCP delegation")
+  }
   return catalog.handle({ method: "workspaceCreate", params: validated })
 }
 
@@ -70,9 +74,9 @@ function object(value: unknown): Record<string, unknown> {
 }
 
 /** Workspace Sessions share their Workspace; machine-scoped Sessions can delegate into Workspaces without seeing other machine-scoped Sessions. */
-function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope): boolean {
+function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope, visible?: Set<string>): boolean {
   if (scope.workspaceId !== undefined) return session.workspaceId === scope.workspaceId
-  return session.id === scope.sessionId || session.workspaceId !== undefined
+  return session.id === scope.sessionId || (session.workspaceId !== undefined && !!visible?.has(session.workspaceId))
 }
 
 /** Local resources stay within the Session's delegation; remote tools use a separately authorized route. */
@@ -103,7 +107,7 @@ export async function dispatchMcp(
     return callRemote(operation as RemoteMcpOperation, args)
   }
   if (method === "catalogList") {
-    const catalog = await operations.catalog.native.snapshot()
+    const catalog = scope.workspaceId === undefined ? await machineMcpCatalog(operations.catalog) : await operations.catalog.native.snapshot()
     return {
       ...catalog,
       sessionId: scope.sessionId,
@@ -119,13 +123,17 @@ export async function dispatchMcp(
     if (scope.workspaceId !== undefined) throw new Error("Workspace is outside this MCP delegation")
     return createMcpWorkspace(operations.catalog, params)
   }
+  const visibleProjects = async () => scope.workspaceId === undefined
+    ? new Set((await machineMcpCatalog(operations.catalog)).workspaces.map(workspace => workspace.id))
+    : undefined
   if (method === "_deskfleet/session/list") {
-    return (await operations.agents.journal.list()).filter(session => sameDelegation(session, scope))
+    const [sessions, visible] = await Promise.all([operations.agents.journal.list(), visibleProjects()])
+    return sessions.filter(session => sameDelegation(session, scope, visible))
   }
   if (method === "_deskfleet/session/subscribe" || method === "_deskfleet/session/history" || method === "_deskfleet/input/submit") {
     if (typeof params.sessionId !== "string") throw new Error("A Session ID is required")
-    const snapshot = await operations.agents.journal.read(params.sessionId)
-    if (!sameDelegation(snapshot.session, scope)) throw new Error("Session is outside this MCP delegation")
+    const session = await operations.agents.journal.session(params.sessionId)
+    if (!sameDelegation(session, scope, await visibleProjects())) throw new Error("Session is outside this MCP delegation")
     return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
@@ -135,7 +143,7 @@ export async function dispatchMcp(
     }
     const parsed = validateSessionCreate(params)
     if (parsed.workspaceId !== undefined) {
-      const catalog = await operations.catalog.native.snapshot()
+      const catalog = await machineMcpCatalog(operations.catalog)
       if (!catalog.workspaces.some(workspace => workspace.id === parsed.workspaceId)) {
         throw new Error(`Unknown Workspace: ${parsed.workspaceId}`)
       }

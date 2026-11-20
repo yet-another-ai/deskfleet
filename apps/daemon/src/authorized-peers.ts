@@ -83,6 +83,7 @@ export class AuthorizedPeers {
   readonly #admission: PeerAdmission
   readonly #native: ControlPeers
   readonly #agents: AgentChannelSessions
+  readonly #superAgent: AgentChannelSessions["superAgent"]
   readonly #terminals: TerminalSessions
   readonly #signal: (peerId: string, event: PeerSignal) => void
   readonly #now: () => number
@@ -96,9 +97,11 @@ export class AuthorizedPeers {
   constructor(options: {
     peers: ControlPeers; agents: AgentChannelSessions; terminals: TerminalSessions
     identity: { originId: string; machineId: string }
+    superAgent?: AgentChannelSessions["superAgent"]
     signal: (peerId: string, event: PeerSignal) => void; now?: () => number
   }) {
     this.#native = options.peers; this.#agents = options.agents; this.#terminals = options.terminals
+    this.#superAgent = options.superAgent
     this.#admission = PeerAdmission.for(options.peers)
     this.#identity = options.identity
     this.#signal = (id, event) => {
@@ -230,6 +233,12 @@ export class AuthorizedPeers {
     if (purpose === "agent") {
       const sessions: AgentChannelSessions = {
         journal: this.#agents.journal,
+        ...(this.#superAgent ? {
+          superAgent: (method: string, params: unknown) => {
+            this.#live(id, method === "_deskfleet/super-agent/snapshot" ? "agent:read" : "agent:execute")
+            return this.#superAgent!(method, params, owned.authorization.actor)
+          },
+        } : {}),
         onEvent: listener => this.#agents.onEvent(event => {
           try { this.#live(id, "agent:read"); listener(event) } catch { /* expiry closes subscriptions */ }
         }),
@@ -284,6 +293,7 @@ export class AuthorizedPeers {
         this.#agents.sessionDirectory ? sessionId => this.#agents.sessionDirectory!(sessionId) : undefined,
         this.#agents.sessionAttachmentDirectory ? sessionId => this.#agents.sessionAttachmentDirectory!(sessionId) : undefined,
         this.#agents.draftAttachmentDirectory ? draftId => this.#agents.draftAttachmentDirectory!(draftId) : undefined,
+        this.#agents.fileGrant && owned.authorization.actor.userId ? path => this.#agents.fileGrant!(owned.authorization.actor.userId!, path) : undefined,
       ),
       bytes => send(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), false),
       method => { this.#live(id, fileAction(method)) },

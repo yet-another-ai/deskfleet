@@ -8,6 +8,7 @@ import type { CentralSocket, CentralTransport } from "@deskfleet/client/central-
 import type { RemoteMcp } from "./remote-mcp.ts"
 import type { AgentActor } from "./agent-protocol.ts"
 import type { GithubPullRequest, GithubPullRequestQuery } from "../../../packages/client/src/central.ts"
+import type { SuperHandler } from "./agent-channel.ts"
 import { AuthorizedPeers, type LocalPeerSink } from "./authorized-peers.ts"
 import { centralUrl, type CentralStatus, type LocalPeerGrant, type MachineCredentials, type MachineEnrollment, type PeerOffer, type ServerMessage } from "./central-protocol.ts"
 import { CentralSync } from "./central-sync.ts"
@@ -71,18 +72,18 @@ export class CentralClient {
   readonly #remoteMcp?: RemoteMcp
   readonly #transport?: CentralTransport
 
-  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport) {
+  constructor(directory: string, operations: MachineOperations, peers: ControlPeers, shutdownTimeoutMs = 5_000, remoteMcp?: RemoteMcp, centralTransport?: CentralTransport, superAgent?: SuperHandler) {
     this.#remoteMcp = remoteMcp
     this.#transport = centralTransport
     this.#shutdownTimeoutMs = shutdownTimeoutMs
     this.#path = join(directory, "central.json")
     this.#operations = operations
     this.#peers = new AuthorizedPeers({
-      peers, agents: operations.agents, terminals: operations.terminals,
+      peers, agents: operations.agents, terminals: operations.terminals, superAgent,
       identity: operations.agents.journal.identity,
       signal: (peerId, event) => this.#send({ type: "peerEvent", peerId, event }),
     })
-    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates)
+    this.#sync = new CentralSync(operations.agents, operations.catalog, operations.providers, (path, body) => this.#http(path, body), undefined, operations.schedules, operations.providerUpdates, !!superAgent)
     this.#unsubscribeTerminals = operations.terminals.onChange(() => this.#sync.changed())
   }
 

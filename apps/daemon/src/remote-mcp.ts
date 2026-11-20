@@ -5,6 +5,7 @@ import type { AgentActor } from "./agent-protocol.ts"
 import { FilesService } from "./files-service.ts"
 import type { MachineOperations } from "./machine-operations.ts"
 import { createMcpSession, createMcpWorkspace, sendMcpSession } from "./mcp-dispatch.ts"
+import { machineMcpCatalog } from "./super-agent-workspaces.ts"
 import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
@@ -62,25 +63,42 @@ export class RemoteMcp {
       } else if (!current.allowRead) throw new Error("This machine does not allow other machines' Agents to read it")
     }
     if (!isFileCleanup) await authorize()
+    const visibleProject = async (workspaceId?: string) => workspaceId === undefined
+      || (await machineMcpCatalog(this.#operations.catalog)).workspaces.some(workspace => workspace.id === workspaceId)
+    const requireSession = async (sessionId: string) => {
+      const session = await this.#operations.agents.journal.session(sessionId)
+      if (!await visibleProject(session.workspaceId)) throw new Error("Session is outside this MCP delegation")
+    }
     switch (operation) {
       case "machine":
         z.strictObject({}).parse(params)
-        return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access: settings }
+        return { catalog: await machineMcpCatalog(this.#operations.catalog), providers: this.#operations.providers.metadata(), access: settings }
       case "sessions": {
         const { workspaceId } = z.strictObject({ workspaceId: nonEmpty.optional() }).parse(params)
-        return (await this.#operations.agents.journal.list()).filter(session => workspaceId === undefined || session.workspaceId === workspaceId)
+        const [catalog, sessions] = await Promise.all([machineMcpCatalog(this.#operations.catalog), this.#operations.agents.journal.list()])
+        const visible = new Set(catalog.workspaces.map(workspace => workspace.id))
+        return sessions.filter(session => (workspaceId === undefined || session.workspaceId === workspaceId)
+          && (session.workspaceId === undefined || visible.has(session.workspaceId)))
       }
-      case "session":
-        return this.#operations.agents.handle("_deskfleet/session/subscribe", z.strictObject({ sessionId: nonEmpty }).parse(params), actor)
-      case "history":
-        return this.#operations.agents.handle("_deskfleet/session/history", z.strictObject({
+      case "session": {
+        const parsed = z.strictObject({ sessionId: nonEmpty }).parse(params)
+        await requireSession(parsed.sessionId)
+        return this.#operations.agents.handle("_deskfleet/session/subscribe", parsed, actor)
+      }
+      case "history": {
+        const parsed = z.strictObject({
           sessionId: nonEmpty,
           afterSeq: z.string().regex(/^[0-9]+$/u, "afterSeq must be a nonnegative sequence string"),
           limit: z.number().int().min(1).max(200).optional(),
-        }).parse(params), actor)
+        }).parse(params)
+        await requireSession(parsed.sessionId)
+        return this.#operations.agents.handle("_deskfleet/session/history", parsed, actor)
+      }
       case "sessionCreate":
+        if (typeof params.workspaceId === "string" && !await visibleProject(params.workspaceId)) throw new Error("Workspace is outside this MCP delegation")
         return createMcpSession(this.#operations.agents, params, actor)
       case "sessionSend":
+        await requireSession(nonEmpty.parse(params.sessionId))
         return sendMcpSession(this.#operations.agents, params, actor)
       case "workspaceCreate":
         return createMcpWorkspace(this.#operations.catalog, params)

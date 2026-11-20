@@ -8,10 +8,13 @@ import {
   type AgentActor, type AgentEvent, type AgentMethod, type AgentPermission, type AgentPreview, type AgentSnapshot,
 } from "./agent-protocol.ts"
 
+export type SuperHandler = (method: string, params: unknown, actor: AgentActor) => Promise<unknown>
 export interface AgentChannelSessions {
+  superAgent?: SuperHandler
   readonly journal: { readonly identity: unknown }
   sessionDirectory?(sessionId: string): Promise<string>
   sessionAttachmentDirectory?(sessionId: string): Promise<string>
+  fileGrant?(userId: string, path: string): string
   draftAttachmentDirectory?(draftId: string): Promise<string>
   handle(method: AgentMethod, params: unknown, actor: AgentActor): Promise<unknown>
   onEvent(listener: (event: AgentEvent) => void): () => void
@@ -215,6 +218,11 @@ export class AgentChannel {
         return
       }
       if (!this.#initialized) { this.#error(id, -32002, "Initialize ACP before using Sessions"); return }
+      if (this.#sessions.superAgent && ["snapshot", "send", "correct", "settings"].some(name => method === `_deskfleet/super-agent/${name}`)) {
+        const result = await this.#sessions.superAgent(method, params, this.#actor)
+        if (!this.#closed) this.#queue({ jsonrpc: "2.0", id, result })
+        return
+      }
       if (!METHODS.has(method as AgentMethod)) { this.#error(id, -32601, "Method not found"); return }
       if (method === "_deskfleet/git/subscribe" || method === "_deskfleet/git/unsubscribe") {
         await this.#gitSubscription(method, params)

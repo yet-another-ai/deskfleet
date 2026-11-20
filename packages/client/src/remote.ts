@@ -144,12 +144,15 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
   const userRpc = <T>(method: string, params: unknown = {}) => user.rpc<T>(machine.teamId, machine.id, method, params)
   const control = <M extends AgentMethod>(method: M, params: AgentMethods[M]["params"]) => {
     if (!management.has(method) || local && method === "_deskfleet/git/branches") return undefined
+    // Read project menu choices over the selected local registration's granted Agent channel.
+    if (local && host.localChannels && method === "_deskfleet/agent/configuration"
+      && "includeMatrix" in params && params.includeMatrix === false) return undefined
     const api = method === "_deskfleet/session/read" ? automatic : managementReads.has(method) ? central : user
     return api.rpc<AgentMethods[M]["result"]>(machine.teamId, machine.id, method, params)
   }
   const api: DeskfleetDesktopApi = {
     ...host,
-    target: { id: machine.id, local, lastSeen: machine.lastSeenAt ?? undefined },
+    target: { id: machine.id, teamId: machine.teamId, local, lastSeen: machine.lastSeenAt ?? undefined },
     catalog: {
       list: async options => {
         if (options?.live) return { ...await userRpc<CatalogSnapshot>("catalogList"), machineName: name }
@@ -230,6 +233,7 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
     // A refreshed roster repairs presence events missed during signaling loss,
     // without replacing the adapter or revoking its still-authorized peers.
     updateMachine(value, rosterRefreshed = false) {
+      if (value.id !== machine.id || value.teamId !== machine.teamId) throw new Error("Cannot rebind a machine adapter to another registration")
       const refresh = awaitingRoster && rosterRefreshed
       if (refresh) awaitingRoster = false
       if (supportsMachineMux(machine) !== supportsMachineMux(value)) muxUnsupported = false

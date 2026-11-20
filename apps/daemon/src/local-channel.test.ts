@@ -256,6 +256,11 @@ test("authenticated IPC carries Agent and terminal messages with WebRTC disabled
   await a.send("agent", { jsonrpc: "2.0", id: 2, method: "_deskfleet/session/list", params: {} })
   await until(() => a.packets("agent").some(packet => packet.id === 2))
   assert.deepEqual(a.packets("agent").find(packet => packet.id === 2)!.result, [])
+  await a.send("agent", { jsonrpc: "2.0", id: 3, method: "_deskfleet/super-agent/snapshot", params: { workspaceId: null } })
+  await until(() => a.packets("agent").some(packet => packet.id === 3))
+  const front = a.packets("agent").find(packet => packet.id === 3)!.result as { workspaceId: string | null; messages: unknown[] }
+  assert.equal(front.workspaceId, null)
+  assert.deepEqual(front.messages, [])
   assert.ok(a.messages("agent").every(event => !event.isString))
   await assert.rejects(a.client.call("localSend", { peerId: "agent", isString: false, data: "invalid base64" }), /binary message/)
   await assert.rejects(a.client.call("localSend", { peerId: "agent", isString: true, data: "x".repeat(MAX_LOCAL_MESSAGE_BYTES + 1) }), /too large/)

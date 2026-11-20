@@ -1,7 +1,13 @@
+import type { routeSuperMessage } from "./super-agent-router.ts"
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { hostname } from "node:os"
 import type { CentralTransport } from "@deskfleet/client/central-transport"
+import { SuperAttachmentStore } from "./super-agent-attachments.ts"
+import { SuperAgentService, type SuperUserState } from "./super-agent-service.ts"
+import { createCoordinatorRuntime } from "./super-agent-provider.ts"
+import { LocalSuperStore } from "./super-agent-store.ts"
+import { superWorkspaces } from "./super-agent-workspaces.ts"
 import { AgentProviders } from "./agent-providers.ts"
 import { AgentSessions } from "./agent-sessions.ts"
 import { CentralAgentQuotas, type AgentQuotaAuthority } from "./agent-quotas.ts"
@@ -27,6 +33,7 @@ interface MachineOptions {
   peers: ControlPeers
   capabilities: () => Promise<DesktopCapabilities>
   agentProvider?: AgentProvider
+  superRoute?: typeof routeSuperMessage
   agentQuotas?: AgentQuotaAuthority
   auvPath?: string
   workspaceDirectory?: string
@@ -46,6 +53,8 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   const setup = new ProviderSetup(terminals, { directory })
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
+  let frontDesk: SuperAgentService | undefined
+  let superStore: LocalSuperStore<SuperUserState> | undefined
   let schedules: ScheduledTasks | undefined
   let providerUpdates: ProviderUpdates | undefined
   let mcp: AgentMcp | undefined
@@ -54,10 +63,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let stopping: Promise<void> | undefined
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
+    const frontDeskStopped = frontDesk?.close()
     const cleanupResults = await Promise.allSettled([cleanup?.close()])
     remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
-    const results = await Promise.allSettled([providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
+    const results = await Promise.allSettled([frontDeskStopped, providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
     const terminalResults = await Promise.allSettled([terminals.close()])
     const failures = [...cleanupResults, ...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
@@ -67,7 +77,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     try { await stop() }
     finally {
       try { await central?.close() }
-      finally { await catalog.close() }
+      finally { await superStore?.close(); await catalog.close() }
     }
   })()
   try {
@@ -104,8 +114,20 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     })
     operations = new MachineOperations({ agents, catalog, providers, terminals, setup, providerUpdates, schedules, mcpServers, capabilities: options.capabilities })
     remoteMcp = new RemoteMcp(hostDirectory, operations)
-    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp, options.centralTransport)
+    superStore = new LocalSuperStore<SuperUserState>(catalog.native)
+    await superStore.init()
+    const coordinator = createCoordinatorRuntime(providers)
+    frontDesk = new SuperAgentService({
+      supportsCoordinator: coordinator.supports, coordinatorOptions: coordinator.options, coordinatorModel: coordinator.model,
+      registration: () => central?.status(),
+      defaultCoordinator: process.platform === "darwin" ? "codex" : "claude-code",
+      attachments: new SuperAttachmentStore(directory, (uid, path) => catalog.attachments.fileGrant(uid, path)),
+      store: superStore, agents, authorize, route: options.superRoute, ...superWorkspaces(catalog, directory),
+      providers: () => providers.metadata().providers,
+    })
+    central = new CentralClient(directory, operations, options.peers, undefined, remoteMcp, options.centralTransport, frontDesk.handle.bind(frontDesk))
     await central.init()
+    await frontDesk.init()
     cleanup = new WorktreeCleanup({ agents, catalog, pullRequest: (actor, query) => central!.githubPullRequest(actor, query) })
     cleanup.start()
     schedules.start()

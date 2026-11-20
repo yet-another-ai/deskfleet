@@ -61,6 +61,7 @@ function fixture(closeGate?: Promise<void>, closeError?: Error) {
         if (closeError) throw closeError
       },
     },
+    superAgent: async (method, _params, actor) => { calls.push({ method, actor }); return { workspaceId: "proj" } },
     agents, terminals: {} as TerminalSessions, identity, signal: (_id, event) => { signals.push(event) }, now: () => now,
   })
   peers.bind(credentials)
@@ -382,6 +383,27 @@ test("Agent RPC uses the server actor and cannot perform management over WebRTC"
   await f.rpc(4, "_deskfleet/elicitation/respond", { sessionId: "1", elicitationId: "2", response: { action: "cancel" }, actor: { userId: "spoof" } })
   assert.equal(f.calls[1]?.method, "_deskfleet/elicitation/respond")
   assert.equal(f.calls[1]?.actor.userId, "alice")
+})
+
+test("a remote workspace agent uses the granted identity and checks read and execute separately", async context => {
+  for (const writable of [false, true]) {
+    const f = fixture(); context.after(() => f.peers.closeAll())
+    const authorization = grant()
+    if (!writable) authorization.actions = ["agent:read"]
+    await f.peers.offer({ peerId: "peer", sdp, authorization, iceServers: [] })
+    authorization.actor.userId = "changed"
+    await f.rpc(1, "initialize", { protocolVersion: 1 })
+    const params = { workspaceId: "proj", actor: { kind: "user", userId: "other", deviceId: "other-device" } }
+    const methods = ["snapshot", "send", "correct", "settings"].map(name => `_deskfleet/super-agent/${name}`)
+    for (const [i, method] of methods.entries()) {
+      await f.rpc(i + 2, method, params)
+      const response = f.sent.map(packet => JSON.parse(packet)).find(packet => packet.id === i + 2)
+      if (writable || i === 0) assert.deepEqual(response.result, { workspaceId: "proj" })
+      else assert.match(response.error.message, /does not allow/)
+    }
+    assert.deepEqual(f.calls.map(call => call.method), writable ? methods : methods.slice(0, 1))
+    for (const call of f.calls) assert.deepEqual(call.actor, { kind: "user", userId: "alice", deviceId: "login" })
+  }
 })
 
 test("shared Session read acknowledgements require read authority and use the verified peer actor", async context => {
