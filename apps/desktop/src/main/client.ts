@@ -18,8 +18,10 @@ import { installAppearance } from "./appearance.ts"
 import { installDesktopMediaIpc } from "./desktop-media.ts"
 import { installNativeDesktop } from "./native-desktop.ts"
 import { keepRunningInBackground } from "./lifecycle.ts"
+import { startAppImageRestart } from "./appimage-restart.ts"
 import { KeepAwakeController } from "./keep-awake.ts"
 import { refreshLaunchAtStartup } from "./launch-at-startup.ts"
+import { configureLinuxPasswordStore, LinuxKeyringSettingsController } from "./linux-keyring-settings.ts"
 import { LocalAgentController } from "./local-agent-controller.ts"
 import { createLocalAgentRuntime } from "./local-agent-runtime.ts"
 import { establishedDesktopProfile, OnboardingController } from "./onboarding-controller.ts"
@@ -46,12 +48,25 @@ import { installApplication } from "./application.ts"
 import { installGoogleTag } from "./google-tag.ts"
 
 function start(): void {
+  const linuxKeyringPath = join(app.getPath("userData"), "linux-keyring.json")
+  const { appliedUseSystemKeyring } = configureLinuxPasswordStore({
+    platform: process.platform,
+    path: linuxKeyringPath,
+    commandLine: app.commandLine,
+    env: process.env,
+  })
   const dshHost = electronDshHost(process.execPath)
   configureDshRuntime(app.isPackaged
     ? bundledDshRuntime(join(process.resourcesPath, "dsh"), dshHost)
     : sourceDshRuntime(join(app.getAppPath(), "package.json"), dshHost))
   registerRendererScheme()
-  const lifecycle = keepRunningInBackground(app, hideMainWindow)
+  // Pass original process.argv so internal commandLine.appendSwitch() entries
+  // (such as --password-store=basic) do not stick across restarts, and route
+  // Linux AppImages through the supervisor instead of the ephemeral mount path.
+  const relaunch = process.platform === "linux" && process.env.APPIMAGE
+    ? () => startAppImageRestart(process.env.APPIMAGE!, process.argv.slice(1), process.env)
+    : () => app.relaunch({ args: process.argv.slice(1) })
+  const lifecycle = keepRunningInBackground(app, hideMainWindow, relaunch)
   installApplication(lifecycle)
   const show = () => void showMainWindow(lifecycle)
 
@@ -65,22 +80,6 @@ function start(): void {
     installGoogleTag()
     installRendererDownloadGuard()
     installDesktopMediaIpc()
-    // AUV registers its Linux desktop identity in parallel with account and IPC
-    // setup; the bundled binary needs that identity before agents can use it.
-    const auvPath = prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
-    const windowsDesktopService = installWindowsDesktopService()
-    void windowsDesktopService?.reconcileOnStartup().catch(error => {
-      console.warn("Windows desktop service maintenance update failed", error)
-    })
-    const central = await installCentralAccount()
-    const nativeDesktop = installNativeDesktop(central)
-    installLocalApplications(central)
-    installNetworkDiagnostics(central)
-    const speech = installSpeech()
-    const files = installFiles(central)
-    const ports = installPorts(central)
-    const localChannels = installLocalChannels(central)
-    const muxChannels = installMuxChannels(central)
     installRendererPermissions()
     // The dev runner, service managers, and session shutdown stop the client with
     // signals. Electron's own handlers, installed during startup, request an
@@ -90,11 +89,20 @@ function start(): void {
     process.once("SIGTERM", () => lifecycle.quit())
     // Logging out or shutting down must not wait on a client hidden in the tray.
     powerMonitor.on("shutdown", () => lifecycle.quit())
+
+    const userData = app.getPath("userData")
     const daemonDirectory = desktopDaemonDirectory()
     const workspaceDirectory = desktopWorkspaceDirectory()
+    // AUV registers its Linux desktop identity in parallel with local setup;
+    // the bundled binary needs that identity before agents can use it.
+    const auvPath = prepareAuv({ isPackaged: app.isPackaged, appPath: app.getAppPath(), resourcesPath: process.resourcesPath })
+    const windowsDesktopService = installWindowsDesktopService()
+    void windowsDesktopService?.reconcileOnStartup().catch(error => {
+      console.warn("Windows desktop service maintenance update failed", error)
+    })
     const auvBinary = await auvPath
     const localAgent = new LocalAgentController(
-      join(app.getPath("userData"), "settings.json"),
+      join(userData, "settings.json"),
       createLocalAgentRuntime({
         directory: daemonDirectory,
         workspaceDirectory,
@@ -104,8 +112,7 @@ function start(): void {
     )
     // AUV's Portal identity and consent are a Linux desktop concern.
     const auv = process.platform === "linux" ? new AuvPermissionsController(auvBinary) : undefined
-    const keepAwake = new KeepAwakeController(join(app.getPath("userData"), "keep-awake.json"), powerSaveBlocker)
-    const userData = app.getPath("userData")
+    const keepAwake = new KeepAwakeController(join(userData, "keep-awake.json"), powerSaveBlocker)
     const onboarding = new OnboardingController({
       path: join(userData, "onboarding.json"), platform: process.platform, localAgent,
       windowsDesktopService, auv,
@@ -113,42 +120,26 @@ function start(): void {
       established: () => establishedDesktopProfile(userData),
     })
     installOnboarding(onboarding)
-    const notificationSettings = new NotificationSettingsController(join(app.getPath("userData"), "notifications.json"))
-    const notifications = new DesktopNotifications(notificationSettings, event => void openMainWindowNotificationSession(lifecycle, event))
-    const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
-    if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
-    void notificationMonitor.start().catch(console.error)
-    // The hosted daemon outlives windows but not the app. Exit once it has
-    // released its sessions, terminals, and discovery.
+
+    // The hosted daemon outlives windows but not the app. Register its shutdown
+    // barrier before starting the daemon or touching safeStorage so quits work
+    // cleanly even while a locked Linux keyring waits for unlock.
+    const closers: Array<() => void | Promise<void>> = [() => localAgent.close()]
+    const syncCleanups: Array<() => void> = [() => auv?.close()]
+    let closeUpdates: (() => void) | undefined
     let closing: Promise<void> | undefined
     let servicesClosed = false
     const closeServices = (): Promise<void> => {
-      auv?.close()
-      notificationMonitor.close()
-      notifications.close()
-      closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close(), speech.close()]).then(results => {
+      for (const cleanup of syncCleanups) cleanup()
+      closing ??= Promise.allSettled(closers.map(close => close())).then(results => {
         const failure = results.find(result => result.status === "rejected")
         if (failure?.status === "rejected") throw failure.reason
         servicesClosed = true
       }).finally(() => keepAwake.close()).catch((error: unknown) => { closing = undefined; throw error })
       return closing
     }
-    const updates = await installUpdates(lifecycle, closeServices)
-    const updateSettings = new UpdateSettingsController(
-      join(userData, "updates.json"),
-      state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
-      resolveDesktopInstallSource(),
-    )
-    installSettings(
-      localAgent,
-      keepAwake,
-      notificationSettings,
-      new WorktreeRootSettingsController(daemonDirectory, workspaceDirectory === daemonDirectory ? daemonDirectory : join(workspaceDirectory, "worktrees")),
-      updateSettings,
-      new RemoteAgentSettingsController(daemonDirectory),
-    )
     app.on("will-quit", (event) => {
-      updates.close()
+      closeUpdates?.()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier
       // has already completed. Ordinary exits still wait for hosted services.
       if (servicesClosed) return
@@ -158,13 +149,65 @@ function start(): void {
         (error: unknown) => { console.error(error); app.exit(1) },
       )
     })
+
+    // Start Keep Awake and the hosted daemon BEFORE installCentralAccount()
+    // accesses Electron safeStorage. The daemon authenticates with central.json
+    // and never needs the OS keyring, so remote control, terminals, agents, and
+    // files reconnect immediately even if a locked Linux keyring blocks unlock.
     try { keepAwake.get() } catch (error) { console.error(error) }
-    try { updateSettings.get() } catch (error) { console.error(error) }
     await localAgent.initialize({ start: false })
     try {
       const { step } = await onboarding.get()
       if (step !== "account" && step !== "machineControl") await localAgent.startIfEnabled()
     } catch (error) { console.error(error) }
+    if (lifecycle.quitting) return
+
+    const central = await installCentralAccount()
+    if (lifecycle.quitting) return
+    const nativeDesktop = installNativeDesktop(central)
+    installLocalApplications(central)
+    installNetworkDiagnostics(central)
+    const speech = installSpeech()
+    const files = installFiles(central)
+    const ports = installPorts(central)
+    const localChannels = installLocalChannels(central)
+    const muxChannels = installMuxChannels(central)
+    closers.push(
+      () => files.close(),
+      () => ports.close(),
+      () => localChannels.close(),
+      () => muxChannels.close(),
+      () => nativeDesktop.close(),
+      () => speech.close(),
+    )
+
+    const notificationSettings = new NotificationSettingsController(join(userData, "notifications.json"))
+    const notifications = new DesktopNotifications(notificationSettings, event => void openMainWindowNotificationSession(lifecycle, event))
+    const notificationMonitor = new TaskNotificationMonitor(central, notification => notifications.notify(notification), console.error)
+    syncCleanups.push(() => notificationMonitor.close(), () => notifications.close())
+    if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
+    void notificationMonitor.start().catch(console.error)
+
+    const updates = await installUpdates(lifecycle, closeServices)
+    closeUpdates = () => updates.close()
+    const updateSettings = new UpdateSettingsController(
+      join(userData, "updates.json"),
+      state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
+      resolveDesktopInstallSource(),
+    )
+    const linuxKeyring = process.platform === "linux"
+      ? new LinuxKeyringSettingsController(linuxKeyringPath, appliedUseSystemKeyring)
+      : undefined
+    installSettings(
+      localAgent,
+      keepAwake,
+      notificationSettings,
+      new WorktreeRootSettingsController(daemonDirectory, workspaceDirectory === daemonDirectory ? daemonDirectory : join(workspaceDirectory, "worktrees")),
+      updateSettings,
+      new RemoteAgentSettingsController(daemonDirectory),
+      linuxKeyring,
+    )
+    try { updateSettings.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
     updates.start()
     createTray({ show, quit: () => lifecycle.quit() })

@@ -17,6 +17,6 @@ export function installApplication(lifecycle: BackgroundLifecycle): void {
       || !isMainRendererUrl(event.senderFrame.url)) {
       throw new Error("Application IPC is restricted to the main renderer")
     }
-    lifecycle.restart()
+    return lifecycle.restart()
   })
 }

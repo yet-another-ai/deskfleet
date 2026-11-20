@@ -112,6 +112,14 @@ Each process has its own Vite configuration (`vite.main.config.ts`,
 The production client signs in to a configured backend through its owned account system and selects
 a team and an enrolled machine. The Electron main process owns account HTTP and
 WebSocket connections and stores the application token using Electron safeStorage.
+The hosted daemon authenticates separately with `<userData>/daemon/central.json`
+and starts before `safeStorage` account decryption, so a locked or cancelled
+Linux keyring prompt does not block remote daemon reconnection or abort startup.
+On Linux, users who want unattended restarts and AppImage updates without system
+keyring prompts can disable **Settings → Preferences → Use system keyring**
+(persisted in `<userData>/linux-keyring.json` and applied via Chromium's
+`--password-store=basic` before `app.whenReady()`), or override the backend with
+`--password-store=<backend>` or `DESKFLEET_PASSWORD_STORE=<backend>`.
 A narrow preload adapter exposes operations and events without exposing that token
 to the renderer. The browser callback uses a temporary loopback listener and a
 client verifier bound to the one-time login code.

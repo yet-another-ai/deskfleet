@@ -17,6 +17,11 @@ export interface KeepAwakeState {
   enabled: boolean
 }
 
+export interface LinuxKeyringState {
+  useSystemKeyring: boolean
+  restartRequired: boolean
+}
+
 export type UpdateInstallSource =
   | "desktop_installer"
   | "package_manager"
@@ -61,6 +66,8 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   setLaunchAtStartup(enabled: boolean): Promise<LaunchAtStartupState>
   getKeepAwake(): Promise<KeepAwakeState>
   setKeepAwake(enabled: boolean): Promise<KeepAwakeState>
+  getLinuxKeyring?(): Promise<LinuxKeyringState>
+  setLinuxKeyring?(useSystemKeyring: boolean): Promise<LinuxKeyringState>
   getAutoDownloadUpdates(): Promise<AutoDownloadUpdatesState>
   setAutoDownloadUpdates(enabled: boolean): Promise<AutoDownloadUpdatesState>
   setPauseUpdatesOnMetered(enabled: boolean): Promise<AutoDownloadUpdatesState>

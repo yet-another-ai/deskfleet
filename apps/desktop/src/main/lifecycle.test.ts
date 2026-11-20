@@ -85,3 +85,22 @@ test("a failed install restores background behavior without cancelling an explic
   expect(lifecycle.quitting).toBe(true)
   expect(application.quit()).toBe(false)
 })
+
+test("a custom async relaunch waits before quitting and restores state on failure", async () => {
+  const application = new FakeApplication()
+  const hideWindows = vi.fn()
+  const relaunch = vi.fn<() => Promise<void>>()
+    .mockRejectedValueOnce(new Error("spawn failed"))
+    .mockResolvedValueOnce(undefined)
+  const lifecycle = keepRunningInBackground(application, hideWindows, relaunch)
+
+  await expect(lifecycle.restart()).rejects.toThrow("spawn failed")
+  expect(lifecycle.quitting).toBe(false)
+  expect(application.quit).not.toHaveBeenCalled()
+
+  await lifecycle.restart()
+  expect(relaunch).toHaveBeenCalledTimes(2)
+  expect(application.relaunch).not.toHaveBeenCalled()
+  expect(lifecycle.quitting).toBe(true)
+  expect(application.quit).toHaveBeenCalledOnce()
+})

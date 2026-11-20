@@ -38,7 +38,7 @@ async function invokeDesktop<T>(method: string, params?: unknown): Promise<T> {
   return result.value
 }
 
-async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "setPauseUpdatesOnMetered" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getWorktreePreferences" | "setWorktreePreferences" | "getNotifications" | "setNotifications" | "getNotificationPermission" | "requestNotificationPermission" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
+async function invokeSettings<T>(method: "get" | "setLocalAgentEnabled" | "getLaunchAtStartup" | "setLaunchAtStartup" | "getKeepAwake" | "setKeepAwake" | "getLinuxKeyring" | "setLinuxKeyring" | "getAutoDownloadUpdates" | "setAutoDownloadUpdates" | "setPauseUpdatesOnMetered" | "getWorktreeRoot" | "setWorktreeRoot" | "chooseWorktreeRoot" | "getWorktreePreferences" | "setWorktreePreferences" | "getNotifications" | "setNotifications" | "getNotificationPermission" | "requestNotificationPermission" | "getRemoteAgentSettings" | "setRemoteAgentSettings", value?: unknown): Promise<T> {
   const result = await ipcRenderer.invoke(SETTINGS_CHANNEL, method, value) as SettingsResult<T>
   if (!result.ok) throw new Error(result.error)
   return result.value
@@ -84,6 +84,10 @@ return {
     setLaunchAtStartup: (enabled) => invokeSettings("setLaunchAtStartup", enabled),
     getKeepAwake: () => invokeSettings("getKeepAwake"),
     setKeepAwake: (enabled) => invokeSettings("setKeepAwake", enabled),
+    ...(process.platform === "linux" ? {
+      getLinuxKeyring: () => invokeSettings("getLinuxKeyring"),
+      setLinuxKeyring: (useSystemKeyring: boolean) => invokeSettings("setLinuxKeyring", useSystemKeyring),
+    } : {}),
     getAutoDownloadUpdates: () => invokeSettings("getAutoDownloadUpdates"),
     setAutoDownloadUpdates: (enabled) => invokeSettings("setAutoDownloadUpdates", enabled),
     setPauseUpdatesOnMetered: (enabled) => invokeSettings("setPauseUpdatesOnMetered", enabled),

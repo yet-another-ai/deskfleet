@@ -242,5 +242,39 @@ test("metered update preference reports unavailable settings", async () => {
   attachSettings({ webContents: sender } as unknown as BrowserWindow)
   const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
   expect(await invoke(event, "setPauseUpdatesOnMetered", false)).toEqual({ ok: false, error: "Automatic update settings are unavailable" })
+  expect(await invoke(event, "getLinuxKeyring")).toEqual({ ok: false, error: "Linux keyring settings are unavailable" })
+  expect(await invoke(event, "setLinuxKeyring", false)).toEqual({ ok: false, error: "Linux keyring settings are unavailable" })
   sender.emit("destroyed")
+})
+
+test("Linux keyring settings restrict callers, validate writes, and report failures", async () => {
+  const linuxKeyring = {
+    get: vi.fn(() => ({ useSystemKeyring: true, restartRequired: false })),
+    setUseSystemKeyring: vi.fn((useSystemKeyring: boolean) => ({ useSystemKeyring, restartRequired: !useSystemKeyring })),
+  }
+  installSettings(
+    {} as LocalAgentController,
+    {} as KeepAwakeController,
+    {} as NotificationSettingsController,
+    {} as WorktreeRootSettingsController,
+    undefined,
+    undefined,
+    linuxKeyring,
+  )
+  const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
+  const mainFrame = { url: BUNDLED_RENDERER_URL }
+  const sender = Object.assign(new EventEmitter(), { mainFrame })
+  const event = { sender, senderFrame: mainFrame } as unknown as IpcMainInvokeEvent
+  await expect(invoke(event, "setLinuxKeyring", false)).rejects.toThrow("restricted")
+  attachSettings({ webContents: sender } as unknown as BrowserWindow)
+  await expect(invoke({ ...event, senderFrame: { ...mainFrame } } as IpcMainInvokeEvent, "setLinuxKeyring", false)).rejects.toThrow("restricted")
+  expect(await invoke(event, "setLinuxKeyring", "false")).toEqual({ ok: false, error: "Linux keyring setting must be a boolean" })
+  expect(linuxKeyring.setUseSystemKeyring).not.toHaveBeenCalled()
+  expect(await invoke(event, "getLinuxKeyring")).toEqual({ ok: true, value: { useSystemKeyring: true, restartRequired: false } })
+  expect(await invoke(event, "setLinuxKeyring", false)).toEqual({ ok: true, value: { useSystemKeyring: false, restartRequired: true } })
+  expect(linuxKeyring.setUseSystemKeyring).toHaveBeenCalledExactlyOnceWith(false)
+  linuxKeyring.setUseSystemKeyring.mockImplementationOnce(() => { throw new Error("Could not save Linux keyring preference") })
+  expect(await invoke(event, "setLinuxKeyring", true)).toEqual({ ok: false, error: "Could not save Linux keyring preference" })
+  sender.emit("destroyed")
+  await expect(invoke(event, "getLinuxKeyring")).rejects.toThrow("restricted")
 })
