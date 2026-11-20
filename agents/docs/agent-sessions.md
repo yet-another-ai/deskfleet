@@ -10,6 +10,40 @@ The target [identity and billing requirements](identity-billing.md) add Team
 capacity admission and per-Session turn limits. These are planned capabilities;
 the current journal and execution behavior below are not proof of enforcement.
 
+## Machine-scoped workspace conversations
+
+Electron groups projects and Worker Sessions under their owning Machine.
+New project opens that Machine's folder picker. Selecting a project opens its
+Super Agent on a compatible daemon. Expanding the project reveals its Sessions,
+including earlier Sessions with that project ID. Unassigned Sessions are folded
+under their Machine and retain their own composer. Browsers retain the existing Session entry.
+
+`packages/components/src/views/WorkspaceAgentView.vue` renders the front-desk
+timeline, Ticket details and Worker links. A quote identifies one displayed
+message, including a single Worker result in an interleaved conversation.
+The project uses the shared Session composer for file attachments, paste, dictation
+and automatic sizing. Execution-specific controls are available in the project's
+Worker detail view.
+Sending without a quote leaves the choice of Ticket to the daemon. Only the
+window that sent the current request follows its acknowledged workspace
+handoff. Returning to an older handoff presents a link to its destination.
+
+`useWorkspaceConversation.ts` refreshes the visible workspace, reconciles
+submissions using their client-generated IDs, and retains edits made while a
+request is in flight. `services/workspace-agent-client.ts` owns the authenticated Agent
+channel's ACP handshake. Concurrent first calls await its single initialization
+reply. Closing or losing the channel clears the handshake and discards pending
+transport operations. The daemon owns the durable conversation and focus.
+The workspace conversation and the ordinary Session page share the same
+approval, plan and structured question controls. Workspace links open the
+Worker's full execution history and changes. Its return action restores the
+originating workspace on the same Machine. Agent settings distinguish the
+coordinator used for new front-desk messages across this user's registration
+from the default Worker used for new Tickets in the current workspace.
+Changing the coordinator is explicit. A routing failure can be retried with the
+original message ID after the user chooses a coordinator. History citations include the
+Session ID and the observed event range.
+
 ## Ownership and collaboration
 
 All authorized clients can operate on a Session simultaneously, without a control
@@ -149,6 +183,10 @@ Session initially inherits the source title.
 The daemon creates a new Session under the same Workspace and provider, provisions
 its own execution context, and opens a fresh provider connection to fork the
 source provider Session. Model, reasoning, and mode selections carry over.
+Project message shortcuts include an optional `expectedTurnId` in the fork request.
+The host checks it against the latest turn while holding the source Session's
+fork lock, before allocating the child. For older Session records, the owning
+worktree can supply a missing Workspace ID.
 
 Forking copies the conversation, not the source Session's files. Execution paths
 follow ordinary Session creation: worktree context uses new checkouts from the
@@ -439,6 +477,16 @@ Cancelling or failing login does not replace an existing account credential.
 Each registration uses its own credential file, shared by login, detection, and
 sessions. Existing Harness profiles and session history keep their original home;
 set the provider's `DSH_HOME` to use that home's credential store explicitly.
+For the bundled Harness, set `DESKFLEET_DSH_DESKTOP_ROUTES=1` on a provider to
+share that machine's desktop model routes with the registration. This imports
+the declarative `llm-pi-ai` provider settings and the model preference from
+`profiles/desktop/cordis.patch.yml`, then applies the Harness home's
+`cordis.patch.yml` overrides. Desktop routes use the Harness home's saved
+logins. The registration keeps its own DeepSeek credential file when no explicit
+`DSH_HOME` is set. An explicit provider `DSH_HOME` also selects that home's
+desktop routes by default. Set `DESKFLEET_DSH_DESKTOP_ROUTES=0` to turn off
+desktop route sharing. Editing desktop routes refreshes the catalog for new
+selections. Changes to a live Worker use its existing session model control.
 Alternatively, set `DEEPSEEK_API_KEY` (optional `DEEPSEEK_BASE_URL`). A configured
 API key takes precedence over account login; otherwise a saved account selects
 the `deepseek-account` route. Detection checks local credential availability,
@@ -882,9 +930,12 @@ in `/`. The daemon does not scan skill directories or infer universal skill
 invocation semantics.
 
 `composer-references.ts` owns file/Session discovery and resolution;
-`agent-composer-commands.ts` owns the initial command-notification wait. Shared
-`composer-mentions.ts` and `composer-prompt.ts` own token identities and prompt
-assembly. Both reference RPCs require `agent:execute` on the authenticated Agent
+`agent-composer-commands.ts` owns the initial command-notification wait. The shared
+`composer-reference-protocol.ts` validates selected token ranges and serializes
+native skill invocations. The Session composer uses `composer-prompt.ts` for
+prompt assembly. Workspace conversations resolve selections in their project for
+bounded coordinator previews, then resolve them again against the receiving
+Worker's captured directories before sending its prompt. Both reference RPCs require `agent:execute` on the authenticated Agent
 peer, return reference metadata rather than file contents, and do not write the
 journal. Provider prompts retain the existing submission and delivery audit.
 
@@ -960,10 +1011,19 @@ the message queued, and is retried by the next request.
 
 ## Shared permissions
 
+The workspace composer can set a native provider mode and a separate
+auto-approval default for newly created Workers in this project. The daemon
+applies both through the ordinary Session creation command. See the
+[project settings](workspace-agent.md#project-execution-settings).
+
 Persist each request with a stable permission ID before showing it. All attached
 clients see the same options. The first valid decision wins; later decisions
 return that outcome and retain their own command audit. Only the winning commit
 invokes the live provider callback.
+
+On macOS and iOS the owning workspace also displays each outstanding request.
+Choosing an option there uses the same Session, request ID and authenticated
+decision command. Viewing the workspace does not attach a Worker viewer.
 
 Each viewer also receives standard `session/request_permission` with a
 connection-local RPC ID and the durable permission ID in `_meta.deskfleet`.
@@ -1110,7 +1170,7 @@ Backpressure retries retain the same frame, and closing cancels pending delivery
 | `_deskfleet/session/list` | Read persisted Session summaries |
 | `_deskfleet/agent/configuration` | Discover provider configuration and advertised commands/skills for a draft in the Workspace's default directory, or home without a Workspace |
 | `_deskfleet/composer/references` | Search file or same-Workspace Session metadata for the current compose context; requires `agent:execute` |
-| `_deskfleet/composer/resolve` | Resolve selected references into prompt blocks against the receiving Session's captured context; requires `agent:execute` |
+| `_deskfleet/composer/resolve` | Resolve selected references into prompt blocks in the Workspace for front-desk evidence or against the receiving Session's captured directories for delivery; requires `agent:execute` |
 | `_deskfleet/session/create` | Idempotently create a worktree or directory Session with a configured provider ID, apply optional model/reasoning/mode selections, and start it (or return the initial `provisioning` snapshot immediately when `deferStartup: true` while setup and startup proceed asynchronously); return snapshot |
 | `_deskfleet/session/fork` | Idempotently fork an idle Session's conversation into a new worktree or directory Session under the same Workspace and provider; return the child snapshot |
 | `_deskfleet/session/configuration` | Read the Session's confirmed configuration and advertised commands/skills |
@@ -1224,6 +1284,12 @@ draft selections follow its confirmed transitions locally without a request or
 loading state. Uncached selections restore that draft's confirmed choices into
 a fresh probe; separate drafts never share mutable ACP state. Existing Session
 configuration writes still wait for the live provider's authoritative response.
+
+The project Super Agent's model menu requests `cache: true, includeMatrix: false`.
+The daemon returns the execution provider's current choices, shares any pending
+initial discovery for the same configuration, and omits the transition matrix.
+A local desktop registration with a granted Agent channel reads these choices
+directly. Remote registrations continue to use the machine management RPC.
 
 The configuration API also retains caller-scoped `probeId` sessions for direct
 clients that do not request the cache. Their keys include the verified user and
