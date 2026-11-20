@@ -14,8 +14,10 @@ import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
 import { attachApplication } from "./application.ts"
 import { attachGoogleTag } from "./google-tag.ts"
+import { getMainLocale, t } from "./i18n.ts"
 
 let mainWindow: BrowserWindow | null = null
+let startupWindow: BrowserWindow | null = null
 const sessionWindows = new Map<string, BrowserWindow>()
 
 export function secureWebPreferences(): WebPreferences {
@@ -97,19 +99,7 @@ function attachRendererWindow(window: BrowserWindow): void {
   })
 }
 
-export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""): Promise<void> {
-  // The Dock icon is visible only while a window is.
-  await app.dock?.show()
-  const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (hash) void mainWindow.loadURL(`${entrypoint.url}${hash}`)
-    // Hiding the Dock icon resets macOS focus, which otherwise tabs into the first control on show.
-    if (!mainWindow.isVisible()) mainWindow.webContents.focus()
-    mainWindow.show()
-    mainWindow.focus()
-    return
-  }
-
+function createMainWindow(lifecycle: BackgroundLifecycle): BrowserWindow {
   const window = new BrowserWindow({
     title: "DeskFleet",
     show: false,
@@ -127,8 +117,8 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
   attachRendererWindow(window)
   window.once("closed", () => {
     if (mainWindow === window) mainWindow = null
+    if (startupWindow === window) startupWindow = null
   })
-  window.once("ready-to-show", () => window.show())
   window.on("close", (event) => {
     if (lifecycle.quitting) return
     event.preventDefault()
@@ -136,7 +126,57 @@ export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""):
   })
   // Windows ends the session through window messages rather than a quit request.
   window.on("session-end", () => lifecycle.quit())
+  return window
+}
 
+/** The ordinary window can explain a slow Mac startup before authenticated IPC exists. */
+export function showStartupWindow(lifecycle: BackgroundLifecycle, foreground = false): void {
+  if (lifecycle.quitting) return
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (foreground && mainWindow === startupWindow) mainWindow.show()
+    return
+  }
+  const window = createMainWindow(lifecycle)
+  startupWindow = window
+  const message = t("startup.waitForMac").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+  const page = `<!doctype html>
+    <html lang="${getMainLocale()}">
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <title>DeskFleet</title>
+    <style>
+      :root { color-scheme: light dark }
+      body { margin: 0; height: 100vh; display: grid; place-items: center; font: menu }
+      p { max-width: 32em; padding: 1em; text-align: center; line-height: 1.6 }
+    </style>
+    <body><p role="status">${message}</p></body></html>`
+  window.once("ready-to-show", () => {
+    // Leave the system Keychain prompt in front.
+    if (startupWindow === window && !lifecycle.quitting) window.showInactive()
+  })
+  void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`).catch((error: unknown) => {
+    // A fast transition to the real document cancels this navigation.
+    if (startupWindow === window && !window.isDestroyed()) console.error("Could not show startup status", error)
+  })
+}
+
+export async function showMainWindow(lifecycle: BackgroundLifecycle, hash = ""): Promise<void> {
+  // The Dock icon is visible only while a window is.
+  await app.dock?.show()
+  if (lifecycle.quitting) return
+  const entrypoint = resolveRendererEntrypoint(app.isPackaged, process.env.DESKFLEET_RENDERER_URL)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const needsDocument = mainWindow === startupWindow || !!hash
+    startupWindow = null
+    if (needsDocument) void mainWindow.loadURL(`${entrypoint.url}${hash}`)
+    // Hiding the Dock icon resets macOS focus, which otherwise tabs into the first control on show.
+    if (!mainWindow.isVisible()) mainWindow.webContents.focus()
+    mainWindow.show()
+    mainWindow.focus()
+    return
+  }
+  const window = createMainWindow(lifecycle)
+  window.once("ready-to-show", () => window.show())
   void window.loadURL(`${entrypoint.url}${hash}`)
 }
 

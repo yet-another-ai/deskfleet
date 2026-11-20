@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
@@ -11,6 +11,7 @@ vi.mock("electron", () => ({
   app: { getPath: vi.fn(), once: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
   powerMonitor: { on: vi.fn(), removeListener: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
+  dialog: { showMessageBox: vi.fn() },
   ipcMain: { handle: vi.fn() },
   safeStorage: { isAsyncEncryptionAvailable: vi.fn(), decryptStringAsync: vi.fn(), encryptStringAsync: vi.fn() },
   shell: { openExternal: vi.fn() },
@@ -19,7 +20,7 @@ vi.mock("electron", () => ({
 vi.mock("./desktop-media.ts", () => ({ isDesktopMediaSender: () => true }))
 vi.mock("./daemon-client.ts", () => ({ DaemonClient: { connect: vi.fn() } }))
 vi.mock("./backend.ts", () => ({ backendUrl: "https://fleet.example/" }))
-import { app, BrowserWindow, ipcMain, net, powerMonitor, safeStorage } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, safeStorage } from "electron"
 import { CENTRAL_CHANNEL, CENTRAL_EVENT, installCentralAccount } from "./central-account.ts"
 
 const user = { id: "user-1", name: "Ada" }
@@ -61,6 +62,7 @@ test("main-process peer telemetry reaches the renderer without peer credentials"
 
 async function setup(stored: Record<string, unknown> = {}) {
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
+  vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 1, checkboxChecked: false })
   const root = await mkdtemp(join(tmpdir(), "deskfleet-account-"))
   roots.push(root)
   const path = join(root, "account.json")
@@ -87,6 +89,35 @@ test("restores an encrypted account using the async decryption result", async ()
   expect(safeStorage.decryptStringAsync).toHaveBeenCalledExactlyOnceWith(encrypted)
   expect(sentRequest(f.fetch).url).toBe(`${serverUrl}/api/me`)
   expect(sentRequest(f.fetch).headers.get("authorization")).toBe("Bearer restored-token")
+})
+
+test.skipIf(process.platform !== "darwin")("a refused keychain read can be retried without discarding the saved account", async () => {
+  const f = await setup({ encryptedToken: Buffer.from("encrypted-token").toString("base64"), user })
+  const saved = await readFile(f.path, "utf8")
+  vi.mocked(safeStorage.decryptStringAsync).mockRejectedValueOnce(new Error("Access denied"))
+  vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 0, checkboxChecked: false })
+  const client = await f.install()
+  expect(await client.status()).toEqual({ serverUrl, user, siteAdmin: false })
+  expect(dialog.showMessageBox).toHaveBeenCalledOnce()
+  expect(safeStorage.decryptStringAsync).toHaveBeenCalledTimes(2)
+  expect(await readFile(f.path, "utf8")).toBe(saved)
+})
+
+test.skipIf(process.platform !== "darwin")("opening sign-in after a damaged account preserves the original file until login succeeds", async () => {
+  const f = await setup()
+  const damaged = '{"encryptedToken":'
+  await writeFile(f.path, damaged)
+  const before = await stat(f.path)
+  const client = await f.install()
+  expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
+  expect(dialog.showMessageBox).toHaveBeenCalledOnce()
+  expect(f.fetch).not.toHaveBeenCalled()
+  expect(await readFile(f.path, "utf8")).toBe(damaged)
+  await client.exchange("callback-code", "verifier")
+  const after = await stat(f.path)
+  expect(after.ino).not.toBe(before.ino)
+  expect(after.mode & 0o777).toBe(0o600)
+  expect(JSON.parse(await readFile(f.path, "utf8")).user).toEqual(user)
 })
 
 test("the desktop account bridge forwards ownership transfer to the selected Team", async () => {
@@ -162,9 +193,16 @@ test("unavailable encryption neither restores nor persists credentials", async (
   const client = await f.install()
   expect(await client.status()).toEqual({ serverUrl, user: undefined, siteAdmin: false })
   expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled()
-  await client.exchange("callback-code", "verifier")
+  if (process.platform === "darwin") {
+    const original = await readFile(f.path, "utf8")
+    await expect(client.exchange("callback-code", "verifier")).rejects.toThrow()
+    expect(await readFile(f.path, "utf8")).toBe(original)
+    expect(dialog.showMessageBox).toHaveBeenCalledOnce()
+  } else {
+    await client.exchange("callback-code", "verifier")
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ serverUrl })
+  }
   expect(safeStorage.encryptStringAsync).not.toHaveBeenCalled()
-  expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({ serverUrl })
 })
 
 test("an async encryption failure preserves the saved account and rejects login", async () => {

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, powerMonitor, safeStorage, shell } from "electron"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor, safeStorage, shell } from "electron"
+import { randomUUID } from "node:crypto"
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { join } from "node:path"
 import { HttpCentralClient, serverAddress, type SavedAccount } from "@deskfleet/client/http-central"
@@ -13,11 +14,18 @@ import { enrollLocalMachine } from "./local-enrollment.ts"
 import { backendUrl } from "./backend.ts"
 import { desktopErrorReportingContext } from "./error-reporting-context.ts"
 import { desktopCentralTransport } from "./central-transport.ts"
+import { t } from "./i18n.ts"
 
 export const CENTRAL_CHANNEL = "deskfleet:central"
 export const CENTRAL_EVENT = "deskfleet:central-event"
 export const CENTRAL_CONTEXT_CHANNEL = "deskfleet:central-context"
 interface StoredAccount { serverUrl: string; encryptedToken?: string; user?: SavedAccount["user"] }
+
+async function encryptionAvailable(): Promise<boolean> {
+  const available = await safeStorage.isAsyncEncryptionAvailable()
+  if (!available && process.platform === "darwin") throw new Error(t("startup.keychainUnavailable"))
+  return available
+}
 
 async function readAccount(path: string): Promise<SavedAccount> {
   const serverUrl = serverAddress(backendUrl)
@@ -27,26 +35,51 @@ async function readAccount(path: string): Promise<SavedAccount> {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return { serverUrl }
     throw error
   }
+  if (!value || typeof value !== "object" || typeof value.serverUrl !== "string") throw new Error("Invalid saved account")
   if (value.serverUrl !== serverUrl) return { serverUrl }
   let token: string | undefined
   if (value.encryptedToken) {
     try {
-      if (await safeStorage.isAsyncEncryptionAvailable()) {
+      if (await encryptionAvailable()) {
         token = (await safeStorage.decryptStringAsync(Buffer.from(value.encryptedToken, "base64"))).result
       }
     } catch (error) {
       // A locked/cancelled Linux keyring or switched password-store backend
       // must not abort app startup or overwrite the saved account file.
       console.warn("Could not decrypt saved desktop account token", error)
+      if (process.platform === "darwin") throw error
     }
   }
   return { serverUrl, token, user: token ? value.user : undefined }
 }
+
+async function restoreAccount(path: string): Promise<SavedAccount> {
+  for (;;) {
+    try { return await readAccount(path) }
+    catch (error) {
+      if (process.platform !== "darwin") throw error
+      const { response } = await dialog.showMessageBox({
+        type: "warning", message: t("startup.accountUnavailable"), detail: t("startup.accountRecovery"),
+        buttons: [t("welcome.retry"), t("startup.openSignIn")], defaultId: 0, cancelId: 1,
+      })
+      // An explicit fresh sign-in may replace the file later. Opening the login page keeps it intact.
+      if (response !== 0) return { serverUrl: serverAddress(backendUrl) }
+    }
+  }
+}
+
 async function saveAccount(path: string, account: SavedAccount): Promise<void> {
-  const encryptedToken = account.token && await safeStorage.isAsyncEncryptionAvailable()
+  const encryptedToken = account.token && await encryptionAvailable()
     ? (await safeStorage.encryptStringAsync(account.token)).toString("base64") : undefined
   await mkdir(app.getPath("userData"), { recursive: true })
-  await writeFile(path, JSON.stringify({ serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined } satisfies StoredAccount), { mode: 0o600 })
+  const stored: StoredAccount = { serverUrl: account.serverUrl, encryptedToken, user: encryptedToken ? account.user : undefined }
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, JSON.stringify(stored), { mode: 0o600, flag: "wx" })
+    await rename(temporary, path)
+  } finally {
+    await rm(temporary, { force: true })
+  }
 }
 
 /** A one-shot loopback callback receives the code; the verifier remains in the main process. */
@@ -99,7 +132,7 @@ async function daemonCall<M extends "centralStatus" | "centralPrepareEnrollment"
 
 export async function installCentralAccount(options: { openAuthorization?: (url: string) => Promise<unknown> } = {}): Promise<HttpCentralClient> {
   const path = join(app.getPath("userData"), "account.json")
-  const client = new HttpCentralClient({ ...desktopCentralTransport, account: await readAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
+  const client = new HttpCentralClient({ ...desktopCentralTransport, account: await restoreAccount(path), persist: account => saveAccount(path, account), authorize: client => authorize(client, options.openAuthorization ?? shell.openExternal), openExternal: shell.openExternal })
   const localEnrollment = () => daemonCall("centralStatus", {})
   const enrollLocal = (teamId: string, name?: string) => enrollLocalMachine(client, {
     status: localEnrollment,
