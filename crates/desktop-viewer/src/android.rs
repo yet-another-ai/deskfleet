@@ -28,6 +28,7 @@ use crate::renderer::NativeWindow;
 use crate::renderer::{PhysicalSize, Renderer};
 use crate::session::{self, Frames};
 use crate::{Error, WindowEvent};
+use deskfleet_native::rtc::mobile_ports;
 
 #[derive(Clone)]
 pub(crate) struct AndroidNotifier {
@@ -570,6 +571,65 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
 
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativePortsInit<
+    'local,
+>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    unowned_env
+        .with_env(|env| -> Result<(), jni::errors::Error> {
+            let vm = env.get_java_vm()?;
+            let callback_ref = env.new_global_ref(callback)?;
+            mobile_ports::set_event_emitter(Some(Arc::new(move |payload: String| {
+                let _ = vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+                    let jstr = JString::from_str(env, &payload)?;
+                    env.call_method(
+                        &callback_ref,
+                        jni_str!("onPortsEvent"),
+                        jni_sig!("(Ljava/lang/String;)V"),
+                        &[JValue::Object(jstr.as_ref())],
+                    )?;
+                    Ok(())
+                });
+            })));
+            Ok(())
+        })
+        .resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativePortsCall<
+    'local,
+>(
+    mut unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    request_json: JString<'local>,
+) -> jstring {
+    unowned_env
+        .with_env(|env| -> Result<jstring, jni::errors::Error> {
+            let payload = mobile_ports::handle_command(&request_json.to_string());
+            let jstr = JString::from_str(env, &payload)?;
+            Ok(jstr.into_raw())
+        })
+        .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativePortsCloseAll<
+    'local,
+>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+) {
+    mobile_ports::close_all();
+}
+
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
 pub extern "C" fn deskfleet_ios_start(
@@ -660,9 +720,52 @@ pub unsafe extern "C" fn deskfleet_ios_test_nat(
 
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_ports_init(
+    on_event: Option<unsafe extern "C" fn(*const std::ffi::c_char)>,
+) {
+    let Some(on_event) = on_event else {
+        mobile_ports::set_event_emitter(None);
+        return;
+    };
+    mobile_ports::set_event_emitter(Some(Arc::new(move |payload| {
+        if let Ok(cstr) = std::ffi::CString::new(payload) {
+            // SAFETY: `cstr` is a valid NUL-terminated string for the duration of this call.
+            unsafe { on_event(cstr.as_ptr()) };
+        }
+    })));
+}
+
+/// # Safety
+/// `request_json` must be either null or a valid NUL-terminated UTF-8 string.
+/// The returned pointer, when non-null, must be freed via `deskfleet_ios_string_free`.
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn deskfleet_ios_ports_call(
+    request_json: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    let payload = if request_json.is_null() {
+        json!({ "error": "Missing port forwarding request" }).to_string()
+    } else {
+        // SAFETY: Caller guarantees `request_json` is a valid NUL-terminated UTF-8 string.
+        match unsafe { std::ffi::CStr::from_ptr(request_json) }.to_str() {
+            Ok(raw) => mobile_ports::handle_command(raw),
+            Err(error) => json!({ "error": error.to_string() }).to_string(),
+        }
+    };
+    std::ffi::CString::new(payload).map_or(std::ptr::null_mut(), std::ffi::CString::into_raw)
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub extern "C" fn deskfleet_ios_ports_close_all() {
+    mobile_ports::close_all();
+}
+
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn deskfleet_ios_string_free(ptr: *mut std::ffi::c_char) {
     if !ptr.is_null() {
-        // SAFETY: `ptr` was allocated by `CString::into_raw` in `deskfleet_ios_test_nat`.
+        // SAFETY: `ptr` was allocated by `CString::into_raw` in `deskfleet_ios_test_nat` or `deskfleet_ios_ports_call`.
         unsafe { drop(std::ffi::CString::from_raw(ptr)) };
     }
 }

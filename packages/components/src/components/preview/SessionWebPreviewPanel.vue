@@ -72,10 +72,11 @@ const pageTitle = ref("")
 const resolvedOrigin = ref<string | null>(null)
 const retryNonce = ref(0)
 
+const isDesktopWebview = computed(() => Boolean(client.webPreview))
 const location = computed(() => fleet.findSession(props.sessionId))
 const machine = computed(() => location.value?.machine)
 const fileTarget = useFileTarget(() => location.value?.machine.id)
-const useDirectLocal = computed(() => Boolean(machine.value?.local && client.platform !== "web"))
+const useDirectLocal = computed(() => Boolean(machine.value?.local && client.platform !== "web" && !client.mobile))
 const remoteTarget = computed(() => {
   if (fileTarget.value?.kind === "machine") {
     return { teamId: fileTarget.value.teamId, machineId: fileTarget.value.machineId }
@@ -90,6 +91,7 @@ const machineOffline = computed(() => Boolean(committedTarget.value && machine.v
 const webviewCanGoBack = ref(false)
 const webviewCanGoForward = ref(false)
 const guestWebContentsId = ref<number | null>(null)
+const iframeKey = ref(0)
 let webviewEl: ElectronWebviewElement | null = null
 let webviewDomReady = false
 
@@ -98,7 +100,7 @@ const actualUrl = computed(() =>
     ? buildActualPreviewUrl(resolvedOrigin.value, committedTarget.value.path)
     : undefined,
 )
-const canOpenDevTools = computed(() => Boolean(client.webPreview && guestWebContentsId.value !== null))
+const canOpenDevTools = computed(() => Boolean(isDesktopWebview.value && guestWebContentsId.value !== null))
 const committedLogicalUrl = computed(() => (committedTarget.value ? formatLogicalPreviewUrl(committedTarget.value) : ""))
 const addressDirty = computed(() => addressInput.value.trim() !== committedLogicalUrl.value)
 
@@ -123,10 +125,12 @@ const endpointKey = computed(() => {
 })
 
 let endpointRevision = 0
+let activeForwardId: string | undefined
 watchImmediate(endpointKey, (key, _previous, onCleanup) => {
   const revision = ++endpointRevision
   let cancelled = false
   let forwardId: string | undefined
+  activeForwardId = undefined
 
   resolvedOrigin.value = null
   connectError.value = null
@@ -141,6 +145,7 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
     cancelled = true
     if (forwardId) {
       const id = forwardId
+      if (activeForwardId === id) activeForwardId = undefined
       forwardId = undefined
       void client.ports?.stop(id).catch(() => {})
     }
@@ -173,6 +178,7 @@ watchImmediate(endpointKey, (key, _previous, onCleanup) => {
           return
         }
         forwardId = forward.id
+        activeForwardId = forward.id
         origin = buildActualPreviewOrigin("127.0.0.1", forward.localPort)
       }
       if (cancelled || revision !== endpointRevision) return
@@ -207,9 +213,9 @@ function syncPathFromGuest(rawUrl: string): void {
 }
 
 watch(
-  [webviewHost, resolvedOrigin],
-  ([host, origin], _previous, onCleanup) => {
-    if (!host || !origin) return
+  [webviewHost, resolvedOrigin, isDesktopWebview],
+  ([host, origin, useWebview], _previous, onCleanup) => {
+    if (!useWebview || !host || !origin) return
     const el = document.createElement("webview") as unknown as ElectronWebviewElement
     webviewEl = el
     webviewDomReady = false
@@ -277,7 +283,37 @@ watch(
 
 onScopeDispose(() => {
   endpointRevision++
+  activeForwardId = undefined
 })
+
+async function isActiveForwardRetired(): Promise<boolean> {
+  if (useDirectLocal.value || !client.ports || !activeForwardId) return false
+  const currentId = activeForwardId
+  try {
+    const active = await client.ports.list()
+    return !active.some(entry => entry.id === currentId)
+  } catch {
+    return false
+  }
+}
+
+function runWithLiveForward(action: () => void): void {
+  const currentForwardId = !useDirectLocal.value ? activeForwardId : undefined
+  if (!currentForwardId) {
+    action()
+    return
+  }
+  void isActiveForwardRetired().then(retired => {
+    if (activeForwardId !== currentForwardId || !resolvedOrigin.value) return
+    if (retired) retryNonce.value++
+    else action()
+  })
+}
+
+function reloadCurrentTarget(): void {
+  if (isDesktopWebview.value) webviewEl?.reload?.()
+  else iframeKey.value++
+}
 
 function applyTarget(raw: string): void {
   const parsed = parseWebPreviewInput(raw)
@@ -294,10 +330,17 @@ function applyTarget(raw: string): void {
   loadError.value = null
   emit("change", logicalUrl)
 
-  if (sameOrigin && resolvedOrigin.value && webviewEl) {
-    const url = buildActualPreviewUrl(resolvedOrigin.value, parsed.path)
-    if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(url)
-    else webviewEl.setAttribute("src", url)
+  if (sameOrigin && resolvedOrigin.value) {
+    runWithLiveForward(() => {
+      if (!resolvedOrigin.value) return
+      const url = buildActualPreviewUrl(resolvedOrigin.value, parsed.path)
+      if (isDesktopWebview.value && webviewEl) {
+        if (webviewDomReady && webviewEl.loadURL) void webviewEl.loadURL(url)
+        else webviewEl.setAttribute("src", url)
+      } else {
+        iframeKey.value++
+      }
+    })
   }
 }
 
@@ -311,12 +354,14 @@ function reload(): void {
     retryNonce.value++
     return
   }
-  webviewEl?.reload?.()
+  runWithLiveForward(reloadCurrentTarget)
 }
 
 function openExternal(): void {
   const url = actualUrl.value
-  if (url) window.open(url, "_blank", "noopener,noreferrer")
+  if (!url) return
+  if (client.openExternal) void client.openExternal(url)
+  else window.open(url, "_blank", "noopener,noreferrer")
 }
 
 function openDevTools(): void {
@@ -330,10 +375,10 @@ function openDevTools(): void {
 <template>
   <section class="flex h-full min-h-0 flex-col bg-ui-surface text-ui-text" :aria-label="t('webPreview.title')" data-web-preview>
     <header class="flex shrink-0 items-center gap-1 border-b border-ui-border px-2 py-1.5">
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.back')" :disabled="!webviewCanGoBack" data-web-preview-back @click="webviewEl?.goBack?.()">
+      <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.back')" :disabled="!webviewCanGoBack" data-web-preview-back @click="webviewEl?.goBack?.()">
         <ArrowLeft :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.forward')" :disabled="!webviewCanGoForward" data-web-preview-forward @click="webviewEl?.goForward?.()">
+      <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.forward')" :disabled="!webviewCanGoForward" data-web-preview-forward @click="webviewEl?.goForward?.()">
         <ArrowRight :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
       <UiButton variant="ghost" size="icon" :label="t('webPreview.reload')" :disabled="!resolvedOrigin && !connectError" data-web-preview-reload @click="reload">
@@ -367,7 +412,7 @@ function openDevTools(): void {
       <UiButton variant="ghost" size="icon" :label="t('webPreview.openExternal')" :disabled="!actualUrl" data-web-preview-external @click="openExternal">
         <ExternalLink :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
-      <UiButton variant="ghost" size="icon" :label="t('webPreview.openDevTools')" :disabled="!canOpenDevTools" data-web-preview-devtools @click="openDevTools">
+      <UiButton v-if="isDesktopWebview" variant="ghost" size="icon" :label="t('webPreview.openDevTools')" :disabled="!canOpenDevTools" data-web-preview-devtools @click="openDevTools">
         <CodeXml :size="15" :stroke-width="1.75" aria-hidden="true" />
       </UiButton>
     </header>
@@ -417,7 +462,15 @@ function openDevTools(): void {
           <UiButton size="sm" data-web-preview-retry @click="reload">{{ t('webPreview.retry') }}</UiButton>
         </ErrorNotice>
       </div>
-      <div ref="webviewHost" data-web-preview-webview-host class="flex min-h-0 flex-1 flex-col" />
+      <div v-if="isDesktopWebview" ref="webviewHost" data-web-preview-webview-host class="flex min-h-0 flex-1 flex-col" />
+      <iframe
+        v-else-if="actualUrl"
+        :key="`${iframeKey}:${actualUrl}`"
+        :src="actualUrl"
+        :title="formatWebPreviewTabTitle(committedTarget, pageTitle, t('webPreview.title'))"
+        data-web-preview-iframe
+        class="min-h-0 w-full flex-1 border-0 bg-white"
+      />
     </div>
   </section>
 </template>

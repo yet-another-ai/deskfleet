@@ -2,7 +2,7 @@ import { ipcMain } from "electron"
 import type { CentralApi } from "@deskfleet/client/central"
 import { PORTS_IPC_CHANNEL, type PortForwardRequest, type PortsApi } from "@deskfleet/client/ports"
 import { isDesktopMediaSender } from "./desktop-media.ts"
-import { PortForwards } from "./ports-controller.ts"
+import { PortForwards } from "@deskfleet/client/ports-controller"
 import { openNativePortForward } from "./ports-peer.ts"
 
 function object(value: unknown): Record<string, unknown> {

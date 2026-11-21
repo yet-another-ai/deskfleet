@@ -27,14 +27,24 @@ afterEach(async () => {
   await router.replace("/")
 })
 
-async function setup(platform: DeskfleetDesktopApi["platform"] = "linux") {
+interface SetupOptions {
+  platform?: DeskfleetDesktopApi["platform"]
+  mobile?: boolean
+  ports?: DeskfleetDesktopApi["ports"]
+}
+
+async function setup(platformOrOptions: DeskfleetDesktopApi["platform"] | SetupOptions = "linux") {
+  const options: SetupOptions = typeof platformOrOptions === "string"
+    ? { platform: platformOrOptions }
+    : platformOrOptions
+  const platform = options.platform ?? "linux"
   const pinia = createPinia()
   useFleetStore(pinia).catalog = catalogFixture()
   useTerminalsStore(pinia).loaded = true
   await router.replace(`/sessions/${sessionId}`)
   const wrapper = mount(WindowManager, {
     props: { sessionId }, attachTo: document.body,
-    global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform } }, stubs: {
+    global: { plugins: [pinia, router, i18n], provide: { [platformClientKey as symbol]: { ...getClient(), platform, mobile: options.mobile, ports: options.ports ?? getClient().ports } }, stubs: {
       AppMainWindow: true, ChangesPanel: true, GithubPanel: true, SessionPreviewWindow: true, WindowToolbar: true,
       SessionDesktopPanel: desktopStub,
       SessionWebPreviewPanel: webPreviewStub,
@@ -202,12 +212,13 @@ test("restoring a Chat-only layout never starts newly introduced desktop preview
   expect(second.wrapper.find('[data-session-desktops][data-active="true"]').exists()).toBe(false)
 })
 
-test("offers web preview creation in + menu on desktop and omits it on web", async () => {
-  for (const [platform, expected] of [
+test("offers web preview creation in + menu for desktop and mobile, and omits it on pure web", async () => {
+  for (const [opts, expected] of [
     ["linux", true],
-    ["web", false],
+    [{ platform: "web", mobile: true, ports: { start: vi.fn(), stop: vi.fn(), list: vi.fn() } }, true],
+    [{ platform: "web", mobile: false, ports: undefined }, false],
   ] as const) {
-    const view = await setup(platform)
+    const view = await setup(opts)
     const changesGroup = view.wrapper.get('[data-window-tab-id="changes"]').element.closest(".dv-groupview")!
     ;(changesGroup.querySelector('[aria-label="Add window"]') as HTMLButtonElement).click()
     await flushPromises()

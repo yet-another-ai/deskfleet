@@ -8,9 +8,9 @@ export interface WebPreviewTarget {
 }
 
 export function isWebPreviewSupported(
-  client: Pick<DeskfleetDesktopApi, "platform">,
+  client: Pick<DeskfleetDesktopApi, "platform" | "mobile" | "ports">,
 ): boolean {
-  return client.platform !== "web"
+  return client.platform !== "web" || (Boolean(client.mobile) && Boolean(client.ports))
 }
 
 function normalizeHost(hostname: string): PortForwardHost | null {

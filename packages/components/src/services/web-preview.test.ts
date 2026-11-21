@@ -57,4 +57,6 @@ test("formats logical URLs, actual tunnel origins, path extraction, tab titles, 
 
   expect(isWebPreviewSupported({ platform: "darwin" })).toBe(true)
   expect(isWebPreviewSupported({ platform: "web" })).toBe(false)
+  expect(isWebPreviewSupported({ platform: "web", mobile: true })).toBe(false)
+  expect(isWebPreviewSupported({ platform: "web", mobile: true, ports: {} as never })).toBe(true)
 })
