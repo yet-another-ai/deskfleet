@@ -31,7 +31,9 @@ database and the same model configuration.
 
 Eve writes its diagnostic cache to `/var/cache/deskfleet-super-agent` as UID
 10001. When deploying with a read-only root filesystem, mount writable temporary
-storage there and at `/tmp`. Session history lives in PostgreSQL.
+storage there and at `/tmp`. Session history lives in PostgreSQL. `bash`,
+`curl`, and `jq` are included for container health checks against
+`http://127.0.0.1:3100/eve/v1/health`.
 
 To build the same image from source, use the root flake on a Linux builder:
 

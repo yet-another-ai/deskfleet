@@ -86,6 +86,7 @@ test("classifies complete PR and push changes, including removals during renames
 test("packaging detector covers desktop builder configs, staging scripts, and build inputs", () => {
   for (const file of [
     "apps/desktop/package.json",
+    "apps/server/Dockerfile",
     "apps/desktop/electron-builder.yml",
     "apps/desktop/electron-builder.release.yml",
     "apps/desktop/build/entitlements.mac.plist",

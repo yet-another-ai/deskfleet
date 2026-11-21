@@ -1,29 +1,21 @@
 {
   dockerTools,
   runCommand,
-  cacert,
-  coreutils,
+  containerRuntime,
   super-agent,
 }:
 let
   root = runCommand "deskfleet-super-agent-root" { } ''
-    mkdir -p "$out/bin" "$out/etc/ssl/certs"
+    mkdir -p "$out/bin"
     ln -s ${super-agent}/bin/deskfleet-super-agent "$out/bin/deskfleet-super-agent"
     ln -s ${super-agent}/bin/bootstrap "$out/bin/bootstrap"
-    ln -s ${cacert}/etc/ssl/certs/ca-bundle.crt "$out/etc/ssl/certs/ca-certificates.crt"
   '';
 in
 dockerTools.buildLayeredImage {
   name = "deskfleet-super-agent";
   tag = super-agent.version;
-  contents = [
-    root
-    coreutils
-  ];
-  extraCommands = ''
-    mkdir -p tmp
-    chmod 1777 tmp
-  '';
+  contents = [ root ] ++ containerRuntime.contents;
+  inherit (containerRuntime) extraCommands;
   fakeRootCommands = ''
     install -d -m 0700 -o 10001 -g 10001 .${super-agent.cacheDir}
   '';
@@ -40,8 +32,9 @@ dockerTools.buildLayeredImage {
       "PATH=/bin"
       "HOME=/tmp"
       "NODE_ENV=production"
-      "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt"
-    ];
+      "NODE_EXTRA_CA_CERTS=${containerRuntime.caBundlePath}"
+    ]
+    ++ containerRuntime.env;
     User = "10001:10001";
     ExposedPorts."3100/tcp" = { };
     StopSignal = "SIGTERM";
