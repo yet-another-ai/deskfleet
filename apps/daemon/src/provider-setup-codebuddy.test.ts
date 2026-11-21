@@ -53,18 +53,19 @@ for (const [name, timeoutMs, deadline] of [["default", undefined, 30_000], ["exp
   })
 }
 
+// The fake-timer test exercises slow metadata. Use immediate responses in the real launcher tests.
 for (const extension of ["ps1", "cmd"]) {
-  test(`Windows discovers a CodeBuddy .${extension} launcher whose help takes over three seconds`, {
+  test(`Windows discovers CodeBuddy through a .${extension} launcher`, {
     skip: process.platform !== "win32", timeout: 20_000,
   }, async t => {
-    const directory = await mkdtemp(join(tmpdir(), "df-codebuddy slow metadata-"))
+    const directory = await mkdtemp(join(tmpdir(), "df-codebuddy launcher-"))
     t.after(() => rm(directory, { recursive: true, force: true }))
     const npmDirectory = join(directory, "npm launchers")
     await mkdir(npmDirectory)
     const script = join(directory, "codebuddy-fixture.ts")
     await writeFile(script, `
 if (process.argv[2] === "--version") console.log("2.184.0")
-else if (process.argv[2] === "--help") setTimeout(() => console.log("Usage: codebuddy|cbc [options] [command] [prompt]"), 3_200)
+else if (process.argv[2] === "--help") console.log("Usage: codebuddy|cbc [options] [command] [prompt]")
 else throw new Error("Only read-only metadata commands are allowed")
 `)
     const binary = join(npmDirectory, `codebuddy.${extension}`)
