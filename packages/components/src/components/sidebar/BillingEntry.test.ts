@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { computed, ref } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import type { TeamBilling } from "@deskfleet/client/billing"
+import { HttpError } from "@deskfleet/client/http-central"
 import { accountSessionKey, type AccountSession } from "../../composables/useAccountSession.ts"
 import { i18n } from "../../i18n/index.ts"
 import { billingFixture, fakeCentral } from "../../test/central.ts"
@@ -63,11 +64,14 @@ test("a late previous-Team response cannot advertise its plan on the next Team",
   expect(wrapper.text()).not.toContain("Upgrade plan")
 })
 
-test("billing lookup failure retains a working neutral entry", async () => {
+test("billing lookup failure retains a working neutral entry without reporting an unhandled global error", async () => {
+  const reportError = vi.fn()
+  vi.stubGlobal("reportError", reportError)
   const { central, account } = setup()
-  central.billing.mockRejectedValue(new Error("offline"))
+  central.billing.mockRejectedValue(new HttpError(401, "Unauthorized", undefined, "unauthorized"))
   window.dispatchEvent(new Event("focus"))
   await flushPromises()
+  expect(reportError).not.toHaveBeenCalled()
   await wrapper.get("button").trigger("click")
   expect(account.openSettings).toHaveBeenCalledWith("plans")
   expect(wrapper.text()).toContain("Plans & billing")

@@ -35,7 +35,7 @@ const { state, isLoading, error, executeImmediate: load } = useAsyncState(async 
   const billing = await central.billing(props.team.id)
   updatePlan(billing.plan)
   return billing
-}, undefined)
+}, undefined, { onError: () => {} })
 watch(() => account.account.value.user?.id, () => { checkoutIds.clear(); checkoutOpened.value = false })
 // Checkout and the billing portal finish in another tab or the system browser.
 useEventListener(window, "focus", () => { void load() })

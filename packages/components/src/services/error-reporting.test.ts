@@ -320,6 +320,43 @@ test("background terminal lists suppress only the structured offline response in
   }
 })
 
+test("background systemStatus polling suppresses only structured machine_offline 503 responses", async () => {
+  initializeErrorReporting("web")
+  const fetch = vi.fn<typeof globalThis.fetch>()
+  vi.stubGlobal("fetch", fetch)
+  const adapter = await browserClient("https://fleet.example", captureCentralRequestError, { cookieAuth: false })
+  const central = adapter.central as HttpCentralClient
+  const automatic = withCentralRequestTrigger(central, "background")
+  const target = { id: "machine", teamId: "team", name: "Machine", originId: "origin", localMachineId: "local", capabilities: {}, online: true }
+  const remote = remoteMachineClient(adapter, central, target)
+  const failure = (status: number, code?: string) => Response.json({ error: { code, message: "Machine request failed" } }, { status })
+  try {
+    fetch.mockResolvedValueOnce(failure(503, "machine_offline"))
+    const offline = await automatic.rpc("team", "machine", "systemStatus", {}).catch(error => error)
+    expect(offline).toMatchObject({ message: "Machine request failed", diagnostics: { status: 503, apiErrorCode: "machine_offline", trigger: "background" } })
+    globalThis.onunhandledrejection?.call(window, { reason: offline } as PromiseRejectionEvent)
+    await flushSdk()
+    expect(events()).toHaveLength(0)
+
+    fetch.mockResolvedValueOnce(failure(503, "machine_busy"))
+      .mockResolvedValueOnce(failure(503))
+      .mockResolvedValueOnce(failure(504, "daemon_timeout"))
+      .mockResolvedValueOnce(failure(503, "machine_offline"))
+    for (const status of [503, 503, 504]) await expect(automatic.rpc("team", "machine", "systemStatus", {})).rejects.toMatchObject({ status })
+    await expect(remote.api.system!.status()).rejects.toMatchObject({ status: 503 })
+    await flushSdk()
+    expect(events().map(event => [event.tags?.["central.rpc_method"], event.tags?.["central.status"], event.tags?.["central.api_error_code"], event.tags?.["central.trigger"]])).toEqual([
+      ["systemStatus", "503", "machine_busy", "background"],
+      ["systemStatus", "503", undefined, "background"],
+      ["systemStatus", "504", "daemon_timeout", "background"],
+      ["systemStatus", "503", "machine_offline", "unknown"],
+    ])
+  } finally {
+    remote.dispose()
+    central.dispose()
+  }
+})
+
 test("caller cancellation is ignored while deadlines still report a timeout", async () => {
   initializeErrorReporting("web")
   for (const name of ["AbortError", "TimeoutError"]) {

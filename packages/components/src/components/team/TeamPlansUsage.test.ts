@@ -15,7 +15,7 @@ vi.mock("../../services/analytics.ts", () => ({ trackEvent: vi.fn(), beginAnalyt
 
 let view: VueWrapper | undefined
 let session: AccountSession | undefined
-afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; vi.clearAllMocks() })
+afterEach(() => { view?.unmount(); view = undefined; session?.dispose(); session = undefined; vi.clearAllMocks(); vi.unstubAllGlobals() })
 const usage = () => view!.getComponent(TeamPlansUsage)
 const metric = (key: string) => usage().get(`[data-team-usage="${key}"]`)
 
@@ -62,10 +62,13 @@ test.each([[0, 0], [8, 4]])("%s active sessions and %s members are counts agains
   expect(metric("turns").text()).toContain("Unlimited")
 })
 
-test("failed usage requests can be retried without showing zero as the result", async () => {
+test("failed usage requests can be retried without showing zero or reporting an unhandled global error", async () => {
+  const reportError = vi.fn()
+  vi.stubGlobal("reportError", reportError)
   const fake = await setup(fake => fake.central.billing
-    .mockRejectedValueOnce(new Error("Network unavailable"))
+    .mockRejectedValueOnce(new HttpError(401, "Unauthorized", undefined, "unauthorized"))
     .mockResolvedValueOnce(billingFixture({ relayedBytes: "2048", activeSessionCount: 3, memberCount: 2 })))
+  expect(reportError).not.toHaveBeenCalled()
   expect(usage().get('[role="alert"]').text()).toBe("Could not load usage.")
   expect(usage().find("[data-team-usage-amount]").exists()).toBe(false)
   await button("Retry")!.trigger("click")

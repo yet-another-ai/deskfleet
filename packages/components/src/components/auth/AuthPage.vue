@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 import { accountAuthentication } from "@deskfleet/client/account-security"
 import type { HttpCentralClient } from "@deskfleet/client/http-central"
 import { captureMarketingSearchParams, readMarketingAttribution, readStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
+import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
 import { failureMessage } from "../../composables/useRecentAuthentication.ts"
 import { useErrorReportingUser } from "../../composables/useErrorReportingUser.ts"
 import { setSiteTelemetryEnabled, userTelemetryConsent } from "../../services/analytics.ts"
@@ -21,6 +22,7 @@ import SignInForm from "./SignInForm.vue"
 const props = defineProps<{ api: HttpCentralClient }>()
 const { t } = useI18n()
 const account = accountAuthentication(props.api)
+const backgroundAccount = accountAuthentication(withCentralRequestTrigger(props.api, "background"))
 const route = location.pathname.replace(/\/$/, "")
 const attempt = new URLSearchParams(location.search).get("attempt") ?? undefined
 // Mailed tokens travel in the fragment so they never reach server logs; drop them from history.
@@ -36,21 +38,35 @@ captureMarketingSearchParams(returnUrl.search, userTelemetryConsent.value)
 const returnTo = route === "/auth/login" ? `/${returnUrl.search}` : returnUrl.pathname + returnUrl.search
 if (token) history.replaceState(null, "", location.pathname + location.search)
 if (githubError || googleError) history.replaceState(null, "", returnUrl.pathname + returnUrl.search + (token ? "" : returnUrl.hash))
-function syncAuthTelemetryConsent(telemetryEnabled: boolean | undefined): void {
-  if (!telemetryEnabled) return
+const TELEMETRY_SYNC_NAVIGATION_TIMEOUT_MS = 1_000
+function syncAuthTelemetryConsent(telemetryEnabled: boolean | undefined): Promise<void> | undefined {
+  if (!telemetryEnabled) return undefined
   if (userTelemetryConsent.value) {
-    void account.updateTelemetryConsent({
+    return backgroundAccount.updateTelemetryConsent({
       consented: true,
       attribution: readMarketingAttribution(true),
     }).catch(() => {})
-  } else if (readStoredTelemetryConsent() === "declined") {
-    void account.updateTelemetryConsent({ consented: false }).catch(() => {})
+  }
+  if (readStoredTelemetryConsent() === "declined") {
+    return backgroundAccount.updateTelemetryConsent({ consented: false }).catch(() => {})
+  }
+  return undefined
+}
+async function awaitBeforeNavigation(pending: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      pending,
+      new Promise<void>(resolve => { timer = setTimeout(resolve, TELEMETRY_SYNC_NAVIGATION_TIMEOUT_MS) }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
   }
 }
 const { state, isLoading, error, executeImmediate: reload } = useAsyncState(async () => {
   const [config, status] = await Promise.all([account.config(), props.api.status()])
   setSiteTelemetryEnabled(Boolean(config.telemetryEnabled))
-  if (status.user) syncAuthTelemetryConsent(config.telemetryEnabled)
+  if (status.user) void syncAuthTelemetryConsent(config.telemetryEnabled)
   return { config, user: status.user }
 }, undefined, { resetOnExecute: false })
 useErrorReportingUser(() => state.value?.user)
@@ -64,10 +80,13 @@ const signedInPages: Record<string, { title: string; description?: string; newTa
   "/auth/email/verify": { title: "auth.signInTitle", description: "auth.emailSignInDescription" },
 }
 const signIn = signedInPages[route] ?? { title: "auth.signInTitle" }
-function signedIn(): void {
-  syncAuthTelemetryConsent(state.value?.config.telemetryEnabled)
+async function signedIn(): Promise<void> {
+  const sync = syncAuthTelemetryConsent(state.value?.config.telemetryEnabled)
   if (route in signedInPages) { state.value = undefined; void reload() }
-  else location.assign("/")
+  else {
+    if (sync) await awaitBeforeNavigation(sync)
+    location.assign("/")
+  }
 }
 async function signOut(): Promise<void> { await props.api.logout(); state.value = undefined; await reload() }
 </script>
