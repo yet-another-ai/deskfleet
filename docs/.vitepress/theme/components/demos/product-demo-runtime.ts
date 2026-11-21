@@ -20,6 +20,7 @@ export interface ProductDemoOptions {
   locale?: AppLocale
   initialRoute?: string
   sidebar?: boolean
+  standaloneSession?: boolean
 }
 
 export async function mountProductDemoApp(target: HTMLElement, options: ProductDemoOptions & { locale: AppLocale }) {
@@ -83,12 +84,14 @@ export async function mountProductDemoApp(target: HTMLElement, options: ProductD
   target.lang = intlLocale(locale)
 
   const layout = useLayoutStore(pinia)
-  // Demos stay inside their app windows, including on narrow website viewports.
-  // Compact drawers would portal over the website and block its install controls.
-  Reflect.set(layout, "compact", ref(false))
+  // The narrow session uses the mobile windows without the portaled sidebar drawer.
+  const standaloneSession = options.standaloneSession ?? false
+  Reflect.set(layout, "compact", ref(standaloneSession))
+  layout.standaloneSession = standaloneSession
   // Embedded applications get independent, nonpersistent layout preferences.
-  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, sidebarWidth: 260, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
-  layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
+  const sidebarOpen = !standaloneSession && (options.sidebar ?? target.clientWidth >= 700)
+  for (const [key, value] of Object.entries({ sidebarOpen, sidebarWidth: 260, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
+  if (!standaloneSession) layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
 
   const providers = useProvidersStore(pinia)
   providers.providers = structuredClone(demoProviders)

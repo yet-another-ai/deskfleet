@@ -97,8 +97,8 @@ of mainland China from Cloudflare TURN. Pairwise arcs illustrate connectivity,
 not measured traffic or routes between relays.
 
 Embedded demos keep their application layout inside the preview window even on
-mobile pages. Their compact drawer mode is disabled so app panels cannot portal
-over the website navigation or installation controls. The demo runtime keeps its
+mobile pages. The narrow Team chapter uses the standalone mobile session layout
+with a full-width conversation and no sidebar drawer. The demo runtime keeps its
 own memory-history route table, because importing the product router would
 install hash history on the website. When a view the demos can reach links a
 new named route, add that route to `product-demo-runtime.ts`. Each embedded app

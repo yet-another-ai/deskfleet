@@ -112,7 +112,7 @@ function onKeydown(event: KeyboardEvent, index: number) {
           :inert="i !== selected"
           :data-demo-panel="chapter.key"
         >
-          <ProductDemo v-if="opened[i]" :kind="chapter.kind" :initial-route="chapter.initialRoute" :locale="locale" />
+          <ProductDemo v-if="opened[i]" :kind="chapter.kind" :initial-route="chapter.initialRoute" :locale="locale" :standalone-session="narrow && chapter.key === 'team'" />
         </div>
       </div>
     </div>

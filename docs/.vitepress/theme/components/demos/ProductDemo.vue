@@ -21,7 +21,7 @@ async function mount() {
   else dispose = cleanup
 }
 onMounted(mount)
-watch(() => [props.locale, props.kind, props.initialRoute, props.sidebar], mount)
+watch(() => [props.locale, props.kind, props.initialRoute, props.sidebar, props.standaloneSession], mount)
 onBeforeUnmount(() => { generation++; dispose?.() })
 </script>
 
