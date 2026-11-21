@@ -4,17 +4,19 @@ import UiButton from "../components/common/UiButton.vue"
 import UiSelect from "../components/common/UiSelect.vue"
 import UiCheckbox from "../components/common/UiCheckbox.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
+import DesktopMobileControls from "../components/desktop/DesktopMobileControls.vue"
 import { useConnectionResume } from "../composables/useConnectionResume.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 
 import { GripVertical, LoaderCircle, Maximize, Minimize, MonitorPlay, Play, RefreshCw, SlidersHorizontal, Unplug } from "@lucide/vue"
-import { watchImmediate, whenever } from "@vueuse/core"
+import { useMediaQuery, watchImmediate, whenever } from "@vueuse/core"
 import { computed, onBeforeUnmount, ref, shallowRef, useTemplateRef, watch } from "vue"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { DesktopCapabilities } from "../../../client/src/desktop-media.ts"
 import { commonDesktopCodecs, desktopCodecLabel, useDesktopConnection } from "../composables/useDesktopConnection.ts"
 import { useDesktopInput } from "../composables/useDesktopInput.ts"
+import type { DesktopPointerMode } from "../composables/useDesktopTouch.ts"
 import { useFloatingToolbar } from "../composables/useFloatingToolbar.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useAppearanceStore } from "../stores/appearance.ts"
@@ -45,10 +47,12 @@ const reverseScroll = ref(false)
 const clipboard = ref(true)
 const controlPaused = ref(false)
 const video = shallowRef<HTMLVideoElement | null>(null)
+const pointerMode = ref<DesktopPointerMode>("absolute")
+const touchControls = useMediaQuery("(any-pointer: coarse)")
 const inputEnabled = computed(() => control.value && !controlPaused.value && connection.inputReady.value)
 const windowsTarget = computed(() => fleet.localDesktopTarget.platform === "win32")
 const secureAttentionAvailable = computed(() => windowsTarget.value && capabilities.value?.secureAttention === true)
-useDesktopInput(video, inputEnabled, connection.sendInput, reverseScroll, clipboard, connection.remoteClipboard)
+useDesktopInput(video, inputEnabled, connection.sendInput, reverseScroll, clipboard, connection.remoteClipboard, pointerMode)
 const playbackBlocked = ref(false)
 const fullscreenError = ref(false)
 const isFullscreen = ref(false)
@@ -269,6 +273,7 @@ const errorDescription = computed(() => {
         v-show="stream"
         ref="video"
         class="absolute inset-0 h-full w-full object-contain"
+        :style="{ touchAction: inputEnabled ? 'none' : 'auto' }"
         :class="inputEnabled && 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-accent'"
         :tabindex="inputEnabled ? 0 : -1"
         :title="inputEnabled ? t('desktop.controlHint') : undefined"
@@ -309,6 +314,7 @@ const errorDescription = computed(() => {
         <button
           type="button"
           class="inline-flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded-md text-ui-text-faint ui-motion hover:bg-ui-hover hover:text-ui-text-muted active:cursor-grabbing"
+          :class="touchControls && 'min-h-11 min-w-11'"
           style="touch-action: none"
           data-move-controls
           :aria-label="t('desktop.moveControls')"
@@ -326,6 +332,7 @@ const errorDescription = computed(() => {
         <UiButton v-if="stream && control && state === 'connected'" type="button" class="py-1" :disabled="!connection.inputReady.value" :aria-pressed="!controlPaused" @click="toggleControl">
           {{ controlPaused ? t("desktop.resumeControl") : t("desktop.pauseControl") }}
         </UiButton>
+        <DesktopMobileControls v-if="stream && touchControls" v-model="pointerMode" :enabled="inputEnabled" :stage="stage" :platform="fleet.localDesktopTarget.platform ?? ''" :send="connection.sendInput" />
         <UiButton v-if="stream && control && state === 'connected' && secureAttentionAvailable" type="button" class="py-1" data-desktop-secure-attention :disabled="!inputEnabled" @click="sendSecureAttention">
           {{ t("desktop.sendSecureAttention") }}
         </UiButton>

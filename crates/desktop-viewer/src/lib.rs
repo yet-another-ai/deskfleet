@@ -14,11 +14,12 @@ mod codec_tests;
 mod gpui_input;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod host;
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", test))]
 mod input;
 mod input_configuration;
 mod input_queue;
 mod input_reply;
+mod input_text;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod macos_decoder;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -79,6 +80,8 @@ enum WindowEvent {
         codec: protocol::Codec,
     },
     FrameReady,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    InputEnabled(bool),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Error(String),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

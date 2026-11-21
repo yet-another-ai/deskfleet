@@ -686,8 +686,8 @@ H.264 constrained baseline,
 and optional mouse/keyboard control;
 it does not negotiate system audio. Electron's embedded launch page omits its
 floating controls; display and control settings belong to the native window.
-Android/iOS retain display and control selection on their explicit launch page
-because their native surface does not yet expose those settings. Browser-only
+Android/iOS expose display and control selection in their native floating
+controls as well as their explicit launch page. Browser-only
 codec, audio, and reverse-scroll options remain hidden for native launch paths.
 
 The toolbar follows the embedded desktop viewer's layout, color tokens, and
@@ -1074,15 +1074,48 @@ do not loop back. Both the embedded browser viewer and the native GPUI desktop
 window expose a **Clipboard sharing** setting (enabled by default) and sync on
 window focus and paste gestures; Android and iOS viewers sync automatically with
 `ClipboardManager` / `UIPasteboard` on focus and change events and expose a
-top-left `📋` action for explicit sync. Target clipboard integration uses Win32
+floating `📋` action for explicit sync. Target clipboard integration uses Win32
 `CF_UNICODETEXT` on the bound input desktop (including across the Windows
 desktop service worker pipe on `RefreshInput`), macOS `NSPasteboard`, Wayland
 `org.freedesktop.portal.Clipboard`, X11 `CLIPBOARD` selection ownership and
 `XFIXES` notifications, and Android `scrcpy-server` control/device messages.
-Text/IME composition forwarding and operating
-system shortcuts intercepted by the viewer's OS are outside this contract, apart
-from the explicit Windows `secureAttention` action described above.
+Mobile system keyboards commit text after IME composition through ordered
+`clipboard` and paste-key events (Command+V on macOS targets, Control+V elsewhere).
+The **Terminal paste** option uses Control+Shift+V for terminal applications on
+non-macOS targets. This explicit text entry replaces the remote clipboard, independently of automatic
+clipboard sharing, and requires an application that accepts that paste shortcut.
+It also requires working target clipboard support; the existing clipboard message
+has no acknowledgement for reporting an unsuccessful paste to the mobile editor.
+Preedit/composition state is kept locally. Operating system shortcuts intercepted
+by the viewer's OS remain outside this contract, apart from the explicit Windows
+`secureAttention` action described above.
 `releaseAll` releases only controls held by this controller.
+
+### Phone and tablet controls
+
+Native Android/iOS viewers provide a draggable floating toolbar with display and
+control settings, pause/resume, clipboard, disconnect/reconnect, and close actions.
+The toolbar stays within safe areas when the device rotates or the system keyboard
+opens. The embedded browser/PWA viewer keeps its existing floating toolbar and
+adds touch controls on devices with a coarse pointer, including tablets with a mouse.
+
+Absolute mouse mode maps taps to the visible remote image, ignoring letterboxing;
+one-finger motion drags. Relative mode acts as a trackpad, preserving the cursor
+between gestures and moving it by finger displacement. Taps click at that cursor.
+Long press sends a secondary click and two-finger motion scrolls. iOS also exposes
+a drag action for relative mode; Android and the embedded viewer support
+double-tap-and-hold dragging.
+Switching modes, losing focus,
+pausing, and disconnecting release active gestures.
+
+**System keyboard** focuses a native IME editor (or a browser textarea).
+**Hacker Keyboard** opens a built-in special-key panel: Esc, Tab, navigation,
+delete, function keys, shortcut letters, and one-shot Ctrl/Alt/Shift/Meta modifiers.
+These modifiers are applied and released with the next key, so selecting a modifier
+never leaves it held remotely. Both keyboards obey the acknowledged remote-control
+state; opening a keyboard does not grant control. Native key/text commands and
+relative touch coordinates stay local to the viewer and reuse the existing desktop
+DataChannel contract.
 
 `deskfleet-input` owns validation, held state and platform injection behind one
 backend interface. Windows uses SendInput scan codes and physical virtual-desktop

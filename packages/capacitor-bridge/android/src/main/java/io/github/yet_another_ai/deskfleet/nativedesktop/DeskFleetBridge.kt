@@ -26,6 +26,7 @@ import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
 import java.util.UUID
+import org.json.JSONObject
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -202,6 +203,8 @@ class DeskFleetBridge : Plugin() {
     fun open(call: PluginCall) {
         val currentActivity = activity ?: return call.reject("Activity unavailable")
         runCatching {
+            activeViewerPlugin = WeakReference(this)
+            viewerUiState = null
             nativeStart(this)
             currentActivity.startActivity(Intent(currentActivity, RemoteDesktopActivity::class.java))
         }.fold({ call.resolve() }, { call.reject(it.message ?: "Failed to open native desktop") })
@@ -211,7 +214,15 @@ class DeskFleetBridge : Plugin() {
     fun send(call: PluginCall) {
         val command = call.getString("command")?.takeIf { it.isNotEmpty() }
             ?: return call.reject("Missing command payload")
-        runCatching { nativeSendCommand(command) }
+        runCatching {
+            val value = JSONObject(command)
+            if (value.optString("type") == "ui") {
+                val state = value.getJSONObject("state")
+                viewerUiState = state
+                activeActivity?.get()?.applyUiState(state)
+            }
+            nativeSendCommand(command)
+        }
             .fold({ call.resolve() }, { call.reject(it.message ?: "Failed to send command") })
     }
 
@@ -324,6 +335,8 @@ class DeskFleetBridge : Plugin() {
         private var pendingOutlineStartCall: PluginCall? = null
 
         @Volatile internal var activeActivity: WeakReference<RemoteDesktopActivity>? = null
+        @Volatile internal var viewerUiState: JSONObject? = null
+        @Volatile private var activeViewerPlugin: WeakReference<DeskFleetBridge>? = null
         @Volatile private var activeOutlinePlugin: WeakReference<DeskFleetBridge>? = null
 
         internal fun completeOutlineAudioStart(started: Boolean, errorMessage: String?) {
@@ -347,6 +360,12 @@ class DeskFleetBridge : Plugin() {
                 act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) act.finish() }
             }
             activeActivity = null
+            viewerUiState = null
+            activeViewerPlugin = null
+        }
+
+        internal fun emitViewerAction(event: JSONObject) {
+            activeViewerPlugin?.get()?.onViewerEvent(event.toString())
         }
 
         @JvmStatic external fun nativeStart(callback: Any)

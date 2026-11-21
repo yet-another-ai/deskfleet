@@ -19,7 +19,7 @@ use ndk::native_window::NativeWindow;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 
-use crate::input::normalized_point;
+use crate::input::TouchInput;
 use crate::input_queue;
 use crate::protocol::{self, Command};
 use crate::queue::FrameQueue;
@@ -99,6 +99,7 @@ struct AndroidViewer {
     shutdown: watch::Sender<bool>,
     renderer: Option<Renderer>,
     control: bool,
+    touch: TouchInput,
     redraw: bool,
     submitted: u64,
     last_stats: Instant,
@@ -113,6 +114,7 @@ impl AndroidViewer {
             shutdown,
             renderer: None,
             control: false,
+            touch: TouchInput::default(),
             redraw: true,
             submitted: 0,
             last_stats: Instant::now(),
@@ -156,7 +158,11 @@ impl AndroidViewer {
         match cmd {
             RenderCommand::Window(WindowEvent::Start { title, control, .. }) => {
                 tracing::info!(%title, control, "Android viewer started");
-                self.control = control;
+                self.control = false;
+                self.touch = TouchInput::default();
+            }
+            RenderCommand::Window(WindowEvent::InputEnabled(enabled)) => {
+                self.control = enabled;
             }
             RenderCommand::Window(WindowEvent::FrameReady) => {}
             RenderCommand::SurfaceAttached {
@@ -184,7 +190,9 @@ impl AndroidViewer {
                 self.shutdown.send_replace(true);
                 return Ok(true);
             }
-            RenderCommand::Touch { kind, x, y, dx, dy } if self.control => {
+            RenderCommand::Touch { kind, x, y, dx, dy }
+                if self.control || kind == 6 || kind == 14 =>
+            {
                 self.handle_touch(kind, (x, y), (dx, dy))?;
             }
             RenderCommand::Touch { .. } => {}
@@ -193,57 +201,16 @@ impl AndroidViewer {
         Ok(false)
     }
 
-    fn handle_touch(&self, kind: i32, pos: (f64, f64), delta: (f64, f64)) -> Result<(), Error> {
-        if kind == 6 {
-            let _ = self.input.send(InputEvent::ReleaseAll);
-            return Ok(());
-        }
-        let Some(renderer) = self.renderer.as_ref() else {
-            return Ok(());
-        };
-        let Some((x, y)) =
-            normalized_point(pos, renderer.surface_size(), renderer.video_size, kind == 2)
-        else {
-            return Ok(());
-        };
-        match kind {
-            0 => self.input.send(InputEvent::PointerMove { x, y })?,
-            1 => {
-                self.input.send(InputEvent::PointerMove { x, y })?;
-                self.input.send(InputEvent::PointerButton {
-                    button: 0,
-                    pressed: true,
-                    x,
-                    y,
-                })?;
+    fn handle_touch(&mut self, kind: i32, pos: (f64, f64), delta: (f64, f64)) -> Result<(), Error> {
+        let viewport = self.renderer.as_ref().map_or((0., 0., 0., 0.), |renderer| {
+            if renderer.video_size.0 == 0 || renderer.video_size.1 == 0 {
+                (0., 0., 0., 0.)
+            } else {
+                crate::renderer::viewport(renderer.surface_size(), renderer.video_size)
             }
-            2 => self.input.send(InputEvent::PointerButton {
-                button: 0,
-                pressed: false,
-                x,
-                y,
-            })?,
-            3 | 4 => {
-                let button = if kind == 3 { 0 } else { 2 };
-                self.input.send(InputEvent::PointerMove { x, y })?;
-                self.input.send(InputEvent::PointerButton {
-                    button,
-                    pressed: true,
-                    x,
-                    y,
-                })?;
-                self.input.send(InputEvent::PointerButton {
-                    button,
-                    pressed: false,
-                    x,
-                    y,
-                })?;
-            }
-            5 => self.input.send(InputEvent::Wheel {
-                delta_x: delta.0.clamp(-10_000., 10_000.),
-                delta_y: delta.1.clamp(-10_000., 10_000.),
-            })?,
-            _ => {}
+        });
+        for event in self.touch.events(kind, pos, delta, viewport) {
+            self.input.send(event)?;
         }
         Ok(())
     }

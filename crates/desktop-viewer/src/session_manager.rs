@@ -46,7 +46,13 @@ pub(crate) async fn run(
                 }
             }
             Some(Command::Ui { state }) => ui(&proxy, state),
-            Some(Command::SetControl { .. } | Command::Clipboard { .. }) => {}
+            Some(
+                Command::SetControl { .. }
+                | Command::Clipboard { .. }
+                | Command::Input { .. }
+                | Command::Text { .. }
+                | Command::PauseInput { .. },
+            ) => {}
             Some(Command::Stop) => stopped(&proxy)?,
             Some(Command::Close) | None => return Ok(()),
             Some(Command::Answer { .. } | Command::Candidate { .. }) => {

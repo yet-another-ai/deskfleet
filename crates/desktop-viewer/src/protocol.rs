@@ -36,6 +36,21 @@ pub(crate) enum Command {
     Clipboard {
         text: String,
     },
+    /// Native mobile keyboards share the desktop's ordered input channel.
+    Input {
+        event: deskfleet_input::InputEvent,
+    },
+    /// Committed IME text is pasted using the controlled machine's shortcut.
+    Text {
+        text: String,
+        #[serde(rename = "pasteCode")]
+        paste_code: crate::input_text::PasteCode,
+        #[serde(default, rename = "pasteShift")]
+        paste_shift: bool,
+    },
+    PauseInput {
+        paused: bool,
+    },
     Close,
 }
 
@@ -75,6 +90,7 @@ pub(crate) struct UiState {
     pub(crate) settings_error: Option<String>,
     pub(crate) locale: Option<String>,
     pub(crate) theme: Option<String>,
+    pub(crate) platform: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

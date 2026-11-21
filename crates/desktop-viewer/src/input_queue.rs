@@ -78,6 +78,15 @@ impl Sender {
 }
 
 impl Receiver {
+    /// Settings and local pause transitions must not replay queued gestures.
+    pub(crate) fn clear(&mut self) -> Result<(), Error> {
+        self.pending
+            .lock()
+            .map_err(|_| "input queue poisoned")?
+            .clear();
+        Ok(())
+    }
+
     pub(crate) async fn recv(&mut self) -> Result<Option<InputEvent>, Error> {
         loop {
             let event = self
@@ -178,6 +187,18 @@ mod tests {
         drop(sender);
         assert_eq!(receiver.recv().await.unwrap(), Some(InputEvent::ReleaseAll));
         assert_eq!(receiver.recv().await.unwrap(), Some(position(0.8)));
+        assert_eq!(receiver.recv().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn pause_or_peer_replacement_discards_queued_presses() {
+        let (sender, mut receiver) = channel();
+        sender.send(key("ControlLeft")).unwrap();
+        sender.send(button()).unwrap();
+        receiver.clear().unwrap();
+        sender.send(key("KeyB")).unwrap();
+        drop(sender);
+        assert_eq!(receiver.recv().await.unwrap(), Some(key("KeyB")));
         assert_eq!(receiver.recv().await.unwrap(), None);
     }
 

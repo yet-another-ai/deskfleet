@@ -112,6 +112,10 @@ pub(crate) async fn run_peer(
             });
             let mut input_open = false;
             let mut input_ready = false;
+            let mut input_paused = false;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let mut rendered_input_enabled = false;
+            input.clear()?;
             let mut configuration = crate::input_configuration::Configuration::default();
             let mut deferred_configuration = None;
             let mut answered = false;
@@ -131,6 +135,7 @@ pub(crate) async fn run_peer(
                             Some(Command::Close) | None => { exit = Some(PeerExit::Close); break; },
                             Some(Command::Stop) => { exit = Some(PeerExit::Stop); break; },
                             Some(Command::SetControl { control: enabled }) => {
+                                input.clear()?;
                                 // Always release before changing authorization on the ordered channel.
                                 if input_open {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await?;
@@ -145,15 +150,37 @@ pub(crate) async fn run_peer(
                             },
                             Some(Command::Ui { state }) => crate::session_manager::ui(&proxy, state),
                             Some(Command::Clipboard { text }) => {
-                                if control && input_open && input_ready && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
+                                if control && input_open && input_ready && !input_paused && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::Clipboard { text })?).await?;
                                 }
+                            },
+                            Some(Command::Input { event }) => {
+                                if control && input_open && input_ready && (!input_paused || matches!(event, InputEvent::ReleaseAll)) {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
+                                }
+                            },
+                            Some(Command::Text { text, paste_code, paste_shift }) => {
+                                if control && input_open && input_ready && !input_paused
+                                    && let Some(events) = crate::input_text::paste_events(text, paste_code, paste_shift)
+                                {
+                                    input.clear()?;
+                                    for event in events {
+                                        peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
+                                    }
+                                }
+                            },
+                            Some(Command::PauseInput { paused }) => {
+                                input.clear()?;
+                                if control && input_open && input_ready {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await?;
+                                }
+                                input_paused = paused;
                             },
                             Some(Command::Start { .. }) => return Err("viewer already started".into()),
                         },
                         event = input.recv() => {
                             if let Some(event) = event? {
-                                if control && input_open && input_ready {
+                                if control && input_open && input_ready && (!input_paused || matches!(event, InputEvent::ReleaseAll)) {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
                                 }
                             } else { break; }
@@ -203,10 +230,18 @@ pub(crate) async fn run_peer(
                                     }
                                     Reply::Error { error } => return Err(error.into()),
                                     Reply::Configured { request_id, control: enabled } => {
-                                        if configuration.reply(request_id, enabled, None)? { control = enabled; input_ready = true; }
+                                        if configuration.reply(request_id, enabled, None)? {
+                                            input.clear()?;
+                                            control = enabled;
+                                            input_ready = true;
+                                        }
                                     }
                                     Reply::ConfigurationError { request_id, control: enabled, error } => {
-                                        if configuration.reply(request_id, enabled, Some(error))? { control = enabled; input_ready = true; }
+                                        if configuration.reply(request_id, enabled, Some(error))? {
+                                            input.clear()?;
+                                            control = enabled;
+                                            input_ready = true;
+                                        }
                                     }
                                     Reply::Clipboard { text } => {
                                         if control && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
@@ -223,9 +258,19 @@ pub(crate) async fn run_peer(
                             _ => {},
                         },
                     }
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    {
+                        let enabled = control && input_open && input_ready && !input_paused;
+                        if enabled != rendered_input_enabled {
+                            let _ = proxy.send_event(WindowEvent::InputEnabled(enabled));
+                            rendered_input_enabled = enabled;
+                        }
+                    }
                 }
                 Ok(())
             }.await;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let _ = proxy.send_event(WindowEvent::InputEnabled(false));
             if input_open {
                 let _ = peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await;
             }
