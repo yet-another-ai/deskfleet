@@ -41,7 +41,8 @@ export function rendererContentSecurityPolicy(
     // Fetch bundled WASM and in-memory previews; API traffic stays in main.
     `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",
-    "frame-src 'self' blob:",
+    // Sandboxed HTML previews use app/Blob documents; Web Preview frames loopback HTTP dev servers.
+    "frame-src 'self' blob: http://localhost:* http://127.0.0.1:*",
     "form-action 'none'",
     "base-uri 'none'",
   ].join("; ")

@@ -2328,5 +2328,23 @@
     "showAllSessions": "显示全部",
     "showMoreSessions": "展开其余 {count} 个会话",
     "showFewerSessions": "收起"
+  },
+  "webPreview": {
+    "title": "网页预览",
+    "new": "新建网页预览",
+    "reload": "刷新",
+    "addressLabel": "预览地址或端口",
+    "addressPlaceholder": "输入端口或 localhost 地址（如 5173）",
+    "open": "打开",
+    "openExternal": "在系统浏览器中打开",
+    "invalidAddress": "请输入回环端口或 HTTP 地址（localhost、127.0.0.1 或 [::1]）。",
+    "emptyTitle": "预览本地 Web 服务",
+    "emptyDescription": "通过端口号或回环地址连接此会话所在机器上运行的开发服务器。",
+    "offlineTitle": "机器已离线",
+    "offlineDescription": "机器重新上线后即可加载其回环网页预览。",
+    "connecting": "正在建立预览隧道…",
+    "connectErrorTitle": "无法连接预览",
+    "retry": "重试",
+    "unavailable": "当前平台不支持网页预览。"
   }
 }

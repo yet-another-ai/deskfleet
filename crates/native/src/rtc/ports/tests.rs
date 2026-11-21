@@ -324,7 +324,7 @@ async fn native_deadline_closes_idle_sockets_without_js_or_event_consumers() {
 async fn forwarding_requires_explicit_authorization_and_loopback_target() {
     let peer = Peer::new(PeerConfig::default()).await.unwrap();
     for host in [
-        "localhost",
+        "localhost.example",
         "127.0.0.2",
         "::ffff:127.0.0.1",
         "192.168.1.1",
@@ -359,9 +359,50 @@ fn wire_rejects_invalid_targets_frames_and_zero_ids() {
     }
     assert!(Frame::decode(Bytes::from(vec![0; CHUNK_BYTES + 6]), false).is_err());
     assert!(Frame::decode(Bytes::from_static(&[5, 0, 0, 0, 1]), true).is_err());
-    for host in ["127.0.0.1", "::1"] {
+    for host in ["localhost", "127.0.0.1", "::1"] {
         let target = Target::new(host, 65535).unwrap();
         let decoded = Frame::decode(Frame::Open(1, target).encode().freeze(), false).unwrap();
         assert!(matches!(decoded, Frame::Open(1, actual) if actual == target));
+    }
+}
+
+#[tokio::test]
+async fn localhost_target_forwards_to_ipv4_and_ipv6_loopback_listeners() {
+    async fn assert_localhost_forwards(listener: TcpListener, expected: &'static [u8]) {
+        let port = listener.local_addr().unwrap().port();
+        let left = Peer::new(PeerConfig::default()).await.unwrap();
+        let right = Peer::new(PeerConfig::default()).await.unwrap();
+        right
+            .enable_port_forwarding(expires_after(Duration::from_secs(120)))
+            .await
+            .unwrap();
+        let local = left
+            .listen_port_forward(0, "localhost", port)
+            .await
+            .unwrap();
+        connect(&left, &right).await;
+        let service = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            socket.write_all(expected).await.unwrap();
+        });
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, local))
+            .await
+            .unwrap();
+        let mut buf = vec![0; expected.len()];
+        tokio::time::timeout(Duration::from_secs(5), client.read_exact(&mut buf))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf.as_slice(), expected);
+        service.await.unwrap();
+        left.close().await.unwrap();
+        right.close().await.unwrap();
+    }
+
+    let v4_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    assert_localhost_forwards(v4_listener, b"v4-ok").await;
+
+    if let Ok(v6_listener) = TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, 0)).await {
+        assert_localhost_forwards(v6_listener, b"v6-ok").await;
     }
 }
