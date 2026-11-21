@@ -231,7 +231,14 @@ const { fadeStyle } = useScrollFade(list, { size: "sm" })
 watch(currentActive, id => {
   if (scrub.value) return
   const index = items.value.findIndex(item => item.id === id)
-  rows.value?.[index]?.scrollIntoView({ block: "nearest" })
+  const row = rows.value?.[index]
+  const scroller = list.value
+  if (!row || !scroller) return
+  // The list is the rows' offset parent. Leave enclosing scroll areas undisturbed.
+  const top = row.offsetTop
+  const bottom = top + row.offsetHeight
+  if (top < scroller.scrollTop) scroller.scrollTop = top
+  else if (bottom > scroller.scrollTop + scroller.clientHeight) scroller.scrollTop = bottom - scroller.clientHeight
 }, { flush: "post" })
 </script>
 
@@ -245,7 +252,7 @@ watch(currentActive, id => {
       <div class="ui-scroll-mask flex min-h-0 flex-col" :style="fadeStyle">
         <ol
           ref="list"
-          class="ui-outline-list pointer-events-auto min-h-0 select-none overflow-x-hidden overflow-y-auto scrollbar-none"
+          class="ui-outline-list pointer-events-auto relative min-h-0 select-none overflow-x-hidden overflow-y-auto scrollbar-none"
           @pointerdown="onPointerDown"
           @pointermove="onPointerMove"
           @pointerup="stopScrub"

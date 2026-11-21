@@ -10,7 +10,7 @@ async function mount() {
   const current = ++generation
   dispose?.()
   dispose = undefined
-  const { mountProductDemo } = await import("./product-demo-runtime.ts")
+  const { mountProductDemo } = await import("./product-demo-bootstrap.ts")
   if (!target.value || current !== generation) return
   // Each pending app owns its node, so stale cleanup cannot unmount a newer app.
   const container = document.createElement("div")
@@ -21,7 +21,7 @@ async function mount() {
   else dispose = cleanup
 }
 onMounted(mount)
-watch(() => [props.locale, props.kind, props.initialRoute, props.sidebar], mount)
+watch(() => [props.locale, props.kind, props.initialRoute, props.sidebar, props.standaloneSession], mount)
 onBeforeUnmount(() => { generation++; dispose?.() })
 </script>
 

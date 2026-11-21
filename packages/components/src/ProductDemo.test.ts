@@ -4,7 +4,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
 vi.mock("vitepress", () => ({ withBase: (path: string) => path }))
 
-const { mountProductDemo } = await import("../../../docs/.vitepress/theme/components/demos/product-demo-runtime.ts")
+const { mountProductDemo } = await import("../../../docs/.vitepress/theme/components/demos/product-demo-bootstrap.ts")
 
 const originalClient = getClient()
 const cleanups: (() => void)[] = []
@@ -79,4 +79,15 @@ test("product demo composer preparation and team session controls run locally wi
   allowButton!.click()
   await settle()
   expect(visibleAlerts(teamTarget)).toEqual([])
+})
+
+test("the narrow team demo shows its approval in the standalone session layout", async () => {
+  const container = document.createElement("div")
+  document.body.appendChild(container)
+  cleanups.push(await mountProductDemo(container, { kind: "team", standaloneSession: true }))
+  await settle()
+
+  const chat = container.querySelector('[data-mobile-view="chat"]')
+  expect(chat?.textContent).toContain("Allow once")
+  expect(container.querySelector('[data-mobile-view="changes"]')?.getAttribute("aria-hidden")).toBe("true")
 })

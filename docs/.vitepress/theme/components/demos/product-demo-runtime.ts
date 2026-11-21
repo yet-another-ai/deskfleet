@@ -13,7 +13,6 @@ import type { TerminalListener } from "../../../../../packages/components/src/se
 import en from "../../../../../packages/components/locales/en-US.json"
 import ja from "../../../../../packages/components/locales/ja-JP.json"
 import zh from "../../../../../packages/components/locales/zh-cmn-Hans-CN.json"
-import { configureProductDemoHost } from "./product-demo-host.ts"
 import { configuration, demoPatch, demoProviders, fixtures, input } from "./product-demo-fixtures.ts"
 
 export interface ProductDemoOptions {
@@ -21,13 +20,12 @@ export interface ProductDemoOptions {
   locale?: AppLocale
   initialRoute?: string
   sidebar?: boolean
+  standaloneSession?: boolean
 }
 
-/** Mount the production application with browser-local state and no daemon connection. */
-export async function mountProductDemo(target: HTMLElement, options: ProductDemoOptions) {
-  const locale = options.locale ?? "en-US"
+export async function mountProductDemoApp(target: HTMLElement, options: ProductDemoOptions & { locale: AppLocale }) {
+  const { locale } = options
   const say = (en: string, zh: string, ja: string) => locale === "ja-JP" ? ja : locale === "zh-cmn-Hans-CN" ? zh : en
-  configureProductDemoHost(locale)
   const { default: App } = await import("@deskfleet/components/App.vue")
   const { useAppearanceStore } = await import("@deskfleet/components/stores/appearance.ts")
   const pinia = createPinia()
@@ -38,6 +36,7 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   app.config.errorHandler = (error, _instance, info) => console.error(`[product demo: ${options.kind}] ${info}`, error)
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: "/", name: "new-session", component: () => import("@deskfleet/components/views/NewSessionView.vue") },
+    { path: "/desktops", name: "remote-desktops", component: () => import("@deskfleet/components/views/RemoteDesktopsView.vue") },
     { path: "/schedules", name: "schedules", component: () => import("@deskfleet/components/views/ScheduledTasksView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/archived", name: "archived-sessions", component: () => import("@deskfleet/components/views/ArchivedSessionsView.vue"), meta: { hideDetails: true } },
     { path: "/sessions/:sessionId", name: "session", component: () => import("@deskfleet/components/views/SessionView.vue"), props: true },
@@ -85,12 +84,14 @@ export async function mountProductDemo(target: HTMLElement, options: ProductDemo
   target.lang = intlLocale(locale)
 
   const layout = useLayoutStore(pinia)
-  // Demos stay inside their app windows, including on narrow website viewports.
-  // Compact drawers would portal over the website and block its install controls.
-  Reflect.set(layout, "compact", ref(false))
+  // The narrow session uses the mobile windows without the portaled sidebar drawer.
+  const standaloneSession = options.standaloneSession ?? false
+  Reflect.set(layout, "compact", ref(standaloneSession))
+  layout.standaloneSession = standaloneSession
   // Embedded applications get independent, nonpersistent layout preferences.
-  for (const [key, value] of Object.entries({ sidebarOpen: options.sidebar ?? target.clientWidth >= 700, sidebarWidth: 260, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
-  layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
+  const sidebarOpen = !standaloneSession && (options.sidebar ?? target.clientWidth >= 700)
+  for (const [key, value] of Object.entries({ sidebarOpen, sidebarWidth: 260, sessionContext: "worktree", terminalPanelOpen: false, terminalPanelHeight: 220 })) Reflect.set(layout, key, ref(value))
+  if (!standaloneSession) layout.toggleSidebar = () => { layout.sidebarOpen = !layout.sidebarOpen }
 
   const providers = useProvidersStore(pinia)
   providers.providers = structuredClone(demoProviders)

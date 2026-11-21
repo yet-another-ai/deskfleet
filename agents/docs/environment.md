@@ -73,7 +73,8 @@ chapter tabs show every value proposition before any interaction. They switch a
 single framed demo window. Each demo mounts on first selection and then stays
 alive, so a reader's changes survive switching. Each chapter opens on the view that
 shows its point. Agents opens on a running session at desktop widths and on a new
-session on narrow pages. The demos mount the same `App.vue`, routes, stores,
+session on narrow pages. The demo bootstrap configures its fixture adapter before
+loading application modules. The demos mount the same `App.vue`, routes, stores,
 and controls with independent browser-local sample state. They need no backend,
 agent credentials, or model calls. The trust section (`#open`) is a bento grid:
 the repository layout links to its source, and the machine and data cards
@@ -96,8 +97,8 @@ of mainland China from Cloudflare TURN. Pairwise arcs illustrate connectivity,
 not measured traffic or routes between relays.
 
 Embedded demos keep their application layout inside the preview window even on
-mobile pages. Their compact drawer mode is disabled so app panels cannot portal
-over the website navigation or installation controls. The demo runtime keeps its
+mobile pages. The narrow Team chapter uses the standalone mobile session layout
+with a full-width conversation and no sidebar drawer. The demo runtime keeps its
 own memory-history route table, because importing the product router would
 install hash history on the website. When a view the demos can reach links a
 new named route, add that route to `product-demo-runtime.ts`. Each embedded app
