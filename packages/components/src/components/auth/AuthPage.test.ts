@@ -1,6 +1,7 @@
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { afterEach, expect, test, vi } from "vitest"
 import { HttpError, type HttpCentralClient } from "@deskfleet/client/http-central"
+import { writeStoredTelemetryConsent } from "@deskfleet/client/marketing-attribution"
 import { i18n } from "../../i18n/index.ts"
 import { setErrorReportingUser } from "../../services/error-reporting.ts"
 import AuthPage from "./AuthPage.vue"
@@ -19,7 +20,7 @@ vi.mock("altcha", () => {
 })
 
 let view: VueWrapper | undefined
-afterEach(() => { view?.unmount(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { view?.unmount(); localStorage.clear(); sessionStorage.clear(); history.replaceState(null, "", "/"); vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
 const recentRequired = () => new HttpError(403, "Confirm your password or Passkey to continue.", undefined, "recent_authentication_required")
 const dialog = () => new DOMWrapper(document.body).find('[role="dialog"]')
 const button = (root: { findAll(selector: string): DOMWrapper<Element>[] }, label: string) => root.findAll("button").find(value => value.text() === label)!
@@ -590,4 +591,36 @@ test("failed email resend clears the replaced proof and waits before another att
   expect(request.mock.calls.some(([, path]) => path === "/api/auth/reauthenticate/email/verify")).toBe(false)
   await vi.advanceTimersByTimeAsync(60_000)
   expect(button(dialog(), i18n.global.t("auth.useEmailCode")).attributes("disabled")).toBeUndefined()
+})
+
+test.each(["resolved", "timed out"] as const)("sign-in keeps the form disabled while telemetry consent sync is %s before navigating", async outcome => {
+  vi.useFakeTimers()
+  const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
+  writeStoredTelemetryConsent("declined")
+  const consent = Promise.withResolvers<void>()
+  const request = mountAt("/auth/login", async (_method, path) => {
+    if (path === "/api/auth/config") return { registrationEnabled: true, telemetryEnabled: true, githubEnabled: true }
+    if (path === "/api/me/telemetry-consent") return consent.promise
+    return {}
+  })
+  await flushPromises()
+  await view!.get('input[type="email"]').setValue("ada@example.test")
+  await view!.get('input[type="password"]').setValue("password")
+  await view!.get("form").trigger("submit")
+  await flushPromises()
+  expect(request).toHaveBeenCalledWith("PUT", "/api/me/telemetry-consent", { consented: false })
+  expect(assign).not.toHaveBeenCalled()
+  expect(view!.get('input[type="email"]').attributes("disabled")).toBeDefined()
+  expect(view!.get('input[type="password"]').attributes("disabled")).toBeDefined()
+  expect(view!.get('button[type="submit"]').attributes("disabled")).toBeDefined()
+  expect(button(view!, i18n.global.t("auth.signInWithGithub")).attributes("disabled")).toBeDefined()
+  await view!.get("form").trigger("submit")
+  await flushPromises()
+  expect(request.mock.calls.filter(([, path]) => path === "/api/auth/login")).toHaveLength(1)
+
+  if (outcome === "resolved") consent.resolve()
+  else await vi.advanceTimersByTimeAsync(1_000)
+  await flushPromises()
+  expect(assign).toHaveBeenCalledExactlyOnceWith("/")
+  expect(view!.get('button[type="submit"]').attributes("disabled")).toBeDefined()
 })

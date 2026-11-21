@@ -15,7 +15,7 @@ const { state, executeImmediate: load } = useAsyncState(async () => {
   const team = account.team.value
   if (!team) return undefined
   return { key, billing: await account.central.billing(team.id) }
-}, undefined, { immediate: false, resetOnExecute: false })
+}, undefined, { immediate: false, resetOnExecute: false, onError: () => {} })
 watch(scope, () => { void load() }, { immediate: true })
 useEventListener(window, "focus", () => { void load() })
 const billing = computed(() => state.value?.key === scope.value ? state.value.billing : undefined)

@@ -40,6 +40,26 @@ test("route templates remove encoded identifiers and query values", () => {
   expect(error.diagnostics.route).toBe("/api/teams/:teamId/machines/:machineId/sessions/:sessionId/events")
 })
 
+test.each([
+  ["PUT", "/api/me/telemetry-consent?token=secret", "/api/me/telemetry-consent"],
+  ["PUT", "/api/push/subscription", "/api/push/subscription"],
+  ["DELETE", "/api/auth/sessions/private-session", "/api/auth/sessions/:sessionId"],
+  ["POST", "/api/auth/sessions/revoke-all", "/api/auth/sessions/revoke-all"],
+  ["PATCH", "/api/auth/passkeys/private-passkey", "/api/auth/passkeys/:passkeyId"],
+  ["PUT", "/api/admin/plan-quotas/pro", "/api/admin/plan-quotas/:plan"],
+  ["PUT", "/api/admin/credit-rates", "/api/admin/credit-rates"],
+  ["GET", "/api/teams/private-team/turn-settings", "/api/teams/:teamId/turn-settings"],
+  ["GET", "/api/integrations/github/repository-items?owner=private", "/api/integrations/github/repository-items"],
+  ["POST", "/api/integrations/github/authorization/start", "/api/integrations/github/authorization/start"],
+  ["POST", "/api/auth/login", "/api/auth/login"],
+  ["POST", "/api/auth/captcha/challenge", "/api/auth/captcha/challenge"],
+])("maps allowlisted route %s %s to %s without leaking identifiers", (method, path, expected) => {
+  const error = centralRequestFailure(new TypeError("fetch failed"), { method, path, elapsedMs: 5 })
+  expect(error.diagnostics.method).toBe(method)
+  expect(error.diagnostics.route).toBe(expected)
+  expect(JSON.stringify(serializeCentralRequestError(error))).not.toMatch(/private|secret/u)
+})
+
 test("cause summaries are bounded and terminate on cycles", () => {
   const cyclic = new Error("private")
   cyclic.cause = cyclic
