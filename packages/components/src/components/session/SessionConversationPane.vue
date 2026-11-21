@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
 import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../../stores/conversation-reading.ts"
-import { pendingMermaidLocate, performMermaidLocateDom, type MermaidSource } from "../../stores/layout.ts"
+import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../../stores/layout.ts"
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../../stores/previews.ts"
 import { scrollSpring, type SpringScroll } from "../../services/spring-scroll.ts"
 import FocusOverlay from "../common/FocusOverlay.vue"
@@ -31,7 +31,9 @@ const props = withDefaults(defineProps<{
 }>(), { sidebar: true })
 const { t } = useI18n()
 const route = useRoute()
-const toolbarLeftInset = usePlatformClient().platform === "darwin" ? "pl-20" : "pl-2"
+const { platform } = usePlatformClient()
+const layout = useLayoutStore()
+const toolbarLeftInset = computed(() => platform === "darwin" && !layout.sidebarOpen ? "pl-20" : "pl-2")
 const reading = useConversationReadingStore()
 provide(conversationReadingKey, () => reading.session(props.readingId))
 const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
