@@ -14,6 +14,7 @@ in
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "deskfleet-super-agent";
   inherit version;
+  passthru.cacheDir = "/var/cache/deskfleet-super-agent";
 
   src = lib.fileset.toSource {
     root = source;
@@ -73,6 +74,8 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       const model = models.find(entry => entry.slug === "openai/gpt-5.4-mini");
       if (!model?.providers.some(provider => provider.contextWindowTokens > 0)) throw Error("Missing Gateway context window for openai/gpt-5.4-mini")'
     rm -rf .eve
+    # Eve's info command refreshes the diagnostic metadata under the agent root.
+    ln -s ${finalAttrs.passthru.cacheDir} .eve
     popd
     makeWrapper ${nodejs}/bin/node "$out/bin/deskfleet-super-agent" \
       --chdir "$agent" --add-flags "$agent/node_modules/eve/bin/eve.js" --prefix PATH : ${nodejs}/bin

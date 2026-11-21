@@ -29,6 +29,10 @@ Set `DESKFLEET_SUPER_AGENT_URL=http://super-agent:3100` and the same
 API's public URL. All Eve replicas for this deployment share the workflow
 database and the same model configuration.
 
+Eve writes its diagnostic cache to `/var/cache/deskfleet-super-agent` as UID
+10001. When deploying with a read-only root filesystem, mount writable temporary
+storage there and at `/tmp`. Session history lives in PostgreSQL.
+
 To build the same image from source, use the root flake on a Linux builder:
 
 ```sh

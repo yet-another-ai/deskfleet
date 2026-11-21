@@ -24,6 +24,9 @@ dockerTools.buildLayeredImage {
     mkdir -p tmp
     chmod 1777 tmp
   '';
+  fakeRootCommands = ''
+    install -d -m 0700 -o 10001 -g 10001 .${super-agent.cacheDir}
+  '';
   config = {
     Cmd = [
       "deskfleet-super-agent"

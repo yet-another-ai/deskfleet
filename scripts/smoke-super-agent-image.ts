@@ -15,6 +15,10 @@ const agent = `${network}-agent`
 const world = "WORKFLOW_POSTGRES_URL=postgres://postgres:smoke-test@postgres:5432/deskfleet"
 
 try {
+  // Eve's info command refreshes its on-disk diagnostics as the image's runtime user.
+  const info = docker("run", "--rm", "--network", "none", image, "deskfleet-super-agent", "info", "--json")
+  assert.equal(JSON.parse(info).status, "ready", "Eve must be able to refresh its diagnostic cache")
+
   docker("network", "create", network)
   await startPostgres(network, database, true)
   docker("run", "--name", bootstrap, "--network", network, "--env", world, image, "bootstrap")
