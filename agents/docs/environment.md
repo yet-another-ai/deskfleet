@@ -451,13 +451,13 @@ for initialization checks and prompt commands.
 
 [`renovate.json`](../../renovate.json) follows
 [Heron's grouped update policy](https://github.com/minori-live/heron/blob/main/renovate.json):
-weekly dependency updates, monthly GitHub Actions updates, at most two open PRs,
+weekly dependency updates, monthly GitHub Actions and Nix flake updates, at most two open PRs,
 and a separate lockfile maintenance group. Majors and minors share the update
 group and require maintainer review; automerge is disabled. npm releases age for
 three days before ordinary updates. Lockfile maintenance delegates resolution to
 Cargo and pnpm and does not apply that release-age filter.
 
-Built-in managers cover Cargo, pnpm, Compose images, and GitHub Actions, including
+Built-in managers cover Cargo, pnpm, Compose images, Dockerfiles, Nix flakes, and GitHub Actions, including
 the mise version in `.github/actions/setup-mise`. Keep Renovate's Node, pnpm, and
 Rust `constraints` aligned with `mise.toml` so lockfile generation uses the
 repository's tools.
