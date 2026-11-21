@@ -7,6 +7,7 @@ import { remoteMachineClient } from "@deskfleet/client/remote"
 import { accountSessionKey, type AccountSession } from "./useAccountSession.ts"
 import { platformClientKey } from "./usePlatformClient.ts"
 import { createSidebarFilter, type SidebarFilterState } from "./useSidebarFilter.ts"
+import { createSidebarOrder, type SidebarOrder } from "./useSidebarOrder.ts"
 import { i18n } from "../i18n/index.ts"
 import { router } from "../router/index.ts"
 import { appearanceStoreKey, type useAppearanceStore } from "../stores/appearance.ts"
@@ -28,6 +29,7 @@ export interface MachineRuntimes {
   opened: Map<string, MachineRuntime>
   sidebarScrollTop: number
   sidebarFilter: SidebarFilterState
+  sidebarOrder: SidebarOrder
   open(machine: Machine): MachineRuntime
 }
 
@@ -51,6 +53,7 @@ export function createMachineRuntimes(
     runtime?.dispose()
   }
   const identity = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id, session.teamId.value]))
+  const sidebarOrder = createSidebarOrder(identity)
   const owner = computed(() => JSON.stringify([session.account.value.serverUrl, session.account.value.user?.id]))
   watch(owner, (_, previous) => { void clearConversationOwner(previous) })
   watch(identity, () => {
@@ -72,6 +75,7 @@ export function createMachineRuntimes(
     opened,
     sidebarScrollTop: 0,
     sidebarFilter,
+    sidebarOrder,
     open(machine) {
       const existing = opened.get(machine.id)
       if (existing) return existing

@@ -2193,6 +2193,7 @@
     "filterEmptyWorking": "没有工作中的会话",
     "showAllSessions": "显示全部",
     "showMoreSessions": "展开其余 {count} 个会话",
+    "reorderItem": "调整 {name} 的顺序",
     "showFewerSessions": "收起"
   }
 }

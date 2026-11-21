@@ -1601,6 +1601,7 @@
     "filterEmptyUnread": "未読のセッションはありません",
     "filterEmptyWorking": "実行中のセッションはありません",
     "showAllSessions": "すべて表示",
+    "reorderItem": "{name} を並べ替え",
     "showMoreSessions": "さらに {count} 件を表示",
     "showFewerSessions": "折りたたむ"
   }

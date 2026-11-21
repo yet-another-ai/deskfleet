@@ -12,6 +12,7 @@ import { useI18n } from "vue-i18n"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
 import { useSidebarFilter, type SidebarSessionFilter } from "../../composables/useSidebarFilter.ts"
+import { machineOrderGroup, useSidebarOrder } from "../../composables/useSidebarOrder.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "../chrome/WindowToolbar.vue"
@@ -53,6 +54,9 @@ onBeforeUnmount(() => {
   if (runtimes && el) runtimes.sidebarScrollTop = el.scrollTop
 })
 const { machines, catalogError, catalogLoading } = storeToRefs(fleet)
+const sidebarOrder = useSidebarOrder()
+const accountMachines = computed(() => sidebarOrder.ordered(machineOrderGroup, account?.machines.value ?? []))
+const localMachines = computed(() => sidebarOrder.ordered(machineOrderGroup, machines.value))
 const platform = platformClient.platform
 // Each opened machine retains its own catalog and action scope.
 const loaded = (id: string) => machines.value.find(machine => machine.id === id)
@@ -140,13 +144,13 @@ function refresh(): void {
       </div>
       <p v-if="catalogError" role="alert" class="mx-2.5 mb-3 break-words text-xs text-ui-danger">{{ catalogError }}</p>
       <template v-if="account">
-        <template v-for="machine in account.machines.value" :key="machine.id">
+        <template v-for="machine in accountMachines" :key="machine.id">
           <MachineSection v-if="loaded(machine.id)" :machine="loaded(machine.id)!" />
           <MachineSidebarSurface v-else-if="runtimes?.opened.has(machine.id)" :runtime="runtimes.opened.get(machine.id)!" />
           <MachineSection v-else :machine="unopened(machine)" />
         </template>
       </template>
-      <MachineSection v-for="machine in machines" v-else :key="machine.id" :machine="machine" />
+      <MachineSection v-for="machine in localMachines" v-else :key="machine.id" :machine="machine" />
       <div v-if="filterEmpty" class="mx-2.5 mt-4 flex flex-col items-start gap-1.5 text-xs text-ui-text-faint">
         <p class="m-0">{{ t(sidebarFilter.filter.value === 'unread' ? 'sidebar.filterEmptyUnread' : 'sidebar.filterEmptyWorking') }}</p>
         <button type="button" class="cursor-pointer rounded text-ui-accent hover:underline" @click="sidebarFilter.filter.value = 'all'">{{ t('sidebar.showAllSessions') }}</button>

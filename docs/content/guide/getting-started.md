@@ -65,6 +65,8 @@ Closing the desktop window keeps DeskFleet in the system tray so running agent s
    - **New worktree**: Creates an isolated Git checkout branched from committed `HEAD` so parallel sessions never conflict.
    - **Working directory**: Works directly inside the workspace's existing directories, including any uncommitted changes.
 
+To reorder the sidebar, drag a row by its grip. You can also focus the grip and press Up or Down. Machines reorder within their team, workspaces within their machine, and sessions within their current list. DeskFleet remembers each team's order on the device you used to set it.
+
 ## Add a headless machine
 
 For remote workstations, VMs, or build servers without a desktop session, run the standalone `deskfleet-daemon` single-executable binary (`deskfleet-daemon.exe` on Windows; use PowerShell 7 `pwsh`).
