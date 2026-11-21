@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest"
 import type { CentralEvent } from "@deskfleet/client/central"
 import type { PortForwardRequest } from "@deskfleet/client/ports"
 import type { PortConnection } from "@deskfleet/client/ports-signaling"
-import { PortForwards, type OpenPortForward } from "./ports-controller.ts"
+import { PortForwards, type OpenPortForward } from "@deskfleet/client/ports-controller"
 
 const request: PortForwardRequest = { target: { teamId: "team", machineId: "machine" }, targetPort: 3000 }
 const connection = (localPort = 41000) => ({ localPort, close: vi.fn(async () => {}) })

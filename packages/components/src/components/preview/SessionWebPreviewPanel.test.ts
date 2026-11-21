@@ -1,5 +1,6 @@
 import { getClient } from "@deskfleet/client/platform"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
+import type { PortForward } from "@deskfleet/client/ports"
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils"
 import { createPinia, disposePinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
@@ -22,10 +23,12 @@ afterEach(() => {
 
 interface SetupOptions {
   platform?: DeskfleetDesktopApi["platform"]
+  mobile?: boolean
   local?: boolean
   online?: boolean
   active?: boolean
   initialUrl?: string | null
+  withWebPreview?: boolean
 }
 
 async function setup(options: SetupOptions = {}) {
@@ -35,27 +38,36 @@ async function setup(options: SetupOptions = {}) {
   const machineId = local ? "9007199254740999" : "remote-machine-1"
   let forwardSeq = 0
 
-  const startMock = vi.fn(async (input: Parameters<NonNullable<DeskfleetDesktopApi["ports"]>["start"]>[0]) => ({
-    id: `fwd-${++forwardSeq}`,
-    target: input.target,
-    targetHost: input.targetHost ?? "127.0.0.1",
-    targetPort: input.targetPort,
-    localHost: "127.0.0.1" as const,
-    localPort: 41233 + forwardSeq,
-  }))
-  const stopMock = vi.fn(async () => {})
+  const activeForwards = new Map<string, PortForward>()
+  const startMock = vi.fn(async (input: Parameters<NonNullable<DeskfleetDesktopApi["ports"]>["start"]>[0]) => {
+    const id = `fwd-${++forwardSeq}`
+    const forward: PortForward = {
+      id,
+      target: input.target,
+      targetHost: input.targetHost ?? "127.0.0.1",
+      targetPort: input.targetPort,
+      localHost: "127.0.0.1",
+      localPort: 41233 + forwardSeq,
+    }
+    activeForwards.set(id, forward)
+    return forward
+  })
+  const stopMock = vi.fn(async (id: string) => { activeForwards.delete(id) })
   const openDevToolsMock = vi.fn(async () => {})
+  const openExternalMock = vi.fn(async () => {})
 
   const client: DeskfleetDesktopApi = {
     ...getClient(),
     platform: options.platform ?? "linux",
+    mobile: options.mobile,
     target: { id: machineId, local },
     ports: {
       start: startMock,
       stop: stopMock,
-      list: async () => [],
+      list: async () => [...activeForwards.values()],
     },
-    webPreview: { openDevTools: openDevToolsMock },
+    webPreview: options.withWebPreview === false ? undefined : { openDevTools: openDevToolsMock },
+    openExternal: openExternalMock,
   }
 
   const provide: Record<PropertyKey, unknown> = { [platformClientKey as symbol]: client }
@@ -84,10 +96,12 @@ async function setup(options: SetupOptions = {}) {
     wrapper,
     panel: () => wrapper.getComponent(SessionWebPreviewPanel),
     setActive(next: boolean) { panelActive.value = next },
+    retireForward: (id: string) => activeForwards.delete(id),
     fleet,
     startMock,
     stopMock,
     openDevToolsMock,
+    openExternalMock,
   }
 }
 
@@ -201,6 +215,51 @@ test("desktop remote tunnels via ports.start, hides random port from address bar
   wrapper.unmount()
   await flushPromises()
   expect(stopMock).toHaveBeenCalledWith("fwd-2")
+})
+
+test("mobile mode renders iframe without desktop controls, commits dirty address, recovers retired tunnels, and opens external browser", async () => {
+  const { wrapper, startMock, retireForward, openExternalMock } = await setup({
+    platform: "web",
+    mobile: true,
+    local: false,
+    online: true,
+    withWebPreview: false,
+  })
+
+  expect(wrapper.find("[data-web-preview-empty]").exists()).toBe(true)
+  expect(wrapper.find("[data-web-preview-devtools]").exists()).toBe(false)
+  expect(wrapper.find("[data-web-preview-back]").exists()).toBe(false)
+  expect(wrapper.find("[data-web-preview-forward]").exists()).toBe(false)
+
+  await wrapper.get("[data-web-preview-quick-port='5173']").trigger("click")
+  await flushPromises()
+  expect(startMock).toHaveBeenCalledTimes(1)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41234/")
+  expect(wrapper.find("[data-web-preview-go]").exists()).toBe(false)
+
+  const addressInput = wrapper.get("[data-web-preview-address]")
+  await addressInput.setValue("http://127.0.0.1:8080")
+  await flushPromises()
+  await wrapper.get("[data-web-preview-go]").trigger("click")
+  await flushPromises()
+  expect(startMock).toHaveBeenCalledTimes(2)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41235/")
+
+  await addressInput.setValue("http://127.0.0.1:8080/counter")
+  await flushPromises()
+  await wrapper.get("[data-web-preview-reload]").trigger("click")
+  await flushPromises()
+  expect(startMock).toHaveBeenCalledTimes(2)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41235/counter")
+
+  expect(retireForward("fwd-2")).toBe(true)
+  await wrapper.get("[data-web-preview-reload]").trigger("click")
+  await flushPromises()
+  expect(startMock).toHaveBeenCalledTimes(3)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41236/counter")
+
+  await wrapper.get("[data-web-preview-external]").trigger("click")
+  expect(openExternalMock).toHaveBeenCalledWith("http://127.0.0.1:41236/counter")
 })
 
 test("rejects invalid addresses and reconnects once offline remote machine returns online", async () => {
