@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto"
-import type { CentralApi } from "@deskfleet/client/central"
-import type { PortForward, PortForwardRequest, PortsApi } from "@deskfleet/client/ports"
-import type { PortConnection } from "@deskfleet/client/ports-signaling"
+import type { CentralApi } from "./central.ts"
+import type { PortForward, PortForwardRequest, PortsApi } from "./ports.ts"
+import type { PortConnection } from "./ports-signaling.ts"
 
 export type OpenPortForward = (
   request: PortForwardRequest, failed: (error: Error) => void, signal: AbortSignal,
@@ -30,7 +29,7 @@ export class PortForwards implements PortsApi {
 
   async start(request: PortForwardRequest): Promise<PortForward> {
     if (this.#closed) throw new Error("Port forwarding is closed")
-    const id = randomUUID()
+    const id = globalThis.crypto.randomUUID()
     // Copy caller-owned values before negotiation yields.
     const options = { ...request, target: { ...request.target } }
     // Defer the connector so even a synchronous failure can retire this entry.

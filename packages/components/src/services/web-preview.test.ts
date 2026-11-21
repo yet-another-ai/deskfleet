@@ -51,4 +51,6 @@ test("formats URLs, normalizes stored URLs, formats tab titles, and gates platfo
 
   expect(isWebPreviewSupported({ platform: "darwin" })).toBe(true)
   expect(isWebPreviewSupported({ platform: "web" })).toBe(false)
+  expect(isWebPreviewSupported({ platform: "web", mobile: true })).toBe(false)
+  expect(isWebPreviewSupported({ platform: "web", mobile: true, ports: {} as never })).toBe(true)
 })

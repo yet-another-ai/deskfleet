@@ -1,10 +1,14 @@
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 
 /// ICE server credentials supplied by the signaling service.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IceServer {
     pub urls: Vec<String>,
+    #[serde(default)]
     pub username: String,
+    #[serde(default)]
     pub credential: String,
 }
 
@@ -28,11 +32,15 @@ pub struct PeerConfig {
 }
 
 /// A trickled ICE candidate. An empty candidate marks the end of candidates.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IceCandidate {
     pub candidate: String,
+    #[serde(default)]
     pub sdp_mid: Option<String>,
+    #[serde(default, alias = "sdpMLineIndex")]
     pub sdp_mline_index: Option<u16>,
+    #[serde(default)]
     pub username_fragment: Option<String>,
 }
 

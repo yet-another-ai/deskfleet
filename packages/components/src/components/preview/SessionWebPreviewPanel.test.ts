@@ -24,6 +24,7 @@ afterEach(() => {
 
 interface SetupOptions {
   platform?: DeskfleetDesktopApi["platform"]
+  mobile?: boolean
   local?: boolean
   online?: boolean
   initialUrl?: string | null
@@ -51,16 +52,19 @@ async function setup(options: SetupOptions = {}) {
     return forward
   })
   const stopMock = vi.fn(async (id: string) => { activeForwards.delete(id) })
+  const openExternalMock = vi.fn(async () => {})
 
   const client: DeskfleetDesktopApi = {
     ...getClient(),
     platform: options.platform ?? "linux",
+    mobile: options.mobile,
     target: { id: machineId, local },
     ports: {
       start: startMock,
       stop: stopMock,
       list: async () => [...activeForwards.values()],
     },
+    ...(options.mobile ? { openExternal: openExternalMock } : {}),
   }
 
   const provide: Record<PropertyKey, unknown> = { [platformClientKey as symbol]: client }
@@ -91,6 +95,7 @@ async function setup(options: SetupOptions = {}) {
     fleet,
     startMock,
     stopMock,
+    openExternalMock,
   }
 }
 
@@ -166,6 +171,25 @@ test("desktop remote tunnels via ports.start, recovers retired forwards, and cle
   wrapper.unmount()
   await flushPromises()
   expect(stopMock).toHaveBeenCalledWith("fwd-3")
+})
+
+test("mobile mode tunnels via ports.start and delegates external open to client.openExternal", async () => {
+  const { wrapper, startMock, openExternalMock } = await setup({
+    platform: "web",
+    mobile: true,
+    local: false,
+    online: true,
+  })
+
+  expect(wrapper.find("[data-web-preview-empty]").exists()).toBe(true)
+
+  await wrapper.get("[data-web-preview-quick-port='5173']").trigger("click")
+  await flushPromises()
+  expect(startMock).toHaveBeenCalledTimes(1)
+  expect(wrapper.get("[data-web-preview-iframe]").attributes("src")).toBe("http://127.0.0.1:41234/")
+
+  await wrapper.get("[data-web-preview-external]").trigger("click")
+  expect(openExternalMock).toHaveBeenCalledWith("http://127.0.0.1:41234/")
 })
 
 test("rejects invalid addresses and reconnects once offline remote machine returns online", async () => {

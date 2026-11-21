@@ -35,6 +35,10 @@ fn error(message: &'static str) -> PeerError {
     PeerError::PortForwarding(message)
 }
 
+pub(super) fn validate_target(host: &str, port: u16) -> Result<()> {
+    Target::new(host, port).map(|_| ())
+}
+
 #[derive(Clone, Copy)]
 struct Deadline(Option<u64>);
 
