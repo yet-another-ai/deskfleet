@@ -99,7 +99,7 @@ jobs:
         id: setup_build
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
           # Main's Linux x64 smoke build keeps a release target entry for later
           # smoke builds; full builds only restore it, so other platforms do not
           # take quota. Production releases build without a target cache.
@@ -357,7 +357,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
 
       - name: Configure Gradle Maven Central mirror
         uses: ./.github/actions/setup-gradle-mirror
@@ -489,7 +489,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
 
       - name: Build iOS archive (smoke)
         if: ${{ !inputs.production_release && !inputs.signed_ios }}

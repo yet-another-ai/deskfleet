@@ -74,7 +74,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
 
       - name: Run preflight checks
         run: mise run ci:preflight
@@ -95,7 +95,7 @@ jobs:
         id: setup_build
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
           rust-cache: static
 
       - name: Run static checks
@@ -139,7 +139,7 @@ jobs:
         id: setup_build
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
           rust-cache: test
 
       - name: Run tests
@@ -188,7 +188,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
 
       - name: Configure Gradle Maven Central mirror
         uses: ./.github/actions/setup-gradle-mirror
@@ -213,7 +213,7 @@ jobs:
       - name: Set up build environment
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
 
       - name: Build and verify iOS Simulator app
         run: mise run ios:test
@@ -265,7 +265,7 @@ jobs:
         id: setup_build
         uses: ./.github/actions/setup-build
         with:
-          github-token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          github-token: ${{ github.token }}
           # Start from the Linux test target directory, which shares most
           # dependencies with the backend packages, but leave writing it to Tests.
           rust-cache: test

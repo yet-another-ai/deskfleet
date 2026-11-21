@@ -779,8 +779,8 @@ the locked Node archive, slow enough that mise's download budget expires first.
 The setup action rewrites `https://nodejs.org/dist/` to the npmmirror CDN on
 macOS only. The lockfile still records the nodejs.org URL and checksum, and
 mise checks the downloaded bytes against that checksum. Linux and Windows keep
-using nodejs.org. A throttled Actions cache restore or save is retried for up
-to two minutes; without that wait, HTTP 429 is treated as a missing tool cache.
+using nodejs.org. Test and Build jobs give mise their read-only job token for
+GitHub release metadata during tool installation, including on pull requests.
 
 Android CI jobs install `.github/actions/setup-gradle-mirror` into Gradle's
 `init.d` directory so hosted runners prefer Google's Maven Central mirror
