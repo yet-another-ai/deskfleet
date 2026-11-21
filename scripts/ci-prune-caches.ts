@@ -1,12 +1,8 @@
-// Delete GitHub Actions caches that no run can use any more, keeping the
-// repository below its quota so that eviction never removes a live entry.
+// Delete unused GitHub Actions caches to free quota for active entries.
 //
 // Only main writes caches. Pull requests and tags restore main's entries, and
-// an entry saved on any other ref is visible only to that ref. Every cache key
-// ends with segments that change with its inputs (lockfile hashes, toolchain
-// versions); when they change, main saves a new entry and the old one stays
-// until GitHub evicts it. Group main's entries by the key without those
-// segments and keep only the newest of each group.
+// an entry saved on any other ref is visible only to that ref. Remove retired
+// download caches, then keep the newest main entry from each active family.
 
 import { pathToFileURL } from "node:url"
 
@@ -19,24 +15,25 @@ export interface Cache {
 }
 
 const mainRef = "refs/heads/main"
+const retiredDownloadCache = /^(?:cargo-downloads-|electron-|mise-v1-|pnpm-store-)/u
 
 /** The cache key without the segments that change with its inputs. */
 export function cacheFamily(key: string): string {
-  // A content hash or a locked version, such as an Electron release.
-  let family = key.replace(/-(?:[0-9a-f]{8,}|\d+(?:\.\d+)+)$/u, "")
-  // mise-action's periodic rebuild counter.
-  family = family.replace(/-p\d+$/u, "")
+  // Drop the trailing input hash or version.
+  const family = key.replace(/-(?:[0-9a-f]{8,}|\d+(?:\.\d+)+)$/u, "")
   // rust-cache appends an environment hash before the lockfile hash.
-  if (family.startsWith("v0-rust-")) family = family.replace(/-[0-9a-f]{8}$/u, "")
-  return family
+  return family.startsWith("v0-rust-") ? family.replace(/-[0-9a-f]{8}$/u, "") : family
 }
 
-/** Caches to delete: all entries outside main, then all but main's newest per family. */
+/** Delete retired caches and keep only main's newest entry per active family. */
 export function staleCaches(caches: readonly Cache[]): Cache[] {
-  const stale = caches.filter(cache => cache.ref !== mainRef)
+  const stale: Cache[] = []
   const newest = new Map<string, Cache>()
   for (const cache of caches) {
-    if (cache.ref !== mainRef) continue
+    if (cache.ref !== mainRef || retiredDownloadCache.test(cache.key)) {
+      stale.push(cache)
+      continue
+    }
     const family = cacheFamily(cache.key)
     const current = newest.get(family)
     if (!current) {

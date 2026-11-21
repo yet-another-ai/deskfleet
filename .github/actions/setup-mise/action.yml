@@ -1,12 +1,11 @@
 name: Setup DeskFleet mise
-description: Install locked mise tools with the CI environment and a main-only tool cache.
+description: Install locked mise tools with the CI environment.
 
 inputs:
   tools:
     description: >-
       Space-separated tools to install, such as `node`. Leave empty to install
-      every locked tool. mise-action keys its cache by this list, so a partial
-      install never replaces the full toolchain entry.
+      every locked tool.
     required: false
     default: ""
   github-token:
@@ -14,19 +13,16 @@ inputs:
     required: false
     default: ""
 
-outputs:
-  cache-hit:
-    description: Whether mise restored its tool cache.
-    value: ${{ steps.mise.outputs.cache-hit == 'true' || steps.mise-retry.outputs.cache-hit == 'true' }}
-
 runs:
   using: composite
   steps:
-    # `MISE_ENV=ci` loads mise.ci.toml and is part of mise-action's cache key.
-    # It must be set before the first mise invocation.
+    # Load mise.ci.toml and prefer upstream prebuilt Cargo tools such as
+    # cargo-shear before the first mise invocation.
     - name: Select the CI mise environment
       shell: bash
-      run: echo "MISE_ENV=ci" >> "$GITHUB_ENV"
+      run: |
+        echo "MISE_ENV=ci" >> "$GITHUB_ENV"
+        echo "MISE_CARGO_BINSTALL_NATIVE=true" >> "$GITHUB_ENV"
 
     # nodejs.org throttles the darwin Node archive from GitHub-hosted macOS
     # runners (a few KiB/s until mise's download budget expires). Rewrite only
@@ -47,15 +43,7 @@ runs:
       with:
         version: 2026.11.9
         install_args: --locked ${{ inputs.tools }}
-        cache: true
-        # Every ref restores main's tool cache; only main writes it. Pull
-        # requests and tags cannot share their entries, which would only
-        # spend the repository cache quota.
-        cache_save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
-        # HTTP 429 is otherwise reported as a cache miss, and the job then
-        # downloads the toolchain.
-        cache_restore_retry_budget: 120s
-        cache_save_retry_budget: 120s
+        cache: false
         # An explicit empty input suppresses mise-action's automatic token default.
         github_token: ${{ inputs.github-token }}
 
@@ -66,10 +54,7 @@ runs:
       with:
         version: 2026.11.9
         install_args: --locked ${{ inputs.tools }}
-        cache: true
-        cache_save: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
-        cache_restore_retry_budget: 120s
-        cache_save_retry_budget: 120s
+        cache: false
         github_token: ${{ inputs.github-token }}
 
     - name: Require locked toolchain

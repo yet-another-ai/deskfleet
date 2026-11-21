@@ -1,5 +1,5 @@
 name: Setup DeskFleet build
-description: Install locked tools and dependencies with shared build caches.
+description: Install locked tools and dependencies and restore shared Cargo build outputs.
 
 inputs:
   github-token:
@@ -10,8 +10,8 @@ inputs:
     description: >-
       Cargo target cache role, such as `static`, `test`, or `release`. Jobs
       with the same role and OS share one entry, so give a role only to jobs
-      that build the same profiles and feature sets. Leave empty to cache only
-      Cargo downloads.
+      that build the same profiles and feature sets. Leave empty to skip the
+      Cargo cache.
     required: false
     default: ""
   rust-cache-save:
@@ -26,7 +26,6 @@ runs:
   using: composite
   steps:
     - name: Install locked toolchain
-      id: mise
       uses: ./.github/actions/setup-mise
       with:
         github-token: ${{ inputs.github-token }}
@@ -66,142 +65,20 @@ runs:
         save-if: ${{ github.ref == 'refs/heads/main' && inputs.rust-cache-save == 'true' }}
         cache-on-failure: true
 
-    - name: Locate Cargo, pnpm, and Electron caches
-      id: cache-paths
-      shell: bash
-      run: |
-        node --input-type=module <<'EOF'
-        import { execFileSync } from "node:child_process"
-        import { appendFileSync, readFileSync } from "node:fs"
-        import { homedir, platform } from "node:os"
-        import { join } from "node:path"
-
-        const home = homedir()
-        const output = process.env.GITHUB_OUTPUT
-        const cargoHome = process.env.CARGO_HOME ?? join(home, ".cargo")
-        const pnpmStore = execFileSync("pnpm", ["store", "path", "--silent"], { encoding: "utf8" }).trim()
-        const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local")
-        const electron = platform() === "darwin"
-          ? join(home, "Library", "Caches", "electron")
-          : platform() === "win32"
-            ? join(localAppData, "electron", "Cache")
-            : join(home, ".cache", "electron")
-        // Key Electron downloads by the locked Electron version, not the whole
-        // lockfile: unrelated dependency updates must not refetch the archive.
-        const electronVersion = readFileSync("pnpm-lock.yaml", "utf8").match(/^  electron@([^:(\s]+):$/m)?.[1]
-        if (!electronVersion) throw new Error("pnpm-lock.yaml does not lock electron")
-        appendFileSync(output, `cargo-home=${cargoHome}\n`)
-        appendFileSync(output, `pnpm-store=${pnpmStore}\n`)
-        appendFileSync(output, `electron-path=${electron}\n`)
-        appendFileSync(output, `electron-version=${electronVersion}\n`)
-        EOF
-
-    - name: Restore Cargo downloads
-      id: cargo-downloads
-      # rust-cache already caches the registry and git databases.
-      if: inputs.rust-cache == ''
-      uses: actions/cache/restore@v6
-      with:
-        path: |
-          ${{ steps.cache-paths.outputs.cargo-home }}/registry/index
-          ${{ steps.cache-paths.outputs.cargo-home }}/registry/cache
-          ${{ steps.cache-paths.outputs.cargo-home }}/git/db
-        key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
-        restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
-
-    - name: Fetch locked Rust dependencies
-      if: inputs.rust-cache == ''
-      shell: bash
-      run: cargo fetch --locked
-
-    - name: Save Cargo downloads
-      # Pull requests and tags read main's entry through the base-branch
-      # fallback. Their own copies would only spend the repository cache quota.
-      if: >-
-        inputs.rust-cache == '' &&
-        github.ref == 'refs/heads/main' &&
-        steps.cargo-downloads.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: |
-          ${{ steps.cache-paths.outputs.cargo-home }}/registry/index
-          ${{ steps.cache-paths.outputs.cargo-home }}/registry/cache
-          ${{ steps.cache-paths.outputs.cargo-home }}/git/db
-        key: ${{ steps.cargo-downloads.outputs.cache-primary-key }}
-
-    - name: Restore pnpm store
-      id: pnpm-store
-      uses: actions/cache/restore@v6
-      with:
-        path: ${{ steps.cache-paths.outputs.pnpm-store }}
-        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-        restore-keys: pnpm-store-${{ runner.os }}-${{ runner.arch }}-
-
-    - name: Restore Electron downloads
-      id: electron-downloads
-      uses: actions/cache/restore@v6
-      with:
-        path: ${{ steps.cache-paths.outputs.electron-path }}
-        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache-paths.outputs.electron-version }}
-
     - name: Install workspace dependencies
       shell: bash
       run: mise run install
 
-    # Offline DSH deployment still needs the original package snapshots after
-    # install. Store pruning can remove them even while node_modules is intact.
-    - name: Save pnpm store
-      if: github.ref == 'refs/heads/main' && steps.pnpm-store.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: ${{ steps.cache-paths.outputs.pnpm-store }}
-        key: ${{ steps.pnpm-store.outputs.cache-primary-key }}
-
-    # Electron's install script is disabled in pnpm-workspace.yaml; jobs fetch
-    # the archive on first use. Fetch it here on a main miss so every OS gets
-    # an entry, whichever job happens to need Electron later.
-    - name: Download Electron for the cache
-      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
-      shell: bash
-      run: mise exec -- pnpm --filter @deskfleet/desktop exec install-electron
-
-    - name: Save Electron downloads
-      if: github.ref == 'refs/heads/main' && steps.electron-downloads.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: ${{ steps.cache-paths.outputs.electron-path }}
-        key: ${{ steps.electron-downloads.outputs.cache-primary-key }}
-
-    # Compare cache effectiveness across runs without opening each log.
-    - name: Summarize cache restores
+    - name: Summarize Cargo cache restore
+      if: inputs.rust-cache != ''
       shell: bash
       env:
-        MISE_HIT: ${{ steps.mise.outputs.cache-hit }}
         RUST_ROLE: ${{ inputs.rust-cache }}
         RUST_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
-        CARGO_HIT: ${{ steps.cargo-downloads.outputs.cache-hit }}
-        CARGO_MATCH: ${{ steps.cargo-downloads.outputs.cache-matched-key }}
-        PNPM_HIT: ${{ steps.pnpm-store.outputs.cache-hit }}
-        PNPM_MATCH: ${{ steps.pnpm-store.outputs.cache-matched-key }}
-        ELECTRON_HIT: ${{ steps.electron-downloads.outputs.cache-hit }}
       run: |
-        result() {
-          if [[ "$1" == true ]]; then echo exact
-          elif [[ -n "$2" ]]; then echo "fallback \`$2\`"
-          else echo miss
-          fi
-        }
-        {
-          echo "### Cache restores: $GITHUB_JOB ($RUNNER_OS $RUNNER_ARCH)"
-          echo
-          echo "| Cache | Result |"
-          echo "| --- | --- |"
-          echo "| mise tools | $(result "$MISE_HIT") |"
-          if [[ -n "$RUST_ROLE" ]]; then
-            echo "| Cargo target (\`$RUST_ROLE\`) | $([[ "$RUST_HIT" == true ]] && echo exact || echo 'fallback or miss') |"
-          else
-            echo "| Cargo downloads | $(result "$CARGO_HIT" "$CARGO_MATCH") |"
-          fi
-          echo "| pnpm store | $(result "$PNPM_HIT" "$PNPM_MATCH") |"
-          echo "| Electron | $(result "$ELECTRON_HIT") |"
-        } >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$RUST_HIT" == true ]]; then
+          result=exact
+        else
+          result='fallback or miss'
+        fi
+        printf 'Cargo target cache (%s, %s %s) — %s\n' "$RUST_ROLE" "$RUNNER_OS" "$RUNNER_ARCH" "$result" >> "$GITHUB_STEP_SUMMARY"
