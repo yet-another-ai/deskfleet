@@ -1,6 +1,7 @@
 import { Menu, nativeImage, Tray } from "electron"
 import { t } from "./i18n.ts"
 import { buildResourcePath } from "./paths.ts"
+import { desktopDisplayName } from "./application-display.ts"
 
 interface TrayActions {
   show(): void
@@ -16,7 +17,7 @@ export function createTray(actions: TrayActions): void {
   // The "Template" suffix lets macOS tint the image for the menu bar appearance.
   const image = process.platform === "darwin" ? "trayTemplate.png" : "tray.png"
   tray = new Tray(nativeImage.createFromPath(buildResourcePath(image)))
-  tray.setToolTip("DeskFleet")
+  tray.setToolTip(desktopDisplayName())
   refreshTrayMenu()
   // Windows tray icons open their app on click and show the menu on right-click.
   if (process.platform === "win32") tray.on("click", actions.show)

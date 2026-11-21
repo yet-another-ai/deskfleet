@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { app } from "electron"
 import { expect, test, vi } from "vitest"
 
 const { menu, setApplicationMenu, setAboutPanelOptions } = vi.hoisted(() => ({
@@ -16,7 +17,7 @@ const { menu, setApplicationMenu, setAboutPanelOptions } = vi.hoisted(() => ({
   setApplicationMenu: vi.fn(), setAboutPanelOptions: vi.fn(),
 }))
 vi.mock("electron", () => ({
-  app: { setAboutPanelOptions },
+  app: { name: "deskfleet", setAboutPanelOptions },
   Menu: { getApplicationMenu: () => menu, setApplicationMenu },
   MenuItem: class { constructor(options: object) { Object.assign(this, options) } },
 }))
@@ -43,4 +44,21 @@ test("packaging display name stays separate from the existing secure-storage ide
   expect(manifest.productName).toBe("deskfleet")
   expect(packaging).toMatch(/^productName: DeskFleet$/mu)
   expect(packaging).toContain('artifactName: "deskfleet-${version}-${os}-${arch}.${ext}"')
+  const variant = readFileSync(new URL("../../electron-builder.super-agent.yml", import.meta.url), "utf8")
+  expect(variant).toMatch(/^productName: DeskFleet SA$/mu)
+  expect(variant).toMatch(/^  productName: DeskFleet Workspace Agent$/mu)
+})
+
+test("the SA variant presents its new name in the native menus while keeping its runtime name", () => {
+  const original = app.name
+  try {
+    app.name = "DeskFleet Workspace Agent"
+    menu.items[0]!.label = app.name
+    configureApplicationDisplay()
+    expect(menu.items[0]?.label).toBe("DeskFleet SA")
+    expect(setAboutPanelOptions).toHaveBeenCalledWith(expect.objectContaining({ applicationName: "DeskFleet SA" }))
+    expect(app.name).toBe("DeskFleet Workspace Agent")
+  } finally {
+    app.name = original
+  }
 })

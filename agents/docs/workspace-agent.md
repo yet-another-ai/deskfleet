@@ -321,6 +321,8 @@ sign-in page. Both actions preserve the saved file. A successful new sign-in
 replaces it atomically.
 A local temporary build directory avoids extra Finder metadata from cloud-synced folders.
 
+The independent Mac, iPhone and iPad builds display the name **DeskFleet SA**.
+The Mac build keeps its original internal name for existing profiles and Keychain items.
 The independent variant has a distinct bundle ID, application profile, keychain
 identity and update policy. It can run alongside the original installation.
 Accounts and local front-desk state are established within its own profile.

@@ -99,7 +99,7 @@ authentication callback and the same DeskFleet service.
 
 ```sh
 export DESKFLEET_IOS_APP_ID=com.example.deskfleet.workspaceagent
-export DESKFLEET_IOS_DISPLAY_NAME="DeskFleet Workspace"
+export DESKFLEET_IOS_DISPLAY_NAME="DeskFleet SA"
 export VITE_DESKFLEET_SERVER_URL=https://deskfleet.yetanother.ai
 mise run ios:sync
 ```

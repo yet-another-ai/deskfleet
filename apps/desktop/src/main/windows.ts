@@ -13,6 +13,7 @@ import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { buildResourcePath } from "./paths.ts"
 import { followSystemTheme, windowChromeOptions } from "./window-chrome.ts"
 import { attachApplication } from "./application.ts"
+import { desktopDisplayName } from "./application-display.ts"
 import { attachGoogleTag } from "./google-tag.ts"
 import { getMainLocale, t } from "./i18n.ts"
 
@@ -48,7 +49,7 @@ function auxiliaryWindowOptions(url: string): BrowserWindowConstructorOptions | 
     }
   }
   return {
-    title: "DeskFleet",
+    title: desktopDisplayName(),
     ...(sessionTarget
       ? { width: 1120, height: 780, minWidth: 720, minHeight: 520 }
       : { width: 960, height: 680, minWidth: 480, minHeight: 360 }),
@@ -101,7 +102,7 @@ function attachRendererWindow(window: BrowserWindow): void {
 
 function createMainWindow(lifecycle: BackgroundLifecycle): BrowserWindow {
   const window = new BrowserWindow({
-    title: "DeskFleet",
+    title: desktopDisplayName(),
     show: false,
     width: 1360,
     height: 840,
@@ -143,7 +144,7 @@ export function showStartupWindow(lifecycle: BackgroundLifecycle, foreground = f
     <html lang="${getMainLocale()}">
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-    <title>DeskFleet</title>
+    <title>${desktopDisplayName()}</title>
     <style>
       :root { color-scheme: light dark }
       body { margin: 0; height: 100vh; display: grid; place-items: center; font: menu }
