@@ -6,6 +6,7 @@ import { useLayoutStore } from "../../stores/layout.ts"
 import WindowToolbar from "./WindowToolbar.vue"
 
 const platformClient = usePlatformClient()
+withDefaults(defineProps<{ sidebar?: boolean }>(), { sidebar: true })
 
 const layout = useLayoutStore()
 const { compact, sidebarOpen } = storeToRefs(layout)
@@ -18,7 +19,7 @@ const platform = platformClient.platform
     class="app-drag titlebar-overlay-inset box-content flex h-12 shrink-0 items-center gap-2 pr-2"
     :class="!sidebarOpen && platform === 'darwin' ? 'pl-20' : 'pl-3'"
   >
-    <WindowToolbar v-if="compact || !sidebarOpen" />
+    <WindowToolbar v-if="compact || !sidebarOpen" :sidebar="sidebar" />
     <div class="min-w-0 flex-1 truncate text-sm font-medium">
       <slot />
     </div>

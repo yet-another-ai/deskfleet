@@ -8,6 +8,7 @@ import { i18n } from "../../i18n/index.ts"
 import { router } from "../../router/index.ts"
 import { buildPromptContent, previewPromptContent, sessionTitleFromDraft, type ComposerAttachment } from "../../services/composer-attachments.ts"
 import { writeGithubItemDrag } from "../../services/github-composer-reference.ts"
+import { buildSuperAgentMessage } from "../../services/super-agent-message.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import type { SessionTarget, WorkspaceLocation } from "../../stores/fleet.ts"
@@ -87,6 +88,36 @@ test("composer highlights file drags across its children and attaches files with
     expect(wrapper.emitted("update:attachments")?.[0]?.[0]).toEqual([
       expect.objectContaining({ kind: "local_file", name: "README", size: 5 }),
     ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+test("a hosted composer submits local attachments without a machine or a text prompt", async () => {
+  pinia = createPinia()
+  const wrapper = mount(SessionComposer, {
+    props: { location: null, hosted: { sessionId: "hosted-session" }, activeTurn: true },
+    global: { plugins: [pinia, router, i18n] },
+  })
+  const transfer = new DataTransfer()
+  transfer.items.add(new File(["Review this"], "notes.txt", { type: "text/plain" }))
+  Object.defineProperty(transfer, "types", { value: ["Files"] })
+  await flushPromises()
+  try {
+    expect(wrapper.find("[data-composer-attach]").exists()).toBe(true)
+    expect(wrapper.find("[data-composer-yolo]").exists()).toBe(false)
+    expect(wrapper.get("button.composer-send").attributes("disabled")).toBeDefined()
+
+    wrapper.get("textarea").element.dispatchEvent(dragEvent("drop", transfer))
+    await flushPromises()
+    const attachments = wrapper.emitted<[ComposerAttachment[]]>("update:attachments")?.[0]?.[0] ?? []
+    const file = { type: "file", filename: "notes.txt", mediaType: "text/plain", data: "UmV2aWV3IHRoaXM=" }
+    expect(buildSuperAgentMessage("", attachments)).toEqual([file])
+    expect(buildSuperAgentMessage(" Check the note ", attachments)).toEqual([file, { type: "text", text: "Check the note" }])
+    expect(buildSuperAgentMessage(" Check the note ", [])).toBe("Check the note")
+    expect(wrapper.get("button.composer-send").attributes("aria-label")).toBe("Send")
+    await wrapper.get("button.composer-send").trigger("click")
+    expect(wrapper.emitted("submit")).toEqual([["backlog"]])
   } finally {
     wrapper.unmount()
   }

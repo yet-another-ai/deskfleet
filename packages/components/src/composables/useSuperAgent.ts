@@ -1,8 +1,10 @@
 import { CentralRequestError, HttpError } from "@deskfleet/client/request-diagnostics"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
-import type { SuperAgentHistory, SuperAgentMessage, SuperAgentSession, SuperAgentUsage } from "@deskfleet/client/super-agent"
+import type { SuperAgentHistory, SuperAgentMessage, SuperAgentSession, SuperAgentTranscriptPart, SuperAgentTurn, SuperAgentUsage } from "@deskfleet/client/super-agent"
 import { useDocumentVisibility, useTimeoutPoll } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, watch } from "vue"
+import type { ComposerAttachment } from "../services/composer-attachments.ts"
+import { buildSuperAgentMessage } from "../services/super-agent-message.ts"
 import { useAccountSession } from "./account-session-context.ts"
 
 export function useSuperAgent() {
@@ -14,9 +16,12 @@ export function useSuperAgent() {
   const selected = ref<string>()
   const usage = shallowRef<SuperAgentUsage>()
   const messages = shallowRef<SuperAgentMessage[]>([])
+  const turns = shallowRef<SuperAgentTurn[]>([])
+  const previews = shallowRef<SuperAgentHistory["previews"]>()
   const status = ref<SuperAgentHistory["status"]>()
   const pending = shallowRef<SuperAgentMessage[]>([])
   const draft = ref("")
+  const attachments = shallowRef<ComposerAttachment[]>([])
   const loadingList = ref(false)
   const loadingHistory = ref(false)
   const sending = ref(false)
@@ -24,17 +29,24 @@ export function useSuperAgent() {
   const usageError = shallowRef<unknown>()
   const readError = shallowRef<unknown>()
   const sendError = shallowRef<unknown>()
+  const cancelError = shallowRef<unknown>()
+  const cancellingId = ref<string>()
+  const activeTurn = computed(() => turns.value.findLast(turn => turn.state === "running"))
+  const cancelling = computed(() => !!cancellingId.value && cancellingId.value === activeTurn.value?.id)
+  const canCancel = computed(() => !!activeTurn.value && !cancelling.value && !sending.value && !loadingHistory.value && !readError.value && status.value !== "ended")
   const canSend = computed(() => !!account?.superAgentEnabled.value && !!usage.value?.admitted && !loadingList.value && !listError.value && !loadingHistory.value
     && !readError.value && !sending.value && status.value !== "ended")
   const title = computed(() => sessions.value.find(session => session.sessionId === selected.value)?.title)
   let scopeRevision = 0
   let sessionRevision = 0
   let nextIndex = 0
+  let pendingSenders: SuperAgentHistory["pendingSenders"]
   let reading = false
   // A poll can observe a rejection before the concurrent POST returns its delivery ID.
   const rejectedDuringSend = new Set<string>()
+  const sentDrafts = new Map<string, { text: string; attachments: ComposerAttachment[] }>()
   let createOperation: string | undefined
-  let delivery: { text: string; operationId: string } | undefined
+  let delivery: { text: string; attachments: ComposerAttachment[]; operationId: string } | undefined
 
   function checkGate(error: unknown): void {
     const code = error instanceof HttpError ? error.code : error instanceof CentralRequestError ? error.diagnostics.apiErrorCode : undefined
@@ -66,12 +78,24 @@ export function useSuperAgent() {
     const revision = sessionRevision
     reading = true
     try {
-      const page = await automatic.superAgentHistory(teamId, sessionId, nextIndex)
+      const page = previews.value?.length
+        ? await automatic.superAgentHistory(teamId, sessionId, nextIndex, pendingSenders, previews.value)
+        : await automatic.superAgentHistory(teamId, sessionId, nextIndex, pendingSenders)
       if (revision !== sessionRevision) return
       nextIndex = page.nextIndex
+      pendingSenders = page.pendingSenders
+      previews.value = page.previews
+      if (page.turns?.length) {
+        const byId = new Map(turns.value.map(turn => [turn.id, turn]))
+        for (const turn of page.turns) byId.set(turn.id, { ...byId.get(turn.id), ...turn })
+        turns.value = [...byId.values()]
+      }
       if (page.messages.length) {
         const byId = new Map(messages.value.map(message => [message.id, message]))
-        for (const message of page.messages) byId.set(message.id, message)
+        for (const message of page.messages) {
+          byId.set(message.id, message)
+          if (message.role === "user") sentDrafts.delete(message.id)
+        }
         messages.value = [...byId.values()]
         pending.value = pending.value.filter(message => !byId.has(message.id))
       }
@@ -79,7 +103,12 @@ export function useSuperAgent() {
         const rejected = new Set(page.undeliveredIds)
         if (sending.value) for (const id of rejected) rejectedDuringSend.add(id)
         const retry = pending.value.findLast(message => rejected.has(message.id))
-        if (retry && !draft.value) draft.value = retry.text
+        const original = retry && sentDrafts.get(retry.id)
+        if (original && !draft.value && !attachments.value.length) {
+          draft.value = original.text
+          attachments.value = original.attachments
+        }
+        for (const id of rejected) sentDrafts.delete(id)
         pending.value = pending.value.filter(message => !rejected.has(message.id))
       }
       if (page.status) {
@@ -115,16 +144,23 @@ export function useSuperAgent() {
     poll.pause()
     selected.value = id
     messages.value = []
+    turns.value = []
+    previews.value = undefined
     pending.value = []
     status.value = undefined
     readError.value = undefined
     sendError.value = undefined
+    cancelError.value = undefined
+    cancellingId.value = undefined
     draft.value = ""
+    attachments.value = []
     rejectedDuringSend.clear()
+    sentDrafts.clear()
     createOperation = undefined
     delivery = undefined
     reading = false
     nextIndex = 0
+    pendingSenders = undefined
     loadingHistory.value = !!id
   }
   function select(id?: string): void {
@@ -155,13 +191,16 @@ export function useSuperAgent() {
 
   async function send(): Promise<void> {
     const teamId = account?.teamId.value
+    const senderId = account?.account.value.user?.id
     const text = draft.value.trim()
-    if (!teamId || !user || !text || !canSend.value) return
+    const files = attachments.value
+    if (!teamId || !user || (!text && !files.length) || !canSend.value) return
     const revision = scopeRevision
     rejectedDuringSend.clear()
     sending.value = true
     sendError.value = undefined
     try {
+      const content = buildSuperAgentMessage(text, files)
       let sessionId = selected.value
       if (!sessionId) {
         createOperation ??= crypto.randomUUID()
@@ -171,18 +210,26 @@ export function useSuperAgent() {
         selected.value = sessionId
         sessions.value = [{ sessionId, title: null, lastActiveAt: Date.now() }, ...sessions.value]
       }
-      if (delivery?.text !== text) delivery = { text, operationId: crypto.randomUUID() }
-      const { deliveryId } = await user.sendSuperAgentMessage(teamId, sessionId, delivery.operationId, text)
+      if (delivery?.text !== text || delivery.attachments !== files) delivery = { text, attachments: files, operationId: crypto.randomUUID() }
+      const { deliveryId } = await user.sendSuperAgentMessage(teamId, sessionId, delivery.operationId, content)
       if (revision !== scopeRevision) return
       delivery = undefined
       const rejected = rejectedDuringSend.has(deliveryId)
-      if (!rejected) draft.value = ""
+      if (!rejected) {
+        if (draft.value.trim() === text) draft.value = ""
+        if (attachments.value === files) attachments.value = []
+      }
       const current = sessions.value.find(session => session.sessionId === sessionId)
-      const title = current?.title ?? [...(text.split("\n", 1)[0] ?? "")].slice(0, 80).join("")
+      const firstText = typeof content === "string" ? content : content.filter(part => part.type === "text").find(part => part.text.trim())?.text
+      const title = current?.title ?? (firstText ? [...(firstText.trim().split("\n", 1)[0] ?? "")].slice(0, 80).join("") : null)
       sessions.value = [{ sessionId, title, lastActiveAt: Date.now() }, ...sessions.value.filter(session => session.sessionId !== sessionId)]
       if (!rejected && !messages.value.some(message => message.id === deliveryId)) {
         if (status.value === "failed") status.value = undefined
-        pending.value = [...pending.value, { id: deliveryId, role: "user", text, at: new Date().toISOString() }]
+        const parts: SuperAgentTranscriptPart[] | undefined = typeof content === "string" ? undefined : content.map(part => part.type === "text"
+          ? { kind: "text", text: part.text }
+          : { kind: "file", mediaType: part.mediaType, filename: part.filename })
+        sentDrafts.set(deliveryId, { text, attachments: files })
+        pending.value = [...pending.value, { id: deliveryId, role: "user", text, at: new Date().toISOString(), senderId, parts }]
       }
       await readHistory()
       // An idle shared conversation polls less frequently. Pick up the reply promptly after a send.
@@ -197,6 +244,25 @@ export function useSuperAgent() {
       if (error instanceof CentralRequestError && error.diagnostics.status === 429) void refreshUsage()
     } finally {
       if (revision === scopeRevision) sending.value = false
+    }
+  }
+
+  async function cancel(): Promise<void> {
+    const teamId = account?.teamId.value
+    const sessionId = selected.value
+    const turnId = activeTurn.value?.id
+    if (!teamId || !sessionId || !turnId || !user || !canCancel.value) return
+    const revision = sessionRevision
+    cancellingId.value = turnId
+    cancelError.value = undefined
+    try {
+      await user.cancelSuperAgentTurn(teamId, sessionId, turnId)
+      if (revision === sessionRevision) await readHistory()
+    } catch (error) {
+      if (revision !== sessionRevision) return
+      checkGate(error)
+      cancellingId.value = undefined
+      cancelError.value = error
     }
   }
 
@@ -216,6 +282,6 @@ export function useSuperAgent() {
   }, { immediate: true, flush: "sync" })
 
   onScopeDispose(() => { ++scopeRevision; ++sessionRevision })
-  return { sessions, selected, title, usage, messages, status, pending, draft, loadingList, loadingHistory, sending, canSend,
-    listError, usageError, readError, sendError, loadSessions, readHistory, refreshUsage, select, send }
+  return { sessions, selected, title, usage, messages, turns, previews, status, pending, draft, attachments, loadingList, loadingHistory, sending,
+    canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError, loadSessions, readHistory, refreshUsage, select, send, cancel }
 }

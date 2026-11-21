@@ -19,7 +19,7 @@ const location: SessionTarget = {
   session: { id: "session", title: "Voice", provider: "codex", archiveState: "active", context: "directory" },
 }
 
-async function fixture(supported = true) {
+async function fixture(supported = true, hosted?: { sessionId?: string }) {
   let listener!: (event: SpeechEvent) => void
   const speech: SpeechApi = {
     status: vi.fn(async () => ({ supported })),
@@ -37,14 +37,23 @@ async function fixture(supported = true) {
   document.body.append(container)
   const host = mount({
     components: { SessionComposer },
-    setup: () => ({ draft, location }),
-    template: '<SessionComposer v-model="draft" :location="location" />',
+    setup: () => ({ draft, location: hosted ? null : location, hosted }),
+    template: '<SessionComposer v-model="draft" :location="location" :hosted="hosted" />',
   }, { global, attachTo: container })
   const composer = host.getComponent(SessionComposer)
   cleanups.push(() => { host.unmount(); container.remove(); disposePinia(pinia) })
   await flushPromises()
   return { composer, speech, global, draft, emit: (event: SpeechEvent) => listener(event) }
 }
+
+test("a hosted conversation can dictate without a machine", async () => {
+  const f = await fixture(true, { sessionId: "hosted-session" })
+  await f.composer.get("[data-composer-dictation]").trigger("click")
+  const sessionId = vi.mocked(f.speech.start).mock.calls[0]![0].sessionId
+  f.emit({ type: "result", text: "Review the rollout.", final: true, sessionId })
+  await flushPromises()
+  expect(f.draft.value).toBe("Review the rollout.")
+})
 
 test("voice input defaults on, shows genuine levels, and the web preference cancels and hides it immediately", async () => {
   const f = await fixture()

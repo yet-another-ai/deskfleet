@@ -14,10 +14,6 @@ const completedResponse: ConversationResponse = {
   last: true,
   turn: {
     id: "turn-1",
-    sessionId: "sess-1",
-    initialInputId: "inp-1",
-    dispatchCommandId: "cmd-1",
-    runGeneration: 1,
     state: "completed",
     startedAt: "2026-10-29T14:00:06Z",
     endedAt: "2026-10-29T14:00:48Z",

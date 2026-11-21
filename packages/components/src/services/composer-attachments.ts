@@ -175,7 +175,7 @@ export function createMachineFileAttachment(entry: Pick<FileEntry, "name" | "pat
   return { id: crypto.randomUUID(), kind: "machine_file", name: entry.name, path: entry.path, uri: pathToFileUri(entry.path), size: entry.size }
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   let binary = ""
   const chunkSize = 0x8000
   for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {

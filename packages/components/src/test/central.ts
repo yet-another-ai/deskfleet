@@ -5,7 +5,7 @@ import type { AdminPlanQuota } from "../../../client/src/central.ts"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { SuperAgentHistory, SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
+import type { SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
@@ -146,7 +146,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       sessionId: `wrun_${operationId}`, ...(message === undefined ? {} : { deliveryId: `delivery_${operationId}` }),
     })),
     sendSuperAgentMessage: vi.fn<CentralApi["sendSuperAgentMessage"]>(async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` })),
-    superAgentHistory: vi.fn(async (_teamId: string, _sessionId: string, startIndex: number): Promise<SuperAgentHistory> => ({ messages: [], nextIndex: startIndex })),
+    cancelSuperAgentTurn: vi.fn<CentralApi["cancelSuperAgentTurn"]>(async () => {}),
+    superAgentHistory: vi.fn<CentralApi["superAgentHistory"]>(async (_teamId, _sessionId, startIndex) => ({ messages: [], nextIndex: startIndex })),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     teamTurnSettings: vi.fn(async (_teamId: string) => teamTurnSettings()),
     updateTeamTurnSettings: vi.fn(async (_teamId: string, settings: TeamTurnSettingsUpdate) => {

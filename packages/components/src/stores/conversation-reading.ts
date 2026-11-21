@@ -7,7 +7,7 @@ export interface ConversationReading {
 }
 export const conversationReadingKey: InjectionKey<() => ConversationReading> = Symbol("conversation reading")
 
-/** Machine-scoped UI state survives route unmounts without retaining the DOM. */
+/** Session reading state survives route unmounts without retaining the DOM. */
 export const useConversationReadingStore = defineStore("conversation-reading", () => {
   const sessions = reactive(new Map<string, ConversationReading>())
   function session(id: string): ConversationReading {

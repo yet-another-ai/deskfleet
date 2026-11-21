@@ -117,7 +117,8 @@ export interface CentralApi {
   superAgentUsage(teamId: string): Promise<SuperAgentUsage>
   createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId?: string }>
   sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId: string }>
-  superAgentHistory(teamId: string, sessionId: string, startIndex: number): Promise<SuperAgentHistory>
+  cancelSuperAgentTurn(teamId: string, sessionId: string, turnId: string): Promise<void>
+  superAgentHistory(teamId: string, sessionId: string, startIndex: number, pendingSenders?: SuperAgentHistory["pendingSenders"], previews?: SuperAgentHistory["previews"]): Promise<SuperAgentHistory>
   status(): Promise<AccountState>
   login(): Promise<void>
   logout(): Promise<void>

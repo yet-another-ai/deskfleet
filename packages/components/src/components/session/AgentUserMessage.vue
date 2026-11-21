@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheck, LoaderCircle, User } from "@lucide/vue"
 import { usePreferredReducedMotion } from "@vueuse/core"
 import { computed, onMounted, onScopeDispose, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
-import type { AgentInput } from "../../../../../apps/daemon/src/agent-protocol.ts"
+import type { ConversationInput } from "../../services/agent-conversation.ts"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentActor } from "../../composables/useAgentActor.ts"
 import { formatMessageTime } from "../../services/agent-format.ts"
@@ -12,7 +12,7 @@ import UserAvatar from "../common/UserAvatar.vue"
 import AgentActor from "./AgentActor.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
-const props = defineProps<{ input: AgentInput; animateSend?: boolean }>()
+const props = defineProps<{ input: ConversationInput; animateSend?: boolean; unattributedLabel?: string }>()
 const { t, locale } = useI18n()
 const { name, email } = useAgentActor(() => props.input.author)
 const time = computed(() => formatMessageTime(props.input.deliveredAt ?? props.input.createdAt, intlLocale(locale.value as AppLocale)))
@@ -36,6 +36,7 @@ onScopeDispose(() => { for (const anim of animations) anim.cancel() })
     <div class="flex min-w-0 flex-col items-end gap-1.5">
       <div data-user-message-meta class="flex items-center gap-1.5 text-xs text-ui-text-muted">
         <template v-if="input.author.userId"><AgentActor :actor="input.author" class="font-medium text-ui-text" /><span aria-hidden="true">·</span></template>
+        <template v-else-if="unattributedLabel"><span class="font-medium text-ui-text">{{ unattributedLabel }}</span><span aria-hidden="true">·</span></template>
         <span v-if="steered">{{ t('agent.steered') }}<template v-if="input.dispatcher && input.dispatcher.userId !== input.author.userId"> · <AgentActor :actor="input.dispatcher" /></template></span>
         <LoaderCircle v-if="input.state === 'dispatching'" :size="14" :stroke-width="2" class="animate-spin" aria-hidden="true" />
         <CircleAlert v-else-if="input.state === 'uncertain'" :size="14" :stroke-width="2" class="text-ui-warning" aria-hidden="true" />
@@ -50,7 +51,7 @@ onScopeDispose(() => { for (const anim of animations) anim.cancel() })
       <AgentMessageActions :text="text" />
     </div>
     <UserAvatar v-if="input.author.userId" data-user-message-avatar :name="name" :email="email" :size="32" :title="name" class="mt-6 text-xs" />
-    <span v-else data-user-message-avatar class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="name" aria-hidden="true">
+    <span v-else data-user-message-avatar class="ui-avatar mt-6 h-8 w-8 rounded-full" :title="unattributedLabel || name" aria-hidden="true">
       <User :size="16" :stroke-width="2" />
     </span>
   </div>

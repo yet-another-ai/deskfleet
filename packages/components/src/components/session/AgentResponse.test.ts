@@ -30,7 +30,7 @@ function tool(id: string, overrides: Partial<ConversationTool> = {}): Extract<Co
 function response(steps: ConversationStep[], live = true): ConversationResponse {
   return {
     id: "response-1", kind: "response", turnId: "70", live, last: true, steps,
-    turn: { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: live ? "running" : "completed", startedAt: "2026-10-30T12:00:00Z" },
+    turn: { id: "70", state: live ? "running" : "completed", startedAt: "2026-10-30T12:00:00Z" },
   }
 }
 
