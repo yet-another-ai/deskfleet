@@ -99,8 +99,9 @@ same 16 MiB preview limit as remote files. Regular refreshes fetch only metadata
 The project and default workspace composers have a single model menu beside the
 add button. The coordinator and execution provider each have their own optional
 model and reasoning choices. Both menus use the providers registered on the
-target machine. A provider can coordinate only when its adapter supports a
-tool-free routing call. Coordinator settings apply to the user on this
+target machine. Adding a registration makes the same instance selectable for
+both roles, including a custom ACP executable or a second account for one template.
+Older hosts can advertise a smaller list until updated. Coordinator settings apply to the user on this
 machine registration. Execution defaults apply when this workspace creates a
 Worker. A specific Worker's session retains its own model selector, approvals,
 context usage and worktree changes.
@@ -118,7 +119,11 @@ Coordinator choices arrive in the workspace snapshot. Opening the model menu
 starts loading the execution provider's choices for the selected workspace and
 model. The execution controls share that read and reuse its result on reopening.
 Changing the provider registration or project directory invalidates the result.
-The execution adapter can report a different model list from the coordinator.
+The coordinator uses the registered provider's model choices. Native inference
+transports contribute their supported reasoning settings. If a Codex or Claude
+model is available through the registration's ACP adapter only, the coordinator
+uses that adapter for the selected model.
+The Antigravity model table is available for either role on desktop and touch clients.
 
 Workspace context usage is the last measured coordinator inference for this
 workspace and configuration. When the provider reports enough information, the
@@ -160,7 +165,7 @@ A literal filesystem path can still be sent as text.
 | Workspace page, message actions and correction controls | `packages/components/src/views/WorkspaceAgentView.vue`, `packages/components/src/services/workspace-message-timeline.ts`, `useWorkspaceConversation.ts` |
 | Provider command and reference completion | `packages/components/src/composables/useWorkspaceCommands.ts`, `packages/components/src/components/composer/useComposerCompletions.ts` |
 | Coordinator and execution model menu | `packages/components/src/components/composer/ProjectModelMenu.vue`, `apps/daemon/src/super-agent-profiles.ts` |
-| Registered coordinator adapters and DeepSeek inference | `apps/daemon/src/super-agent-provider.ts`, `packages/dsh-runtime/src/helper.ts` |
+| Coordinator transport selection, ACP inference and DeepSeek inference | `apps/daemon/src/super-agent-provider.ts`, `apps/daemon/src/super-agent-acp.ts`, `packages/dsh-runtime/src/helper.ts` |
 | Coordinator usage measurements | `apps/daemon/src/super-agent-usage.ts`, `packages/components/src/components/composer/AgentUsage.vue` |
 | Device mode, optional directory grouping and authenticated ownership | `packages/components/src/components/settings/WorkspaceAgentSettings.vue`, `apps/daemon/src/super-agent-history.ts` |
 | Machine-scoped project entry, folder selection and navigation | `packages/components/src/views/WorkspaceEntryView.vue`, `NewProjectView.vue`, `components/sidebar/MachineSection.vue` |
@@ -183,7 +188,9 @@ execution. Desktop exposes remote project operations only on a machine advertisi
 API continues to enforce Worker quotas and its existing session synchronization.
 User front-desk data is local to the registration SQLite database. Content used for
 inference is passed to the explicitly selected coordinator, including any retrieved
-evidence. Worker input and history follow the existing DeskFleet data path.
+evidence. When the coordinator rewrites a single assignment, the Worker receives
+the user's original wording and constraints alongside an instruction addressed to
+the assigned Worker. Worker input and history follow the existing DeskFleet data path.
 
 The SQLite migration adds one revisioned state row for each user. Each row stores
 the workspace conversations, replies, ticket ownership and scope, recent user
@@ -249,8 +256,22 @@ The coordinator preference applies to the signed-in user across this registratio
 Each workspace separately selects its default Worker. Coordinator selections refer
 to a provider registration ID. If an explicitly selected provider is missing, or several registrations
 match the default, the user chooses a coordinator before sending work that needs inference.
-The Codex coordinator supports macOS with Codex CLI 0.170.0 or 0.171.0. Other
-CLI versions require verification of the outgoing request before they can coordinate. Its default is gpt-6.2-sol with low effort. Its ephemeral process disables execution tools,
+The registry supplies an ACP routing connection for any template without a dedicated
+inference transport. It opens a fresh session in a temporary directory using the
+selected instance's executable and existing authentication. Model and effort use
+the same negotiated ACP settings as Worker sessions. Model discovery sends no
+prompt. Routing supplies only the decision packet and permitted image inputs.
+DeskFleet supplies no filesystem, terminal, MCP servers or permission grants to
+this connection. A reported tool call or subagent aborts the decision. The host
+validates the result before it can read evidence or dispatch work. DeskFleet
+discards the directory and requests deletion of the temporary session when the
+provider supports it. External ACP programs run with their own native privileges
+and may retain their own history. Antigravity runs a temporary custom main agent
+with an empty tool list and no MCP servers, skills or plugins.
+
+The specialized Codex transport on macOS is verified for CLI 0.170.0 and 0.171.0.
+Other versions and platforms use the registration's ACP transport.
+Its default is gpt-6.2-sol with low effort. Its ephemeral process disables execution tools,
 uses a restricted model catalog, and excludes user/project instruction files.
 Protocol tests inspect the complete outgoing tool declaration, including incremental
 tools. Claude Code runs a restricted, nonpersistent structured-output invocation.

@@ -23,5 +23,8 @@ test("clearing optional choices still works if CLI discovery is temporarily unav
   assert.doesNotThrow(() => validateCoordinatorProfile({}, unavailable))
   assert.throws(() => validateCoordinatorProfile({ model: "unavailable" }, unavailable), /does not offer/)
   assert.deepEqual(effectiveCoordinatorProfile("claude-code", {}, unavailable), {})
-  assert.deepEqual(effectiveCoordinatorProfile("codex", {}, unavailable), { model: "gpt-6.2-sol", reasoningEffort: "low" })
+  assert.deepEqual(effectiveCoordinatorProfile("codex", {}, unavailable), {})
+  assert.deepEqual(effectiveCoordinatorProfile("codex", {}, { defaultModel: "registered-default", defaultReasoningEfforts: ["medium"],
+    models: [{ id: "registered-default", name: "Registered default", reasoningEfforts: ["medium"], defaultReasoningEffort: "medium" }] }),
+  { model: "registered-default", reasoningEffort: "medium" })
 })

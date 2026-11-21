@@ -20,8 +20,8 @@ async function codexOptions(cwd: string, launch?: SuperModelLaunch): Promise<Sup
     id: model.slug, name: model.display_name, defaultReasoningEffort: model.default_reasoning_level,
     reasoningEfforts: model.supported_reasoning_levels.map(level => level.effort),
   }))
-  return { models, defaultModel: codexCoordinatorSelection.model,
-    defaultReasoningEfforts: models.find(model => model.id === codexCoordinatorSelection.model)?.reasoningEfforts ?? [] }
+  const defaultModel = models.find(model => model.id === codexCoordinatorSelection.model)
+  return { models, defaultModel: defaultModel?.id, defaultReasoningEfforts: defaultModel?.reasoningEfforts ?? [] }
 }
 
 async function claudeOptions(cwd: string, launch?: SuperModelLaunch): Promise<SuperCoordinatorOptions> {
@@ -53,8 +53,11 @@ export async function queryCliCoordinatorOptions(template: string, launch?: Supe
 
 export function effectiveCoordinatorProfile(provider: SuperCoordinator, overrides: SuperModelSelection, options: SuperCoordinatorOptions): SuperModelSelection {
   if (provider !== "codex") return { ...overrides }
-  const model = overrides.model ?? codexCoordinatorSelection.model
-  const defaultEffort = model === codexCoordinatorSelection.model ? codexCoordinatorSelection.reasoningEffort : options.models.find(entry => entry.id === model)?.defaultReasoningEffort
+  const model = overrides.model ?? options.defaultModel
+  if (!model) return { ...overrides }
+  const available = options.models.find(entry => entry.id === model)
+  const defaultEffort = model === codexCoordinatorSelection.model && (!available || available.reasoningEfforts.includes("low"))
+    ? codexCoordinatorSelection.reasoningEffort : available?.defaultReasoningEffort
   return { model, reasoningEffort: overrides.reasoningEffort ?? defaultEffort }
 }
 

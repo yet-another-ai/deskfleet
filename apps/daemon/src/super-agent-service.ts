@@ -31,9 +31,8 @@ interface Dependencies {
   registration?: () => WorkerRegistration | undefined
   attachments?: SuperAttachmentStore
   defaultCoordinator?: string
-  coordinatorOptions: (id: string) => Promise<SuperCoordinatorOptions>
-  supportsCoordinator: (id: string) => boolean
-  coordinatorModel?: (id: string) => SuperDecisionModel
+  coordinatorOptions: (id: string, model?: string) => Promise<SuperCoordinatorOptions>
+  coordinatorModel: (id: string) => SuperDecisionModel
   store: SuperStateStore
   authorize: (actor: AgentActor) => Promise<AgentActor>
   workspaces: (userId: string, includeDefaultWorker?: boolean) => Promise<SuperWorkspace[]>
@@ -68,10 +67,7 @@ export class SuperAgentService {
   #unsubscribe?: () => void
   constructor(deps: Dependencies) { this.#deps = deps }
 
-  #coordinators(providers = this.#deps.providers()) {
-    return providers.filter(provider => this.#deps.supportsCoordinator(provider.id))
-  }
-  #coordinator(state: SuperUserState | undefined, configured = this.#coordinators()) {
+  #coordinator(state: SuperUserState | undefined, configured = this.#deps.providers()) {
     if (state?.coordinatorProviderId !== undefined) return configured.find(provider => provider.id === state.coordinatorProviderId)
     const preferred = configured.filter(provider => (provider.template ?? provider.id) === this.#deps.defaultCoordinator)
     return preferred.length === 1 ? preferred[0] : configured.length === 1 ? configured[0] : undefined
@@ -92,16 +88,15 @@ export class SuperAgentService {
     const state = this.#deps.store.get(uid)
     const room = roomWithArchives(state?.rooms.find(item => item.workspaceId === workspaceId) ?? roomFor(emptyState(), workspaceId), this.#workerSessions)
     const providers = this.#deps.providers()
-    const configured = this.#coordinators(providers)
-    const coordinator = this.#coordinator(state, configured)
+    const coordinator = this.#coordinator(state, providers)
     const snapshot = publicRoom(room, coordinator?.id, this.#defaultProvider(room), state?.intents ?? [])
     snapshot.pendingRequests = room.tickets.flatMap(ticket => {
       const pending = !ticket.archiveState && ticket.sessionId && this.#pendingRequests.get(JSON.stringify([uid, ticket.sessionId]))
       return pending && pending.ticketId === ticket.id ? pending.requests.map(request => ({ ...request, ticketId: ticket.id })) : []
     })
     if (coordinator) {
-      snapshot.coordinatorOptions = await this.#deps.coordinatorOptions(coordinator.id)
       snapshot.coordinatorOverrides = state?.coordinatorOverrides?.[coordinator.id] ?? {}
+      snapshot.coordinatorOptions = await this.#deps.coordinatorOptions(coordinator.id, snapshot.coordinatorOverrides.model)
       snapshot.coordinatorSelection = effectiveCoordinatorProfile(coordinator.template ?? coordinator.id, snapshot.coordinatorOverrides, snapshot.coordinatorOptions)
       const measurement = room.coordinatorMeasurement
       if (measurement && measurement.coordinator === coordinator.id && measurement.selection.model === snapshot.coordinatorSelection.model
@@ -114,8 +109,9 @@ export class SuperAgentService {
     snapshot.supportsComposerMentions = true
     snapshot.supportsAttachmentPreviews = !!this.#deps.attachments
     snapshot.supportsAttachments = !!this.#deps.attachments
-    snapshot.coordinatorProviders = configured.map(({ id, name }) => ({ id, name }))
     snapshot.workerProviders = providers.map(({ id, name }) => ({ id, name }))
+    // Older clients consume these fields separately. Registration grants both roles.
+    snapshot.coordinatorProviders = snapshot.workerProviders
     return snapshot
   }
   #track(job: Promise<void>) {
@@ -246,13 +242,13 @@ export class SuperAgentService {
       }
       if (front && frontSelection) {
         const id = identifier(front.provider)
-        if (!this.#coordinators().some(entry => entry.id === id)) throw new Error("Unknown coordinator provider for this machine")
-        validateCoordinatorProfile(frontSelection, await this.#deps.coordinatorOptions(id))
+        if (!this.#deps.providers().some(entry => entry.id === id)) throw new Error("Unknown coordinator provider for this machine")
+        validateCoordinatorProfile(frontSelection, await this.#deps.coordinatorOptions(id, frontSelection.model))
       }
       if (provider === undefined && coordinator === undefined && !selected && !front && !workerMode && autoApprove === undefined) throw new Error("Select a coordinator or worker provider")
       await this.#transaction(uid, state => {
         if (coordinator) {
-          if (!this.#coordinators().some(entry => entry.id === coordinator)) throw new Error("Unknown coordinator provider for this machine")
+          if (!this.#deps.providers().some(entry => entry.id === coordinator)) throw new Error("Unknown coordinator provider for this machine")
           state.coordinatorProviderId = coordinator
         }
         if (provider && !this.#deps.providers().some(entry => entry.id === provider)) throw new Error("Unknown worker provider")
@@ -504,11 +500,12 @@ export class SuperAgentService {
           context.attachments = await previewSuperAttachments([...files, ...evidence], selectedFiles)
         }
         const state = this.#deps.store.get(uid)
-        const front = this.#coordinator(state, this.#coordinators(providers))
+        const front = this.#coordinator(state, providers)
         if (!front) throw new Error(missingCoordinatorProvider)
         context.coordinator = front.id
-        context.coordinatorSelection = effectiveCoordinatorProfile(front.template ?? front.id, state?.coordinatorOverrides?.[front.id] ?? {},
-          await this.#deps.coordinatorOptions(front.id))
+        const overrides = state?.coordinatorOverrides?.[front.id] ?? {}
+        context.coordinatorSelection = effectiveCoordinatorProfile(front.template ?? front.id, overrides,
+          await this.#deps.coordinatorOptions(front.id, overrides.model))
         const evidence = createSuperEvidence({
           listRoots: async id => knownWorkspace(await this.#deps.workspaces(uid), id).roots,
           readTicket: async id => {
@@ -536,7 +533,7 @@ export class SuperAgentService {
         const selection = context.coordinatorSelection ?? {}
         signal.throwIfAborted()
         const routing = (this.#deps.route || routeSuperMessage)(context, {
-          evidence, model: this.#deps.coordinatorModel?.(coordinator), signal, onUsage: usage => { measurement = { coordinator, selection, usage } },
+          evidence, model: this.#deps.coordinatorModel(coordinator), signal, onUsage: usage => { measurement = { coordinator, selection, usage } },
         })
         // A provider or an in-flight evidence read can finish after abort. Free this project's routing queue now.
         const decision = await Promise.race([routing, aborted(signal, controller).then(() => undefined)])
@@ -656,9 +653,16 @@ export class SuperAgentService {
           ticket.acceptanceMessageId = source.id
         }
         const workerPrompt = text(action.prompt)
-        // Preserve the original instruction and constraints even if the router paraphrased them.
-        const prompt = split ? [workerPrompt, source.context].filter(Boolean).join("\n\n") : action.kind === "stop" || workerPrompt === originalText && !source.context ? workerPrompt
-          : [originalText, source.context ? `Handoff context:\n${source.context}` : "", workerPrompt !== originalText ? `Task details:\n${workerPrompt}` : ""].filter(Boolean).join("\n\n")
+        // Keep the user's authority verbatim. When forwarding a rewritten assignment, make its recipient explicit.
+        let prompt = workerPrompt
+        if (split) prompt = [workerPrompt, source.context].filter(Boolean).join("\n\n")
+        else if (action.kind !== "stop" && (workerPrompt !== originalText || source.context)) {
+          prompt = [
+            `Original user request to the coordinator:\n${originalText}`,
+            source.context && `Handoff context:\n${source.context}`,
+            `You are the Worker assigned to this request. Carry out the assignment and return the result within the user's constraints.\n${workerPrompt === originalText ? "" : workerPrompt}`.trimEnd(),
+          ].filter(Boolean).join("\n\n")
+        }
         // New workers cannot see the front desk. Carry the selected scope and the specific
         // quoted result (or cited ticket summary) alongside their assigned instruction.
         const reference = action.kind === "create" && ticket.referenceTicketId ? room.tickets.find(t => t.id === ticket!.referenceTicketId) : undefined

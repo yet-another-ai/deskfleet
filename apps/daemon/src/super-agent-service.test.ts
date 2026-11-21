@@ -8,6 +8,7 @@ import { SuperAttachmentStore } from "./super-agent-attachments.ts"
 import { setTimeout as sleep } from "node:timers/promises"
 import type { AgentActor, AgentCommand, AgentEvent, AgentMethod, AgentReceipt, AgentSessionRecord, AgentSnapshot } from "./agent-protocol.ts"
 import { SuperAgentService } from "./super-agent-service.ts"
+import { AGENT_PROVIDER_TEMPLATES } from "./provider-protocol.ts"
 import { routeSuperMessage, type SuperRouteContext } from "./super-agent-router.ts"
 import { emptyState, note, publicRoom, roomFor, type DispatchIntent, type SuperStateStore, type SuperUserState } from "./super-agent-state.ts"
 import type { SuperWorkers } from "./super-agent-worker.ts"
@@ -126,7 +127,6 @@ function fixture(providers: { id: string; name: string; template?: string }[] = 
   }
   const service = (defaultCoordinator?: "claude-code" | "codex", attachments?: SuperAttachmentStore) => new SuperAgentService({
     defaultCoordinator, attachments, registration: () => ({ teamId: "team", machineId: "machine" }),
-    supportsCoordinator: id => providers.some(entry => entry.id === id && entry.template !== "acp"),
     coordinatorModel: id => async () => ({ registeredId: id }),
     coordinatorOptions: async coordinator => coordinator === "codex" ? { defaultModel: "gpt-6.2-sol", defaultReasoningEfforts: ["low", "high"],
       models: [{ id: "gpt-6.2-sol", name: "Sol", reasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
@@ -146,6 +146,23 @@ async function until(check: () => boolean | Promise<boolean>) {
   for (let i = 0; i < 300; i++) { if (await check()) return; await sleep(5) }
   assert.fail("Condition did not become true")
 }
+
+test("a forwarded assignment identifies the receiving Worker and preserves the user's exact constraints", async () => {
+  const f = fixture()
+  const original = "Ask a Worker to reply AMBER. Do not edit files."
+  const assignment = "Reply with AMBER."
+  f.route(async () => ({ reason: "delegate", actions: [{ kind: "create", title: "Echo", scope: "Text reply only", prompt: assignment }] }))
+  const service = f.service()
+  await service.init()
+  try {
+    await f.send(service, "delegate", original)
+    await until(() => f.store.get("user")?.intents[0]?.phase === "sent")
+    const prompt = f.store.get("user")!.intents[0]!.prompt
+    assert.ok(prompt.includes("Original user request to the coordinator:\n" + original))
+    assert.match(prompt, /You are the Worker assigned to this request/)
+    assert.ok(prompt.includes(assignment))
+  } finally { await service.close() }
+})
 
 test("stop uses actual steer delivery, requires shared-turn consent and targets a fallback's own turn", async () => {
   const f = fixture()
@@ -526,10 +543,27 @@ test("the coordinator setting belongs to the user and registration independently
   } finally { await s.close() }
 })
 
+test("every registered template can coordinate while the project keeps its independent execution provider", async t => {
+  const providers = AGENT_PROVIDER_TEMPLATES.map(({ id, name }) => ({ id: "registered-" + id, name, template: id }))
+  const f = fixture(providers)
+  const service = f.service("codex")
+  await service.init()
+  t.after(() => service.close())
+  const initial = await f.snap(service)
+  assert.deepEqual(initial.coordinatorProviders, providers.map(({ id, name }) => ({ id, name })))
+  assert.deepEqual(initial.coordinatorProviders, initial.workerProviders)
+  for (const { id } of providers) {
+    await service.handle("_deskfleet/super-agent/settings", { workspaceId, coordinator: id }, actor)
+    const snapshot = await f.snap(service)
+    assert.equal(snapshot.coordinator, id)
+    assert.equal(snapshot.provider, initial.provider)
+  }
+})
+
 test("the live registry owns both menus; routing, removal and retry use exact registration IDs", async t => {
   const codex = { id: "registered-one", name: "Home Codex", template: "codex" }
-  const workerOnly = { id: "worker-only", name: "Script", template: "acp" }
-  const providers = [codex, workerOnly]
+  const acp = { id: "local-script", name: "Script", template: "acp" }
+  const providers = [codex, acp]
   const f = fixture(providers)
   const service = f.service("codex")
   await service.init()
@@ -537,9 +571,10 @@ test("the live registry owns both menus; routing, removal and retry use exact re
   const change = (coordinator: string) => service.handle("_deskfleet/super-agent/settings", { workspaceId, coordinator }, actor)
   const initial = await f.snap(service)
   assert.equal(initial.coordinator, codex.id)
-  assert.deepEqual(initial.coordinatorProviders?.map(p => p.id), [codex.id])
-  assert.deepEqual(initial.workerProviders?.map(p => p.id), [codex.id, workerOnly.id])
-  await assert.rejects(change(workerOnly.id), /Unknown coordinator/)
+  assert.deepEqual(initial.coordinatorProviders, initial.workerProviders)
+  assert.deepEqual(initial.workerProviders?.map(p => p.id), [codex.id, acp.id])
+  await change(acp.id)
+  assert.equal((await f.snap(service)).coordinator, acp.id)
   await assert.rejects(change("claude-code"), /Unknown coordinator/)
   const dsh = { id: "custom-id-42", name: "My DeepSeek", template: "deepseek-harness" }
   providers.push(dsh)

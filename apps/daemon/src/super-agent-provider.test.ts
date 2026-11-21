@@ -15,6 +15,7 @@ test("registered DeepSeek instances use their own keys, a native model-only requ
   const registry = new AgentProviders(dir)
   await registry.init()
   const runtime = createCoordinatorRuntime(registry)
+  t.after(() => runtime.close())
   const calls: { key: unknown; body: Record<string, unknown> }[] = []
   const result = { reason: "answered", actions: [{ kind: "answer", text: "ready" }] }
   const server = createServer(async (req, res) => {
@@ -44,7 +45,6 @@ test("registered DeepSeek instances use their own keys, a native model-only requ
   const settings = { template: "deepseek-harness" as const, name: "Studio", inheritShellEnvironment: false, env }
   const first = await registry.create(settings)
   const second = await registry.create({ ...settings, env: { ...env, DEEPSEEK_API_KEY: "second-key" } })
-  assert.equal(runtime.supports(first.id), true)
   const profile = await runtime.options(first.id)
   assert.ok(profile.models.some(item => item.id === "deepseek-flash" && item.reasoningEfforts.includes("low")))
   assert.equal(calls.length, 0)
@@ -64,10 +64,7 @@ test("registered DeepSeek instances use their own keys, a native model-only requ
     assert.match(JSON.stringify(body.messages), /Reply ready/)
     assert.match(JSON.stringify(body.system), /DeskFleet workspace/)
   }
-  const custom = await registry.create({ ...settings, binaryPath: "/unverified/dsh" })
-  assert.equal(runtime.supports(custom.id), false)
   await registry.remove(first.id)
-  assert.equal(runtime.supports(first.id), false)
   assert.deepEqual((await runtime.options(first.id)).models, [])
   await assert.rejects(runtime.model(first.id)({}), /unavailable/)
 })
@@ -78,6 +75,7 @@ test("desktop DSH routes select the exact adapter and desktop credential for mat
   const registry = new AgentProviders(dir)
   await registry.init()
   const runtime = createCoordinatorRuntime(registry)
+  t.after(() => runtime.close())
   const requests: { path: string; key?: string; body: Record<string, unknown> }[] = []
   const decision = { reason: "test", actions: [{ kind: "answer", text: "ready" }] }
   const server = createServer(async (req, res) => {
@@ -165,6 +163,7 @@ esac`, { mode: 0o700 })
   const registry = new AgentProviders(dir)
   await registry.init()
   const runtime = createCoordinatorRuntime(registry)
+  t.after(() => runtime.close())
   const settings = { template: "claude-code" as const, name: "Custom", binaryPath: binary, env: { FIXTURE_INSTANCE: "one" }, inheritShellEnvironment: false }
   const first = await registry.create(settings)
   const second = await registry.create({ ...settings, env: { FIXTURE_INSTANCE: "two" } })
@@ -200,6 +199,7 @@ test("registered Codex routes an explicit API key only to its configured origin,
   const registry = new AgentProviders(dir)
   await registry.init()
   const runtime = createCoordinatorRuntime(registry)
+  t.after(() => runtime.close())
   const settings = { name: "Custom Codex", binaryPath: binary, env, inheritShellEnvironment: false }
   const record = await registry.create({ ...settings, template: "codex" })
   await assert.rejects(runtime.model(record.id)({ message: "synthetic" }), /Codex/)

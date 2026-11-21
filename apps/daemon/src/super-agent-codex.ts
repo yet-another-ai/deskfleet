@@ -83,7 +83,7 @@ export async function writeSuperCodexCatalog(binary: string, cwd: string, env: N
 const schemaText = JSON.stringify(strictSchema(superDecisionSchema as Schema))
 
 /** Never send a saved ChatGPT session to an API endpoint selected by a provider override. */
-async function registeredAuth(cwd: string, env: NodeJS.ProcessEnv, settings?: NodeJS.ProcessEnv): Promise<string[]> {
+export async function registeredCodexAuth(cwd: string, env: NodeJS.ProcessEnv, settings?: NodeJS.ProcessEnv): Promise<string[]> {
   if (!settings) return []
   // Ambient OPENAI_API_KEY can belong to another application. Normal CLI sign-in remains
   // authoritative unless this record supplies a key or an explicit API endpoint is in use.
@@ -102,6 +102,9 @@ async function registeredAuth(cwd: string, env: NodeJS.ProcessEnv, settings?: No
   // This verified CLI uses auth.json for API-key sessions. The private temporary home
   // also prevents reading or replacing the user's existing account login.
   await writeFile(join(env.CODEX_HOME, "auth.json"), JSON.stringify({ OPENAI_API_KEY: key }), { mode: 0o600 })
+  // The ACP bridge launches app-server itself. Bind that process to the identical endpoint and private credential file.
+  const config = (endpoint ? `openai_base_url = ${JSON.stringify(endpoint)}\n` : "") + 'cli_auth_credentials_store = "file"\n'
+  await writeFile(join(env.CODEX_HOME, "config.toml"), config, { mode: 0o600 })
   return apiArgs
 }
 
@@ -151,7 +154,7 @@ export const runCodexSuperDecisionModel: SuperDecisionModel = async (packet, sig
     await Promise.all([writeFile(schema, schemaText), writeFile(instructions, superDecisionInstructions)])
     const selection = options.selection ?? codexCoordinatorSelection
     const catalog = await writeSuperCodexCatalog(binary, cwd, opts.env, selection)
-    const authArgs = await registeredAuth(cwd, opts.env, options.launch?.authEnv)
+    const authArgs = await registeredCodexAuth(cwd, opts.env, options.launch?.authEnv)
     const args = superCodexArgs(schema, instructions, result, catalog, selection)
     args.splice(args.indexOf("--output-schema"), 0, ...authArgs)
     args.splice(args.indexOf("--output-schema"), 0, ...await superCodexImageArgs(images, cwd))

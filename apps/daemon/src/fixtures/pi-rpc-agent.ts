@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url"
 
 const args = process.argv.slice(2)
 const logPath = process.env.DESKFLEET_TEST_PI_LOG!
+const answer = process.env.DESKFLEET_TEST_PI_ANSWER ?? "Pi fixture answer"
 const sessionArgument = args.indexOf("--session")
 const sessionFile = sessionArgument >= 0 ? args[sessionArgument + 1]! : join(process.env.PI_CODING_AGENT_DIR!, "fixture-session.json")
 const models = [
@@ -77,7 +78,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     case "prompt":
       state.messages.push(
         { role: "user", content: [{ type: "text", text: request.message! }] },
-        { role: "assistant", content: [{ type: "text", text: "Pi fixture answer" }] },
+        { role: "assistant", content: [{ type: "text", text: answer }] },
       )
       save()
       break
@@ -89,7 +90,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (request.type === "prompt") {
     send({ type: "agent_start" })
     send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Pi fixture thought" } })
-    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Pi fixture answer" } })
+    send({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: answer } })
     send({ type: "agent_end" })
     send({ type: "agent_settled" })
   }

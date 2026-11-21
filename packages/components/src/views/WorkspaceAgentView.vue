@@ -478,7 +478,7 @@ function canCorrect(message: SuperMessage) {
       </div>
     </template>
     <template #toolbar>
-      <ProjectModelMenu v-if="snapshot" v-model:open="showSettings" :touch="touchWorkspace" :save-error="error" :snapshot="snapshot" :workers="workers" :disabled="busy" :save="saveSettings" />
+      <ProjectModelMenu v-if="snapshot" v-model:open="showSettings" :touch="touchWorkspace" :save-error="error" :snapshot="snapshot" :workers="workers" :disabled="busy" :save="saveSettings" @refresh="refresh" />
     </template>
   </SessionComposer>
 </template>

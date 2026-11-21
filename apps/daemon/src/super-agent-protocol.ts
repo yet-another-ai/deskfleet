@@ -116,7 +116,7 @@ export interface SuperSnapshot {
   attachmentPreview?: SuperAttachmentRequest & { content: SuperAttachmentPreview }
   supportsAttachments?: boolean
   coordinator?: SuperCoordinator
-  /** Configured instances that support a restricted coordinator invocation on this host. */
+  /** Mirrors workerProviders. Older hosts may omit this or advertise a subset. */
   coordinatorProviders?: { id: string; name: string }[]
   workerProviders?: { id: string; name: string }[]
   workspaceId: SuperWorkspaceId

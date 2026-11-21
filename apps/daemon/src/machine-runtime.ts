@@ -54,6 +54,7 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let agents: AgentSessions | undefined
   let central: CentralClient | undefined
   let frontDesk: SuperAgentService | undefined
+  const coordinator = createCoordinatorRuntime(providers)
   let superStore: LocalSuperStore<SuperUserState> | undefined
   let schedules: ScheduledTasks | undefined
   let providerUpdates: ProviderUpdates | undefined
@@ -64,10 +65,11 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
   let closing: Promise<void> | undefined
   const stop = () => stopping ??= (async () => {
     const frontDeskStopped = frontDesk?.close()
+    const coordinatorStopped = coordinator.close()
     const cleanupResults = await Promise.allSettled([cleanup?.close()])
     remoteMcp?.close()
     // Providers must close before awaiting a create/configure RPC they can unblock.
-    const results = await Promise.allSettled([frontDeskStopped, providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
+    const results = await Promise.allSettled([frontDeskStopped, coordinatorStopped, providerUpdates?.close(), schedules?.close(), mcp?.close(), central?.stop(), agents?.close()])
     // Provider shutdown releases its ACP handles through the still-live terminal registry.
     const terminalResults = await Promise.allSettled([terminals.close()])
     const failures = [...cleanupResults, ...results, ...terminalResults].flatMap(result => result.status === "rejected" ? [result.reason] : [])
@@ -116,9 +118,8 @@ async function openMachine(directory: string, hostDirectory: string, options: Ma
     remoteMcp = new RemoteMcp(hostDirectory, operations)
     superStore = new LocalSuperStore<SuperUserState>(catalog.native)
     await superStore.init()
-    const coordinator = createCoordinatorRuntime(providers)
     frontDesk = new SuperAgentService({
-      supportsCoordinator: coordinator.supports, coordinatorOptions: coordinator.options, coordinatorModel: coordinator.model,
+      coordinatorOptions: coordinator.options, coordinatorModel: coordinator.model,
       registration: () => central?.status(),
       defaultCoordinator: process.platform === "darwin" ? "codex" : "claude-code",
       attachments: new SuperAttachmentStore(directory, (uid, path) => catalog.attachments.fileGrant(uid, path)),

@@ -29,6 +29,7 @@ const props = defineProps<{
   save: (settings: Omit<SuperSettings, "workspaceId">) => Promise<boolean>
 }>()
 const open = defineModel<boolean>("open", { default: false })
+const emit = defineEmits<{ refresh: [] }>()
 const agents = useAgentSessionsStore()
 const providers = useProvidersStore()
 const sharedCatalogs = useAgentConfigurationCacheStore()
@@ -39,7 +40,7 @@ const coordinators = computed<Choice[]>(() => {
   const available = props.snapshot.coordinatorProviders
   return props.workers.map(provider => {
     const supported = available ? available.some(item => item.id === provider.id) : ["codex", "claude-code"].includes(provider.id)
-    return supported ? provider : { ...provider, disabledReason: t(available ? "superAgent.executionOnly" : "superAgent.hostUpdateRequired") }
+    return supported ? provider : { ...provider, disabledReason: t("superAgent.hostUpdateRequired") }
   })
 })
 const coordinator = computed(() => coordinators.value.find(item => !item.disabledReason && item.id === props.snapshot.coordinator))
@@ -64,12 +65,19 @@ watch(open, value => { if (!value) active.value = undefined })
 const workspace = computed(() => props.snapshot.workspaceId ?? undefined)
 const confirmAutoApprove = ref(false)
 watch(workspace, () => { confirmAutoApprove.value = false }, { flush: "sync" })
-const tableOpen = ref(false)
-const antigravity = computed(() => providers.providers.find(item => item.id === executor.value?.id)?.template === "antigravity")
-watch([workspace, () => executor.value?.id, antigravity], () => { tableOpen.value = false })
-function showTable() {
-  tableOpen.value = true
+const tableRole = ref<Role>()
+function isAntigravity(role: Role) {
+  const id = role === "coordinator" ? coordinator.value?.id : executor.value?.id
+  return providers.providers.find(item => item.id === id)?.template === "antigravity"
+}
+watch([workspace, () => coordinator.value?.id, () => executor.value?.id], () => { tableRole.value = undefined })
+function showTable(role: Role) {
+  tableRole.value = role
   open.value = false
+}
+function reloadTable() {
+  if (tableRole.value === "coordinator") emit("refresh")
+  else { reads.clear(); epoch.value++ }
 }
 const catalogProvider = computed(() => props.snapshot.workerSelection && executor.value?.id)
 const directory = computed(() => sharedCatalogs.workspaceDirectory(workspace.value))
@@ -98,7 +106,7 @@ function catalog(model?: string) {
   void request.catch(() => { if (reads.get(key) === request) reads.delete(key) })
   return request
 }
-watch([() => open.value || tableOpen.value, catalogProvider, () => props.snapshot.workerSelection?.model, () => props.snapshot.workerSelection?.mode, catalogEffort, epoch], async ([isOpen, provider, model], _, onCleanup) => {
+watch([() => open.value || tableRole.value === "executor", catalogProvider, () => props.snapshot.workerSelection?.model, () => props.snapshot.workerSelection?.mode, catalogEffort, epoch], async ([isOpen, provider, model], _, onCleanup) => {
   let current = true
   onCleanup(() => { current = false })
   configuration.value = undefined
@@ -130,7 +138,7 @@ const groups = computed<{ role: Role; rows: Row[] }[]>(() => {
   return [
     { role: "coordinator", rows: [
       { field: "provider", label: t("superAgent.routingProvider"), value: coordinator.value?.id, choices: coordinators.value },
-      { field: "model", label: t("composer.model"), value: cap ? front.model : effective?.model, choices: withDefault(cap?.models), effective: effective?.model, disabled: !cap },
+      { field: "model", label: t("composer.model"), value: cap ? front.model : effective?.model, choices: withDefault(cap?.models), effective: effective?.model ?? cap?.defaultModel, disabled: !cap },
       { field: "effort", label: t("composer.reasoningEffort"), value: cap ? front.reasoningEffort : effective?.reasoningEffort,
         effective: effective?.reasoningEffort, choices: withDefault(coordinatorEfforts(front.model).map(id => ({ id, name: effortName(id) }))), disabled: !cap },
     ] },
@@ -148,6 +156,7 @@ const groups = computed<{ role: Role; rows: Row[] }[]>(() => {
     ] },
   ]
 })
+const tableModelRow = computed(() => groups.value.find(group => group.role === tableRole.value)?.rows.find(row => row.field === "model"))
 function label(row: Row): string {
   if (!row.value && row.field === "provider") return unselected.value
   if (!row.value && row.effective) {
@@ -244,7 +253,7 @@ function selectOnTouch(role: Role, row: Row, event: Event) {
               <DropdownMenuPortal>
                 <DropdownMenuSubContent :as="SpringSurface" :aria-label="row.label" :side-offset="4" :collision-padding="8" class="ui-menu z-50 flex max-h-[min(20rem,var(--reka-popper-available-height))] min-w-44 max-w-[min(20rem,calc(100vw-16px))] flex-col overflow-hidden p-0" loop>
                   <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
-                    <DropdownMenuItem v-if="antigravity && group.role === 'executor' && row.field === 'model'" as="button" type="button" class="ui-menu-item" data-project-periodic-table :disabled="busy || row.disabled" @select="showTable">{{ t("composer.geminiPeriodicTable.trigger") }}</DropdownMenuItem>
+                    <DropdownMenuItem v-if="row.field === 'model' && isAntigravity(group.role)" as="button" type="button" class="ui-menu-item" :data-project-periodic-table="group.role" :disabled="busy || row.disabled" @select="showTable(group.role)">{{ t("composer.geminiPeriodicTable.trigger") }}</DropdownMenuItem>
                     <DropdownMenuRadioGroup :model-value="row.value ?? ''">
                       <DropdownMenuRadioItem v-for="choice in row.choices" :key="choice.id" as="button" type="button" :value="choice.id" :data-project-model-choice="choice.id || 'default'" :disabled="busy || !!choice.disabledReason" class="ui-menu-item focus:outline-none" @select.prevent="choose(group.role, row, choice.id)">
                         <span class="min-w-0 flex-1 truncate text-left">{{ choice.name }}</span>
@@ -252,7 +261,7 @@ function selectOnTouch(role: Role, row: Row, event: Event) {
                         <Check v-if="(row.value ?? '') === choice.id" :size="15" class="shrink-0" aria-hidden="true" />
                       </DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
-                    <p v-if="group.role === 'coordinator' && row.field === 'provider' && !snapshot.coordinatorProviders && row.choices.some(choice => choice.disabledReason)" class="m-0 px-2.5 py-1.5 text-xs text-ui-text-muted">{{ t('superAgent.updateHostForProviders') }}</p>
+                    <p v-if="group.role === 'coordinator' && row.field === 'provider' && row.choices.some(choice => choice.disabledReason)" class="m-0 px-2.5 py-1.5 text-xs text-ui-text-muted">{{ t('superAgent.updateHostForProviders') }}</p>
                     <DropdownMenuItem v-if="row.field === 'provider' && !row.choices.some(choice => !choice.disabledReason)" as="button" type="button" class="ui-menu-item" @select="router.push({ name: 'settings-agents' })">{{ t('providers.manage') }}</DropdownMenuItem>
                     <template v-if="group.role === 'executor' && row.field !== 'provider' && row.field !== 'approval'">
                       <p v-if="loading" role="status" class="m-0 px-2.5 py-1.5 text-xs text-ui-text-muted">{{ t('composer.loadingConfiguration') }}</p>
@@ -281,7 +290,7 @@ function selectOnTouch(role: Role, row: Row, event: Event) {
             <option v-for="choice in row.choices" :key="choice.id" :value="choice.id" :selected="choice.id === (row.value ?? '')" :disabled="!!choice.disabledReason">{{ choice.name }}{{ choice.disabledReason ? ' · ' + choice.disabledReason : '' }}</option>
           </select>
         </label>
-        <button v-if="antigravity && group.role === 'executor'" type="button" class="ui-text-button min-h-11 text-ui-accent" data-project-periodic-table :disabled="busy || executionModelRow.disabled" @click="showTable">{{ t("composer.geminiPeriodicTable.trigger") }}</button>
+        <button v-if="isAntigravity(group.role)" type="button" class="ui-text-button min-h-11 text-ui-accent" :data-project-periodic-table="group.role" :disabled="busy || group.rows.find(row => row.field === 'model')?.disabled" @click="showTable(group.role)">{{ t("composer.geminiPeriodicTable.trigger") }}</button>
         <button v-if="!group.rows[0]!.choices.some(choice => !choice.disabledReason)" type="button" class="ui-text-button min-h-11 text-ui-accent" @click="open = false; router.push({ name: 'settings-agents' })">{{ t("providers.manage") }}</button>
       </fieldset>
       <p v-if="loading" role="status" class="m-0 text-sm text-ui-text-muted">{{ t("composer.loadingConfiguration") }}</p>
@@ -293,8 +302,8 @@ function selectOnTouch(role: Role, row: Row, event: Event) {
   </BottomSheet>
   <ConfirmDialog v-if="confirmAutoApprove" :title="t('superAgent.confirmAutoApproval')" :description="t('superAgent.autoApprovalScope')"
     :confirm-label="t('superAgent.autoApproval')" :confirm="enableAutoApprove" @close="confirmAutoApprove = false" />
-  <GeminiPeriodicTableDialog v-if="tableOpen && antigravity"
-    :models="configuration?.models?.options ?? []" :current-model="executionModelRow.value ?? configuration?.models?.currentValue"
-    :loading="loading" :error="error || saveError" :disabled="busy || loading || executionModelRow.disabled"
-    @select="choose('executor', executionModelRow, $event)" @reload="epoch++" @close="tableOpen = false" />
+  <GeminiPeriodicTableDialog v-if="tableRole && tableModelRow && isAntigravity(tableRole)"
+    :models="tableModelRow.choices.filter(choice => choice.id)" :current-model="tableModelRow.value ?? (tableRole === 'executor' ? configuration?.models?.currentValue : tableModelRow.effective)"
+    :loading="tableRole === 'executor' && loading" :error="(tableRole === 'executor' && error) || saveError || undefined" :disabled="busy || tableModelRow.disabled || (tableRole === 'executor' && loading)"
+    @select="choose(tableRole, tableModelRow, $event)" @reload="reloadTable" @close="tableRole = undefined" />
 </template>

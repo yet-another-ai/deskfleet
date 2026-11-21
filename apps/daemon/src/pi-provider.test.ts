@@ -13,8 +13,9 @@ import { agentConfiguration } from "./agent-configuration-protocol.ts"
 import { AgentProviders } from "./agent-providers.ts"
 import type { AgentConnection } from "./agents/acp.ts"
 import { configureAdapterHost } from "./agents/adapter-host.ts"
+import { createCoordinatorRuntime } from "./super-agent-provider.ts"
 
-async function fixture(t: TestContext, auth = "configured") {
+async function fixture(t: TestContext, auth = "configured", answer?: string) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "df-provider-pi-")))
   const connections: AgentConnection[] = []
   const logPath = join(directory, "pi-rpc.jsonl")
@@ -66,12 +67,13 @@ async function fixture(t: TestContext, auth = "configured") {
       HOME: privateHome, PI_CODING_AGENT_DIR: agentDirectory, PATH: emptyPath,
       PI_ACP_PI_COMMAND: "/ignored/pi", DESKFLEET_TEST_VALUE: "provider environment",
       DESKFLEET_TEST_PI_LOG: logPath, DESKFLEET_TEST_PI_AUTH: auth,
+      ...(answer && { DESKFLEET_TEST_PI_ANSWER: answer }),
     },
   })
   const { provider, config } = registry.resolve(configured.id)
   assert.equal(provider.id, "pi")
   return {
-    cwd, binaryPath, agentDirectory, env: config.env,
+    cwd, binaryPath, agentDirectory, env: config.env, registry, id: configured.id,
     async connect(updates: acp.SessionNotification[] = []) {
       const connection = await provider.connect(config, { onUpdate(update) { updates.push(update) } })
       connections.push(connection)
@@ -88,6 +90,21 @@ async function fixture(t: TestContext, auth = "configured") {
     },
   }
 }
+
+test("the same Pi registration routes through its bundled bridge with its selected model and effort", { timeout: 20_000, skip: process.platform === "win32" }, async t => {
+  const answer = { reason: "fixture", actions: [{ kind: "answer", text: "Ready" }] }
+  const pi = await fixture(t, "configured", JSON.stringify(answer))
+  const runtime = createCoordinatorRuntime(pi.registry)
+  try {
+    const model = "fixture/second"
+    assert.deepEqual((await runtime.options(pi.id, model)).models.map(m => m.id), ["fixture/first", model])
+    assert.deepEqual(await runtime.model(pi.id)({ message: "Ready?" }, undefined, undefined, { selection: { model, reasoningEffort: "high" } }), answer)
+    const events = await pi.log()
+    assert.ok(events.some(entry => entry.type === "set_model" && entry.modelId === "second"))
+    assert.ok(events.some(entry => entry.type === "set_thinking_level" && entry.level === "high"))
+    assert.equal(events.filter(entry => entry.type === "prompt").length, 1)
+  } finally { await runtime.close() }
+})
 
 test("Pi runs the bundled ACP bridge with its configured CLI and continues saved sessions", { timeout: 20_000, skip: process.platform === "win32" }, async t => {
   const pi = await fixture(t)

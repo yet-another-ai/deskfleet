@@ -1199,6 +1199,9 @@ creation. A Session retains its configured provider ID, and each new provider
 process resolves the current settings. Editing or removing a provider does not
 stop existing processes or delete their history; a removed provider cannot
 start again. Provider launch settings remain outside the Session journal.
+In Super Agent mode each registration can serve as the coordinator and as a Worker.
+Routing resolves the same registration into a separate inference call. Its lifecycle
+and host capabilities are described in [project execution settings](workspace-agent.md#project-execution-settings).
 The same daemon probes executable paths during provider creation. Explicit
 installation and login actions run in machine-owned terminals, using official
 installers or pinned vendor downloads and the selected CLI's authentication

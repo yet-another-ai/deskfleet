@@ -1,10 +1,17 @@
 /** Real, opt-in semantic replay with synthetic projects. No worker or filesystem evidence is attached. */
 import assert from "node:assert/strict"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { performance } from "node:perf_hooks"
-import { routeSuperMessage, type SuperRouteContext, type SuperRouteAction } from "../apps/daemon/src/super-agent-router.ts"
+import { AgentProviders } from "../apps/daemon/src/agent-providers.ts"
+import { AGENT_PROVIDER_TEMPLATES } from "../apps/daemon/src/provider-protocol.ts"
+import { createCoordinatorRuntime } from "../apps/daemon/src/super-agent-provider.ts"
+import { routeSuperMessage, type SuperDecisionModel, type SuperRouteContext, type SuperRouteAction } from "../apps/daemon/src/super-agent-router.ts"
 
-const coordinator = process.argv[2]
-if (coordinator !== "codex" && coordinator !== "claude-code") throw new Error("Usage: node scripts/smoke-super-router.ts codex|claude-code")
+const template = AGENT_PROVIDER_TEMPLATES.find(entry => entry.id === process.argv[2])
+if (!template) throw new Error("Choose an Agent template: " + AGENT_PROVIDER_TEMPLATES.map(entry => entry.id).join(", "))
+const coordinator = template.id
 const base: SuperRouteContext = {
   coordinator, workspaceId: "A", text: "", recent: [],
   workspaces: [{ id: "A", name: "A", rootCount: 1 }, { id: "B", name: "B", rootCount: 1 }],
@@ -45,12 +52,12 @@ let failed=0
 const filters = process.argv.slice(3)
 const pending = cases.filter(entry => !filters.length || filters.includes(entry.name.split(" ")[0]!))
 if (!pending.length) throw new Error("No matching replay cases")
-async function run() {
+async function run(model: SuperDecisionModel) {
   for (let entry = pending.shift(); entry; entry = pending.shift()) {
     const start = performance.now()
     try {
       const ctx={...base,...entry.ctx}
-      const {actions}=await routeSuperMessage(ctx,{evidence:async req=>{
+      const {actions}=await routeSuperMessage(ctx,{model,evidence:async req=>{
         if(req.kind==="ticket" && req.ticketId==="sign") return JSON.stringify({id:"sign",summary:`Notarization log records certificate: ${cert}.`})
         if(req.kind==="read" && req.workspaceId==="B" && req.path==="README.md") return JSON.stringify({path:"README.md",firstLine:1,text:"Project codename: ORCHID"})
         if(req.kind==="list" || req.kind==="search") return JSON.stringify({entries:["README.md"]})
@@ -61,5 +68,16 @@ async function run() {
     } catch(error){failed++;console.error(`FAIL ${entry.name}: ${(error as Error).message}`)}
   }
 }
-await Promise.all([run(),run(),run()])
+const directory = await mkdtemp(join(tmpdir(), "deskfleet-routing-replay-"))
+try {
+  const registry = new AgentProviders(directory)
+  await registry.init()
+  const registration = await registry.create({ template: template.id, name: template.name, env: {},
+    binaryPath: process.env.DESKFLEET_SMOKE_AGENT_BINARY, inheritShellEnvironment: false })
+  const runtime = createCoordinatorRuntime(registry)
+  try {
+    const model = runtime.model(registration.id)
+    await Promise.all([run(model), run(model), run(model)])
+  } finally { await runtime.close() }
+} finally { await rm(directory, { recursive: true, force: true }) }
 if(failed) process.exitCode=1

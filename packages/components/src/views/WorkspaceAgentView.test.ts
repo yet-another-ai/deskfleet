@@ -1078,25 +1078,30 @@ async function selectProjectOption(row: string, option: string) {
 }
 const capabilities = { models: [{ id: "first", name: "First", reasoningEfforts: ["low", "high"] }, { id: "second", name: "Second", reasoningEfforts: ["low"] }], defaultModel: "first", defaultReasoningEfforts: ["low", "high"] }
 
-test.each([false, true])("project execution model can be selected in the Antigravity table (touch=%s)", async touch => {
+test.each([
+  ["coordinator", false], ["executor", false], ["coordinator", true], ["executor", true],
+] as const)("the Antigravity table changes only the %s model (touch=%s)", async (role, touch) => {
   const provider = { id: "custom-agy", name: "My Antigravity", template: "antigravity" as const }
-  const { api } = await setup(room({ provider: provider.id, workerProviders: [provider], workerSelection: {} }), undefined, touch)
+  const models = [{ id: "gemini-4-carbon", name: "Gemini 4 Carbon" }, { id: "gemini-4-neon", name: "Gemini 4 Neon" }]
+  const { api } = await setup(room({ provider: provider.id, workerProviders: [provider], workerSelection: {},
+    coordinator: provider.id, coordinatorProviders: [provider], coordinatorOverrides: {},
+    coordinatorOptions: { defaultModel: models[0]!.id, defaultReasoningEfforts: [], models: models.map(m => ({ ...m, reasoningEfforts: [] })) },
+  }), undefined, touch)
   useProvidersStore(pinia).providers = [provider]
   vi.spyOn(useAgentSessionsStore(pinia), "agentConfiguration").mockResolvedValue({
     provider, modes: null, reasoningEfforts: null,
-    models: { id: "model", currentValue: "gemini-4-carbon", options: [
-      { id: "gemini-4-carbon", name: "Gemini 4 Carbon" }, { id: "gemini-4-neon", name: "Gemini 4 Neon" },
-    ] },
+    models: { id: "model", currentValue: "gemini-4-carbon", options: models },
   })
   await wrapper.get("[data-project-model-trigger]").trigger("click")
-  if (!touch) await (await projectRow("executor-model")).trigger("click")
+  if (!touch) await (await projectRow(role + "-model")).trigger("click")
   await flushPromises()
   const body = new DOMWrapper(document.body)
-  await body.get("[data-project-periodic-table]").trigger("click")
+  await body.get('[data-project-periodic-table="' + role + '"]').trigger("click")
   await flushPromises()
   await body.get('[data-periodic-element="Ne"]').trigger("click")
   await flushPromises()
-  expect(api.settings.mock.lastCall?.[0]).toEqual({ workspaceId: "A", workerSelection: { provider: provider.id, model: "gemini-4-neon" } })
+  const field = role === "coordinator" ? "coordinatorSelection" : "workerSelection"
+  expect(api.settings.mock.lastCall?.[0]).toEqual({ workspaceId: "A", [field]: { provider: provider.id, model: "gemini-4-neon" } })
 })
 
 test("iOS presents both roles in a single touch sheet and confirms native selections with the project", async () => {
@@ -1357,15 +1362,16 @@ test.each(["A", null])("both provider menus track this machine’s registered in
   const body = new DOMWrapper(document.body)
   const choices = () => body.findAll("[data-project-model-choice]").map(item => item.attributes("data-project-model-choice"))
   expect(choices()).toEqual([codex.id, other.id])
-  expect(body.get('[data-project-model-choice="instance-3"]').text()).toContain("Execution only")
+  expect(body.get('[data-project-model-choice="instance-3"]').text()).toContain("Update required")
   expect(body.get('[data-project-model-choice="instance-3"]').attributes("data-disabled")).toBeDefined()
   expect(wrapper.get("[data-project-model-trigger]").text()).toContain(codex.name)
 
-  update({ ...state, coordinatorProviders: [codex, dsh], workerProviders: [codex, dsh, other] })
+  update({ ...state, coordinatorProviders: [codex, dsh, other], workerProviders: [codex, dsh, other] })
   const registration = useProvidersStore(pinia)
   registration.providers = [{ ...dsh, template: "deepseek-harness" }]
   await flushPromises()
   expect(choices()).toEqual([codex.id, dsh.id, other.id])
+  expect(body.get('[data-project-model-choice="instance-3"]').attributes("data-disabled")).toBeUndefined()
   await body.get('[data-project-model-choice="instance-2"]').trigger("click")
   await flushPromises()
   expect(api.settings).toHaveBeenCalledExactlyOnceWith({ workspaceId, coordinator: dsh.id })

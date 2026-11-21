@@ -42,7 +42,8 @@ async function open(directory: string, backend: BackendAgent, choose?: typeof ro
   await workers.init()
   const createService = () => new SuperAgentService({
     registration: () => ({ teamId: "team", machineId: "machine" }),
-    supportsCoordinator: () => true, coordinatorOptions: async () => ({ models: [], defaultReasoningEfforts: [] }),
+    coordinatorOptions: async () => ({ models: [], defaultReasoningEfforts: [] }),
+    coordinatorModel: () => async () => { throw new Error("The integration fixture supplies its own route") },
     agents: workers, store, providers: () => providers.metadata().providers, ...superWorkspaces(catalog, directory),
     authorize: async who => { assert.deepEqual(who, actor); return who },
     route: choose || (async ctx => ({ reason: "fixture assignment", actions: ctx.focusTicketId ? [{kind: "continue", ticketId:ctx.focusTicketId, prompt:ctx.text}] : [{kind: "create", title: "Read README", scope: "Read only", prompt: ctx.text}] })),

@@ -4,8 +4,6 @@ import type { SuperWorkspace } from "./super-agent-protocol.ts"
 import { basename, dirname } from "node:path"
 import type { SuperCoordinatorUsage, SuperModelSelection, SuperTicketStatus } from "./super-agent-protocol.ts"
 import type { SuperImage, SuperAttachmentContext } from "./super-agent-attachments.ts"
-import { runSuperDecisionModel } from "./super-agent-model.ts"
-import { runCodexSuperDecisionModel } from "./super-agent-codex.ts"
 import type { SuperEvidenceRequest } from "./super-agent-evidence.ts"
 export type { SuperEvidenceRequest } from "./super-agent-evidence.ts"
 
@@ -44,7 +42,7 @@ interface SuperModelOptions {
 export type SuperDecisionModel = (packet: Record<string, unknown>, signal?: AbortSignal, images?: SuperImage[], options?: SuperModelOptions) => Promise<unknown>
 export interface SuperRouterOptions {
   onUsage?: SuperModelOptions["onUsage"]
-  model?: SuperDecisionModel
+  model: SuperDecisionModel
   evidence?: (request: SuperEvidenceRequest) => Promise<string>
   signal?: AbortSignal
 }
@@ -215,7 +213,7 @@ function exactOption(ctx: SuperRouteContext): SuperRouteResult | undefined {
   }] }
 }
 
-export async function routeSuperMessage(ctx: SuperRouteContext, options: SuperRouterOptions = {}): Promise<SuperRouteResult> {
+export async function routeSuperMessage(ctx: SuperRouteContext, options: SuperRouterOptions): Promise<SuperRouteResult> {
   options.signal?.throwIfAborted()
   if (!ctx.text.trim() && !ctx.attachments?.previews.length) throw new Error("Message must contain text")
   const exact = !ctx.attachments?.previews.length && exactOption(ctx)
@@ -231,12 +229,9 @@ export async function routeSuperMessage(ctx: SuperRouteContext, options: SuperRo
   const readSessions = new Set<string>()
   let validationError: string | undefined
   let invalidCount = 0
-  const model = options.model ?? (ctx.coordinator === "codex" ? runCodexSuperDecisionModel
-    : !ctx.coordinator || ctx.coordinator === "claude-code" ? runSuperDecisionModel : undefined)
-  if (!model) throw new Error("The selected provider has no coordinator adapter")
   for (let pass = 0; pass < 7; pass++) {
     options.signal?.throwIfAborted()
-    const raw = await model({ ...packet, evidence, validationError, remainingReads: Math.max(0, 5 - pass) }, options.signal, ctx.attachments?.images,
+    const raw = await options.model({ ...packet, evidence, validationError, remainingReads: Math.max(0, 5 - pass) }, options.signal, ctx.attachments?.images,
       { selection: ctx.coordinatorSelection, onUsage: options.onUsage })
     options.signal?.throwIfAborted()
     try {

@@ -60,6 +60,8 @@ export interface AgentTerminalHandler {
 
 export interface AgentClient {
   signal?: AbortSignal
+  /** One host-owned temporary directory for a model-only connection. No client tools or interactive grants. */
+  inferenceOnly?: { cwd: string }
   terminals?: AgentTerminalHandler
   /** Opt in only when the consumer projects these structured events or options. */
   capabilities?: { configOptions?: boolean; compaction?: boolean; notices?: boolean; plans?: boolean; subagents?: boolean }
