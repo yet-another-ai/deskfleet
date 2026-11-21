@@ -7,6 +7,7 @@ import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
+import { createSidebarOrder } from "../composables/useSidebarOrder.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
 import { springScrollIntoView } from "../services/spring-scroll.ts"
 
@@ -84,6 +85,7 @@ export function listenMermaidLocate(handler: (code: string, source?: MermaidSour
 }
 
 export const useLayoutStore = defineStore("layout", () => {
+  const sidebarOrder = markRaw(createSidebarOrder())
   const standaloneSession = ref(
     (typeof window !== "undefined" && parseSessionWindowHash(window.location.hash) !== undefined)
       || router.currentRoute.value.query.window === "session",
@@ -156,6 +158,7 @@ export const useLayoutStore = defineStore("layout", () => {
     terminalPanelOpen,
     terminalPanelHeight,
     sidebarFilter,
+    sidebarOrder,
     toggleSidebar,
     toggleDetails,
     requestDetailsOpen,
