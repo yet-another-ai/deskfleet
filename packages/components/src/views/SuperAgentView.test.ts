@@ -1,7 +1,9 @@
 import { HttpError } from "@deskfleet/client/request-diagnostics"
 import type { SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
-import { flushPromises, mount } from "@vue/test-utils"
+import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
+import { createPinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
+import { createMemoryHistory, createRouter } from "vue-router"
 import { accountSessionKey, createAccountSession } from "../composables/useAccountSession.ts"
 import { i18n } from "../i18n/index.ts"
 import { fakeCentral } from "../test/central.ts"
@@ -21,8 +23,10 @@ async function setup(configure?: (central: ReturnType<typeof fakeCentral>["centr
   configure?.(central)
   const account = createAccountSession(central)
   await flushPromises()
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/super-agent", component: SuperAgentView }] })
+  await router.push("/super-agent")
   const wrapper = mount(SuperAgentView, { attachTo: document.body, global: {
-    plugins: [i18n], provide: { [accountSessionKey as symbol]: account },
+    plugins: [createPinia(), i18n, router], provide: { [accountSessionKey as symbol]: account },
     stubs: { AgentMarkdown: { props: ["text"], template: "<div>{{ text }}</div>" } },
   } })
   cleanup.push(() => { wrapper.unmount(); account.dispose() })
@@ -42,13 +46,13 @@ test("starts from a suggested prompt, creates only on send, then resumes committ
   central.sendSuperAgentMessage.mockResolvedValue({ sessionId: "release", deliveryId: "msg-1" })
   const pendingSenders = [["msg-1", "user-1"]] as const
   central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 2, messages: [], status: "working", pendingSenders })
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(central.createSuperAgentSession).toHaveBeenCalledExactlyOnceWith("alpha", expect.any(String))
   expect(central.sendSuperAgentMessage).toHaveBeenCalledExactlyOnceWith("alpha", "release", expect.any(String), "Plan our release")
   expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0, undefined)
-  expect(wrapper.get('[data-message-role="user"]').text()).toContain("Ada")
-  expect(wrapper.get('[data-message-role="user"]').text()).toContain("Plan our release")
+  expect(wrapper.get('[data-user-message-meta]').text()).toContain("Ada")
+  expect(wrapper.get('[data-user-message-bubble]').text()).toContain("Plan our release")
 
   central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 8, status: "idle", messages: [
     { id: "msg-1", role: "user", text: "Plan our release", at, senderId: "user-1" },
@@ -57,14 +61,17 @@ test("starts from a suggested prompt, creates only on send, then resumes committ
   await vi.advanceTimersByTimeAsync(1500)
   await flushPromises()
   expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 2, pendingSenders)
-  expect(wrapper.findAll('[data-message-role="user"]')).toHaveLength(1)
-  expect(wrapper.get('[data-message-role="assistant"]').text()).toContain("Which date should we target?")
+  expect(wrapper.findAll('[data-user-message-bubble]')).toHaveLength(1)
+  expect(wrapper.get('[data-conversation-entry^="message-"]').text()).toContain("Which date should we target?")
   expect(wrapper.get("h1").text()).toBe("Plan our release")
   expect(wrapper.text()).toContain("Shared with Product")
   await wrapper.get('button[aria-label="New conversation"]').trigger("click")
-  expect(wrapper.find("[data-message-role]").exists()).toBe(false)
+  expect(wrapper.find('[data-conversation-entry^="input-"]').exists()).toBe(false)
   expect(central.createSuperAgentSession).toHaveBeenCalledTimes(1)
-  await wrapper.get("#super-agent-history li button").trigger("click")
+  vi.useRealTimers()
+  await wrapper.get('button[aria-label="Conversations"]').trigger("keydown", { key: "ArrowDown" })
+  await flushPromises()
+  await new DOMWrapper(document.body).get('#super-agent-history [role="menuitem"]').trigger("click")
   await flushPromises()
   expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0, undefined)
 })
@@ -79,7 +86,7 @@ test("names senders from the Team roster even without a Machine and preserves le
       { id: "older", role: "user", text: "Update the plan", at },
     ] })
   })
-  expect(wrapper.findAll('[data-message-role="user"] span').map(label => label.text())).toEqual(["Ada", "Bob", "user-3", "Team member"])
+  expect(wrapper.findAll('[data-user-message-meta] .font-medium').map(label => label.text())).toEqual(["Ada", "Bob", "user-3", "Team member"])
 })
 
 test("keeps the draft and reuses each operation ID when a create or a delivery acknowledgement is lost", async () => {
@@ -87,7 +94,7 @@ test("keeps the draft and reuses each operation ID when a create or a delivery a
   central.createSuperAgentSession.mockRejectedValueOnce(new Error("Lost connection")).mockResolvedValue({ sessionId: "work" })
   central.sendSuperAgentMessage.mockRejectedValueOnce(new Error("Lost connection"))
   await wrapper.get("textarea").setValue("Review our plan")
-  const submit = async () => { await wrapper.get("form").trigger("submit"); await flushPromises() }
+  const submit = async () => { await wrapper.get(".composer-send").trigger("click"); await flushPromises() }
   await submit()
   expect(wrapper.get('[role="alert"]').text()).toContain("Couldn’t send your message")
   await submit()
@@ -106,10 +113,10 @@ test("a Team at its limit can read an existing conversation without creating or 
     central.superAgentSessions.mockResolvedValue([{ sessionId: "existing", title: "Review", lastActiveAt: Date.parse(at) }])
     central.superAgentHistory.mockResolvedValue({ nextIndex: 1, messages: [{ id: "reply", role: "assistant", text: "Previous reply", at }] })
   })
-  expect(wrapper.get('[data-message-role="assistant"]').text()).toContain("Previous reply")
+  expect(wrapper.get('[data-conversation-entry^="message-"]').text()).toContain("Previous reply")
   expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
   expect(wrapper.text()).toContain("Your team has used all its credits for this billing period.")
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get(".composer-send").trigger("click")
   expect(central.sendSuperAgentMessage).not.toHaveBeenCalled()
 })
 
@@ -139,7 +146,7 @@ test("refreshes the route gate on revocation at the API", async () => {
   central.superAgentAvailability.mockResolvedValue({ enabled: false })
   central.createSuperAgentSession.mockRejectedValue(new HttpError(404, "Feature disabled", undefined, "super_agent_disabled"))
   await wrapper.get("textarea").setValue("Plan a trip")
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(account.superAgentEnabled.value).toBe(false)
   expect(central.sendSuperAgentMessage).not.toHaveBeenCalled()
@@ -152,15 +159,53 @@ test("removes a refused optimistic delivery, restores its draft, and leaves fast
   central.superAgentHistory.mockResolvedValueOnce({ messages: [], nextIndex: 1 })
     .mockResolvedValueOnce({ messages: [], nextIndex: 2, undeliveredIds: ["refused"], status: "failed" })
   await wrapper.get("textarea").setValue("Review our plan")
-  await wrapper.get("form").trigger("submit")
+  await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
-  expect(wrapper.find('[data-message-role="user"]').exists()).toBe(true)
+  expect(wrapper.find('[data-user-message-bubble]').exists()).toBe(true)
   await vi.advanceTimersByTimeAsync(1500)
   await flushPromises()
-  expect(wrapper.find('[data-message-role="user"]').exists()).toBe(false)
+  expect(wrapper.find('[data-user-message-bubble]').exists()).toBe(false)
   expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe("Review our plan")
   expect(wrapper.text()).toContain("Super Agent couldn’t complete this turn.")
   expect(wrapper.text()).not.toContain("Waiting for Super Agent")
   await vi.advanceTimersByTimeAsync(1500)
   expect(central.superAgentHistory).toHaveBeenCalledTimes(2)
+})
+
+test("sends a local file through the common composer and restores it after a refusal", async () => {
+  const { central, wrapper } = await setup()
+  central.createSuperAgentSession.mockResolvedValue({ sessionId: "work" })
+  central.sendSuperAgentMessage.mockResolvedValue({ sessionId: "work", deliveryId: "file-delivery" })
+  central.superAgentHistory.mockResolvedValueOnce({ messages: [], nextIndex: 1 })
+    .mockResolvedValueOnce({ messages: [], nextIndex: 2, undeliveredIds: ["file-delivery"], status: "failed" })
+
+  const input = wrapper.get<HTMLInputElement>("[data-composer-file-input]")
+  Object.defineProperty(input.element, "files", { value: [new File(["Checklist"], "release.txt", { type: "text/plain" })] })
+  await input.trigger("change")
+  await flushPromises()
+  await wrapper.get(".composer-send").trigger("click")
+  await flushPromises()
+  expect(central.sendSuperAgentMessage).toHaveBeenCalledWith("alpha", "work", expect.any(String), [
+    { type: "file", mediaType: "text/plain", filename: "release.txt", data: "Q2hlY2tsaXN0" },
+  ])
+  expect(wrapper.get("[data-user-message-bubble]").text()).toContain("release.txt")
+  await vi.advanceTimersByTimeAsync(1500)
+  await flushPromises()
+  expect(wrapper.find('button[aria-label="Remove release.txt"]').exists()).toBe(true)
+  expect(wrapper.find("[data-user-message-bubble]").exists()).toBe(false)
+})
+
+test("cancels the observed turn with the common composer even when sending is blocked", async () => {
+  const { central, wrapper } = await setup(central => {
+    central.superAgentUsage.mockResolvedValue({ runtimeConfigured: true, admitted: false, includedTokens: 200, usedTokens: 200, start: at, end: at, plan: "go" })
+    central.superAgentSessions.mockResolvedValue([{ sessionId: "work", title: "Shared work", lastActiveAt: Date.parse(at) }])
+    central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 2, status: "working", turns: [{ id: "turn-1", state: "running", startedAt: at }], messages: [] })
+      .mockResolvedValueOnce({ nextIndex: 3, status: "idle", turns: [{ id: "turn-1", state: "cancelled", endedAt: at }], messages: [] })
+  })
+  expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
+  await wrapper.get('button[aria-label="Cancel turn"]').trigger("click")
+  await flushPromises()
+  expect(central.cancelSuperAgentTurn).toHaveBeenCalledExactlyOnceWith("alpha", "work", "turn-1")
+  expect(wrapper.find('button[aria-label="Cancel turn"]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain("Cancelling the turn…")
 })

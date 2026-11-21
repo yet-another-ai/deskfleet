@@ -9,6 +9,7 @@ import { RouterLink, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
+import SessionWelcome from "../components/session/SessionWelcome.vue"
 import { useAccountSession } from "../composables/useAccountSession.ts"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { hasIncompleteAttachmentUploads, hasSubmittableText, previewPromptContent, sessionTitleFromDraft } from "../services/composer-attachments.ts"
@@ -122,14 +123,12 @@ async function submit(): Promise<void> {
 
 <template>
   <PaneHeader />
-  <div v-navigation-motion="motion" class="relative isolate flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6">
-    <div class="ui-aurora" aria-hidden="true" />
-    <h1 class="ui-gradient-text m-0 pb-1 text-center text-3xl font-semibold tracking-tight">{{ t("newSession.heading") }}</h1>
+  <SessionWelcome v-navigation-motion="motion" :heading="t('newSession.heading')">
     <p v-if="!newSessionTarget" class="m-0 text-ui-text-muted">{{ t("newSession.noTarget") }}</p>
     <p v-if="submitting" role="status" class="text-sm text-ui-text-muted">{{ t("agent.creating") }}</p>
     <ErrorNotice v-if="error" :error="error" class="w-full max-w-xl" />
     <ErrorNotice v-if="newSessionTarget?.machine.online && providers.error" :error="providers.error" class="w-full max-w-xl" />
     <p v-else-if="newSessionTarget?.machine.online && providers.ready && !providers.providers.length" class="max-w-xl text-center text-sm text-ui-text-muted">{{ t('providers.noneConfigured') }} <RouterLink :to="{ name: 'settings-agents' }" class="text-ui-accent hover:underline">{{ t('providers.manage') }}</RouterLink></p>
-  </div>
+  </SessionWelcome>
   <SessionComposer v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" v-model:context="sessionContext" v-model:base-branch="baseBranch" v-model:base-revisions="baseRevisions" v-model:cwd="workingDirectory" :location="newSessionTarget" :disabled="!newSessionTarget?.machine.online || !providers.ready || !providers.selectedId" :submitting="submitting" show-target @submit="submit" />
 </template>

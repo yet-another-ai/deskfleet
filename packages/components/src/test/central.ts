@@ -146,6 +146,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       sessionId: `wrun_${operationId}`, ...(message === undefined ? {} : { deliveryId: `delivery_${operationId}` }),
     })),
     sendSuperAgentMessage: vi.fn<CentralApi["sendSuperAgentMessage"]>(async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` })),
+    cancelSuperAgentTurn: vi.fn<CentralApi["cancelSuperAgentTurn"]>(async () => {}),
     superAgentHistory: vi.fn<CentralApi["superAgentHistory"]>(async (_teamId, _sessionId, startIndex) => ({ messages: [], nextIndex: startIndex })),
     teamUsage: vi.fn(async (_teamId: string) => ({ relayedBytes: "0", activeSessionCount: 0, memberCount: state.members.length })),
     teamTurnSettings: vi.fn(async (_teamId: string) => teamTurnSettings()),

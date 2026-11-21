@@ -5,6 +5,7 @@ import { expect, test, vi } from "vitest"
 import { i18n } from "../../i18n/index.ts"
 import * as projectors from "../../services/conversation-projector.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
+import { projectSuperAgentConversation } from "../../services/super-agent-conversation.ts"
 import { agentEvent, agentInput, agentSnapshot } from "../../test/agent.ts"
 import AgentConversation from "./AgentConversation.vue"
 import AgentOutline from "./AgentOutline.vue"
@@ -47,4 +48,21 @@ test("conversation and outline share one incremental projection and update toget
     view.unmount()
     factory.mockRestore()
   }
+})
+
+test("shared conversation and outline accept a hosted transcript with a working turn", () => {
+  const at = "2026-11-21T10:00:00Z"
+  const turns = [{ id: "turn-1", state: "running", startedAt: at }] as const
+  const projection = projectSuperAgentConversation([
+    { id: "user-1", role: "user", text: "Review release notes", at, senderId: "ada", turnId: "turn-1" },
+  ], [], turns)
+  const view = mount(defineComponent({ render: () => h("div", [
+    h(AgentConversation, { sessionId: "hosted-session", turns, projection }),
+    h(AgentOutline, { projection }),
+  ]) }), { global: { plugins: [createPinia(), i18n], stubs: { AgentResponse: true, AgentUserMessage: true } } })
+
+  expect(view.find('nav button[aria-label="Review release notes"]').exists()).toBe(true)
+  expect(view.find('nav button[aria-label="Inspect repo"]').exists()).toBe(false)
+  expect(view.findComponent(AgentResponse).props("response")).toMatchObject({ turnId: "turn-1", live: true, startedAt: at })
+  view.unmount()
 })

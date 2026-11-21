@@ -11,7 +11,7 @@ const global = { plugins: [i18n], stubs: { AgentContent: true } }
 function response(): ConversationResponse {
   return {
     id: "response-1", kind: "response", turnId: "70", live: false, last: true,
-    turn: { id: "70", sessionId: "30", initialInputId: "40", dispatchCommandId: "50", runGeneration: 1, state: "completed", startedAt: "2026-10-30T12:00:00Z" },
+    turn: { id: "70", state: "completed", startedAt: "2026-10-30T12:00:00Z" },
     steps: [
       { id: "thought", kind: "message", role: "thought", content: [{ type: "text", text: "Private reasoning" }] },
       { id: "progress", kind: "message", role: "assistant", content: [{ type: "text", text: "Checking the files" }] },

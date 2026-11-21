@@ -17,6 +17,7 @@ use std::{
 struct Calls {
     creates: AtomicUsize,
     sends: AtomicUsize,
+    cancels: AtomicUsize,
 }
 
 fn check_secret(req: &HttpRequest) {
@@ -126,6 +127,17 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
                         assert_eq!(body["message"], "hello");
                         assert_eq!(body["idempotencyKey"].as_str().unwrap().len(), 43);
                         HttpResponse::Accepted().json(json!({"ok":true, "deliveryId":"delivery_1"}))
+                    },
+                ),
+            )
+            .route(
+                "/eve/v1/session/{id}/cancel",
+                web::post().to(
+                    |req: HttpRequest, body: web::Json<Value>, calls: web::Data<Calls>| async move {
+                        check_secret(&req);
+                        assert_eq!(*body, json!({"turnId":"turn_1"}));
+                        calls.cancels.fetch_add(1, Ordering::SeqCst);
+                        HttpResponse::Accepted().json(json!({"ok":true}))
                     },
                 ),
             )
@@ -247,10 +259,13 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     let availability: Value = test::call_and_read_body_json(&app, get(&availability_path)).await;
     assert_eq!(availability, json!({"enabled":false}));
     let message_body = json!({"operationId":uuid::Uuid::new_v4().to_string(),"message":"hello"});
+    let cancel_path = format!("{path}/{session_id}/cancel");
+    let cancel_body = json!({"turnId":"turn_1"});
     for request in [
         post(&path, create.clone()),
         get(&path),
         post(&format!("{path}/{session_id}/messages"), message_body),
+        post(&cancel_path, cancel_body.clone()),
         get(&format!("{path}/{session_id}/stream")),
         get(&format!("{base}/usage")),
     ] {
@@ -304,6 +319,15 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
             .status(),
         StatusCode::NOT_FOUND
     );
+    assert_eq!(
+        test::call_service(
+            &app,
+            post(&format!("{cross_team}/cancel"), cancel_body.clone())
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
     let delivery: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery["deliveryId"], "delivery_1");
     // Disabling the rollout blocks new reads/writes while the worker still
@@ -334,6 +358,22 @@ async fn hosted_team_sessions_bind_before_delivery_and_replay_after_exhaustion()
     assert_eq!(usage["usedCredits"], "12.25");
     assert_eq!(usage["includedCredits"], 12);
     assert_eq!(usage["admitted"], false);
+    for invalid in [json!({}), json!({"turnId":null}), json!({"turnId":" "})] {
+        assert_eq!(
+            test::call_service(&app, post(&cancel_path, invalid))
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(calls.cancels.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        test::call_service(&app, post(&cancel_path, cancel_body))
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(calls.cancels.load(Ordering::SeqCst), 1);
     let repeated: Value = test::call_and_read_body_json(&app, post(&send_path, body.clone())).await;
     assert_eq!(delivery, repeated);
     // A receipt written by the text-only gateway still replays without contacting Eve.

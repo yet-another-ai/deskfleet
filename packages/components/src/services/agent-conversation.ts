@@ -69,10 +69,13 @@ export function groupResponseActivity(steps: ConversationStep[]): (ConversationS
   return groups.map(group => group.kind === "activity" && group.steps.length === 1 ? group.steps[0]! : group)
 }
 
+export type ConversationInput = Pick<AgentInput, "id" | "author" | "content" | "state" | "actualDelivery" | "dispatcher" | "turnId" | "createdAt" | "deliveredAt">
+export type ConversationTurn = Pick<AgentTurn, "id" | "state" | "endedAt" | "error"> & { startedAt?: string }
+
 export type ConversationEntry =
-  | { id: string; kind: "input"; input: AgentInput }
+  | { id: string; kind: "input"; input: ConversationInput }
   | ConversationStep
-  | { id: string; kind: "turn"; turn: AgentTurn }
+  | { id: string; kind: "turn"; turn: ConversationTurn }
 
 export function readableValue(value: unknown): string {
   if (typeof value === "string") return value
@@ -89,7 +92,7 @@ export interface ConversationResponse {
   id: string
   kind: "response"
   turnId?: string
-  turn?: AgentTurn
+  turn?: ConversationTurn
   steps: ConversationStep[]
   /** Bounds of this response within its turn; absent while unknown or still running. */
   startedAt?: string
@@ -197,13 +200,13 @@ function stepIsLive(step: ConversationStep): boolean {
 /** Groups projected entries into user messages and the agent responses that follow them. */
 export function groupTranscript(
   entries: ConversationEntry[],
-  snapshot: AgentSnapshot,
+  snapshot: Pick<AgentSnapshot, "turns" | "session" | "runs"> | undefined,
   previous: readonly TranscriptEntry[] = [],
-  options?: { previewing?: boolean },
+  options?: { previewing?: boolean; turns?: readonly ConversationTurn[] },
 ): TranscriptEntry[] {
-  const turns = new Map(snapshot.turns.map(turn => [turn.id, turn]))
+  const turns = new Map((options?.turns ?? snapshot?.turns ?? []).map(turn => [turn.id, turn]))
   const transcript: TranscriptEntry[] = []
-  const turnOf = (id: string | undefined, fallback?: AgentTurn) => id ? turns.get(id) ?? fallback : fallback
+  const turnOf = (id: string | undefined, fallback?: ConversationTurn) => id ? turns.get(id) ?? fallback : fallback
   for (const entry of entries) {
     if (entry.kind === "input") { transcript.push(entry); continue }
     const turnId = entry.kind === "turn" ? entry.turn.id : entry.turnId
@@ -225,7 +228,7 @@ export function groupTranscript(
     entry.endedAt = sameTurn(after)?.deliveredAt ?? entry.turn.endedAt
     lastResponse.set(entry.turn.id, entry)
   })
-  const runRunning = snapshot.session.archiveState === "active" && snapshot.runs.at(-1)?.state === "running"
+  const runRunning = snapshot?.session.archiveState === "active" && snapshot.runs.at(-1)?.state === "running"
   const trailing = transcript.at(-1)
   for (const entry of transcript) {
     if (entry.kind !== "response") continue

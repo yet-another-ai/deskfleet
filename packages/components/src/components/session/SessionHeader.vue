@@ -3,13 +3,13 @@ import { inject } from "vue"
 import PaneHeader from "../chrome/PaneHeader.vue"
 import { windowHeaderActionsTargetKey } from "../chrome/windowHeaderActions.ts"
 
-defineProps<{ hasActions: boolean }>()
-const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey)
+withDefaults(defineProps<{ hasActions: boolean; sidebar?: boolean }>(), { sidebar: true })
+const windowHeaderActionsTarget = inject(windowHeaderActionsTargetKey, undefined)
 const windowedMainWindow = !!windowHeaderActionsTarget
 </script>
 
 <template>
-  <PaneHeader v-if="!windowedMainWindow">
+  <PaneHeader v-if="!windowedMainWindow" :sidebar="sidebar">
     <slot />
     <template v-if="hasActions" #actions><slot name="actions" /></template>
   </PaneHeader>

@@ -723,6 +723,7 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       sessionId: `wrun_${operationId}`, ...(message === undefined ? {} : { deliveryId: `delivery_${operationId}` }),
     }),
     sendSuperAgentMessage: async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` }),
+    cancelSuperAgentTurn: async () => {},
     superAgentHistory: async (_teamId, _sessionId, startIndex) => ({ messages: [], nextIndex: startIndex }),
     teamTurnSettings: async () => structuredClone(teamTurn),
     updateTeamTurnSettings: async (_teamId: string, next: TeamTurnSettingsUpdate) => {

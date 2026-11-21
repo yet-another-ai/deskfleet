@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "
 import { useI18n } from "vue-i18n"
 import type { AgentEvent, AgentInput, AgentSnapshot } from "../../../../../apps/daemon/src/agent-protocol.ts"
 import type { AgentLiveNotice } from "@deskfleet/client/agent-live"
-import { containsConversationEntry, groupTranscript, liveTurnStates, type ConversationEntry, type TranscriptEntry } from "../../services/agent-conversation.ts"
+import { containsConversationEntry, groupTranscript, liveTurnStates, type ConversationEntry, type ConversationTurn, type TranscriptEntry } from "../../services/agent-conversation.ts"
 import { useConversationProjection } from "../../composables/useConversationProjection.ts"
 import AgentResponse from "./AgentResponse.vue"
 import AgentUserMessage from "./AgentUserMessage.vue"
@@ -14,50 +14,67 @@ import type { FileTarget } from "../../../../client/src/files.ts"
 import { agentResourceContextKey } from "../../services/agent-resources.ts"
 
 const client = usePlatformClient()
-const props = defineProps<{ events: AgentEvent[]; snapshot: AgentSnapshot; projection?: ConversationEntry[]; optimisticInput?: AgentInput; notices?: AgentLiveNotice[]; disabled?: boolean; resourceTarget?: FileTarget; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
+const props = defineProps<{
+  events?: AgentEvent[]
+  snapshot?: AgentSnapshot
+  sessionId?: string
+  projection?: ConversationEntry[]
+  turns?: readonly ConversationTurn[]
+  startupStatus?: string
+  unattributedUserLabel?: string
+  optimisticInput?: AgentInput
+  notices?: AgentLiveNotice[]
+  disabled?: boolean
+  resourceTarget?: FileTarget
+  canFork?: boolean
+  forkDisabled?: boolean
+  locateEntry?: string
+}>()
 const emit = defineEmits<{ fork: []; dismissNotice: [id: string] }>()
+const sessionId = computed(() => props.sessionId ?? props.snapshot?.session.id)
 const resourceActive = ref(true)
-watch([() => props.snapshot.session.id, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })
+watch([sessionId, () => JSON.stringify(props.resourceTarget)], () => { resourceActive.value = true })
 const unsubscribe = client.central?.onEvent(event => { if (event.type === "accountChanged") resourceActive.value = false })
 onBeforeUnmount(() => unsubscribe?.())
 provide(agentResourceContextKey, computed(() => {
   const target = resourceActive.value ? props.resourceTarget : undefined
-  return target ? { target, sessionId: props.snapshot.session.id } : undefined
+  return target && sessionId.value ? { target, sessionId: sessionId.value } : undefined
 }))
 const { t } = useI18n()
-const projection = useConversationProjection(() => props.events, () => props.snapshot)
+const projection = useConversationProjection(() => props.events ?? [], () => props.snapshot)
 const previewing = computed(() => {
-  const lastSeq = props.events.at(-1)?.seq
-  return !!lastSeq && BigInt(lastSeq) > BigInt(props.snapshot.session.lastEventSeq || "0")
+  const lastSeq = props.events?.at(-1)?.seq
+  return !!lastSeq && BigInt(lastSeq) > BigInt(props.snapshot?.session.lastEventSeq || "0")
 })
 const transcript = computed<TranscriptEntry[]>(previous =>
-  groupTranscript(props.projection ?? projection.value, props.snapshot, previous, { previewing: previewing.value }),
+  groupTranscript(props.projection ?? projection.value, props.snapshot, previous, { previewing: previewing.value, turns: props.turns }),
 )
 const optimisticKey = "initial-session-input"
 const optimisticSessions = new Set<string>()
 const displayedTranscript = computed<TranscriptEntry[]>(() => {
   const base = transcript.value
-  if (!props.snapshot.inputs.length && props.optimisticInput && !base.some(entry => entry.kind === "input")) {
+  if (props.snapshot && !props.snapshot.inputs.length && props.optimisticInput && !base.some(entry => entry.kind === "input")) {
     optimisticSessions.add(props.snapshot.session.id)
     return [...base, { id: "input-optimistic", kind: "input", input: props.optimisticInput }]
   }
   return base
 })
 function entryKey(entry: TranscriptEntry): string {
-  if (entry.kind === "input" && optimisticSessions.has(props.snapshot.session.id)) {
+  if (entry.kind === "input" && props.snapshot && optimisticSessions.has(props.snapshot.session.id)) {
     if (entry.id === "input-optimistic" || entry.input.id === props.snapshot.inputs[0]?.id) return optimisticKey
   }
   return entry.id
 }
 const lastInputId = computed(() => displayedTranscript.value.findLast(entry => entry.kind === "input")?.id)
 const liveResponseExists = computed(() => displayedTranscript.value.some(entry => entry.kind === "response" && entry.live))
-const activeTurn = computed(() => props.snapshot.turns.find(turn => liveTurnStates.includes(turn.state)))
-const latestRun = computed(() => props.snapshot.runs.at(-1))
 const startupStatus = computed(() => {
-  if (props.snapshot.session.archiveState !== "active" || liveResponseExists.value) return undefined
-  if (activeTurn.value) return t("agent.working")
-  if (props.snapshot.session.lifecycle === "provisioning") return t("agent.lifecycle.provisioning")
-  if (latestRun.value?.state === "starting") return t("agent.runState.starting")
+  if (liveResponseExists.value) return undefined
+  const snapshot = props.snapshot
+  if (!snapshot) return props.startupStatus
+  if (snapshot.session.archiveState !== "active") return undefined
+  if (snapshot.turns.some(turn => liveTurnStates.includes(turn.state))) return t("agent.working")
+  if (snapshot.session.lifecycle === "provisioning") return t("agent.lifecycle.provisioning")
+  if (snapshot.runs.at(-1)?.state === "starting") return t("agent.runState.starting")
   return undefined
 })
 const items = useTemplateRef<HTMLLIElement[]>("items")
@@ -75,7 +92,7 @@ defineExpose({ items })
         'ui-conversation-input': entry.kind === 'input',
       }"
       :data-conversation-entry="entry.kind === 'input' ? entry.id : undefined">
-      <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :animate-send="entry.id === lastInputId" />
+      <AgentUserMessage v-if="entry.kind === 'input'" :input="entry.input" :animate-send="entry.id === lastInputId" :unattributed-label="unattributedUserLabel" />
       <AgentResponse v-else :response="entry" :disabled="disabled" :can-fork="canFork && entry === displayedTranscript.at(-1)" :fork-disabled="forkDisabled" :locate-entry="locateEntry" @fork="emit('fork')" />
     </li>
     <li v-if="startupStatus" key="agent-startup-status" data-agent-startup-status class="scroll-mt-6">

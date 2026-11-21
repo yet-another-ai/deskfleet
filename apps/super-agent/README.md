@@ -123,10 +123,11 @@ with that UUID to get the Session. Each Team member can use the Team's allowance
 | GET `/sessions` | List this Team's conversations by most recent activity, with `sessionId`, the first message's short `title` when available, and `lastActiveAt` in UTC milliseconds. |
 | POST `/sessions` | Send `{"operationId":"<uuid>"}` to create an empty Session and receive `{sessionId}`. Include `message` to deliver the first message and receive `{sessionId, deliveryId}`. |
 | POST `/sessions/{sessionId}/messages` | Send `operationId` and `message` to receive `{sessionId, deliveryId}`. |
+| POST `/sessions/{sessionId}/cancel` | Send `{turnId}` to request cancellation of that turn. Returns HTTP 204 when the runtime accepts the request. |
 | GET `/sessions/{sessionId}/stream?startIndex=0` | Read stored eve NDJSON through the current tail. Resume at the next stored line. |
 | GET `/usage` | Read the effective plan, billing period, credit allowance (`includedCredits`, an integer or `null` for unlimited), credits charged (`usedCredits`, a decimal string), raw model tokens (`usedTokens`), runtime availability and admission decision. `includedTokens` is the legacy name for the allowance. |
 
-Both writes accept a plain string (including Markdown) or an ordered array of
+Both message endpoints accept a plain string (including Markdown) or an ordered array of
 1–64 text and file parts. A file can be the entire message. This request opens
 a Session with a screenshot.
 
@@ -159,6 +160,14 @@ use that ID to show the sender's name from the current Team directory. Messages
 sent before sender attribution retain the generic Team member label.
 Eve queues messages from a different member behind an active turn so each
 turn retains its own sender.
+
+Web and Desktop share the Session transcript, reading controls, previews, and
+composer with machine Sessions. The hosted composer sends local files and pasted
+content through the message API, including when the Team has no Machines.
+Stored attachments with an Eve-internal reference display their name and media
+type. Public attachment URLs can be opened from the transcript. The cancel
+action targets the currently displayed turn and remains available when the
+Team has exhausted its allowance.
 
 When rollout is disabled, the other routes return HTTP 404 with code
 `super_agent_disabled`. The usage collector continues settling accepted work.

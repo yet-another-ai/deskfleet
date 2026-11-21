@@ -3,18 +3,17 @@ import { vNavigationMotion } from "../directives/navigation-motion.ts"
 import { useNavigationMotion } from "../composables/useNavigationMotion.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import UiButton from "../components/common/UiButton.vue"
-import UiScrollArea from "../components/common/UiScrollArea.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
-import { ArrowDown, LoaderCircle, SquareTerminal } from "@lucide/vue"
+import { LoaderCircle, SquareTerminal } from "@lucide/vue"
 import { storeToRefs } from "pinia"
-import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
-import { computed, defineAsyncComponent, inject, nextTick, onScopeDispose, onBeforeUnmount, provide, ref, useTemplateRef, watch } from "vue"
+import { watchImmediate } from "@vueuse/core"
+import { computed, defineAsyncComponent, inject, onScopeDispose, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { useRoute, useRouter } from "vue-router"
+import { useRouter } from "vue-router"
 import type { AgentSessionContext, AgentSnapshot } from "../../../../apps/daemon/src/agent-protocol.ts"
 import SessionHeader from "../components/session/SessionHeader.vue"
+import SessionConversationPane from "../components/session/SessionConversationPane.vue"
 import ResourcePath from "../components/chrome/ResourcePath.vue"
-import WindowToolbar from "../components/chrome/WindowToolbar.vue"
 import { newTerminalWindowKey, windowHeaderActionsTargetKey } from "../components/chrome/windowHeaderActions.ts"
 import OpenWithMenu from "../components/catalog/OpenWithMenu.vue"
 import SessionComposer from "../components/composer/SessionComposer.vue"
@@ -24,17 +23,12 @@ import AgentConversation from "../components/session/AgentConversation.vue"
 import AgentAuthStatus from "../components/session/AgentAuthStatus.vue"
 import AgentNotice from "../components/session/AgentNotice.vue"
 import AgentOutline from "../components/session/AgentOutline.vue"
-import ReadingSpotlight from "../components/session/ReadingSpotlight.vue"
 import AgentPermissions from "../components/session/AgentPermissions.vue"
 import AgentSessionMenu from "../components/session/AgentSessionMenu.vue"
 import RenameSessionDialog from "../components/session/RenameSessionDialog.vue"
 import ForkSessionDialog from "../components/session/ForkSessionDialog.vue"
-import MermaidViewer from "../components/session/MermaidViewer.vue"
-import PreviewViewer from "../components/session/PreviewViewer.vue"
-import FocusOverlay from "../components/common/FocusOverlay.vue"
 import { useFleetStore } from "../stores/fleet.ts"
-import { pendingMermaidLocate, performMermaidLocateDom, useLayoutStore, type MermaidSource } from "../stores/layout.ts"
-import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../stores/previews.ts"
+import { useLayoutStore } from "../stores/layout.ts"
 import { useAgentSessionsStore } from "../stores/agent-sessions.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 import { openSessionInNewWindow } from "@deskfleet/client/session-window"
@@ -51,19 +45,14 @@ import { createAgentUsageSelector } from "../services/agent-usage.ts"
 import { hasIncompleteAttachmentUploads } from "../services/composer-attachments.ts"
 import { buildComposerPrompt } from "../services/composer-prompt.ts"
 import { commandDraft } from "../services/composer-mentions.ts"
-import { conversationReadingKey, useConversationReadingStore } from "../stores/conversation-reading.ts"
-import { scrollSpring, type SpringScroll } from "../services/spring-scroll.ts"
 
 const client = usePlatformClient()
 
 // xterm stays out of the session bundle until the panel is opened.
 const SessionTerminalPanel = defineAsyncComponent(() => import("../components/terminal/SessionTerminalPanel.vue"))
 const props = defineProps<{ sessionId: string }>()
-const reading = useConversationReadingStore()
-provide(conversationReadingKey, () => reading.session(props.sessionId))
 const { t } = useI18n()
 const motion = useNavigationMotion()
-const route = useRoute()
 const router = useRouter()
 const newTerminalWindow = inject(newTerminalWindowKey, undefined)
 const windowedMainWindow = !!inject(windowHeaderActionsTargetKey)
@@ -74,22 +63,8 @@ const account = useAccountSession()
 const fleet = useFleetStore()
 const agents = useAgentSessionsStore()
 const terminals = useTerminalsStore()
-const { compact, sidebarOpen, standaloneSession, terminalPanelOpen } = storeToRefs(useLayoutStore())
+const { compact, standaloneSession, terminalPanelOpen } = storeToRefs(useLayoutStore())
 const canOpenInNewWindow = computed(() => client.platform !== "web" && !client.mobile && !standaloneSession.value)
-const focusedMermaid = computed(() => typeof route.query.mermaid === "string" && route.query.mermaid ? route.query.mermaid : undefined)
-const focusedMermaidSource = computed<MermaidSource>(() => ({
-  sessionId: props.sessionId,
-  ...(typeof route.query.mermaidEntry === "string" && route.query.mermaidEntry ? { entryId: route.query.mermaidEntry } : {}),
-  ...(typeof route.query.mermaidDiagram === "string" && route.query.mermaidDiagram ? { diagramId: route.query.mermaidDiagram } : {}),
-}))
-const focusedMermaidContent = computed(() => focusedMermaid.value ? { code: focusedMermaid.value, source: focusedMermaidSource.value } : undefined)
-const focusedPreview = computed(() => {
-  const preview = focusedPreviewFromRoute(route)
-  if (!preview) return undefined
-  return { ...preview, source: { sessionId: props.sessionId, ...preview.source } }
-})
-const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value)
-const focusedEntry = computed(() => typeof route.query.entry === "string" && route.query.entry ? route.query.entry : undefined)
 const location = computed(() => fleet.findSession(props.sessionId))
 const resourceTarget = useFileTarget(() => location.value?.machine.id)
 const view = computed(() => agents.views[props.sessionId])
@@ -171,103 +146,14 @@ const forkOpen = ref(false)
 const renameOpen = ref(false)
 const actionError = ref<string | null>(null)
 const draftError = computed(() => actionError.value ?? openWithMenu.value?.launchError ?? agents.draftErrors[props.sessionId])
-const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
-const scroller = computed(() => scrollArea.value?.viewportElement ?? undefined)
-const overlay = useTemplateRef<HTMLElement>("overlay")
-const conversation = useTemplateRef<InstanceType<typeof AgentConversation>>("conversation")
-const { height: overlayHeight } = useElementSize(overlay, { width: 0, height: 140 }, { box: "border-box" })
-const followBottom = ref(true)
-const showScrollToBottom = computed(() => !!snapshot.value && !view.value?.loading && !followBottom.value)
-const activeEntry = ref<string>()
-let locatedEntry: string | undefined
-let entryHighlightTimer: ReturnType<typeof setTimeout> | undefined
-let restoringScroll = false
-let followingSpring: SpringScroll | undefined
-onScopeDispose(() => {
-  clearTimeout(entryHighlightTimer)
-  followingSpring?.cancel()
-  followingSpring = undefined
-})
-function saveReading(id: string): void {
-  if (scroller.value?.isConnected && !restoringScroll) reading.session(id).scroll = { top: scroller.value.scrollTop, bottom: followBottom.value }
-}
-onBeforeUnmount(() => saveReading(props.sessionId))
-const { arrivedState } = useScroll(scroller, {
-  offset: { bottom: 100 },
-  onScroll() {
-    if (restoringScroll || followingSpring) return
-    followBottom.value = arrivedState.bottom
-    saveReading(props.sessionId)
-    updateOutline()
-  },
-})
-
-function followSpringToBottom(el: HTMLElement): void {
-  // Retargets keep the latest handle so the prior finished(false) is ignored and cancel stays current.
-  const spring = scrollSpring(el, el.scrollHeight)
-  followingSpring = spring
-  void spring.finished.then(completed => {
-    if (followingSpring !== spring) return
-    followingSpring = undefined
-    if (!completed && el.isConnected) followBottom.value = arrivedState.bottom
-    saveReading(props.sessionId)
-    updateOutline()
-  })
-}
-
-function scrollToBottom(): void {
-  followBottom.value = true
-  saveReading(props.sessionId)
-  const el = scroller.value
-  if (!el) return
-  followSpringToBottom(el)
-}
-
-function updateOutline(): void {
-  const el = scroller.value
-  const entries = conversation.value?.items?.filter(item => item.dataset.conversationEntry)
-  if (!el || !entries?.length) return
-  if (followBottom.value) {
-    activeEntry.value = entries.at(-1)?.dataset.conversationEntry
-    return
-  }
-  const threshold = el.getBoundingClientRect().top + 80
-  const current = entries.findLast(item => item.getBoundingClientRect().top <= threshold) ?? entries[0]
-  activeEntry.value = current?.dataset.conversationEntry
-}
-
-function locateEntry(id: string): void {
-  const target = conversation.value?.items?.find(item => item.dataset.conversationEntry === id)
-  if (!target) return
-  followBottom.value = false
-  target.scrollIntoView({ block: "start", behavior: "instant" })
-  activeEntry.value = id
-}
-
+const scrollRevision = computed(() => [view.value?.events.length, view.value?.syncing])
 const faces = useSessionFaces(() => props.sessionId)
-watchImmediate(() => props.sessionId, (id, previous) => {
-  if (previous) saveReading(previous)
-  followingSpring?.cancel()
-  followingSpring = undefined
-  restoringScroll = true
+watchImmediate(() => props.sessionId, id => {
   busy.value = false
   forkOpen.value = false
   renameOpen.value = false
   actionError.value = null
-  activeEntry.value = undefined
-  locatedEntry = undefined
-  followBottom.value = !focusedEntry.value && (!pendingLocate.value || (!!pendingLocate.value.sessionId && pendingLocate.value.sessionId !== id))
-  const saved = reading.session(id).scroll
-  if (saved && !focusedEntry.value && !pendingLocate.value) followBottom.value = saved.bottom
   void agents.open(id)
-  void nextTick(() => {
-    if (props.sessionId !== id) return
-    if (!focusedEntry.value && !pendingLocate.value && (saved || !view.value?.loading)) {
-      scroller.value?.scrollTo({ top: !saved || saved.bottom ? scroller.value.scrollHeight : saved.top })
-    }
-    restoringScroll = false
-    updateOutline()
-  })
 })
 watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _, onCleanup) => {
   // A dropped channel already clears attendance. Attend again when this view is still mounted.
@@ -277,38 +163,6 @@ watchImmediate([() => props.sessionId, () => agents.state], ([id, connection], _
   void agents.attend(id).then(present => { if (left && present) void agents.leave(id) })
 })
 useSessionRead(() => props.sessionId)
-watch(() => [view.value?.events.length, view.value?.loading, view.value?.syncing], () => {
-  if (!view.value?.loading && followBottom.value && !pendingLocate.value && scroller.value) {
-    if (followingSpring) followSpringToBottom(scroller.value)
-    else scroller.value.scrollTo({ top: scroller.value.scrollHeight })
-  }
-  if (followBottom.value || !activeEntry.value) updateOutline()
-}, { flush: "post" })
-watch([focusedEntry, () => props.sessionId, () => view.value?.loading, () => view.value?.events.length], async ([entry, id, loading]) => {
-  if (!entry) { locatedEntry = undefined; return }
-  const key = `${id}:${entry}`
-  if (locatedEntry === key) return
-  followBottom.value = false
-  if (loading) return
-  await nextTick()
-  if (props.sessionId !== id || focusedEntry.value !== entry) return
-  const target = [...scroller.value?.querySelectorAll<HTMLElement>("[data-conversation-entry]") ?? []].find(item => item.dataset.conversationEntry === entry)
-  if (!target) return
-  locatedEntry = key
-  clearTimeout(entryHighlightTimer)
-  for (const previous of scroller.value?.querySelectorAll<HTMLElement>("[data-conversation-located]") ?? []) delete previous.dataset.conversationLocated
-  target.dataset.conversationLocated = "true"
-  target.scrollIntoView({ block: "center", behavior: "instant" })
-  entryHighlightTimer = setTimeout(() => { delete target.dataset.conversationLocated }, 2000)
-}, { immediate: true, flush: "post" })
-watch([pendingLocate, () => view.value?.loading, () => view.value?.events.length, focusedPreview, focusedMermaid], async ([target, loading, , preview, mermaid]) => {
-  if (!target || loading || preview || mermaid) return
-  if (target.sessionId && target.sessionId !== props.sessionId) return
-  followBottom.value = false
-  await nextTick()
-  if ("content" in target) performPreviewLocateDom(target)
-  else performMermaidLocateDom(target)
-}, { flush: "post" })
 async function action(operation: () => Promise<unknown>): Promise<void> {
   if (busy.value) return
   const sessionId = props.sessionId
@@ -379,99 +233,56 @@ function openInNewWindow(): void {
       </div>
     </template>
   </SessionHeader>
-  <div v-navigation-motion="compact ? undefined : motion" class="relative flex min-h-0 flex-1">
-    <UiScrollArea
-      ref="scrollArea"
-      fade="top"
-      class="min-h-0 min-w-0 flex-1"
-      content-class="flex min-h-full flex-col"
-      data-session-scroll-area
-      :viewport-attrs="{ 'data-session-scroll-viewport': '' }"
-    >
-      <div class="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col px-6 pt-6" :style="{ paddingBottom: `${overlayHeight + 24}px` }">
-        <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
-        <template v-else-if="snapshot">
-          <AgentConversation ref="conversation" :events="view!.events" :snapshot="snapshot" :projection="projection" :optimistic-input="agents.optimisticInputs[sessionId]" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
-            <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
-          </AgentConversation>
-          <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
-        </template>
-      </div>
-    </UiScrollArea>
-    <ReadingSpotlight />
-    <AgentOutline
-      v-if="snapshot && !view?.loading"
-      :events="view!.events"
-      :snapshot="snapshot"
-      :projection="projection"
-      :active="activeEntry"
-      class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2"
-      @select="locateEntry"
-    />
-    <div
-      v-if="showScrollToBottom"
-      class="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
-      :style="{ bottom: `${overlayHeight + 8}px` }"
-    >
-      <div class="relative mx-auto flex w-full max-w-3xl justify-end px-6">
-        <UiButton
-          type="button"
-          size="icon"
-          class="pointer-events-auto h-8 w-8 rounded-full border border-ui-border bg-ui-surface text-ui-text shadow-ui-popover"
-          :label="t('agent.scrollToBottom')"
-          data-scroll-to-bottom
-          @click="scrollToBottom"
-        >
-          <ArrowDown :size="16" :stroke-width="1.75" aria-hidden="true" />
-        </UiButton>
-      </div>
-    </div>
-    <div v-if="location" ref="overlay" class="pointer-events-none absolute inset-x-0 bottom-0 z-10">
-      <div class="pointer-events-auto relative mx-auto flex w-full max-w-3xl flex-col bg-ui-canvas">
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-x-0 -top-6 h-6 [background:linear-gradient(to_bottom,transparent,var(--ui-color-canvas))]"
-        />
-        <div class="flex w-full shrink-0 flex-col gap-2 px-6 empty:hidden" :class="active ? 'pb-2' : 'pb-5'">
-          <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.error ? agents.relayDeniedReason : undefined">
-            <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
-          </ErrorNotice>
-          <ErrorNotice v-for="operation in pending" :key="operation.operationId" :title="t('agent.operationPending')" description="" :error="operation.error">
-            <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
-          </ErrorNotice>
-          <ErrorNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" :error="draftError" />
-          <template v-if="snapshot">
-            <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
-              <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
-            </AgentNotice>
-            <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
-            <AgentNotice v-else-if="snapshot.session.lifecycle === 'deleting'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
-            <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
-            <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
-            <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />
-            <AgentNotice v-else-if="resumeUnavailable && !runActive && snapshot.session.lifecycle === 'ready'" :text="t('agent.resumeUnavailable')" />
-            <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
-            <SessionAllowance :snapshot="snapshot" />
-            <AgentBacklog :inputs="snapshot.inputs" :exclude-input-ids="promotedInputIds" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
-          </template>
-        </div>
-        <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
-      </div>
-    </div>
-  </div>
+  <SessionConversationPane
+    v-navigation-motion="compact ? undefined : motion"
+    :session-id="sessionId"
+    :reading-id="sessionId"
+    :loading="view?.loading"
+    :ready="!!snapshot"
+    :revision="scrollRevision"
+    :show-composer="!!location"
+    :composer-active="active"
+  >
+    <template #default="{ focusedEntry }">
+      <p v-if="view?.loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
+      <template v-else-if="snapshot">
+        <AgentConversation :events="view!.events" :snapshot="snapshot" :projection="projection" :optimistic-input="agents.optimisticInputs[sessionId]" :resource-target="resourceTarget" :notices="agents.notices[sessionId]" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" :can-fork="canFork" :fork-disabled="forkDisabled || !location?.machine.online || busy || !!pendingFork" :locate-entry="focusedEntry" @fork="forkOpen = true" @dismiss-notice="agents.dismissNotice(sessionId, $event)">
+          <template #live><AgentAuthStatus v-if="agents.authStatuses[sessionId]" :status="agents.authStatuses[sessionId]!" /></template>
+        </AgentConversation>
+        <p v-if="empty" class="m-auto text-sm text-ui-text-muted">{{ t('agent.empty') }}</p>
+      </template>
+    </template>
+    <template #outline="{ activeEntry, locateEntry }">
+      <AgentOutline v-if="snapshot" :events="view!.events" :snapshot="snapshot" :projection="projection" :active="activeEntry" class="absolute left-1 top-1/2 z-20 max-h-[calc(100%-2rem)] -translate-y-1/2" @select="locateEntry" />
+    </template>
+    <template #notices>
+      <ErrorNotice v-if="!view?.loading && (!connected || view?.error)" :title="t('agent.disconnected')" :description="view?.error || agents.error ? undefined : ''" :error="view?.error || agents.error" :relay-denied-reason="view?.error ? view.relayDeniedReason : agents.error ? agents.relayDeniedReason : undefined">
+        <UiButton type="button" :disabled="agents.state === 'connecting'" @click="action(() => agents.open(sessionId))">{{ t('agent.reconnect') }}</UiButton>
+      </ErrorNotice>
+      <ErrorNotice v-for="operation in pending" :key="operation.operationId" :title="t('agent.operationPending')" description="" :error="operation.error">
+        <UiButton type="button" :disabled="busy" @click="action(() => checkOperation(operation.operationId))">{{ t('agent.checkResult') }}</UiButton>
+      </ErrorNotice>
+      <ErrorNotice v-if="draftError && !pending.some(operation => operation.error === draftError)" :error="draftError" />
+      <template v-if="snapshot">
+        <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
+          <UiButton v-if="archiveState === 'archived'" size="sm" type="button" class="shrink-0" :disabled="!location?.machine.online || busy" @click="action(() => agents.restore(sessionId))">{{ t('agent.restore') }}</UiButton>
+        </AgentNotice>
+        <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
+        <AgentNotice v-else-if="snapshot.session.lifecycle === 'deleting'" tone="progress" :text="t(`agent.lifecycle.${snapshot.session.lifecycle}`)" :detail="snapshot.session.error" />
+        <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
+        <AgentNotice v-if="additionalDirectoriesUnavailable" tone="warning" :text="t('agent.additionalDirectoriesUnavailable')" :detail="location?.worktree?.directories[0]?.path" />
+        <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />
+        <AgentNotice v-else-if="resumeUnavailable && !runActive && snapshot.session.lifecycle === 'ready'" :text="t('agent.resumeUnavailable')" />
+        <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => action(() => agents.respond(sessionId, id, option))" />
+        <SessionAllowance :snapshot="snapshot" />
+        <AgentBacklog :inputs="snapshot.inputs" :exclude-input-ids="promotedInputIds" :can-steer="canSteer" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @steer="id => action(() => agents.steer(sessionId, id, activeTurn!.id))" @withdraw="id => action(() => agents.withdraw(sessionId, id))" @retry="id => action(() => agents.retry(sessionId, id))" />
+      </template>
+    </template>
+    <template #composer>
+      <SessionComposer v-if="active" v-model="draft" v-model:attachments="attachments" v-model:mentions="mentions" :location="location" :usage="usage" :disabled="!connected || !!view?.syncing || !!view?.error || snapshot?.session.lifecycle !== 'ready' || unresolvedSubmission || (run?.state !== 'running' && !canResume)" :submitting="busy || agents.preparingDrafts[sessionId]" :active-turn="!!activeTurn" :can-steer="canSteer" :can-cancel="!!activeTurn && activeTurn.state !== 'cancelling' && connected && !busy && !view?.syncing && !view?.error" @submit="submit" @cancel="action(() => agents.cancel(sessionId, activeTurn!.id))" />
+    </template>
+  </SessionConversationPane>
   <SessionTerminalPanel v-if="compact && !windowedMainWindow && terminalPanelOpen && terminalWorktree" :key="terminalWorktree.id" :worktree="terminalWorktree" :read-only="!active" />
   <RenameSessionDialog v-if="renameOpen && snapshot" :key="sessionId" :title="snapshot.session.title" :disabled="!location?.machine.online" :confirm="title => agents.rename(sessionId, title)" @close="renameOpen = false" />
   <ForkSessionDialog v-if="forkOpen && snapshot" :key="sessionId" :context="forkContext" :allow-worktree="!!snapshot.session.workspaceId" :retrying="!!pendingFork" :disabled="(!pendingFork && !canFork) || forkDisabled || !location?.machine.online || busy" :confirm="fork" @close="forkOpen = false" />
-  <FocusOverlay :content="focusedMermaidContent" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performMermaidLocateDom()" v-slot="{ content }">
-    <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
-      <WindowToolbar />
-    </div>
-    <MermaidViewer :key="content.code" :code="content.code" :source="content.source" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
-  </FocusOverlay>
-  <FocusOverlay :content="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performPreviewLocateDom()" v-slot="{ content }">
-    <div v-if="compact || !sidebarOpen" class="app-drag flex h-12 shrink-0 items-center border-b border-ui-border pr-3" :class="client.platform === 'darwin' ? 'pl-20' : 'pl-3'">
-      <WindowToolbar />
-    </div>
-    <PreviewViewer :key="content.content" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
-  </FocusOverlay>
 </template>

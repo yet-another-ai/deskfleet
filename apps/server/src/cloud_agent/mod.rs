@@ -30,6 +30,7 @@ pub(crate) fn configure(config: &mut web::ServiceConfig) {
             .route("/sessions", web::get().to(list))
             .route("/sessions", web::post().to(create))
             .route("/sessions/{sessionId}/messages", web::post().to(message))
+            .route("/sessions/{sessionId}/cancel", web::post().to(cancel_turn))
             .route("/sessions/{sessionId}/stream", web::get().to(stream))
             .route("/usage", web::get().to(usage)),
     );
@@ -48,6 +49,12 @@ struct CreateRequest {
 struct MessageRequest {
     operation_id: String,
     message: Message,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CancelRequest {
+    turn_id: String,
 }
 
 #[derive(Serialize)]
@@ -338,6 +345,29 @@ async fn deliver(
         state.store.name_cloud_session(team, session, title).await?;
     }
     Ok(delivery)
+}
+
+async fn cancel_turn(
+    req: HttpRequest,
+    state: web::Data<AppState>,
+    path: web::Path<(String, String)>,
+    body: web::Payload,
+) -> Result<HttpResponse> {
+    let (team, session) = path.into_inner();
+    authorize(&req, &state, &team, TeamAction::UseSuperAgent).await?;
+    require_session(&state, &team, &session).await?;
+    let body: CancelRequest = read_body(&req, body).await?;
+    // A delayed cancellation may only affect the turn the caller observed.
+    if body.turn_id.trim().is_empty() {
+        return Err(ApiError::bad("turnId must be nonempty"));
+    }
+    client::send(
+        runtime(&state)?
+            .post(&["eve", "v1", "session", &session, "cancel"])?
+            .json(&body),
+    )
+    .await?;
+    Ok(HttpResponse::NoContent().finish())
 }
 
 async fn stream(
