@@ -4,7 +4,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 
 vi.mock("vitepress", () => ({ withBase: (path: string) => path }))
 
-const { mountProductDemo } = await import("../../../docs/.vitepress/theme/components/demos/product-demo-runtime.ts")
+const { mountProductDemo } = await import("../../../docs/.vitepress/theme/components/demos/product-demo-bootstrap.ts")
 
 const originalClient = getClient()
 const cleanups: (() => void)[] = []

@@ -73,7 +73,8 @@ chapter tabs show every value proposition before any interaction. They switch a
 single framed demo window. Each demo mounts on first selection and then stays
 alive, so a reader's changes survive switching. Each chapter opens on the view that
 shows its point. Agents opens on a running session at desktop widths and on a new
-session on narrow pages. The demos mount the same `App.vue`, routes, stores,
+session on narrow pages. The demo bootstrap configures its fixture adapter before
+loading application modules. The demos mount the same `App.vue`, routes, stores,
 and controls with independent browser-local sample state. They need no backend,
 agent credentials, or model calls. The trust section (`#open`) is a bento grid:
 the repository layout links to its source, and the machine and data cards
