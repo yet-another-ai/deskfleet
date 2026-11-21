@@ -1121,10 +1121,11 @@ every 30 minutes, including while hidden in the tray. Settings → Updates displ
 the installed version and offers an explicit check against the same feed. Opening
 the page only reads updater state; checking never authorizes installation.
 Preferences enables automatic background downloads by default. When enabled,
-it also exposes **Pause on metered networks**, defaulting on and retaining its
-value when automatic downloads are disabled. The main process persists both
-preferences in `updates.json`. Existing preferences without a metered choice
-use the default.
+Preferences also shows **Pause on metered networks** and, on desktop, **Install
+updates on quit**. Both sub-preferences default to on and keep their values when
+automatic downloads are disabled. The main process saves these preferences in
+`updates.json`. Existing files without one of the sub-preferences use the
+default.
 
 Before an automatic download, the native library reads the current OS network
 cost: NetworkManager's primary connection on Linux, Windows connection cost,
@@ -1135,17 +1136,28 @@ background transfer without an install error; an unmetered connection starts it
 again. Disabling automatic downloads also cancels an active background transfer.
 Explicit installation permits downloading regardless of network cost or the
 automatic-download preference, including a background transfer it has joined.
-The main process owns
-the updater and its state; the sandboxed renderer reads snapshots and subscribes
-through a narrow preload API. The lower-left sidebar offers an update only when
-a newer stable version is available. Clicking downloads the update, reports
-progress, closes the hosted daemon and peer services, and then lets the updater
-install and restart the app. Failed downloads or installation preparation can
-be retried. If installation fails after services have stopped, retry the update
-or quit and reopen the app before continuing work. Ordinary app shutdown never
-installs a downloaded update. Web clients
-and development launches do not check for desktop updates. Release artifacts and
-feed metadata are described in [CI notes](ci.md#tagged-releases).
+The main process owns the updater and its state. The sandboxed renderer reads
+snapshots and subscribes through a narrow preload API. When **Install updates
+on quit** is disabled, the lower-left sidebar offers an update whenever a newer
+stable version is available. When **Install updates on quit** is enabled, the
+sidebar stays hidden unless installation fails, while Settings → Updates still
+shows status and lets the user install immediately. Clicking **Update and
+restart** downloads the update if needed, closes the hosted daemon and peer
+services, and then installs and restarts the app.
+
+When **Install updates on quit** is enabled and the user quits from the tray,
+the tray hides and the main process closes hosted services immediately. If a
+background download is still running, the main process waits for that download
+to finish before running a silent install without relaunching. If the user
+launches DeskFleet again during that wait, the main process cancels the
+download and relaunches DeskFleet. OS shutdown, process signals, and in-app
+restarts skip quit installation. When a downloaded update is ready to install on
+quit, the tray quit item shows the target version. Failed downloads or
+installation preparation can be retried. If installation fails after services
+have stopped, retry the update or quit and reopen the app before continuing
+work. Web clients and development launches do not check for desktop updates.
+Release artifacts and feed metadata are described in
+[CI notes](ci.md#tagged-releases).
 
 The Capacitor Android client uses the same update interface, checking at launch
 and whenever the app returns to the foreground, and chooses its update backend

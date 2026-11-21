@@ -18,6 +18,7 @@ const workspaces: CatalogWorkspace[] = []
 let keepAwake = false
 let autoDownloadUpdates = true
 let pauseUpdatesOnMetered = true
+let installUpdatesOnQuit = true
 let worktreeRoot: string | null = null
 let worktreePreferences: WorktreePreferences = { branchNaming: "semantic", cleanup: { archived: true, merged: true, inactive: true, inactiveDays: 5, settled: true, settledDays: 6, unchanged: true, keepLocalChanges: "uncommitted" } }
 let notifications: NotificationSettings = { enabled: true, taskCompleted: true, taskNeedsInput: true }
@@ -42,9 +43,10 @@ const host: DeskfleetDesktopApi = {
     setLaunchAtStartup: async () => ({ available: false, enabled: false }),
     getKeepAwake: async () => ({ enabled: keepAwake }),
     setKeepAwake: async enabled => ({ enabled: keepAwake = enabled }),
-    getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered, installSource: "desktop_installer" }),
-    setAutoDownloadUpdates: async enabled => ({ enabled: autoDownloadUpdates = enabled, pauseOnMetered: pauseUpdatesOnMetered, installSource: "desktop_installer" }),
-    setPauseUpdatesOnMetered: async enabled => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered = enabled, installSource: "desktop_installer" }),
+    getAutoDownloadUpdates: async () => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered, installOnQuit: installUpdatesOnQuit, installSource: "desktop_installer" }),
+    setAutoDownloadUpdates: async enabled => ({ enabled: autoDownloadUpdates = enabled, pauseOnMetered: pauseUpdatesOnMetered, installOnQuit: installUpdatesOnQuit, installSource: "desktop_installer" }),
+    setPauseUpdatesOnMetered: async enabled => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered = enabled, installOnQuit: installUpdatesOnQuit, installSource: "desktop_installer" }),
+    setInstallUpdatesOnQuit: async enabled => ({ enabled: autoDownloadUpdates, pauseOnMetered: pauseUpdatesOnMetered, installOnQuit: installUpdatesOnQuit = enabled, installSource: "desktop_installer" }),
     getWorktreeRoot: async () => ({ root: worktreeRoot, defaultRoot: "/workspace/.worktrees" }),
     getWorktreePreferences: async () => structuredClone(worktreePreferences),
     setWorktreePreferences: async settings => structuredClone(worktreePreferences = settings),

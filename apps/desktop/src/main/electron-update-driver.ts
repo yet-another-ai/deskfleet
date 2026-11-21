@@ -38,9 +38,10 @@ export function electronUpdateDriver(updater: AppUpdater, channel = "latest"): U
         updater.removeListener("download-progress", listener)
       }
     },
-    install(failed) {
+    install(failed, silent = false) {
       installFailed = failed
-      updater.quitAndInstall(false, true)
+      updater.autoRunAppAfterInstall = !silent
+      updater.quitAndInstall(silent, !silent)
     },
     close() {
       installFailed = undefined

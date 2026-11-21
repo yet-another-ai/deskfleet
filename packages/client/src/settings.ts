@@ -34,6 +34,7 @@ export type UpdateInstallSource =
 export interface AutoDownloadUpdatesState {
   enabled: boolean
   pauseOnMetered: boolean
+  installOnQuit?: boolean
   installSource: UpdateInstallSource
 }
 
@@ -72,6 +73,7 @@ export interface SettingsApi extends LocalAgentSettingsApi {
   getAutoDownloadUpdates(): Promise<AutoDownloadUpdatesState>
   setAutoDownloadUpdates(enabled: boolean): Promise<AutoDownloadUpdatesState>
   setPauseUpdatesOnMetered(enabled: boolean): Promise<AutoDownloadUpdatesState>
+  setInstallUpdatesOnQuit?(enabled: boolean): Promise<AutoDownloadUpdatesState>
   getWorktreeRoot(): Promise<WorktreeRootState>
   setWorktreeRoot(root: string | null): Promise<WorktreeRootState>
   chooseWorktreeRoot(): Promise<string | null>

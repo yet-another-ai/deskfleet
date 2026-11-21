@@ -227,6 +227,7 @@
   },
   "updates": {
     "available": "Version {version} is available",
+    "readyOnQuit": "Version {version} is ready and will install when you quit",
     "install": "Update and restart",
     "retry": "Retry update",
     "checking": "Checking for updates…",
@@ -796,10 +797,12 @@
     "linuxKeyringRestartRequired": "Restart DeskFleet to apply",
     "linuxKeyringOverridden": "Controlled by command-line or environment setting",
     "autoDownloadUpdates": "Automatically download updates",
-    "autoDownloadUpdatesDescription": "Download new versions in the background and wait for your confirmation before installing and restarting.",
+    "autoDownloadUpdatesDescription": "Download new versions in the background so they are ready to install.",
     "pauseUpdatesOnMetered": "Pause on metered networks",
     "pauseUpdatesOnMeteredDescription": "Automatically pause update downloads on metered networks. You can still download an update manually.",
     "pauseUpdatesOnMeteredPlayDescription": "Wait to offer automatic updates on metered networks. Downloads you accept are managed by Google Play.",
+    "installUpdatesOnQuit": "Install updates on quit",
+    "installUpdatesOnQuitDescription": "Automatically install updates when you quit DeskFleet, ready on next launch.",
     "windowsLockControl": "Remote control while locked",
     "windowsLockControlDescription": "Allow remote desktop access while this Windows session is locked. Keep DeskFleet running and this computer awake. Enabling or disabling requires administrator approval.",
     "windowsLockControlUnavailable": "Install a Windows build with desktop service support to enable remote control while locked.",
@@ -1272,7 +1275,8 @@
   },
   "tray": {
     "show": "Show DeskFleet",
-    "quit": "Quit DeskFleet"
+    "quit": "Quit DeskFleet",
+    "quitAndUpdate": "Quit and update (v{version})"
   },
   "catalog": {
     "local": "Local",

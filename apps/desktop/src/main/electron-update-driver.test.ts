@@ -5,7 +5,7 @@ import { electronUpdateDriver } from "./electron-update-driver.ts"
 
 function updater() {
   const mock = Object.assign(new EventEmitter(), {
-    autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: true, allowDowngrade: true,
+    autoDownload: true, autoInstallOnAppQuit: true, autoRunAppAfterInstall: true, allowPrerelease: true, allowDowngrade: true,
     disableWebInstaller: false, disableDifferentialDownload: false,
     checkForUpdates: vi.fn().mockResolvedValue({ isUpdateAvailable: true, updateInfo: { version: "0.2.0" } }),
     downloadUpdate: vi.fn().mockResolvedValue(["installer.exe"]),
@@ -73,7 +73,11 @@ test("installation is explicit and reports asynchronous installer failure once",
   const driver = electronUpdateDriver(api)
   const failed = vi.fn()
   driver.install(failed)
+  expect(mock.autoRunAppAfterInstall).toBe(true)
   expect(mock.quitAndInstall).toHaveBeenCalledExactlyOnceWith(false, true)
+  driver.install(failed, true)
+  expect(mock.autoRunAppAfterInstall).toBe(false)
+  expect(mock.quitAndInstall).toHaveBeenLastCalledWith(true, false)
   const error = new Error("Installer refused")
   mock.emit("error", error)
   mock.emit("error", error)

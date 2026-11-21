@@ -34,7 +34,7 @@ export function installSettings(
   keepAwake: KeepAwakeController,
   notifications: NotificationSettingsController,
   worktrees: WorktreeRootSettingsController,
-  updates?: Pick<UpdateSettingsController, "get" | "setEnabled" | "setPauseOnMetered">,
+  updates?: Pick<UpdateSettingsController, "get" | "setEnabled" | "setPauseOnMetered" | "setInstallOnQuit">,
   remoteAgents?: RemoteAgentSettingsController,
   linuxKeyring?: Pick<LinuxKeyringSettingsController, "get" | "setUseSystemKeyring">,
 ): void {
@@ -80,6 +80,10 @@ export function installSettings(
           if (typeof enabled !== "boolean") throw new Error("Metered network update setting must be a boolean")
           if (!updates) throw new Error("Automatic update settings are unavailable")
           return { ok: true, value: updates.setPauseOnMetered(enabled) }
+        case "setInstallUpdatesOnQuit":
+          if (typeof enabled !== "boolean") throw new Error("Install updates on quit setting must be a boolean")
+          if (!updates) throw new Error("Automatic update settings are unavailable")
+          return { ok: true, value: updates.setInstallOnQuit(enabled) }
         case "getWorktreeRoot": return { ok: true, value: await worktrees.get() }
         case "getWorktreePreferences": return { ok: true, value: await worktrees.getPreferences() }
         case "setWorktreePreferences":

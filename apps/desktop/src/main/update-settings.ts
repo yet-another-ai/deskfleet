@@ -9,6 +9,7 @@ export class UpdateSettingsController {
   readonly #installSource: UpdateInstallSource
   #enabled: boolean | undefined
   #pauseOnMetered = true
+  #installOnQuit = true
 
   constructor(
     path: string,
@@ -23,6 +24,8 @@ export class UpdateSettingsController {
   get(): AutoDownloadUpdatesState {
     if (this.#enabled === undefined) {
       let enabled = true
+      let pauseOnMetered = true
+      let installOnQuit = true
       try {
         const stored: unknown = JSON.parse(readFileSync(this.#path, "utf8"))
         if (!stored || typeof stored !== "object" || !("enabled" in stored)
@@ -30,32 +33,51 @@ export class UpdateSettingsController {
         enabled = stored.enabled
         if ("pauseOnMetered" in stored) {
           if (typeof stored.pauseOnMetered !== "boolean") throw new Error("Invalid automatic update settings")
-          this.#pauseOnMetered = stored.pauseOnMetered
+          pauseOnMetered = stored.pauseOnMetered
+        }
+        if ("installOnQuit" in stored) {
+          if (typeof stored.installOnQuit !== "boolean") throw new Error("Invalid automatic update settings")
+          installOnQuit = stored.installOnQuit
         }
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
       }
       this.#enabled = enabled
+      this.#pauseOnMetered = pauseOnMetered
+      this.#installOnQuit = installOnQuit
       this.#onChange(this.get())
     }
-    return { enabled: this.#enabled, pauseOnMetered: this.#pauseOnMetered, installSource: this.#installSource }
+    return {
+      enabled: this.#enabled,
+      pauseOnMetered: this.#pauseOnMetered,
+      installOnQuit: this.#installOnQuit,
+      installSource: this.#installSource,
+    }
   }
 
   setEnabled(enabled: boolean): AutoDownloadUpdatesState {
-    return this.#save(enabled, this.get().pauseOnMetered)
+    this.get()
+    return this.#save(enabled, this.#pauseOnMetered, this.#installOnQuit)
   }
 
   setPauseOnMetered(enabled: boolean): AutoDownloadUpdatesState {
-    return this.#save(this.get().enabled, enabled)
+    this.get()
+    return this.#save(this.#enabled!, enabled, this.#installOnQuit)
   }
 
-  #save(enabled: boolean, pauseOnMetered: boolean): AutoDownloadUpdatesState {
+  setInstallOnQuit(enabled: boolean): AutoDownloadUpdatesState {
+    this.get()
+    return this.#save(this.#enabled!, this.#pauseOnMetered, enabled)
+  }
+
+  #save(enabled: boolean, pauseOnMetered: boolean, installOnQuit: boolean): AutoDownloadUpdatesState {
     mkdirSync(dirname(this.#path), { recursive: true })
     const temporary = `${this.#path}.tmp`
-    writeFileSync(temporary, JSON.stringify({ enabled, pauseOnMetered }, null, 2) + "\n", { mode: 0o600 })
+    writeFileSync(temporary, JSON.stringify({ enabled, pauseOnMetered, installOnQuit }, null, 2) + "\n", { mode: 0o600 })
     renameSync(temporary, this.#path)
     this.#enabled = enabled
     this.#pauseOnMetered = pauseOnMetered
+    this.#installOnQuit = installOnQuit
     const state = this.get()
     this.#onChange(state)
     return state

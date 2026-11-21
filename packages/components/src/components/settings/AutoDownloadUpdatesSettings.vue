@@ -47,6 +47,17 @@ async function setPauseOnMetered(enabled: boolean) {
   } finally { saving.value = false }
 }
 
+async function setInstallOnQuit(enabled: boolean) {
+  if (!platformClient.settings.setInstallUpdatesOnQuit) return
+  saving.value = true
+  requestError.value = null
+  try {
+    state.value = await platformClient.settings.setInstallUpdatesOnQuit(enabled)
+  } catch (error) {
+    requestError.value = error instanceof Error ? error.message : String(error)
+  } finally { saving.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -78,6 +89,22 @@ onMounted(load)
       :disabled="busy"
       class="ml-2 disabled:cursor-default"
       @update:model-value="setPauseOnMetered"
+    />
+  </SettingsRow>
+  <SettingsRow
+    v-if="state?.enabled && state.installOnQuit !== undefined"
+    :label="t('settings.installUpdatesOnQuit')"
+    label-id="install-updates-on-quit-label"
+    description-id="install-updates-on-quit-description"
+  >
+    <template #description>{{ t("settings.installUpdatesOnQuitDescription") }}</template>
+    <UiSwitch
+      aria-labelledby="install-updates-on-quit-label"
+      aria-describedby="install-updates-on-quit-description"
+      :model-value="state.installOnQuit"
+      :disabled="busy"
+      class="ml-2 disabled:cursor-default"
+      @update:model-value="setInstallOnQuit"
     />
   </SettingsRow>
   <p v-if="requestError" role="alert" class="m-0 -mt-1 break-words px-4 pb-3 text-[13px] text-ui-danger">{{ requestError }}</p>

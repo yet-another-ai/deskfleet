@@ -10,6 +10,7 @@ interface TrayActions {
 // A collected Tray disappears from the notification area, so keep a reference.
 let tray: Tray | null = null
 let trayActions: TrayActions | null = null
+let updateVersion: string | null = null
 
 export function createTray(actions: TrayActions): void {
   trayActions = actions
@@ -22,13 +23,25 @@ export function createTray(actions: TrayActions): void {
   if (process.platform === "win32") tray.on("click", actions.show)
 }
 
+export function setTrayUpdateVersion(version: string | null): void {
+  if (updateVersion === version) return
+  updateVersion = version
+  refreshTrayMenu()
+}
+
+export function destroyTray(): void {
+  tray?.destroy()
+  tray = null
+  trayActions = null
+}
+
 export function refreshTrayMenu(): void {
   if (!tray || !trayActions) return
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: t("tray.show"), click: trayActions.show },
       { type: "separator" },
-      { label: t("tray.quit"), click: trayActions.quit },
+      { label: updateVersion ? t("tray.quitAndUpdate", { version: updateVersion }) : t("tray.quit"), click: trayActions.quit },
     ]),
   )
 }

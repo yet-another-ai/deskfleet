@@ -51,6 +51,7 @@ const status = computed(() => {
   if (state.value?.status === "downloading") return t("updates.downloading", { percent: Math.floor(state.value.percent ?? 0) })
   if (state.value?.status === "installing") return t("updates.installing")
   if (state.value?.status === "disabled") return t("updatesSettings.unavailable")
+  if (state.value?.status === "downloaded" && state.value.installOnQuit && state.value.version) return t("updates.readyOnQuit", { version: state.value.version })
   if (state.value?.version) return t("updates.available", { version: state.value.version })
   return checked.value ? t("updatesSettings.upToDate") : t("updatesSettings.ready")
 })

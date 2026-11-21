@@ -11,7 +11,7 @@ const { handle, app, loadUpdater, createDriver, createAppImageUpdater, appImageU
     isPackaged: false,
     getVersion: () => "0.1.0",
     getPath: vi.fn(() => "/Applications/DeskFleet.app/Contents/MacOS/deskfleet"),
-  }, loadUpdater: vi.fn(), createDriver: vi.fn(), createAppImageUpdater: vi.fn(), appImageUpdater: {},
+  }, loadUpdater: vi.fn(), createDriver: vi.fn(), createAppImageUpdater: vi.fn(), appImageUpdater: { on: vi.fn() },
   driver: { check: vi.fn(), download: vi.fn(), install: vi.fn(), close: vi.fn() },
   isNetworkMetered: vi.fn(),
 }))
@@ -94,7 +94,7 @@ test("extracted Linux bundles are disabled while AppImage installs can update", 
   expect(resolveDesktopInstallSource()).toBe("desktop_installer")
   const appImage = await installUpdates(lifecycle(), vi.fn())
   controllers.push(appImage)
-  expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
+  expect(appImage.get()).toEqual({ status: "idle", currentVersion: "0.1.0", installOnQuit: true })
   expect(createDriver).toHaveBeenCalledOnce()
   expect(createAppImageUpdater).toHaveBeenCalledOnce()
   expect(createDriver).toHaveBeenCalledWith(appImageUpdater)
@@ -118,7 +118,7 @@ test("Nix-managed macOS installs are disabled while ordinary app installs update
   expect(resolveDesktopInstallSource()).toBe("desktop_installer")
   const controller = await installUpdates(lifecycle(), vi.fn())
   controllers.push(controller)
-  expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0" })
+  expect(controller.get()).toEqual({ status: "idle", currentVersion: "0.1.0", installOnQuit: true })
   expect(createDriver).toHaveBeenCalledOnce()
   expect(createAppImageUpdater).not.toHaveBeenCalled()
 })

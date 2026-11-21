@@ -7,6 +7,7 @@ export interface UpdateState {
   version?: string
   percent?: number
   error?: string
+  installOnQuit?: boolean
 }
 
 /** Updates belong to the local Electron client, independently of the selected Machine. */

@@ -227,6 +227,7 @@
   },
   "updates": {
     "available": "新版本 {version} 已可用",
+    "readyOnQuit": "新版本 {version} 已就绪，将在退出时自动安装",
     "install": "更新并重启",
     "retry": "重试更新",
     "checking": "正在检查更新…",
@@ -796,10 +797,12 @@
     "linuxKeyringRestartRequired": "重启 DeskFleet 后生效",
     "linuxKeyringOverridden": "由启动参数或环境变量控制",
     "autoDownloadUpdates": "自动下载更新",
-    "autoDownloadUpdatesDescription": "在后台自动下载新版本，并在安装和重启前等待你的确认。",
+    "autoDownloadUpdatesDescription": "在后台自动下载新版本，随时可供安装。",
     "pauseUpdatesOnMetered": "在计费网络中自动暂停",
     "pauseUpdatesOnMeteredDescription": "使用计费网络时自动暂停更新下载。你仍可手动下载更新。",
     "pauseUpdatesOnMeteredPlayDescription": "使用计费网络时暂缓自动提示更新。你确认后的下载由 Google Play 管理。",
+    "installUpdatesOnQuit": "退出时自动安装更新",
+    "installUpdatesOnQuitDescription": "退出 DeskFleet 时自动安装更新，下次启动即生效。",
     "windowsLockControl": "锁屏时允许远程控制",
     "windowsLockControlDescription": "允许在当前 Windows 会话锁屏时访问远程桌面。请保持 DeskFleet 运行，并确保本机未休眠。启用或停用需要管理员授权。",
     "windowsLockControlUnavailable": "请安装包含桌面服务的 Windows 版本，以启用锁屏远程控制。",
@@ -1272,7 +1275,8 @@
   },
   "tray": {
     "show": "显示 DeskFleet",
-    "quit": "退出 DeskFleet"
+    "quit": "退出 DeskFleet",
+    "quitAndUpdate": "退出并更新 (v{version})"
   },
   "catalog": {
     "local": "本地",
