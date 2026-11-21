@@ -18,6 +18,8 @@ pub(crate) struct Palette {
     pub(crate) muted: u32,
     pub(crate) faint: u32,
     pub(crate) success: u32,
+    /// Degraded stream quality; always shown beside a text label.
+    pub(crate) warning: u32,
     pub(crate) danger: u32,
     pub(crate) accent: u32,
 }
@@ -35,6 +37,7 @@ impl Palette {
                 muted: 0xa3a9b7,
                 faint: 0x7c8393,
                 success: 0x4cc38a,
+                warning: 0xe8c547,
                 danger: 0xf47c71,
                 accent: 0x8e9bff,
             }
@@ -48,6 +51,7 @@ impl Palette {
                 muted: 0x596173,
                 faint: 0x838a9a,
                 success: 0x167a4a,
+                warning: 0x9a7a00,
                 danger: 0xc4372f,
                 accent: 0x4a5bd4,
             }
@@ -157,6 +161,23 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
         "expand" => r#"<path d="M5 12h14m-7-7v14"/>"#,
         "chevron" => r#"<path d="m6 9 6 6 6-6"/>"#,
         "check" => r#"<path d="m9 12 2 2 4-4"/>"#,
+        "activity" => {
+            r#"<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>"#
+        }
+        "mouse" => r#"<rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/>"#,
+        "zoom" => r#"<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/>"#,
+        "clipboard" => {
+            r#"<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>"#
+        }
+        "command" => {
+            r#"<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>"#
+        }
+        "eye" => {
+            r#"<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>"#
+        }
+        "refresh" => {
+            r#"<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>"#
+        }
         _ => {
             r#"<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4m-4 0h8m-5-14 5 3-5 3z"/>"#
         }
@@ -174,10 +195,31 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
 mod tests {
     use super::*;
 
-    const CONTROL_ICONS: [&str; 17] = [
-        "grip", "maximize", "minimize", "settings", "unplug", "chevron", "check", "monitor",
-        "pause", "play", "pointer", "trackpad", "keyboard", "terminal", "close", "collapse",
+    const CONTROL_ICONS: [&str; 24] = [
+        "grip",
+        "maximize",
+        "minimize",
+        "settings",
+        "unplug",
+        "chevron",
+        "check",
+        "monitor",
+        "pause",
+        "play",
+        "pointer",
+        "trackpad",
+        "keyboard",
+        "terminal",
+        "close",
+        "collapse",
         "expand",
+        "activity",
+        "mouse",
+        "zoom",
+        "clipboard",
+        "command",
+        "eye",
+        "refresh",
     ];
 
     #[component]
@@ -207,10 +249,8 @@ mod tests {
     fn native_controls_use_the_shared_desktop_translations() {
         for locale in ["en-US", "zh-cmn-Hans-CN", "ja-JP"] {
             for key in [
-                "pauseControl",
-                "resumeControl",
                 "settings",
-                "hideSettings",
+                "display",
                 "displayOption",
                 "displayName",
                 "control",
@@ -221,8 +261,6 @@ mod tests {
                 "moveControls",
                 "hackerKeyboard",
                 "keyboardModifiersHint",
-                "absoluteMouse",
-                "relativeMouse",
                 "systemKeyboard",
                 "hideKeyboard",
                 "terminalPaste",
@@ -231,6 +269,46 @@ mod tests {
                 "close",
                 "collapseControls",
                 "expandControls",
+                "fullscreen",
+                "exitFullscreen",
+                "sendSecureAttention",
+                "panelControl",
+                "panelConfig",
+                "panelMonitor",
+                "viewOnly",
+                "controlPaused",
+                "sendInput",
+                "sendInputHint",
+                "viewOnlyHint",
+                "allowControl",
+                "inputWaiting",
+                "touch",
+                "touchDirect",
+                "touchTrackpad",
+                "pinchZoom",
+                "zoom",
+                "resetZoom",
+                "mouse",
+                "keyboard",
+                "shortcuts",
+                "clipboardSection",
+                "session",
+                "reconnect",
+                "qualityWaiting",
+                "qualityGood",
+                "qualityFair",
+                "qualityPoor",
+                "bitrate",
+                "frameRate",
+                "packetLoss",
+                "jitter",
+                "resolution",
+                "codec",
+                "skippedFrames",
+                "keyframeRequests",
+                "packetsLost",
+                "monitorHint",
+                "hidePanel",
             ] {
                 assert!(!label(Some(locale), key).is_empty());
             }

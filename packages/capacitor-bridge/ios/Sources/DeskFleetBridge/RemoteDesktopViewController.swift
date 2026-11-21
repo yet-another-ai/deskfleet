@@ -49,7 +49,7 @@ final class MetalVideoView: UIView {
     }
 }
 
-final class RemoteDesktopViewController: UIViewController {
+final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDelegate {
     private static let maxClipboardBytes = 32 * 1024
     private let metalView = MetalVideoView(frame: .zero)
     private let controls = RemoteDesktopControls()
@@ -59,6 +59,11 @@ final class RemoteDesktopViewController: UIViewController {
     private var inputState = RemoteDesktopInputState()
     private var reverseScroll = false
     private var clipboardSharing = true
+    private var pinchZoom = true
+    private var pinching = false
+    /// Set once a gesture pinches; its remaining pan never scrolls or drags the remote.
+    private var panSuppressed = false
+    private let pan = UIPanGestureRecognizer()
     private var fullscreen = true
     private var state: [String: Any] = [:]
     private var relative = false
@@ -73,8 +78,10 @@ final class RemoteDesktopViewController: UIViewController {
     private var lastSyncedClipboard: String?
     private var lastPasteboardChangeCount: Int = UIPasteboard.general.changeCount
 
+    private var connected: Bool { state["status"] as? String == "connected" }
+
     private var inputEnabled: Bool {
-        state["status"] as? String == "connected" && state["control"] as? Bool == true
+        connected && state["control"] as? Bool == true
             && state["inputReady"] as? Bool == true && !paused
     }
 
@@ -119,10 +126,13 @@ final class RemoteDesktopViewController: UIViewController {
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
         longPress.minimumPressDuration = 0.5
         metalView.addGestureRecognizer(longPress)
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.addTarget(self, action: #selector(handlePan(_:)))
         pan.minimumNumberOfTouches = 1
         pan.maximumNumberOfTouches = 2
         metalView.addGestureRecognizer(pan)
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.delegate = self
+        metalView.addGestureRecognizer(pinch)
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(handleFocusLost), name: UIApplication.willResignActiveNotification, object: nil)
@@ -200,13 +210,13 @@ final class RemoteDesktopViewController: UIViewController {
         controls.update(state: state, relative: relative, paused: paused, dragging: dragLocked,
                         keyboard: keyboard.isFirstResponder, hacker: hackerOpen, terminalPaste: terminalPaste,
                         modifiers: modifiers.selected, reverseScroll: reverseScroll,
-                        clipboardSharing: clipboardSharing, fullscreen: fullscreen)
+                        clipboardSharing: clipboardSharing, fullscreen: fullscreen, pinchZoom: pinchZoom)
         view.setNeedsLayout()
     }
 
     private func handleAction(_ event: [String: Any]) {
         switch event["type"] as? String {
-        case "toggleCollapsed", "toggleSettings":
+        case "toggleCollapsed", "togglePanel":
             releaseInput()
             hackerOpen = false
         case "toggleMouseMode":
@@ -254,6 +264,14 @@ final class RemoteDesktopViewController: UIViewController {
         case "key" where inputEnabled:
             if let code = event["value"] as? String { pressKey(code) }
         case "secureAttention" where inputEnabled: sendInput(["type": "secureAttention"])
+        case "shortcut" where inputEnabled:
+            guard let codes = event["value"] as? [String], let key = codes.last else { return }
+            releaseInput()
+            sendKey(key, modifiers: Array(codes.dropLast()))
+        case "setPinchZoom":
+            pinchZoom = event["value"] as? Bool == true
+            if !pinchZoom { deskfleetIosTouch(17, 0, 0, 0, 0) }
+        case "resetZoom": deskfleetIosTouch(17, 0, 0, 0, 0)
         case "reconnect", "disconnect":
             releaseInput()
             emit(["type": event["type"] as? String ?? "disconnect"])
@@ -328,7 +346,41 @@ final class RemoteDesktopViewController: UIViewController {
         deskfleetIosTouch(relative ? 10 : 4, x, y, 0, 0)
     }
 
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        gestureRecognizer is UIPinchGestureRecognizer && other === pan
+    }
+
+    /// Pinch zoom is local presentation, so it needs a connection but not input control.
+    @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+        switch recognizer.state {
+        case .began, .changed:
+            guard pinchZoom, connected, recognizer.numberOfTouches >= 2 else { return }
+            if !pinching {
+                pinching = true
+                panSuppressed = true
+                if dragging && !dragLocked { releaseInput(resetPan: false); updateControls() }
+            }
+            let (x, y) = scaledPoint(recognizer)
+            deskfleetIosTouch(15, x, y, Double(recognizer.scale), 0)
+            recognizer.scale = 1
+        default:
+            guard pinching else { return }
+            pinching = false
+            deskfleetIosTouch(16, 0, 0, 0, 0)
+            if ![.began, .changed].contains(pan.state) { panSuppressed = false }
+        }
+    }
+
     @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+        if panSuppressed {
+            recognizer.setTranslation(.zero, in: metalView)
+            if [.ended, .cancelled, .failed].contains(recognizer.state) {
+                panSuppressed = pinching
+                inputState.endPan()
+            }
+            return
+        }
         guard inputEnabled else { return }
         let (x, y) = scaledPoint(recognizer)
         let scale = metalView.contentScaleFactor

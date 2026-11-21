@@ -40,7 +40,8 @@ final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
     private var toolbarRect = CGRect.zero
     private var panelRect = CGRect.zero
     private var keyboardRect = CGRect.zero
-    private var settingsOpen = false
+    /// The open toolbar dropdown: "control", "config", or "monitor".
+    private var panel: String?
     private var selectOpen = false
     private var collapsed = false
     private var dragOrigin = CGPoint.zero
@@ -82,14 +83,18 @@ final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
 
     func update(state: [String: Any], relative: Bool, paused: Bool, dragging: Bool,
                 keyboard: Bool, hacker: Bool, terminalPaste: Bool, modifiers: Set<String>,
-                reverseScroll: Bool, clipboardSharing: Bool, fullscreen: Bool) {
+                reverseScroll: Bool, clipboardSharing: Bool, fullscreen: Bool, pinchZoom: Bool) {
         var ui: [String: Any] = ["status": "starting", "title": "", "displays": [], "displayId": 0,
                                  "control": false, "inputReady": false, "secureAttention": false]
         ui.merge(state) { _, next in next }
         connected = ui["status"] as? String == "connected"
+        if !connected {
+            panel = nil
+            selectOpen = false
+        }
         snapshot = ["ui": ui, "mobile": true, "relativeMouse": relative, "paused": paused,
                     "dragging": dragging, "fullscreen": fullscreen, "keyboardOpen": keyboard, "hackerOpen": hacker,
-                    "pasteShift": terminalPaste, "reverseScroll": reverseScroll, "clipboardSharing": clipboardSharing,
+                    "pasteShift": terminalPaste, "reverseScroll": reverseScroll, "clipboardSharing": clipboardSharing, "pinchZoom": pinchZoom,
                     "modifiers": ["ControlLeft", "AltLeft", "ShiftLeft", "MetaLeft"].map { modifiers.contains($0) }]
         setNeedsLayout()
     }
@@ -114,10 +119,10 @@ final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
         toolbarRect = CGRect(origin: position, size: toolbarSize)
         let panelWidth = min(288, max(0, bounds.width - 24))
         let panelY = min(toolbarRect.maxY + 8, max(12, availableHeight - panelHeight - 12))
-        panelRect = settingsOpen ? CGRect(x: min(position.x, max(12, bounds.width - panelWidth - 12)),
+        panelRect = panel != nil ? CGRect(x: min(position.x, max(12, bounds.width - panelWidth - 12)),
                                          y: panelY, width: panelWidth, height: panelHeight) : .zero
         snapshot.merge([
-            "collapsed": collapsed, "dark": traitCollection.userInterfaceStyle == .dark, "settingsOpen": settingsOpen,
+            "collapsed": collapsed, "dark": traitCollection.userInterfaceStyle == .dark, "panel": panel ?? NSNull(),
             "position": [position.x, position.y], "toolbarSize": [toolbarSize.width, toolbarSize.height],
             "viewport": [bounds.width, bounds.height], "panelPosition": [panelRect.minX, panelRect.minY],
             "panelHeight": panelHeight, "keyboardPosition": [keyboardRect.minX, keyboardRect.minY],
@@ -140,15 +145,16 @@ final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
             panelHeight = height
         case "toggleCollapsed":
             collapsed.toggle()
-            settingsOpen = false
+            panel = nil
             selectOpen = false
             action?(event)
-        case "toggleSettings":
-            settingsOpen.toggle()
+        case "togglePanel":
+            let next = event["value"] as? String
+            panel = panel == next ? nil : next
             selectOpen = false
             action?(event)
-        case "toggleHackerKeyboard":
-            settingsOpen = false
+        case "toggleHackerKeyboard", "reconnect", "disconnect":
+            panel = nil
             selectOpen = false
             action?(event)
         case "selectOpen":

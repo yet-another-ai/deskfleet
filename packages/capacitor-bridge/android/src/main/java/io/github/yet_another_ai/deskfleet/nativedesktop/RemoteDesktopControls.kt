@@ -32,9 +32,13 @@ internal class RemoteDesktopControls(
         private set
     var dragging = false
         private set
+    /** Local presentation zoom; it does not need input control. */
+    var pinchZoom = true
+        private set
     private var paused = false
     private var fullscreen = true
-    private var settingsOpen = false
+    /** The open toolbar dropdown: "control", "config", or "monitor". */
+    private var panel: String? = null
     private var hackerOpen = false
     private var collapsed = false
     private var selectOpen = false
@@ -46,7 +50,7 @@ internal class RemoteDesktopControls(
         .put("inputReady", false).put("secureAttention", false)
     private var safe = RectF()
     private val toolbar = RectF(12f, 12f, 292f, 100f)
-    private val settings = RectF(12f, 108f, 300f, 420f)
+    private val panelBounds = RectF(12f, 108f, 300f, 420f)
     private val hacker = RectF(12f, 120f, 340f, 400f)
     private var keyboardLimit = Pair(328f, 280f)
     private var gripStart: Pair<Float, Float>? = null
@@ -84,6 +88,10 @@ internal class RemoteDesktopControls(
             release()
             resetPointer()
         }
+        if (!connected()) {
+            panel = null
+            selectOpen = false
+        }
         if (!ui.optBoolean("control") || !ui.optBoolean("inputReady") || !connected()) {
             if (paused) send(JSONObject().put("type", "pauseInput").put("paused", false).toString())
             paused = false
@@ -109,10 +117,16 @@ internal class RemoteDesktopControls(
                 updateEnabled()
             }
             "toggleFullscreen" -> { fullscreen = !fullscreen; toggleFullscreen() }
-            "toggleSettings" -> { release(); settingsOpen = !settingsOpen; hackerOpen = false; selectOpen = false }
+            "togglePanel" -> {
+                release()
+                val next = action.getString("value")
+                panel = if (panel == next) null else next
+                hackerOpen = false
+                selectOpen = false
+            }
             "selectDisplay" -> {
                 release()
-                settingsOpen = false
+                panel = null
                 selectOpen = false
                 emit(JSONObject().put("type", "selectDisplay").put("displayId", action.getInt("value")))
             }
@@ -127,13 +141,28 @@ internal class RemoteDesktopControls(
             "setReverseScroll" -> reverseScroll = action.getBoolean("value")
             "setClipboardSharing" -> clipboardSharing = action.getBoolean("value")
             "secureAttention" -> input.secureAttention()
-            "reconnect", "disconnect" -> { release(); emit(JSONObject().put("type", action.getString("type"))) }
+            "shortcut" -> {
+                val codes = action.getJSONArray("value")
+                onRelease()
+                stopDrag()
+                input.chord(List(codes.length()) { codes.getString(it) })
+            }
+            "setPinchZoom" -> {
+                pinchZoom = action.getBoolean("value")
+                if (!pinchZoom) resetZoom()
+            }
+            "resetZoom" -> resetZoom()
+            "reconnect", "disconnect" -> {
+                release()
+                panel = null
+                emit(JSONObject().put("type", action.getString("type")))
+            }
             "toggleMouseMode" -> { release(); relative = !relative; resetPointer() }
             "toggleKeyboard" -> toggleKeyboard()
             "toggleHackerKeyboard" -> if (input.enabled) {
                 release()
                 hackerOpen = !hackerOpen
-                settingsOpen = false
+                panel = null
                 selectOpen = false
             }
             "setPasteShift" -> input.pasteShift = action.getBoolean("value")
@@ -153,7 +182,7 @@ internal class RemoteDesktopControls(
             "toggleCollapsed" -> {
                 release()
                 collapsed = !collapsed
-                settingsOpen = false
+                panel = null
                 hackerOpen = false
                 selectOpen = false
                 input.clearModifiers()
@@ -167,8 +196,8 @@ internal class RemoteDesktopControls(
             }
             "panelMeasured" -> {
                 val height = action.getDouble("value").toFloat()
-                if (kotlin.math.abs(settings.height() - height) < 0.5f) return
-                settings.bottom = settings.top + height
+                if (kotlin.math.abs(panelBounds.height() - height) < 0.5f) return
+                panelBounds.bottom = panelBounds.top + height
             }
             "keyboardMeasured" -> {
                 val size = action.getJSONArray("value")
@@ -201,7 +230,7 @@ internal class RemoteDesktopControls(
     fun closeKeyboard(): Boolean {
         if (imeVisible) { hideKeyboard(); return true }
         if (hackerOpen) { hackerOpen = false; input.clearModifiers(); publish(); return true }
-        if (settingsOpen) { settingsOpen = false; selectOpen = false; publish(); return true }
+        if (panel != null) { panel = null; selectOpen = false; publish(); return true }
         return false
     }
 
@@ -216,7 +245,7 @@ internal class RemoteDesktopControls(
         overlay.destroy()
     }
 
-    private fun connected() = ui.optString("status") == "connected"
+    fun connected() = ui.optString("status") == "connected"
     private fun available() = connected() && ui.optBoolean("control") && ui.optBoolean("inputReady")
 
     private fun updateEnabled() {
@@ -230,6 +259,8 @@ internal class RemoteDesktopControls(
     }
 
     private fun resetPointer() = DeskFleetBridge.nativeTouch(14, 0.0, 0.0, 0.0, 0.0)
+
+    private fun resetZoom() = DeskFleetBridge.nativeTouch(17, 0.0, 0.0, 0.0, 0.0)
 
     private fun toggleKeyboard() {
         if (!input.enabled) return
@@ -251,7 +282,7 @@ internal class RemoteDesktopControls(
         val pointX = x / density
         val pointY = y / density
         return !connected() || selectOpen || toolbar.contains(pointX, pointY) ||
-            (settingsOpen && settings.contains(pointX, pointY)) ||
+            (panel != null && panelBounds.contains(pointX, pointY)) ||
             (hackerOpen && hacker.contains(pointX, pointY))
     }
 
@@ -287,9 +318,9 @@ internal class RemoteDesktopControls(
         val bottom = (height - safe.bottom - 8f).coerceAtLeast(top)
         val toolbarBottom = if (hackerOpen) (bottom - 88f).coerceAtLeast(top) else bottom
         toolbar.offsetTo(toolbar.left.coerceIn(left, (right - toolbar.width()).coerceAtLeast(left)), toolbar.top.coerceIn(top, (toolbarBottom - toolbar.height()).coerceAtLeast(top)))
-        settings.right = settings.left + minOf(288f, (width - safe.left - safe.right - 24f).coerceAtLeast(0f))
-        val settingsY = if (toolbar.bottom + 8f + settings.height() <= bottom) toolbar.bottom + 8f else toolbar.top - settings.height() - 8f
-        settings.offsetTo(toolbar.left.coerceIn(left, (right - settings.width()).coerceAtLeast(left)), settingsY.coerceIn(top, (bottom - settings.height()).coerceAtLeast(top)))
+        panelBounds.right = panelBounds.left + minOf(288f, (width - safe.left - safe.right - 24f).coerceAtLeast(0f))
+        val panelY = if (toolbar.bottom + 8f + panelBounds.height() <= bottom) toolbar.bottom + 8f else toolbar.top - panelBounds.height() - 8f
+        panelBounds.offsetTo(toolbar.left.coerceIn(left, (right - panelBounds.width()).coerceAtLeast(left)), panelY.coerceIn(top, (bottom - panelBounds.height()).coerceAtLeast(top)))
         keyboardLimit = Pair((right - left).coerceAtLeast(0f), (bottom - toolbar.bottom - 8f).coerceIn(40f, 320f))
         hacker.offsetTo(left, (bottom - minOf(hacker.height(), keyboardLimit.second)).coerceAtLeast(top))
         publish()
@@ -301,7 +332,7 @@ internal class RemoteDesktopControls(
             .put("reverseScroll", reverseScroll).put("clipboardSharing", clipboardSharing)
             .put("fullscreen", fullscreen)
             .put("dark", context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
-            .put("settingsOpen", settingsOpen).put("relativeMouse", relative)
+            .put("panel", panel ?: JSONObject.NULL).put("pinchZoom", pinchZoom).put("relativeMouse", relative)
             .put("keyboardOpen", imeVisible).put("hackerOpen", hackerOpen)
             .put("pasteShift", input.pasteShift).put("dragging", dragging).put("collapsed", collapsed)
             .put("modifiers", JSONArray(modifiers))
@@ -311,7 +342,7 @@ internal class RemoteDesktopControls(
                 (root.width / density - safe.left - safe.right).coerceAtLeast(0f),
                 (root.height / density - safe.top - safe.bottom).coerceAtLeast(0f),
             )))
-            .put("panelPosition", JSONArray(listOf(settings.left, settings.top))).put("panelHeight", settings.height())
+            .put("panelPosition", JSONArray(listOf(panelBounds.left, panelBounds.top))).put("panelHeight", panelBounds.height())
             .put("keyboardPosition", JSONArray(listOf(hacker.left, hacker.top)))
             .put("keyboardSize", JSONArray(listOf(keyboardLimit.first, keyboardLimit.second)))
     }

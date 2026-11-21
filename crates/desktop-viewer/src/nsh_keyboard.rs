@@ -181,9 +181,45 @@ pub(crate) fn key_events(modifiers: [bool; 4], code: &str) -> Vec<InputEvent> {
     events
 }
 
+/// One shortcut chord: earlier codes are held while the last is pressed.
+#[cfg(any(test, not(any(target_os = "android", target_os = "ios"))))]
+pub(crate) fn chord_events(codes: &[&str]) -> Vec<InputEvent> {
+    let key = |code: &str, pressed| InputEvent::Key {
+        code: code.into(),
+        pressed,
+        repeat: false,
+    };
+    let mut events = vec![InputEvent::ReleaseAll];
+    events.extend(codes.iter().map(|code| key(code, true)));
+    events.extend(codes.iter().rev().map(|code| key(code, false)));
+    events
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_chords_release_in_reverse_order() {
+        let events = chord_events(&["ControlLeft", "ShiftLeft", "Escape"]);
+        let pressed = |code: &str, pressed| InputEvent::Key {
+            code: code.into(),
+            pressed,
+            repeat: false,
+        };
+        assert_eq!(
+            events,
+            [
+                InputEvent::ReleaseAll,
+                pressed("ControlLeft", true),
+                pressed("ShiftLeft", true),
+                pressed("Escape", true),
+                pressed("Escape", false),
+                pressed("ShiftLeft", false),
+                pressed("ControlLeft", false),
+            ]
+        );
+    }
 
     #[test]
     fn selected_modifiers_wrap_one_complete_key_in_order() {

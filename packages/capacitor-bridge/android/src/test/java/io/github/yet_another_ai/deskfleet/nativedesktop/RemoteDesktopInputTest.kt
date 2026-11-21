@@ -30,6 +30,20 @@ class RemoteDesktopInputTest {
     }
 
     @Test
+    fun `shortcut chords release everything first and unwind in reverse`() {
+        val sent = mutableListOf<String>()
+        val input = RemoteDesktopInput(sent::add).apply { enabled = true }
+        input.toggleModifier("AltLeft")
+        input.chord(listOf("ControlLeft", "ShiftLeft", "Escape"))
+        val events = sent.map { JSONObject(it).getJSONObject("event") }
+        assertEquals("releaseAll", events.first().getString("type"))
+        val keys = events.drop(1)
+        assertEquals(listOf("ControlLeft", "ShiftLeft", "Escape", "Escape", "ShiftLeft", "ControlLeft"), keys.map { it.getString("code") })
+        assertEquals(listOf(true, true, true, false, false, false), keys.map { it.getBoolean("pressed") })
+        assertTrue("A chord replaces pending Hacker modifiers", input.modifiers.isEmpty())
+    }
+
+    @Test
     fun `committed unicode uses target platform paste and removes NUL`() {
         val sent = mutableListOf<String>()
         val input = RemoteDesktopInput(sent::add).apply { enabled = true; pasteCode = "MetaLeft" }

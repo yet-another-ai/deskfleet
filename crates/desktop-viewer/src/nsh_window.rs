@@ -252,6 +252,9 @@ impl Viewer {
         {
             self.toolbar_state.paused = false;
         }
+        if self.toolbar_state.ui.status != Status::Connected {
+            self.toolbar_state.panel = None;
+        }
         match event {
             WindowEvent::Start { title, .. } | WindowEvent::Ui(protocol::UiState { title, .. }) => {
                 let title = window_branding::title(&title, self.toolbar_state.ui.locale.as_deref());
@@ -465,8 +468,8 @@ impl Viewer {
         window.focus(&self.focus, cx);
     }
 
-    fn dismiss_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.toolbar_state.settings_open = false;
+    fn dismiss_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.toolbar_state.panel = None;
         self.release(window, cx);
         self.keyboard_focus.resume();
         self.resume_focus(window, cx);
@@ -488,7 +491,7 @@ impl Viewer {
             ToolbarAction::ToggleHackerKeyboard => {
                 self.toolbar_state.hacker_open =
                     !self.toolbar_state.hacker_open && self.toolbar_state.controls_enabled();
-                self.toolbar_state.settings_open = false;
+                self.toolbar_state.panel = None;
                 self.toolbar_state.keyboard_size = (520., 400.);
                 self.toolbar_state.modifiers = [false; 4];
                 self.release(window, cx);
@@ -522,12 +525,21 @@ impl Viewer {
                 window.toggle_fullscreen();
                 None
             }
-            ToolbarAction::ToggleSettings => {
-                if self.toolbar_state.settings_open {
-                    self.dismiss_settings(window, cx);
+            ToolbarAction::Shortcut(codes) if self.toolbar_state.controls_enabled() => {
+                self.toolbar_state.modifiers = [false; 4];
+                let events = crate::nsh_keyboard::chord_events(codes);
+                let clip =
+                    self.clipboard
+                        .before_events(self.toolbar_state.clipboard_sharing, &events, cx);
+                self.send(clip.into_iter().chain(events), window, cx);
+                None
+            }
+            ToolbarAction::TogglePanel(panel) => {
+                if self.toolbar_state.panel == Some(panel) {
+                    self.dismiss_panel(window, cx);
                     return;
                 }
-                self.toolbar_state.settings_open = true;
+                self.toolbar_state.panel = Some(panel);
                 self.toolbar_state.hacker_open = false;
                 self.toolbar_state.modifiers = [false; 4];
                 self.release(window, cx);
@@ -590,6 +602,9 @@ impl Viewer {
             | ToolbarAction::SecureAttention
             | ToolbarAction::ToggleModifier(_)
             | ToolbarAction::Key(_)
+            | ToolbarAction::Shortcut(_)
+            | ToolbarAction::SetPinchZoom(_)
+            | ToolbarAction::ResetZoom
             | ToolbarAction::ToggleMouseMode
             | ToolbarAction::ToggleKeyboard
             | ToolbarAction::ToggleDrag
@@ -601,7 +616,7 @@ impl Viewer {
         if let Some(event) = event {
             self.release(window, cx);
             if matches!(action, ToolbarAction::Reconnect | ToolbarAction::Disconnect) {
-                self.toolbar_state.settings_open = false;
+                self.toolbar_state.panel = None;
                 self.toolbar_state.hacker_open = false;
                 self.toolbar_state.modifiers = [false; 4];
             }
@@ -649,12 +664,12 @@ impl Viewer {
             return;
         }
         self.local_pointer = target == PointerTarget::LocalUi;
-        if self.toolbar_state.settings_open
+        if self.toolbar_state.panel.is_some()
             && !self.select_open
             && !self.toolbar_bounds(window).contains(&event.position)
             && !self.panel_bounds(window).contains(&event.position)
         {
-            self.dismiss_settings(window, cx);
+            self.dismiss_panel(window, cx);
             cx.stop_propagation();
             return;
         }
@@ -790,7 +805,7 @@ fn pointer_target(
         // Native title bars, resize borders, and other non-client areas live
         // outside the GPUI client content. They belong to the platform.
         PointerTarget::NativeChrome
-    } else if state.settings_open
+    } else if state.panel.is_some()
         || state.ui.status != Status::Connected
         || toolbar.contains(&position)
         || (state.hacker_open
@@ -865,10 +880,10 @@ impl Render for Viewer {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|viewer, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape"
-                    && viewer.toolbar_state.settings_open
+                    && viewer.toolbar_state.panel.is_some()
                     && !viewer.select_open
                 {
-                    viewer.dismiss_settings(window, cx);
+                    viewer.dismiss_panel(window, cx);
                     cx.stop_propagation();
                 } else if event.keystroke.key == "escape" && viewer.toolbar_state.hacker_open {
                     viewer.action(ToolbarAction::ToggleHackerKeyboard, window, cx);
@@ -993,7 +1008,7 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_or_open_settings_keep_client_pointer_local() {
+    fn disconnected_or_open_panels_keep_client_pointer_local() {
         let mut state = connected();
         state.ui.status = Status::Disconnected;
         assert_eq!(
@@ -1002,7 +1017,7 @@ mod tests {
         );
 
         let mut state = connected();
-        state.settings_open = true;
+        state.panel = Some(crate::nsh_controls::Panel::Monitor);
         assert_eq!(
             pointer_target(&state, point(px(480.), px(320.)), content(), toolbar()),
             PointerTarget::LocalUi

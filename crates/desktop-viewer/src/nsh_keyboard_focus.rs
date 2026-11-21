@@ -40,7 +40,7 @@ impl KeyboardFocus {
         toolbar: Bounds<Pixels>,
     ) -> bool {
         state.controls_enabled()
-            && !state.settings_open
+            && state.panel.is_none()
             && !state.hacker_open
             && (self.resumed
                 || self.pointer_exited
@@ -117,9 +117,9 @@ mod tests {
         state.paused = true;
         assert!(!focus.enabled(&state, pointer, content(), toolbar()));
         state.paused = false;
-        state.settings_open = true;
+        state.panel = Some(crate::nsh_controls::Panel::Control);
         assert!(!focus.enabled(&state, pointer, content(), toolbar()));
-        state.settings_open = false;
+        state.panel = None;
         state.hacker_open = true;
         assert!(!focus.enabled(&state, pointer, content(), toolbar()));
         state.hacker_open = false;

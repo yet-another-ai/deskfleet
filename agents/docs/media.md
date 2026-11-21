@@ -696,10 +696,27 @@ locale and theme when opening the window. The title combines the machine name,
 localized remote desktop label, and DeskFleet name. The compiled viewer embeds
 the DeskFleet icon for X11 windows, Windows title bars/task switching, and the
 macOS Dock; Wayland uses the installed DeskFleet desktop entry through its app ID.
-The toolbar shows connection and
-codec status, can be dragged within the window, enters or leaves full screen,
-pauses or resumes remote input, and disconnects. Settings select a display and
-enable or disable remote control. Display changes replace the receiving peer
+The toolbar holds only a drag grip, three dropdown triggers, and (on desktop)
+full screen; everything else lives in the dropdowns, and at most one is open:
+
+- **Control** owns input. Its trigger shows the input mode (active, paused, or
+  view only). The panel pauses or resumes sending input, offers **Allow control**
+  in a view-only session, and groups pointer options, keyboards, one-press
+  shortcut chips for the remote platform, Ctrl+Alt+Del, and clipboard sharing.
+  On phones and tablets it also selects Direct or Trackpad touch, drag lock, and
+  pinch zoom.
+- **Config** owns the session: display selection, the remote-control
+  permission, full screen, reconnect, and disconnect.
+- **Monitor** owns stream health. Its trigger shows a quality dot and frame rate;
+  the panel shows received bitrate with a 30-second history, frame rate, packet
+  loss, jitter, resolution, codec, lost packets, skipped frames, and keyframe
+  requests. The receive loop measures these from RTP packets and decoder totals
+  once per second. Quality is *Poor* at ≥5% loss or ≥60 ms jitter, *Fair* at
+  ≥1% or ≥25 ms, and *Good* otherwise. Live statistics and zoom re-render only
+  the values that show them, so an open display menu survives each sample.
+
+A shortcut chip sends its whole chord at once: it releases held input, presses
+each code in order, and releases them in reverse. Display changes replace the receiving peer
 while keeping the window open; an incompatible display leaves the current
 stream running and shows a settings error. Control-setting changes configure
 the current peer, while pause only gates local input.
@@ -1107,7 +1124,18 @@ Hacker Keyboard, with touch-sized buttons and a compact layout. The controls
 provide display and control settings, pause/resume, clipboard,
 disconnect/reconnect, and close actions.
 The toolbar stays within safe areas when the device rotates or the system keyboard
-opens. The embedded browser/PWA viewer keeps its existing floating toolbar and
+opens. Collapsing the mobile toolbar closes its dropdown.
+
+Pinch zoom magnifies the presented video locally, up to 5× and the GPU's largest
+viewport. It changes neither the remote display nor the stream, so it also works
+in view-only sessions; **Pinch to zoom** in Control disables it and resets the
+view. The fingers' midpoint stays on the same video point, so moving two fingers
+while pinching pans. A zoomed edge never exposes letterboxing. Touch input maps
+through the zoomed rectangle, and a trackpad cursor that leaves the view pans it
+along. A new video size starts unzoomed. Hosts send touch kinds 15 (one pinch
+step: focal point in surface pixels and the incremental scale), 16 (pinch end),
+and 17 (reset). Once a gesture pinches, it no longer scrolls the remote. Desktop
+viewers do not zoom. The embedded browser/PWA viewer keeps its existing floating toolbar and
 adds touch controls on devices with a coarse pointer, including tablets with a mouse.
 
 Absolute mouse mode maps taps to the visible remote image, ignoring letterboxing;

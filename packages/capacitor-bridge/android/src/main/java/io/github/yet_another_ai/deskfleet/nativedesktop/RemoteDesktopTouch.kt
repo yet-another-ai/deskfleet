@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.os.SystemClock
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.SurfaceView
 
 internal class RemoteDesktopTouch(private val surface: SurfaceView, private val controls: RemoteDesktopControls) {
@@ -11,6 +12,8 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
     private var active = false
     private var multiTouch = false
     private var longPressed = false
+    /** A pinch owns the rest of its gesture, so it never also scrolls the remote. */
+    private var pinching = false
     private var lastX = 0.0
     private var lastY = 0.0
     private val detector = GestureDetector(surface.context, object : GestureDetector.SimpleOnGestureListener() {
@@ -43,6 +46,7 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
         }
 
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (pinching) return true
             if (e2.pointerCount >= 2) {
                 multiTouch = true
                 endDrag()
@@ -61,9 +65,34 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
         }
     })
 
+    // Pinch zoom is local presentation; Rust maps later touches through the zoomed video.
+    private val scale = ScaleGestureDetector(surface.context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+            if (!controls.pinchZoom || !controls.connected()) return false
+            pinching = true
+            multiTouch = true
+            endDrag()
+            return true
+        }
+
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            DeskFleetBridge.nativeTouch(15, detector.focusX.toDouble(), detector.focusY.toDouble(), detector.scaleFactor.toDouble(), 0.0)
+            return true
+        }
+
+        override fun onScaleEnd(detector: ScaleGestureDetector) {
+            DeskFleetBridge.nativeTouch(16, 0.0, 0.0, 0.0, 0.0)
+        }
+    }).apply {
+        // Double-tap-and-hold drags the remote pointer; it must not also zoom.
+        isQuickScaleEnabled = false
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     fun attach() {
         surface.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) pinching = false
+            if (controls.pinchZoom && controls.connected()) scale.onTouchEvent(event)
             if (!controls.input.enabled) { reset(); return@setOnTouchListener true }
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 active = true

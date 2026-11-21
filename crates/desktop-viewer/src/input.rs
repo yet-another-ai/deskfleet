@@ -13,6 +13,11 @@ impl Default for TouchInput {
 }
 
 impl TouchInput {
+    /// The relative-mode virtual cursor, normalized to the video.
+    pub(crate) fn cursor(&self) -> (f64, f64) {
+        self.cursor
+    }
+
     /// Kinds 0..6 are absolute move/drag/click/right-click/scroll/release.
     /// Kinds 8..13 are relative move/click/right-click/drag/scroll; 14 resets
     /// the virtual cursor when switching modes. Deltas are surface pixels.
@@ -152,6 +157,8 @@ mod tests {
             input.events(8, (0., 0.), (800., -900.), VIEWPORT),
             [InputEvent::PointerMove { x: 1., y: 0. }]
         );
+        // Zoom reveal follows this normalized cursor.
+        assert_eq!(input.cursor(), (1., 0.));
         assert_eq!(
             input.events(14, (0., 0.), (0., 0.), VIEWPORT),
             [InputEvent::ReleaseAll]

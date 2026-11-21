@@ -68,6 +68,14 @@ internal class RemoteDesktopInput(private val send: (String) -> Unit) {
         }
     }
 
+    /** Sends one whole shortcut: earlier codes stay held while the last is tapped. */
+    fun chord(codes: List<String>) {
+        if (!enabled || codes.isEmpty()) return
+        release()
+        codes.forEach { sendKey(it, true) }
+        codes.asReversed().forEach { sendKey(it, false) }
+    }
+
     fun secureAttention() {
         if (enabled) event(JSONObject().put("type", "secureAttention"))
     }

@@ -3,6 +3,18 @@
 use crate::protocol::{Status, UiState};
 use serde::{Deserialize, Serialize};
 
+/// The toolbar's three dropdowns. At most one is open.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Panel {
+    /// Input: pointer mode, keyboards, shortcuts, clipboard, and zoom.
+    Control,
+    /// Session: display, control permission, and connection.
+    Config,
+    /// Stream health: bitrate, frame rate, loss, and jitter.
+    Monitor,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub(crate) struct ToolbarState {
@@ -21,9 +33,11 @@ pub(crate) struct ToolbarState {
     pub(crate) paused: bool,
     pub(crate) reverse_scroll: bool,
     pub(crate) clipboard_sharing: bool,
+    /// Mobile hosts present a local pinch zoom when enabled.
+    pub(crate) pinch_zoom: bool,
     pub(crate) fullscreen: bool,
     pub(crate) dark: bool,
-    pub(crate) settings_open: bool,
+    pub(crate) panel: Option<Panel>,
     pub(crate) position: (f32, f32),
     pub(crate) toolbar_size: (f32, f32),
     pub(crate) viewport: (f32, f32),
@@ -48,9 +62,10 @@ impl Default for ToolbarState {
             paused: false,
             reverse_scroll: false,
             clipboard_sharing: true,
+            pinch_zoom: true,
             fullscreen: false,
             dark: false,
-            settings_open: false,
+            panel: None,
             position: (12., 12.),
             toolbar_size: (480., 42.),
             viewport: (960., 640.),
@@ -92,12 +107,17 @@ pub(crate) enum ToolbarAction {
     ToggleModifier(&'static str),
     Key(&'static str),
     KeyboardMeasured(f32, f32),
+    /// One complete chord. Earlier codes are held while the last is pressed.
+    Shortcut(&'static [&'static str]),
     ToggleFullscreen,
-    ToggleSettings,
+    /// Opens a panel, or closes it when it is already open.
+    TogglePanel(Panel),
     SelectDisplay(u32),
     SetControl(bool),
     SetReverseScroll(bool),
     SetClipboardSharing(bool),
+    SetPinchZoom(bool),
+    ResetZoom,
     SecureAttention,
     Reconnect,
     Disconnect,

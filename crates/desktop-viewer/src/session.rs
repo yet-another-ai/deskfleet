@@ -7,7 +7,7 @@
     target_os = "android",
     target_os = "ios"
 ))]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 #[cfg(any(
     target_os = "linux",
@@ -26,6 +26,14 @@ use tokio::sync::{mpsc, watch};
 use crate::input_queue;
 use crate::protocol::{self, Candidate, Command};
 use crate::queue::FrameQueue;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android",
+    target_os = "ios"
+))]
+use crate::stream_stats::{self, DecodeTotals, Meter};
 use crate::{Error, Frame, WindowEvent, WindowNotifier};
 
 pub(crate) type Frames = Arc<Mutex<FrameQueue<Frame>>>;
@@ -314,6 +322,11 @@ async fn receive(
     let request = Arc::clone(&keyframe);
     let stopped = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&stopped);
+    // Decoded count and packed `width << 32 | height` for the Monitor panel.
+    let decoded = Arc::new(AtomicU64::new(0));
+    let decoded_size = Arc::new(AtomicU64::new(0));
+    let (decoded_count, decoded_extent) = (Arc::clone(&decoded), Arc::clone(&decoded_size));
+    let decoded_frames = Arc::clone(&frames);
     let mut worker = tokio::task::spawn_blocking(move || -> Result<(), Error> {
         let Some(first): Option<deskfleet_native::rtc::ReceivedVideoPacket> =
             incoming.blocking_recv()
@@ -375,8 +388,15 @@ async fn receive(
                     height = frame.height,
                     "viewer frame decoded"
                 );
+                decoded_count.fetch_add(1, Ordering::Relaxed);
+                decoded_extent.store(
+                    (u64::from(frame.width) << 32) | u64::from(frame.height),
+                    Ordering::Relaxed,
+                );
                 let notify = {
-                    let mut queue = frames.lock().map_err(|_| "decoded queue poisoned")?;
+                    let mut queue = decoded_frames
+                        .lock()
+                        .map_err(|_| "decoded queue poisoned")?;
                     let was_empty = queue.is_empty();
                     queue.push(Frame {
                         width: frame.width,
@@ -398,6 +418,13 @@ async fn receive(
         Ok(())
     });
     let mut keyframe_poll = tokio::time::interval(Duration::from_millis(50));
+    let mut stats_tick = tokio::time::interval(Duration::from_secs(1));
+    stats_tick.tick().await;
+    let mut meter = Meter::new(Instant::now());
+    let mut keyframe_requests = 0;
+    // The frame queue outlives each peer; skipped frames are per peer.
+    let skipped_base = frames.lock().map_or(0, |queue| queue.dropped);
+    stream_stats::publish(Default::default());
     let mut completed = None;
     let result: Result<(), Error> = async {
         loop {
@@ -406,6 +433,7 @@ async fn receive(
                 result = &mut worker => { completed = Some(result); break; },
                 packet = receiver.next_packet() => match packet? {
                     Some(packet) => {
+                        meter.packet(packet.data.len(), packet.sequence_number, packet.timestamp, packet.received_at);
                         tokio::select! {
                             _ = shutdown.changed() => break,
                             sent = packets.send(packet) => if sent.is_err() { break; },
@@ -414,12 +442,26 @@ async fn receive(
                     None => break,
                 },
                 _ = keyframe_poll.tick() => {
-                    if keyframe.swap(false, Ordering::AcqRel) { receiver.request_keyframe().await?; }
+                    if keyframe.swap(false, Ordering::AcqRel) {
+                        keyframe_requests += 1;
+                        receiver.request_keyframe().await?;
+                    }
+                },
+                _ = stats_tick.tick() => {
+                    let size = decoded_size.load(Ordering::Relaxed);
+                    let totals = DecodeTotals {
+                        decoded: decoded.load(Ordering::Relaxed),
+                        size: ((size >> 32) as u32, size as u32),
+                        skipped: frames.lock().map_or(0, |queue| queue.dropped.saturating_sub(skipped_base)),
+                        keyframe_requests,
+                    };
+                    stream_stats::publish(meter.sample(Instant::now(), totals));
                 },
             }
         }
         Ok(())
     }.await;
+    stream_stats::publish(Default::default());
     stopped.store(true, Ordering::Release);
     drop(packets);
     match completed {
