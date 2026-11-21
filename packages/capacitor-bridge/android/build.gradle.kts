@@ -29,7 +29,7 @@ android {
 // The published Cargo crate contains the Java runtime matching its JNI ABI.
 // Generate it from Cargo.lock rather than vendoring or editing upstream sources.
 val prepareNshSources by tasks.registering(Exec::class) {
-    val repository = projectDir.resolve("../../..")
+    val repository = projectDir.canonicalFile.resolve("../../..").canonicalFile
     workingDir(repository)
     commandLine("node", repository.resolve("scripts/prepare-android-nsh.ts").absolutePath)
     inputs.files(repository.resolve("Cargo.lock"), repository.resolve("scripts/prepare-android-nsh.ts"))

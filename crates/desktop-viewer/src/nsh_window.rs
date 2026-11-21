@@ -321,7 +321,7 @@ impl Viewer {
             self.toolbar_bounds(window),
         );
         if !ui_allows_keyboard {
-            self.release(window, cx);
+            self.release_for_local_ui(window, cx);
         }
         if let Some(physical) = &self.physical {
             physical
@@ -379,6 +379,15 @@ impl Viewer {
         }
         let event = self.controls.release();
         self.send([event], window, cx);
+    }
+
+    fn release_for_local_ui(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let captured_keyboard = self
+            .physical
+            .as_ref()
+            .is_some_and(|physical| physical.set_enabled(false));
+        let event = self.controls.release_for_local_ui(captured_keyboard);
+        self.send(event, window, cx);
     }
 
     fn toolbar_bounds(&self, window: &Window) -> Bounds<Pixels> {
@@ -651,7 +660,7 @@ impl Viewer {
         }
         if self.local_pointer {
             self.video_focused = false;
-            self.release(window, cx);
+            self.release_for_local_ui(window, cx);
             let toolbar = self.toolbar_bounds(window);
             if event.button == gpui::MouseButton::Left
                 && grip_bounds(toolbar).contains(&event.position)
@@ -690,7 +699,7 @@ impl Viewer {
                     .hit_test(event.position)
                     .is_some()
             {
-                self.release(window, cx);
+                self.release_for_local_ui(window, cx);
             } else {
                 self.sync_input(window, cx);
                 let events = self.controls.mouse_move(event, self.video_bounds(window));
@@ -737,7 +746,7 @@ impl Viewer {
         self.keyboard_focus.pointer_exited();
         self.drag = None;
         self.local_pointer = false;
-        self.release(window, cx);
+        self.release_for_local_ui(window, cx);
     }
 
     fn install_input(&self, window: &mut Window, cx: &Context<Self>) {
