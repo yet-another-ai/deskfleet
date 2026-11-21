@@ -4,6 +4,7 @@ import { useElementSize, useScroll, watchImmediate } from "@vueuse/core"
 import { computed, nextTick, onBeforeUnmount, onScopeDispose, provide, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute } from "vue-router"
+import { usePlatformClient } from "../../composables/usePlatformClient.ts"
 import { conversationReadingKey, useConversationReadingStore } from "../../stores/conversation-reading.ts"
 import { pendingMermaidLocate, performMermaidLocateDom, type MermaidSource } from "../../stores/layout.ts"
 import { focusedPreviewFromRoute, pendingPreviewLocate, performPreviewLocateDom } from "../../stores/previews.ts"
@@ -30,6 +31,7 @@ const props = withDefaults(defineProps<{
 }>(), { sidebar: true })
 const { t } = useI18n()
 const route = useRoute()
+const toolbarLeftInset = usePlatformClient().platform === "darwin" ? "pl-20" : "pl-2"
 const reading = useConversationReadingStore()
 provide(conversationReadingKey, () => reading.session(props.readingId))
 const scrollArea = useTemplateRef<InstanceType<typeof UiScrollArea>>("scrollArea")
@@ -201,11 +203,11 @@ watch([pendingLocate, () => props.loading, () => props.revision, focusedPreview,
       </div>
     </div>
     <FocusOverlay :content="mermaidContent" data-mermaid-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performMermaidLocateDom()" v-slot="{ content }">
-      <div class="app-drag flex h-9 shrink-0 items-center px-2 pr-[var(--window-controls-width,0px)]"><WindowToolbar :sidebar="sidebar" /></div>
+      <div class="app-drag flex h-9 shrink-0 items-center pr-[var(--window-controls-width,0px)]" :class="toolbarLeftInset"><WindowToolbar :sidebar="sidebar" /></div>
       <MermaidViewer :key="content.code" :code="content.code" :source="content.source" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
     </FocusOverlay>
     <FocusOverlay :content="focusedPreview" data-preview-focus-view class="absolute inset-0 z-20 flex flex-col bg-ui-canvas" @after-leave="performPreviewLocateDom()" v-slot="{ content }">
-      <div class="app-drag flex h-9 shrink-0 items-center px-2 pr-[var(--window-controls-width,0px)]"><WindowToolbar :sidebar="sidebar" /></div>
+      <div class="app-drag flex h-9 shrink-0 items-center pr-[var(--window-controls-width,0px)]" :class="toolbarLeftInset"><WindowToolbar :sidebar="sidebar" /></div>
       <PreviewViewer :key="content.content" v-bind="content" mode="focus" class="min-h-0 flex-1 rounded-none border-0" />
     </FocusOverlay>
   </div>

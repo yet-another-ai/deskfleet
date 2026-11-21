@@ -162,12 +162,18 @@ Eve queues messages from a different member behind an active turn so each
 turn retains its own sender.
 
 Web and Desktop share the Session transcript, reading controls, previews, and
-composer with machine Sessions. The hosted composer sends local files and pasted
-content through the message API, including when the Team has no Machines.
-Stored attachments with an Eve-internal reference display their name and media
-type. Public attachment URLs can be opened from the transcript. The cancel
-action targets the currently displayed turn and remains available when the
-Team has exhausted its allowance.
+composer with machine Sessions. The hosted composer reads selected files into
+the draft and sends them as base64 file parts when the message is submitted.
+It sends pasted text as text parts. This works for a Team without Machines and
+uses the message API for the upload.
+
+Eve stages file parts in its sandbox before making them available to the model.
+Without a sandbox, Eve can accept the delivery and supply an attachment
+availability note in place of the file content. The transcript shows the
+filename, or the media type for an unnamed file, when Eve has no public URL.
+Public attachment URLs can be opened from the transcript. The cancel action
+targets the currently displayed turn and remains available when the Team has
+exhausted its allowance.
 
 When rollout is disabled, the other routes return HTTP 404 with code
 `super_agent_disabled`. The usage collector continues settling accepted work.

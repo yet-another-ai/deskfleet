@@ -14,7 +14,7 @@ afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose(); 
 
 async function setup(configure?: (central: ReturnType<typeof fakeCentral>["central"]) => void) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
   const { central } = fakeCentral({ teams: [
     { id: "alpha", name: "Product", role: "admin" },
     { id: "beta", name: "Support", role: "member" },
@@ -31,7 +31,7 @@ async function setup(configure?: (central: ReturnType<typeof fakeCentral>["centr
   } })
   cleanup.push(() => { wrapper.unmount(); account.dispose() })
   await flushPromises()
-  return { central, account, wrapper }
+  return { central, account, wrapper, visibility }
 }
 
 const at = "2026-11-21T08:00:00Z"
@@ -195,17 +195,38 @@ test("sends a local file through the common composer and restores it after a ref
   expect(wrapper.find("[data-user-message-bubble]").exists()).toBe(false)
 })
 
-test("cancels the observed turn with the common composer even when sending is blocked", async () => {
-  const { central, wrapper } = await setup(central => {
-    central.superAgentUsage.mockResolvedValue({ runtimeConfigured: true, admitted: false, includedTokens: 200, usedTokens: 200, start: at, end: at, plan: "go" })
+test.each(["text", "attachment"])("quota exhaustion allows cancellation with an unsent %s draft", async draftKind => {
+  const { central, wrapper, visibility } = await setup(central => {
     central.superAgentSessions.mockResolvedValue([{ sessionId: "work", title: "Shared work", lastActiveAt: Date.parse(at) }])
     central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 2, status: "working", turns: [{ id: "turn-1", state: "running", startedAt: at }], messages: [] })
-      .mockResolvedValueOnce({ nextIndex: 3, status: "idle", turns: [{ id: "turn-1", state: "cancelled", endedAt: at }], messages: [] })
   })
+  const textarea = wrapper.get<HTMLTextAreaElement>("textarea")
+  const draft = draftKind === "text" ? "Follow up on the release" : ""
+  if (draftKind === "text") await textarea.setValue(draft)
+  else {
+    const input = wrapper.get<HTMLInputElement>("[data-composer-file-input]")
+    Object.defineProperty(input.element, "files", { value: [new File(["Checklist"], "release.txt", { type: "text/plain" })] })
+    await input.trigger("change")
+    await flushPromises()
+  }
+  expect(wrapper.get(".composer-send").attributes("disabled")).toBeUndefined()
+
+  central.superAgentUsage.mockResolvedValue({ runtimeConfigured: true, admitted: false, includedTokens: 200, usedTokens: 200, start: at, end: at, plan: "go" })
+  visibility.mockReturnValue("hidden")
+  document.dispatchEvent(new Event("visibilitychange"))
+  await flushPromises()
+  visibility.mockReturnValue("visible")
+  document.dispatchEvent(new Event("visibilitychange"))
+  await flushPromises()
+
+  central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 3, status: "idle", turns: [{ id: "turn-1", state: "cancelled", endedAt: at }], messages: [] })
   expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
   await wrapper.get('button[aria-label="Cancel turn"]').trigger("click")
   await flushPromises()
   expect(central.cancelSuperAgentTurn).toHaveBeenCalledExactlyOnceWith("alpha", "work", "turn-1")
+  expect(central.sendSuperAgentMessage).not.toHaveBeenCalled()
+  expect(textarea.element.value).toBe(draft)
+  if (draftKind === "attachment") expect(wrapper.find('button[aria-label="Remove release.txt"]').exists()).toBe(true)
   expect(wrapper.find('button[aria-label="Cancel turn"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Cancelling the turn…")
 })

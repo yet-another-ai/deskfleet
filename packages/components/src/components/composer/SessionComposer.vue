@@ -67,7 +67,7 @@ const props = defineProps<{
   activeTurn?: boolean
   canSteer?: boolean
   usage?: AgentUsageUpdate
-  /** Whether the empty composer offers to cancel the active turn. */
+  /** Whether the active turn can be cancelled. */
   canCancel?: boolean
 }>()
 const draft = defineModel<string>({ default: "" })
@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
             <Square v-if="dictation.active" :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" />
             <Mic v-else :size="17" :stroke-width="1.75" aria-hidden="true" />
           </UiButton>
-          <UiButton v-if="canCancel && empty" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
+          <UiButton v-if="canCancel && (empty || (hosted && disabled))" variant="primary" size="icon" class="h-8 w-8 rounded-full" :title="t('agent.cancelTurn')" :aria-label="t('agent.cancelTurn')" @click="emit('cancel')"><Square :size="12" :stroke-width="0" fill="currentColor" aria-hidden="true" /></UiButton>
           <UiButton v-else variant="primary" size="icon" class="composer-send h-8 w-8 rounded-full" :title="sendLabel" :aria-label="sendLabel" :disabled="disabled || submitting || preparing || configurationLoading || uploadingAttachments || !canCompose || empty" @click="submit()"><CornerDownRight v-if="steerOnSend" :size="16" :stroke-width="2" aria-hidden="true" /><ArrowUp v-else v-spring-hover="-1" :size="17" :stroke-width="2" class="composer-send-arrow" aria-hidden="true" /></UiButton>
         </div>
       </div>
