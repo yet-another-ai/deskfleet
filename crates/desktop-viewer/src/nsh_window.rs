@@ -212,6 +212,7 @@ impl Viewer {
             cx.observe_window_bounds(window, |viewer, window, cx| {
                 viewer.clamp_position(window);
                 viewer.toolbar_state.fullscreen = window.is_fullscreen();
+                viewer.toolbar_state.keyboard_size = (520., 400.);
                 viewer.sync_input(window, cx);
                 cx.notify();
             }),
@@ -304,6 +305,10 @@ impl Viewer {
 
     fn sync_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let enabled = self.toolbar_state.controls_enabled();
+        if !enabled {
+            self.toolbar_state.hacker_open = false;
+            self.toolbar_state.modifiers = [false; 4];
+        }
         self.controls
             .set_reverse_scroll(self.toolbar_state.reverse_scroll);
         let release = self.controls.set_enabled(enabled);
@@ -471,6 +476,39 @@ impl Viewer {
                 }
                 None
             }
+            ToolbarAction::ToggleHackerKeyboard => {
+                self.toolbar_state.hacker_open =
+                    !self.toolbar_state.hacker_open && self.toolbar_state.controls_enabled();
+                self.toolbar_state.settings_open = false;
+                self.toolbar_state.keyboard_size = (520., 400.);
+                self.toolbar_state.modifiers = [false; 4];
+                self.release(window, cx);
+                None
+            }
+            ToolbarAction::ToggleModifier(code) if self.toolbar_state.controls_enabled() => {
+                if let Some(index) = crate::nsh_keyboard::MODIFIERS
+                    .iter()
+                    .position(|value| *value == code)
+                {
+                    self.toolbar_state.modifiers[index] = !self.toolbar_state.modifiers[index];
+                }
+                None
+            }
+            ToolbarAction::Key(code) if self.toolbar_state.controls_enabled() => {
+                let modifiers = std::mem::take(&mut self.toolbar_state.modifiers);
+                let events = crate::nsh_keyboard::key_events(modifiers, code);
+                let clip =
+                    self.clipboard
+                        .before_events(self.toolbar_state.clipboard_sharing, &events, cx);
+                self.send(clip.into_iter().chain(events), window, cx);
+                None
+            }
+            ToolbarAction::KeyboardMeasured(width, height) => {
+                if width.is_finite() && height.is_finite() && width > 0. && height > 0. {
+                    self.toolbar_state.keyboard_size = (width, height);
+                }
+                None
+            }
             ToolbarAction::ToggleFullscreen => {
                 window.toggle_fullscreen();
                 None
@@ -481,6 +519,8 @@ impl Viewer {
                     return;
                 }
                 self.toolbar_state.settings_open = true;
+                self.toolbar_state.hacker_open = false;
+                self.toolbar_state.modifiers = [false; 4];
                 self.release(window, cx);
                 None
             }
@@ -537,12 +577,24 @@ impl Viewer {
                 self.select_open = open;
                 return;
             }
-            ToolbarAction::ToggleControl | ToolbarAction::SecureAttention => None,
+            ToolbarAction::ToggleControl
+            | ToolbarAction::SecureAttention
+            | ToolbarAction::ToggleModifier(_)
+            | ToolbarAction::Key(_)
+            | ToolbarAction::ToggleMouseMode
+            | ToolbarAction::ToggleKeyboard
+            | ToolbarAction::ToggleDrag
+            | ToolbarAction::ToggleCollapsed
+            | ToolbarAction::SyncClipboard
+            | ToolbarAction::Close
+            | ToolbarAction::SetPasteShift(_) => None,
         };
         if let Some(event) = event {
             self.release(window, cx);
             if matches!(action, ToolbarAction::Reconnect | ToolbarAction::Disconnect) {
                 self.toolbar_state.settings_open = false;
+                self.toolbar_state.hacker_open = false;
+                self.toolbar_state.modifiers = [false; 4];
             }
             if let Err(error) = protocol::emit(event) {
                 self.fail(error, window, cx);
@@ -732,6 +784,13 @@ fn pointer_target(
     } else if state.settings_open
         || state.ui.status != Status::Connected
         || toolbar.contains(&position)
+        || (state.hacker_open
+            && Bounds::new(
+                content.origin
+                    + point(px(state.keyboard_position.0), px(state.keyboard_position.1)),
+                size(px(state.keyboard_size.0), px(state.keyboard_size.1)),
+            )
+            .contains(&position))
     {
         PointerTarget::LocalUi
     } else {
@@ -775,6 +834,11 @@ impl Render for Viewer {
             (panel.origin.x - content.origin.x).into(),
             (panel.origin.y - content.origin.y).into(),
         );
+        let keyboard_width = 520_f32.min((self.toolbar_state.viewport.0 - 24.).max(0.));
+        self.toolbar_state.keyboard_position = (
+            (self.toolbar_state.viewport.0 - keyboard_width) / 2.,
+            (self.toolbar_state.viewport.1 - self.toolbar_state.keyboard_size.1 - 12.).max(12.),
+        );
         self.toolbar.update(self.toolbar_state.clone());
         let video = self.video.clone();
         let viewer = cx.weak_entity();
@@ -796,6 +860,9 @@ impl Render for Viewer {
                     && !viewer.select_open
                 {
                     viewer.dismiss_settings(window, cx);
+                    cx.stop_propagation();
+                } else if event.keystroke.key == "escape" && viewer.toolbar_state.hacker_open {
+                    viewer.action(ToolbarAction::ToggleHackerKeyboard, window, cx);
                     cx.stop_propagation();
                 } else if viewer.handle_focused {
                     let step = match event.keystroke.key.as_str() {
@@ -897,6 +964,22 @@ mod tests {
         assert_eq!(
             pointer_target(&state, toolbar().center(), content(), toolbar()),
             PointerTarget::LocalUi
+        );
+    }
+
+    #[test]
+    fn hacker_keyboard_is_local_while_uncovered_video_remains_remote() {
+        let mut state = connected();
+        state.hacker_open = true;
+        state.keyboard_position = (200., 300.);
+        state.keyboard_size = (520., 300.);
+        assert_eq!(
+            pointer_target(&state, point(px(400.), px(400.)), content(), toolbar()),
+            PointerTarget::LocalUi
+        );
+        assert_eq!(
+            pointer_target(&state, point(px(100.), px(300.)), content(), toolbar()),
+            PointerTarget::Remote
         );
     }
 

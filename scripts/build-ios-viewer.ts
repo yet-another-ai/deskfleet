@@ -28,6 +28,10 @@ if (missing.length > 0) {
 }
 
 for (const target of targets) {
+  const sdk = target.endsWith("-sim") ? "iphonesimulator" : "iphoneos"
+  const sdkRoot = execFileSync("xcrun", ["--sdk", sdk, "--show-sdk-path"], { encoding: "utf8" }).trim()
+  const clang = execFileSync("xcrun", ["--sdk", sdk, "--find", "clang"], { encoding: "utf8" }).trim()
+  const targetEnv = target.replaceAll("-", "_")
   execFileSync(
     "cargo",
     [
@@ -45,6 +49,9 @@ for (const target of targets) {
       stdio: "inherit",
       env: {
         ...process.env,
+        SDKROOT: sdkRoot,
+        [`CARGO_TARGET_${targetEnv.toUpperCase()}_LINKER`]: clang,
+        [`CC_${targetEnv}`]: clang,
         IPHONEOS_DEPLOYMENT_TARGET: "16.0",
         ...(release
           ? {

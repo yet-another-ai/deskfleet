@@ -11,8 +11,10 @@ try {
   copyFileSync(new URL("../Sources/DeskFleetBridge/LocalFilesEndpoint.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "LocalFilesEndpoint.swift"))
   copyFileSync(new URL("../Sources/DeskFleetBridge/FirebaseTelemetryBridge.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "FirebaseTelemetryBridge.swift"))
   copyFileSync(new URL("../Sources/DeskFleetBridge/RemoteDesktopModifiers.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "RemoteDesktopModifiers.swift"))
+  copyFileSync(new URL("../Sources/DeskFleetBridge/RemoteDesktopInputState.swift", import.meta.url), join(workspace, "Sources", "DeskFleetLocalFiles", "RemoteDesktopInputState.swift"))
   copyFileSync(new URL("./LocalFilesEndpointTests.swift", import.meta.url), join(workspace, "Tests", "DeskFleetLocalFilesTests", "LocalFilesEndpointTests.swift"))
   copyFileSync(new URL("./RemoteDesktopModifiersTests.swift", import.meta.url), join(workspace, "Tests", "DeskFleetLocalFilesTests", "RemoteDesktopModifiersTests.swift"))
+  copyFileSync(new URL("./RemoteDesktopInputStateTests.swift", import.meta.url), join(workspace, "Tests", "DeskFleetLocalFilesTests", "RemoteDesktopInputStateTests.swift"))
   writeFileSync(join(workspace, "Package.swift"), `// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(name: "DeskFleetLocalFiles", platforms: [.macOS(.v13)], targets: [

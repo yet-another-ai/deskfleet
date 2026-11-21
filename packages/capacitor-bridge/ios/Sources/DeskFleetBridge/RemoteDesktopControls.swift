@@ -1,181 +1,190 @@
 import UIKit
 
-final class RemoteDesktopControls: UIView {
-    var action: ((String) -> Void)?
-    var selectDisplay: ((Int) -> Void)?
-    private let stack = UIStackView()
-    private let menuScroll = UIScrollView()
-    private let menu = UIStackView()
-    private let status = UILabel()
-    private var buttons: [String: UIButton] = [:]
-    private var expanded = false
-    private var origin: CGPoint?
+@_silgen_name("deskfleet_ios_controls_create")
+private func createControls(_ identity: UInt64, _ callback: @convention(c) (UInt64, UnsafePointer<CChar>?) -> Void) -> UnsafeMutableRawPointer?
+@_silgen_name("deskfleet_ios_controls_view")
+private func controlsView(_ handle: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer?
+@_silgen_name("deskfleet_ios_controls_update")
+private func updateControls(_ handle: UnsafeMutableRawPointer, _ json: UnsafePointer<CChar>)
+@_silgen_name("deskfleet_ios_controls_destroy")
+private func destroyControls(_ handle: UnsafeMutableRawPointer)
+
+private final class WeakControls {
+    weak var value: RemoteDesktopControls?
+    init(_ value: RemoteDesktopControls) { self.value = value }
+}
+
+private let controlsCallback: @convention(c) (UInt64, UnsafePointer<CChar>?) -> Void = { identity, pointer in
+    guard let pointer else { return }
+    // NSH owns this buffer only during the callback; copy before crossing threads.
+    let json = String(cString: pointer)
+    DispatchQueue.main.async {
+        guard let data = json.data(using: .utf8),
+              let action = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        RemoteDesktopControls.instances[identity]?.value?.receive(action)
+    }
+}
+
+/// Owns the shared Rust UI's UIView and the platform geometry/touch boundary.
+final class RemoteDesktopControls: UIView, UIGestureRecognizerDelegate {
+    fileprivate static var instances: [UInt64: WeakControls] = [:]
+    private let identity = UInt64.random(in: 1...UInt64.max)
+    private var handle: UnsafeMutableRawPointer?
+    private var hostedView: UIView?
+    var action: (([String: Any]) -> Void)?
+    private var snapshot: [String: Any] = [:]
+    private var position = CGPoint(x: 12, y: 12)
+    private var toolbarSize = CGSize(width: 320, height: 100)
+    private var panelHeight: CGFloat = 320
+    private var keyboardHeight: CGFloat = 260
+    private var toolbarRect = CGRect.zero
+    private var panelRect = CGRect.zero
+    private var keyboardRect = CGRect.zero
+    private var settingsOpen = false
+    private var selectOpen = false
+    private var collapsed = false
     private var dragOrigin = CGPoint.zero
-    private var boundsToUse = CGRect.zero
-    private var menuHeight: NSLayoutConstraint!
-    private var terminalPasteRow: UIStackView?
-    private var chinese = false
+    private var connected = false
 
     init() {
         super.init(frame: .zero)
-        backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.96)
-        layer.cornerRadius = 14
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.separator.cgColor
-        layer.shadowOpacity = 0.2
-        layer.shadowRadius = 8
-        accessibilityLabel = "Remote desktop controls"
-        stack.axis = .vertical
-        stack.spacing = 4
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4)
-        ])
-
-        let bar = UIStackView()
-        bar.distribution = .fillEqually
-        bar.spacing = 2
-        let grip = UIButton(type: .system)
-        grip.setTitle("⠿", for: .normal)
-        grip.accessibilityLabel = "Move controls"
-        grip.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(drag(_:))))
-        bar.addArrangedSubview(grip)
-        for (name, title) in [("pointer", "☝"), ("keyboard", "⌨"), ("hacker", "{ }"), ("menu", "•••")] {
-            bar.addArrangedSubview(makeButton(name, title))
+        backgroundColor = .clear
+        isOpaque = false
+        Self.instances[identity] = WeakControls(self)
+        handle = createControls(identity, controlsCallback)
+        if let handle, let pointer = controlsView(handle) {
+            let hosted = Unmanaged<UIView>.fromOpaque(pointer).takeUnretainedValue()
+            hosted.backgroundColor = .clear
+            hosted.isOpaque = false
+            addSubview(hosted)
+            hostedView = hosted
         }
-        bar.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        stack.addArrangedSubview(bar)
-
-        menu.axis = .vertical
-        menu.spacing = 4
-        menu.translatesAutoresizingMaskIntoConstraints = false
-        menuScroll.addSubview(menu)
-        NSLayoutConstraint.activate([
-            menu.leadingAnchor.constraint(equalTo: menuScroll.contentLayoutGuide.leadingAnchor),
-            menu.trailingAnchor.constraint(equalTo: menuScroll.contentLayoutGuide.trailingAnchor),
-            menu.topAnchor.constraint(equalTo: menuScroll.contentLayoutGuide.topAnchor),
-            menu.bottomAnchor.constraint(equalTo: menuScroll.contentLayoutGuide.bottomAnchor),
-            menu.widthAnchor.constraint(equalTo: menuScroll.frameLayoutGuide.widthAnchor)
-        ])
-        status.font = .preferredFont(forTextStyle: .caption1)
-        status.numberOfLines = 0
-        status.textAlignment = .center
-        menu.addArrangedSubview(status)
-        addRow([("display", "Display"), ("control", "Control")])
-        addRow([("pause", "Pause"), ("drag", "Drag")])
-        addRow([("clipboard", "Clipboard"), ("secure", "Ctrl+Alt+Del")])
-        terminalPasteRow = addRow([("terminalPaste", "Terminal paste (Ctrl+Shift+V)")])
-        addRow([("connection", "Disconnect"), ("close", "Close")])
-        menuHeight = menuScroll.heightAnchor.constraint(equalToConstant: 212)
-        menuHeight.isActive = true
-        menuScroll.isHidden = true
-        stack.addArrangedSubview(menuScroll)
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(drag(_:)))
+        pan.delegate = self
+        addGestureRecognizer(pan)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    @discardableResult
-    private func addRow(_ entries: [(String, String)]) -> UIStackView {
-        let row = UIStackView()
-        row.spacing = 4
-        row.distribution = .fillEqually
-        for (name, title) in entries { row.addArrangedSubview(makeButton(name, title)) }
-        row.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        menu.addArrangedSubview(row)
-        return row
+    deinit {
+        Self.instances.removeValue(forKey: identity)
+        hostedView?.removeFromSuperview()
+        if let handle { destroyControls(handle) }
     }
 
-    private func makeButton(_ name: String, _ title: String) -> UIButton {
-        let button = UIButton(type: .system)
-        var configuration = UIButton.Configuration.tinted()
-        configuration.title = title
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
-        button.configuration = configuration
-        button.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
-        button.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            if name == "menu" {
-                self.expanded.toggle()
-                self.menuScroll.isHidden = !self.expanded
-                self.layout(in: self.boundsToUse)
-            } else {
-                self.action?(name)
-            }
-        }, for: .touchUpInside)
-        buttons[name] = button
-        return button
+    func stop() {
+        Self.instances.removeValue(forKey: identity)
+        hostedView?.removeFromSuperview()
+        hostedView = nil
+        if let handle { destroyControls(handle); self.handle = nil }
     }
 
-    func update(state: [String: Any], relative: Bool, paused: Bool, dragging: Bool, keyboard: Bool, hacker: Bool, terminalPaste: Bool) {
-        chinese = (state["locale"] as? String)?.hasPrefix("zh") == true
-        let connected = state["status"] as? String == "connected"
-        let control = state["control"] as? Bool == true
-        let ready = connected && control && state["inputReady"] as? Bool == true
-        let enabled = ready && !paused
-        set("pointer", title: relative ? label("Rel", "相对") : label("Abs", "绝对"), label: relative ? label("Relative mouse", "相对鼠标") : label("Absolute mouse", "绝对鼠标"))
-        set("keyboard", title: "⌨", label: label("System keyboard", "系统键盘"), selected: keyboard, enabled: enabled)
-        set("hacker", title: "{ }", label: "Hacker Keyboard", selected: hacker, enabled: enabled)
-        set("menu", title: "•••", label: label("More controls", "更多控制"))
-        set("control", title: label("Control", "鼠标和键盘"), selected: control, enabled: connected)
-        set("pause", title: paused ? label("Resume", "恢复控制") : label("Pause", "暂停控制"), selected: paused, enabled: ready)
-        set("drag", title: label("Drag", "拖动"), selected: dragging, enabled: enabled)
-        set("clipboard", title: label("Clipboard", "同步剪贴板"), enabled: enabled)
-        set("secure", title: "Ctrl+Alt+Del", enabled: enabled && state["secureAttention"] as? Bool == true)
-        set("terminalPaste", title: label("Terminal paste (Ctrl+Shift+V)", "终端粘贴（Ctrl+Shift+V）"), selected: terminalPaste)
-        terminalPasteRow?.isHidden = state["platform"] as? String == "darwin"
-        set("connection", title: connected ? label("Disconnect", "断开连接") : label("Reconnect", "重新连接"))
-        set("close", title: label("Close", "关闭"))
-        status.text = state["settingsError"] as? String ?? state["error"] as? String ?? (paused ? label("Control paused", "已暂停控制") : (connected ? label("Connected", "已连接") : label("Not connected", "未连接")))
-        updateDisplays(state)
+    func update(state: [String: Any], relative: Bool, paused: Bool, dragging: Bool,
+                keyboard: Bool, hacker: Bool, terminalPaste: Bool, modifiers: Set<String>,
+                reverseScroll: Bool, clipboardSharing: Bool, fullscreen: Bool) {
+        var ui: [String: Any] = ["status": "starting", "title": "", "displays": [], "displayId": 0,
+                                 "control": false, "inputReady": false, "secureAttention": false]
+        ui.merge(state) { _, next in next }
+        connected = ui["status"] as? String == "connected"
+        snapshot = ["ui": ui, "mobile": true, "relativeMouse": relative, "paused": paused,
+                    "dragging": dragging, "fullscreen": fullscreen, "keyboardOpen": keyboard, "hackerOpen": hacker,
+                    "pasteShift": terminalPaste, "reverseScroll": reverseScroll, "clipboardSharing": clipboardSharing,
+                    "modifiers": ["ControlLeft", "AltLeft", "ShiftLeft", "MetaLeft"].map { modifiers.contains($0) }]
+        setNeedsLayout()
     }
 
-    private func updateDisplays(_ state: [String: Any]) {
-        let displays = state["displays"] as? [[String: Any]] ?? []
-        let selected = state["displayId"] as? Int
-        let actions = displays.compactMap { display -> UIAction? in
-            guard let id = display["id"] as? Int else { return nil }
-            let title = display["name"] as? String ?? "\(label("Display", "显示器")) \(display["displayNumber"] as? Int ?? id)"
-            return UIAction(title: title, state: id == selected ? .on : .off) { [weak self] _ in self?.selectDisplay?(id) }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        hostedView?.frame = bounds
+        publish()
+    }
+
+    private func publish() {
+        guard let handle, bounds.width > 0, bounds.height > 0 else { return }
+        let hacker = snapshot["hackerOpen"] as? Bool == true
+        let keyboardWidth = min(520, max(0, bounds.width - 24))
+        let maximumKeyboardHeight = min(400, max(40, bounds.height - toolbarSize.height - 32))
+        let height = min(keyboardHeight, maximumKeyboardHeight)
+        keyboardRect = hacker ? CGRect(x: (bounds.width - keyboardWidth) / 2,
+                                      y: max(0, bounds.height - height - 12), width: keyboardWidth, height: height) : .zero
+        let availableHeight = hacker ? keyboardRect.minY - 8 : bounds.height
+        position.x = min(max(12, position.x), max(12, bounds.width - toolbarSize.width - 12))
+        position.y = min(max(12, position.y), max(12, availableHeight - toolbarSize.height - 12))
+        toolbarRect = CGRect(origin: position, size: toolbarSize)
+        let panelWidth = min(288, max(0, bounds.width - 24))
+        let panelY = min(toolbarRect.maxY + 8, max(12, availableHeight - panelHeight - 12))
+        panelRect = settingsOpen ? CGRect(x: min(position.x, max(12, bounds.width - panelWidth - 12)),
+                                         y: panelY, width: panelWidth, height: panelHeight) : .zero
+        snapshot.merge([
+            "collapsed": collapsed, "dark": traitCollection.userInterfaceStyle == .dark, "settingsOpen": settingsOpen,
+            "position": [position.x, position.y], "toolbarSize": [toolbarSize.width, toolbarSize.height],
+            "viewport": [bounds.width, bounds.height], "panelPosition": [panelRect.minX, panelRect.minY],
+            "panelHeight": panelHeight, "keyboardPosition": [keyboardRect.minX, keyboardRect.minY],
+            "keyboardSize": [keyboardWidth, maximumKeyboardHeight]
+        ]) { _, next in next }
+        guard let data = try? JSONSerialization.data(withJSONObject: snapshot),
+              let json = String(data: data, encoding: .utf8) else { return }
+        json.withCString { updateControls(handle, $0) }
+    }
+
+    fileprivate func receive(_ event: [String: Any]) {
+        switch event["type"] as? String {
+        case "measured":
+            guard let size = event["value"] as? [Double], size.count == 2 else { return }
+            let next = CGSize(width: size[0], height: size[1])
+            guard abs(next.width - toolbarSize.width) > 0.5 || abs(next.height - toolbarSize.height) > 0.5 else { return }
+            toolbarSize = next
+        case "panelMeasured":
+            guard let height = event["value"] as? Double, abs(height - panelHeight) > 0.5 else { return }
+            panelHeight = height
+        case "toggleCollapsed":
+            collapsed.toggle()
+            settingsOpen = false
+            selectOpen = false
+            action?(event)
+        case "toggleSettings":
+            settingsOpen.toggle()
+            selectOpen = false
+            action?(event)
+        case "toggleHackerKeyboard":
+            settingsOpen = false
+            selectOpen = false
+            action?(event)
+        case "selectOpen":
+            selectOpen = event["value"] as? Bool == true
+            action?(event)
+        case "keyboardMeasured":
+            guard let size = event["value"] as? [Double], size.count == 2,
+                  abs(size[1] - keyboardHeight) > 0.5 else { return }
+            keyboardHeight = size[1]
+        default: action?(event)
         }
-        buttons["display"]?.menu = UIMenu(children: actions)
-        buttons["display"]?.showsMenuAsPrimaryAction = true
-        set("display", title: label("Display", "显示器"), enabled: !actions.isEmpty)
+        setNeedsLayout()
     }
 
-    private func label(_ english: String, _ chineseText: String) -> String { chinese ? chineseText : english }
-
-    private func set(_ name: String, title: String, label: String? = nil, selected: Bool = false, enabled: Bool = true) {
-        let button = buttons[name]
-        button?.configuration?.title = title
-        button?.accessibilityLabel = label ?? title
-        button?.isSelected = selected
-        button?.isEnabled = enabled
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // The NSH root fills the surface. Only visible controls consume touches;
+        // all other points reach the Metal sibling and its remote-input gestures.
+        guard !connected || selectOpen || toolbarRect.contains(point)
+                || panelRect.contains(point) || keyboardRect.contains(point) else { return nil }
+        return super.hitTest(point, with: event)
     }
 
-    func layout(in available: CGRect) {
-        boundsToUse = available
-        guard available.width > 0, available.height > 0 else { return }
-        let width = min(320, available.width)
-        menuHeight.constant = min(212, max(0, available.height - 56))
-        let height: CGFloat = expanded ? 56 + menuHeight.constant : 52
-        let proposed = origin ?? CGPoint(x: available.maxX - width, y: available.minY)
-        let point = CGPoint(
-            x: min(max(proposed.x, available.minX), available.maxX - width),
-            y: min(max(proposed.y, available.minY), max(available.minY, available.maxY - height))
-        )
-        frame = CGRect(origin: point, size: CGSize(width: width, height: height))
-        if origin != nil { origin = point }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        let grip = CGRect(x: toolbarRect.minX, y: toolbarRect.minY, width: 48, height: 48)
+        return grip.contains(touch.location(in: self)) && !selectOpen
     }
 
-    @objc private func drag(_ gesture: UIPanGestureRecognizer) {
-        if gesture.state == .began { dragOrigin = frame.origin }
-        let delta = gesture.translation(in: superview)
-        origin = CGPoint(x: dragOrigin.x + delta.x, y: dragOrigin.y + delta.y)
-        layout(in: boundsToUse)
+    @objc private func drag(_ pan: UIPanGestureRecognizer) {
+        if pan.state == .began {
+            dragOrigin = position
+            action?(["type": "focusHandle"])
+        }
+        if pan.state == .began || pan.state == .changed {
+            let delta = pan.translation(in: self)
+            position = CGPoint(x: dragOrigin.x + delta.x, y: dragOrigin.y + delta.y)
+            publish()
+        }
     }
 }

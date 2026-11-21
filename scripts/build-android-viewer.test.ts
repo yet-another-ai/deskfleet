@@ -8,6 +8,8 @@ import {
   findNdkRoot,
   MIN_ANDROID_API,
   MIN_NDK_MAJOR,
+  nshJniExports,
+  verifyAndroidJniExports,
   verifyElfLoadAlignment,
 } from "./build-android-viewer.ts"
 
@@ -42,6 +44,15 @@ test("findNdkRoot ignores runner NDKs older than r28 and prefers newest stable r
     () => findNdkRoot({ ANDROID_NDK_HOME: r27, ANDROID_HOME: join(root, "missing-sdk") }, emptyHome),
     /NDK r28 or newer/,
   )
+})
+
+test("combined Android library retains all defined NSH JNI exports and rejects undefined or hidden entries", () => {
+  const names = nshJniExports("runtime.o:\n00000000 T JNI_OnLoad\n00000010 T Java_com_longbridge_nsh_Native_create\n00000020 T unrelated\n")
+  assert.deepEqual(names, ["JNI_OnLoad", "Java_com_longbridge_nsh_Native_create"])
+  const exported = "  1: 00000001 20 FUNC GLOBAL DEFAULT 12 JNI_OnLoad\n  2: 00000010 20 FUNC GLOBAL DEFAULT 12 Java_com_longbridge_nsh_Native_create\n"
+  verifyAndroidJniExports(exported, names)
+  assert.throws(() => verifyAndroidJniExports(exported.replace("DEFAULT 12 Java_", "DEFAULT UND Java_"), names), /Native_create/)
+  assert.throws(() => verifyAndroidJniExports(exported.replace("DEFAULT 12 Java_", "HIDDEN 12 Java_"), names), /Native_create/)
 })
 
 test("buildAndroidViewerEnv enforces 16 KB page alignment, Android 14 API, and release debug symbols", () => {

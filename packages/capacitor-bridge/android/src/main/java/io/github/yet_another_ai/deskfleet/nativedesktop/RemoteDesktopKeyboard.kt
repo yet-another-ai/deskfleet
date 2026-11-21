@@ -129,7 +129,6 @@ internal class RemoteDesktopKeyboard(context: Context, private val input: Remote
         }
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
         input.key(code, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0)
-        if (event.action == KeyEvent.ACTION_UP && code !in input.modifiers) input.clearModifiers()
         onInput()
         return true
     }

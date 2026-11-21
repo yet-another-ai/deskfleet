@@ -20,10 +20,16 @@ mod input_configuration;
 mod input_queue;
 mod input_reply;
 mod input_text;
+#[cfg(target_os = "ios")]
+mod ios_controls;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod macos_decoder;
+#[cfg(target_os = "android")]
+mod nsh_android;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_chrome;
+mod nsh_controls;
+mod nsh_keyboard;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_keyboard_focus;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -32,7 +38,6 @@ mod nsh_layout;
 mod nsh_session_state;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_toolbar;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_ui;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_video;

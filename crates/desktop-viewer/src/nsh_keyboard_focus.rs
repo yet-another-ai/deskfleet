@@ -41,6 +41,7 @@ impl KeyboardFocus {
     ) -> bool {
         state.controls_enabled()
             && !state.settings_open
+            && !state.hacker_open
             && (self.resumed
                 || self.pointer_exited
                 || pointer.is_none_or(|position| {
@@ -119,6 +120,9 @@ mod tests {
         state.settings_open = true;
         assert!(!focus.enabled(&state, pointer, content(), toolbar()));
         state.settings_open = false;
+        state.hacker_open = true;
+        assert!(!focus.enabled(&state, pointer, content(), toolbar()));
+        state.hacker_open = false;
         focus.pointer_moved();
         assert!(!focus.enabled(&state, pointer, content(), toolbar()));
         focus.resume();

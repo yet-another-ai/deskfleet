@@ -47,7 +47,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
             addView(surfaceView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
         controls = RemoteDesktopControls(root, DeskFleetBridge::nativeSendCommand,
-            DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote() }, ::requestCloseAndFinish) {
+            DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote(force = true) }, ::requestCloseAndFinish) {
             fullscreen = !fullscreen
             updateSystemBars()
         }
@@ -88,8 +88,8 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun syncLocalClipboardToRemote(onFocus: Boolean = false) {
-        if (!::controls.isInitialized || !controls.input.enabled || !controls.clipboardSharing) return
+    private fun syncLocalClipboardToRemote(onFocus: Boolean = false, force: Boolean = false) {
+        if (!::controls.isInitialized || !controls.input.enabled || (!force && !controls.clipboardSharing)) return
         runCatching {
             val clip = clipboardManager?.primaryClip
             val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
@@ -138,7 +138,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
-        if (::controls.isInitialized) controls.release()
+        if (::controls.isInitialized) controls.destroy()
         runCatching { clipboardManager?.removePrimaryClipChangedListener(clipListener) }
         val active = DeskFleetBridge.activeActivity?.get() === this
         if (active) DeskFleetBridge.activeActivity = null

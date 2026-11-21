@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process"
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs"
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join, resolve } from "node:path"
+import { prepareAndroidNsh } from "./prepare-android-nsh.ts"
 
 export const MIN_ANDROID_API = 34
 export const MIN_NDK_MAJOR = 28
@@ -119,12 +120,24 @@ export function verifyElfLoadAlignment(readelfOutput: string, soPath: string): v
   }
 }
 
+/** Every JNI implementation built into NSH must remain visible in the combined viewer library. */
+export function nshJniExports(nmOutput: string): string[] {
+  return [...new Set([...nmOutput.matchAll(/\b(JNI_OnLoad|Java_com_longbridge_nsh_\w+)\s*$/gmu)].map(match => match[1]!))]
+}
+
+export function verifyAndroidJniExports(dynamicSymbols: string, required: readonly string[]): void {
+  const exported = new Set([...dynamicSymbols.matchAll(/\b(?:GLOBAL|WEAK)\s+DEFAULT\s+(?!UND\b)\S+\s+(\S+)\s*$/gmu)].map(match => match[1]!))
+  const missing = required.filter(name => !exported.has(name))
+  if (missing.length) throw new Error(`Combined libnsh.so is missing JNI exports: ${missing.join(", ")}`)
+}
+
 if (import.meta.main) {
   if (process.env.CAPACITOR_PLATFORM_NAME && process.env.CAPACITOR_PLATFORM_NAME !== "android") {
     process.exit(0)
   }
 
   const repoRoot = resolve(import.meta.dirname, "..")
+  prepareAndroidNsh(repoRoot)
   const release = process.argv.includes("--release") || process.env.DESKFLEET_ANDROID_RELEASE === "1"
   const ndkRoot = findNdkRoot()
   const prebuiltDir = join(ndkRoot, "toolchains/llvm/prebuilt")
@@ -138,12 +151,14 @@ if (import.meta.main) {
     throw new Error(`Missing Android API ${MIN_ANDROID_API} clang wrapper at ${clang}`)
   }
 
-  execFileSync(
+  const artifacts = execFileSync(
     "cargo",
-    ["build", "-p", "deskfleet-desktop-viewer", "--lib", "--target", "aarch64-linux-android", "--locked", ...(release ? ["--release"] : [])],
+    ["build", "-p", "deskfleet-desktop-viewer", "--lib", "--target", "aarch64-linux-android", "--locked", "--message-format=json-render-diagnostics", ...(release ? ["--release"] : [])],
     {
       cwd: repoRoot,
-      stdio: "inherit",
+      stdio: ["ignore", "pipe", "inherit"],
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
       env: buildAndroidViewerEnv(process.env, ndkRoot, binDir, clang, release),
     },
   )
@@ -152,9 +167,26 @@ if (import.meta.main) {
   const readelfOutput = execFileSync(join(binDir, `llvm-readelf${exeExt}`), ["-l", builtSo], { encoding: "utf8" })
   verifyElfLoadAlignment(readelfOutput, builtSo)
 
+  const nshArtifact = artifacts.split("\n").filter(Boolean).map(line => JSON.parse(line) as {
+    reason: string; target?: { name: string }; filenames?: string[];
+  }).find(message => message.reason === "compiler-artifact" && message.target?.name === "nsh")
+  const nshRlib = nshArtifact?.filenames?.find(path => path.endsWith(".rlib"))
+  if (!nshRlib) throw new Error("Cargo did not report the locked NSH Android rlib artifact")
+  const nshSymbols = nshJniExports(execFileSync(join(binDir, `llvm-nm${exeExt}`), ["--defined-only", "--extern-only", nshRlib], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }))
+  if (!nshSymbols.includes("JNI_OnLoad") || !nshSymbols.includes("Java_com_longbridge_nsh_Native_create")) {
+    throw new Error("NSH Android rlib is missing its JNI runtime entry points")
+  }
+  const bridgeSource = readFileSync(join(repoRoot, "packages/capacitor-bridge/android/src/main/java/io/github/yet_another_ai/deskfleet/nativedesktop/DeskFleetBridge.kt"), "utf8")
+  const bridgeSymbols = [...bridgeSource.matchAll(/\bexternal fun (\w+)\(/gu)]
+    .map(match => `Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_${match[1]}`)
+  const dynamicSymbols = execFileSync(join(binDir, `llvm-readelf${exeExt}`), ["--dyn-syms", "--wide", builtSo], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })
+  verifyAndroidJniExports(dynamicSymbols, [...nshSymbols, ...bridgeSymbols, "Java_com_longbridge_nsh_Native_runRust"])
+
   const outDir = join(repoRoot, "packages/capacitor-bridge/android/src/main/jniLibs/arm64-v8a")
   mkdirSync(outDir, { recursive: true })
-  const targetSo = join(outDir, "libdeskfleet_desktop_viewer.so")
+  // Upstream NshView loads "nsh". Keep viewer/NSH globals in one shared object.
+  const targetSo = join(outDir, "libnsh.so")
   copyFileSync(builtSo, targetSo)
+  rmSync(join(outDir, "libdeskfleet_desktop_viewer.so"), { force: true })
   console.log(`Staged ${targetSo} (NDK ${basename(ndkRoot)}, API ${MIN_ANDROID_API}, 16 KB aligned)`)
 }

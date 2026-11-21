@@ -27,6 +27,7 @@ import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
 import java.util.UUID
 import org.json.JSONObject
+import com.longbridge.nsh.NshView
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -328,7 +329,8 @@ class DeskFleetBridge : Plugin() {
 
     companion object {
         init {
-            System.loadLibrary("deskfleet_desktop_viewer")
+            // The viewer and NSH share one native library and one set of runtime globals.
+            System.loadLibrary("nsh")
         }
 
         // Activity results and service start commands both run on the main thread.
@@ -375,6 +377,9 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativeSurfaceChanged(width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceDestroyed()
         @JvmStatic external fun nativeTouch(kind: Int, x: Double, y: Double, dx: Double, dy: Double)
+        @JvmStatic external fun nativeAttachControls(view: NshView, callback: Any, stateJson: String): Long
+        @JvmStatic external fun nativeUpdateControls(handle: Long, stateJson: String)
+        @JvmStatic external fun nativeDetachControls(handle: Long)
         @JvmStatic external fun nativeTestNat(server: String): String
     }
 }

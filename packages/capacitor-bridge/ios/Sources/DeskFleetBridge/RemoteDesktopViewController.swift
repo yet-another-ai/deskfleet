@@ -54,10 +54,18 @@ final class RemoteDesktopViewController: UIViewController {
     private let metalView = MetalVideoView(frame: .zero)
     private let controls = RemoteDesktopControls()
     private let keyboard = RemoteDesktopKeyboard()
-    private let hackerKeyboard = RemoteDesktopHackerKeyboard()
+    private var modifiers = RemoteDesktopModifiers()
+    private var hackerOpen = false
+    private var inputState = RemoteDesktopInputState()
+    private var reverseScroll = false
+    private var clipboardSharing = true
+    private var fullscreen = true
     private var state: [String: Any] = [:]
     private var relative = false
-    private var paused = false
+    private var paused: Bool {
+        get { inputState.paused }
+        set { inputState.paused = newValue }
+    }
     private var terminalPaste = false
     private var dragging = false
     private var dragLocked = false
@@ -70,8 +78,8 @@ final class RemoteDesktopViewController: UIViewController {
             && state["inputReady"] as? Bool == true && !paused
     }
 
-    override var prefersStatusBarHidden: Bool { true }
-    override var prefersHomeIndicatorAutoHidden: Bool { true }
+    override var prefersStatusBarHidden: Bool { fullscreen }
+    override var prefersHomeIndicatorAutoHidden: Bool { fullscreen }
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { .all }
 
     override func viewDidLoad() {
@@ -80,9 +88,7 @@ final class RemoteDesktopViewController: UIViewController {
         metalView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(metalView)
         view.addSubview(keyboard)
-        view.addSubview(hackerKeyboard)
         view.addSubview(controls)
-        hackerKeyboard.isHidden = true
         keyboard.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         NSLayoutConstraint.activate([
             metalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -91,25 +97,22 @@ final class RemoteDesktopViewController: UIViewController {
             metalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         controls.action = { [weak self] action in self?.handleAction(action) }
-        controls.selectDisplay = { [weak self] id in
-            self?.releaseInput()
-            self?.emit(["type": "selectDisplay", "displayId": id])
-        }
         keyboard.sendText = { [weak self] text in
             guard let self, self.inputEnabled else { return }
-            if !self.hackerKeyboard.consumeText(text) {
+            if let code = self.modifiers.code(for: text) {
+                self.pressKey(code)
+            } else {
                 self.releaseInput()
                 let mac = self.state["platform"] as? String == "darwin"
                 self.send(["type": "text", "text": text, "pasteCode": mac ? "MetaLeft" : "ControlLeft", "pasteShift": !mac && self.terminalPaste])
                 self.updateControls()
             }
         }
-        keyboard.sendKey = { [weak self] code in self?.hackerKeyboard.press(code) }
+        keyboard.sendKey = { [weak self] code in self?.pressKey(code) }
         keyboard.visibilityChanged = { [weak self] _ in
             self?.updateControls()
             self?.view.setNeedsLayout()
         }
-        hackerKeyboard.sendKey = { [weak self] code, modifiers in self?.sendKey(code, modifiers: modifiers) }
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
         metalView.addGestureRecognizer(tap)
@@ -135,13 +138,7 @@ final class RemoteDesktopViewController: UIViewController {
         // keyboardLayoutGuide follows docked keyboards, rotation, and split view.
         let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
         available.size.height = max(52, min(available.maxY, keyboardTop - 8) - available.minY)
-        if !hackerKeyboard.isHidden {
-            let width = min(600, available.width)
-            let height = min(252, max(44, available.height - 60))
-            hackerKeyboard.frame = CGRect(x: available.midX - width / 2, y: available.maxY - height, width: width, height: height)
-            available.size.height = max(52, available.height - height - 8)
-        }
-        controls.layout(in: available)
+        controls.frame = available
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -158,6 +155,7 @@ final class RemoteDesktopViewController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         metalView.detachSurface()
+        controls.stop()
         if DeskFleetBridge.activeController === self { DeskFleetBridge.activeController = nil }
         if isBeingDismissed && !closeSent { closeSent = true; deskfleetIosTouch(7, 0, 0, 0, 0) }
     }
@@ -167,6 +165,7 @@ final class RemoteDesktopViewController: UIViewController {
         releaseInput()
         keyboard.resignFirstResponder()
         metalView.detachSurface()
+        controls.stop()
     }
 
     func applyViewerCommand(_ command: [String: Any]) {
@@ -179,15 +178,15 @@ final class RemoteDesktopViewController: UIViewController {
             case "light": overrideUserInterfaceStyle = .light
             default: overrideUserInterfaceStyle = .unspecified
             }
-            if paused && next["status"] as? String != "connected" {
-                paused = false
-                // A transient reconnect may keep this peer, whose pause gate must also reset.
+            if inputState.reconcile(status: next["status"] as? String,
+                                    control: next["control"] as? Bool == true,
+                                    inputReady: next["inputReady"] as? Bool == true) {
                 send(["type": "pauseInput", "paused": false])
             }
             if wasEnabled && !inputEnabled || changedDisplay {
                 releaseInput()
                 keyboard.resignFirstResponder()
-                hackerKeyboard.isHidden = true
+                hackerOpen = false
             }
             if changedDisplay { deskfleetIosTouch(14, 0, 0, 0, 0) }
             updateControls()
@@ -199,52 +198,87 @@ final class RemoteDesktopViewController: UIViewController {
 
     private func updateControls() {
         controls.update(state: state, relative: relative, paused: paused, dragging: dragLocked,
-                        keyboard: keyboard.isFirstResponder, hacker: !hackerKeyboard.isHidden, terminalPaste: terminalPaste)
+                        keyboard: keyboard.isFirstResponder, hacker: hackerOpen, terminalPaste: terminalPaste,
+                        modifiers: modifiers.selected, reverseScroll: reverseScroll,
+                        clipboardSharing: clipboardSharing, fullscreen: fullscreen)
         view.setNeedsLayout()
     }
 
-    private func handleAction(_ action: String) {
-        switch action {
-        case "pointer":
+    private func handleAction(_ event: [String: Any]) {
+        switch event["type"] as? String {
+        case "toggleCollapsed", "toggleSettings":
+            releaseInput()
+            hackerOpen = false
+        case "toggleMouseMode":
             releaseInput()
             relative.toggle()
             deskfleetIosTouch(14, 0, 0, 0, 0)
-        case "keyboard" where inputEnabled:
+        case "toggleKeyboard" where inputEnabled:
+            // Selected Hacker modifiers are local; opening the IME releases any
+            // remote drag while keeping the next Ctrl/Alt shortcut available.
+            let selected = modifiers
+            releaseInput()
+            modifiers = selected
             if keyboard.isFirstResponder { keyboard.resignFirstResponder() }
             else { keyboard.becomeFirstResponder() }
-        case "hacker" where inputEnabled:
-            hackerKeyboard.resetModifiers()
-            hackerKeyboard.isHidden.toggle()
-        case "pause":
+        case "toggleHackerKeyboard" where inputEnabled:
+            releaseInput()
+            hackerOpen.toggle()
+        case "toggleControl":
             releaseInput()
             paused.toggle()
             send(["type": "pauseInput", "paused": paused])
-            if paused { keyboard.resignFirstResponder(); hackerKeyboard.isHidden = true }
-        case "control":
+            if paused { keyboard.resignFirstResponder(); hackerOpen = false }
+        case "setControl":
             releaseInput()
-            emit(["type": "setControl", "control": state["control"] as? Bool != true])
-        case "drag" where inputEnabled:
+            if paused { paused = false; send(["type": "pauseInput", "paused": false]) }
+            emit(["type": "setControl", "control": event["value"] as? Bool == true])
+        case "selectDisplay":
+            guard let id = event["value"] as? Int else { return }
+            releaseInput()
+            emit(["type": "selectDisplay", "displayId": id])
+        case "toggleDrag" where inputEnabled:
             dragLocked.toggle()
             if relative { deskfleetIosTouch(dragLocked ? 11 : 12, 0, 0, 0, 0) }
             else if !dragLocked { releaseInput() }
-        case "clipboard" where inputEnabled: syncLocalClipboardToRemote(force: true)
-        case "terminalPaste": terminalPaste.toggle()
-        case "secure" where inputEnabled: sendInput(["type": "secureAttention"])
-        case "connection":
+        case "syncClipboard" where inputEnabled: syncLocalClipboardToRemote(force: true)
+        case "setPasteShift": terminalPaste = event["value"] as? Bool == true
+        case "setReverseScroll": reverseScroll = event["value"] as? Bool == true
+        case "setClipboardSharing": clipboardSharing = event["value"] as? Bool == true
+        case "toggleFullscreen":
+            fullscreen.toggle()
+            setNeedsStatusBarAppearanceUpdate()
+            setNeedsUpdateOfHomeIndicatorAutoHidden()
+        case "toggleModifier" where inputEnabled:
+            if let code = event["value"] as? String { modifiers.toggle(code) }
+        case "key" where inputEnabled:
+            if let code = event["value"] as? String { pressKey(code) }
+        case "secureAttention" where inputEnabled: sendInput(["type": "secureAttention"])
+        case "reconnect", "disconnect":
             releaseInput()
-            emit(["type": state["status"] as? String == "connected" ? "disconnect" : "reconnect"])
+            emit(["type": event["type"] as? String ?? "disconnect"])
+        case "focusHandle": releaseInput()
+        case "selectOpen" where event["value"] as? Bool == true: releaseInput()
         case "close": handleCloseTapped()
         default: break
         }
         updateControls()
     }
 
-    private func releaseInput() {
+    private func releaseInput(resetPan: Bool = true) {
         dragging = false
         dragLocked = false
-        hackerKeyboard.resetModifiers()
+        if resetPan { inputState.endPan() }
+        modifiers.reset()
         sendInput(["type": "releaseAll"])
         deskfleetIosTouch(6, 0, 0, 0, 0)
+    }
+
+    private func pressKey(_ code: String) {
+        let selected = modifiers.take()
+        releaseInput()
+        sendKey(code, modifiers: selected)
+        updateControls()
     }
 
     @objc private func handleFocusLost() {
@@ -302,9 +336,10 @@ final class RemoteDesktopViewController: UIViewController {
         recognizer.setTranslation(.zero, in: metalView)
         switch recognizer.state {
         case .began, .changed:
-            if recognizer.numberOfTouches >= 2 {
-                if dragging || dragLocked { releaseInput(); updateControls() }
-                deskfleetIosTouch(relative ? 13 : 5, x, y, Double(-translation.x * scale), Double(-translation.y * scale))
+            if inputState.scrollPan(touches: recognizer.numberOfTouches) {
+                if dragging || dragLocked { releaseInput(resetPan: false); updateControls() }
+                let direction: CGFloat = reverseScroll ? 1 : -1
+                deskfleetIosTouch(relative ? 13 : 5, x, y, Double(direction * translation.x * scale), Double(direction * translation.y * scale))
             } else if relative {
                 deskfleetIosTouch(8, 0, 0, Double(translation.x * scale), Double(translation.y * scale))
             } else {
@@ -315,6 +350,7 @@ final class RemoteDesktopViewController: UIViewController {
             releaseInput()
             updateControls()
         case .ended:
+            inputState.endPan()
             if dragging && !dragLocked {
                 dragging = false
                 deskfleetIosTouch(relative ? 12 : 2, x, y, 0, 0)
@@ -328,6 +364,7 @@ final class RemoteDesktopViewController: UIViewController {
         keyboard.resignFirstResponder()
         if !closeSent { closeSent = true; deskfleetIosTouch(7, 0, 0, 0, 0) }
         metalView.detachSurface()
+        controls.stop()
         dismiss(animated: false)
     }
 
@@ -335,6 +372,7 @@ final class RemoteDesktopViewController: UIViewController {
     @objc private func handlePasteboardChanged() { syncLocalClipboardToRemote(force: false) }
 
     func applyRemoteClipboard(_ rawText: String) {
+        guard clipboardSharing else { return }
         let sanitized = rawText.replacingOccurrences(of: "\0", with: "")
         guard !sanitized.isEmpty, sanitized.utf8.count <= Self.maxClipboardBytes,
               sanitized != lastSyncedClipboard else { return }
@@ -344,7 +382,7 @@ final class RemoteDesktopViewController: UIViewController {
     }
 
     private func syncLocalClipboardToRemote(force: Bool) {
-        guard inputEnabled else { return }
+        guard inputEnabled && (force || clipboardSharing) else { return }
         let pasteboard = UIPasteboard.general
         let currentCount = pasteboard.changeCount
         if !force && currentCount == lastPasteboardChangeCount { return }

@@ -11,24 +11,42 @@ internal class RemoteDesktopInput(private val send: (String) -> Unit) {
         }
     var pasteCode = "ControlLeft"
     var pasteShift = false
+    // Hacker modifiers apply to the next key; selecting one must not modify remote mouse clicks.
     val modifiers = linkedSetOf<String>()
+    private val hardwareModifiers = linkedSetOf<String>()
+    private val keyChords = mutableMapOf<String, List<String>>()
 
     fun toggleModifier(code: String) {
         if (!enabled) return
-        val pressed = if (modifiers.remove(code)) false else { modifiers.add(code); true }
-        key(code, pressed)
+        if (!modifiers.remove(code)) modifiers.add(code)
     }
 
     fun key(code: String, pressed: Boolean, repeat: Boolean = false) {
         if (!enabled) return
-        event(JSONObject().put("type", "key").put("code", code).put("pressed", pressed).put("repeat", repeat))
+        if (code in MODIFIER_KEYS) {
+            val wasHeld = modifierHeld(code)
+            if (pressed) hardwareModifiers.add(code) else hardwareModifiers.remove(code)
+            val held = modifierHeld(code)
+            if (wasHeld != held) sendKey(code, held)
+            return
+        }
+        if (pressed && !repeat && code !in keyChords && modifiers.isNotEmpty()) {
+            val chord = modifiers.toList()
+            val newlyHeld = chord.filterNot(::modifierHeld)
+            keyChords[code] = chord
+            modifiers.clear()
+            newlyHeld.forEach { sendKey(it, true) }
+        }
+        sendKey(code, pressed, repeat)
+        if (!pressed) keyChords.remove(code)?.asReversed()?.forEach {
+            if (!modifierHeld(it)) sendKey(it, false)
+        }
     }
 
     fun stroke(code: String) {
         if (!enabled) return
         key(code, true)
         key(code, false)
-        clearModifiers()
     }
 
     fun text(value: String) {
@@ -42,6 +60,9 @@ internal class RemoteDesktopInput(private val send: (String) -> Unit) {
             stroke(shortcutCode)
         } else {
             clearModifiers()
+            // The native text command releases held keys before its paste chord.
+            hardwareModifiers.clear()
+            keyChords.clear()
             send(JSONObject().put("type", "text").put("text", text).put("pasteCode", pasteCode)
                 .put("pasteShift", pasteShift).toString())
         }
@@ -52,13 +73,20 @@ internal class RemoteDesktopInput(private val send: (String) -> Unit) {
     }
 
     fun clearModifiers() {
-        modifiers.toList().forEach { key(it, false) }
         modifiers.clear()
     }
 
-    fun release() {
-        modifiers.clear()
+    fun release(preserveModifiers: Boolean = false) {
+        if (!preserveModifiers) modifiers.clear()
+        hardwareModifiers.clear()
+        keyChords.clear()
         event(JSONObject().put("type", "releaseAll"))
+    }
+
+    private fun modifierHeld(code: String) = code in hardwareModifiers || keyChords.values.any { code in it }
+
+    private fun sendKey(code: String, pressed: Boolean, repeat: Boolean = false) {
+        event(JSONObject().put("type", "key").put("code", code).put("pressed", pressed).put("repeat", repeat))
     }
 
     private fun event(event: JSONObject) {
@@ -85,5 +113,9 @@ internal class RemoteDesktopInput(private val send: (String) -> Unit) {
             '`', '~' -> "Backquote"
             else -> null
         }
+    }
+
+    companion object {
+        private val MODIFIER_KEYS = setOf("ControlLeft", "ControlRight", "AltLeft", "AltRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight")
     }
 }

@@ -737,8 +737,13 @@ that width, making newly available controls unfold across many frames. The
 toolbar now reaches its full width immediately while retaining layout coordinates
 for tooltip anchors.
 
-NSH/GPUI is the sole desktop window implementation. Android continues using
-its existing native surface implementation.
+The pure-Rust `nsh_controls` component tree and `nsh_keyboard` panel are shared by
+desktop, Android, and iOS. `nsh_toolbar` mounts them in GPUI; `nsh_android` and
+`ios_controls` mount them in NSH's native Android and UIKit backends. Each view
+owns its state subscription and action callback. Mobile hosts supply safe-area
+and keyboard-adjusted bounds, route controls locally, and retain their existing
+video surfaces and system IME editors. NSH does not own the video pipeline or
+the receiving peer. These native viewers do not enable NSH's JavaScript runtime.
 
 Electron's main process owns Team authorization, capability discovery, peer
 grants, signaling, and remote capture startup. It exchanges only control,
@@ -913,8 +918,11 @@ plugins on the receiving machine.
 Linux builds of the NSH/GPUI backend additionally need the development libraries
 for Fontconfig, FreeType, XKB/XKB-X11, XCB, and Wayland. Runtime GPU rendering
 requires a working graphics driver and the corresponding platform libraries.
-The NSH 0.4.0 backend and GPUI Fast 0.1.9 are pinned together to the versions in
-NSH's released GPUI workspace lockfile.
+NSH's core and platform backends are pinned to 0.6.0, with GPUI Fast 0.1.17 on
+desktop. The Android build stages the pinned crate's Java runtime sources and
+packages NSH and DeskFleet's JNI entry points together in `libnsh.so`. The iOS
+build links NSH into the existing viewer static library; a thin C bridge exposes
+its UIKit view to the Swift controller.
 
 On Windows, the viewer executable uses the GUI subsystem and its launcher does
 not set `windowsHide`: that flag also hides GPUI's window, even while the peer
@@ -1072,9 +1080,10 @@ from 1 through 32,768 bytes (`MAX_CLIPBOARD_BYTES`) in both directions on
 `deskfleet-input` while control is active, deduplicating echoes so remote writes
 do not loop back. Both the embedded browser viewer and the native GPUI desktop
 window expose a **Clipboard sharing** setting (enabled by default) and sync on
-window focus and paste gestures; Android and iOS viewers sync automatically with
-`ClipboardManager` / `UIPasteboard` on focus and change events and expose a
-floating `📋` action for explicit sync. Target clipboard integration uses Win32
+window focus and paste gestures. Android and iOS viewers expose the same setting
+for automatic `ClipboardManager` / `UIPasteboard` sync on focus and change events.
+The native floating toolbar's explicit clipboard action works independently of
+automatic sharing while input is enabled. Target clipboard integration uses Win32
 `CF_UNICODETEXT` on the bound input desktop (including across the Windows
 desktop service worker pipe on `RefreshInput`), macOS `NSPasteboard`, Wayland
 `org.freedesktop.portal.Clipboard`, X11 `CLIPBOARD` selection ownership and
@@ -1093,8 +1102,10 @@ by the viewer's OS remain outside this contract, apart from the explicit Windows
 
 ### Phone and tablet controls
 
-Native Android/iOS viewers provide a draggable floating toolbar with display and
-control settings, pause/resume, clipboard, disconnect/reconnect, and close actions.
+Native Android/iOS viewers use the shared NSH floating toolbar, settings, and
+Hacker Keyboard, with touch-sized buttons and a compact layout. The controls
+provide display and control settings, pause/resume, clipboard,
+disconnect/reconnect, and close actions.
 The toolbar stays within safe areas when the device rotates or the system keyboard
 opens. The embedded browser/PWA viewer keeps its existing floating toolbar and
 adds touch controls on devices with a coarse pointer, including tablets with a mouse.
@@ -1102,8 +1113,8 @@ adds touch controls on devices with a coarse pointer, including tablets with a m
 Absolute mouse mode maps taps to the visible remote image, ignoring letterboxing;
 one-finger motion drags. Relative mode acts as a trackpad, preserving the cursor
 between gestures and moving it by finger displacement. Taps click at that cursor.
-Long press sends a secondary click and two-finger motion scrolls. iOS also exposes
-a drag action for relative mode; Android and the embedded viewer support
+Long press sends a secondary click and two-finger motion scrolls. Native viewers
+also expose a drag action for relative mode; Android and the embedded viewer support
 double-tap-and-hold dragging.
 Switching modes, losing focus,
 pausing, and disconnecting release active gestures.

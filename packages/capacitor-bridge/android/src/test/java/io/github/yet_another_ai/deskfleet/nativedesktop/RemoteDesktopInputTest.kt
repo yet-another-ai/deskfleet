@@ -21,9 +21,10 @@ class RemoteDesktopInputTest {
         val input = RemoteDesktopInput(sent::add).apply { enabled = true }
         input.toggleModifier("ControlLeft")
         input.toggleModifier("ShiftLeft")
+        assertTrue("Selecting Hacker modifiers must not alter remote clicks", sent.isEmpty())
         input.stroke("KeyZ")
         val keys = sent.map { JSONObject(it).getJSONObject("event") }
-        assertEquals(listOf("ControlLeft", "ShiftLeft", "KeyZ", "KeyZ", "ControlLeft", "ShiftLeft"), keys.map { it.getString("code") })
+        assertEquals(listOf("ControlLeft", "ShiftLeft", "KeyZ", "KeyZ", "ShiftLeft", "ControlLeft"), keys.map { it.getString("code") })
         assertEquals(listOf(true, true, true, false, false, false), keys.map { it.getBoolean("pressed") })
         assertTrue(input.modifiers.isEmpty())
     }
@@ -57,7 +58,7 @@ class RemoteDesktopInputTest {
         input.toggleModifier("AltLeft")
         input.enabled = false
         input.stroke("Tab")
-        assertEquals(2, sent.size)
+        assertEquals(1, sent.size)
         assertEquals("releaseAll", JSONObject(sent.last()).getJSONObject("event").getString("type"))
         assertTrue(input.modifiers.isEmpty())
     }
@@ -80,5 +81,50 @@ class RemoteDesktopInputTest {
         val command = JSONObject(sent.single())
         assertEquals("ControlLeft", command.getString("pasteCode"))
         assertTrue(command.getBoolean("pasteShift"))
+    }
+
+    @Test
+    fun `opening IME releases held keys while retaining the next shortcut`() {
+        val sent = mutableListOf<String>()
+        val input = RemoteDesktopInput(sent::add).apply { enabled = true }
+        input.key("ArrowLeft", true)
+        input.toggleModifier("ControlLeft")
+        input.release(preserveModifiers = true)
+        assertEquals(setOf("ControlLeft"), input.modifiers)
+        assertEquals("releaseAll", JSONObject(sent.last()).getJSONObject("event").getString("type"))
+        sent.clear()
+        input.text("c")
+        assertEquals(listOf("ControlLeft", "KeyC", "KeyC", "ControlLeft"),
+            sent.map { JSONObject(it).getJSONObject("event").getString("code") })
+        assertTrue(input.modifiers.isEmpty())
+    }
+
+    @Test
+    fun `pending modifier wraps a repeating hardware key until its release`() {
+        val sent = mutableListOf<String>()
+        val input = RemoteDesktopInput(sent::add).apply { enabled = true }
+        input.toggleModifier("AltLeft")
+        input.key("ArrowLeft", true)
+        input.key("ArrowLeft", true, repeat = true)
+        input.key("ArrowLeft", false)
+        input.key("KeyA", true)
+        input.key("KeyA", false)
+        val keys = sent.map { JSONObject(it).getJSONObject("event") }
+        assertEquals(listOf("AltLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "AltLeft", "KeyA", "KeyA"), keys.map { it.getString("code") })
+        assertEquals(listOf(true, true, true, false, false, true, false), keys.map { it.getBoolean("pressed") })
+        assertTrue(keys[2].getBoolean("repeat"))
+    }
+
+    @Test
+    fun `one shot shortcut does not release a physically held modifier`() {
+        val sent = mutableListOf<String>()
+        val input = RemoteDesktopInput(sent::add).apply { enabled = true }
+        input.key("ControlLeft", true)
+        input.toggleModifier("ControlLeft")
+        input.stroke("KeyC")
+        input.key("ControlLeft", false)
+        val keys = sent.map { JSONObject(it).getJSONObject("event") }
+        assertEquals(listOf("ControlLeft", "KeyC", "KeyC", "ControlLeft"), keys.map { it.getString("code") })
+        assertEquals(listOf(true, true, false, false), keys.map { it.getBoolean("pressed") })
     }
 }

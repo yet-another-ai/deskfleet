@@ -17,12 +17,12 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
         override fun onDown(e: MotionEvent) = true
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
-            if (!multiTouch && !longPressed) touch(if (controls.relative) 9 else 3, e)
+            if (!multiTouch && !longPressed && !controls.dragging) touch(if (controls.relative) 9 else 3, e)
             return true
         }
 
         override fun onLongPress(e: MotionEvent) {
-            if (!multiTouch && !dragging && controls.input.enabled) {
+            if (!multiTouch && !dragging && !controls.dragging && controls.input.enabled) {
                 longPressed = true
                 touch(if (controls.relative) 10 else 4, e)
             }
@@ -31,7 +31,7 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
         override fun onDoubleTap(e: MotionEvent) = true
 
         override fun onDoubleTapEvent(e: MotionEvent): Boolean {
-            if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN && !controls.dragging) {
                 dragging = true
                 touch(if (controls.relative) 11 else 1, e)
             }
@@ -46,6 +46,7 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
             if (e2.pointerCount >= 2) {
                 multiTouch = true
                 endDrag()
+                controls.stopDrag()
                 val scale = (if (controls.reverseScroll) -1.0 else 1.0) / surface.resources.displayMetrics.density
                 DeskFleetBridge.nativeTouch(if (controls.relative) 13 else 5, e2.x.toDouble(), e2.y.toDouble(), dx * scale, dy * scale)
             } else if (!multiTouch && !longPressed) {

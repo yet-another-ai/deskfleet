@@ -140,6 +140,21 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
         "unplug" => {
             r#"<path d="m19 5 3-3M2 22l3-3m1-17 2 2m12 12 2 2M9 7l8 8m-3-3 2-2M7 9l-2 2a4 4 0 0 0 0 6l2 2a4 4 0 0 0 6 0l2-2m-4-7 2-2"/>"#
         }
+        "pause" => r#"<path d="M8 5v14m8-14v14"/>"#,
+        "play" => r#"<path d="m8 5 11 7-11 7z"/>"#,
+        "pointer" => r#"<path d="m4 3 7 18 3-7 7-3z"/>"#,
+        "trackpad" => {
+            r#"<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 15h18m-9 0v5"/>"#
+        }
+        "keyboard" => {
+            r#"<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M7 16h10"/>"#
+        }
+        "terminal" => {
+            r#"<rect x="2" y="3" width="20" height="18" rx="2"/><path d="m6 8 4 4-4 4m7 0h5"/>"#
+        }
+        "close" => r#"<path d="m6 6 12 12M6 18 18 6"/>"#,
+        "collapse" => r#"<path d="M5 12h14"/>"#,
+        "expand" => r#"<path d="M5 12h14m-7-7v14"/>"#,
         "chevron" => r#"<path d="m6 9 6 6 6-6"/>"#,
         "check" => r#"<path d="m9 12 2 2 4-4"/>"#,
         _ => {
@@ -159,8 +174,10 @@ pub(crate) fn icon(name: &str, color: u32, extent: f32) -> impl IntoElement + us
 mod tests {
     use super::*;
 
-    const CONTROL_ICONS: [&str; 8] = [
+    const CONTROL_ICONS: [&str; 17] = [
         "grip", "maximize", "minimize", "settings", "unplug", "chevron", "check", "monitor",
+        "pause", "play", "pointer", "trackpad", "keyboard", "terminal", "close", "collapse",
+        "expand",
     ];
 
     #[component]
@@ -193,6 +210,7 @@ mod tests {
                 "pauseControl",
                 "resumeControl",
                 "settings",
+                "hideSettings",
                 "displayOption",
                 "displayName",
                 "control",
@@ -201,6 +219,18 @@ mod tests {
                 "disconnect",
                 "connect",
                 "moveControls",
+                "hackerKeyboard",
+                "keyboardModifiersHint",
+                "absoluteMouse",
+                "relativeMouse",
+                "systemKeyboard",
+                "hideKeyboard",
+                "terminalPaste",
+                "dragMouse",
+                "syncClipboard",
+                "close",
+                "collapseControls",
+                "expandControls",
             ] {
                 assert!(!label(Some(locale), key).is_empty());
             }
