@@ -2,6 +2,7 @@ import { expect, test } from "vitest"
 import { isPannablePreview, previewKindFromMime, previewKindFromUri, previewResourceRequestFromQuery, previewResourceRequestToQuery, resolvePreviewKind } from "./preview.ts"
 
 test.each([
+  ["csv", "text/csv"],
   ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
   ["pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],

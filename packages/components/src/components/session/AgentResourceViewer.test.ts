@@ -21,6 +21,37 @@ function renderText(name: string, text: string, uri = name) {
   }, { ...request, uri })
 }
 
+test.each(["dialog", "tab"] as const)("renders a resolved CSV resource as a table in %s mode", async mode => {
+  const name = "report.CSV"
+  const selected = { ...request, uri: "file:///work/report.CSV" }
+  const data = new TextEncoder().encode('\uFEFF项目,备注,完成\r\n"桌面, Web","他说 ""好了""\n第二行",\r\n<em>Test</em>,待办\r\n')
+  const resolveResource = vi.fn().mockResolvedValue({ name, path: "/work/report.CSV", kind: "file" })
+  const readResource = vi.fn().mockResolvedValue({ name, data, mimeType: "text/plain" })
+  const view = render({ resolveResource, readResource }, selected, mode)
+  await flushPromises()
+
+  const table = view.get("[data-csv-preview] table")
+  expect(table.attributes("aria-label")).toBe(name)
+  expect(table.findAll("th").map(cell => cell.text())).toEqual(["项目", "备注", "完成"])
+  expect(table.findAll("tbody tr").map(row => row.findAll("td").map(cell => cell.element.textContent))).toEqual([
+    ["桌面, Web", '他说 "好了"\n第二行', ""],
+    ["<em>Test</em>", "待办", ""],
+  ])
+  expect(table.find("em").exists()).toBe(false)
+  expect(readResource).toHaveBeenCalledExactlyOnceWith(selected, { onProgress: expect.any(Function) })
+  view.unmount()
+})
+
+test("CSV links with a line reference open the requested line in source view", async () => {
+  const source = 'Name,Note\nAlice,"needs, review"\n'
+  const view = renderText("tasks.csv", source, "file:///work/tasks.csv#L2")
+  await flushPromises()
+  expect(view.find("[data-csv-preview]").exists()).toBe(false)
+  expect(view.get("pre code").element.textContent).toBe(source)
+  expect(view.get("pre [data-line='2']").classes()).toContain("bg-ui-hover")
+  view.unmount()
+})
+
 test("highlights the resolved code filename with both themes and retains line navigation", async () => {
   const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
   const source = '/* multiline\n * comment */\nconst greeting: string = "你好";\n'

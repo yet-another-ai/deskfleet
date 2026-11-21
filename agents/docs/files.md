@@ -288,12 +288,12 @@ against the Session's captured first directory, including archived Sessions whos
 working context remains available. Editing Workspace directories later does not
 retarget those references. Link fragments and trailing `:line[:column]` editor
 locations are removed before URI decoding; encoded filename characters remain
-part of the path. In a Session view, clicking any resource link opens a right-side
-preview tab (or mobile preview view) first and resolves workspace authorization
-and file type inside that tab: supported image, audio, video, 3D model, and modern
-Office files (without line references) render in the shared previewer, directories
-open in a file browser, and text or line-referenced files render as syntax-highlighted
-code (falling back to a dialog when session preview tabs are unavailable). Text previews use the shared Shiki highlighter
+part of the path. In a Session view, clicking a resource link opens a right-side
+preview tab or mobile preview view. A dialog opens when preview tabs are
+unavailable. The view resolves workspace authorization and file type before
+rendering. The shared previewer handles supported image, audio, video, 3D model,
+CSV, and modern Office files. Directories open in a file browser, while text
+files and links with line references open as source. Text previews use the shared Shiki highlighter
 for recognized filenames, with the same light/dark colors as Markdown code blocks.
 Unknown languages, files over 200,000 characters, and highlighting failures retain
 plain text. Highlighting preserves source text, line endings, and blank lines.
@@ -308,6 +308,10 @@ and offer a toggle into a sandboxed `<iframe src="./html-preview.html">` preview
 its location with an opaque-origin Blob document inside its own policy container,
 so inline scripts run without inheriting the host renderer's `script-src` policy.
 Other authorized files can be opened locally or downloaded from that tab or dialog.
+
+UTF-8 CSV previews display a read-only, scrollable table with the first record as
+the column headers. The preview shows up to 200 records and 50 columns and
+indicates when it shows part of the file.
 
 Word `.docx`, Excel `.xlsx`, and PowerPoint `.pptx` previews use
 `@silurus/ooxml` to parse the loaded bytes locally with bundled WASM and
@@ -328,9 +332,9 @@ Markdown typography and formatting can alter it; the marker cannot select a
 different Team, Machine, or Session. Code examples and escaped markers stay
 literal, and incomplete streamed markers become links only after they close.
 
-Markdown embeds such as `![Clip](./clip.mp4)` use the shared media viewer for
-supported image, audio, video, 3D model, and Office MIME types. Files are fetched through the same
-authenticated file endpoint and rendered using typed Blob URLs, which are
+Markdown embeds such as `![Clip](./clip.mp4)` use the shared previewer for
+supported image, audio, video, 3D model, CSV, and Office MIME types. The renderer
+fetches files through the same authenticated file endpoint and creates typed Blob URLs, which are
 released when their content or Session context leaves the view. The file client
 assigns media MIME types from filename extensions; playback also requires browser
 codec support. Raw HTML `<video>` tags remain escaped.

@@ -29,6 +29,7 @@ import {
   usePreviewActions,
 } from "../../stores/previews.ts"
 import ColorPickerLoupe from "./ColorPickerLoupe.vue"
+import CsvPreview from "./CsvPreview.vue"
 import ImagePreview from "./ImagePreview.vue"
 import MermaidViewer from "./MermaidViewer.vue"
 import PreviewToolbar from "./PreviewToolbar.vue"
@@ -166,7 +167,7 @@ function previewSource(): PreviewSource {
 function descriptor() {
   const hostUri = root.value?.closest<HTMLElement>("[data-preview]")?.dataset.preview
   const usesSourceFile = kind.value === "model"
-    || (props.data !== undefined && (kind.value === "docx" || kind.value === "xlsx" || kind.value === "pptx"))
+    || (props.data !== undefined && (kind.value === "csv" || kind.value === "docx" || kind.value === "xlsx" || kind.value === "pptx"))
   const localSourceContent = props.resourceRequest?.uri
     ?? (isLocalResource.value ? props.content : (usesSourceFile && hostUri && isFileResource(hostUri) ? hostUri : undefined))
   return {
@@ -295,6 +296,14 @@ onBeforeUnmount(() => {
         :src="url"
         :data="loadedBytes ?? props.data"
         :mode="mode"
+      />
+      <CsvPreview
+        v-else-if="kind === 'csv'"
+        :src="url"
+        :data="loadedBytes ?? props.data"
+        :mode="mode"
+        :title="title"
+        :local-actions="canOpenResource || canRevealResource"
       />
       <div
         v-else
