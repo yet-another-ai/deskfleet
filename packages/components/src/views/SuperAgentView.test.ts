@@ -40,21 +40,23 @@ test("starts from a suggested prompt, creates only on send, then resumes committ
   await wrapper.get("textarea").setValue("Plan our release")
   central.createSuperAgentSession.mockResolvedValue({ sessionId: "release" })
   central.sendSuperAgentMessage.mockResolvedValue({ sessionId: "release", deliveryId: "msg-1" })
-  central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 2, messages: [], status: "working" })
+  const pendingSenders = [["msg-1", "user-1"]] as const
+  central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 2, messages: [], status: "working", pendingSenders })
   await wrapper.get("form").trigger("submit")
   await flushPromises()
   expect(central.createSuperAgentSession).toHaveBeenCalledExactlyOnceWith("alpha", expect.any(String))
   expect(central.sendSuperAgentMessage).toHaveBeenCalledExactlyOnceWith("alpha", "release", expect.any(String), "Plan our release")
-  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0)
+  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0, undefined)
+  expect(wrapper.get('[data-message-role="user"]').text()).toContain("Ada")
   expect(wrapper.get('[data-message-role="user"]').text()).toContain("Plan our release")
 
   central.superAgentHistory.mockResolvedValueOnce({ nextIndex: 8, status: "idle", messages: [
-    { id: "msg-1", role: "user", text: "Plan our release", at },
+    { id: "msg-1", role: "user", text: "Plan our release", at, senderId: "user-1" },
     { id: "answer", role: "assistant", text: "Which date should we target?", at },
   ] })
   await vi.advanceTimersByTimeAsync(1500)
   await flushPromises()
-  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 2)
+  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 2, pendingSenders)
   expect(wrapper.findAll('[data-message-role="user"]')).toHaveLength(1)
   expect(wrapper.get('[data-message-role="assistant"]').text()).toContain("Which date should we target?")
   expect(wrapper.get("h1").text()).toBe("Plan our release")
@@ -64,7 +66,20 @@ test("starts from a suggested prompt, creates only on send, then resumes committ
   expect(central.createSuperAgentSession).toHaveBeenCalledTimes(1)
   await wrapper.get("#super-agent-history li button").trigger("click")
   await flushPromises()
-  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0)
+  expect(central.superAgentHistory).toHaveBeenLastCalledWith("alpha", "release", 0, undefined)
+})
+
+test("names senders from the Team roster even without a Machine and preserves legacy attribution", async () => {
+  const { wrapper } = await setup(central => {
+    central.superAgentSessions.mockResolvedValue([{ sessionId: "release", title: "Release plan", lastActiveAt: Date.parse(at) }])
+    central.superAgentHistory.mockResolvedValue({ nextIndex: 9, messages: [
+      { id: "ada", role: "user", text: "Plan our release", at, senderId: "user-1" },
+      { id: "bob", role: "user", text: "Review the dates", at, senderId: "user-2" },
+      { id: "former", role: "user", text: "I can review it", at, senderId: "user-3" },
+      { id: "older", role: "user", text: "Update the plan", at },
+    ] })
+  })
+  expect(wrapper.findAll('[data-message-role="user"] span').map(label => label.text())).toEqual(["Ada", "Bob", "user-3", "Team member"])
 })
 
 test("keeps the draft and reuses each operation ID when a create or a delivery acknowledgement is lost", async () => {
@@ -106,7 +121,7 @@ test("ignores late history and avoids feature reads while the next Team's gate i
     central.superAgentHistory.mockReturnValue(deferred.promise)
     central.superAgentAvailability.mockImplementation(team => team === "alpha" ? Promise.resolve({ enabled: true }) : gate.promise)
   })
-  expect(central.superAgentHistory).toHaveBeenCalledExactlyOnceWith("alpha", "private", 0)
+  expect(central.superAgentHistory).toHaveBeenCalledExactlyOnceWith("alpha", "private", 0, undefined)
   await account.selectTeam("beta")
   deferred.resolve({ nextIndex: 1, messages: [{ id: "reply", role: "assistant", text: "Private response", at }] })
   await flushPromises()

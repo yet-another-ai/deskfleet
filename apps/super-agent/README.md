@@ -152,6 +152,14 @@ accepted the message. On a retry, send the same operation ID with the same
 parts in the same order. The server binds the Session to the Team before
 delivering the first message, including when resuming an interrupted create.
 
+For each message the gateway sends the authenticated Team member's account ID
+and display name to Eve. Eve keeps that sender context with the conversation
+for the model and records the account ID in `delivery.admitted`. The clients
+use that ID to show the sender's name from the current Team directory. Messages
+sent before sender attribution retain the generic Team member label.
+Eve queues messages from a different member behind an active turn so each
+turn retains its own sender.
+
 When rollout is disabled, the other routes return HTTP 404 with code
 `super_agent_disabled`. The usage collector continues settling accepted work.
 

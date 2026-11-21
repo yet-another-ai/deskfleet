@@ -15,6 +15,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
 use content::Message;
 use deskfleet_control_store::{CloudPrewarm, billing::CloudTokenPeriod, policies::TeamAction};
+use deskfleet_protocol::control::User;
 pub(crate) use rollout::Rollout;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -59,6 +60,9 @@ struct EveDelivery<'a> {
 // Allow a 25 MiB eve attachment after base64 encoding, plus the JSON envelope.
 const MAX_MESSAGE_BODY: usize = 35 * 1024 * 1024;
 
+// Private gateway-to-Eve metadata, separate from the message and its retry key.
+const SENDER_HEADER: &str = "x-deskfleet-message-sender";
+
 /// Read attachment bytes only after authenticating and checking the Team gate.
 async fn read_body<T: DeserializeOwned>(req: &HttpRequest, body: web::Payload) -> Result<T> {
     web::JsonBody::new(req, &mut body.into_inner(), None, true)
@@ -100,7 +104,7 @@ async fn rollout_for_member(
     state: &AppState,
     team: &str,
     action: TeamAction,
-) -> Result<(String, bool)> {
+) -> Result<(User, bool)> {
     let actor = auth::user(req, state).await?;
     state
         .store
@@ -108,7 +112,7 @@ async fn rollout_for_member(
         .await?;
     let team_id = deskfleet_control_store::resource_id(team)?;
     let enabled = state.super_agent_rollout.enabled(&actor.user, team_id);
-    Ok((actor.user.id, enabled))
+    Ok((actor.user, enabled))
 }
 
 async fn availability(
@@ -125,8 +129,8 @@ async fn authorize(
     state: &AppState,
     team: &str,
     action: TeamAction,
-) -> Result<String> {
-    let (user_id, enabled) = rollout_for_member(req, state, team, action).await?;
+) -> Result<User> {
+    let (user, enabled) = rollout_for_member(req, state, team, action).await?;
     if !enabled {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
@@ -134,7 +138,7 @@ async fn authorize(
             "Super Agent is disabled",
         ));
     }
-    Ok(user_id)
+    Ok(user)
 }
 
 fn runtime(state: &AppState) -> Result<&EveClient> {
@@ -198,7 +202,7 @@ async fn create(
         None => "create".to_owned(),
     };
     let eve = runtime(&state)?;
-    let key = request_key(&actor, &team, &body.operation_id)?;
+    let key = request_key(&actor.id, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
     let claim = state
         .store
@@ -219,7 +223,16 @@ async fn create(
         // The creation receipt admitted this payload. Finish it on the bound winner,
         // including when the quota changes between prewarm and delivery or retry.
         let delivery_key = hash(&["initial-message", &key]);
-        let delivery = deliver(&state, &team, &session, &delivery_key, &message, true).await?;
+        let delivery = deliver(
+            &state,
+            &team,
+            &session,
+            &delivery_key,
+            &message,
+            &actor,
+            true,
+        )
+        .await?;
         return Ok(
             HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery}))
         );
@@ -265,9 +278,18 @@ async fn message(
     require_session(&state, &team, &session).await?;
     let body: MessageRequest = read_body(&req, body).await?;
     body.message.validate()?;
-    let key = request_key(&actor, &team, &body.operation_id)?;
+    let key = request_key(&actor.id, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
-    let delivery = deliver(&state, &team, &session, &key, &body.message, admitted).await?;
+    let delivery = deliver(
+        &state,
+        &team,
+        &session,
+        &key,
+        &body.message,
+        &actor,
+        admitted,
+    )
+    .await?;
     Ok(HttpResponse::Accepted().json(json!({"sessionId":session,"deliveryId":delivery})))
 }
 
@@ -277,6 +299,7 @@ async fn deliver(
     session: &str,
     key: &str,
     message: &Message,
+    sender: &User,
     admitted: bool,
 ) -> Result<String> {
     let eve = runtime(state)?;
@@ -291,12 +314,15 @@ async fn deliver(
             // Schedule usage collection before delivery: eve may accept the
             // message even when the HTTP acknowledgement is lost.
             state.store.wake_cloud_meter(team, session).await?;
-            let response = client::send(eve.post(&["eve", "v1", "session", session])?.json(
-                &EveDelivery {
-                    message,
-                    idempotency_key: key,
-                },
-            ))
+            let sender = json!({"id": sender.id, "name": sender.name});
+            let response = client::send(
+                eve.post(&["eve", "v1", "session", session])?
+                    .header(SENDER_HEADER, URL_SAFE_NO_PAD.encode(sender.to_string()))
+                    .json(&EveDelivery {
+                        message,
+                        idempotency_key: key,
+                    }),
+            )
             .await?;
             let sent: Delivered = response.json().await.map_err(|_| client::unavailable())?;
             if sent.delivery_id.is_empty() {

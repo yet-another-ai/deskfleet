@@ -7,7 +7,7 @@ struct EveFixture {
     team: String,
     admin: String,
     prewarms: Mutex<Vec<String>>,
-    deliveries: Mutex<Vec<Value>>,
+    deliveries: Mutex<Vec<(Value, Value)>>,
 }
 
 const SESSION: &str = "wrun_rich";
@@ -19,6 +19,7 @@ async fn prewarm(
 ) -> HttpResponse {
     check_secret(&req);
     assert!(body.get("message").is_none());
+    assert!(!req.headers().contains_key(SENDER_HEADER));
     {
         let mut attempts = eve.prewarms.lock().unwrap();
         attempts.push(body["operationId"].as_str().unwrap().to_owned());
@@ -50,8 +51,14 @@ async fn deliver(
             .unwrap()
     );
     let key = body["idempotencyKey"].as_str().unwrap().to_owned();
+    let sender: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(req.headers().get(SENDER_HEADER).unwrap().as_bytes())
+            .unwrap(),
+    )
+    .unwrap();
     let mut deliveries = eve.deliveries.lock().unwrap();
-    deliveries.push(body.into_inner());
+    deliveries.push((body.into_inner(), sender));
     if deliveries.len() == 1 {
         // Eve received the message, but DeskFleet did not receive the delivery receipt.
         return HttpResponse::ServiceUnavailable().finish();
@@ -78,17 +85,36 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
         .unwrap();
     let team = store.create_team(&user.id, "Design").await.unwrap();
     let other = store.create_team(&user.id, "Separate Team").await.unwrap();
+    let teammate = store
+        .verified_user("reviewer@fixture.test", "林美玲")
+        .await
+        .unwrap();
+    let invite = store
+        .invite(&user.id, &team.id, "reviewer@fixture.test", "member")
+        .await
+        .unwrap();
+    store
+        .accept_invite(&teammate.id, invite["token"].as_str().unwrap())
+        .await
+        .unwrap();
     sdk.override_gate(rollout::GATE, true, Some(&team.id));
     sdk.override_gate(rollout::GATE, true, Some(&other.id));
     let login = store.new_session(&user.id).await.unwrap();
     let token = format!("Bearer {}", login["token"].as_str().unwrap());
-    let post = |path: &str, body: &Value| {
+    let teammate_login = store.new_session(&teammate.id).await.unwrap();
+    let teammate_token = format!("Bearer {}", teammate_login["token"].as_str().unwrap());
+    let post_as = |path: &str, body: &Value, authorization: &str| {
         test::TestRequest::post()
             .uri(path)
-            .insert_header(("Authorization", token.as_str()))
+            .insert_header(("Authorization", authorization))
+            .insert_header((
+                SENDER_HEADER,
+                URL_SAFE_NO_PAD.encode(r#"{"id":"forged","name":"Forged"}"#),
+            ))
             .set_json(body)
             .to_request()
     };
+    let post = |path: &str, body: &Value| post_as(path, body, &token);
     let eve = web::Data::new(EveFixture {
         store: store.clone(),
         team: team.id.clone(),
@@ -178,10 +204,11 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
         let first_calls = eve.deliveries.lock().unwrap();
         assert_eq!(first_calls.len(), 2);
         assert_eq!(first_calls[0], first_calls[1]);
-        assert_eq!(first_calls[0]["message"], parts);
+        assert_eq!(first_calls[0].0["message"], parts);
+        assert_eq!(first_calls[0].1, json!({"id": user.id, "name": user.name}));
         assert_eq!(
             create_again,
-            json!({"sessionId": SESSION, "deliveryId": format!("delivery_{}", first_calls[0]["idempotencyKey"].as_str().unwrap())})
+            json!({"sessionId": SESSION, "deliveryId": format!("delivery_{}", first_calls[0].0["idempotencyKey"].as_str().unwrap())})
         );
     }
     let replay: Value = test::call_and_read_body_json(&app, post(&path, &create)).await;
@@ -214,15 +241,16 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
         .update_plan_limits(&user.id, Plan::Free, free)
         .await
         .unwrap();
-    let delivery: Value = test::call_and_read_body_json(&app, post(&sends, &followup)).await;
+    let teammate_post = |body: &Value| post_as(&sends, body, &teammate_token);
+    let delivery: Value = test::call_and_read_body_json(&app, teammate_post(&followup)).await;
     assert_eq!(delivery["sessionId"], SESSION);
     assert_ne!(delivery["deliveryId"], create_again["deliveryId"]);
-    let repeated: Value = test::call_and_read_body_json(&app, post(&sends, &followup)).await;
+    let repeated: Value = test::call_and_read_body_json(&app, teammate_post(&followup)).await;
     assert_eq!(repeated, delivery);
     let mut changed_followup = followup.clone();
     changed_followup["message"][0]["filename"] = json!("changed.txt");
     assert_eq!(
-        test::call_service(&app, post(&sends, &changed_followup))
+        test::call_service(&app, teammate_post(&changed_followup))
             .await
             .status(),
         StatusCode::CONFLICT
@@ -235,7 +263,11 @@ async fn rich_first_delivery_survives_lost_ack_and_exhaustion_and_followups_keep
     {
         let calls = eve.deliveries.lock().unwrap();
         assert_eq!(calls.len(), 3);
-        assert_eq!(calls[2]["message"], file);
+        assert_eq!(calls[2].0["message"], file);
+        assert_eq!(
+            calls[2].1,
+            json!({"id": teammate.id, "name": teammate.name})
+        );
     }
     let listed = store.cloud_sessions(&team.id).await.unwrap();
     assert_eq!(listed[0].title.as_deref(), Some("Check the design"));

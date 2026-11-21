@@ -148,6 +148,41 @@ test("replays committed chat over the authenticated stream, advancing its durabl
   await expect(f.client.superAgentHistory("team/1", "s", 6)).rejects.toMatchObject({ diagnostics: { status: 404, apiErrorCode: "super_agent_disabled" } })
 })
 
+test("joins sender principals to consumed messages across history reads", async () => {
+  const f = setup()
+  const at = "2026-11-21T10:00:00Z"
+  const page = (tail: number, facts: unknown[]) => new Response(JSON.stringify({ at, facts }), {
+    headers: { "x-eve-stream-version": "27", "x-eve-stream-tail-index": String(tail) },
+  })
+  const admitted = (deliveryId: string, id: string, type = "user") => ({ type: "delivery.admitted", data: { deliveryId, principal: { id, type } } })
+  const consumed = (deliveryId: string, text: string) => ({ type: "delivery.consumed", data: { deliveryId, parts: [{ kind: "text", text }] } })
+  f.fetch.mockResolvedValueOnce(page(0, [admitted("a", "ada"), admitted("b", "bob"), admitted("rejected", "ada")]))
+  const first = await f.client.superAgentHistory("team", "s", 0)
+  expect(first).toEqual({
+    nextIndex: 1, messages: [], status: "working", pendingSenders: [["a", "ada"], ["b", "bob"], ["rejected", "ada"]],
+  })
+
+  f.fetch.mockResolvedValueOnce(page(1, [
+    { type: "delivery.settled", data: { deliveryId: "rejected", outcome: "refused" } },
+    consumed("b", "Review the dates"),
+    admitted("old", "deskfleet-server", "service"),
+    consumed("old", "Update the plan"),
+  ]))
+  const second = await f.client.superAgentHistory("team", "s", first.nextIndex, first.pendingSenders)
+  expect(second).toEqual({
+    nextIndex: 2, status: "working", undeliveredIds: ["rejected"], pendingSenders: [["a", "ada"]],
+    messages: [
+      { id: "b", at, role: "user", text: "Review the dates", senderId: "bob" },
+      { id: "old", at, role: "user", text: "Update the plan" },
+    ],
+  })
+  f.fetch.mockResolvedValueOnce(page(2, [consumed("a", "Plan our release")]))
+  expect(await f.client.superAgentHistory("team", "s", second.nextIndex, second.pendingSenders)).toEqual({
+    nextIndex: 3, status: "working",
+    messages: [{ id: "a", at, role: "user", text: "Plan our release", senderId: "ada" }],
+  })
+})
+
 test("allows Super Agent history to finish within the gateway's replay deadline", async () => {
   vi.useFakeTimers()
   const f = setup()

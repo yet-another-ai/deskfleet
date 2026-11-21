@@ -30,6 +30,7 @@ export function useSuperAgent() {
   let scopeRevision = 0
   let sessionRevision = 0
   let nextIndex = 0
+  let pendingSenders: SuperAgentHistory["pendingSenders"]
   let reading = false
   // A poll can observe a rejection before the concurrent POST returns its delivery ID.
   const rejectedDuringSend = new Set<string>()
@@ -66,9 +67,10 @@ export function useSuperAgent() {
     const revision = sessionRevision
     reading = true
     try {
-      const page = await automatic.superAgentHistory(teamId, sessionId, nextIndex)
+      const page = await automatic.superAgentHistory(teamId, sessionId, nextIndex, pendingSenders)
       if (revision !== sessionRevision) return
       nextIndex = page.nextIndex
+      pendingSenders = page.pendingSenders
       if (page.messages.length) {
         const byId = new Map(messages.value.map(message => [message.id, message]))
         for (const message of page.messages) byId.set(message.id, message)
@@ -125,6 +127,7 @@ export function useSuperAgent() {
     delivery = undefined
     reading = false
     nextIndex = 0
+    pendingSenders = undefined
     loadingHistory.value = !!id
   }
   function select(id?: string): void {
@@ -155,6 +158,7 @@ export function useSuperAgent() {
 
   async function send(): Promise<void> {
     const teamId = account?.teamId.value
+    const senderId = account?.account.value.user?.id
     const text = draft.value.trim()
     if (!teamId || !user || !text || !canSend.value) return
     const revision = scopeRevision
@@ -182,7 +186,7 @@ export function useSuperAgent() {
       sessions.value = [{ sessionId, title, lastActiveAt: Date.now() }, ...sessions.value.filter(session => session.sessionId !== sessionId)]
       if (!rejected && !messages.value.some(message => message.id === deliveryId)) {
         if (status.value === "failed") status.value = undefined
-        pending.value = [...pending.value, { id: deliveryId, role: "user", text, at: new Date().toISOString() }]
+        pending.value = [...pending.value, { id: deliveryId, role: "user", text, at: new Date().toISOString(), senderId }]
       }
       await readHistory()
       // An idle shared conversation polls less frequently. Pick up the reply promptly after a send.

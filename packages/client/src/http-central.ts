@@ -306,12 +306,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent) {
     return this.request<{ sessionId: string; deliveryId: string }>("POST", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/messages`, { operationId, message })
   }
-  superAgentHistory(teamId: string, sessionId: string, startIndex: number) {
+  superAgentHistory(teamId: string, sessionId: string, startIndex: number, pendingSenders?: SuperAgentHistory["pendingSenders"]) {
     if (!Number.isSafeInteger(startIndex) || startIndex < 0) throw new RangeError("Invalid Super Agent history position")
     return this.request<SuperAgentHistory>("GET", `${superAgentPath(teamId)}/sessions/${encodeURIComponent(sessionId)}/stream?startIndex=${startIndex}`, undefined, undefined, {
       // The gateway permits a 120-second finite read while eve replays a long conversation.
       timeoutMs: 125_000, totalTimeoutMs: 135_000, accept: "application/x-ndjson",
-      decodeBody: (text, response) => readSuperAgentHistory(text, response, startIndex),
+      decodeBody: (text, response) => readSuperAgentHistory(text, response, startIndex, pendingSenders),
     })
   }
   teamTurnSettings(teamId: string) { return this.request<TeamTurnSettings>("GET", `/api/teams/${encodeURIComponent(teamId)}/turn-settings`) }

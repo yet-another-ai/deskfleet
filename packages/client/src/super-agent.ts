@@ -31,11 +31,14 @@ export interface SuperAgentMessage {
   role: "user" | "assistant"
   text: string
   at: string
+  senderId?: string
 }
 
 export interface SuperAgentHistory {
   nextIndex: number
   messages: SuperAgentMessage[]
+  /** Authenticated senders whose deliveries have been admitted but not consumed or settled. */
+  pendingSenders?: readonly (readonly [deliveryId: string, senderId: string])[]
   /** An accepted delivery can settle without ever producing a user message. */
   undeliveredIds?: string[]
   /** Omitted if this read contains no lifecycle transition. */
@@ -50,6 +53,7 @@ interface EveFact {
   type: string
   data: {
     deliveryId?: string
+    principal?: { id?: string; type?: string }
     parts?: { kind: string; text?: string }[]
     partId?: string
     kind?: string
@@ -61,11 +65,21 @@ interface EveFact {
 }
 
 /** The text transcript projects consumed user text and committed replies from Eve's stream. */
-function applyFact(history: SuperAgentHistory, at: string, { type, data }: EveFact) {
+function applyFact(history: SuperAgentHistory, senders: Map<string, string>, at: string, { type, data }: EveFact) {
   switch (type) {
+    case "delivery.admitted":
+      if (data.deliveryId && data.principal?.type === "user" && typeof data.principal.id === "string" && data.principal.id) {
+        senders.set(data.deliveryId, data.principal.id)
+      }
+      history.status = "working"
+      break
     case "delivery.consumed": {
       const text = data.parts?.filter(part => part.kind === "text").map(part => part.text).join("\n")
-      if (data.deliveryId && text) history.messages.push({ id: data.deliveryId, at, role: "user", text })
+      if (data.deliveryId) {
+        const senderId = senders.get(data.deliveryId)
+        if (text) history.messages.push({ id: data.deliveryId, at, role: "user", text, ...(senderId && { senderId }) })
+        senders.delete(data.deliveryId)
+      }
       history.status = "working"
       break
     }
@@ -75,13 +89,13 @@ function applyFact(history: SuperAgentHistory, at: string, { type, data }: EveFa
       }
       break
     case "turn.started":
-    case "delivery.admitted":
       history.status = "working"
       break
     case "turn.settled":
       history.status = data.outcome === "failed" ? "failed" : "idle"
       break
     case "delivery.settled":
+      if (data.deliveryId) senders.delete(data.deliveryId)
       if (data.outcome === "refused" || data.outcome === "failed" || data.outcome === "ignored") {
         if (data.deliveryId) (history.undeliveredIds ??= []).push(data.deliveryId)
         history.status = "failed"
@@ -89,18 +103,20 @@ function applyFact(history: SuperAgentHistory, at: string, { type, data }: EveFa
       break
     case "session.ended":
       history.status = "ended"
+      senders.clear()
       break
   }
 }
 
 /** A finite eve v27 read. Position markers may skip lines, heartbeats never consume an index. */
-export function readSuperAgentHistory(text: string, response: Response, startIndex: number): SuperAgentHistory {
+export function readSuperAgentHistory(text: string, response: Response, startIndex: number, pendingSenders?: SuperAgentHistory["pendingSenders"]): SuperAgentHistory {
   const version = response.headers.get("x-eve-stream-version")
   const tail = response.headers.get("x-eve-stream-tail-index")
   if (version !== "27" || tail === null || !/^(?:-1|\d+)$/u.test(tail) || !Number.isSafeInteger(Number(tail))) {
     throw new SyntaxError("Invalid Super Agent history headers")
   }
   const history: SuperAgentHistory = { nextIndex: startIndex, messages: [] }
+  const senders = new Map(pendingSenders)
   let terminated = false
   for (const line of text.split("\n")) {
     if (!line.trim()) continue
@@ -111,7 +127,7 @@ export function readSuperAgentHistory(text: string, response: Response, startInd
       continue
     }
     if (Array.isArray(record.facts) && typeof record.at === "string") {
-      for (const fact of record.facts) applyFact(history, record.at, fact)
+      for (const fact of record.facts) applyFact(history, senders, record.at, fact)
     } else if (!record.progress) {
       throw new SyntaxError("Invalid Super Agent history entry")
     }
@@ -122,5 +138,6 @@ export function readSuperAgentHistory(text: string, response: Response, startInd
   // consumed records so messages appended between snapshots remain readable.
   const end = Math.max(startIndex, Number(tail) + 1)
   if (history.nextIndex > end || (history.nextIndex < end && !terminated)) throw new SyntaxError("Incomplete Super Agent history")
+  if (senders.size) history.pendingSenders = [...senders]
   return history
 }

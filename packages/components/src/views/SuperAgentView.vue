@@ -4,6 +4,7 @@ import { useFocus, useScroll } from "@vueuse/core"
 import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { intlLocale, type AppLocale } from "@deskfleet/client/i18n"
+import type { SuperAgentMessage } from "@deskfleet/client/super-agent"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
 import ErrorNotice from "../components/common/ErrorNotice.vue"
 import UiButton from "../components/common/UiButton.vue"
@@ -64,6 +65,14 @@ function suggest(prompt: string): void {
   draft.value = prompt
   focused.value = true
 }
+function senderName(message: SuperAgentMessage): string {
+  if (message.role === "assistant") return t("superAgent.title")
+  const senderId = message.senderId
+  if (!senderId) return t("superAgent.teamMember")
+  const user = account?.account.value.user
+  const profile = user?.id === senderId ? user : account?.members.value.find(member => member.userId === senderId)
+  return profile?.name.trim() || senderId
+}
 function enter(event: KeyboardEvent): void {
   if (event.shiftKey || event.isComposing || event.keyCode === 229 || platform.mobile) return
   event.preventDefault()
@@ -111,10 +120,10 @@ function enter(event: KeyboardEvent): void {
           </div>
           <div v-else-if="transcript.length" class="mx-auto w-full max-w-160 select-text py-5" role="log" :aria-label="t('superAgent.title')" aria-live="polite" aria-relevant="additions">
             <article v-for="message in transcript" :key="message.id" :data-message-role="message.role" class="mb-6 min-w-0 last:mb-0" :class="message.role === 'user' && 'flex flex-col items-end pl-7'">
-              <div class="mb-1.5 flex items-center gap-2 text-xs text-ui-text-muted">
+              <div class="mb-1.5 flex max-w-full items-center gap-2 text-xs text-ui-text-muted">
                 <Orbit v-if="message.role === 'assistant'" :size="15" class="text-ui-accent" aria-hidden="true" />
-                <span class="font-medium">{{ t(message.role === 'assistant' ? 'superAgent.title' : 'superAgent.teamMember') }}</span>
-                <time :datetime="message.at" class="text-ui-text-faint">{{ formatMessageTime(message.at, displayLocale) }}</time>
+                <span class="truncate font-medium" :title="senderName(message)">{{ senderName(message) }}</span>
+                <time :datetime="message.at" class="shrink-0 text-ui-text-faint">{{ formatMessageTime(message.at, displayLocale) }}</time>
               </div>
               <p v-if="message.role === 'user'" class="m-0 max-w-full whitespace-pre-wrap break-words rounded-2xl bg-ui-accent/8 px-4 py-2.5 text-[15px] leading-6">{{ message.text }}</p>
               <AgentMarkdown v-else :text="message.text" class="min-w-0 break-words text-[15px] leading-6" />

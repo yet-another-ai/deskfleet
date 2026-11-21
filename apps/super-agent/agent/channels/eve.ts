@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import type { AuthFn } from "eve/channels/auth"
-import { eveChannel } from "eve/channels/eve"
+import { defaultEveAuth, eveChannel } from "eve/channels/eve"
 
 const deskfleet: AuthFn<Request> = request => {
   const secret = process.env.DESKFLEET_SUPER_AGENT_SECRET
@@ -13,4 +13,30 @@ const deskfleet: AuthFn<Request> = request => {
   return { authenticator: "deskfleet", principalId: "deskfleet-server", principalType: "service", attributes: {} }
 }
 
-export default eveChannel({ auth: [deskfleet] })
+function readSender(request: Request): { id: string; name: string } | undefined {
+  const encoded = request.headers.get("x-deskfleet-message-sender")
+  if (!encoded) return undefined
+
+  let sender: unknown
+  try {
+    sender = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"))
+  } catch {
+    return undefined
+  }
+  if (!sender || typeof sender !== "object" || !("id" in sender) || !("name" in sender)) return undefined
+  if (typeof sender.id !== "string" || !sender.id.trim() || typeof sender.name !== "string") return undefined
+  return { id: sender.id, name: sender.name }
+}
+
+export default eveChannel({
+  auth: [deskfleet],
+  onMessage(ctx) {
+    // Eve runs onMessage after authenticating the DeskFleet gateway.
+    const sender = readSender(ctx.eve.request)
+    if (!sender) return { auth: defaultEveAuth(ctx) }
+    return {
+      auth: { authenticator: "deskfleet", principalId: sender.id, principalType: "user", attributes: {} },
+      context: [`DeskFleet message sender: ${JSON.stringify(sender)}`],
+    }
+  },
+})
