@@ -37,6 +37,7 @@ export function isPackagingPath(path: string): boolean {
     /^\.github\/workflows\/(?:build|publish|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
     path.startsWith(".github/actions/setup-gradle-mirror/") ||
     path === "apps/desktop/package.json" ||
+    path === "apps/server/Dockerfile" ||
     path.startsWith("apps/super-agent/") ||
     path.startsWith("apps/server/src/cloud_agent/") ||
     path === "tsconfig.json" ||

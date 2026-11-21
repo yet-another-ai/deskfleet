@@ -36,6 +36,14 @@ try {
     }
   })
   assert.notEqual(docker("exec", agent, "id", "-u"), "0", "Eve must run as an unprivileged user")
+  const containerHealth = docker(
+    "exec",
+    agent,
+    "bash",
+    "-c",
+    "curl -fsS http://127.0.0.1:3100/eve/v1/health | jq -er '.ok == true and .status == \"ready\"'",
+  )
+  assert.equal(containerHealth, "true", "Super Agent image must include bash, curl, and jq for health checks")
   const unauthorized = await fetch(`${origin}/eve/v1/session`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operationId: randomUUID() }),
     signal: AbortSignal.timeout(5_000),
