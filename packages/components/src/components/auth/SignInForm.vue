@@ -18,8 +18,7 @@ import UiField from "../common/UiField.vue"
 import AuthLayout from "./AuthLayout.vue"
 
 /** Account sign-in. Desktop approval opens the other steps in a new tab. */
-const props = defineProps<{ account: AccountAuthentication; title: string; description?: string; registrationEnabled: boolean; newTab?: boolean; config: AuthConfig; returnTo: string; githubError?: string; googleError?: string; emailVerificationToken?: string }>()
-const emit = defineEmits<{ signedIn: [] }>()
+const props = defineProps<{ account: AccountAuthentication; title: string; description?: string; registrationEnabled: boolean; newTab?: boolean; config: AuthConfig; returnTo: string; githubError?: string; googleError?: string; emailVerificationToken?: string; onSignedIn: () => Promise<void> | void }>()
 const { t } = useI18n()
 const { required: captchaRequired, checking: checkingCaptcha, proof: captchaProof, failure: captchaFailure } = useAuthCaptcha(props.account, () => props.config.captchaEnabled)
 const email = ref("")
@@ -55,9 +54,11 @@ async function run(method: "password" | "passkey", action: () => Promise<void>):
     await action()
     trackEvent("account_signed_in", { method })
     password.value = ""
-    emit("signedIn")
-  } catch (reason) { error.value = signInFailure(reason) }
-  finally { pending.value = undefined }
+    await props.onSignedIn()
+  } catch (reason) {
+    error.value = signInFailure(reason)
+    pending.value = undefined
+  }
 }
 function submit(): void {
   void run("password", async () => props.account.login(email.value, password.value, await captchaProof("login")))

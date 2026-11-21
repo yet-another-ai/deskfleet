@@ -593,13 +593,13 @@ test("failed email resend clears the replaced proof and waits before another att
   expect(button(dialog(), i18n.global.t("auth.useEmailCode")).attributes("disabled")).toBeUndefined()
 })
 
-test("sign-in waits for telemetry consent sync before navigating and never stalls on a slow sync", async () => {
+test.each(["resolved", "timed out"] as const)("sign-in keeps the form disabled while telemetry consent sync is %s before navigating", async outcome => {
   vi.useFakeTimers()
   const assign = vi.spyOn(location, "assign").mockImplementation(() => {})
   writeStoredTelemetryConsent("declined")
-  let consent = Promise.withResolvers<void>()
+  const consent = Promise.withResolvers<void>()
   const request = mountAt("/auth/login", async (_method, path) => {
-    if (path === "/api/auth/config") return { registrationEnabled: true, telemetryEnabled: true }
+    if (path === "/api/auth/config") return { registrationEnabled: true, telemetryEnabled: true, githubEnabled: true }
     if (path === "/api/me/telemetry-consent") return consent.promise
     return {}
   })
@@ -610,16 +610,17 @@ test("sign-in waits for telemetry consent sync before navigating and never stall
   await flushPromises()
   expect(request).toHaveBeenCalledWith("PUT", "/api/me/telemetry-consent", { consented: false })
   expect(assign).not.toHaveBeenCalled()
-  consent.resolve()
-  await flushPromises()
-  expect(assign).toHaveBeenCalledExactlyOnceWith("/")
-
-  assign.mockClear()
-  consent = Promise.withResolvers<void>()
+  expect(view!.get('input[type="email"]').attributes("disabled")).toBeDefined()
+  expect(view!.get('input[type="password"]').attributes("disabled")).toBeDefined()
+  expect(view!.get('button[type="submit"]').attributes("disabled")).toBeDefined()
+  expect(button(view!, i18n.global.t("auth.signInWithGithub")).attributes("disabled")).toBeDefined()
   await view!.get("form").trigger("submit")
   await flushPromises()
-  expect(assign).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(1_000)
+  expect(request.mock.calls.filter(([, path]) => path === "/api/auth/login")).toHaveLength(1)
+
+  if (outcome === "resolved") consent.resolve()
+  else await vi.advanceTimersByTimeAsync(1_000)
   await flushPromises()
   expect(assign).toHaveBeenCalledExactlyOnceWith("/")
+  expect(view!.get('button[type="submit"]').attributes("disabled")).toBeDefined()
 })

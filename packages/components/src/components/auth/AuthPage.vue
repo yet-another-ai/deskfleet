@@ -111,7 +111,7 @@ async function signOut(): Promise<void> { await props.api.logout(); state.value 
     :github-error="githubError"
     :google-error="googleError"
     :new-tab="signIn.newTab"
-    @signed-in="signedIn"
+    :on-signed-in="signedIn"
   />
   <DesktopApproval v-else-if="route === '/auth/desktop'" :account="account" :user="state.user" :attempt="attempt" :sign-out="signOut" />
   <GithubAppAuthorization v-else-if="route === '/auth/github-app'" :api="api" :user="state.user" :sign-out="signOut" />
