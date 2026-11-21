@@ -94,7 +94,8 @@ const workspaces = computed(() => {
   const mapped = activeWorkspaces.value.map(workspace => ({ ...workspace, sessions: workspace.sessions.filter(matchesFilter) }))
   return filtering.value ? mapped.filter(workspace => workspace.sessions.length > 0) : mapped
 })
-const showMachine = computed(() => !filtering.value || sessions.value.length > 0 || workspaces.value.length > 0)
+const unopened = computed(() => Boolean(runtimes && !runtimes.opened.has(props.machine.id)))
+const showMachine = computed(() => !filtering.value || unopened.value || sessions.value.length > 0 || workspaces.value.length > 0)
 
 const activeSessionId = computed(() =>
   route.name === "session" && (!account || account.machineId.value === props.machine.id) && typeof route.params.sessionId === "string"
@@ -142,7 +143,6 @@ async function openTerminal(workspace: WorkspaceSummary): Promise<void> {
   }
 }
 
-const unopened = computed(() => Boolean(runtimes && !runtimes.opened.has(props.machine.id)))
 const collapsed = computed(() => unopened.value || (!filtering.value && fleet.isCollapsed(props.machine.id)))
 function toggleMachine(): void {
   const target = unopened.value ? account?.machines.value.find(item => item.id === props.machine.id) : undefined
