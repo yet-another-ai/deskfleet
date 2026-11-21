@@ -1504,7 +1504,9 @@ never in place of an authorization or capture error. Generic desktop failures
 also suggest checking that the machine is awake and unlocked.
 
 Desktop's [TCP forwarding](ports.md) API owns local loopback
-listeners in its main process, independently of windows and the local Agent.
+listeners in its main process, independently of windows and the local Agent
+(accepting `localhost`, `127.0.0.1`, or `::1`, where `localhost` probes `[::1]`
+then `127.0.0.1` without DNS).
 The target daemon enables native forwarding only for a `ports:forward` grant.
 Remote control's Port forwarding tab manages these ephemeral connections within
 the selected Team and Machine. They are not catalog resources; closing them
@@ -1620,6 +1622,10 @@ Opening a preview selects that machine and display in Remote control, where
 the full desktop connects with mouse/keyboard control and supported system audio
 enabled by default. Viewers can change these settings while connected.
 Tools mount when first visited and retain their connections while switching tabs.
+On Desktop, Sessions can also open and persist multiple Web Preview tabs from the
+`+` window menu; they remain lazily disconnected until first activated,
+connecting directly on local machines or over ephemeral loopback forwards on
+remote Machines, while Web and mobile clients omit Web Preview creation.
 Machine-owned shells live here; Session-owned shells stay in the Session panel.
 System status reads CPU usage, physical memory, swap, battery charge and power
 direction when the machine reports a battery, and machine details from the owning

@@ -1,6 +1,7 @@
 import { installCentralAccount } from "./central-account.ts"
 import { installFiles } from "./files.ts"
 import { installPorts } from "./ports.ts"
+import { installWebPreview } from "./web-preview.ts"
 import { installLocalChannels } from "./local-channels.ts"
 import { installMuxChannels } from "./mux-channels.ts"
 import { installLocalApplications } from "./applications.ts"
@@ -76,6 +77,7 @@ function start(): void {
     const speech = installSpeech()
     const files = installFiles(central)
     const ports = installPorts(central)
+    const webPreview = installWebPreview()
     const localChannels = installLocalChannels(central)
     const muxChannels = installMuxChannels(central)
     installRendererPermissions()
@@ -123,6 +125,7 @@ function start(): void {
       auv?.close()
       notificationMonitor.close()
       notifications.close()
+      webPreview.close()
       closing ??= Promise.allSettled([localAgent.close(), files.close(), ports.close(), localChannels.close(), muxChannels.close(), nativeDesktop.close(), speech.close()]).then(results => {
         const failure = results.find(result => result.status === "rejected")
         if (failure?.status === "rejected") throw failure.reason

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import SpringSurface from "../common/SpringSurface.ts"
 import "dockview-vue/dist/styles/dockview.css"
-import { MonitorPlay, Plus, SquareTerminal } from "@lucide/vue"
+import { Globe, MonitorPlay, Plus, SquareTerminal } from "@lucide/vue"
 import { StorageSerializers, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { computed, defineAsyncComponent, onScopeDispose, provide, shallowRef, toRaw, watch } from "vue"
 import { useI18n } from "vue-i18n"
@@ -28,6 +28,12 @@ import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useLayoutStore, type SessionWindowRequest } from "../../stores/layout.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
+import {
+  formatLogicalPreviewUrl,
+  formatWebPreviewTabTitle,
+  isWebPreviewSupported,
+  parseWebPreviewInput,
+} from "../../services/web-preview.ts"
 import UiButton from "../common/UiButton.vue"
 import GithubIcon from "../common/GithubIcon.vue"
 import ChangesPanel from "../details/ChangesPanel.vue"
@@ -35,15 +41,18 @@ import GithubPanel from "../details/GithubPanel.vue"
 import SessionPreviewWindow from "../session/SessionPreviewWindow.vue"
 import AppMainWindow from "./AppMainWindow.vue"
 import SessionDesktopWindow from "./SessionDesktopWindow.vue"
+import SessionWebPreviewWindow from "./SessionWebPreviewWindow.vue"
 import WindowTab from "./WindowTab.vue"
 import WindowToolbar from "./WindowToolbar.vue"
 import { newTerminalWindowKey, windowHeaderActionsId, windowHeaderActionsTarget } from "./windowHeaderActions.ts"
 
-type WorkspaceWindowId = "changes" | "desktops" | "terminal" | "github"
+type WorkspaceWindowId = "changes" | "desktops" | "terminal" | "github" | "webPreview"
 
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
-const platform = usePlatformClient().platform
+const platformClient = usePlatformClient()
+const platform = platformClient.platform
+const webPreviewAvailable = computed(() => isWebPreviewSupported(platformClient))
 const fleet = useFleetStore()
 const layout = useLayoutStore()
 const terminals = useTerminalsStore()
@@ -158,8 +167,12 @@ function isPreviewPanel(panelId: string): boolean {
   return panelId.startsWith("preview:") || panelId.startsWith("mermaid-preview:")
 }
 
+function isWebPreviewPanel(panelId: string): boolean {
+  return panelId.startsWith("web-preview:")
+}
+
 function rightWindowGroup(current: DockviewApi): DockviewGroupPanel | undefined {
-  const openPreview = current.panels.find(panel => isPreviewPanel(panel.id))
+  const openPreview = current.panels.find(panel => isPreviewPanel(panel.id) || isWebPreviewPanel(panel.id))
   const tools = [current.getPanel("changes"), current.getPanel("desktops")]
   return openPreview?.api.group ?? tools.find(panel => panel?.api.group.api.isVisible)?.api.group ?? tools.find(Boolean)?.api.group
 }
@@ -289,14 +302,27 @@ function onReady(event: DockviewReadyEvent): void {
 
   // Preview contents are intentionally transient; their data is removed before layout
   // persistence, so restored preview entries have no content and are discarded.
-  let removedStoredPreview = false
+  let updatedStoredPanels = false
   for (const panel of [...event.api.panels]) {
     if (isPreviewPanel(panel.id)) {
       event.api.removePanel(panel)
-      removedStoredPreview = true
+      updatedStoredPanels = true
+    } else if (isWebPreviewPanel(panel.id)) {
+      if (!webPreviewAvailable.value) {
+        event.api.removePanel(panel)
+        updatedStoredPanels = true
+      } else {
+        const parsed = typeof panel.params?.url === "string" ? parseWebPreviewInput(panel.params.url) : null
+        const url = parsed ? formatLogicalPreviewUrl(parsed) : null
+        if (panel.params?.url !== url) {
+          panel.api.updateParameters({ url })
+          updatedStoredPanels = true
+        }
+        panel.api.setTitle(formatWebPreviewTabTitle(parsed, undefined, t("webPreview.title")))
+      }
     }
   }
-  if (removedStoredPreview) saveLayout()
+  if (updatedStoredPanels) saveLayout()
 
   const chat = event.api.getPanel("chat")
   if (chat) chat.api.setTitle(chatTitle.value)
@@ -390,6 +416,33 @@ async function openTerminalTab(group: DockviewGroupPanel, direction: "within" | 
   }
 }
 
+function openWebPreviewTab(group?: DockviewGroupPanel): void {
+  const current = api.value
+  if (!current || !webPreviewAvailable.value) return
+  const targetGroup = group ?? rightWindowGroup(current)
+  const windowId = `web-preview:${crypto.randomUUID()}`
+  current.addPanel({
+    id: windowId,
+    component: "webPreview",
+    title: t("webPreview.title"),
+    params: { url: null },
+    position: targetGroup
+      ? { referenceGroup: targetGroup, direction: "within" }
+      : { referencePanel: "chat", direction: "right" },
+    initialWidth: targetGroup ? undefined : 380,
+    minimumWidth: 220,
+  })
+  const panel = current.getPanel(windowId)
+  panel?.api.group.api.setVisible(true)
+  panel?.api.setActive()
+  saveLayout()
+}
+
+function updateWebPreviewParams(panelApi: DockviewPanelApi, url: string | null): void {
+  panelApi.updateParameters({ url })
+  saveLayout()
+}
+
 function openWindowTab(id: WorkspaceWindowId, group: DockviewGroupPanel): void {
   if (id === "github") {
     const current = api.value
@@ -411,6 +464,10 @@ function openWindowTab(id: WorkspaceWindowId, group: DockviewGroupPanel): void {
   }
   if (id === "terminal") {
     void openTerminalTab(group)
+    return
+  }
+  if (id === "webPreview") {
+    openWebPreviewTab(group)
     return
   }
   openToolPanel(id, group)
@@ -477,6 +534,14 @@ onScopeDispose(() => {
       <template #panel-sessionPreview="{ params }">
         <SessionPreviewWindow v-if="params.request" :request="params.request" />
       </template>
+      <template #panel-webPreview="{ api: panelApi, params }">
+        <SessionWebPreviewWindow
+          :session-id="sessionId"
+          :panel-api="panelApi"
+          :initial-url="typeof params?.url === 'string' ? params.url : null"
+          @change="updateWebPreviewParams(panelApi, $event)"
+        />
+      </template>
       <template #defaultTab="params">
         <WindowTab
           :tab-id="params.api.id"
@@ -511,6 +576,9 @@ onScopeDispose(() => {
               </DropdownMenuItem>
               <DropdownMenuItem as="button" type="button" data-window-type="terminal" class="ui-menu-item" :disabled="!sessionWorktreeId" @select="openWindowTab('terminal', group)">
                 <SquareTerminal :size="14" aria-hidden="true" />{{ t("terminal.new") }}
+              </DropdownMenuItem>
+              <DropdownMenuItem v-if="webPreviewAvailable" as="button" type="button" data-window-type="web-preview" class="ui-menu-item" @select="openWindowTab('webPreview', group)">
+                <Globe :size="14" aria-hidden="true" />{{ t("webPreview.new") }}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenuPortal>

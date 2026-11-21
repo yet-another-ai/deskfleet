@@ -17,9 +17,10 @@ pub(super) struct Target {
 impl Target {
     pub(super) fn new(host: &str, port: u16) -> Result<Self> {
         let family = match host {
+            "localhost" => 0,
             "127.0.0.1" => 4,
             "::1" => 6,
-            _ => return Err(error("target must be 127.0.0.1 or ::1")),
+            _ => return Err(error("target must be localhost, 127.0.0.1, or ::1")),
         };
         if port == 0 {
             return Err(error("target port must be nonzero"));
@@ -27,13 +28,23 @@ impl Target {
         Ok(Self { family, port })
     }
 
-    pub(super) fn address(self) -> SocketAddr {
-        let ip = if self.family == 4 {
-            IpAddr::V4(Ipv4Addr::LOCALHOST)
-        } else {
-            IpAddr::V6(Ipv6Addr::LOCALHOST)
-        };
-        SocketAddr::new(ip, self.port)
+    /// Returns literal loopback addresses without DNS resolution.
+    /// `"localhost"` prefers IPv6 loopback and falls back to IPv4 loopback.
+    pub(super) fn addresses(self) -> [Option<SocketAddr>; 2] {
+        match self.family {
+            4 => [
+                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port)),
+                None,
+            ],
+            6 => [
+                Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), self.port)),
+                None,
+            ],
+            _ => [
+                Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), self.port)),
+                Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port)),
+            ],
+        }
     }
 }
 
@@ -99,6 +110,7 @@ impl Frame {
             (1, 8) => {
                 let port = u16::from_be_bytes([bytes[6], bytes[7]]);
                 let host = match bytes[5] {
+                    0 => "localhost",
                     4 => "127.0.0.1",
                     6 => "::1",
                     _ => return Err(error("invalid loopback address family")),

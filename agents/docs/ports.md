@@ -60,8 +60,10 @@ const active = await window.deskfleet.ports.list()
 await window.deskfleet.ports.stop(forward.id)
 ```
 
-`targetHost` defaults to `127.0.0.1`; only the exact literals `127.0.0.1` and `::1`
-are accepted. `targetPort` is 1–65535. `localPort` defaults to zero, asking the OS
+`targetHost` defaults to `127.0.0.1`; only the exact literals `localhost`,
+`127.0.0.1`, and `::1` are accepted (`localhost` instructs `deskfleet-ports`
+to try `[::1]` and then `127.0.0.1` without DNS resolution). `targetPort` is
+1–65535. `localPort` defaults to zero, asking the OS
 to choose an available port; an explicit port must be available. Local listeners
 always bind `127.0.0.1`. The bridge validates parameters and accepts calls only
 from the trusted main renderer. There is no automatic discovery, persistence,
@@ -99,10 +101,13 @@ transport head-of-line delays.
 
 ## Validation
 
-Native tests exercise real WebRTC peers and loopback sockets. Desktop tests
-cover parameter validation, trusted-renderer access, native adaptation, and
-cleanup of active and pending forwards. Signaling tests cover early ICE,
-revocation, expiry, account changes, setup cancellation, and signaling outages.
+Native tests exercise real WebRTC peers and loopback sockets (including
+`localhost` auto-family probing). Desktop tests
+cover parameter validation, trusted-renderer access, native adaptation,
+`WebPreviewController` `<webview>` lockdown, and cleanup of active and pending
+forwards. Signaling tests
+cover early ICE, revocation, expiry, account changes, setup cancellation, and
+signaling outages.
 
 The existing backend smoke workflow also exercises port forwarding through the
 real owned-account/PostgreSQL backend and daemon, with concurrent binary streams, a
@@ -113,6 +118,32 @@ directly and with a configured TURN service:
 mise -E development run backend:smoke
 DESKFLEET_SMOKE_RELAY_ONLY=1 mise -E development run backend:smoke
 ```
+
+## Session Web Preview
+
+Desktop Sessions allow opening multiple interactive Web Preview windows from the
+Dockview `+` menu. Web and mobile clients omit Web Preview creation and discard
+restored Web Preview entries because browsers cannot bind or tunnel loopback
+ports safely.
+
+Preview inputs accept loopback port shorthands (`5173`, `:5173/docs`) or HTTP
+loopback URLs (`localhost`, `127.0.0.1`, `[::1]`) and reject credentials or
+non-`http:` schemes. The toolbar always shows the logical loopback URL while the
+underlying transport connects directly on local Desktop machines or opens an
+ephemeral `ports.start()` forward (`127.0.0.1:<localPort>`) on remote machines.
+
+Desktop (Electron) renders pages inside an isolated `<webview>` in the ephemeral
+`temp:deskfleet-web-preview` partition. `WebPreviewController` in main pins each
+attached `<webview>` to its initial loopback HTTP origin, enforces
+`will-attach-webview` and guest `will-navigate` / `will-redirect` containment,
+strips preloads, enables sandbox/context isolation with `nodeIntegration` off,
+denies guest `window.open` and permission prompts, and exposes a Desktop-only
+detached DevTools toggle.
+
+Open targets persist per Session (`deskfleet.window-layout-v4:<sessionId>`).
+Restored background tabs remain disconnected until first activated, and keep
+their live preview alive once opened until the user changes target port/host or
+closes the tab.
 
 ## Relation to external editors
 
