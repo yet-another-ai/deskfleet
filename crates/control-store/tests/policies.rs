@@ -15,6 +15,7 @@ fn team_policy_separates_member_operations_from_administration() {
         TeamAction::ReadUsage,
         TeamAction::ReadMachines,
         TeamAction::EnrollMachine,
+        TeamAction::UseSuperAgent,
     ];
     let admin_actions = [TeamAction::Rename, TeamAction::ManageMembers];
     let outsider = TeamPolicy::new(None);

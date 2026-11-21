@@ -1,4 +1,34 @@
 {
+  "superAgent": {
+    "title": "Super Agent",
+    "new": "New conversation",
+    "history": "Conversations",
+    "historyEmpty": "Conversations you start with your team will appear here.",
+    "untitled": "Untitled conversation",
+    "heading": "What are we working on?",
+    "intro": "Plan work with Super Agent in a conversation your team can return to.",
+    "plan": "Plan a release",
+    "planPrompt": "Help me plan our next release. Ask me about scope, timing and dependencies.",
+    "breakdown": "Break down a task",
+    "breakdownPrompt": "Help me break a task into smaller steps. Start by asking me what we want to accomplish.",
+    "placeholder": "Message Super Agent…",
+    "send": "Send message",
+    "shared": "Shared with {team}",
+    "teamMember": "Team member",
+    "working": "Super Agent is working…",
+    "queued": "Message delivered. Waiting for Super Agent…",
+    "loading": "Loading conversation…",
+    "loadingList": "Loading conversations…",
+    "runtimeOffline": "The Super Agent service is unavailable. Try again later.",
+    "noAllowance": "Your team’s plan does not include monthly credits.",
+    "quotaReached": "Your team has used all its credits for this billing period.",
+    "readError": "Couldn’t update this conversation",
+    "sendError": "Couldn’t send your message",
+    "listError": "Couldn’t load conversations",
+    "usageError": "Couldn’t load your team’s allowance",
+    "ended": "This conversation has ended. Start a new conversation to continue.",
+    "failed": "Super Agent couldn’t complete this turn."
+  },
   "worktreeSettings": {
     "title": "Worktrees",
     "scope": "Branch naming and automatic cleanup for Sessions on this computer, across all Teams.",
@@ -83,13 +113,13 @@
     },
     "free_plan": {
       "title": "This connection needs a relay",
-      "description": "A direct connection could not be established. The Free plan does not include TURN relay traffic. View billing to compare plans, or try a network that supports direct connections.",
+      "description": "A direct connection could not be established. Your Team’s current plan does not include TURN relay traffic. View billing to compare plans, or try a network that supports direct connections.",
       "mobileDescription": "A direct connection could not be established, and TURN relay traffic is not available for this Team. Try a network that supports direct connections."
     },
     "turn_quota_exhausted": {
-      "title": "Your Team has used its relay allowance",
-      "description": "A direct connection could not be established, and the monthly TURN relay allowance has been used. View billing to review usage and plans, or try a different network.",
-      "mobileDescription": "A direct connection could not be established, and the monthly TURN relay allowance has been used. Try a different network."
+      "title": "No relay allowance remaining",
+      "description": "A direct connection could not be established, and this Team has no relay allowance remaining this month. Check Team usage or try a different network.",
+      "mobileDescription": "A direct connection could not be established, and this Team has no relay allowance remaining this month. Try a different network."
     },
     "metering_unavailable": {
       "title": "Relay connections are temporarily unavailable",
@@ -295,6 +325,32 @@
     "dataNote": "Days use UTC. Today is still in progress. Conversation turns and site-managed relay traffic update as usage is synchronized.",
     "relayHistoryIncomplete": "Some older relay data is not available yet."
   },
+  "creditRates": {
+    "title": "Credit rates",
+    "description": "Credits charged per token across all hosted plans. Changes apply to newly recorded usage.",
+    "input": "Uncached input",
+    "output": "Output",
+    "cacheRead": "Cache read",
+    "cacheWrite": "Cache write",
+    "invalid": "Enter a nonnegative rate with up to 12 whole digits and 6 decimal places.",
+    "save": "Save rates",
+    "saved": "Credit rates saved."
+  },
+  "planQuotas": {
+    "title": "Plan quotas",
+    "description": "Plan limits apply to every Team on the selected plan.",
+    "plan": "Plan",
+    "hint": "Leave a limit empty for unlimited use. Enter 0 to disallow new use.",
+    "selfHosted": "Self-hosted installations have unlimited product quotas.",
+    "maxActiveSessions": "Sessions per Team",
+    "maxTurnsPerSession": "Turns per Session",
+    "maxMembers": "Members per Team",
+    "turnBytes": "Monthly TURN relay bytes",
+    "superAgentTokens": "Monthly credits",
+    "teamTurnServers": "Team-managed TURN servers",
+    "invalid": "Enter whole numbers between 0 and 9,007,199,254,740,991, or leave the field empty.",
+    "saved": "Plan quotas saved."
+  },
   "siteAdmin": {
     "title": "Site administration",
     "generalTitle": "Site settings",
@@ -333,7 +389,7 @@
     "cloudflareTurnKeepTokens": "Leave token fields blank to keep the saved tokens.",
     "cloudflareTurnSaved": "Cloudflare TURN settings saved.",
     "allowTeamTurnServers": "Allow teams to use their own TURN servers",
-    "allowTeamTurnServersDescription": "Pro and Enterprise teams can replace these servers with their own. When off, every team uses these servers.",
+    "allowTeamTurnServersDescription": "Teams with this benefit can use their own TURN servers. When off, all Teams use the site servers.",
     "accounts": "Accounts",
     "createAccount": "Create account",
     "createAccountDescription": "Create a verified account with a password. No verification email is sent; share the password through a secure channel.",
@@ -1638,7 +1694,7 @@
     "usage": "Usage",
     "turnTitle": "Your own TURN server",
     "turnDescription": "Relay this team’s connections through your TURN server instead of the site’s relay. DeskFleet signs short-lived credentials with your shared secret. Traffic through your server doesn’t use your relay allowance, and connections don’t fall back to the site’s relay if your server is unreachable. Changes apply to new connections.",
-    "turnPlanRequired": "Your own TURN server requires the Pro or Enterprise plan.",
+    "turnPlanRequired": "Your Team’s plan does not include its own TURN server.",
     "turnUnavailable": "Your own TURN server is not available for this team. Connections use the site’s relay.",
     "turnDisabledBySite": "Site administrators have turned off team TURN servers. Connections use the site’s relay.",
     "turnSavedUnused": "Your saved server isn’t used: {urls}",
@@ -2040,14 +2096,10 @@
       "title": "Compare plans",
       "subtitle": "Allowances apply to your whole Team. Direct connections are included in every plan.",
       "current": "Current plan",
-      "description": {
-        "free": "For getting started with direct connections.",
-        "go": "For everyday work with relay access.",
-        "pro": "For more work over relayed connections."
-      },
       "freePrice": "Free",
       "priceUnavailable": "Price temporarily unavailable",
       "per": { "month": "/ month", "year": "/ year" },
+      "monthlyCredits": "Monthly credits",
       "monthlyRelay": "Relay / month",
       "relayAmount": "{amount} GiB",
       "direct": "Direct connections",
@@ -2062,17 +2114,9 @@
       "enterprise": "Enterprise",
       "selfHosted": "Self-hosted"
     },
-    "planDescription": {
-      "free": "Up to 3 active Sessions, 30 turns per Session, and 3 members. Direct connections only.",
-      "go": "Unlimited Sessions, turns, and members, with 2 GiB of TURN relay each month.",
-      "pro": "Unlimited Sessions, turns, and members, with 20 GiB of TURN relay each month.",
-      "enterprise": "Assigned by the site administrator. Every allowance is unlimited.",
-      "selfHosted": "This server sets no product limits. Relay uses the operator’s TURN servers."
-    },
+    "selfHostedDescription": "This server sets no product limits. Relay uses the operator’s TURN servers.",
     "offer": {
-      "go": "2 GiB TURN relay / month · unlimited Sessions, turns, and members",
-      "pro": "20 GiB TURN relay / month · unlimited Sessions, turns, and members",
-      "enterprise": "Unlimited allowances with operator-managed deployment support. Contact sales to discuss Enterprise."
+      "enterprise": "Contact sales about Enterprise allowances and deployment support."
     },
     "offerInterval": {
       "month": "Billed monthly",
@@ -2098,14 +2142,14 @@
     "remaining": "{amount} left",
     "resets": "Resets {date}",
     "trafficHint": "Only traffic relayed through TURN counts. Usage is metered with a short delay. At the limit, new relay access stops; existing connections keep their granted lifetime.",
-    "trafficNotIncluded": "Direct connections still work. Upgrade for relay when a direct connection isn’t possible.",
+    "trafficNotIncluded": "Direct connections are available on this plan.",
     "turnsPerSession": "Turns per Session",
     "turnsPerSessionHint": "Each prompt sent to an agent uses one turn. Forked Sessions keep the turns used before the fork.",
     "turnsPerSessionLimit": "{count} per Session",
     "sessionTurns": "{used} of {limit} turns used in this Session",
     "turnsLeft": "No turns left in this Session | 1 turn left of {limit} in this Session | {remaining} turns left of {limit} in this Session",
     "inheritedTurns": "{count} carried over from the source Session",
-    "resumeHint": "Queued input is kept. Retry it after the Team upgrades.",
+    "resumeHint": "Queued input is kept. Retry when the Team has turns available.",
     "retryHint": "Queued input is kept. Please retry later.",
     "upgradePlan": "Upgrade plan", "plansAndBilling": "Plans & billing",
     "viewPlans": "View plans",

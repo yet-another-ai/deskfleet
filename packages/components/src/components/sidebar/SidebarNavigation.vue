@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarClock, MessagesSquare, MonitorPlay, Search, SquarePen } from "@lucide/vue"
+import { CalendarClock, MessagesSquare, MonitorPlay, Orbit, Search, SquarePen } from "@lucide/vue"
 import { vSpring } from "../../directives/spring.ts"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
@@ -13,7 +13,8 @@ import SidebarLink from "./SidebarLink.vue"
 const { t } = useI18n()
 const route = useRoute()
 const { conversationPath } = storeToRefs(useLayoutStore())
-const searchPath = useAccountSession()?.searchPath ?? ref("/search")
+const account = useAccountSession()
+const searchPath = account?.searchPath ?? ref("/search")
 // Only the active section reveals its label, leaving room for more destinations.
 const sections = [
   { routeName: "new-session", label: "nav.conversations", icon: MessagesSquare },
@@ -60,6 +61,7 @@ function destination(section: Section) {
       </RouterLink>
     </div>
     <SidebarLink :to="{ name: 'new-session' }" :icon="SquarePen" :label="t('nav.newSession')" />
+    <SidebarLink v-if="account?.superAgentEnabled.value" :to="{ name: 'super-agent' }" :icon="Orbit" :label="t('superAgent.title')" />
   </nav>
 </template>
 

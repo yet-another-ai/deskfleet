@@ -15,14 +15,15 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
   account authority.
 - Subscriptions and usage belong to a Team. A person can use a single-member
   Team; membership in several Teams does not combine their plans.
-- Sell platform subscriptions. AI credentials and execution remain on user
-  machines. AI token resale, credit purchases, and DeskFleet-managed wallets are
-  outside this release; Stripe may apply native invoice credits from proration.
+- Platform subscriptions can include a monthly Team credit allowance. The hosted
+  Super Agent draws from this allowance using the operator's cloud model credential.
+  Agents on enrolled Machines continue to use the Machine's configured providers.
+  Stripe may apply native invoice credits from subscription proration.
 - Offer Free, Go, Pro, and Enterprise on the hosted service. Go and Pro differ
-  only in monthly TURN allowance and are sold as monthly or yearly Stripe
-  subscriptions. Enterprise remains a Site Admin grant; Plans & Usage can also
-  show a configurable Contact us mailbox (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`)
-  when operators want inbound sales mail.
+  in monthly TURN allowance and can have distinct monthly credit allowances.
+  They are sold as monthly or yearly Stripe subscriptions. A Site Admin grants
+  Enterprise. Plans & Usage can show a configurable Contact us mailbox
+  (`DESKFLEET_ENTERPRISE_CONTACT_EMAIL`) when operators want inbound sales mail.
 - Self-hosted installations use the same account system, unlimited product
   allowances, and no payment integration. Operators supply their own TURN when
   needed. Self-hosting is a deployment setting, not a hosted client's plan choice.
@@ -33,7 +34,65 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 - Preserve Team -> Machine -> Workspace -> Session-owned Worktree ownership,
   the Rust/Actix server, and the TypeScript daemon. Keep `PROTOCOL_VERSION = 1`.
 
+## Monthly credits
+
+The server meters cloud model use per Team. Each root eve Session is registered
+to one Team before it receives a prompt. The collector reads that Session's
+durable stream and records each `usage.recorded` fact once by Session, line
+and index. Parent-reported usage includes its delegated calls. The ledger stores
+the model's raw token counts and the credits charged when the collector first
+records the event. Changing rates preserves charges already in the ledger.
+Model spend from ACP Sessions on a user's Machine has its own usage projection.
+
+Site administrators set four site-wide rates in **Site administration → Plan
+quotas**. Each rate is measured in credits per token, defaults to 1, accepts
+up to six decimal places and can be zero. Eve includes cache reads and cache
+writes in its input total. The meter subtracts both from total input before
+applying the uncached input rate. Missing cache counts contribute zero. If
+the reported cache counts exceed total input, the meter charges all input at
+the uncached rate and keeps the original counts in the ledger.
+Site administrators can read the rates with `GET /api/admin/credit-rates`.
+A recently authenticated administrator can replace all four rates with
+`PUT /api/admin/credit-rates`. Both routes use the same JSON object, with
+decimal strings to preserve fractional rates.
+
+```json
+{ "input": "0.5", "output": "2", "cacheRead": "0.1", "cacheWrite": "1.25" }
+```
+
+For example, a call reports 100 input tokens (30 cache reads and 10 cache
+writes) and 20 output tokens. At the rates above, it uses
+`60 × 0.5 + 20 × 2 + 30 × 0.1 + 10 × 1.25 = 85.5` credits. The raw usage
+remains 120 tokens. Admission compares accumulated credits with the plan's
+monthly credit allowance, including fractional charges.
+
+A new delivery schedules another read while the current collector keeps its
+lease. Committing the cursor preserves that pending read. If the collector
+exits first, a replica can resume from the last committed cursor after expiry.
+
+The Team's effective plan sets its monthly credit allowance. Usage is
+attributed to the monthly billing period containing the event timestamp, including
+on yearly subscriptions. New hosted messages require remaining allowance. Admission
+uses recorded consumption. Concurrent or already accepted work can take the final
+total above the allowance. The ledger retains that full total. Replaying the same
+accepted operation returns its receipt. Monetary pricing and overage collection
+are separate commercial decisions.
+Self-hosted operators can enable the service with their own model credentials and
+unlimited credits. See [Super Agent setup](../../apps/super-agent/README.md).
+
 ## Plan matrix
+
+PostgreSQL stores a site-wide quota row for each plan in `cp_plan_limits`.
+Migration 40 seeds the following defaults. Site administrators can change the
+four hosted plans in **Site administration → Plan quotas**. Changing a quota requires
+recent authentication and records an audit event. Team billing returns the
+current limits and the hosted plan catalog for comparison. The next admission
+reads the new limits, including for existing subscribers. Changing an allowance
+keeps usage, current billing periods, existing members and Sessions intact.
+
+Numeric limits use nonnegative integers. Zero blocks new consumption and
+`null` means unlimited. TURN traffic is measured in bytes. Self-hosted
+installations retain unrestricted product quotas.
 
 | Allowance | Free | Go | Pro | Enterprise | Self-hosted |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -41,18 +100,18 @@ fork, and archive semantics; [backend scope](backend.md) tracks delivery.
 | Consumed turns per Agent Session, including inherited usage | 30 | Unlimited | Unlimited | Unlimited | Unlimited |
 | Joined Team members, including administrators | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
 | TURN relay allowance | Unavailable | 2 GiB/month | 20 GiB/month | Unlimited | Unlimited on operator-configured TURN |
+| Monthly credits | 0 | 0 | 0 | 0 | Unlimited with operator model credentials |
 | Team's own TURN server | Unavailable | Unavailable | Available | Available | Available |
 | Assignment | Default | Paid subscription | Paid subscription | Site Admin only | Deployment configuration |
 
-One GiB is 1,073,741,824 bytes. Go allows 2,147,483,648 bytes and Pro allows
+One GiB is 1,073,741,824 bytes. The default Go allowance is 2,147,483,648 bytes and Pro allows
 21,474,836,480 bytes per monthly usage period. Compare integer bytes; round only
 for display. Checkout sells monthly and yearly recurring Prices for Go and Pro.
 TURN usage periods remain calendar months anchored to the subscription even when
 the Stripe billing interval is yearly. Prices and currency come from the four
 configured Stripe Prices. No paid trial or DeskFleet-managed wallet is offered.
 
-Free has the four restrictions above; no additional feature exclusions have been
-selected. Direct connectivity remains available. Plans never confer Team
+Direct connectivity is available on Free. Plans never confer Team
 membership, resource access, or Site Admin authority.
 
 ## Accounts and authentication
@@ -253,15 +312,14 @@ A replacement subscription adopts its own anchor.
 
 **Over-limit fallback:** preserve existing members, Sessions, files, and
 history after a smaller allowance takes effect. Block growth while the relevant
-count is at or above its limit, and apply Free turn limits to subsequent starts.
+count is at or above its limit, and apply the new per-Session turn limit to subsequent starts.
 Allow reading, archiving, restoring, Session deletion, member removal, and billing
 recovery. Do not remove members or archive Sessions automatically.
 
 ### Manual plan grants
 
 Only a current Site Admin can grant or revoke Free, Go, Pro, or Enterprise for a hosted Team, with an optional expiry and a required internal reason.
-Enterprise unlocks every product allowance, including TURN. It is not sold via
-Checkout or selectable by Team owners. When
+Enterprise uses the allowances configured for that plan. A Site Admin grants it directly. When
 `DESKFLEET_ENTERPRISE_CONTACT_EMAIL` is set, Plans & Usage shows a Contact us
 mailto action for Teams that are not already on Enterprise; when unset, that
 offer is omitted.
@@ -313,7 +371,7 @@ removes the Session from the complete catalog inventory.
 
 ### Per-Session turns and fork inheritance
 
-Free permits at most 30 consumed turns over the Session lifetime. Archive,
+Free defaults to 30 consumed turns over the Session lifetime. Archive,
 restore, process restart, and reconnect do not reset usage. Unlimited plans also
 record consumption so later Free fallback has an accurate count.
 
@@ -323,8 +381,8 @@ Persist an immutable inherited baseline:
 `consumed turns = inherited baseline + turns consumed by this Session`
 
 Later parent activity does not change that baseline. Further forks inherit the
-full total, including inherited usage. A source at 24 leaves its child with
-6 Free turns; a source at 30 leaves none. Inherited display history must not
+full total, including inherited usage. With a 30-turn allowance, a source at
+24 leaves its child with six turns. A source at 30 leaves none. Inherited display history must not
 become executable input or synthetic local turn records.
 
 **Consumption definition:**
@@ -361,14 +419,14 @@ an upgrade resolves the failure.
 
 ### TURN relay allowance
 
-Free receives no TURN credentials. Direct connectivity and configured STUN stay
-available. Explain the plan restriction when direct connection fails, rather
-than reporting a reachable Machine as offline.
+With a zero relay allowance the server withholds site TURN credentials.
+Direct connectivity and configured STUN stay available. Explain the restriction
+when a direct connection fails.
 
-For Go/Pro, compare current-period usage when granting new relay authorization.
-At or above the limit, omit TURN while retaining direct connectivity. Both
-endpoints receive a consistent decision; offer/negotiation paths cannot issue
-credentials for a denied grant. Enterprise and self-hosted TURN are unlimited.
+For a finite positive allowance, compare current-period usage when granting new
+relay authorization. Both endpoints get the same decision. Reaching the limit
+blocks new site TURN credentials while direct connections remain available.
+A null allowance permits unlimited site relay traffic.
 
 Issued authorizations and existing connections retain their original bounded
 lifetime after exhaustion or paid expiry; reconnect does not extend it. Actual
@@ -412,13 +470,13 @@ first-release requirement.
 Continue recording during Enterprise. Revoking the override retains the period
 and usage, so Enterprise-period traffic consumes any restored paid allowance.
 The collector has a database lease and reports freshness/gaps; stale collection
-denies new metered Go/Pro relay grants. Enterprise and self-hosted grants remain
-unlimited. Redis Pub/Sub loss is still not reconstructable.
+denies new relay grants on plans with a finite allowance. Unlimited plans can
+continue to use the relay. Redis Pub/Sub loss is still not reconstructable.
 
 ### Team TURN servers
 
-Pro, Enterprise, and self-hosted Teams can relay through their own TURN REST
-server. Team owners and administrators manage its URLs and shared secret in Team
+Teams whose plan enables `teamTurnServers` can relay through their own TURN
+REST server. Team owners and administrators manage its URLs and shared secret in Team
 settings. While it is in use, new grants carry only the Team's TURN URLs, with
 credentials signed by the Team's secret. These grants bypass the relay allowance
 and are not metered, because the traffic never reaches the site's relay. They
@@ -516,7 +574,7 @@ names remain implementation details. Separate microservices are not required.
    start turn 31. Restart and archive/restore preserve usage.
 6. Fork at 24 inherits 24; later parent activity does not alter it. Fork at 30
    receives no fresh Free turns, including after a further fork.
-7. Free gets direct connectivity but no relay credentials. Go/Pro enforce exact
+7. With the default quotas, Free gets direct connectivity but no relay credentials. Go/Pro enforce exact
    integer-byte limits for new authorization on both endpoints while preserving
    the original lifetime of existing access.
 8. With the month-end convention, January 31 anchors clamp in February

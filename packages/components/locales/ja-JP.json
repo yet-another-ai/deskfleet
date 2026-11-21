@@ -1,4 +1,34 @@
 {
+  "superAgent": {
+    "title": "Super Agent",
+    "new": "新しい会話",
+    "history": "会話履歴",
+    "historyEmpty": "チームで始めた会話がここに表示されます。",
+    "untitled": "無題の会話",
+    "heading": "何に取り組みますか？",
+    "intro": "Super Agent と作業を計画しましょう。チームのメンバーはいつでも会話を再開できます。",
+    "plan": "リリースを計画する",
+    "planPrompt": "次のリリースの計画を手伝ってください。まず、スコープ、日程、依存関係を聞いてください。",
+    "breakdown": "タスクを分解する",
+    "breakdownPrompt": "タスクを小さなステップに分けるのを手伝ってください。まず、達成したいことを聞いてください。",
+    "placeholder": "Super Agent にメッセージを送る…",
+    "send": "メッセージを送信",
+    "shared": "{team} と共有",
+    "teamMember": "チームメンバー",
+    "working": "Super Agent が処理中です…",
+    "queued": "メッセージが届きました。Super Agent の応答を待っています…",
+    "loading": "会話を読み込み中…",
+    "loadingList": "会話履歴を読み込み中…",
+    "runtimeOffline": "Super Agent サービスを利用できません。しばらくしてからもう一度お試しください。",
+    "noAllowance": "チームのプランには月間クレジットが含まれていません。",
+    "quotaReached": "チームはこの請求期間のクレジットを使い切りました。",
+    "readError": "会話を更新できませんでした",
+    "sendError": "メッセージを送信できませんでした",
+    "listError": "会話履歴を読み込めませんでした",
+    "usageError": "チームの利用枠を読み込めませんでした",
+    "ended": "この会話は終了しました。続けるには新しい会話を始めてください。",
+    "failed": "Super Agent がこの応答を完了できませんでした。"
+  },
   "worktreeSettings": {
     "title": "ワークツリー",
     "scope": "このコンピューターのすべてのチームのセッションに適用する、ブランチ命名と自動クリーンアップの設定です。",
@@ -83,13 +113,13 @@
     },
     "free_plan": {
       "title": "この接続にはリレーが必要です",
-      "description": "直接接続を確立できませんでした。無料プランには TURN リレー通信が含まれません。請求ページでプランを比較するか、直接接続に対応したネットワークをお試しください。",
+      "description": "直接接続を確立できませんでした。現在のチームのプランには TURN リレー通信が含まれません。請求ページでプランを比較するか、直接接続に対応したネットワークをお試しください。",
       "mobileDescription": "直接接続を確立できず、このチームでは TURN リレー通信を利用できません。直接接続に対応したネットワークをお試しください。"
     },
     "turn_quota_exhausted": {
-      "title": "チームのリレー通信量を使い切りました",
-      "description": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。請求ページで使用量とプランを確認するか、別のネットワークをお試しください。",
-      "mobileDescription": "直接接続を確立できず、今月の TURN リレー通信量も使い切っています。別のネットワークをお試しください。"
+      "title": "中継の利用枠がありません",
+      "description": "直接接続を確立できず、このチームには今月の中継利用枠が残っていません。チームの使用量を確認するか、別のネットワークをお試しください。",
+      "mobileDescription": "直接接続を確立できず、このチームには今月の中継利用枠が残っていません。別のネットワークをお試しください。"
     },
     "metering_unavailable": {
       "title": "リレー接続は一時的に利用できません",
@@ -275,6 +305,32 @@
     "dataNote": "日付は UTC 基準です。本日の集計は進行中です。会話ターン数とサイト管理のリレー通信量は同期に伴って更新されます。",
     "relayHistoryIncomplete": "過去のリレーデータの一部はまだ利用できません。"
   },
+  "creditRates": {
+    "title": "クレジット換算率",
+    "description": "すべてのホステッドプランに適用する、1 トークンあたりのクレジット数です。変更後に記録される利用量から適用されます。",
+    "input": "キャッシュなしの入力",
+    "output": "出力",
+    "cacheRead": "キャッシュ読み取り",
+    "cacheWrite": "キャッシュ書き込み",
+    "invalid": "整数部 12 桁、小数部 6 桁までの 0 以上の数値を入力してください。",
+    "save": "換算率を保存",
+    "saved": "クレジット換算率を保存しました。"
+  },
+  "planQuotas": {
+    "title": "プランの利用上限",
+    "description": "プランの上限は、選択したプランのすべてのチームに適用されます。",
+    "plan": "プラン",
+    "hint": "空欄は無制限です。0 を入力すると新規利用を停止します。",
+    "selfHosted": "セルフホスト環境の利用上限は無制限です。",
+    "maxActiveSessions": "チームあたりのセッション数",
+    "maxTurnsPerSession": "セッションあたりのターン数",
+    "maxMembers": "チームあたりのメンバー数",
+    "turnBytes": "月間 TURN リレー転送量（バイト）",
+    "superAgentTokens": "月間クレジット",
+    "teamTurnServers": "チームが管理する TURN サーバー",
+    "invalid": "0 から 9,007,199,254,740,991 までの整数を入力するか、空欄にしてください。",
+    "saved": "プランの利用上限を保存しました。"
+  },
   "siteAdmin": {
     "title": "サイト管理", "generalTitle": "サイト設定", "description": "この DeskFleet サイトの設定を管理します。",
     "forbidden": "サイト管理者権限が必要です。", "siteName": "サイト名",
@@ -315,7 +371,7 @@
     "cloudflareTurnKeepTokens": "トークン欄を空白にすると、保存済みのトークンを保持します。",
     "cloudflareTurnSaved": "Cloudflare TURN 設定を保存しました。",
     "allowTeamTurnServers": "チーム独自の TURN サーバーを許可",
-    "allowTeamTurnServersDescription": "Pro と Enterprise のチームは、これらのサーバーを独自のサーバーに置き換えられます。オフにすると、すべてのチームがこれらのサーバーを使用します。",
+    "allowTeamTurnServersDescription": "この権限を持つチームが独自の TURN サーバーを使用できます。オフにすると、すべてのチームがサイトのサーバーを使用します。",
     "searchUsers": "メールアドレスまたは名前で検索", "search": "検索",
     "enableUser": "アカウントを有効化", "disableUser": "アカウントを無効化",
     "registration": "一般ユーザーの登録", "registrationDescription": "メールアドレスを認証したユーザーは誰でもアカウントを作成できます。",
@@ -1217,7 +1273,7 @@
     "plansUsage": "プランと使用状況", "usage": "使用状況", "relayedTraffic": "中継通信量",
     "turnTitle": "独自の TURN サーバー",
     "turnDescription": "このチームの接続をサイトの中継ではなく独自の TURN サーバーで中継します。DeskFleet は共有シークレットで短期間有効な認証情報に署名します。独自サーバーの通信は中継の割り当てを消費せず、サーバーに到達できない場合もサイトの中継には切り替わりません。変更は新しい接続に適用されます。",
-    "turnPlanRequired": "独自の TURN サーバーには Pro または Enterprise プランが必要です。",
+    "turnPlanRequired": "現在のチームのプランでは独自の TURN サーバーを利用できません。",
     "turnUnavailable": "このチームでは独自の TURN サーバーを利用できません。接続にはサイトの中継が使われます。",
     "turnDisabledBySite": "サイト管理者がチームの TURN サーバーを無効にしています。接続にはサイトの中継が使われます。",
     "turnSavedUnused": "保存済みのサーバーは使用されていません: {urls}",
@@ -1491,14 +1547,10 @@
       "title": "プランの利用枠を比較",
       "subtitle": "利用枠はチーム全体で共有されます。すべてのプランに直接接続が含まれます。",
       "current": "現在のプラン",
-      "description": {
-        "free": "直接接続で使い始める方に。",
-        "go": "中継接続を使う日々の作業に。",
-        "pro": "中継接続の利用が多い作業に。"
-      },
       "freePrice": "無料",
       "priceUnavailable": "価格を取得できません",
       "per": { "month": "/ 月", "year": "/ 年" },
+      "monthlyCredits": "月間クレジット",
       "monthlyRelay": "月間中継通信量",
       "relayAmount": "{amount} GiB",
       "direct": "直接接続",
@@ -1511,14 +1563,9 @@
       "pro": "Pro", "enterprise": "Enterprise",
       "selfHosted": "セルフホスト"
     },
-    "planDescription": {
-      "free": "アクティブなセッションは最大 3 件、各セッション 30 ターン、メンバー 3 人まで。直接接続のみ。", "go": "セッション、ターン、メンバーは無制限。TURN 中継通信量は毎月 2 GiB。",
-      "pro": "セッション、ターン、メンバーは無制限。TURN 中継通信量は毎月 20 GiB。", "enterprise": "サイト管理者が付与します。すべての利用枠が無制限です。",
-      "selfHosted": "このサーバーには製品上の利用制限がありません。中継には運営者の TURN サーバーを使用します。"
-    },
+    "selfHostedDescription": "このサーバーには製品上の利用制限がありません。中継には運営者の TURN サーバーを使用します。",
     "offer": {
-      "go": "TURN 中継 2 GiB / 月 · セッション、ターン、メンバーは無制限", "pro": "TURN 中継 20 GiB / 月 · セッション、ターン、メンバーは無制限",
-      "enterprise": "すべての利用枠が無制限で、運営者によるデプロイ支援も含まれます。Enterprise については営業担当にお問い合わせください。"
+      "enterprise": "Enterprise の利用枠と導入支援については営業担当にお問い合わせください。"
     },
     "offerInterval": {
       "month": "毎月請求", "year": "年 1 回請求"
@@ -1534,10 +1581,10 @@
     "fixPayment": "支払い方法を更新", "enterpriseSubscription": "既存の {plan} サブスクリプションへの請求は、解約するまで続きます。",
     "notIncluded": "含まれていません", "remaining": "残り {amount}",
     "resets": "リセット日：{date}", "trafficHint": "TURN で中継された通信量のみを計測します。使用量の反映には少し遅れがあります。上限に達すると新しい中継接続はできなくなりますが、既存の接続は許可済みの有効期限まで継続します。",
-    "trafficNotIncluded": "直接接続は引き続き利用できます。直接接続できない場合に中継を利用するには、アップグレードしてください。", "turnsPerSession": "セッションごとのターン数",
+    "trafficNotIncluded": "このプランでは直接接続を利用できます。", "turnsPerSession": "セッションごとのターン数",
     "turnsPerSessionHint": "エージェントへのプロンプト送信 1 回につき 1 ターン消費します。分岐したセッションには、分岐前に使用したターン数が引き継がれます。", "turnsPerSessionLimit": "セッションごとに {count} ターン",
     "sessionTurns": "このセッションで {limit} ターン中 {used} ターン使用済み", "turnsLeft": "このセッションの残りターンはありません | このセッションは全 {limit} ターン中、残り 1 ターンです | このセッションは全 {limit} ターン中、残り {remaining} ターンです",
-    "inheritedTurns": "元のセッションから {count} ターン引き継ぎ", "resumeHint": "待機中の入力は保持されます。チームのアップグレード後に再試行してください。",
+    "inheritedTurns": "元のセッションから {count} ターン引き継ぎ", "resumeHint": "待機中の入力は保持されます。チームに利用可能なターンがあるときに再試行してください。",
     "retryHint": "待機中の入力は保持されます。しばらくしてから再試行してください。",
     "upgradePlan": "プランをアップグレード", "plansAndBilling": "プランと請求",
     "viewPlans": "プランを見る", "enterpriseTeams": "手動ライセンス", "manageGrant": "ライセンスを管理", "manualGrantHint": "手動ライセンスは期限までプランを上書きします。サブスクリプションの請求は続きます。", "grantPlan": "プラン", "removeGrant": "ライセンスを取り消す", "manualGrantSubscription": "手動ライセンスの有効期間中も {plan} の請求は続きます。", "grantNoExpiry": "無期限", "grantExpiry": "有効期限（空欄は無期限）", "grantReason": "内部記録用の理由", "saveGrant": "保存", "grantReasonRequired": "内部記録用の理由を入力してください。", "grantExpiryInvalid": "未来の有効期限を選択してください。",

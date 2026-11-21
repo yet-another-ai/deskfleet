@@ -43,6 +43,8 @@ const routes = [
   "/api/teams/:teamId/members/:userId", "/api/teams/:teamId/usage", "/api/teams/:teamId/ai-usage",
   "/api/teams/:teamId/ai-usage/sessions", "/api/teams/:teamId/invites", "/api/teams/:teamId/ownership",
   "/api/teams/:teamId/search", "/api/teams/:teamId/machines/:machineId/schedules",
+  "/api/teams/:teamId/super-agent/availability", "/api/teams/:teamId/super-agent/sessions", "/api/teams/:teamId/super-agent/usage",
+  "/api/teams/:teamId/super-agent/sessions/:sessionId/messages", "/api/teams/:teamId/super-agent/sessions/:sessionId/stream",
   "/api/teams/:teamId/machines/:machineId", "/api/teams/:teamId/machines/:machineId/catalog", "/api/teams/:teamId/machines/:machineId/sessions",
   "/api/teams/:teamId/machines/:machineId/sessions/:sessionId", "/api/teams/:teamId/machines/:machineId/sessions/:sessionId/events",
   "/api/teams/:teamId/machines/:machineId/rpc", "/api/peers", "/api/peers/local", "/api/peers/:peerId",
@@ -76,6 +78,7 @@ const errorCodes = new Set([
 const apiErrorCodes = new Set([
   "invalid_request", "unauthorized", "invalid_credentials", "forbidden", "internal", "not_found", "conflict", "rate_limited",
   "machine_offline", "machine_busy", "daemon_timeout", "daemon_error", "turn_service_unavailable",
+  "super_agent_disabled", "super_agent_unavailable", "super_agent_conflict",
 ])
 const syscalls = new Set(["connect", "read", "write", "getaddrinfo", "getnameinfo", "shutdown"])
 

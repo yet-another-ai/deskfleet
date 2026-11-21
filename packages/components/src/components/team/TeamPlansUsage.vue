@@ -157,7 +157,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
               <p class="m-0 text-base font-semibold">{{ t(`billing.plan.${state.plan}`) }}</p>
               <span v-if="status" class="ui-badge" :class="status.tone">{{ status.text }}</span>
             </div>
-            <p class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t(`billing.planDescription.${state.plan}`) }}</p>
+            <p v-if="state.plan === 'selfHosted'" class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.selfHostedDescription") }}</p>
             <p v-if="(state.manualGrant || state.enterpriseOverride) && subscription" class="m-0 mt-1 text-[13px] text-ui-text-muted">{{ t("billing.manualGrantSubscription", { plan: t(`billing.plan.${subscription.plan}`) }) }}</p>
           </div>
           <UiButton v-if="billingAdmin && subscription" class="shrink-0" :loading="pending === 'portal'" @click="open('portal')">{{ t("billing.manage") }}<ExternalLink :size="13" :stroke-width="1.75" aria-hidden="true" /></UiButton>
@@ -166,6 +166,10 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           <UsageMeter data-team-usage="traffic" :label="t('team.relayedTraffic')" :hint="t('billing.trafficHint')" :used="Number(state.usage.relayedBytes)" :limit="state.limits.turnBytes" :format="fileSize" :caption="caption" />
           <UsageMeter data-team-usage="sessions" class="border-t border-ui-border-strong" :label="t('team.activeSessions')" :hint="t('team.activeSessionsHint')" :used="state.usage.activeSessionCount" :limit="state.limits.maxActiveSessions" :format="count" />
           <UsageMeter data-team-usage="members" class="border-t border-ui-border-strong" :label="t('team.usageMembers')" :hint="t('team.usageMembersHint')" :used="state.usage.memberCount" :limit="state.limits.maxMembers" :format="count" />
+          <div v-if="account.superAgentEnabled.value && state.plan !== 'selfHosted'" data-team-usage="tokens" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border-strong px-4 py-3.5">
+            <h3 class="m-0 text-sm font-normal">{{ t("billing.comparison.monthlyCredits") }}</h3>
+            <span class="text-sm tabular-nums">{{ state.limits.superAgentTokens ?? t("team.unlimited") }}</span>
+          </div>
           <div data-team-usage="turns" class="flex min-h-14 items-center justify-between gap-4 border-t border-ui-border-strong px-4 py-3.5">
             <div class="flex min-w-0 items-center gap-1">
               <h3 class="m-0 truncate text-sm font-normal">{{ t("billing.turnsPerSession") }}</h3>
@@ -189,7 +193,7 @@ async function open(target: "go" | "pro" | "portal", source: "manage" | "payment
           </div>
         </div>
         <p v-if="state.paymentsAvailable" class="m-0 text-xs text-ui-text-muted">{{ t(`billing.offerInterval.${interval}`) }} · {{ t("billing.comparison.monthlyReset") }}</p>
-        <PlanComparison :billing="state" :interval="interval" :offers="offers" :pending="pending" @select="open" />
+        <PlanComparison :billing="state" :show-super-agent="account.superAgentEnabled.value === true" :interval="interval" :offers="offers" :pending="pending" @select="open" />
       </section>
       <p v-if="!mobile && state.plan === 'free' && state.paymentsAvailable && !state.canManageBilling" class="m-0 text-[13px] text-ui-text-muted">{{ t("billing.askOwner") }}</p>
       <div v-if="!mobile && enterpriseContact" class="ui-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between" data-billing-offer="enterprise">

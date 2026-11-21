@@ -1,6 +1,10 @@
 //! Billing queue, pagination, and exact TURN aggregation against PostgreSQL.
-use deskfleet_control_store::{ControlStore, TurnUsage, TurnUsageSide, now_ms, timestamp};
-use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget};
+use deskfleet_control_store::{
+    ControlStore, Error, TurnUsage, TurnUsageSide,
+    billing::{Plan, RelayDeniedReason},
+    now_ms, timestamp,
+};
+use deskfleet_protocol::control::{PeerActor, PeerAuthorization, PeerTarget, TeamTurnAvailability};
 use sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement, TransactionTrait,
 };
@@ -82,6 +86,117 @@ async fn peer(store: &ControlStore, owner: &str) -> (String, String) {
         .await
         .unwrap();
     (team.id, grant.peer_id)
+}
+
+#[tokio::test]
+#[ignore = "requires PostgreSQL TEST_DATABASE_URL"]
+async fn changes_to_plan_limits_apply_to_existing_teams_and_keep_usage() {
+    let (store, db, schema, owner) = fixture().await;
+    let (team, peer_id) = peer(&store, &owner).await;
+    let registration = &store.machines(&owner, &team).await.unwrap()[0].id;
+    store.grant_site_admin(&owner).await.unwrap();
+    let email = "member@billing.test";
+    let member = store.verified_user(email, "Member").await.unwrap();
+    let invite = store.invite(&owner, &team, email, "member").await.unwrap();
+    let invite = invite["token"].as_str().unwrap();
+
+    let mut limits = store.plan_limits(Plan::Free).await.unwrap();
+    limits.max_active_sessions = Some(1);
+    limits.max_members = Some(0);
+    limits.max_turns_per_session = Some(7);
+    limits.turn_bytes = Some(10);
+    limits.team_turn_servers = true;
+    store
+        .update_plan_limits(&owner, Plan::Free, limits)
+        .await
+        .unwrap();
+    let summary = store.billing_summary(&team).await.unwrap();
+    assert_eq!(summary["limits"], json!(limits));
+    let offers = summary["planCatalog"].as_array().unwrap();
+    assert_eq!(offers.len(), 4);
+    assert_eq!(offers[0]["plan"], "free");
+    assert_eq!(offers[0]["maxTurnsPerSession"], 7);
+    assert_eq!(
+        store.team_entitlements(&team).await.unwrap()["maxTurnsPerSession"],
+        7
+    );
+    assert_eq!(
+        store
+            .team_turn_settings(&owner, &team)
+            .await
+            .unwrap()
+            .availability,
+        TeamTurnAvailability::Available
+    );
+    assert!(matches!(
+        store.create_team(&owner, "New Team").await,
+        Err(Error::Conflict("member_limit"))
+    ));
+    assert!(matches!(
+        store.accept_invite(&member.id, invite).await,
+        Err(Error::Conflict("member_limit"))
+    ));
+    assert_eq!(store.members(&owner, &team).await.unwrap().len(), 1);
+
+    let operation = uuid::Uuid::new_v4().to_string();
+    let receipt = store
+        .reserve_session(registration, &operation, "create", None)
+        .await
+        .unwrap();
+    assert!(matches!(
+        store
+            .reserve_session(
+                registration,
+                &uuid::Uuid::new_v4().to_string(),
+                "create",
+                None
+            )
+            .await,
+        Err(Error::Conflict("active_session_limit"))
+    ));
+    assert!(store.claim_turn_collector("fixture").await.unwrap());
+    assert!(store.heartbeat_turn_collector("fixture").await.unwrap());
+    assert!(store.relay_allowed(&team).await.unwrap());
+    assert!(
+        store
+            .record_turn_usage(&TurnUsage {
+                peer_id,
+                realm: "test".into(),
+                allocation_id: "quota".into(),
+                side: TurnUsageSide::Client,
+                received_bytes: 0,
+                sent_bytes: 10,
+                collected_at: now_ms(),
+            })
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store.relay_denied_reason(&team).await.unwrap(),
+        Some(RelayDeniedReason::TurnQuotaExhausted)
+    );
+
+    limits.max_members = None;
+    limits.max_active_sessions = Some(0);
+    limits.turn_bytes = Some(11);
+    store
+        .update_plan_limits(&owner, Plan::Free, limits)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .reserve_session(registration, &operation, "create", None)
+            .await
+            .unwrap(),
+        receipt
+    );
+    store.accept_invite(&member.id, invite).await.unwrap();
+    assert!(store.relay_allowed(&team).await.unwrap());
+    let usage = store.billing_summary(&team).await.unwrap();
+    assert_eq!(usage["usage"]["activeSessionCount"], 1);
+    assert_eq!(usage["usage"]["memberCount"], 2);
+    assert_eq!(usage["usage"]["relayedBytes"], "10");
+    cleanup(store, db, schema).await;
 }
 
 #[tokio::test]

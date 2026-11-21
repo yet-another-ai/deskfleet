@@ -99,14 +99,14 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   `scripts/check-linux-release.ts` installs the packages on Ubuntu 24.04.
   `ubuntu-latest` lags new images, so workflows name the version.
   The same matrix packages Electron installers and Linux desktop archives and
-  smoke-tests the bundled server container on each native Linux runner. The
+  smoke-tests the server and Super Agent containers on each native Linux runner. The
   Publish caller enables production configuration and macOS signing. PR, main,
   and manual Build runs do not bind
   the production environment: Statsig and Sentry stay disabled, and Electron
   defaults to `http://localhost:8080`. It supports reusable calls and manual runs.
 - `.github/workflows/publish.yml` validates `v*` tags, calls Test and Build, then
   calls Nix, AUR, and Linux package validation with the desktop artifacts from
-  Build. It creates a draft GitHub Release and pushes the server image after all
+  Build. It creates a draft GitHub Release and publishes both service images after all
   five workflows succeed.
 - `.github/workflows/nix.yml` consumes the same-run Linux desktop archives and
   macOS app ZIP from Build, generates a flake bundle, checks the repackaged Linux
@@ -126,7 +126,7 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
 - `.github/workflows/aur.yml` generates the Arch package from the same-run Linux
   x86_64 desktop archive and builds, installs, smoke-tests, and removes it inside
   a disposable Arch container. Publish requires it before creating the draft or
-  pushing the server image. It needs no AUR credentials and is excluded from daily
+  publishing the service images. It needs no AUR credentials and is excluded from daily
   CI.
 - `.github/workflows/linux-packages.yml` repackages the same-run Linux desktop
   archives into Debian `.deb` and RPM packages for the native architecture. It
@@ -632,8 +632,8 @@ On the disposable Ubuntu runner, the workflow allows Chromium's user namespace
 sandbox through AppArmor and runs the installed package with sandboxing enabled.
 
 `Gate` includes the DEB/RPM workflow after packaging builds. Publish also requires
-Nix and AUR validation before creating the draft release or publishing the server
-image. Nix reuses the configuration already compiled by Build, so it needs no
+Nix and AUR validation before creating the draft release or publishing the service
+images. Nix reuses the configuration already compiled by Build, so it needs no
 production environment access, configuration snapshot, synchronization workflow,
 or additional token. Nix binary-cache publication is not configured.
 
@@ -661,6 +661,29 @@ smoke test checks `/healthz`, the Web entry point and assets, authentication-pag
 fallback, 404 responses for missing API routes and assets, and graceful shutdown
 before uploading its archive. Docker does not compile the Rust server or Web app
 again.
+
+### Super Agent image
+
+Each native Linux Build runner builds the root flake's `super-agent-image`
+output. The package uses the same locked Node, pnpm and workspace dependency
+fetches as the Web build. Its image includes Eve and the PostgreSQL bootstrap
+command. The image smoke test
+bootstraps a disposable PostgreSQL database, starts Eve, checks its private
+channel authentication, and creates an empty Session and reads its history
+through the Rust Team API. The test uses a local Statsig gate override and
+requires no model credential.
+
+Eve uses Gateway model IDs and context windows to compile its dynamic model
+selector. `nix/super-agent-model-catalog.json` pins that input for offline
+builds. To refresh it, run `mise run super-agent:build` with access to the
+Gateway catalog, then run `mise exec -- node scripts/update-super-agent-model-catalog.ts`
+and review the snapshot. Model credentials and the operator's model selection
+are supplied at runtime.
+
+Tag builds publish the two tested architectures together under
+`ghcr.io/yet-another-ai/deskfleet-super-agent:<version>`. Stable releases also
+update `:latest`. See the [Super Agent guide](../../apps/super-agent/README.md#run-the-container)
+for the deployment commands.
 
 ### Experimental Nix server image
 

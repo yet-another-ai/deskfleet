@@ -1,5 +1,8 @@
 //! Site settings need an isolated schema because their state is installation-wide.
-use deskfleet_control_store::{ControlStore, Error};
+use deskfleet_control_store::{
+    ControlStore, Error,
+    billing::{Plan, PlanLimits},
+};
 use deskfleet_protocol::control::SiteSettings;
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement, TransactionTrait};
 use serde_json::{Value, json};
@@ -321,6 +324,34 @@ async fn site_grants_settings_revocation_and_audit_are_transactional() {
     assert_eq!(entries[4]["after_value"], json!({"siteAdmin": false}));
     // Explicit CLI recovery still works after revoking the last administrator.
     assert!(second.grant_site_admin(&member.id).await.unwrap());
+    let go = store.plan_limits(Plan::Go).await.unwrap();
+    let previous = PlanLimits {
+        plan: Plan::Go,
+        limits: go,
+    };
+    let mut changed_limits = go;
+    changed_limits.super_agent_tokens = Some(30);
+    let updated = second
+        .update_plan_limits(&member.id, Plan::Go, changed_limits)
+        .await
+        .unwrap();
+    assert_eq!(store.plan_limits(Plan::Go).await.unwrap(), changed_limits);
+    assert_eq!(
+        second
+            .update_plan_limits(&member.id, Plan::Go, changed_limits)
+            .await
+            .unwrap(),
+        updated
+    );
+    let quota_audit: Vec<_> = audit(&store)
+        .await
+        .into_iter()
+        .filter(|row| row["action"] == "plan.limits.update")
+        .collect();
+    assert_eq!(quota_audit.len(), 1);
+    assert_eq!(quota_audit[0]["actor_user_id"], member.id);
+    assert_eq!(quota_audit[0]["before_value"], json!(previous));
+    assert_eq!(quota_audit[0]["after_value"], json!(updated));
     second.set_captcha_enabled(&member.id, false).await.unwrap();
     assert!(!store.captcha_enabled().await.unwrap());
     second

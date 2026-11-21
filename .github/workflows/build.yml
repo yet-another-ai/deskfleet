@@ -81,6 +81,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Free unused Android SDK space on Linux
+        if: runner.os == 'Linux'
+        # The separate Android job owns that build. Leave room here for the
+        # release target, container layers, and the tested image archive.
+        run: sudo rm -rf /usr/local/lib/android
+
       - name: Disable MSVC PDB generation for release builds
         if: runner.os == 'Windows'
         shell: pwsh
@@ -237,6 +243,42 @@ jobs:
           cp -R apps/web/dist/. image-context/web/
           docker build --platform "linux/$arch" -f apps/server/Dockerfile -t deskfleet-server:smoke image-context
           mise exec -- node scripts/smoke-server-image.ts deskfleet-server:smoke
+
+      - name: Install Nix for the Super Agent image
+        if: runner.os == 'Linux'
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+        with:
+          github_access_token: ${{ github.event_name != 'pull_request' && github.token || '' }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build the Super Agent image with Nix
+        if: runner.os == 'Linux'
+        run: nix build .#super-agent-image --print-build-logs --out-link "$RUNNER_TEMP/result-super-agent-image"
+
+      - name: Smoke test the Nix-built Super Agent image
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          docker load --input "$RUNNER_TEMP/result-super-agent-image"
+          image_tag=$(nix eval --raw .#super-agent-image.imageTag)
+          # Reuse the release dependencies compiled by napi for the explicit host target.
+          host_target=$(mise exec -- rustc --print host-tuple)
+          CARGO_BUILD_TARGET="$host_target" mise exec -- node scripts/smoke-super-agent-image.ts "deskfleet-super-agent:$image_tag" --release
+
+      - name: Stage the tested Super Agent archive
+        if: runner.os == 'Linux' && inputs.production_release
+        run: cp "$RUNNER_TEMP/result-super-agent-image" "$RUNNER_TEMP/super-agent-${{ matrix.platform }}.tar.gz"
+
+      - name: Upload the tested Super Agent image
+        if: runner.os == 'Linux' && inputs.production_release
+        uses: actions/upload-artifact@v7
+        with:
+          name: deskfleet-super-agent-image-${{ matrix.platform }}
+          path: ${{ runner.temp }}/super-agent-${{ matrix.platform }}.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify the standalone daemon
         run: mise run daemon:smoke

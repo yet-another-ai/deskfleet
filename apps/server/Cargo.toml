@@ -43,6 +43,7 @@ url = "2"
 sdp = { package = "rtc-sdp", version = "0.21.1" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+statsig-rust = "0.24.2"
 
 [dev-dependencies]
 flate2 = "1"

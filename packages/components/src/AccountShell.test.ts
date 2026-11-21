@@ -160,6 +160,33 @@ const mountShell = (central: CentralApi, platform: "web" | "darwin" = "darwin", 
 }
 const buttonText = (text: string) => page().findAll("button").find(button => button.text() === text)
 
+test.each([false, true])("Super Agent discovery gates deep links with a registered Machine: %s", async registered => {
+  const fake = fakeCentral({ machines: registered ? [machineFixture("m1", "team-1", "Studio", false)] : [] })
+  const discovery = Promise.withResolvers<{ enabled: boolean }>()
+  fake.central.superAgentAvailability.mockReturnValueOnce(discovery.promise)
+  await router.push("/super-agent")
+  mountShell(fake.central, "web")
+  await flushPromises()
+  expect(fake.central.superAgentSessions).not.toHaveBeenCalled()
+  discovery.resolve({ enabled: false })
+  await settled(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(page().find('a[href*="/super-agent"]').exists()).toBe(false)
+  expect(fake.central.superAgentUsage).not.toHaveBeenCalled()
+})
+
+test("a Team without Machines can enter Super Agent and loses access after a rollout refresh", async () => {
+  const fake = fakeCentral()
+  fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
+  mountShell(fake.central, "web")
+  await settled(() => expect(page().find('a[href*="/super-agent"]').exists()).toBe(true))
+  await page().get('a[href*="/super-agent"]').trigger("click")
+  await vi.waitFor(() => expect(fake.central.superAgentSessions).toHaveBeenCalledWith("team-1"), { timeout: 10000 })
+  fake.central.superAgentAvailability.mockResolvedValue({ enabled: false })
+  window.dispatchEvent(new Event("focus"))
+  await settled(() => expect(router.currentRoute.value.name).toBe("new-session"))
+  expect(page().find('a[href*="/super-agent"]').exists()).toBe(false)
+})
+
 test("Refresh reloads every opened machine's resources with unchanged roster metadata", async () => {
   const fake = fakeCentral({ machines: [
     machineFixture("m1", "team-1", "First", false),

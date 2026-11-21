@@ -67,7 +67,7 @@ paths, queries and credentials are rejected.
 | `DESKFLEET_SMTP_USERNAME`, `DESKFLEET_SMTP_PASSWORD`, `DESKFLEET_MAIL_FROM` | Mail relay credentials and sender. |
 | `DESKFLEET_MAIL_DIRECTORY` | Local-only mail sink; defaults to `.local/mail`. Messages contain one-use secrets and are ignored by Git. |
 | `DESKFLEET_DEPLOYMENT_MODE` | `self-hosted` (default): unlimited allowances and no Stripe; or `hosted`. |
-| `DESKFLEET_STATSIG_SERVER_KEY` | Optional Statsig server secret for verified billing events. Unset disables event production and delivery. Never expose it through a frontend `VITE_*` variable. |
+| `DESKFLEET_STATSIG_SERVER_KEY` | Optional Statsig server secret for verified billing events and local evaluation of the `super_agent` gate. With no key, Super Agent is disabled. Never expose it through a frontend `VITE_*` variable. |
 | `DESKFLEET_STATSIG_ENVIRONMENT` | Statsig environment tier, default `production`; match the frontend project and tier. See [analytics](../../agents/docs/analytics.md#payment-funnel). |
 | `DESKFLEET_WEB_ORIGINS` | Comma-separated browser origins permitted by CORS. |
 | `DESKFLEET_STUN_URLS` | Optional comma-separated `stun:`/`stuns:` URLs advertised on peer grants. Empty means no STUN; there is no public default. Change the list and restart to update new grants. |
@@ -174,6 +174,10 @@ Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-server` for
 build from the same release run. Web files live at `/usr/share/deskfleet/web`
 and are served by the single Actix process. It runs as UID/GID `10001:10001`
 and listens on `0.0.0.0:8080` inside the container.
+
+To enable the hosted Super Agent, deploy the matching
+`ghcr.io/yet-another-ai/deskfleet-super-agent` tag on the API's private network.
+See the [Super Agent container guide](../super-agent/README.md#run-the-container).
 
 Put the configuration above in an environment file, including `DATABASE_URL`,
 the public API/Web origins, and SMTP settings. Use a database hostname reachable from
@@ -519,7 +523,7 @@ Each run creates uniquely scoped fixture identities.
 mise exec -- cargo test -p deskfleet-protocol -p deskfleet-server -p deskfleet-control-store --locked
 TEST_DATABASE_URL='postgres://postgres:password@127.0.0.1:5432/deskfleet_test' \
 TEST_REDIS_URL='redis://127.0.0.1:6379/' \
-  mise exec -- cargo test -p deskfleet-control-store -p deskfleet-server --locked -- --ignored
+  mise run backend:test
 ```
 
 The backend smoke script additionally exercises mailbox verification and password/native exchange APIs, the live

@@ -34,9 +34,14 @@ export function isPackagingPath(path: string): boolean {
     /^(?:flake\.nix|flake\.lock)$/u.test(path) ||
     /^scripts\/(?:package-|check-(?:aur|linux-release)|smoke-linux-package|stage-native-binaries|build-(?:android|ios)-viewer\.ts)/u.test(path) ||
     /^scripts\/(?:app-store-connect|prepare-ios-signing|publish-ios-release|windows-service-signing)\.ts$/u.test(path) ||
-    /^\.github\/workflows\/(?:build|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
+    /^\.github\/workflows\/(?:build|publish|nix|nix-server|aur|aur-publish|linux-packages)\.yml$/u.test(path) ||
     path.startsWith(".github/actions/setup-gradle-mirror/") ||
     path === "apps/desktop/package.json" ||
+    path.startsWith("apps/super-agent/") ||
+    path.startsWith("apps/server/src/cloud_agent/") ||
+    path === "tsconfig.json" ||
+    /^scripts\/smoke-(?:server|super-agent)-image\.ts$/u.test(path) ||
+    path === "scripts/fixtures/image-smoke.ts" ||
     path === "apps/web/capacitor.config.ts" ||
     path.startsWith("apps/web/android/") ||
     path.startsWith("apps/web/ios/") ||

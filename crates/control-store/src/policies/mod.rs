@@ -131,6 +131,7 @@ pub enum TeamAction {
     ReadUsage,
     ReadMachines,
     EnrollMachine,
+    UseSuperAgent,
     Rename,
     Delete,
     ManageMembers,
@@ -164,7 +165,8 @@ impl Policy for TeamPolicy {
             | TeamAction::ReadMembers
             | TeamAction::ReadUsage
             | TeamAction::ReadMachines
-            | TeamAction::EnrollMachine => self.role.is_some(),
+            | TeamAction::EnrollMachine
+            | TeamAction::UseSuperAgent => self.role.is_some(),
             TeamAction::Rename | TeamAction::ManageMembers | TeamAction::ManageTurnServers => {
                 matches!(self.role, Some(TeamRole::Owner | TeamRole::Admin))
             }

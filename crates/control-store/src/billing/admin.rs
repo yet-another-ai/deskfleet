@@ -210,10 +210,16 @@ impl ControlStore {
             .map(|p| (p.team_id.clone(), p))
             .collect::<std::collections::HashMap<_, _>>();
         let mut teams = Vec::with_capacity(usage.len());
+        let catalog = self.list_plan_limits().await?;
         for row in usage {
             let id = row.try_get::<i64>("", "team_id")?.to_string();
             if let Some(p) = by_id.remove(&id) {
-                teams.push(json!({"id":id,"name":row.try_get::<String>("", "name")?,"owner":row.try_get::<Value>("", "owner")?,"billing":summary_value(p,&row,&row,self.hosted,now)?}));
+                teams.push(json!({
+                    "id": id,
+                    "name": row.try_get::<String>("", "name")?,
+                    "owner": row.try_get::<Value>("", "owner")?,
+                    "billing": summary_value(p, &row, &row, self.hosted, now, &catalog)?,
+                }));
             }
         }
         Ok(AdminBillingPage { teams, next_cursor })

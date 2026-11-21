@@ -3,6 +3,8 @@ mod ai_usage;
 mod api;
 pub mod auth;
 pub mod billing;
+mod cloud_agent;
+mod cloud_meter;
 mod cloudflare_turn;
 pub mod config;
 pub mod error;
@@ -39,6 +41,9 @@ pub struct AppState {
     pub config: ServerConfig,
     pub auth: auth::AuthService,
     pub billing: billing::BillingService,
+    pub(crate) eve: Option<cloud_agent::EveClient>,
+    pub(crate) super_agent_rollout: cloud_agent::Rollout,
+    _cloud_meter: Option<crate::cloud_meter::Collector>,
     pub push: push::PushService,
     hub: hub::Hub,
     _routing: hub::Router,
@@ -68,6 +73,14 @@ impl AppState {
         let push_config = push::PushConfig::from_env()
             .map_err(|error| error::ApiError::bad(error.to_string()))?;
         let push = push::PushService::new(push_config).await?;
+        let super_agent_rollout = cloud_agent::Rollout::new(
+            config.billing.statsig_server_key.as_deref(),
+            config.billing.statsig_environment.as_deref(),
+        );
+        let eve = cloud_agent::EveClient::from_env()?;
+        let cloud_meter = eve
+            .clone()
+            .map(|client| crate::cloud_meter::start(store.clone(), client));
         let billing_worker = billing.start_worker(store.clone());
         let turn_usage = config
             .turn_usage_redis_url
@@ -89,6 +102,9 @@ impl AppState {
             _turn_usage: turn_usage,
             cloudflare_turn,
             _billing_worker: billing_worker,
+            eve,
+            super_agent_rollout,
+            _cloud_meter: cloud_meter,
         })
     }
     async fn notify_team(&self, team: &str, message: ControlMessage) -> Result<()> {
@@ -111,6 +127,7 @@ pub fn configure(config: &mut ServiceConfig) {
         web::scope("/api")
             .configure(auth::configure)
             .configure(billing::configure)
+            .configure(cloud_agent::configure)
             .configure(github_app::configure)
             .configure(push::configure)
             .route("/site", web::get().to(site::public_settings))

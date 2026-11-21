@@ -23,6 +23,7 @@ beforeAll(async () => {
     import("./components/settings/SiteUsageTrends.vue"),
     import("./components/settings/SiteIdentitySettings.vue"),
     import("./components/settings/TurnSettings.vue"),
+    import("./components/settings/PlanQuotas.vue"),
     import("./components/settings/CloudflareTurnSettings.vue"),
     import("./components/settings/EnterpriseTeams.vue"),
     import("./components/settings/SiteDeletionRequests.vue"),
@@ -90,6 +91,84 @@ test("a site administrator without any Team opens administration from the accoun
 
 
 
+test("site admins can edit a hosted plan's quotas and inspect self-hosted limits", async () => {
+  const fake = fakeCentral({ siteAdmin: true })
+  fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
+  await router.push("/admin/plan-quotas")
+  mountShell(fake)
+  await settled(() => expect(page().find('select[name="plan"]').exists()).toBe(true))
+  const choose = (plan: string) => page().get('select[name="plan"]').setValue(plan)
+  const input = (field: string) => page().get<HTMLInputElement>(`input[name="${field}"]`)
+  await choose("go")
+  await input("maxMembers").setValue("7")
+  await choose("pro")
+  const creditLabelId = input("superAgentTokens").attributes("aria-labelledby")
+  expect(page().get(`[id="${creditLabelId}"]`).text()).toBe("Monthly credits")
+  await input("superAgentTokens").setValue("9007199254740992")
+  expect(button("Save").attributes("disabled")).toBeDefined()
+  await input("superAgentTokens").setValue("250")
+  await input("turnBytes").setValue("")
+  await input("maxActiveSessions").setValue("0")
+  await page().get("form").trigger("submit")
+  await flushPromises()
+  expect(fake.central.updatePlanQuota).toHaveBeenCalledExactlyOnceWith("pro", {
+    maxActiveSessions: 0, maxTurnsPerSession: null, maxMembers: null, turnBytes: null, superAgentTokens: 250, teamTurnServers: true,
+  })
+  expect(page().get('[role="status"]').text()).toBe("Plan quotas saved.")
+  await choose("go")
+  expect(input("maxMembers").element.value).toBe("7")
+  await choose("selfHosted")
+  expect(input("superAgentTokens").attributes("disabled")).toBeDefined()
+  expect(button("Save")).toBeUndefined()
+})
+
+test("credit rates persist across plans and retry failed loads and saves", async () => {
+  const fake = fakeCentral({ siteAdmin: true })
+  fake.central.superAgentAvailability.mockResolvedValue({ enabled: true })
+  fake.central.creditRates.mockRejectedValueOnce(new Error("Unable to load rates"))
+  await router.push("/admin/plan-quotas")
+  mountShell(fake)
+  await settled(() => expect(page().get('[role="alert"]').text()).toBe("Unable to load rates"))
+  await button("Try again").trigger("click")
+  const input = (name: string) => page().get<HTMLInputElement>(`input[name="${name}"]`)
+  await settled(() => expect(input("cacheRead").element.value).toBe("1"))
+  for (const value of ["", "-1", "0.0000001", "1000000000000"]) {
+    await input("input").setValue(value)
+    expect(button("Save rates").attributes("disabled")).toBeDefined()
+  }
+  await input("input").setValue("0.000001")
+  await input("output").setValue("2.5")
+  await input("cacheRead").setValue("0")
+  await input("cacheWrite").setValue("1.2500")
+  await page().get('select[name="plan"]').setValue("go")
+  fake.central.updateCreditRates.mockRejectedValueOnce(new Error("Unable to save rates"))
+  await button("Save rates").trigger("click")
+  await settled(() => expect(page().get('[role="alert"]').text()).toBe("Unable to save rates"))
+  await button("Save rates").trigger("click")
+  await settled(() => expect(page().get('[role="status"]').text()).toBe("Credit rates saved."))
+  expect(fake.central.updateCreditRates).toHaveBeenLastCalledWith({ input: "0.000001", output: "2.5", cacheRead: "0", cacheWrite: "1.25" })
+  expect(fake.central.updatePlanQuota).not.toHaveBeenCalled()
+  await router.push("/admin/settings")
+  await router.push("/admin/plan-quotas")
+  await settled(() => expect(input("cacheWrite").element.value).toBe("1.25"))
+  expect(button("Save rates").attributes("disabled")).toBeDefined()
+})
+
+test("editing other quotas preserves the hidden monthly credit allowance", async () => {
+  const fake = fakeCentral({ siteAdmin: true })
+  fake.state.planQuotas.find(plan => plan.plan === "free")!.superAgentTokens = 375
+  await router.push("/admin/plan-quotas")
+  mountShell(fake)
+  await settled(() => expect(page().find('input[name="maxMembers"]').exists()).toBe(true))
+  expect(page().find('input[name="superAgentTokens"]').exists()).toBe(false)
+  expect(page().find('input[name="cacheRead"]').exists()).toBe(false)
+  expect(fake.central.creditRates).not.toHaveBeenCalled()
+  await page().get('input[name="maxMembers"]').setValue("7")
+  await page().get("form").trigger("submit")
+  await flushPromises()
+  expect(fake.central.updatePlanQuota).toHaveBeenCalledWith("free", expect.objectContaining({ maxMembers: 7, superAgentTokens: 375 }))
+})
+
 test("terms URLs can be configured independently and cleared without changing other site settings", async () => {
   const fake = fakeCentral({ siteAdmin: true, teams: [], site: { termsOfServiceUrl: "https://example.test/terms" } })
   await router.push("/admin/settings")
@@ -118,7 +197,7 @@ test("administration navigation opens one settings section at a time", async () 
   await settled(() => expect(page().find('[name="site-name"]').exists()).toBe(true))
   expect(fake.central.turnSettings).not.toHaveBeenCalled()
   const nav = page().get('nav[aria-label="Settings sections"]')
-  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Usage trends", "Accounts", "TURN servers", "Cloudflare TURN", "Manual grants", "Deletion requests"])
+  expect(nav.findAll("a").map(link => link.text())).toEqual(["Site settings", "Usage trends", "Accounts", "TURN servers", "Cloudflare TURN", "Plan quotas", "Manual grants", "Deletion requests"])
   await nav.findAll("a").find(link => link.text() === "Usage trends")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Usage trends"))
   expect(router.currentRoute.value.path).toBe("/admin/usage")
@@ -135,6 +214,9 @@ test("administration navigation opens one settings section at a time", async () 
   await nav.findAll("a").find(link => link.text() === "Cloudflare TURN")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Cloudflare TURN"))
   expect(fake.central.cloudflareTurnSettings).toHaveBeenCalledOnce()
+  await nav.findAll("a").find(link => link.text() === "Plan quotas")!.trigger("click")
+  await settled(() => expect(page().get("h1").text()).toBe("Plan quotas"))
+  expect(fake.central.planQuotas).toHaveBeenCalledOnce()
   await nav.findAll("a").find(link => link.text() === "Manual grants")!.trigger("click")
   await settled(() => expect(page().get("h1").text()).toBe("Manual grants"))
   expect(fake.central.billingTeams).toHaveBeenCalledOnce()

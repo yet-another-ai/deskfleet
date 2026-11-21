@@ -5,6 +5,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, provide, ref, watch } 
 import { useEventListener, useStorage, useTitle } from "@vueuse/core"
 import { useI18n } from "vue-i18n"
 import { RouterView } from "vue-router"
+import { Monitor, Orbit } from "@lucide/vue"
 import type { DeskfleetDesktopApi } from "@deskfleet/client/desktop-api"
 import type { OnboardingState } from "@deskfleet/client/onboarding"
 import { getBrowserNotificationPermission } from "@deskfleet/client/browser-notifications"
@@ -19,6 +20,7 @@ import AccountFooter from "./components/sidebar/AccountFooter.vue"
 import AccountNotices from "./components/sidebar/AccountNotices.vue"
 import AppUpdateNotice from "./components/sidebar/AppUpdateNotice.vue"
 import TeamSwitcher from "./components/sidebar/TeamSwitcher.vue"
+import SidebarLink from "./components/sidebar/SidebarLink.vue"
 import { router } from "./router/index.ts"
 import { accountSessionKey, createAccountSession } from "./composables/useAccountSession.ts"
 import { useBrowserNotifications } from "./composables/useBrowserNotifications.ts"
@@ -165,19 +167,28 @@ if (props.host.onboarding) void loadOnboarding()
       <!-- Only the selected route mounts here; opened machines retain their stores and peers. -->
       <MachineSurface v-else-if="machine" :key="machineScopeKey" :session="session" :machine="machine" @ready="finishBillingReturn" />
       <RouterView v-else-if="route.meta.fullWindow" />
-      <div v-else class="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-clip">
+      <div v-else class="flex min-h-0 flex-1 flex-col md:flex-row md:overflow-clip" :class="route.name === 'super-agent' ? 'overflow-clip' : 'overflow-y-auto'">
         <aside class="flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-sidebar pt-2 md:w-65 md:border-b-0 md:border-r md:pt-0">
           <div class="app-drag hidden h-12 shrink-0 md:block" />
           <TeamSwitcher v-if="teams.length" />
+          <nav v-if="session.superAgentEnabled.value" :aria-label="t('nav.label')" class="flex gap-1 px-2 pb-2 md:flex-col">
+            <SidebarLink :to="{ name: 'new-session' }" :icon="Monitor" :label="t('team.machines')" />
+            <SidebarLink :to="{ name: 'super-agent' }" :icon="Orbit" :label="t('superAgent.title')" />
+          </nav>
           <div class="hidden md:block md:flex-1" />
-          <AccountNotices />
-          <AppUpdateNotice />
-          <AccountFooter />
+          <div :class="route.name === 'super-agent' ? 'hidden md:contents' : 'contents'">
+            <AccountNotices />
+            <AppUpdateNotice />
+            <AccountFooter />
+          </div>
         </aside>
-        <main class="flex min-w-0 flex-1 flex-col py-6 md:py-0">
-          <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
-          <MachineOnboarding v-if="team" />
-          <TeamOnboarding v-else-if="!teams.length" />
+        <main class="flex min-w-0 flex-1 flex-col" :class="route.name === 'super-agent' ? 'min-h-0' : 'py-6 md:py-0'">
+          <RouterView v-if="route.name === 'super-agent'" />
+          <template v-else>
+            <div class="app-drag titlebar-overlay-inset hidden h-12 shrink-0 md:block" />
+            <MachineOnboarding v-if="team" />
+            <TeamOnboarding v-else-if="!teams.length" />
+          </template>
         </main>
       </div>
     </template>

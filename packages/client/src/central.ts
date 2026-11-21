@@ -1,9 +1,10 @@
 import type { RelayDeniedReason } from "./relay.ts"
 import type { PeerTelemetryEvent } from "./peer-telemetry.ts"
 import type { ProviderDisplaySnapshot } from "./providers.ts"
-import type { BillingInterval, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
+import type { BillingInterval, BillingPlan, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
+import type { SuperAgentHistory, SuperAgentMessageContent, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
@@ -77,8 +78,14 @@ export type CentralEvent =
   | { type: "connection"; connected: boolean }
   | { type: "accountChanged" }
 
+export type AdminPlanQuota = PlanQuota & { plan: BillingPlan }
+
 /** Site management is available to the Web host, separately from the desktop bridge. */
 export interface SiteAdministrationApi {
+  creditRates(): Promise<CreditRates>
+  updateCreditRates(rates: CreditRates): Promise<CreditRates>
+  planQuotas(): Promise<AdminPlanQuota[]>
+  updatePlanQuota(plan: HostedPlan, limits: PlanQuota): Promise<AdminPlanQuota>
   usageTrends(period: SiteUsagePeriod): Promise<SiteUsageTrends>
   siteSettings(): Promise<SiteSettings>
   updateSiteSettings(settings: SiteSettings): Promise<SiteSettings>
@@ -105,6 +112,12 @@ export interface SiteAdministrationApi {
 
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
 export interface CentralApi {
+  superAgentAvailability(teamId: string): Promise<{ enabled: boolean }>
+  superAgentSessions(teamId: string): Promise<SuperAgentSession[]>
+  superAgentUsage(teamId: string): Promise<SuperAgentUsage>
+  createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId?: string }>
+  sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId: string }>
+  superAgentHistory(teamId: string, sessionId: string, startIndex: number): Promise<SuperAgentHistory>
   status(): Promise<AccountState>
   login(): Promise<void>
   logout(): Promise<void>

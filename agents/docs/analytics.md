@@ -233,8 +233,8 @@ The billing server accepts these optional **runtime** settings:
 
 | Variable | Meaning |
 | --- | --- |
-| `DESKFLEET_STATSIG_SERVER_KEY` | Statsig server secret key for event delivery; keep out of all frontend/Vite variables |
-| `DESKFLEET_STATSIG_ENVIRONMENT` | Tier for server events, default `production`; match the frontend tier |
+| `DESKFLEET_STATSIG_SERVER_KEY` | Private Statsig server key for event delivery and Super Agent gate definitions |
+| `DESKFLEET_STATSIG_ENVIRONMENT` | Tier for server events and Super Agent rollout (default `production`) |
 | `DESKFLEET_GA_MEASUREMENT_ID` | Optional GA4 Measurement ID (`G-XXXX`) for server-side `purchase` conversion delivery |
 | `DESKFLEET_GA_API_SECRET` | Optional GA4 Measurement Protocol API secret; keep out of all frontend/Vite variables |
 
@@ -377,9 +377,22 @@ fallbacks support strings, numbers, and booleans.
 
 Statsig records an exposure when a computed value actually reads a gate or
 experiment. Create/read these helpers where the feature is used; do not eagerly
-read every experiment during startup. Use remote gates only for frontend
-presentation and rollout. Authorization, subscription quotas, and resource
-ownership remain enforced by the server and daemon.
+read every experiment during startup. The server and daemon enforce
+authorization, subscription quotas, and resource ownership.
+
+### Super Agent rollout
+
+The API downloads Statsig rules with `DESKFLEET_STATSIG_SERVER_KEY` and
+evaluates the `super_agent` gate locally for Super Agent requests.
+Target authenticated accounts by `userID` or `email`, and Teams by
+`customIDs.teamID`. Configure the gate for the API's
+`DESKFLEET_STATSIG_ENVIRONMENT` tier (default `production`).
+The SDK disables event and exposure logging. Evaluation works independently
+of renderer telemetry consent and keeps account attributes on the API server.
+Each API instance checks its latest downloaded rules and picks up rollout
+changes on the SDK's background refresh. Without any rules the gate is closed.
+See [Super Agent setup](../../apps/super-agent/README.md) and the
+[Statsig Rust SDK](https://docs.statsig.com/server-core/rust-core).
 
 ## Network and validation
 

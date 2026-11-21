@@ -77,6 +77,91 @@ test("loads deployment STUN configuration without creating a peer and preserves 
   })
 })
 
+test("sends Team-scoped Super Agent operations and preserves caller-supplied retry IDs", async () => {
+  const f = setup()
+  const root = "https://fleet.example/api/teams/team%2F1/super-agent"
+  const session = { sessionId: "session/1" }
+  f.responses.push({ enabled: true }, [], { admitted: false }, session, { ...session, deliveryId: "d1" })
+  expect(await f.client.superAgentAvailability("team/1")).toEqual({ enabled: true })
+  expect(await f.client.superAgentSessions("team/1")).toEqual([])
+  expect(await f.client.superAgentUsage("team/1")).toEqual({ admitted: false })
+  expect(await f.client.createSuperAgentSession("team/1", "create-op")).toEqual(session)
+  expect(await f.client.sendSuperAgentMessage("team/1", session.sessionId, "send-op", "hello")).toEqual({ ...session, deliveryId: "d1" })
+  await expectRequest(f.fetch, 1, root + "/availability", { method: "GET" })
+  await expectRequest(f.fetch, 2, root + "/sessions", { method: "GET" })
+  await expectRequest(f.fetch, 3, root + "/usage", { method: "GET" })
+  await expectRequest(f.fetch, 4, root + "/sessions", { method: "POST", body: JSON.stringify({ operationId: "create-op" }) })
+  await expectRequest(f.fetch, 5, root + "/sessions/session%2F1/messages", { method: "POST", body: JSON.stringify({ operationId: "send-op", message: "hello" }) })
+})
+
+test("sends ordered rich message parts when creating and continuing a Super Agent Session", async () => {
+  const f = setup()
+  const parts = [
+    { type: "text", text: "Compare the screenshot and the report." },
+    { type: "file", mediaType: "image/png", filename: "screen.png", data: "data:image/png;base64,iVBORw0KGgo=" },
+    { type: "file", mediaType: "application/pdf", data: "https://assets.example/report.pdf" },
+  ] as const
+  const sessionId = "session"
+  const root = "https://fleet.example/api/teams/team/super-agent/sessions"
+  f.responses.push({ sessionId, deliveryId: "first" }, { sessionId, deliveryId: "next" })
+  const created = await f.client.createSuperAgentSession("team", "create-op", parts)
+  expect(created.deliveryId).toBe("first")
+  expect(await f.client.sendSuperAgentMessage("team", created.sessionId, "follow-up", [parts[1]]))
+    .toEqual({ sessionId, deliveryId: "next" })
+  await expectRequest(f.fetch, 1, root, { method: "POST", body: JSON.stringify({ operationId: "create-op", message: parts }) })
+  await expectRequest(f.fetch, 2, root + "/session/messages", { method: "POST", body: JSON.stringify({ operationId: "follow-up", message: [parts[1]] }) })
+})
+
+test("replays committed chat over the authenticated stream, advancing its durable cursor", async () => {
+  const f = setup()
+  const at = "2026-11-21T10:00:00Z"
+  const body = [
+    { $eve: "position", next: 3 }, { $eve: "heartbeat" },
+    { at, facts: [{ type: "delivery.consumed", data: { deliveryId: "d1", parts: [{ kind: "text", text: "hello" }] } }] },
+    { progress: { type: "content.delta", data: { partId: "p1", delta: "hel" } } },
+    { at, facts: [
+      { type: "content.completed", data: { partId: "hidden", phase: "reply", kind: "reasoning", value: "private" } },
+      { type: "content.completed", data: { partId: "p1", phase: "reply", kind: "text", value: "hi" } },
+      { type: "turn.settled", data: { outcome: "completed" } },
+    ] },
+  ].map(line => JSON.stringify(line)).join("\n") + "\n"
+  const headers = { "Content-Type": "application/x-ndjson", "x-eve-stream-version": "27", "x-eve-stream-tail-index": "5" }
+  f.fetch.mockResolvedValueOnce(new Response(body, { headers }))
+  expect(await f.client.superAgentHistory("team/1", "s", 2)).toEqual({
+    messages: [{ id: "d1", at, role: "user", text: "hello" }, { id: "p1", at, role: "assistant", text: "hi" }],
+    status: "idle", nextIndex: 6,
+  })
+  await expectRequest(f.fetch, 1, "https://fleet.example/api/teams/team%2F1/super-agent/sessions/s/stream?startIndex=2", {
+    method: "GET", headers: { Authorization: "Bearer application-token", Accept: "application/x-ndjson" },
+  })
+  f.fetch.mockResolvedValueOnce(new Response(null, { headers }))
+  expect(await f.client.superAgentHistory("team/1", "s", 6)).toEqual({ messages: [], nextIndex: 6 })
+  f.fetch.mockResolvedValueOnce(new Response(null, { headers }))
+  await expect(f.client.superAgentHistory("team/1", "s", 5)).rejects.toThrow("Incomplete Super Agent history")
+  for (const marker of ["stream.ended", "stream.lease-ended"]) {
+    f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ $eve: marker }), { headers }))
+    expect(await f.client.superAgentHistory("team/1", "s", 5)).toEqual({ messages: [], nextIndex: 5 })
+  }
+  f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ at, facts: [{ type: "delivery.settled", data: { deliveryId: "d2", outcome: "refused" } }] }), { headers: { ...headers, "x-eve-stream-tail-index": "6" } }))
+  expect(await f.client.superAgentHistory("team/1", "s", 6)).toEqual({ messages: [], undeliveredIds: ["d2"], status: "failed", nextIndex: 7 })
+  f.fetch.mockResolvedValueOnce(Response.json({ error: { code: "super_agent_disabled", message: "Super Agent is disabled" } }, { status: 404 }))
+  await expect(f.client.superAgentHistory("team/1", "s", 6)).rejects.toMatchObject({ diagnostics: { status: 404, apiErrorCode: "super_agent_disabled" } })
+})
+
+test("allows Super Agent history to finish within the gateway's replay deadline", async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  f.fetch.mockImplementation(input => new Promise((resolve, reject) => {
+    const { signal } = input as Request
+    const timer = setTimeout(() => resolve(new Response(null, { headers: { "x-eve-stream-version": "27", "x-eve-stream-tail-index": "-1" } })), 119_000)
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+  }))
+  const history = f.client.superAgentHistory("team", "session", 0)
+  await vi.advanceTimersByTimeAsync(119_000)
+  expect(await history).toEqual({ messages: [], nextIndex: 0 })
+  expect(f.fetch).toHaveBeenCalledOnce()
+})
+
 test("loads installation usage trends through the authenticated admin endpoint", async () => {
   const f = setup()
   const usage = { period: "30d", timeZone: "UTC", totals: { users: 12, teams: 3, machines: 5, sessions: 42 }, buckets: [] }

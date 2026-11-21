@@ -84,7 +84,7 @@ export async function consumeTurn(journal: AgentJournal, authority: AgentQuotaAu
     const current = snapshot.turns.find(value => value.id === turn.id)
     if (!current || current.state !== "running" || snapshot.session.archiveState !== "active") throw new Error("Agent stopped before provider dispatch")
     if (current.consumed) return
-    if (limit !== null && consumedTurns(snapshot) >= limit) throw new TurnAdmissionBlocked("turn_limit_reached", `This Session has reached its ${limit}-turn allowance. Upgrade the Team to continue.`)
+    if (limit !== null && consumedTurns(snapshot) >= limit) throw new TurnAdmissionBlocked("turn_limit_reached", `This Session has reached its ${limit}-turn allowance.`)
     const consumed = { ...current, consumed: true }
     const session = { ...snapshot.session, turnLimitCode: undefined, turnLimitReason: undefined }
     await journal.commit(snapshot, { session, turns: [consumed], events: [

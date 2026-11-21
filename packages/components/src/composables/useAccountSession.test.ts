@@ -20,6 +20,25 @@ const enrollment = (value: Partial<LocalEnrollment> = {}): LocalEnrollment => ({
   configured: false, connected: false, revoked: false, identity: { originId: "local-origin", machineId: "1" }, machineName: "This Mac", ...value,
 })
 
+test("Super Agent availability fails closed and ignores a late response from the previous Team", async () => {
+  const oldTeam = Promise.withResolvers<{ enabled: boolean }>()
+  const fake = fakeCentral({ teams: [
+    { id: "one", name: "One", role: "admin" }, { id: "two", name: "Two", role: "admin" },
+  ] })
+  fake.central.superAgentAvailability.mockReturnValueOnce(oldTeam.promise).mockResolvedValueOnce({ enabled: true })
+  session = createAccountSession(fake.central)
+  await flushPromises()
+  expect(session.superAgentEnabled.value).toBeUndefined()
+  await session.selectTeam("two")
+  expect(session.superAgentEnabled.value).toBe(true)
+  oldTeam.resolve({ enabled: false })
+  await flushPromises()
+  expect(session.superAgentEnabled.value).toBe(true)
+  fake.central.superAgentAvailability.mockRejectedValueOnce(new Error("Unavailable"))
+  await session.refreshSuperAgentAvailability()
+  expect(session.superAgentEnabled.value).toBe(false)
+})
+
 test("automatic reload failures and explicit sign-in failures retain different triggers", async () => {
   const fake = fakeCentral()
   const report = vi.fn()

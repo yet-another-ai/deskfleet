@@ -1,3 +1,4 @@
+use crate::billing::{Plan, plan_limits, team_limits};
 use crate::entities::{
     cp_billing_profiles as billing, cp_checkout_attempts as checkouts, cp_invites as invites,
     cp_machine_registrations as registrations, cp_members as members, cp_site_settings as settings,
@@ -79,6 +80,10 @@ impl ControlStore {
             &TeamCreationPolicy::new(allow_creation),
             TeamCreationAction::Create,
         )?;
+        // A new hosted Team starts on Free, and its owner occupies the first seat.
+        if self.hosted && plan_limits(&tx, Plan::Free).await?.max_members == Some(0) {
+            return Err(Error::Conflict("member_limit"));
+        }
         let id = teams::Entity::insert(teams::ActiveModel {
             name: Set(value.into()),
             ..Default::default()
@@ -389,8 +394,8 @@ impl ControlStore {
             .await?
             .map(|row| row.role);
         if existing.is_none() {
-            let plan = crate::billing::effective_plan(&tx, id, self.hosted, now_ms()).await?;
-            if let Some(limit) = plan.limits().max_members {
+            let limits = team_limits(&tx, id, self.hosted, now_ms()).await?;
+            if let Some(limit) = limits.max_members {
                 let count: i64 = one_query(
                     &tx,
                     Query::select()

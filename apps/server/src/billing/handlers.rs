@@ -1,5 +1,6 @@
 use crate::{AppState, auth, error::Result};
 use actix_web::{HttpRequest, web};
+use deskfleet_control_store::billing::{CreditRates, Limits, Plan, PlanLimits};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -14,6 +15,16 @@ pub fn configure(config: &mut web::ServiceConfig) {
         )
         .route("/admin/teams", web::get().to(admin_teams))
         .route("/admin/teams/{teamId}/grant", web::put().to(manual_grant))
+        .route("/admin/plan-quotas", web::get().to(plan_quotas))
+        .service(
+            web::resource("/admin/credit-rates")
+                .route(web::get().to(credit_rates))
+                .route(web::put().to(update_credit_rates)),
+        )
+        .route(
+            "/admin/plan-quotas/{plan}",
+            web::put().to(update_plan_quota),
+        )
         .route("/daemon/entitlements", web::get().to(entitlements))
         .service(
             web::resource("/daemon/session-admissions")
@@ -108,6 +119,46 @@ async fn admin_teams(
             .await?
     )))
 }
+async fn plan_quotas(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+) -> Result<web::Json<Vec<PlanLimits>>> {
+    let user = auth::user(&req, &s).await?;
+    Ok(web::Json(s.store.admin_plan_limits(&user.user.id).await?))
+}
+
+async fn update_plan_quota(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    plan: web::Path<Plan>,
+    body: web::Json<Limits>,
+) -> Result<web::Json<PlanLimits>> {
+    let user = auth::recent(&req, &s).await?;
+    Ok(web::Json(
+        s.store
+            .update_plan_limits(&user.user.id, plan.into_inner(), body.into_inner())
+            .await?,
+    ))
+}
+
+async fn credit_rates(req: HttpRequest, s: web::Data<AppState>) -> Result<web::Json<CreditRates>> {
+    let user = auth::user(&req, &s).await?;
+    Ok(web::Json(s.store.admin_credit_rates(&user.user.id).await?))
+}
+
+async fn update_credit_rates(
+    req: HttpRequest,
+    s: web::Data<AppState>,
+    body: web::Json<CreditRates>,
+) -> Result<web::Json<CreditRates>> {
+    let user = auth::recent(&req, &s).await?;
+    Ok(web::Json(
+        s.store
+            .update_credit_rates(&user.user.id, body.into_inner())
+            .await?,
+    ))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ManualGrant {

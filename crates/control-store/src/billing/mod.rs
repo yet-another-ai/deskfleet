@@ -2,11 +2,18 @@
 mod admin;
 mod admissions;
 mod analytics;
+mod cloud_tokens;
+mod credit_rates;
+mod limits;
 mod payments;
 mod period;
 
 pub use admin::AdminBillingPage;
 pub use analytics::{BillingAnalyticsDelivery, BillingAnalyticsEvent};
+pub use cloud_tokens::{CloudTokenEvent, CloudTokenPeriod};
+pub use credit_rates::{CreditRate, CreditRates};
+pub(crate) use limits::plan_limits;
+pub use limits::{Limits, PlanLimits};
 pub use payments::{CheckoutAttempt, PaymentEvent, SubscriptionProjection};
 pub use period::period_at;
 
@@ -50,20 +57,6 @@ impl Plan {
             Self::SelfHosted => "selfHosted",
         }
     }
-    pub fn limits(self) -> Limits {
-        Limits {
-            max_active_sessions: (self == Self::Free).then_some(3),
-            max_turns_per_session: (self == Self::Free).then_some(30),
-            max_members: (self == Self::Free).then_some(3),
-            turn_bytes: match self {
-                Self::Free => Some(0),
-                Self::Go => Some(2_147_483_648),
-                Self::Pro => Some(21_474_836_480),
-                _ => None,
-            },
-            team_turn_servers: matches!(self, Self::Pro | Self::Enterprise | Self::SelfHosted),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -72,17 +65,6 @@ pub enum RelayDeniedReason {
     FreePlan,
     TurnQuotaExhausted,
     MeteringUnavailable,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Limits {
-    pub max_active_sessions: Option<i64>,
-    pub max_turns_per_session: Option<i64>,
-    pub max_members: Option<i64>,
-    pub turn_bytes: Option<i64>,
-    /// A Team's own TURN server replaces the site relay without consuming allowance.
-    pub team_turn_servers: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -147,12 +129,27 @@ fn summary_value(
     meter: &QueryResult,
     hosted: bool,
     now: i64,
+    catalog: &[PlanLimits],
 ) -> Result<Value> {
     let plan = p.effective_plan(hosted, now);
+    let limits = &catalog
+        .iter()
+        .find(|entry| entry.plan == plan)
+        .ok_or_else(|| {
+            sea_orm::DbErr::RecordNotFound(format!("missing limits for {}", plan.as_str()))
+        })?
+        .limits;
+    let offers: Vec<_> = catalog
+        .iter()
+        .filter(|entry| entry.plan != Plan::SelfHosted)
+        .collect();
     let (start, end) = period_at(p.period_anchor, now);
     let last_seen = meter.try_get::<Option<i64>>("", "last_seen_at")?;
     Ok(json!({
-        "plan":plan,"limits":plan.limits(),"enterpriseOverride":plan == Plan::Enterprise && p.grant_plan.as_deref() == Some("enterprise"),
+        "plan": plan,
+        "limits": limits,
+        "planCatalog": offers,
+        "enterpriseOverride": plan == Plan::Enterprise && p.grant_plan.as_deref() == Some("enterprise"),
         "manualGrant":p.grant_plan.as_ref().filter(|_| p.grant_expires_at.is_none_or(|end| now < end)).map(|grant| json!({"plan":grant,"expiresAt":p.grant_expires_at.map(timestamp)})),
         "usage":{"activeSessionCount":usage.try_get::<i64>("","sessions")?,"memberCount":usage.try_get::<i64>("","members")?,"relayedBytes":usage.try_get::<String>("","bytes")?},
         "period":{"start":timestamp(start),"end":timestamp(end)},"nextResetAt":timestamp(end),
@@ -161,14 +158,14 @@ fn summary_value(
     }))
 }
 
-pub(crate) async fn effective_plan(
+pub(crate) async fn team_limits(
     db: &impl ConnectionTrait,
     team: i64,
     hosted: bool,
     at: i64,
-) -> Result<Plan> {
+) -> Result<Limits> {
     if !hosted {
-        return Ok(Plan::SelfHosted);
+        return plan_limits(db, Plan::SelfHosted).await;
     }
     let row = db
         .query_one(
@@ -178,9 +175,11 @@ pub(crate) async fn effective_plan(
                 .and_where(Expr::col(profiles::Column::TeamId).eq(team)),
         )
         .await?;
-    row.map(profile)
-        .transpose()
-        .map(|value| value.map_or(Plan::Free, |p| p.effective_plan(true, at)))
+    let plan = row
+        .map(profile)
+        .transpose()?
+        .map_or(Plan::Free, |p| p.effective_plan(true, at));
+    plan_limits(db, plan).await
 }
 
 fn usage_query(team: Expr, start: Expr, end: Expr) -> SelectStatement {
@@ -248,7 +247,7 @@ impl ControlStore {
     pub async fn team_entitlements(&self, team_id: &str) -> Result<Value> {
         let p = self.billing_profile(team_id).await?;
         let plan = p.effective_plan(self.hosted, now_ms());
-        let limits = plan.limits();
+        let limits = self.plan_limits(plan).await?;
         let valid_until = matches!(plan, Plan::Go | Plan::Pro)
             .then_some(p.paid_through)
             .flatten();
@@ -272,7 +271,8 @@ impl ControlStore {
         .await?;
         let meter =
             crate::cloudflare_turn::metering(&self.db, Some(resource_id(team_id)?), now).await?;
-        summary_value(p, &row, &meter, self.hosted, now)
+        let catalog = self.list_plan_limits().await?;
+        summary_value(p, &row, &meter, self.hosted, now, &catalog)
     }
 
     pub async fn relay_allowed(&self, team_id: &str) -> Result<bool> {
@@ -282,11 +282,16 @@ impl ControlStore {
     pub async fn relay_denied_reason(&self, team_id: &str) -> Result<Option<RelayDeniedReason>> {
         let profile = self.billing_profile(team_id).await?;
         let now = now_ms();
-        let Some(limit) = profile.effective_plan(self.hosted, now).limits().turn_bytes else {
+        let plan = profile.effective_plan(self.hosted, now);
+        let Some(limit) = self.plan_limits(plan).await?.turn_bytes else {
             return Ok(None);
         };
         if limit == 0 {
-            return Ok(Some(RelayDeniedReason::FreePlan));
+            return Ok(Some(if plan == Plan::Free {
+                RelayDeniedReason::FreePlan
+            } else {
+                RelayDeniedReason::TurnQuotaExhausted
+            }));
         }
         let (start, end) = period_at(profile.period_anchor, now);
         let meter =
@@ -541,6 +546,5 @@ mod tests {
         p.grant_expires_at = None;
         assert_eq!(p.effective_plan(true, 98), Plan::Free);
         assert_eq!(p.effective_plan(false, 100), Plan::SelfHosted);
-        assert_eq!(Plan::Go.limits().turn_bytes, Some(2_147_483_648));
     }
 }

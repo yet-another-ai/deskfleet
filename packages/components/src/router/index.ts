@@ -50,6 +50,12 @@ export const router = createRouter({
           component: () => import("../components/settings/CloudflareTurnSettings.vue"),
         },
         {
+          path: "plan-quotas",
+          name: "site-admin-plan-quotas",
+          component: () => import("../components/settings/PlanQuotas.vue"),
+          meta: { recentAuthentication: true },
+        },
+        {
           path: "manual-grants",
           name: "site-admin-manual-grants",
           component: () => import("../components/settings/EnterpriseTeams.vue"),
@@ -67,6 +73,11 @@ export const router = createRouter({
       path: "/",
       name: "new-session",
       component: () => import("../views/NewSessionView.vue"),
+    },
+    {
+      path: "/super-agent",
+      name: "super-agent",
+      component: () => import("../views/SuperAgentRoute.vue"),
     },
     {
       path: "/search",

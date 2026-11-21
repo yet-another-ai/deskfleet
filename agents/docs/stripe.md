@@ -24,9 +24,8 @@ payments, configure all seven settings:
 Create two Stripe Products: Go and Pro. Each Product has one monthly and one
 yearly recurring Price. The four Price IDs must be distinct, share the same
 currency, use quantity one, and have a positive fixed amount. Go must be cheaper
-than Pro for each interval. Go includes 2 GiB and Pro 20 GiB of TURN per
-monthly usage period (anchored to the subscription); neither limits members,
-Sessions, or turns. Checkout accepts `interval` of `month` or `year` and selects
+than Pro for each interval. The site's [plan quotas](identity-billing.md#plan-matrix) supply
+monthly allowances for both billing intervals. Checkout accepts `interval` of `month` or `year` and selects
 the matching Price. No trials, quantity-based seat charges, or metered overage
 are exposed. Create and validate these objects separately in test mode before
 providing live configuration.

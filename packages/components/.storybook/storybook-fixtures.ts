@@ -1,3 +1,4 @@
+import { adminPlanQuotasFixture, creditRatesFixture, planCatalogFixture } from "../src/test/plan-quotas.ts"
 import { computed, type ComputedRef } from "vue"
 import { createPinia } from "pinia"
 import { createMemoryHistory, createRouter } from "vue-router"
@@ -185,7 +186,9 @@ export const storybookFileTransfers: FileTransfer[] = [
 
 export const storybookBilling: TeamBilling = {
   plan: "pro",
+  planCatalog: planCatalogFixture().map(entry => entry.plan === "pro" ? { ...entry, maxActiveSessions: 25, maxTurnsPerSession: 200, maxMembers: 10, turnBytes: 10_737_418_240 } : entry),
   limits: {
+    teamTurnServers: true, superAgentTokens: 0,
     maxActiveSessions: 25,
     maxTurnsPerSession: 200,
     maxMembers: 10,
@@ -591,6 +594,8 @@ export const storybookArchivedSessionRecord: AgentSessionRecord = {
 }
 
 export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
+  let planQuotas = adminPlanQuotasFixture()
+  let rates = { ...creditRatesFixture }
   const listeners = new Set<(event: CentralEvent) => void>()
   let site: SiteSettings = {
     siteName: "DeskFleet Cloud",
@@ -653,6 +658,14 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
       return { ...site }
     },
     turnSettings: async () => ({ ...turn, urls: [...turn.urls] }),
+    creditRates: async () => ({ ...rates }),
+    updateCreditRates: async next => { rates = { ...next }; return { ...rates } },
+    planQuotas: async () => planQuotas.map(row => ({ ...row })),
+    updatePlanQuota: async (plan, limits) => {
+      const updated = { plan, ...limits }
+      planQuotas = planQuotas.map(row => row.plan === plan ? updated : row)
+      return updated
+    },
     updateTurnSettings: async next => {
       turn = { ...next, urls: [...next.urls] }
       return { ...turn, urls: [...turn.urls] }
@@ -700,6 +713,17 @@ export function createStorybookCentral(): CentralApi & SiteAdministrationApi {
     },
     members: async () => structuredClone(members),
     teamUsage: async () => ({ relayedBytes: "3221225472", activeSessionCount: 8, memberCount: members.length }),
+    superAgentAvailability: async () => ({ enabled: false }),
+    superAgentSessions: async () => [],
+    superAgentUsage: async () => ({
+      runtimeConfigured: true, admitted: true, usedCredits: "0", includedCredits: null, usedTokens: 0, includedTokens: null, plan: "selfHosted",
+      start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",
+    }),
+    createSuperAgentSession: async (_teamId, operationId, message) => ({
+      sessionId: `wrun_${operationId}`, ...(message === undefined ? {} : { deliveryId: `delivery_${operationId}` }),
+    }),
+    sendSuperAgentMessage: async (_teamId, sessionId, operationId) => ({ sessionId, deliveryId: `delivery_${operationId}` }),
+    superAgentHistory: async (_teamId, _sessionId, startIndex) => ({ messages: [], nextIndex: startIndex }),
     teamTurnSettings: async () => structuredClone(teamTurn),
     updateTeamTurnSettings: async (_teamId: string, next: TeamTurnSettingsUpdate) => {
       teamTurn = { ...teamTurn, urls: [...next.urls], secretConfigured: next.urls.length > 0 && (teamTurn.secretConfigured || next.secret !== undefined) }
