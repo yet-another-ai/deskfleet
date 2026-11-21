@@ -21,11 +21,12 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   the required status check in repository branch protection. Successful push and
   manual runs on `main` then deploy the product website to GitHub Pages, except
   `specs_only` pushes, which produce no website artifact.
-  A new pull request push cancels that pull request's previous run; runs on
-  `main` and the daily run are never cancelled, so every main commit finishes
-  and saves its caches. The reusable workflows declare no concurrency groups of
-  their own. After each run on `main`, `Prune caches` deletes superseded cache
-  entries, as described under [Toolchains and caches](#toolchains-and-caches).
+  A new pull request push cancels that pull request's previous run. The
+  concurrency policy lets started push, scheduled, and manual runs finish,
+  while GitHub can replace older queued runs in the same group. Reusable
+  workflows inherit the caller's group. After each run on `main`, `Prune
+  caches` removes retired and superseded entries as described under
+  [Toolchains and caches](#toolchains-and-caches).
 - `.github/workflows/test.yml` runs a staged test pipeline. `Preflight` runs
   the checks that need no Rust compilation on Linux with `mise run ci:preflight`:
   rustfmt, cargo-shear, script tests, the Rust skills harness check, the pnpm
@@ -47,7 +48,9 @@ DEB/RPM validation also runs after packaging builds in `ci.yml`.
   tests run in parallel. Linux uses `mise run test`, including the renderer Vitest
   project. macOS and Windows use `mise run ci:test:platform`: the same Rust, daemon,
   script, and desktop main/shared/client checks, without repeating the happy-dom renderer
-  project. Each platform also runs `mise run desktop:smoke-dsh` against Electron's Node
+  project. Windows tests have a 45-minute job deadline to accommodate cold Rust
+  builds and cache upload. Linux and macOS tests have a 30-minute deadline.
+  Each platform also runs `mise run desktop:smoke-dsh` against Electron's Node
   host, plus `mise run desktop:smoke-proxy` to verify backend sign-in, bearer HTTP,
   and WebSocket events through an isolated session proxy with direct access refused
   (under Xvfb on Linux). Local `mise run test` still runs both Vitest projects on every OS. It supports
@@ -832,20 +835,13 @@ profile above. mise-action exports them to later steps, so plain `cargo`
 steps see the same environment as `mise run`. Reproduce a CI build locally
 with `mise -E ci run <task>`.
 
-Only pushes and runs on `main` save caches. Pull requests and tags restore
-main's entries through the base-branch fallback, so their own copies would
-only spend the repository's 10 GB quota. Every save skips an exact hit.
-
-| Cache | Key | Writer |
-| --- | --- | --- |
-| mise tools | mise-action's key: OS, mise version, `MISE_ENV`, requested tools, and `mise.lock` | Every job on `main`; Node-only jobs have their own entry |
-| Cargo target | rust-cache's key: role, OS, architecture, Rust toolchain, `CARGO_*`/`RUST*` environment, and lockfiles | One job per role on `main` |
-| Cargo downloads | OS, architecture, and `Cargo.lock` | Jobs without a target role |
-| pnpm store | OS, architecture, and `pnpm-lock.yaml` | Every setup-build job on `main` |
-| Electron | OS, architecture, and the locked Electron version | Every setup-build job on `main` |
-
-Cargo target caches are keyed by role, not by job, so jobs that compile the
-same profiles and features share one entry per OS:
+The repository's 10 GB Actions cache budget goes to compiled Cargo dependency
+artifacts. The Rust cache action bundles Cargo registry and Git dependency
+data with the target directory. Its keys include the role, OS, architecture,
+Rust toolchain, relevant environment, and workspace dependencies. Only
+eligible jobs on `main` write entries. Eligible pull request jobs can restore
+main's entries, and a save skips an exact hit. Jobs that compile the same
+profiles and features share one entry per platform and role.
 
 | Role | Jobs | Saves |
 | --- | --- | --- |
@@ -853,29 +849,22 @@ same profiles and features share one entry per OS:
 | `test` | Tests on each platform; the PostgreSQL job restores Linux's entry | Tests only |
 | `release` | Build | Main smoke build only |
 
-Preflight caches only Cargo downloads. Tagged production builds restore no
-target directory, so a release never reuses outputs from an unrelated build.
-rust-cache saves after a failed test as well, because the build outputs are
-still valid. CI does not use sccache: one Actions cache object per compilation
-filled the quota and evicted the target caches.
+Preflight and tagged production builds use fresh Cargo directories. The Rust
+cache action saves compiled dependencies after a failed test as well. Per-crate
+sccache entries previously filled the quota and evicted Cargo target caches.
 
-The pnpm store and Cargo downloads fall back to the newest same-platform entry.
-Installed `node_modules` directories are rebuilt from the frozen lockfile, which
-also repopulates packages missing from a restored store. Keep the pnpm store
-intact after installation: `pnpm store prune` can remove original package
-snapshots still needed by the offline DeepSeek Harness deployment even when
-the installed dependencies work. Fallback stores may retain older packages;
-the cache cleanup below removes superseded Actions cache entries.
-`pnpm install` does not download Electron. On a main miss, setup-build runs
-`install-electron` and saves the archive on every OS, whichever job later
-launches Electron.
+Each job installs its locked mise tools and workspace packages directly. In
+CI, mise can download the pinned Cargo Shear release binary. Cargo downloads
+missing dependencies on demand, and jobs that launch Electron install its
+binary at first use. Keep the job's pnpm store intact after the frozen install
+because offline DeepSeek Harness deployment uses its package snapshots.
 
-After every run on `main`, `Prune caches` runs `scripts/ci-prune-caches.ts`.
-It deletes caches saved outside `main`, then groups main's entries by key
-without their input hashes and versions and keeps the newest of each group.
-Superseded entries are removed instead of waiting for LRU eviction, which could
-remove a live entry first. Run it locally with `GITHUB_REPOSITORY` and
-`GITHUB_TOKEN` set and `--dry-run` to list what it would delete.
+After each completed run on `main`, `Prune caches` runs
+`scripts/ci-prune-caches.ts`. It removes the retired mise, standalone Cargo
+download, pnpm store, and Electron archive entries, plus entries outside
+`main`. For active families it retains the newest key, grouping keys without
+their changing input hashes. Run it locally with `GITHUB_REPOSITORY` and
+`GITHUB_TOKEN` set and `--dry-run` to list its proposed deletions.
 
 Heron's Nix, coverage upload, Playwright, plug-in SDK, signing, and symbol-upload
 jobs are not part of this workflow. DeskFleet keeps the orchestrator, the reusable
