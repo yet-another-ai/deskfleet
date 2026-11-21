@@ -11,5 +11,5 @@ onBeforeUnmount(() => unmount?.())
 </script>
 
 <template>
-  <div ref="root" class="mt-4 first:mt-0" />
+  <div ref="root" class="mt-4 first:mt-0 empty:hidden" />
 </template>

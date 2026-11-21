@@ -1,11 +1,12 @@
 import { useBreakpoints, useLocalStorage } from "@vueuse/core"
 import { defineStore } from "pinia"
-import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
+import { computed, markRaw, nextTick, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { AgentSessionContext } from "../../../../apps/daemon/src/agent-protocol.ts"
 import type { FileResourceRequest } from "../../../client/src/files.ts"
 import { parseSessionWindowHash } from "@deskfleet/client/session-window"
 import { router } from "../router/index.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
+import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
 import { springScrollIntoView } from "../services/spring-scroll.ts"
 
@@ -115,6 +116,8 @@ export const useLayoutStore = defineStore("layout", () => {
   /** The Session terminal panel below the conversation. */
   const terminalPanelOpen = useLocalStorage("deskfleet.terminal-panel-open", false)
   const terminalPanelHeight = useLocalStorage("deskfleet.terminal-panel-height", 280)
+  /** Non-persistent filter shared in local-only mode when MachineRuntimes is absent. */
+  const sidebarFilter = markRaw(createSidebarFilter())
 
   function toggleSidebar(): void {
     if (standaloneSession.value) return
@@ -152,6 +155,7 @@ export const useLayoutStore = defineStore("layout", () => {
     sessionContext,
     terminalPanelOpen,
     terminalPanelHeight,
+    sidebarFilter,
     toggleSidebar,
     toggleDetails,
     requestDetailsOpen,

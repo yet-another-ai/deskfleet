@@ -9,9 +9,9 @@ import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { sessionIsUnread } from "../../services/agent-conversation.ts"
 import { usePinnedSessionsStore } from "../../stores/pinned-sessions.ts"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
+import SessionHoverTooltip from "./SessionHoverTooltip.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
-import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
 
 const { t } = useI18n()
@@ -39,26 +39,25 @@ function open(machineId: string, sessionId: string): void {
     <ul class="m-0 flex list-none flex-col gap-1 p-0">
       <li v-for="item in visiblePins" :key="`${item.machineId}:${item.sessionId}`" :data-pinned-machine="item.machineId" :data-pinned-session="item.sessionId">
         <SessionContextMenu :machine-id="item.machineId" :session-id="item.sessionId" :title="item.title" :context="item.context" :archive-state="item.archiveState" :disabled="!item.online || !item.loaded">
-          <button
-            type="button"
-            class="ui-nav-item w-full px-2.5 text-left"
-            :class="active(item.machineId, item.sessionId) && 'ui-nav-active'"
-            :aria-current="active(item.machineId, item.sessionId) ? 'page' : undefined"
-            :title="`${sessionLabel({ id: item.sessionId, title: item.title })} · ${item.machineName}`"
-            @click="open(item.machineId, item.sessionId)"
-          >
-            <SessionPresenceIcon :session-id="item.sessionId" :machine-id="item.machineId">
+          <SessionHoverTooltip :machine-id="item.machineId" :session-id="item.sessionId" :title="sessionLabel({ id: item.sessionId, title: item.title })" :machine-name="item.machineName" :online="item.online" :context="item.context">
+            <button
+              type="button"
+              class="ui-nav-item w-full px-2.5 text-left"
+              :class="active(item.machineId, item.sessionId) && 'ui-nav-active'"
+              :aria-current="active(item.machineId, item.sessionId) ? 'page' : undefined"
+              @click="open(item.machineId, item.sessionId)"
+            >
               <Pin :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" />
-            </SessionPresenceIcon>
-            <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
-            <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
-            <SessionWorkingIndicator v-if="item.archiveState === 'archiving' || item.working" :state="item.archiveState === 'archiving' ? 'archiving' : item.working" />
-            <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
-            <span v-if="!item.online" class="inline-flex shrink-0 items-center text-ui-warning" :title="t('machine.offline')">
-              <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
-              <span class="sr-only">{{ t('machine.offline') }}</span>
-            </span>
-          </button>
+              <span class="min-w-0 flex-1 truncate">{{ sessionLabel({ id: item.sessionId, title: item.title }) }}</span>
+              <SessionPullRequestIndicators :machine-id="item.machineId" :session-id="item.sessionId" />
+              <SessionWorkingIndicator v-if="item.archiveState === 'archiving' || item.working" :state="item.archiveState === 'archiving' ? 'archiving' : item.working" />
+              <SessionUnreadIndicator v-else-if="sessionIsUnread(item)" />
+              <span v-if="!item.online" class="inline-flex shrink-0 items-center text-ui-warning" :title="t('machine.offline')">
+                <Unplug :size="14" :stroke-width="1.75" aria-hidden="true" />
+                <span class="sr-only">{{ t('machine.offline') }}</span>
+              </span>
+            </button>
+          </SessionHoverTooltip>
         </SessionContextMenu>
       </li>
     </ul>

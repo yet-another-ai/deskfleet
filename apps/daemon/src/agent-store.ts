@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { isSubagentNotification } from "../../../packages/client/src/agent-session-scope.ts"
 import { compactCommandEvent, compactCommandResult } from "./agent-command-results.ts"
 import { AgentLiveState } from "./agent-live.ts"
 import { AGENT_HISTORY_MAX_EVENTS, AGENT_MESSAGE_BYTES } from "./agent-protocol.ts"
@@ -165,6 +166,13 @@ export class AgentJournal {
   }
   async commit(current: AgentSnapshot | AgentSessionRecord | undefined, changes: AgentCommit): Promise<AgentEvent[]> {
     const session = current && ("session" in current ? current.session : current)
+    const msgAt = changes.events?.findLast(event =>
+      event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload)
+      && event.payload.update.sessionUpdate === "agent_message_chunk")?.createdAt
+    if (session && msgAt) {
+      const base = changes.session ?? session
+      if (!base.lastMessageAt || msgAt > base.lastMessageAt) changes = { ...changes, session: { ...base, lastMessageAt: msgAt } }
+    }
     const terminal = (turn: AgentTurn) => ["completed", "cancelled", "interrupted", "failed"].includes(turn.state)
     if (session && changes.turns?.some(terminal)) {
       const snapshot = current && "session" in current ? current : await this.read(session.id)

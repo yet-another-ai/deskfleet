@@ -128,6 +128,7 @@ export const useFleetStore = defineStore("fleet", () => {
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
         providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
         context: metadata.context, archiveState: metadata.archiveState,
+        lastMessageAt: metadata.lastMessageAt, createdAt: metadata.createdAt,
         lastCompletedSeq: metadata.lastCompletedSeq, lastReadSeq: metadata.lastReadSeq,
       })
     }
@@ -150,6 +151,7 @@ export const useFleetStore = defineStore("fleet", () => {
         title: metadata.title, provider: provider?.name, providerIcon: provider?.icon,
         providerTemplate: provider?.template, providerUnavailable: providers.loaded && !provider,
         context: metadata.context, archiveState: metadata.archiveState,
+        lastMessageAt: metadata.lastMessageAt, createdAt: metadata.createdAt,
         lastCompletedSeq: metadata.lastCompletedSeq, lastReadSeq: metadata.lastReadSeq,
       })
     }

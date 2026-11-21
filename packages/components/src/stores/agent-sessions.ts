@@ -3,6 +3,7 @@ import { useAgentLiveState } from "../composables/useAgentLiveState.ts"
 import { isSubagentNotification } from "../../../client/src/agent-session-scope.ts"
 import type { AgentLiveUpdate } from "../../../client/src/agent-live.ts"
 import { snapshotIsWorking, type SessionActivity } from "../services/agent-conversation.ts"
+import { extractSessionPreview, latestSessionInput, snapshotLastMessageAt, type SessionMessagePreview } from "../services/session-preview.ts"
 import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { cloneFnJSON, useLocalStorage, useTimeoutFn } from "@vueuse/core"
 import { defineStore } from "pinia"
@@ -135,6 +136,8 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   const deletedSessions = new Set<string>()
   const loads = new Map<string, Promise<void>>()
   const reads = new Map<string, Promise<void>>()
+  const previewCache = new Map<string, { seq: string; preview: SessionMessagePreview }>()
+  const previewLoads = new Map<string, Promise<SessionMessagePreview | null>>()
   const permissionRequests = new Map<string, { sessionId: string; permissionId: string; resolve(value: unknown): void }>()
   const gitSubscriptions = new Map<string, { sessionId: string; listener(error?: string): void }>()
   let connectionGeneration = 0
@@ -239,8 +242,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     // Keep metadata separate from immutable journal payloads. Updating just the
     // cursor must not invalidate consumers of title, ownership or unread state.
     if (!current) { sessions.value[record.id] = { ...record }; return }
+    const lastMessageAt = record.lastMessageAt ?? current.lastMessageAt
     for (const key of Object.keys(current)) if (!(key in record)) Reflect.deleteProperty(current, key)
     Object.assign(current, record)
+    if (lastMessageAt !== undefined) current.lastMessageAt = lastMessageAt
   }
   function advance(id: string): void {
     const current = view(id)
@@ -268,6 +273,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
       if (sequenceCompare(event.seq, journalTails.get(event.sessionId) ?? "0") > 0) journalTails.set(event.sessionId, event.seq)
       if (event.kind === "session" && sequenceCompare(event.seq, sessions.value[event.sessionId]?.lastEventSeq ?? "0") >= 0) updateSession(event.payload as AgentSessionRecord)
       if (event.kind === "input") delete optimisticInputs.value[event.sessionId]
+      const isMessage = event.kind === "input" && ["pending", "dispatching"].includes((event.payload as AgentInput).state)
+        || event.kind === "acp" && "update" in event.payload && !isSubagentNotification(event.payload) && event.payload.update.sessionUpdate === "agent_message_chunk"
+      const currentSession = isMessage ? sessions.value[event.sessionId] : undefined
+      if (currentSession && (!currentSession.lastMessageAt || event.createdAt > currentSession.lastMessageAt)) currentSession.lastMessageAt = event.createdAt
       if (event.kind === "command") commandReceived(event.payload as AgentCommand)
       if (event.kind === "run" && (event.payload as AgentRun).state === "starting"
         && sequenceCompare(event.seq, commandSequences.get(event.sessionId) ?? "0") > 0) {
@@ -377,7 +386,10 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     if (snapshot.inputs.length) delete optimisticInputs.value[snapshot.session.id]
     current.snapshot = snapshot
     current.snapshotSeq = snapshot.session.lastEventSeq
-    if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) updateSession(snapshot.session)
+    const lastMessageAt = snapshotLastMessageAt(snapshot)
+    const session = lastMessageAt && lastMessageAt !== snapshot.session.lastMessageAt
+      ? { ...snapshot.session, lastMessageAt } : snapshot.session
+    if (sequenceCompare(snapshot.session.lastEventSeq, sessions.value[snapshot.session.id]?.lastEventSeq ?? "0") >= 0) updateSession(session)
     advance(snapshot.session.id)
   }
 
@@ -569,6 +581,27 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     }).finally(() => { reads.delete(id) })
     reads.set(id, reading)
     return reading
+  }
+  async function readPreview(id: string): Promise<SessionMessagePreview | null> {
+    if (deletedSessions.has(id)) return null
+    const loaded = views.value[id]
+    if (loaded?.snapshot && (loaded.events.length > 0 || loaded.snapshot.inputs.length === 0)) return extractSessionPreview(loaded.snapshot, loaded.events)
+    const seq = sessions.value[id]?.lastEventSeq
+    const cached = previewCache.get(id)
+    if (cached && (!seq || cached.seq === seq)) return cached.preview
+    const task = previewLoads.get(id) ?? (async () => {
+      const snapshot = api.history ? await api.history.snapshot(id) : await call("_deskfleet/session/subscribe", { sessionId: id })
+      const input = !disposed && !deletedSessions.has(id) ? latestSessionInput(snapshot.inputs) : undefined
+      const tail = input && sequenceCompare(snapshot.session.lastEventSeq, input.acceptedSeq) > 0
+        ? await (api.history ? api.history.events(id, input.acceptedSeq, 200) : call("_deskfleet/session/history", { sessionId: id, afterSeq: input.acceptedSeq, limit: 200 }))
+        : []
+      if (disposed || deletedSessions.has(id)) return null
+      const preview = extractSessionPreview(snapshot, tail)
+      previewCache.set(id, { seq: snapshot.session.lastEventSeq, preview })
+      return preview
+    })().finally(() => { previewLoads.delete(id) })
+    previewLoads.set(id, task)
+    return task
   }
   function open(id: string, showLoading = true): Promise<void> {
     if (deletedSessions.has(id)) return Promise.resolve()
@@ -978,6 +1011,7 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
     previews.delete(sessionId)
     live.remove(sessionId)
     visiblePreviews.delete(sessionId)
+    previewCache.delete(sessionId)
   }
   const gitBranches = (workspaceId: string) => call("_deskfleet/git/branches", { workspaceId })
   const prepareGit = (workspaceId: string, context: AgentSessionContext, confirmationToken?: string) => call("_deskfleet/git/prepare", { workspaceId, context, ...(confirmationToken ? { confirmationToken } : {}) })
@@ -1008,5 +1042,5 @@ export const useAgentSessionsStore = defineStore("agent-sessions", () => {
   }
   const closeTransport = () => { flushDisplay(false); clearPreviews(); client.close() }
   onScopeDispose(() => { cacheTimer.stop(); persistConversations(); disposed = true; displayTimer.stop(); pendingEvents = []; pendingPreviews.clear(); gitSubscriptions.clear(); closeTransport() })
-  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
+  return { notices: live.notices, authStatuses: live.authStatuses, dismissNotice: live.dismiss, sessions, views, isWorking, drafts, draftAttachments, draftMentions, draftErrors, preparingDrafts, optimisticInputs, elicitationDrafts, draftConfiguration, draftYolo, configurations, agentConfiguration, releaseAgentConfiguration, agentUsage, sessionConfiguration, configureSession, switchAgent, state, error, relayDeniedReason, operations, sessionPresence, refresh, open, readPreview, attend, leave, markRead, markUnread, checkOperation, create, fork, submit, steer, withdraw, retry, cancel, respond, respondToElicitation, stop, rename, setYolo, archive, restore, remove, composerReferences, resolveComposerReferences, gitBranches, prepareGit, gitStatus, gitDiff, watchGit, closeTransport }
 })

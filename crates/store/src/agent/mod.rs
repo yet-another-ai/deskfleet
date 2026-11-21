@@ -321,6 +321,7 @@ impl LocalCatalog {
             turn_limit_reason: None,
             turn_limit_code: None,
             last_event_seq: 0.into(),
+            last_message_at: None,
             last_completed_seq: None,
             last_read_seq: None,
             configuration_since_seq: None,

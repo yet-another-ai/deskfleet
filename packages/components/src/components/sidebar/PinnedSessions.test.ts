@@ -76,7 +76,7 @@ test("Pinned appears in pin order with current titles from every Team machine", 
   expect(row("second").text()).toContain("Offline")
   expect(row("first").text()).toContain("Current investigation")
   expect(row("first").text()).not.toContain("Offline")
-  expect(row("second").get("button").attributes("title")).toContain("Build server")
+  expect(row("second").getComponent({ name: "SessionHoverTooltip" }).props("machineName")).toBe("Build server")
   agents.sessions["30"] = { ...agents.sessions["30"]!, title: "Renamed investigation" }
   await flushPromises()
   expect(row("first").text()).toContain("Renamed investigation")

@@ -826,7 +826,7 @@ export class AgentSessions {
       }
       const titleSource = adopted.map(block => block.type === "text" ? block.text : block.type === "resource" && "text" in block.resource ? block.resource.text : "").filter(Boolean).join(" ").trim()
       const title = snapshot.session.title || truncateGeneratedTitle(titleSource.split(/\r?\n/u)[0] ?? "")
-      const session = { ...snapshot.session, title, updatedAt: timestamp() }
+      const session = { ...snapshot.session, title, lastMessageAt: input.createdAt, updatedAt: timestamp() }
       await this.journal.commit(snapshot, { session, inputs: [input], command: { ...command, status: delivery === "steer" ? "accepted" : "completed", result: receipt, completedAt: delivery === "steer" ? undefined : timestamp() }, events: [
         this.journal.event(sessionId, "input", input), this.journal.event(sessionId, "session", session),
       ] })
