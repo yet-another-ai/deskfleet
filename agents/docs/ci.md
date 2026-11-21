@@ -397,6 +397,12 @@ the upload state before reporting failure. The job succeeds only after Apple
 finishes processing; a processing timeout can be retried without rebuilding.
 This publishes to TestFlight and does not submit the app for App Review.
 
+The main app's `apps/web/ios/App/App/Info.plist` sets
+`ITSAppUsesNonExemptEncryption` to Boolean `false`, declaring that the app uses
+no non-exempt encryption. Xcode includes this declaration in the IPA, so new
+TestFlight and App Store uploads do not require the repeated export compliance
+questionnaire. See [Apple's encryption declaration key](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption).
+
 Before the next release tag, run **Build → Run workflow → signed_ios = true** on
 a branch allowed by the production environment's deployment rules. This skips
 desktop and Android jobs, uses the same signing path, and produces the IPA and
