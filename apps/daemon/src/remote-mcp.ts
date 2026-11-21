@@ -43,8 +43,12 @@ export class RemoteMcp {
       ? source.machineId === target.machineId || source.machineId !== actor.sourceMachine?.id || !actor.sourceMachine?.originId
       : actor.sourceMachine !== undefined)
       throw new Error("Remote MCP source does not match the delegated user")
-    const settings = await readRemoteAgentSettings(this.#directory)
-    if (method === "remoteMcpDiscover") return settings
+    const readAccess = async () => {
+      const { allowSuperAgent, ...peerAccess } = await readRemoteAgentSettings(this.#directory)
+      if ("machineId" in source) return peerAccess
+      return { allowRead: allowSuperAgent, allowOperate: allowSuperAgent, allowSessions: allowSuperAgent, allowWorkspaces: allowSuperAgent }
+    }
+    if (method === "remoteMcpDiscover") return readAccess()
     const operation = envelope.operation as RemoteMcpOperation
     const params = record.parse(envelope.arguments)
     const rawFileParams = record.safeParse(params.params).data
@@ -52,7 +56,7 @@ export class RemoteMcp {
       || (operation === "filesWrite" && params.method === "abort" && typeof rawFileParams?.transferId === "string" && this.#transfers.has(rawFileParams.transferId))
     const authorize = async () => {
       this.#closing.signal.throwIfAborted()
-      const current = await readRemoteAgentSettings(this.#directory)
+      const current = await readAccess()
       if (operation === "sessionCreate" || operation === "sessionSend") {
         if (!current.allowSessions) throw new Error("This machine does not allow remote Agents to start or message Sessions on it")
       } else if (operation === "workspaceCreate") {
@@ -64,12 +68,13 @@ export class RemoteMcp {
       } else if (operation === "machine") {
         if (!current.allowRead && !current.allowSessions && !current.allowWorkspaces) throw new Error("This machine does not allow remote Agents to read it")
       } else if (!current.allowRead) throw new Error("This machine does not allow remote Agents to read it")
+      return current
     }
-    if (!isFileCleanup) await authorize()
+    const access = isFileCleanup ? undefined : await authorize()
     switch (operation) {
       case "machine":
         z.strictObject({}).parse(params)
-        return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access: settings }
+        return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access }
       case "sessions": {
         const { workspaceId } = z.strictObject({ workspaceId: nonEmpty.optional() }).parse(params)
         return (await this.#operations.agents.journal.list()).filter(session => workspaceId === undefined || session.workspaceId === workspaceId)

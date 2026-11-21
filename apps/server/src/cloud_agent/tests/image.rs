@@ -104,7 +104,7 @@ async fn dispatch_session() {
         let actor = actor.unwrap();
         assert_eq!(actor.user_id, user.id);
         let result = if method == "remoteMcpDiscover" {
-            json!({"allowSessions": true})
+            json!({"allowRead": true, "allowOperate": true, "allowSessions": true, "allowWorkspaces": true})
         } else {
             assert_eq!(params["source"]["sessionId"], id);
             assert_eq!(params["operation"], "sessionCreate");

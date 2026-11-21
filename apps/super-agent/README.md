@@ -110,13 +110,16 @@ use their own model account with unlimited credits.
 
 ## Dispatch work to a Machine
 
-On the target desktop, open **Settings → Preferences → This computer** and enable the permission
-to start and message Sessions. Ask Super Agent to list available machines
-and providers, then describe the task and the target Workspace. It can create
-a Session with an initial prompt or send a follow-up to an existing Session.
-Enable read access to let it inspect Session history and progress.
-Creating Workspaces and invoking configured MCP servers use the target's
-separate workspace and operate permissions.
+On the target desktop, open **Settings → Preferences → This computer** and
+enable **Allow Super Agent to use this computer**. On a headless daemon, set
+`"allowSuperAgent": true` in `<host directory>/remote-agent-settings.json`.
+This single switch grants all hosted machine tools. Super Agent can inspect
+Workspaces and providers, create Workspaces and Sessions, send follow-ups,
+read Session history, and invoke the machine's configured MCP tools. Turn the
+switch off to withdraw access.
+
+Ask Super Agent to list available machines and providers, then describe the
+task and the target Workspace.
 
 The built-in DeskFleet MCP connection lists online registrations in the
 conversation's Team. Each tool call runs with the current message sender's

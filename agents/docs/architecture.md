@@ -154,8 +154,10 @@ Session to Eve's authenticated channel. Eve's DeskFleet MCP connection forwards
 the active turn's principal to the API. Each tool call resolves the active
 login and rechecks Team access, rollout and Session ownership. The API uses
 the shared remote MCP relay to reach the target registration. Target daemons
-recognize the cloud Session as a Super Agent source and enforce the host's
-remote Agent permissions on discovery and execution.
+recognize the cloud Session as a Super Agent source and check the host's
+`allowSuperAgent` setting on discovery and execution. This single opt-in
+grants the hosted tool catalog for that machine. Agents running on other
+machines use the host's separate remote Agent permissions.
 The cloud service owns conversation execution and replay. The control store owns Team membership,
 request receipts, Session bindings and the cloud token ledger. Each API instance
 can claim outstanding Session streams to meter. The cursor advances after the
