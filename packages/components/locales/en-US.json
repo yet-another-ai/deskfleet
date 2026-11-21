@@ -2183,5 +2183,16 @@
       "network": "The speech recognition service could not connect. Try again.",
       "failed": "Voice input failed. Try again."
     }
+  },
+  "sidebar": {
+    "filterLabel": "Filter sessions",
+    "filterAll": "All",
+    "filterUnread": "Unread",
+    "filterWorking": "Working",
+    "filterEmptyUnread": "No unread sessions",
+    "filterEmptyWorking": "No active sessions",
+    "showAllSessions": "Show all",
+    "showMoreSessions": "Show {count} more",
+    "showFewerSessions": "Show less"
   }
 }

@@ -2183,5 +2183,16 @@
       "network": "无法连接语音识别服务，请重试。",
       "failed": "语音输入失败，请重试。"
     }
+  },
+  "sidebar": {
+    "filterLabel": "筛选会话",
+    "filterAll": "全部",
+    "filterUnread": "未读",
+    "filterWorking": "工作中",
+    "filterEmptyUnread": "没有未读会话",
+    "filterEmptyWorking": "没有工作中的会话",
+    "showAllSessions": "显示全部",
+    "showMoreSessions": "展开其余 {count} 个会话",
+    "showFewerSessions": "收起"
   }
 }

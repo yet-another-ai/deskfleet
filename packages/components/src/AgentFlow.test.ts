@@ -573,13 +573,11 @@ test("new sessions use the selected configured provider and show its name", asyn
   expect(transport.call.mock.calls.find(([method]) => method === "_deskfleet/session/create")?.[1]).toMatchObject({ provider: "work-codex" })
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toContain("Work Codex")
   expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
-  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("deepseek")
 
   vi.mocked(platformClient.providers.list).mockResolvedValue({ revision: "registry-1", shellEnvironmentDefault: true, templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "claude", env: {} }] })
   await useProvidersStore(pinia).refresh()
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
-  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes('data-provider-icon')).toBe("claude")
 })
 
 test("restored sessions show pending provider identity until its configuration loads", async () => {
@@ -597,14 +595,12 @@ test("restored sessions show pending provider identity until its configuration l
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Agent")
   expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(true)
-  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(true)
   expect(wrapper.text()).not.toContain("Provider unavailable")
 
   read.resolve({ revision: "registry-1", shellEnvironmentDefault: true, templates: [], providers: [{ id: "work-codex", template: "codex", name: "Work Codex", icon: "deepseek", env: {} }] })
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Work Codex")
   await vi.waitFor(() => expect(wrapper.get('[data-agent-configuration-trigger] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek"))
-  expect(wrapper.get('aside a[href="#/sessions/30"] [data-provider-icon]').attributes("data-provider-icon")).toBe("deepseek")
   expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(false)
 
   list.mockResolvedValue({ revision: "registry-1", shellEnvironmentDefault: true, templates: [], providers: [] })
@@ -612,7 +608,6 @@ test("restored sessions show pending provider identity until its configuration l
   await flushPromises()
   expect(wrapper.get('[data-agent-configuration-trigger]').text()).toBe("Provider unavailable")
   expect(wrapper.find('[data-agent-configuration-trigger] [data-provider-pending]').exists()).toBe(false)
-  expect(wrapper.find('aside a[href="#/sessions/30"] [data-provider-pending]').exists()).toBe(false)
 })
 
 test("an empty provider list links to Agents settings and prevents session creation", async () => {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   Archive,
-  Bot,
   ChevronRight,
   Folder,
   FolderOpen,
@@ -12,34 +11,35 @@ import {
   SquareTerminal,
   Unplug,
 } from "@lucide/vue"
-import { useArrayFilter } from "@vueuse/core"
-import { computed, ref } from "vue"
+import { computed, onBeforeUnmount, ref, watch, watchEffect } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
-import { useRouter, type RouteLocationRaw } from "vue-router"
+import { useRoute, useRouter, type RouteLocationRaw } from "vue-router"
 import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
-import type { MachineSummary, WorkspaceSummary } from "../../stores/fleet-types.ts"
+import type { AgentSessionSummary, MachineSummary, WorkspaceSummary } from "../../stores/fleet-types.ts"
 import { useSessionLabel } from "../../composables/useSessionLabel.ts"
 import { useAccountSession } from "../../composables/useAccountSession.ts"
 import { useMachineRuntimes } from "../../composables/useMachineRuntimes.ts"
+import { useSidebarFilter } from "../../composables/useSidebarFilter.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import { useFleetStore } from "../../stores/fleet.ts"
 import { useTerminalsStore } from "../../stores/terminals.ts"
 import UiButton from "../common/UiButton.vue"
-import ProviderIcon from "../common/ProviderIcon.vue"
 import WorkspaceCreateDialog from "../catalog/WorkspaceCreateDialog.vue"
 import WorkspaceContextMenu from "../catalog/WorkspaceContextMenu.vue"
 import SessionContextMenu from "../session/SessionContextMenu.vue"
 import { sessionIsUnread, type SessionActivity } from "../../services/agent-conversation.ts"
+import { compareSessionsByRecency } from "../../services/session-preview.ts"
+import SessionHoverTooltip from "./SessionHoverTooltip.vue"
 import SessionUnreadIndicator from "./SessionUnreadIndicator.vue"
 import SessionWorkingIndicator from "./SessionWorkingIndicator.vue"
 import SessionPullRequestIndicators from "./SessionPullRequestIndicators.vue"
-import SessionPresenceIcon from "./SessionPresenceIcon.vue"
 import MachineBatteryIndicator from "./MachineBatteryIndicator.vue"
 import TreeLink from "./TreeLink.vue"
 
 type SessionIndicatorState = SessionActivity | "archiving"
 const indicatorRank: Record<SessionIndicatorState, number> = { archiving: 4, permission: 3, question: 2, working: 1 }
+const MAX_VISIBLE_SESSIONS = 10
 
 const props = defineProps<{ machine: MachineSummary }>()
 const { t, locale } = useI18n()
@@ -47,18 +47,71 @@ const sessionLabel = useSessionLabel()
 const agents = useAgentSessionsStore()
 const fleet = useFleetStore()
 const terminals = useTerminalsStore()
+const route = useRoute()
 const router = useRouter()
 const account = useAccountSession()
 const runtimes = useMachineRuntimes()
+const sidebarFilter = useSidebarFilter()
 const addingWorkspace = ref(false)
 const openingTerminal = ref(false)
 const terminalError = ref<{ workspaceId: string; message: string } | null>(null)
+const expandedGroups = ref(new Set<string>())
+
+const activeOnly = (items: readonly AgentSessionSummary[]) =>
+  items.filter(s => s.archiveState === "active" || s.archiveState === "archiving").sort(compareSessionsByRecency)
+
 // Catalog-only entries can belong to archived Sessions; wait for their metadata.
-const sessions = useArrayFilter(() => props.machine.sessions, session => session.archiveState === "active" || session.archiveState === "archiving")
-const workspaces = computed(() => props.machine.workspaces.map(workspace => ({
+const activeMachineSessions = computed(() => activeOnly(props.machine.sessions))
+const activeWorkspaces = computed(() => props.machine.workspaces.map(workspace => ({
   ...workspace,
-  sessions: workspace.sessions.filter(session => session.archiveState === "active" || session.archiveState === "archiving"),
+  sessions: activeOnly(workspace.sessions),
 })))
+
+const sessionIndicator = (session: { id: string; archiveState?: string }): SessionIndicatorState | false =>
+  session.archiveState === "archiving" ? "archiving" : agents.isWorking(session.id)
+
+const filtering = computed(() => sidebarFilter.filter.value !== "all")
+const matchesFilter = (session: AgentSessionSummary) => {
+  const mode = sidebarFilter.filter.value
+  if (mode === "all") return true
+  const indicator = sessionIndicator(session)
+  return mode === "working" ? Boolean(indicator) : !indicator && sessionIsUnread(session)
+}
+
+watchEffect(() => {
+  let unread = 0
+  let working = 0
+  for (const session of [...activeMachineSessions.value, ...activeWorkspaces.value.flatMap(w => w.sessions)]) {
+    if (sessionIndicator(session)) working++
+    else if (sessionIsUnread(session)) unread++
+  }
+  sidebarFilter.counts.set(props.machine.id, { unread, working })
+})
+onBeforeUnmount(() => { sidebarFilter.counts.delete(props.machine.id) })
+
+const sessions = computed(() => activeMachineSessions.value.filter(matchesFilter))
+const workspaces = computed(() => {
+  const mapped = activeWorkspaces.value.map(workspace => ({ ...workspace, sessions: workspace.sessions.filter(matchesFilter) }))
+  return filtering.value ? mapped.filter(workspace => workspace.sessions.length > 0) : mapped
+})
+const unopened = computed(() => Boolean(runtimes && !runtimes.opened.has(props.machine.id)))
+const showMachine = computed(() => !filtering.value || unopened.value || sessions.value.length > 0 || workspaces.value.length > 0)
+
+const activeSessionId = computed(() =>
+  route.name === "session" && (!account || account.machineId.value === props.machine.id) && typeof route.params.sessionId === "string"
+    ? route.params.sessionId : undefined,
+)
+watch([activeSessionId, sessions, workspaces], ([id]) => {
+  if (!id) return
+  if (sessions.value.findIndex(s => s.id === id) >= MAX_VISIBLE_SESSIONS) expandedGroups.value.add("")
+  for (const workspace of workspaces.value) {
+    if (workspace.sessions.findIndex(s => s.id === id) >= MAX_VISIBLE_SESSIONS) expandedGroups.value.add(workspace.id)
+  }
+}, { immediate: true })
+
+const visibleOf = (key: string, items: AgentSessionSummary[]) =>
+  expandedGroups.value.has(key) ? items : items.slice(0, MAX_VISIBLE_SESSIONS)
+const toggleGroup = (key: string) => { if (!expandedGroups.value.delete(key)) expandedGroups.value.add(key) }
 
 function openRoute(destination: RouteLocationRaw): void {
   if (account) account.openMachineRoute(props.machine.id, destination)
@@ -90,8 +143,7 @@ async function openTerminal(workspace: WorkspaceSummary): Promise<void> {
   }
 }
 
-const unopened = computed(() => Boolean(runtimes && !runtimes.opened.has(props.machine.id)))
-const collapsed = computed(() => unopened.value || fleet.isCollapsed(props.machine.id))
+const collapsed = computed(() => unopened.value || (!filtering.value && fleet.isCollapsed(props.machine.id)))
 function toggleMachine(): void {
   const target = unopened.value ? account?.machines.value.find(item => item.id === props.machine.id) : undefined
   if (target && runtimes) runtimes.open(target)
@@ -106,8 +158,6 @@ const lastSeen = computed(() => {
   return t("machine.lastSeen", { time })
 })
 const terminalLink = (terminalId: string) => ({ name: "terminal", params: { terminalId } })
-const sessionIndicator = (session: { id: string; archiveState?: string }): SessionIndicatorState | false =>
-  session.archiveState === "archiving" ? "archiving" : agents.isWorking(session.id)
 
 /** Highest-priority working indicator across sessions, matching session-row precedence. */
 function sessionsIndicator(items: readonly { id: string; archiveState?: string }[]): SessionIndicatorState | false {
@@ -128,14 +178,14 @@ function sessionsIndicator(items: readonly { id: string; archiveState?: string }
 const machineIndicator = computed(() => {
   if (!collapsed.value) return false
   return sessionsIndicator([
-    ...sessions.value,
-    ...workspaces.value.flatMap(workspace => workspace.sessions),
+    ...activeMachineSessions.value,
+    ...activeWorkspaces.value.flatMap(workspace => workspace.sessions),
   ])
 })
 </script>
 
 <template>
-  <CollapsibleRoot as="section" :data-machine-id="machine.id" :open="!collapsed" class="mt-4 first:mt-0" @update:open="toggleMachine">
+  <CollapsibleRoot v-if="showMachine" as="section" :data-machine-id="machine.id" :open="!collapsed" class="mt-4 first:mt-0" @update:open="toggleMachine">
     <div class="group flex h-8 items-center gap-1 pl-2.5 pr-1">
       <CollapsibleTrigger
         type="button"
@@ -165,7 +215,7 @@ const machineIndicator = computed(() => {
     <WorkspaceCreateDialog v-if="addingWorkspace" @created="workspaceCreated" @cancel="addingWorkspace = false" />
 
     <CollapsibleContent as="ul" class="mt-1 flex flex-col gap-1">
-      <li>
+      <li v-if="!filtering">
         <TreeLink
           :machine-id="machine.id"
           :to="{ name: 'machine-control', params: { machineId: machine.id } }"
@@ -174,42 +224,37 @@ const machineIndicator = computed(() => {
           :depth="0"
         />
       </li>
-      <li v-for="session in sessions" :key="session.id">
+      <li v-for="session in visibleOf('', sessions)" :key="session.id">
         <SessionContextMenu v-slot="{ requestArchive, pending }" :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :context="session.context" :archive-state="session.archiveState" :disabled="!machine.online">
-          <TreeLink
-            :machine-id="machine.id"
-            :to="{ name: 'session', params: { sessionId: session.id } }"
-            :icon="Bot"
-            :label="sessionLabel(session)"
-            :depth="0"
-          >
-            <template #icon>
-              <SessionPresenceIcon :session-id="session.id" :machine-id="machine.id">
-                <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-                <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
-              </SessionPresenceIcon>
-            </template>
-            <template #trailing>
-              <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-              <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
-              <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
-            </template>
-            <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-              <UiButton
-                variant="ghost"
-                size="icon"
-                class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
-                :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-                :disabled="!machine.online || pending || !session.context"
-                @click="requestArchive()"
-              >
-                <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
-              </UiButton>
-            </template>
-          </TreeLink>
+          <SessionHoverTooltip :machine-id="machine.id" :session-id="session.id" :title="sessionLabel(session)" :machine-name="machine.name" :online="machine.online" :context="session.context">
+            <TreeLink :machine-id="machine.id" :to="{ name: 'session', params: { sessionId: session.id } }" :label="sessionLabel(session)" :depth="0">
+              <template #trailing>
+                <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
+                <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
+                <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
+              </template>
+              <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+                <UiButton
+                  variant="ghost"
+                  size="icon"
+                  class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
+                  :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+                  :disabled="!machine.online || pending || !session.context"
+                  @click="requestArchive()"
+                >
+                  <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+                </UiButton>
+              </template>
+            </TreeLink>
+          </SessionHoverTooltip>
         </SessionContextMenu>
       </li>
-      <li v-if="workspaces.length === 0 && sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
+      <li v-if="sessions.length > MAX_VISIBLE_SESSIONS">
+        <button type="button" class="ui-nav-item w-full px-2.5 text-left text-xs text-ui-text-faint hover:text-ui-text" @click="toggleGroup('')">
+          {{ expandedGroups.has('') ? t('sidebar.showFewerSessions') : t('sidebar.showMoreSessions', { count: sessions.length - MAX_VISIBLE_SESSIONS }) }}
+        </button>
+      </li>
+      <li v-if="!filtering && workspaces.length === 0 && sessions.length === 0" class="h-8 px-2.5 leading-8 text-ui-text-faint">
         {{ t("machine.noWorkspaces") }}
       </li>
       <CollapsibleRoot v-for="workspace in workspaces" :key="workspace.id" v-slot="{ open }" as="li" default-open class="flex flex-col gap-1">
@@ -229,44 +274,41 @@ const machineIndicator = computed(() => {
         </WorkspaceContextMenu>
         <p v-if="terminalError?.workspaceId === workspace.id" role="alert" class="m-0 break-words px-2.5 text-xs text-ui-danger">{{ terminalError.message }}</p>
         <CollapsibleContent as="ul" class="flex flex-col gap-1 empty:hidden">
-          <li v-for="terminal in workspace.terminals" :key="terminal.id">
-            <TreeLink :machine-id="machine.id" :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
-          </li>
-          <li v-for="session in workspace.sessions" :key="session.id">
+          <template v-if="!filtering">
+            <li v-for="terminal in workspace.terminals" :key="terminal.id">
+              <TreeLink :machine-id="machine.id" :to="terminalLink(terminal.id)" :icon="SquareTerminal" :label="terminal.title" :depth="1" />
+            </li>
+          </template>
+          <li v-for="session in visibleOf(workspace.id, workspace.sessions)" :key="session.id">
             <SessionContextMenu v-slot="{ requestArchive, pending }" :machine-id="machine.id" :session-id="session.id" :title="session.title ?? ''" :context="session.context" :archive-state="session.archiveState" :disabled="!machine.online">
               <!-- A Session's shells open in its bottom panel, not the sidebar. -->
-              <TreeLink
-                :machine-id="machine.id"
-                :to="{ name: 'session', params: { sessionId: session.id } }"
-                :icon="Bot"
-                :label="sessionLabel(session)"
-                :depth="1"
-              >
-                <template #icon>
-                  <SessionPresenceIcon :session-id="session.id" :machine-id="machine.id">
-                    <span v-if="!session.provider && !session.providerUnavailable" class="h-3.5 w-3.5 shrink-0 rounded bg-ui-border" data-provider-pending aria-hidden="true" />
-                    <ProviderIcon v-else :icon="session.providerIcon" :template="session.providerTemplate" :size="15" />
-                  </SessionPresenceIcon>
-                </template>
-                <template #trailing>
-                  <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
-                  <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
-                  <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
-                </template>
-                <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
-                  <UiButton
-                    variant="ghost"
-                    size="icon"
-                    class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
-                    :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
-                    :disabled="!machine.online || pending || !session.context"
-                    @click="requestArchive()"
-                  >
-                    <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
-                  </UiButton>
-                </template>
-              </TreeLink>
+              <SessionHoverTooltip :machine-id="machine.id" :session-id="session.id" :title="sessionLabel(session)" :machine-name="machine.name" :online="machine.online" :context="session.context">
+                <TreeLink :machine-id="machine.id" :to="{ name: 'session', params: { sessionId: session.id } }" :label="sessionLabel(session)" :depth="1">
+                  <template #trailing>
+                    <SessionPullRequestIndicators :machine-id="machine.id" :session-id="session.id" />
+                    <SessionWorkingIndicator v-if="sessionIndicator(session)" :state="sessionIndicator(session)" />
+                    <SessionUnreadIndicator v-else-if="sessionIsUnread(session)" />
+                  </template>
+                  <template v-if="session.archiveState === 'active' || session.archiveState === 'archiving'" #actions>
+                    <UiButton
+                      variant="ghost"
+                      size="icon"
+                      class="text-current [&:not(:disabled,[aria-disabled=true])]:hover:bg-current/15 [&:not(:disabled,[aria-disabled=true])]:hover:text-current [&:not(:disabled,[aria-disabled=true])]:active:bg-current/20"
+                      :label="t(session.archiveState === 'archiving' ? 'agent.retryArchive' : 'agent.archive')"
+                      :disabled="!machine.online || pending || !session.context"
+                      @click="requestArchive()"
+                    >
+                      <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    </UiButton>
+                  </template>
+                </TreeLink>
+              </SessionHoverTooltip>
             </SessionContextMenu>
+          </li>
+          <li v-if="workspace.sessions.length > MAX_VISIBLE_SESSIONS">
+            <button type="button" class="ui-nav-item w-full pl-6 pr-2.5 text-left text-xs text-ui-text-faint hover:text-ui-text" @click="toggleGroup(workspace.id)">
+              {{ expandedGroups.has(workspace.id) ? t('sidebar.showFewerSessions') : t('sidebar.showMoreSessions', { count: workspace.sessions.length - MAX_VISIBLE_SESSIONS }) }}
+            </button>
           </li>
         </CollapsibleContent>
       </CollapsibleRoot>

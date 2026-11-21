@@ -192,6 +192,9 @@ pub struct AgentSessionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_limit_code: Option<TurnLimitCode>,
     pub last_event_seq: AgentSequence,
+    /// Timestamp of the latest user input or assistant message; absent until a message is recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_message_at: Option<String>,
     /// Latest terminal turn event; absent until a turn finishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_completed_seq: Option<AgentSequence>,

@@ -41,6 +41,8 @@ export interface AgentSessionRecord {
   turnLimitCode?: TurnLimitCode
   turnLimitReason?: string
   lastEventSeq: string
+  /** Timestamp of the latest user input or assistant message; absent until a message is recorded. */
+  lastMessageAt?: string
   /** Latest terminal turn event; absent until a turn finishes. */
   lastCompletedSeq?: string
   /** Shared watermark acknowledged by a person. An unread mark may rewind it to just before `lastCompletedSeq`. */

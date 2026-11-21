@@ -1592,5 +1592,16 @@
       "network": "音声認識サービスに接続できませんでした。もう一度お試しください。",
       "failed": "音声入力に失敗しました。もう一度お試しください。"
     }
+  },
+  "sidebar": {
+    "filterLabel": "セッションを絞り込む",
+    "filterAll": "すべて",
+    "filterUnread": "未読",
+    "filterWorking": "実行中",
+    "filterEmptyUnread": "未読のセッションはありません",
+    "filterEmptyWorking": "実行中のセッションはありません",
+    "showAllSessions": "すべて表示",
+    "showMoreSessions": "さらに {count} 件を表示",
+    "showFewerSessions": "折りたたむ"
   }
 }

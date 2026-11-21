@@ -181,7 +181,9 @@ export function remoteMachineClient(host: DeskfleetDesktopApi, central: CentralA
       history: {
         parallel: () => !local,
         available: () => online,
-        list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({ ...snapshot.session,
+        list: async () => (await central.sessions(machine.teamId, machine.id)).map(snapshot => ({
+          ...snapshot.session,
+          lastMessageAt: snapshot.session.lastMessageAt ?? snapshot.turns.reduce<string | undefined>((latest, t) => t.endedAt && (!latest || t.endedAt > latest) ? t.endedAt : latest, undefined),
           working: snapshot.permissions?.some(permission => permission.state === "pending") ? "permission" as const
             : snapshot.elicitations?.some(elicitation => elicitation.state === "pending") ? "question" as const
             : snapshot.turns.some(turn => ["starting", "running", "cancelling"].includes(turn.state)),

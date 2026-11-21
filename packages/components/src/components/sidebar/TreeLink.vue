@@ -6,7 +6,7 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 const props = defineProps<{
   to: RouteLocationRaw
   machineId?: string
-  icon: Component
+  icon?: Component
   label: string
   /** Nesting below the machine: 0 for machine items, 1 under a workspace, 2 under a worktree. */
   depth: 0 | 1 | 2
@@ -33,7 +33,7 @@ function open(event: MouseEvent, navigate: (event?: MouseEvent) => unknown): voi
       custom
     >
       <a :href="href" class="ui-nav-item pr-2.5" :class="[indent[depth], selected && isActive ? 'ui-nav-active group-hover:bg-ui-accent/20' : 'group-hover:bg-ui-hover']" :aria-current="selected && isExactActive ? 'page' : undefined" @click="open($event, navigate)">
-        <slot name="icon"><component :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
+        <slot name="icon"><component v-if="icon" :is="icon" :size="15" :stroke-width="1.75" class="shrink-0" aria-hidden="true" /></slot>
         <span class="min-w-0 flex-1 truncate">{{ label }}</span>
         <span v-if="$slots.trailing || $slots.actions" class="inline-flex min-w-3.5 shrink-0 items-center justify-center gap-1.5 ui-motion" :class="$slots.actions && 'group-hover:op-0 group-focus-within:op-0'">
           <slot name="trailing" />
