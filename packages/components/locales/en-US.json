@@ -66,6 +66,7 @@
     "approvalsHandled": "{count} tool approval handled | {count} tool approvals handled",
     "openTicketSession": "Open Session · {name}",
     "ticketList": "Tickets",
+    "locateTicketMessage": "Locate the latest message for {name}",
     "archiveTicket": "Archive ticket",
     "restoreTicket": "Restore ticket",
     "archivedTickets": "Archived ({count})",

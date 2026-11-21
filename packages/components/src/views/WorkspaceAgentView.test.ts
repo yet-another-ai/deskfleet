@@ -920,16 +920,78 @@ test("the header opens ticket details outside the scrolling conversation and tog
   expect(panel.element.isConnected).toBe(false)
 })
 
+async function openTicketList() {
+  const header = wrapper.get("header button")
+  await header.trigger("click")
+  await flushPromises()
+  return new DOMWrapper(document.getElementById(header.attributes("aria-controls")!)!)
+}
+
+function locateButton(panel: DOMWrapper<Element>, job: SuperTicket) {
+  const label = i18n.global.t("superAgent.locateTicketMessage", { name: job.title })
+  return panel.get(`button[aria-label="${label}"]`)
+}
+
+test.each([false, true])("locates each ticket's latest displayed message without changing the project draft (mobile=%s)", async mobile => {
+  const first = ticket("First"), second = ticket("Second"), third = ticket("Third"), empty = ticket("Empty")
+  const { api, router } = await setup(room({ tickets: [first, second, third, empty], messages: [
+    message("split", { state: "assigned" }),
+    ...[first, second].map(job => message("dispatch-" + job.id, { role: "assistant", kind: "dispatch", ticketId: job.id, sourceMessageId: "split" })),
+    message("first-result", { role: "worker", workerEvent: "result", ticketId: first.id, sourceMessageId: "split" }),
+    message("third-request", { ticketId: third.id }),
+    message("third-answer", { role: "assistant", sourceMessageId: "third-request" }),
+    message("receipt", { role: "worker", kind: "delivery", ticketId: first.id, sourceMessageId: "split" }),
+    message("unrelated"),
+  ] }), "team", mobile)
+  await wrapper.get("textarea").setValue("Draft in progress")
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const panel = await openTicketList()
+  const locate = locateButton(panel, first)
+  expect(locate.text()).toBe("")
+  expect(locate.get("svg").attributes("aria-hidden")).toBe("true")
+  expect(locateButton(panel, empty).attributes("aria-disabled")).toBe("true")
+  await locateButton(panel, empty).trigger("click")
+  expect(scroll).not.toHaveBeenCalled()
+  for (const [job, target] of [[first, "first-result"], [second, "split"], [third, "third-answer"]] as const) {
+    await locateButton(job === first ? panel : await openTicketList(), job).trigger("click")
+    await flushPromises()
+    const element = wrapper.get(`[data-super-message="${target}"]`).element
+    expect(scroll.mock.contexts).toContain(element)
+    expect(wrapper.get("[data-conversation-located]").element).toBe(element)
+    expect(wrapper.get("header button").attributes("aria-expanded")).toBe("false")
+  }
+  expect(wrapper.get("textarea").element.value).toBe("Draft in progress")
+  expect(router.currentRoute.value.name).toBe("workspace-agent")
+  expect(api.send).not.toHaveBeenCalled()
+  expect(api.archiveTicket).not.toHaveBeenCalled()
+})
+
+test("locating archived history reveals the latest message inside its collapsed approval group", async () => {
+  const job = { ...ticket("Archive review"), archiveState: "archived" as const }
+  const receipt = (id: string) => message(id, { role: "worker", ticketId: job.id, workerEvent: "permission", turnId: "1" })
+  await setup(room({ tickets: [job], messages: [
+    receipt("first-approval"), message("interleaved", { ticketId: job.id }), receipt("latest-approval"), message("other"),
+  ] }))
+  const group = wrapper.get('[data-approval-history="first-approval"] button')
+  expect(group.attributes("aria-expanded")).toBe("false")
+  expect(wrapper.find('[data-super-message="latest-approval"]').exists()).toBe(false)
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => {})
+  const panel = await openTicketList()
+  await panel.get("summary").trigger("click")
+  await locateButton(panel, job).trigger("click")
+  await flushPromises()
+  expect(group.attributes("aria-expanded")).toBe("true")
+  const target = wrapper.get('[data-super-message="latest-approval"]')
+  expect(scroll.mock.contexts).toContain(target.element)
+  expect(target.attributes("data-conversation-located")).toBe("true")
+  expect(wrapper.get("header button").text()).toBe(i18n.global.t("superAgent.tickets", { count: 0 }))
+})
+
 test.each([false, true])("archives from ticket details and restores from an empty active list (mobile=%s)", async mobile => {
   const job = { ...ticket("Inspect export"), sessionId: "4", workerContext: "worktree" as const }
   const { api } = await setup(room({ supportsTicketArchive: true, tickets: [job], messages: [message("Original request", { ticketId: job.id })] }), "team", mobile)
   const doc = new DOMWrapper(document.body)
   const header = wrapper.get("header button")
-  const openList = async () => {
-    await header.trigger("click")
-    await flushPromises()
-    return new DOMWrapper(document.getElementById(header.attributes("aria-controls")!)!)
-  }
   const choose = async (item: Pick<DOMWrapper<Element>, "get">) => {
     await item.get("summary").trigger("click")
     await item.get("button").trigger("click")
@@ -937,18 +999,18 @@ test.each([false, true])("archives from ticket details and restores from an empt
     return doc.get('[role="dialog"]')
   }
   expect(header.text()).toBe(i18n.global.t("superAgent.tickets", { count: 1 }))
-  let dialog = await choose((await openList()).get("details"))
+  let dialog = await choose((await openTicketList()).get("details"))
   expect(dialog.text()).toContain(i18n.global.t("agent.archiveWorktreeQuestion"))
   await dialog.get("[data-confirm-cancel]").trigger("click")
   await flushPromises()
   expect(api.archiveTicket).not.toHaveBeenCalled()
-  dialog = await choose((await openList()).get("details"))
+  dialog = await choose((await openTicketList()).get("details"))
   await dialog.findAll("button").at(-1)!.trigger("click")
   await flushPromises()
   expect(api.archiveTicket).toHaveBeenCalledExactlyOnceWith({ workspaceId: "A", ticketId: job.id, sessionId: "4", archived: true, operationId: expect.any(String) })
   expect(header.text()).toBe(i18n.global.t("superAgent.tickets", { count: 0 }))
   expect(wrapper.get('[data-super-message="Original request"]').text()).toContain("Original request")
-  const group = (await openList()).get("details")
+  const group = (await openTicketList()).get("details")
   expect(group.attributes("open")).toBeUndefined()
   expect(group.get("summary").text()).toBe(i18n.global.t("superAgent.archivedTickets", { count: 1 }))
   await group.get("summary").trigger("click")
@@ -965,15 +1027,10 @@ test.each([false, true])("archives the chosen collapsed ticket from its own butt
   const first = ticket("First task")
   const second = { ...ticket("Second task with a long title"), sessionId: "7", workerContext: "directory" as const }
   const { api } = await setup(room({ supportsTicketArchive: true, tickets: [first, second] }), "team", mobile)
-  const header = wrapper.get("header button")
-  const openList = async () => {
-    await header.trigger("click")
-    await flushPromises()
-    return new DOMWrapper(document.getElementById(header.attributes("aria-controls")!)!)
-  }
-  const panel = await openList()
-  const buttons = panel.findAll("button[aria-label]")
+  const panel = await openTicketList()
   const label = i18n.global.t("superAgent.archiveTicket")
+  const archiveSelector = `button[aria-label^="${label} · "]`
+  const buttons = panel.findAll(archiveSelector)
   expect(buttons.map(button => button.attributes("aria-label"))).toEqual([`${label} · ${first.title}`, `${label} · ${second.title}`])
   const disclosure = panel.findAll("details")[1]!.element
   expect(disclosure.open).toBe(false)
@@ -987,7 +1044,7 @@ test.each([false, true])("archives the chosen collapsed ticket from its own butt
   await dialog.findAll("button").at(-1)!.trigger("click")
   await flushPromises()
   expect(api.archiveTicket).toHaveBeenCalledExactlyOnceWith({ workspaceId: "A", ticketId: second.id, sessionId: "7", archived: true, operationId: expect.any(String) })
-  expect((await openList()).findAll("button[aria-label]").map(button => button.attributes("aria-label"))).toEqual([`${label} · ${first.title}`])
+  expect((await openTicketList()).findAll(archiveSelector).map(button => button.attributes("aria-label"))).toEqual([`${label} · ${first.title}`])
 })
 
 test("a result from an older machine has no review badge and its Worker details still open", async () => {
@@ -1005,7 +1062,8 @@ test("a result from an older machine has no review badge and its Worker details 
   await flushPromises()
   const panel = new DOMWrapper(document.getElementById(trigger.attributes("aria-controls")!)!)
   expect(panel.get("summary").text()).toBe("repair")
-  expect(panel.find("button[aria-label]").exists()).toBe(false)
+  expect(panel.find(`button[aria-label^="${i18n.global.t("superAgent.archiveTicket")} · "]`).exists()).toBe(false)
+  expect(locateButton(panel, job).attributes("aria-disabled")).toBeUndefined()
 })
 
 async function projectRow(id: string) {

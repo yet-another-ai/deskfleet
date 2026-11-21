@@ -66,6 +66,7 @@
     "approvalsHandled": "ツールの承認 {count} 件を処理済み",
     "openTicketSession": "セッションを開く · {name}",
     "ticketList": "チケット",
+    "locateTicketMessage": "「{name}」の最新メッセージに移動",
     "archiveTicket": "チケットをアーカイブ",
     "restoreTicket": "チケットを復元",
     "archivedTickets": "アーカイブ済み（{count}）",

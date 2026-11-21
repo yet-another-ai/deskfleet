@@ -46,7 +46,10 @@ An Antigravity execution provider exposes the standard Gemini model table in the
 The conversation header counts active tickets in the current workspace.
 Its button opens a popover at the header, independent of the conversation's scroll
 position. Expanding a ticket shows its scope, latest result or progress, and
-linked Worker session when one exists. A successful Worker turn clears the
+linked Worker session when one exists. The map pin beside an active or archived
+ticket closes the list and scrolls to its latest message in this conversation.
+The message is briefly highlighted. If it belongs to a collapsed group of tool
+approvals, that group opens. A successful Worker turn clears the
 ticket's status. Its result stays in the conversation and the ticket can be
 continued, including by quoting that result.
 

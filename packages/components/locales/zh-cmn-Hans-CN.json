@@ -66,6 +66,7 @@
     "approvalsHandled": "已处理 {count} 次授权",
     "openTicketSession": "打开执行会话 · {name}",
     "ticketList": "事项",
+    "locateTicketMessage": "定位到「{name}」的最后一条消息",
     "archiveTicket": "归档事项",
     "restoreTicket": "恢复事项",
     "archivedTickets": "已归档（{count}）",

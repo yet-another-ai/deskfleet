@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Archive, ArrowRight, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Folder, MessagesSquare, X } from "@lucide/vue"
+import { Archive, ArrowRight, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Folder, MapPin, MessagesSquare, X } from "@lucide/vue"
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from "reka-ui"
-import { useOnline, useResizeObserver } from "@vueuse/core"
+import { useOnline, useResizeObserver, useTimeoutFn } from "@vueuse/core"
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink, useRouter } from "vue-router"
@@ -142,6 +142,14 @@ const target = ref("")
 const details = ref<string>()
 const busy = computed(() => sending.value || saving.value || !!offlineMachine.value)
 const rows = computed(() => workspaceMessageRows(messages.value, tickets.value, localStops.value))
+const lastMessageByTicket = computed(() => {
+  const latest = new Map<string, string>()
+  for (const { message, ticket, jobs } of rows.value) {
+    if (ticket) latest.set(ticket.id, message.id)
+    for (const job of jobs) latest.set(job.ticket.id, message.id)
+  }
+  return latest
+})
 const supportsStop = computed(() => !!props.api.stop && snapshot.value?.supportsStop === true)
 const stopChoices = computed(() => supportsStop.value ? rows.value.flatMap(({ progress }) =>
   progress && stoppableSteps(progress).length ? [progress] : []) : [])
@@ -162,6 +170,8 @@ function composerStop() {
 }
 const transcriptGroups = computed(() => groupWorkspaceApprovals(rows.value))
 const expandedApprovals = ref(new Set<string>())
+const locatedMessage = ref<string>()
+const { start: clearHighlightLater } = useTimeoutFn(() => { locatedMessage.value = undefined }, 2000, { immediate: false })
 watch(attachmentScope, () => expandedApprovals.value.clear())
 function toggleApprovals(id: string) {
   if (expandedApprovals.value.has(id)) expandedApprovals.value.delete(id)
@@ -210,11 +220,24 @@ function followScroll() {
   }
 }
 function locateEntry(id: string) {
+  const entry = transcript.value?.querySelector<HTMLElement>(`[data-super-message="${CSS.escape(id)}"]`)
+  if (!entry) return
   spring?.cancel()
   spring = undefined
   stickToBottom.value = false
-  entries().find(item => item.dataset.conversationEntry === id)?.scrollIntoView({ block: "start", behavior: "instant" })
-  activeEntry.value = id
+  entry.scrollIntoView({ block: "start", behavior: "instant" })
+  activeEntry.value = entry.dataset.outlineSource
+}
+async function locateTicket(ticketId: string) {
+  const id = lastMessageByTicket.value.get(ticketId)
+  if (!id) return
+  const group = transcriptGroups.value.find(group => group.approvals && group.rows.some(row => row.message.id === id))
+  if (group) expandedApprovals.value.add(group.id)
+  ticketMenuOpen.value = false
+  locatedMessage.value = id
+  await nextTick()
+  locateEntry(id)
+  clearHighlightLater()
 }
 function scrollToBottom() {
   const el = viewport.value
@@ -298,9 +321,9 @@ function canCorrect(message: SuperMessage) {
             <template v-for="group in [{ archived: false, items: activeTickets }, { archived: true, items: archivedTickets }]" :key="String(group.archived)">
               <component :is="group.archived ? 'details' : 'div'" v-if="group.items.length">
                 <summary v-if="group.archived" :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer py-1.5 text-sm text-ui-text-muted">{{ t("superAgent.archivedTickets", { count: group.items.length }) }}</summary>
-                <div v-for="ticket in group.items" :key="ticket.id" class="relative">
-                  <details class="break-words py-1.5">
-                    <summary :class="[touchWorkspace && 'min-h-11 py-2', !group.archived && canChangeTicketArchive(ticket) && (touchWorkspace ? 'pr-12' : 'pr-8')]" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="ticket.archiveState === 'archiving'" class="text-ui-text-muted">{{ t('superAgent.archivingTicket') }}</small><small v-else-if="!ticket.archiveState && hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
+                <div v-for="ticket in group.items" :key="ticket.id" class="flex items-start gap-1">
+                  <details class="min-w-0 flex-1 break-words py-1.5">
+                    <summary :class="touchWorkspace && 'min-h-11 py-2'" class="cursor-pointer text-sm font-medium">{{ ticket.title }} <small v-if="ticket.archiveState === 'archiving'" class="text-ui-text-muted">{{ t('superAgent.archivingTicket') }}</small><small v-else-if="!ticket.archiveState && hasTicketStatus(ticket.status)" class="text-ui-text-muted">{{ t(`superAgent.status.${ticket.status}`) }}</small></summary>
                     <p class="my-1.5 whitespace-pre-wrap text-sm">{{ ticket.scope }}</p>
                     <p v-if="ticket.latestAcceptance" class="my-1 select-text whitespace-pre-wrap text-sm">{{ t('superAgent.acceptance', { text: ticket.latestAcceptance }) }}</p>
                     <p v-if="ticket.summary && ticket.summary !== ticket.scope" class="my-1.5 whitespace-pre-wrap text-sm text-ui-text-muted">{{ progressText(ticket.summary) }}</p>
@@ -311,11 +334,17 @@ function canCorrect(message: SuperMessage) {
                       <span v-else-if="ticket.archiveState && ticket.sessionId && !ticket.workerContext" class="text-ui-text-muted">{{ t('superAgent.workerUnavailable') }}</span>
                     </div>
                   </details>
-                  <UiButton v-if="!group.archived && canChangeTicketArchive(ticket)" variant="ghost" size="icon"
-                    class="absolute right-0 top-0.5" :class="touchWorkspace && 'min-h-11 min-w-11'"
-                    :label="t('superAgent.archiveTicket') + ' · ' + ticket.title" :disabled="busy" @click="chooseArchive(ticket)">
-                    <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
-                  </UiButton>
+                  <div class="mt-0.5 flex shrink-0 items-center">
+                    <UiButton variant="ghost" size="icon" :class="touchWorkspace && 'min-h-11 min-w-11'"
+                      :label="t('superAgent.locateTicketMessage', { name: ticket.title })" :disabled="!lastMessageByTicket.has(ticket.id)" @click="locateTicket(ticket.id)">
+                      <MapPin :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    </UiButton>
+                    <UiButton v-if="!group.archived && canChangeTicketArchive(ticket)" variant="ghost" size="icon"
+                      :class="touchWorkspace && 'min-h-11 min-w-11'"
+                      :label="t('superAgent.archiveTicket') + ' · ' + ticket.title" :disabled="busy" @click="chooseArchive(ticket)">
+                      <Archive :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    </UiButton>
+                  </div>
                 </div>
               </component>
             </template>
@@ -344,8 +373,8 @@ function canCorrect(message: SuperMessage) {
               </button>
             </li>
           <template v-for="{ message, progress, ticket, sessions, detailSummary, jobs, fork, workerMissing, workerFailure, perTicketFailures } in (!group.approvals || expandedApprovals.has(group.id) ? group.rows : [])" :key="message.id">
-            <li :data-super-message="message.id" :data-outline-source="sourceForOutline(message)" :data-conversation-entry="message.role === 'user' ? message.id : undefined" class="min-w-0 scroll-mt-6"
-              :class="{ 'workspace-touch-actions': touchWorkspace, 'ui-conversation-history': !progress && message.id !== rows.at(-1)?.message.id && details !== message.id && activeEntry !== message.id, 'ui-conversation-input': message.role === 'user' }">
+            <li :data-super-message="message.id" :data-conversation-located="locatedMessage === message.id || undefined" :data-outline-source="sourceForOutline(message)" :data-conversation-entry="message.role === 'user' ? message.id : undefined" class="min-w-0 scroll-mt-6"
+              :class="{ 'workspace-touch-actions': touchWorkspace, 'ui-conversation-history': !progress && message.id !== rows.at(-1)?.message.id && details !== message.id && activeEntry !== message.id && locatedMessage !== message.id, 'ui-conversation-input': message.role === 'user' }">
               <WorkspaceMessage :resource-target="message.role === 'worker' ? resourceTarget : undefined" :read-attachment="readAttachment" :message="message" :touch="touchWorkspace" :animate-send="message.id === lastUserMessage" :can-fork="!!fork && supportsFork(fork.sessionId)" :fork-disabled="!!offlineMachine"
                 @quote="quote(message)" @fork="fork && openFork(fork.sessionId, fork.turnId)">
                 <template #heading>
