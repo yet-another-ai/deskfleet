@@ -44,13 +44,14 @@ function open(machineId: string, sessionId: string): void {
   <section v-if="orderedPins.length" :aria-labelledby="id" data-pinned-sessions class="mb-5">
     <h2 :id="id" class="m-0 mb-2 px-2.5 text-xs font-normal text-ui-text-faint">{{ t('pinnedSessions.title') }}</h2>
     <ul class="m-0 flex list-none flex-col gap-1 p-0">
-      <SidebarReorderRow v-for="item in orderedPins" :key="item.id" v-slot="{ handle }" as="li" :group="pinnedSessionOrderGroup" :id="item.id" :items="orderedPins" :label="pinLabel(item)" :data-pinned-machine="item.machineId" :data-pinned-session="item.sessionId" class="group">
+      <SidebarReorderRow v-for="item in orderedPins" :key="item.id" v-slot="{ source }" as="li" :group="pinnedSessionOrderGroup" :id="item.id" :items="orderedPins" :data-pinned-machine="item.machineId" :data-pinned-session="item.sessionId">
         <SessionContextMenu :machine-id="item.machineId" :session-id="item.sessionId" :title="item.title" :context="item.context" :archive-state="item.archiveState" :disabled="!item.online || !item.loaded">
           <SessionHoverTooltip :machine-id="item.machineId" :session-id="item.sessionId" :title="pinLabel(item)" :machine-name="item.machineName" :online="item.online" :context="item.context">
             <button
+              v-bind="source"
               type="button"
               class="ui-nav-item w-full px-2.5 text-left"
-              :class="[active(item.machineId, item.sessionId) && 'ui-nav-active', orderedPins.length > 1 && 'pr-9']"
+              :class="active(item.machineId, item.sessionId) && 'ui-nav-active'"
               :aria-current="active(item.machineId, item.sessionId) ? 'page' : undefined"
               @click="open(item.machineId, item.sessionId)"
             >
@@ -66,9 +67,6 @@ function open(machineId: string, sessionId: string): void {
             </button>
           </SessionHoverTooltip>
         </SessionContextMenu>
-        <div v-if="orderedPins.length > 1" class="absolute inset-y-0 right-1 flex items-center op-0 ui-motion group-hover:op-100 group-focus-within:op-100">
-          <component :is="handle" />
-        </div>
       </SidebarReorderRow>
     </ul>
   </section>

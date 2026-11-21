@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { GripVertical } from "@lucide/vue"
-import { computed, h, nextTick, onBeforeUnmount, shallowRef, type FunctionalComponent } from "vue"
-import { useI18n } from "vue-i18n"
+import { computed, nextTick, onBeforeUnmount, shallowRef, type HTMLAttributes } from "vue"
 import { useSidebarOrder } from "../../composables/useSidebarOrder.ts"
 
 type Edge = "before" | "after"
 type DragSource = { group: string; id: string }
+type SourceAttrs = HTMLAttributes & { "data-sidebar-reorder-source"?: "" }
 
 const props = withDefaults(defineProps<{
   as?: "div" | "li"
   group: string
   id: string
-  label: string
   items: readonly { id: string }[]
 }>(), { as: "div" })
-defineSlots<{ default: (props: { handle: FunctionalComponent }) => unknown }>()
+defineSlots<{ default: (props: { source: SourceAttrs }) => unknown }>()
 
-const { t } = useI18n()
 const { drag, move } = useSidebarOrder()
 const rowSelector = "[data-sidebar-reorder-group]"
 const hover = shallowRef<{ source: DragSource; edge: Edge }>()
@@ -31,6 +28,8 @@ function startDrag(event: DragEvent): void {
   if (!transfer) return
   event.stopPropagation()
   transfer.effectAllowed = "move"
+  // Draggable anchors start with link data. Keep the drag local to sidebar ordering.
+  transfer.clearData()
   transfer.setData("application/x-deskfleet-sidebar-order", props.id)
   const row = (event.currentTarget as HTMLElement).closest(rowSelector)
   if (row) {
@@ -76,9 +75,10 @@ function drop(event: DragEvent): void {
 }
 
 function keydown(event: KeyboardEvent): void {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
   if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
-  const button = event.currentTarget as HTMLElement
-  const row = button.closest<HTMLElement>(rowSelector)
+  const control = event.currentTarget as HTMLElement
+  const row = control.closest<HTMLElement>(rowSelector)
   if (!row) return
 
   event.preventDefault()
@@ -91,27 +91,18 @@ function keydown(event: KeyboardEvent): void {
   const sibling = rows[rows.indexOf(row) + (earlier ? -1 : 1)]
   const targetId = sibling?.dataset.sidebarReorderId
   if (targetId && move(props.group, props.items, props.id, targetId, earlier ? "before" : "after")) {
-    void nextTick(() => button.focus())
+    void nextTick(() => control.focus())
   }
 }
 
-const handle: FunctionalComponent = () => {
-  if (props.items.length < 2) return null
-  const label = t("sidebar.reorderItem", { name: props.label })
-  return h("button", {
-    type: "button",
-    draggable: true,
-    class: "sidebar-reorder-handle ui-button-ghost h-7 w-7 shrink-0 p-0",
-    "data-sidebar-reorder-handle": "",
-    "aria-label": label,
-    "aria-keyshortcuts": "ArrowUp ArrowDown",
-    title: label,
-    onClick: (event: MouseEvent) => event.stopPropagation(),
-    onDragstart: startDrag,
-    onDragend: endDrag,
-    onKeydown: keydown,
-  }, [h(GripVertical, { size: 15, "stroke-width": 1.75, "aria-hidden": "true" })])
-}
+const source = computed<SourceAttrs>(() => props.items.length < 2 ? { draggable: false } : {
+  draggable: true,
+  "data-sidebar-reorder-source": "",
+  "aria-keyshortcuts": "Alt+ArrowUp Alt+ArrowDown",
+  onDragstart: startDrag,
+  onDragend: endDrag,
+  onKeydown: keydown,
+})
 </script>
 
 <template>
@@ -125,7 +116,7 @@ const handle: FunctionalComponent = () => {
     @dragleave="dragLeave"
     @drop="drop"
   >
-    <slot :handle="handle" />
+    <slot :source="source" />
   </component>
 </template>
 
@@ -143,10 +134,4 @@ const handle: FunctionalComponent = () => {
 
 .sidebar-reorder-row[data-sidebar-reorder-edge="before"]::after { top: -1px; }
 .sidebar-reorder-row[data-sidebar-reorder-edge="after"]::after { bottom: -1px; }
-.sidebar-reorder-row :deep(.sidebar-reorder-handle[draggable="true"]) { cursor: grab; }
-.sidebar-reorder-row :deep(.sidebar-reorder-handle[draggable="true"]:active) { cursor: grabbing; }
-
-@media (hover: hover) {
-  .sidebar-reorder-row:not(:hover, :focus-within) :deep(.sidebar-reorder-handle) { opacity: 0; }
-}
 </style>

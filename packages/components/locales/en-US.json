@@ -2192,7 +2192,6 @@
     "filterEmptyUnread": "No unread sessions",
     "filterEmptyWorking": "No active sessions",
     "showAllSessions": "Show all",
-    "reorderItem": "Reorder {name}",
     "showMoreSessions": "Show {count} more",
     "showFewerSessions": "Show less"
   }

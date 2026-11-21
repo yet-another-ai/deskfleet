@@ -65,7 +65,7 @@ Closing the desktop window keeps DeskFleet in the system tray so running agent s
    - **New worktree**: Creates an isolated Git checkout branched from committed `HEAD` so parallel sessions never conflict.
    - **Working directory**: Works directly inside the workspace's existing directories, including any uncommitted changes.
 
-To reorder the sidebar, drag a row by its grip. You can also focus the grip and press Up or Down. Machines reorder within their team, workspaces within their machine, and sessions within their current list. DeskFleet remembers each team's order on the device you used to set it.
+To reorder the sidebar, drag a row by its main button or link. You can also focus the row and press Alt+Up or Alt+Down. Machines reorder within their team, workspaces within their machine, and sessions within their current list. DeskFleet remembers each team's order on the device you used to set it.
 
 ## Add a headless machine
 
