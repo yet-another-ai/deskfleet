@@ -23,7 +23,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    sourceSets.getByName("main").java.srcDir(layout.buildDirectory.dir("generated/nsh/java"))
+    sourceSets.getByName("main").java.srcDir(layout.buildDirectory.dir("generated/nsh/java").get().asFile)
 }
 
 // The published Cargo crate contains the Java runtime matching its JNI ABI.
