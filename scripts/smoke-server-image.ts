@@ -34,6 +34,14 @@ try {
       return false
     }
   })
+  const containerHealth = docker(
+    "exec",
+    server,
+    "bash",
+    "-c",
+    "curl -fsS http://127.0.0.1:8080/healthz | jq -er '.status == \"ok\" and .protocol_version == 1'",
+  )
+  assert.equal(containerHealth, "true", "Server image must include bash, curl, and jq for health checks")
   const origin = `http://127.0.0.1:${port}`
   const homepage = await fetch(origin, { signal: AbortSignal.timeout(5_000) })
   assert.equal(homepage.status, 200)

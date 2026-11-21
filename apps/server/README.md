@@ -173,7 +173,8 @@ Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-server` for
 `linux/amd64` and `linux/arm64`. The image contains the server binary and Web
 build from the same release run. Web files live at `/usr/share/deskfleet/web`
 and are served by the single Actix process. It runs as UID/GID `10001:10001`
-and listens on `0.0.0.0:8080` inside the container.
+and listens on `0.0.0.0:8080` inside the container. `bash`, `curl`, and `jq` are
+included for container health checks against `http://127.0.0.1:8080/healthz`.
 
 To enable the hosted Super Agent, deploy the matching
 `ghcr.io/yet-another-ai/deskfleet-super-agent` tag on the API's private network.

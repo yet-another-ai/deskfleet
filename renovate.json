@@ -21,6 +21,14 @@
     "pnpm": "12.15.0",
     "rust": "1.99.1"
   },
+  "nix": {
+    "enabled": true,
+    "lockFileMaintenance": {
+      "enabled": true,
+      "groupName": "nix",
+      "extends": ["schedule:monthly"]
+    }
+  },
   "lockFileMaintenance": {
     "enabled": true,
     "groupName": "lock"
@@ -34,6 +42,12 @@
       "matchManagers": ["github-actions"],
       "groupName": "actions",
       "pinDigests": false,
+      "extends": ["schedule:monthly"]
+    },
+    {
+      "description": "Group Nix flake lock updates separately on a monthly schedule so nixpkgs updates stay isolated from weekly Cargo and npm updates.",
+      "matchManagers": ["nix"],
+      "groupName": "nix",
       "extends": ["schedule:monthly"]
     },
     {

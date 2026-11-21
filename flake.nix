@@ -44,12 +44,17 @@
             inherit (nodeToolchain) nodejs pnpm;
             inherit (pnpmLock) importPnpmLock iplConfigHook;
           };
-          server-image = pkgs.callPackage ./nix/server-image.nix { inherit server web; };
+          containerRuntime = pkgs.callPackage ./nix/container-runtime.nix { };
+          server-image = pkgs.callPackage ./nix/server-image.nix {
+            inherit containerRuntime server web;
+          };
           super-agent = pkgs.callPackage ./nix/super-agent.nix {
             inherit (nodeToolchain) nodejs pnpm;
             inherit (pnpmLock) importPnpmLock iplConfigHook;
           };
-          super-agent-image = pkgs.callPackage ./nix/super-agent-image.nix { inherit super-agent; };
+          super-agent-image = pkgs.callPackage ./nix/super-agent-image.nix {
+            inherit containerRuntime super-agent;
+          };
         in
         {
           inherit
