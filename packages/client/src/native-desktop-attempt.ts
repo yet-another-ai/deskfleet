@@ -230,6 +230,7 @@ export function openNativeDesktopAttempt(
     const display = capabilities.displays.find(display => display.id === request.displayId)
     update({
       title: machine.name,
+      platform: typeof machine.capabilities?.platform === "string" ? machine.capabilities.platform : undefined,
       displays: capabilities.displays.map(({ id, name, displayNumber, width, height }) => ({ id, name, displayNumber, width, height })),
       secureAttention: machine.capabilities?.platform === "win32" && capabilities.secureAttention === true,
     })

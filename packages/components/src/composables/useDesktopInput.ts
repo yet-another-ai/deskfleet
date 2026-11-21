@@ -1,5 +1,6 @@
 import { useDocumentVisibility, useEventListener, watchImmediate } from "@vueuse/core"
-import { onScopeDispose, watch, type Ref } from "vue"
+import { onScopeDispose, ref, watch, type Ref } from "vue"
+import { useDesktopTouch, type DesktopPointerMode } from "./useDesktopTouch.ts"
 import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPointerButton } from "../../../client/src/desktop-input.ts"
 
 interface Point { x: number; y: number }
@@ -36,12 +37,13 @@ export function useDesktopInput(
   reverseScroll?: Readonly<Ref<boolean>>,
   clipboardSharing?: Readonly<Ref<boolean>>,
   remoteClipboard?: Readonly<Ref<{ id: number; text: string } | null>>,
+  pointerMode: Readonly<Ref<DesktopPointerMode>> = ref("absolute"),
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
   const pointers = new Set<number>()
   const macClient = navigator.platform.startsWith("Mac")
-  let lastPoint: Point = { x: 0, y: 0 }
+  let lastPoint: Point = { x: 0.5, y: 0.5 }
   let lastObservedLocal: string | null = null
   let lastRemoteSynced: string | null = null
   let baselineSeeded = false
@@ -170,6 +172,7 @@ export function useDesktopInput(
   }
 
   function release(): void {
+    touch.release()
     clearPasteBarrier()
     if (buttons.size || keys.size) send({ type: "releaseAll" })
     buttons.clear()
@@ -226,6 +229,7 @@ export function useDesktopInput(
   }
 
   function pointerUp(event: PointerEvent): void {
+    if (event.pointerType === "touch") return
     const button = pointerButton(event.button)
     if (button === null || !buttons.has(button)) return
     event.preventDefault()
@@ -321,6 +325,8 @@ export function useDesktopInput(
   function lostPointerCapture(event: PointerEvent): void {
     if (pointers.has(event.pointerId)) release()
   }
+
+  const touch = useDesktopTouch(video, enabled, pointerMode, send, () => lastPoint, point => { lastPoint = point }, reverseScroll)
 
   // Replacing the surface drops keys and buttons before the listeners move with it.
   watchImmediate(video, (_element, _previous, onCleanup) => { onCleanup(release) }, { flush: "post" })

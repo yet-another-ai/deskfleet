@@ -46,6 +46,12 @@ impl Input {
         InputEvent::ReleaseAll
     }
 
+    /// Entering local UI releases captured input once. Repeated local renders
+    /// must not cancel complete Hacker Keyboard chords waiting in the queue.
+    pub(crate) fn release_for_local_ui(&mut self, captured_keyboard: bool) -> Option<InputEvent> {
+        (captured_keyboard || self.buttons != 0).then(|| self.release())
+    }
+
     pub(crate) fn mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -163,6 +169,56 @@ mod tests {
     fn video() -> Bounds<Pixels> {
         // A 16:9 image letterboxed in an 800×600 logical-pixel window.
         Bounds::new(point(px(0.), px(75.)), size(px(800.), px(450.)))
+    }
+
+    #[tokio::test]
+    async fn local_ui_updates_preserve_complete_hacker_chords_in_the_session_queue() {
+        let mut input = active();
+        let (sender, mut receiver) = crate::input_queue::channel();
+        let held = InputEvent::Key {
+            code: "AltLeft".into(),
+            pressed: true,
+            repeat: false,
+        };
+        sender.send(input.prepare(held).unwrap()).unwrap();
+        // Opening local UI cancels a captured physical press before a new chord.
+        let release = input.release_for_local_ui(true).unwrap();
+        sender.send(input.prepare(release).unwrap()).unwrap();
+        let chord = crate::nsh_keyboard::key_events([true, false, false, false], "Tab");
+        for event in chord.iter().cloned() {
+            if let Some(event) = input.prepare(event) {
+                sender.send(event).unwrap();
+            }
+        }
+        // FrameReady, layout updates, and pointer motion inside the keyboard
+        // leave physical capture disabled while the session drains the chord.
+        for _ in 0..100 {
+            if let Some(event) = input.release_for_local_ui(false) {
+                sender.send(input.prepare(event).unwrap()).unwrap();
+            }
+        }
+        drop(sender);
+        for event in chord {
+            assert_eq!(receiver.recv().await.unwrap(), Some(event));
+        }
+        assert_eq!(receiver.recv().await.unwrap(), None);
+    }
+
+    #[test]
+    fn local_ui_releases_a_remote_drag_without_physical_keyboard_capture() {
+        let mut input = active();
+        input.mouse_down(
+            &MouseDownEvent {
+                position: point(px(400.), px(300.)),
+                ..Default::default()
+            },
+            video(),
+        );
+        assert_eq!(
+            input.release_for_local_ui(false),
+            Some(InputEvent::ReleaseAll)
+        );
+        assert_eq!(input.release_for_local_ui(false), None);
     }
 
     #[test]

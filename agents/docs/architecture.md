@@ -36,11 +36,16 @@ and GPU presentation. The machine daemon continues running inside Electron's
 main process. Native viewer closure releases that viewing session without
 changing the daemon's lifetime.
 
-The native desktop viewer uses a GPUI host with a pure-Rust NSH floating
-toolbar. Its video scene and toolbar share one window compositor; decoded pixels
-stay in Rust and never pass through the NSH engine. The toolbar uses the shared
-desktop translations and theme, with display selection, control settings,
-pause/resume, full screen, and disconnect/reconnect. One viewer process keeps
+Native viewers share a pure-Rust NSH control surface: the floating toolbar, its
+Control, Config, and Monitor dropdowns, and the Hacker Keyboard use the same
+components, translations, theme, and typed actions. Desktop hosts these components in GPUI; Android mounts NSH's native
+views over its video surface, and iOS mounts NSH's UIKit view over its Metal view.
+Platform hosts own window and surface lifetimes, local input state, touch gestures,
+and the system IME bridge. Decoded pixels stay in Rust and never pass through the
+NSH engine. Control gathers input (pointer, keyboards, shortcuts, clipboard, and
+mobile pinch zoom); Config gathers display, control permission, full screen, and
+the connection; Monitor shows receiver-side stream health.
+One desktop viewer process keeps
 its window while Electron replaces or stops the receiving peer. Per-window
 platform hooks forward physical keyboard positions through the existing input
 contract. The [native viewer guide](media.md) records runtime validation and

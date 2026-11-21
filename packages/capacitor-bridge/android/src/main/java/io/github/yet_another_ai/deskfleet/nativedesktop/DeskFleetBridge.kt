@@ -26,6 +26,8 @@ import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.lang.ref.WeakReference
 import java.util.UUID
+import org.json.JSONObject
+import com.longbridge.nsh.NshView
 
 @CapacitorPlugin(
     name = "DeskFleetBridge",
@@ -202,6 +204,8 @@ class DeskFleetBridge : Plugin() {
     fun open(call: PluginCall) {
         val currentActivity = activity ?: return call.reject("Activity unavailable")
         runCatching {
+            activeViewerPlugin = WeakReference(this)
+            viewerUiState = null
             nativeStart(this)
             currentActivity.startActivity(Intent(currentActivity, RemoteDesktopActivity::class.java))
         }.fold({ call.resolve() }, { call.reject(it.message ?: "Failed to open native desktop") })
@@ -211,7 +215,15 @@ class DeskFleetBridge : Plugin() {
     fun send(call: PluginCall) {
         val command = call.getString("command")?.takeIf { it.isNotEmpty() }
             ?: return call.reject("Missing command payload")
-        runCatching { nativeSendCommand(command) }
+        runCatching {
+            val value = JSONObject(command)
+            if (value.optString("type") == "ui") {
+                val state = value.getJSONObject("state")
+                viewerUiState = state
+                activeActivity?.get()?.applyUiState(state)
+            }
+            nativeSendCommand(command)
+        }
             .fold({ call.resolve() }, { call.reject(it.message ?: "Failed to send command") })
     }
 
@@ -317,13 +329,16 @@ class DeskFleetBridge : Plugin() {
 
     companion object {
         init {
-            System.loadLibrary("deskfleet_desktop_viewer")
+            // The viewer and NSH share one native library and one set of runtime globals.
+            System.loadLibrary("nsh")
         }
 
         // Activity results and service start commands both run on the main thread.
         private var pendingOutlineStartCall: PluginCall? = null
 
         @Volatile internal var activeActivity: WeakReference<RemoteDesktopActivity>? = null
+        @Volatile internal var viewerUiState: JSONObject? = null
+        @Volatile private var activeViewerPlugin: WeakReference<DeskFleetBridge>? = null
         @Volatile private var activeOutlinePlugin: WeakReference<DeskFleetBridge>? = null
 
         internal fun completeOutlineAudioStart(started: Boolean, errorMessage: String?) {
@@ -347,6 +362,12 @@ class DeskFleetBridge : Plugin() {
                 act.runOnUiThread { if (!act.isFinishing && !act.isDestroyed) act.finish() }
             }
             activeActivity = null
+            viewerUiState = null
+            activeViewerPlugin = null
+        }
+
+        internal fun emitViewerAction(event: JSONObject) {
+            activeViewerPlugin?.get()?.onViewerEvent(event.toString())
         }
 
         @JvmStatic external fun nativeStart(callback: Any)
@@ -356,6 +377,9 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativeSurfaceChanged(width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceDestroyed()
         @JvmStatic external fun nativeTouch(kind: Int, x: Double, y: Double, dx: Double, dy: Double)
+        @JvmStatic external fun nativeAttachControls(view: NshView, callback: Any, stateJson: String): Long
+        @JvmStatic external fun nativeUpdateControls(handle: Long, stateJson: String)
+        @JvmStatic external fun nativeDetachControls(handle: Long)
         @JvmStatic external fun nativeTestNat(server: String): String
     }
 }

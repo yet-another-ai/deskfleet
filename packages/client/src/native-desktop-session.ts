@@ -1,5 +1,6 @@
 import type { CentralApi } from "./central.ts"
 import type { IceCandidate, VideoCodec } from "./desktop-media.ts"
+import type { DesktopInputMessage } from "./desktop-input.ts"
 import { openNativeDesktopAttempt } from "./native-desktop-attempt.ts"
 import type { NativeDesktopRequest } from "./native-desktop.ts"
 import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
@@ -7,6 +8,7 @@ import { PEER_SETUP_TIMEOUT_MS } from "./peer-lifecycle.ts"
 export interface ViewerUiState {
   status: "connecting" | "starting" | "connected" | "disconnected" | "error"
   title: string
+  platform?: string
   codec?: VideoCodec
   displays: { id: number; name?: string; displayNumber?: number; width: number; height: number }[]
   displayId: number
@@ -26,6 +28,9 @@ export type ViewerCommand =
   | { type: "ui"; state: ViewerUiState }
   | { type: "setControl"; control: boolean }
   | { type: "clipboard"; text: string }
+  | { type: "input"; event: DesktopInputMessage }
+  | { type: "text"; text: string; pasteCode: "ControlLeft" | "MetaLeft"; pasteShift?: boolean }
+  | { type: "pauseInput"; paused: boolean }
   | { type: "stop" | "close" }
 
 export type ViewerEvent =

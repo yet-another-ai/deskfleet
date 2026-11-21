@@ -1,32 +1,27 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
-import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.util.TypedValue
-import android.view.GestureDetector
-import android.view.Gravity
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 
 class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
-    private var dragging = false
+    private lateinit var controls: RemoteDesktopControls
+    private lateinit var touch: RemoteDesktopTouch
+    private var fullscreen = true
     private var closeSent = false
     private val clipboardSync = RemoteDesktopClipboard()
     private var clipboardManager: ClipboardManager? = null
@@ -34,123 +29,57 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         syncLocalClipboardToRemote()
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DeskFleetBridge.activeActivity = WeakReference(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        hideSystemBars()
+        updateSystemBars()
 
         val surfaceView = SurfaceView(this).apply {
             holder.addCallback(this@RemoteDesktopActivity)
         }
-        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent) = true
-
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                DeskFleetBridge.nativeTouch(3, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
-                return true
-            }
-
-            override fun onLongPress(e: MotionEvent) {
-                DeskFleetBridge.nativeTouch(4, e.x.toDouble(), e.y.toDouble(), 0.0, 0.0)
-            }
-
-            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-                val x = e2.x.toDouble()
-                val y = e2.y.toDouble()
-                if (e2.pointerCount >= 2) {
-                    if (dragging) {
-                        dragging = false
-                        DeskFleetBridge.nativeTouch(2, x, y, 0.0, 0.0)
-                    }
-                    DeskFleetBridge.nativeTouch(5, x, y, dx.toDouble(), dy.toDouble())
-                } else {
-                    if (!dragging && e1 != null) {
-                        dragging = true
-                        DeskFleetBridge.nativeTouch(1, e1.x.toDouble(), e1.y.toDouble(), 0.0, 0.0)
-                    }
-                    DeskFleetBridge.nativeTouch(0, x, y, 0.0, 0.0)
-                }
-                return true
-            }
-        })
-
-        surfaceView.setOnTouchListener { _, event ->
-            detector.onTouchEvent(event)
-            val action = event.actionMasked
-            if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && dragging) {
-                dragging = false
-                DeskFleetBridge.nativeTouch(2, event.x.toDouble(), event.y.toDouble(), 0.0, 0.0)
-            }
-            true
-        }
-
-        val m = dp(16f)
-        val closeButton = TextView(this).apply {
-            text = "✕"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(dp(12f), dp(6f), dp(12f), dp(6f))
-            gravity = Gravity.CENTER
-            contentDescription = "Disconnect"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18f).toFloat()
-                setColor(Color.argb(140, 20, 20, 24))
-                setStroke(dp(1f), Color.argb(90, 255, 255, 255))
-            }
-            setOnClickListener { requestCloseAndFinish() }
-        }
-        val clipboardButton = TextView(this).apply {
-            text = "📋"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(dp(12f), dp(6f), dp(12f), dp(6f))
-            gravity = Gravity.CENTER
-            contentDescription = "Clipboard sharing"
-            background = GradientDrawable().apply {
-                cornerRadius = dp(18f).toFloat()
-                setColor(Color.argb(140, 20, 20, 24))
-                setStroke(dp(1f), Color.argb(90, 255, 255, 255))
-            }
-            setOnClickListener { syncLocalClipboardToRemote() }
-        }
-
         clipboardManager = getSystemService(ClipboardManager::class.java)?.also {
             it.addPrimaryClipChangedListener(clipListener)
         }
 
-        setContentView(FrameLayout(this).apply {
+        val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(surfaceView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            addView(closeButton, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
-                setMargins(m, m, m, m)
-            })
-            addView(clipboardButton, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP or Gravity.START).apply {
-                setMargins(m + dp(46f), m, m, m)
-            })
-        })
+        }
+        controls = RemoteDesktopControls(root, DeskFleetBridge::nativeSendCommand,
+            DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote(force = true) }, ::requestCloseAndFinish) {
+            fullscreen = !fullscreen
+            updateSystemBars()
+        }
+        touch = RemoteDesktopTouch(surfaceView, controls).also { it.attach() }
+        controls.onRelease = touch::reset
+        setContentView(root)
+        DeskFleetBridge.viewerUiState?.let(controls::applyState)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = requestCloseAndFinish()
+            override fun handleOnBackPressed() {
+                if (!controls.closeKeyboard()) requestCloseAndFinish()
+            }
         })
     }
-
-    private fun dp(value: Float): Int =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics).toInt()
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            hideSystemBars()
+            updateSystemBars()
             window.decorView.post { syncLocalClipboardToRemote(onFocus = true) }
         } else {
-            dragging = false
+            if (::controls.isInitialized) controls.release()
             DeskFleetBridge.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
         }
     }
 
+    internal fun applyUiState(state: JSONObject) {
+        runOnUiThread { if (::controls.isInitialized) controls.applyState(state) }
+    }
+
     internal fun applyRemoteClipboard(payload: String) {
+        if (::controls.isInitialized && !controls.clipboardSharing) return
         val text = clipboardSync.acceptIncomingEvent(payload) ?: return
         runOnUiThread {
             runCatching {
@@ -159,7 +88,8 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun syncLocalClipboardToRemote(onFocus: Boolean = false) {
+    private fun syncLocalClipboardToRemote(onFocus: Boolean = false, force: Boolean = false) {
+        if (!::controls.isInitialized || !controls.input.enabled || (!force && !controls.clipboardSharing)) return
         runCatching {
             val clip = clipboardManager?.primaryClip
             val text = if (clip != null && clip.itemCount > 0) clip.getItemAt(0).text else null
@@ -172,15 +102,17 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun hideSystemBars() {
+    private fun updateSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            hide(WindowInsetsCompat.Type.systemBars())
+            if (fullscreen) hide(WindowInsetsCompat.Type.systemBars())
+            else show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
     private fun requestCloseAndFinish() {
+        if (::controls.isInitialized) controls.release()
         if (!closeSent) {
             closeSent = true
             DeskFleetBridge.nativeTouch(7, 0.0, 0.0, 0.0, 0.0)
@@ -206,6 +138,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        if (::controls.isInitialized) controls.destroy()
         runCatching { clipboardManager?.removePrimaryClipChangedListener(clipListener) }
         val active = DeskFleetBridge.activeActivity?.get() === this
         if (active) DeskFleetBridge.activeActivity = null

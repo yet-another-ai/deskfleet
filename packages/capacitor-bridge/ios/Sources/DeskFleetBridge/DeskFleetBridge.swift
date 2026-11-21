@@ -263,8 +263,14 @@ public class DeskFleetBridge: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPr
             call.reject("Missing command payload")
             return
         }
-        command.withCString { deskfleetIosSendCommand($0) }
-        call.resolve()
+        DispatchQueue.main.async {
+            if let data = command.data(using: .utf8),
+               let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                Self.activeController?.applyViewerCommand(object)
+            }
+            command.withCString { deskfleetIosSendCommand($0) }
+            call.resolve()
+        }
     }
 
     @objc func close(_ call: CAPPluginCall) {

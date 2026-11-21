@@ -46,13 +46,14 @@ impl PhysicalInput {
         })
     }
 
-    /// The host releases remote controls before disabling this gate.
-    pub(crate) fn set_enabled(&self, enabled: bool) {
+    /// The host must release remote controls when disabling this gate.
+    /// Returns whether capture was enabled before this update.
+    pub(crate) fn set_enabled(&self, enabled: bool) -> bool {
         #[cfg(target_os = "macos")]
         if enabled && !self.bridge.enabled() {
             self._platform.refresh_modifiers();
         }
-        self.bridge.set_enabled(enabled);
+        self.bridge.set_enabled(enabled)
     }
 
     /// The OS may deliver releases to another window while this one is blurred.
@@ -89,10 +90,11 @@ impl Bridge {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    fn set_enabled(&self, enabled: bool) {
+    fn set_enabled(&self, enabled: bool) -> bool {
         let mut state = self.state();
+        let was_enabled = state.enabled;
         if state.enabled == enabled {
-            return;
+            return was_enabled;
         }
         state.enabled = enabled;
         state.pending.clear();
@@ -115,6 +117,7 @@ impl Bridge {
         if wake {
             (self.wake)();
         }
+        was_enabled
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]

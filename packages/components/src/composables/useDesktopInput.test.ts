@@ -1,6 +1,8 @@
 import { effectScope, nextTick, ref, shallowRef } from "vue"
 import { afterEach, expect, test, vi } from "vitest"
 import { desktopPoint, useDesktopInput } from "./useDesktopInput.ts"
+import type { DesktopPointerMode } from "./useDesktopTouch.ts"
+import type { DesktopInputMessage } from "../../../client/src/desktop-input.ts"
 
 const disposers: (() => void)[] = []
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose() })
@@ -26,9 +28,10 @@ function fixture(platform = "Win32") {
   const reverseScroll = ref(false)
   const clipboardSharing = ref(true)
   const remoteClipboard = shallowRef<{ id: number; text: string } | null>(null)
-  const send = vi.fn(() => true)
+  const send = vi.fn((_message: DesktopInputMessage) => true)
   const surface = shallowRef<HTMLVideoElement | null>(video)
-  scope.run(() => useDesktopInput(surface, enabled, send, reverseScroll, clipboardSharing, remoteClipboard))
+  const pointerMode = ref<DesktopPointerMode>("absolute")
+  scope.run(() => useDesktopInput(surface, enabled, send, reverseScroll, clipboardSharing, remoteClipboard, pointerMode))
   disposers.push(() => { scope.stop(); video.remove() })
   let mouseButtons = 0
   function pointer(type: string, init: PointerEventInit = {}) {
@@ -46,8 +49,104 @@ function fixture(platform = "Win32") {
     video.dispatchEvent(event)
     return event
   }
-  return { video, surface, enabled, reverseScroll, clipboardSharing, remoteClipboard, send, pointer, key, scope }
+  return { video, surface, enabled, reverseScroll, clipboardSharing, remoteClipboard, send, pointer, key, scope, pointerMode }
 }
+
+test("touch taps map to the image and absolute drags release on pause", () => {
+  const f = fixture()
+  f.pointer("pointerdown", { pointerType: "touch", clientY: 40 })
+  f.pointer("pointerup", { pointerType: "touch", clientY: 40 })
+  expect(f.send).not.toHaveBeenCalled()
+  f.pointer("pointerdown", { pointerType: "touch" })
+  f.pointer("pointerup", { pointerType: "touch" })
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "pointerButton", button: 0, pressed: true, x: 0.5, y: 0.5 }],
+    [{ type: "pointerButton", button: 0, pressed: false, x: 0.5, y: 0.5 }],
+  ])
+  f.send.mockClear()
+  f.pointer("pointerdown", { pointerType: "touch" })
+  f.pointer("pointermove", { pointerType: "touch", clientX: 1200 })
+  f.enabled.value = false
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "pointerButton", button: 0, pressed: true, x: 0.5, y: 0.5 }],
+    [{ type: "pointerMove", x: 1, y: 0.5 }],
+    [{ type: "pointerButton", button: 0, pressed: false, x: 1, y: 0.5 }],
+  ])
+  expect(f.video.hasPointerCapture(1)).toBe(false)
+})
+
+test("relative touch moves from the cursor, preserves it across gestures, and taps without jumping", () => {
+  const f = fixture()
+  f.pointerMode.value = "relative"
+  f.pointer("pointerdown", { pointerType: "touch", clientX: 40, clientY: 40 })
+  f.pointer("pointermove", { pointerType: "touch", clientX: 120, clientY: 40 })
+  f.pointer("pointerup", { pointerType: "touch", clientX: 120, clientY: 40 })
+  expect(f.send).toHaveBeenCalledExactlyOnceWith({ type: "pointerMove", x: 0.6, y: 0.5 })
+  f.pointer("pointerdown", { pointerType: "touch", clientX: 700 })
+  f.pointer("pointerup", { pointerType: "touch", clientX: 700 })
+  expect(f.send.mock.calls.slice(1)).toEqual([
+    [{ type: "pointerButton", button: 0, pressed: true, x: 0.6, y: 0.5 }],
+    [{ type: "pointerButton", button: 0, pressed: false, x: 0.6, y: 0.5 }],
+  ])
+})
+
+test("two-finger scrolling never leaves a drag held or clicks when a finger lifts", () => {
+  const f = fixture()
+  f.pointer("pointerdown", { pointerType: "touch" })
+  f.pointer("pointermove", { pointerType: "touch", clientX: 450 })
+  f.pointer("pointerdown", { pointerType: "touch", pointerId: 2 })
+  f.pointer("pointermove", { pointerType: "touch", pointerId: 2, clientY: 340 })
+  f.pointer("pointerup", { pointerType: "touch", pointerId: 2 })
+  f.pointer("pointerup", { pointerType: "touch" })
+  expect(f.send.mock.calls.filter(([message]) => message.type === "pointerButton")).toHaveLength(2)
+  expect(f.send).toHaveBeenCalledWith({ type: "wheel", deltaX: -0, deltaY: -10 })
+})
+
+test("two-finger scroll targets the touched pane before sending a wheel event", () => {
+  const f = fixture()
+  f.pointer("pointerdown", { pointerType: "touch", clientX: 210 })
+  f.pointer("pointerdown", { pointerType: "touch", pointerId: 2, clientX: 230 })
+  f.pointer("pointermove", { pointerType: "touch", pointerId: 2, clientX: 230, clientY: 340 })
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "pointerMove", x: 0.25, y: 0.5 }],
+    [{ type: "wheel", deltaX: -0, deltaY: -10 }],
+  ])
+})
+
+test("relative double-tap-and-hold drags and releases at the virtual cursor", () => {
+  const f = fixture()
+  f.pointerMode.value = "relative"
+  f.pointer("pointerdown", { pointerType: "touch" })
+  f.pointer("pointerup", { pointerType: "touch" })
+  f.send.mockClear()
+  f.pointer("pointerdown", { pointerType: "touch" })
+  f.pointer("pointermove", { pointerType: "touch", clientX: 490 })
+  f.pointer("pointerup", { pointerType: "touch", clientX: 490 })
+  expect(f.send.mock.calls).toEqual([
+    [{ type: "pointerButton", button: 0, pressed: true, x: 0.5, y: 0.5 }],
+    [{ type: "pointerMove", x: 0.6, y: 0.5 }],
+    [{ type: "pointerButton", button: 0, pressed: false, x: 0.6, y: 0.5 }],
+  ])
+})
+
+test("touch cancellation and mode changes cancel pending long presses", () => {
+  vi.useFakeTimers()
+  try {
+    const f = fixture()
+    f.pointer("pointerdown", { pointerType: "touch" })
+    f.pointerMode.value = "relative"
+    vi.advanceTimersByTime(600)
+    expect(f.send).not.toHaveBeenCalled()
+    f.pointer("pointerdown", { pointerType: "touch" })
+    vi.advanceTimersByTime(600)
+    expect(f.send.mock.calls).toEqual([
+      [{ type: "pointerButton", button: 2, pressed: true, x: 0.5, y: 0.5 }],
+      [{ type: "pointerButton", button: 2, pressed: false, x: 0.5, y: 0.5 }],
+    ])
+    f.pointer("pointercancel", { pointerType: "touch" })
+    expect(f.video.hasPointerCapture(1)).toBe(false)
+  } finally { vi.useRealTimers() }
+})
 
 test("maps the visible image rather than letterbox bars, and clamps captured drags", () => {
   const { video } = fixture()

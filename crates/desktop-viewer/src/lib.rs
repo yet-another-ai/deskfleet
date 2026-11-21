@@ -14,15 +14,22 @@ mod codec_tests;
 mod gpui_input;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod host;
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(any(target_os = "android", target_os = "ios", test))]
 mod input;
 mod input_configuration;
 mod input_queue;
 mod input_reply;
+mod input_text;
+#[cfg(target_os = "ios")]
+mod ios_controls;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod macos_decoder;
+#[cfg(target_os = "android")]
+mod nsh_android;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_chrome;
+mod nsh_controls;
+mod nsh_keyboard;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_keyboard_focus;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -31,7 +38,6 @@ mod nsh_layout;
 mod nsh_session_state;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_toolbar;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_ui;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nsh_video;
@@ -53,10 +59,12 @@ mod renderer;
 mod rtp_video;
 mod session;
 mod session_manager;
+mod stream_stats;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod window_branding;
 #[cfg(target_os = "windows")]
 mod windows_decoder;
+mod zoom;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::io;
@@ -79,6 +87,8 @@ enum WindowEvent {
         codec: protocol::Codec,
     },
     FrameReady,
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    InputEnabled(bool),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Error(String),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

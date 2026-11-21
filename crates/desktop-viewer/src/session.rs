@@ -7,7 +7,7 @@
     target_os = "android",
     target_os = "ios"
 ))]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 #[cfg(any(
     target_os = "linux",
@@ -26,6 +26,14 @@ use tokio::sync::{mpsc, watch};
 use crate::input_queue;
 use crate::protocol::{self, Candidate, Command};
 use crate::queue::FrameQueue;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android",
+    target_os = "ios"
+))]
+use crate::stream_stats::{self, DecodeTotals, Meter};
 use crate::{Error, Frame, WindowEvent, WindowNotifier};
 
 pub(crate) type Frames = Arc<Mutex<FrameQueue<Frame>>>;
@@ -112,6 +120,10 @@ pub(crate) async fn run_peer(
             });
             let mut input_open = false;
             let mut input_ready = false;
+            let mut input_paused = false;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let mut rendered_input_enabled = false;
+            input.clear()?;
             let mut configuration = crate::input_configuration::Configuration::default();
             let mut deferred_configuration = None;
             let mut answered = false;
@@ -131,6 +143,7 @@ pub(crate) async fn run_peer(
                             Some(Command::Close) | None => { exit = Some(PeerExit::Close); break; },
                             Some(Command::Stop) => { exit = Some(PeerExit::Stop); break; },
                             Some(Command::SetControl { control: enabled }) => {
+                                input.clear()?;
                                 // Always release before changing authorization on the ordered channel.
                                 if input_open {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await?;
@@ -145,15 +158,37 @@ pub(crate) async fn run_peer(
                             },
                             Some(Command::Ui { state }) => crate::session_manager::ui(&proxy, state),
                             Some(Command::Clipboard { text }) => {
-                                if control && input_open && input_ready && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
+                                if control && input_open && input_ready && !input_paused && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::Clipboard { text })?).await?;
                                 }
+                            },
+                            Some(Command::Input { event }) => {
+                                if control && input_open && input_ready && (!input_paused || matches!(event, InputEvent::ReleaseAll)) {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
+                                }
+                            },
+                            Some(Command::Text { text, paste_code, paste_shift }) => {
+                                if control && input_open && input_ready && !input_paused
+                                    && let Some(events) = crate::input_text::paste_events(text, paste_code, paste_shift)
+                                {
+                                    input.clear()?;
+                                    for event in events {
+                                        peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
+                                    }
+                                }
+                            },
+                            Some(Command::PauseInput { paused }) => {
+                                input.clear()?;
+                                if control && input_open && input_ready {
+                                    peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await?;
+                                }
+                                input_paused = paused;
                             },
                             Some(Command::Start { .. }) => return Err("viewer already started".into()),
                         },
                         event = input.recv() => {
                             if let Some(event) = event? {
-                                if control && input_open && input_ready {
+                                if control && input_open && input_ready && (!input_paused || matches!(event, InputEvent::ReleaseAll)) {
                                     peer.send_text("deskfleet-input", &serde_json::to_string(&event)?).await?;
                                 }
                             } else { break; }
@@ -203,10 +238,18 @@ pub(crate) async fn run_peer(
                                     }
                                     Reply::Error { error } => return Err(error.into()),
                                     Reply::Configured { request_id, control: enabled } => {
-                                        if configuration.reply(request_id, enabled, None)? { control = enabled; input_ready = true; }
+                                        if configuration.reply(request_id, enabled, None)? {
+                                            input.clear()?;
+                                            control = enabled;
+                                            input_ready = true;
+                                        }
                                     }
                                     Reply::ConfigurationError { request_id, control: enabled, error } => {
-                                        if configuration.reply(request_id, enabled, Some(error))? { control = enabled; input_ready = true; }
+                                        if configuration.reply(request_id, enabled, Some(error))? {
+                                            input.clear()?;
+                                            control = enabled;
+                                            input_ready = true;
+                                        }
                                     }
                                     Reply::Clipboard { text } => {
                                         if control && !text.is_empty() && text.len() <= deskfleet_input::MAX_CLIPBOARD_BYTES {
@@ -223,9 +266,19 @@ pub(crate) async fn run_peer(
                             _ => {},
                         },
                     }
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    {
+                        let enabled = control && input_open && input_ready && !input_paused;
+                        if enabled != rendered_input_enabled {
+                            let _ = proxy.send_event(WindowEvent::InputEnabled(enabled));
+                            rendered_input_enabled = enabled;
+                        }
+                    }
                 }
                 Ok(())
             }.await;
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let _ = proxy.send_event(WindowEvent::InputEnabled(false));
             if input_open {
                 let _ = peer.send_text("deskfleet-input", &serde_json::to_string(&InputEvent::ReleaseAll)?).await;
             }
@@ -269,6 +322,11 @@ async fn receive(
     let request = Arc::clone(&keyframe);
     let stopped = Arc::new(AtomicBool::new(false));
     let stop = Arc::clone(&stopped);
+    // Decoded count and packed `width << 32 | height` for the Monitor panel.
+    let decoded = Arc::new(AtomicU64::new(0));
+    let decoded_size = Arc::new(AtomicU64::new(0));
+    let (decoded_count, decoded_extent) = (Arc::clone(&decoded), Arc::clone(&decoded_size));
+    let decoded_frames = Arc::clone(&frames);
     let mut worker = tokio::task::spawn_blocking(move || -> Result<(), Error> {
         let Some(first): Option<deskfleet_native::rtc::ReceivedVideoPacket> =
             incoming.blocking_recv()
@@ -330,8 +388,15 @@ async fn receive(
                     height = frame.height,
                     "viewer frame decoded"
                 );
+                decoded_count.fetch_add(1, Ordering::Relaxed);
+                decoded_extent.store(
+                    (u64::from(frame.width) << 32) | u64::from(frame.height),
+                    Ordering::Relaxed,
+                );
                 let notify = {
-                    let mut queue = frames.lock().map_err(|_| "decoded queue poisoned")?;
+                    let mut queue = decoded_frames
+                        .lock()
+                        .map_err(|_| "decoded queue poisoned")?;
                     let was_empty = queue.is_empty();
                     queue.push(Frame {
                         width: frame.width,
@@ -353,6 +418,13 @@ async fn receive(
         Ok(())
     });
     let mut keyframe_poll = tokio::time::interval(Duration::from_millis(50));
+    let mut stats_tick = tokio::time::interval(Duration::from_secs(1));
+    stats_tick.tick().await;
+    let mut meter = Meter::new(Instant::now());
+    let mut keyframe_requests = 0;
+    // The frame queue outlives each peer; skipped frames are per peer.
+    let skipped_base = frames.lock().map_or(0, |queue| queue.dropped);
+    stream_stats::publish(Default::default());
     let mut completed = None;
     let result: Result<(), Error> = async {
         loop {
@@ -361,6 +433,7 @@ async fn receive(
                 result = &mut worker => { completed = Some(result); break; },
                 packet = receiver.next_packet() => match packet? {
                     Some(packet) => {
+                        meter.packet(packet.data.len(), packet.sequence_number, packet.timestamp, packet.received_at);
                         tokio::select! {
                             _ = shutdown.changed() => break,
                             sent = packets.send(packet) => if sent.is_err() { break; },
@@ -369,12 +442,26 @@ async fn receive(
                     None => break,
                 },
                 _ = keyframe_poll.tick() => {
-                    if keyframe.swap(false, Ordering::AcqRel) { receiver.request_keyframe().await?; }
+                    if keyframe.swap(false, Ordering::AcqRel) {
+                        keyframe_requests += 1;
+                        receiver.request_keyframe().await?;
+                    }
+                },
+                _ = stats_tick.tick() => {
+                    let size = decoded_size.load(Ordering::Relaxed);
+                    let totals = DecodeTotals {
+                        decoded: decoded.load(Ordering::Relaxed),
+                        size: ((size >> 32) as u32, size as u32),
+                        skipped: frames.lock().map_or(0, |queue| queue.dropped.saturating_sub(skipped_base)),
+                        keyframe_requests,
+                    };
+                    stream_stats::publish(meter.sample(Instant::now(), totals));
                 },
             }
         }
         Ok(())
     }.await;
+    stream_stats::publish(Default::default());
     stopped.store(true, Ordering::Release);
     drop(packets);
     match completed {

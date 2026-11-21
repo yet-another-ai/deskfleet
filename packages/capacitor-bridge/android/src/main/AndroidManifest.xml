@@ -21,7 +21,8 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="fullSensor"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 
         <service
