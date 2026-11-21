@@ -8,7 +8,7 @@ function available(): boolean {
   return app.isPackaged && (process.platform === "darwin" || process.platform === "win32" || process.platform === "linux")
 }
 
-function linuxStartup(): LinuxLaunchAtStartup {
+function linuxStartup(executablePath?: string): LinuxLaunchAtStartup {
   const configHome = process.env.XDG_CONFIG_HOME
   const directory = configHome && isAbsolute(configHome) ? configHome : join(app.getPath("home"), ".config")
   const launcher = process.env.DESKFLEET_LAUNCHER
@@ -16,13 +16,13 @@ function linuxStartup(): LinuxLaunchAtStartup {
     join(directory, "autostart", "io.github.yet_another_ai.deskfleet.desktop"),
     // Package launchers restore runtime library and plugin paths at login.
     // Electron's executable inside an AppImage lives in a temporary mount.
-    launcher && isAbsolute(launcher) ? launcher : process.env.APPIMAGE || process.execPath,
+    executablePath || (launcher && isAbsolute(launcher) ? launcher : process.env.APPIMAGE || process.execPath),
   )
 }
 
 /** Refresh an enabled Linux entry after an upgrade or a move of the app. */
-export function refreshLaunchAtStartup(): void {
-  if (available() && process.platform === "linux") linuxStartup().refresh()
+export function refreshLaunchAtStartup(executablePath?: string): void {
+  if (available() && process.platform === "linux") linuxStartup(executablePath).refresh()
 }
 
 export function getLaunchAtStartup(): LaunchAtStartupState {

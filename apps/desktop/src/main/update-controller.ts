@@ -6,7 +6,7 @@ export const UPDATE_NETWORK_CHECK_INTERVAL = 10 * 1000
 export interface UpdateDriver {
   check(): Promise<string | null>
   download(progress: (percent: number) => void, signal?: AbortSignal): Promise<void>
-  install(failed: (error: Error) => void): void
+  install(failed: (error: Error) => void, silent?: boolean): void
   close(): void
 }
 
@@ -18,6 +18,7 @@ export class UpdateController {
   readonly #currentVersion: string | undefined
   #autoDownload: boolean
   #pauseOnMetered = true
+  #installOnQuit = true
   readonly #isNetworkMetered: () => Promise<boolean>
   #networkCheck: Promise<boolean> | undefined
   #networkTimer: ReturnType<typeof setInterval> | undefined
@@ -29,6 +30,8 @@ export class UpdateController {
   #downloading: Promise<void> | undefined
   #installing: Promise<void> | undefined
   #downloadedVersion: string | undefined
+  #quitting = false
+  #finishQuitInstall: (() => void) | undefined
   #closed = false
 
   constructor(driver: UpdateDriver | null, publish: (state: UpdateState) => void, beforeInstall: () => Promise<void>, currentVersion?: string, autoDownload = true, isNetworkMetered: () => Promise<boolean> = async () => false) {
@@ -41,21 +44,32 @@ export class UpdateController {
     this.#state = { status: driver ? "idle" : "disabled" }
   }
 
+  get #effectiveInstallOnQuit(): boolean {
+    return Boolean(this.#driver && this.#autoDownload && this.#installOnQuit)
+  }
+
   get(): UpdateState {
-    return { ...this.#state, ...(this.#currentVersion ? { currentVersion: this.#currentVersion } : {}) }
+    return {
+      ...this.#state,
+      ...(this.#currentVersion ? { currentVersion: this.#currentVersion } : {}),
+      ...(this.#effectiveInstallOnQuit ? { installOnQuit: true } : {}),
+    }
   }
 
   setAutoDownload(enabled: boolean): void {
-    this.setDownloadPreferences(enabled, this.#pauseOnMetered)
+    this.setDownloadPreferences(enabled, this.#pauseOnMetered, this.#installOnQuit)
   }
 
-  setDownloadPreferences(enabled: boolean, pauseOnMetered: boolean): void {
+  setDownloadPreferences(enabled: boolean, pauseOnMetered: boolean, installOnQuit = this.#installOnQuit): void {
+    const wasInstallOnQuit = this.#effectiveInstallOnQuit
     this.#autoDownload = enabled
     this.#pauseOnMetered = pauseOnMetered
+    this.#installOnQuit = installOnQuit
     if (!enabled && !this.#installing) this.#automaticAbort?.abort()
     if (enabled && this.#state.status === "available" && this.#state.version) {
       this.#startAutoDownload(this.#state.version)
     }
+    if (!this.#closed && this.#effectiveInstallOnQuit !== wasInstallOnQuit) this.#publish(this.get())
     void this.#refreshNetworkPolicy()
   }
 
@@ -114,6 +128,43 @@ export class UpdateController {
     return this.#installing
   }
 
+  canInstallOnQuit(): boolean {
+    return !this.#closed && !this.#quitting && this.#effectiveInstallOnQuit
+      && !this.#installing && this.#state.status !== "installing"
+      && (Boolean(this.#downloading) || Boolean(this.#state.version && this.#downloadedVersion === this.#state.version))
+  }
+
+  /** Close services, wait for an active download if needed, and hand off silent install without relaunching. */
+  async installOnQuit(): Promise<void> {
+    if (!this.canInstallOnQuit()) return
+    this.#quitting = true
+    if (this.#timer) clearInterval(this.#timer)
+    this.#timer = undefined
+    if (this.#networkTimer) clearInterval(this.#networkTimer)
+    this.#networkTimer = undefined
+    const shutdown = this.#beforeInstall()
+    void shutdown.catch(() => this.close())
+    if (this.#downloading) await this.#downloading.catch(() => {})
+    await shutdown
+    if (this.#closed || !this.#state.version || this.#downloadedVersion !== this.#state.version) return
+    await new Promise<void>(resolve => {
+      const done = (): void => {
+        this.#finishQuitInstall = undefined
+        resolve()
+      }
+      this.#finishQuitInstall = done
+      try {
+        this.#driver!.install(error => {
+          console.error("Application update on quit failed", error)
+          done()
+        }, true)
+      } catch (error) {
+        console.error("Application update on quit failed", error)
+        done()
+      }
+    })
+  }
+
   async #performInstall(): Promise<void> {
     // The updater's check selects the download target. Wait before using that target.
     if (this.#checking) await this.#checking
@@ -133,7 +184,7 @@ export class UpdateController {
   }
 
   #startAutoDownload(version: string): void {
-    if (this.#closed || !this.#driver || this.#downloading || this.#installing || this.#state.status === "installing" || this.#downloadedVersion === version) return
+    if (this.#closed || this.#quitting || !this.#driver || this.#downloading || this.#installing || this.#state.status === "installing" || this.#downloadedVersion === version) return
     const abort = new AbortController()
     const downloading = (async () => {
       const metered = this.#pauseOnMetered && await this.#networkMetered()
@@ -203,6 +254,7 @@ export class UpdateController {
     if (this.#networkTimer) clearInterval(this.#networkTimer)
     this.#networkTimer = undefined
     this.#automaticAbort?.abort()
+    this.#finishQuitInstall?.()
     this.#driver?.close()
   }
 

@@ -39,7 +39,8 @@ import {
   installRendererProtocol,
   registerRendererScheme,
 } from "./renderer-protocol.ts"
-import { createTray } from "./tray.ts"
+import { createTray, destroyTray, setTrayUpdateVersion } from "./tray.ts"
+import type { UpdateController } from "./update-controller.ts"
 import { UpdateSettingsController } from "./update-settings.ts"
 import { installUpdates, resolveDesktopInstallSource } from "./updates.ts"
 import { installWindowsDesktopService } from "./windows-desktop-service.ts"
@@ -69,8 +70,21 @@ function start(): void {
   const lifecycle = keepRunningInBackground(app, hideMainWindow, relaunch)
   installApplication(lifecycle)
   const show = () => void showMainWindow(lifecycle)
+  let updates: UpdateController | undefined
+  let userQuit = false
+  let quittingForUpdate = false
+  let relaunchOnExit = false
 
-  app.on("second-instance", show)
+  const reopen = (): void => {
+    if (quittingForUpdate) {
+      relaunchOnExit = true
+      updates?.close()
+      return
+    }
+    show()
+  }
+
+  app.on("second-instance", reopen)
 
   void app.whenReady().then(async () => {
     configureApplicationDisplay(() => void showMainWindow(lifecycle, "#/settings/preferences"))
@@ -85,10 +99,15 @@ function start(): void {
     // signals. Electron's own handlers, installed during startup, request an
     // ordinary quit that the tray lifecycle blocks; registering after ready
     // replaces them.
-    process.once("SIGINT", () => lifecycle.quit())
-    process.once("SIGTERM", () => lifecycle.quit())
+    const abortQuitUpdate = (): void => {
+      userQuit = false
+      updates?.close()
+      lifecycle.quit()
+    }
+    process.once("SIGINT", abortQuitUpdate)
+    process.once("SIGTERM", abortQuitUpdate)
     // Logging out or shutting down must not wait on a client hidden in the tray.
-    powerMonitor.on("shutdown", () => lifecycle.quit())
+    powerMonitor.on("shutdown", abortQuitUpdate)
 
     const userData = app.getPath("userData")
     const daemonDirectory = desktopDaemonDirectory()
@@ -126,7 +145,6 @@ function start(): void {
     // cleanly even while a locked Linux keyring waits for unlock.
     const closers: Array<() => void | Promise<void>> = [() => localAgent.close()]
     const syncCleanups: Array<() => void> = [() => auv?.close()]
-    let closeUpdates: (() => void) | undefined
     let closing: Promise<void> | undefined
     let servicesClosed = false
     const closeServices = (): Promise<void> => {
@@ -139,11 +157,25 @@ function start(): void {
       return closing
     }
     app.on("will-quit", (event) => {
-      closeUpdates?.()
       // Let the updater's own quit/relaunch finish once the same shutdown barrier
       // has already completed. Ordinary exits still wait for hosted services.
       if (servicesClosed) return
       event.preventDefault()
+      if (quittingForUpdate) return
+      if (userQuit && updates?.canInstallOnQuit()) {
+        quittingForUpdate = true
+        destroyTray()
+        app.dock?.hide()
+        void updates.installOnQuit().then(async () => {
+          if (relaunchOnExit) await relaunch()
+          app.exit(0)
+        }).catch((error: unknown) => {
+          console.error(error)
+          app.exit(1)
+        })
+        return
+      }
+      updates?.close()
       void closeServices().then(
         () => app.exit(0),
         (error: unknown) => { console.error(error); app.exit(1) },
@@ -188,11 +220,12 @@ function start(): void {
     if (process.platform === "win32") app.setAppUserModelId("io.github.yet-another-ai.deskfleet")
     void notificationMonitor.start().catch(console.error)
 
-    const updates = await installUpdates(lifecycle, closeServices)
-    closeUpdates = () => updates.close()
+    updates = await installUpdates(lifecycle, closeServices, state => {
+      setTrayUpdateVersion(state.status === "downloaded" && state.installOnQuit && state.version ? state.version : null)
+    })
     const updateSettings = new UpdateSettingsController(
       join(userData, "updates.json"),
-      state => updates.setDownloadPreferences(state.enabled, state.pauseOnMetered),
+      state => updates!.setDownloadPreferences(state.enabled, state.pauseOnMetered, state.installOnQuit),
       resolveDesktopInstallSource(),
     )
     const linuxKeyring = process.platform === "linux"
@@ -210,9 +243,9 @@ function start(): void {
     try { updateSettings.get() } catch (error) { console.error(error) }
     if (lifecycle.quitting) return
     updates.start()
-    createTray({ show, quit: () => lifecycle.quit() })
+    createTray({ show, quit: () => { userQuit = true; lifecycle.quit() } })
     show()
-    app.on("activate", show)
+    app.on("activate", reopen)
   })
 }
 

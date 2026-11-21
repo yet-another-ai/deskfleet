@@ -141,13 +141,33 @@ test.each([
 })
 
 test.each([
-  ["en-US", "Automatically download updates", "Download new versions in the background and wait for your confirmation before installing and restarting."],
-  ["zh-cmn-Hans-CN", "自动下载更新", "在后台自动下载新版本，并在安装和重启前等待你的确认。"],
-] as const)("explains the background download and confirmation behavior in %s", async (locale, label, description) => {
+  ["en-US", "Automatically download updates", "Download new versions in the background so they are ready to install."],
+  ["zh-cmn-Hans-CN", "自动下载更新", "在后台自动下载新版本，随时可供安装。"],
+] as const)("explains the background download behavior in %s", async (locale, label, description) => {
   i18n.global.locale.value = locale
   const view = render()
   await flushPromises()
   const toggle = view.get('[role="switch"]')
   expect(view.get(`#${toggle.attributes("aria-labelledby")}`).text()).toBe(label)
   expect(view.get(`#${toggle.attributes("aria-describedby")}`).text()).toBe(description)
+})
+
+test("toggles install-on-quit on desktop and hides it when absent", async () => {
+  const selector = '[role="switch"][aria-labelledby="install-updates-on-quit-label"]'
+  vi.mocked(platformClient.settings.getAutoDownloadUpdates).mockResolvedValueOnce({ enabled: true, pauseOnMetered: true, installSource: "google_play" })
+  const mobileView = render()
+  await flushPromises()
+  expect(mobileView.find(selector).exists()).toBe(false)
+  mobileView.unmount()
+
+  vi.mocked(platformClient.settings.getAutoDownloadUpdates).mockResolvedValueOnce({ enabled: true, pauseOnMetered: true, installOnQuit: true, installSource: "desktop_installer" })
+  const save = vi.spyOn(platformClient.settings, "setInstallUpdatesOnQuit").mockResolvedValueOnce({ enabled: true, pauseOnMetered: true, installOnQuit: false, installSource: "desktop_installer" })
+  const view = render()
+  await flushPromises()
+  const toggle = view.get(selector)
+  expect(toggle.attributes("aria-checked")).toBe("true")
+  await toggle.trigger("click")
+  await flushPromises()
+  expect(save).toHaveBeenCalledExactlyOnceWith(false)
+  expect(toggle.attributes("aria-checked")).toBe("false")
 })

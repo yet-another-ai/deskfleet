@@ -33,7 +33,11 @@ const { isLoading, executeImmediate } = useAsyncState(() => api!.install(), unde
     state.value = { ...state.value, status: "error", error: error instanceof Error ? error.message : String(error) }
   },
 })
-const visible = computed(() => Boolean(api && state.value.version && state.value.status !== "disabled" && state.value.status !== "idle"))
+const visible = computed(() => Boolean(
+  api && state.value.version
+  && state.value.status !== "disabled" && state.value.status !== "idle"
+  && (!state.value.installOnQuit || state.value.status === "error"),
+))
 const busy = computed(() => isLoading.value || ["checking", "downloading", "installing"].includes(state.value.status))
 const downloading = computed(() => state.value.status === "downloading")
 // The button's own background fills left to right while the update downloads.

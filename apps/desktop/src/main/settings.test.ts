@@ -198,9 +198,10 @@ test("Keep Awake settings restrict callers, validate writes, and report failures
 
 test("automatic update settings restrict callers, validate writes, and report failures", async () => {
   const updates = {
-    get: vi.fn(() => ({ enabled: true, pauseOnMetered: true, installSource: "desktop_installer" as const })),
-    setEnabled: vi.fn((enabled: boolean) => ({ enabled, pauseOnMetered: true, installSource: "desktop_installer" as const })),
-    setPauseOnMetered: vi.fn((pauseOnMetered: boolean) => ({ enabled: true, pauseOnMetered, installSource: "desktop_installer" as const })),
+    get: vi.fn(() => ({ enabled: true, pauseOnMetered: true, installOnQuit: true, installSource: "desktop_installer" as const })),
+    setEnabled: vi.fn((enabled: boolean) => ({ enabled, pauseOnMetered: true, installOnQuit: true, installSource: "desktop_installer" as const })),
+    setPauseOnMetered: vi.fn((pauseOnMetered: boolean) => ({ enabled: true, pauseOnMetered, installOnQuit: true, installSource: "desktop_installer" as const })),
+    setInstallOnQuit: vi.fn((installOnQuit: boolean) => ({ enabled: true, pauseOnMetered: true, installOnQuit, installSource: "desktop_installer" as const })),
   }
   installSettings({} as LocalAgentController, {} as KeepAwakeController, {} as NotificationSettingsController, {} as WorktreeRootSettingsController, updates)
   const invoke = handle.mock.calls.at(-1)![1] as (event: IpcMainInvokeEvent, method: string, value?: unknown) => Promise<unknown>
@@ -218,11 +219,14 @@ test("automatic update settings restrict callers, validate writes, and report fa
     expect(await invoke(event, "setPauseUpdatesOnMetered", invalid)).toEqual({ ok: false, error: "Metered network update setting must be a boolean" })
   }
   expect(updates.setPauseOnMetered).not.toHaveBeenCalled()
-  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: true, installSource: "desktop_installer" } })
-  expect(await invoke(event, "setAutoDownloadUpdates", false)).toEqual({ ok: true, value: { enabled: false, pauseOnMetered: true, installSource: "desktop_installer" } })
+  expect(await invoke(event, "getAutoDownloadUpdates")).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: true, installOnQuit: true, installSource: "desktop_installer" } })
+  expect(await invoke(event, "setAutoDownloadUpdates", false)).toEqual({ ok: true, value: { enabled: false, pauseOnMetered: true, installOnQuit: true, installSource: "desktop_installer" } })
   expect(updates.setEnabled).toHaveBeenCalledExactlyOnceWith(false)
-  expect(await invoke(event, "setPauseUpdatesOnMetered", false)).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: false, installSource: "desktop_installer" } })
+  expect(await invoke(event, "setPauseUpdatesOnMetered", false)).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: false, installOnQuit: true, installSource: "desktop_installer" } })
   expect(updates.setPauseOnMetered).toHaveBeenCalledExactlyOnceWith(false)
+  expect(await invoke(event, "setInstallUpdatesOnQuit", "false")).toEqual({ ok: false, error: "Install updates on quit setting must be a boolean" })
+  expect(await invoke(event, "setInstallUpdatesOnQuit", false)).toEqual({ ok: true, value: { enabled: true, pauseOnMetered: true, installOnQuit: false, installSource: "desktop_installer" } })
+  expect(updates.setInstallOnQuit).toHaveBeenCalledExactlyOnceWith(false)
   updates.setEnabled.mockImplementationOnce(() => { throw new Error("Could not save automatic updates") })
   expect(await invoke(event, "setAutoDownloadUpdates", true)).toEqual({ ok: false, error: "Could not save automatic updates" })
   updates.setPauseOnMetered.mockImplementationOnce(() => { throw new Error("Could not save metered update preference") })

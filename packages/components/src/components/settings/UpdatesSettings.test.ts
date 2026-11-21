@@ -170,3 +170,10 @@ test("retries an unavailable initial snapshot without checking for or installing
   expect(check).not.toHaveBeenCalled()
   expect(install).not.toHaveBeenCalled()
 })
+
+test("shows quit-install status while keeping manual update available", async () => {
+  get.mockResolvedValue({ status: "downloaded", version: "0.2.0", percent: 100, currentVersion: "0.1.0", installOnQuit: true })
+  const view = await render()
+  expect(view.get('[role="status"]').text()).toBe("Version 0.2.0 is ready and will install when you quit")
+  expect(view.findAll("button")[1]!.text()).toBe("Update and restart")
+})

@@ -4,6 +4,9 @@ import { ICAT_ARGUMENT, runIcat } from "@deskfleet/daemon/terminal-images"
 
 // Await routing before Electron becomes ready: the adapter runs in Electron's
 // Node mode and must never acquire the client's single-instance lock.
+if (process.env.APPIMAGE_EXIT_AFTER_INSTALL === "true") {
+  process.exit(0)
+}
 const adapter = bundledAdapter(process.argv)
 if (process.argv[2] === ICAT_ARGUMENT) {
   process.exitCode = await runIcat(process.argv.slice(3))

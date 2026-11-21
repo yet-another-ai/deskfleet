@@ -54,11 +54,20 @@ test("offers the available version and starts an update only after the click", a
 test.each<UpdateState>([
   { status: "disabled" }, { status: "idle" }, { status: "checking" },
   { status: "error", error: "Offline" },
-])("keeps $status without a new version out of the sidebar", async state => {
+  { status: "available", version: "0.2.0", installOnQuit: true },
+  { status: "downloading", version: "0.2.0", percent: 50, installOnQuit: true },
+  { status: "downloaded", version: "0.2.0", percent: 100, installOnQuit: true },
+])("keeps $status out of the sidebar when no user prompt is needed", async state => {
   get.mockResolvedValue(state)
   const view = await render()
   expect(view.find("button").exists()).toBe(false)
   expect(install).not.toHaveBeenCalled()
+})
+
+test("still shows install errors in the sidebar when install-on-quit is enabled", async () => {
+  get.mockResolvedValue({ status: "error", version: "0.2.0", error: "Install failed", installOnQuit: true })
+  const view = await render()
+  expect(view.get("button").text()).toBe("Retry update")
 })
 
 test("does not render an updater on the Web host", async () => {

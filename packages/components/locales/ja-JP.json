@@ -196,7 +196,7 @@
     "download": "ダウンロード"
   },
   "updates": {
-    "available": "バージョン {version} が利用可能です", "install": "更新して再起動",
+    "available": "バージョン {version} が利用可能です", "readyOnQuit": "バージョン {version} の準備が完了しました。終了時に自動インストールされます", "install": "更新して再起動",
     "retry": "更新を再試行", "checking": "更新を確認中…",
     "downloading": "ダウンロード中 {percent}%", "installing": "再起動中…",
     "failed": "更新に失敗しました。再試行するか、DeskFleet を終了して再度開いてください。"
@@ -616,10 +616,12 @@
     "linuxKeyringDescription": "デスクトップのアカウントトークンを Linux のシステムキーリングに保存します。オフにするとリモート更新や再起動時のキーリング解除プロンプトを避けられます（再起動後に再サインインが必要になる場合があります）。",
     "linuxKeyringRestartRequired": "適用するには DeskFleet を再起動してください",
     "linuxKeyringOverridden": "起動引数または環境変数で制御されています",
-    "autoDownloadUpdates": "アップデートを自動ダウンロード", "autoDownloadUpdatesDescription": "新しいバージョンをバックグラウンドでダウンロードし、インストールして再起動する前に確認を待ちます。",
+    "autoDownloadUpdates": "アップデートを自動ダウンロード", "autoDownloadUpdatesDescription": "新しいバージョンをバックグラウンドでダウンロードし、いつでもインストールできるようにします。",
     "pauseUpdatesOnMetered": "従量制課金ネットワークで自動的に一時停止",
     "pauseUpdatesOnMeteredDescription": "従量制課金ネットワークではアップデートのダウンロードを自動的に一時停止します。手動でのダウンロードは引き続き可能です。",
     "pauseUpdatesOnMeteredPlayDescription": "従量制課金ネットワークでは自動更新の案内を待機します。承認後のダウンロードは Google Play が管理します。",
+    "installUpdatesOnQuit": "終了時にアップデートを自動インストール",
+    "installUpdatesOnQuitDescription": "DeskFleet の終了時にアップデートを自動的にインストールし、次回起動時に適用します。",
     "windowsLockControl": "ロック中のリモート操作",
     "windowsLockControlDescription": "現在の Windows セッションがロックされている間もリモートデスクトップにアクセスできます。DeskFleet を起動したまま、コンピューターをスリープさせないでください。有効化と無効化には管理者の承認が必要です。",
     "windowsLockControlUnavailable": "ロック中のリモート操作を有効にするには、デスクトップサービスを含む Windows 版をインストールしてください。",
@@ -943,7 +945,8 @@
     "gitUnknown": "Git の状態はまだ確認されていません。"
   },
   "tray": {
-    "show": "DeskFleet を表示", "quit": "DeskFleet を終了"
+    "show": "DeskFleet を表示", "quit": "DeskFleet を終了",
+    "quitAndUpdate": "終了して更新 (v{version})"
   },
   "catalog": {
     "local": "ローカル", "workspaces": "ワークスペース",

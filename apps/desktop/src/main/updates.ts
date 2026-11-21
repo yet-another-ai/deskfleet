@@ -4,6 +4,7 @@ import type { UpdateInstallSource } from "../../../../packages/client/src/settin
 import { UPDATES_CHANNEL, UPDATES_CHANGED_EVENT, type UpdateState } from "../../../../packages/client/src/updates.ts"
 import { isMainRendererUrl } from "../shared/renderer-security.ts"
 import { electronUpdateDriver } from "./electron-update-driver.ts"
+import { refreshLaunchAtStartup } from "./launch-at-startup.ts"
 import type { BackgroundLifecycle } from "./lifecycle.ts"
 import { UpdateController, type UpdateDriver } from "./update-controller.ts"
 
@@ -58,22 +59,32 @@ export function resolveDesktopInstallSource(): Extract<UpdateInstallSource, "des
   return "desktop_installer"
 }
 
-export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInstall: () => Promise<void>): Promise<UpdateController> {
+export async function installUpdates(
+  lifecycle: BackgroundLifecycle,
+  beforeInstall: () => Promise<void>,
+  onStateChange?: (state: UpdateState) => void,
+): Promise<UpdateController> {
   // Development launches, extracted Linux bundles, and Nix-managed macOS
   // installs have no installable update target.
   const enabled = resolveDesktopInstallSource() === "desktop_installer"
   let driver: UpdateDriver | null = null
   if (enabled) {
     const { default: module } = await import("electron-updater")
-    const updater = electronUpdateDriver(process.platform === "linux"
+    const rawUpdater = process.platform === "linux"
       ? new (await import("./appimage-updater.ts")).RestartingAppImageUpdater()
-      : module.autoUpdater)
+      : module.autoUpdater
+    if (process.platform === "linux") {
+      rawUpdater.on("appimage-filename-updated", (destination: string) => {
+        try { refreshLaunchAtStartup(destination) } catch (error) { console.error("Could not refresh launch at startup", error) }
+      })
+    }
+    const updater = electronUpdateDriver(rawUpdater)
     driver = {
       ...updater,
-      install(failed) {
+      install(failed, silent) {
         lifecycle.setInstallingUpdate(true)
         try {
-          updater.install(error => { lifecycle.setInstallingUpdate(false); failed(error) })
+          updater.install(error => { lifecycle.setInstallingUpdate(false); failed(error) }, silent)
         } catch (error) {
           lifecycle.setInstallingUpdate(false)
           throw error
@@ -81,7 +92,11 @@ export async function installUpdates(lifecycle: BackgroundLifecycle, beforeInsta
       },
     }
   }
-  const controller = new UpdateController(driver, publishUpdateState, beforeInstall, app.getVersion(), true, isNetworkMetered)
+  const publish = (state: UpdateState): void => {
+    publishUpdateState(state)
+    onStateChange?.(state)
+  }
+  const controller = new UpdateController(driver, publish, beforeInstall, app.getVersion(), true, isNetworkMetered)
   installUpdateIpc(controller)
   return controller
 }

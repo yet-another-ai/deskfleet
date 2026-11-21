@@ -426,12 +426,18 @@ never replace assets on an existing published release.
 The Electron main process checks for updates on startup and every 30 minutes.
 Settings → Updates shows the installed version and can trigger a check on demand.
 **Settings → Preferences → Automatically download updates** is enabled by default
-and saved in `updates.json` under Electron's `userData` directory. When enabled,
-discovered updates download in the background and stop at the confirmation state;
-clicking **Update and restart** stops the embedded daemon, then installs and
-restarts the app. When disabled, clicking **Update and restart** downloads the
-update first before installing and restarting. Ordinary app exit does not install
-an update.
+and saved in `updates.json` under Electron's `userData` directory. On desktop,
+**Install updates on quit** is also enabled by default under that preference.
+When both are enabled, discovered updates download in the background and install
+silently without relaunching when the user quits from the tray. If a download is
+still in progress when the user quits from the tray, the window and tray close,
+hosted services stop, and the main process waits for the download to finish
+before installing. OS shutdown, signals, and in-app restarts skip quit
+installation. Clicking **Update and restart** stops the embedded daemon, then
+installs and restarts the app immediately. When automatic download is disabled,
+clicking **Update and restart** downloads the update first before installing and
+restarting. When **Install updates on quit** is disabled, ordinary app exit does
+not install an update.
 Windows uses NSIS, macOS uses the signed update ZIP, and Linux requires running
 the AppImage. Windows updates use the published blockmap for differential
 downloads; electron-updater falls back to a full installer when a differential
