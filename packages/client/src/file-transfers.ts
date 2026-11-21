@@ -16,7 +16,7 @@ function mimeType(name: string): string {
     xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     html: "text/html", htm: "text/html",
-    pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/plain", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain",
+    pdf: "application/pdf", json: "application/json", txt: "text/plain", md: "text/plain", csv: "text/csv", ts: "text/plain", js: "text/plain", rs: "text/plain", py: "text/plain",
   } as Record<string, string>)[extension] ?? "application/octet-stream"
 }
 

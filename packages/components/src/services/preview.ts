@@ -2,7 +2,7 @@ import { type Component, type InjectionKey } from "vue"
 import type { FileResourceRequest } from "../../../client/src/files.ts"
 
 export type OfficePreviewKind = "docx" | "xlsx" | "pptx"
-export type PreviewKind = "mermaid" | "image" | "audio" | "video" | "model" | OfficePreviewKind
+export type PreviewKind = "mermaid" | "image" | "audio" | "video" | "model" | "csv" | OfficePreviewKind
 export type MediaPreviewKind = Exclude<PreviewKind, "mermaid">
 export type PreviewMode = "inline" | "focus" | "tab" | "window"
 
@@ -67,6 +67,7 @@ export function previewKindFromMime(mime?: string | null): MediaPreviewKind | un
   if (clean.startsWith("audio/")) return "audio"
   if (clean.startsWith("video/")) return "video"
   if (clean.startsWith("model/")) return "model"
+  if (clean === "text/csv") return "csv"
   if (clean === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx"
   if (clean === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") return "xlsx"
   if (clean === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "pptx"
@@ -83,12 +84,12 @@ export function previewKindFromUri(uri: string, explicitMime?: string | null): M
   if (/^(?:aac|flac|m4a|mp3|oga|ogg|opus|wav|weba)$/u.test(extension ?? "")) return "audio"
   if (/^(?:m4v|mov|mp4|ogv|webm)$/u.test(extension ?? "")) return "video"
   if (/^(?:3mf|fbx|glb|gltf|obj|stl)$/u.test(extension ?? "")) return "model"
-  if (extension === "docx" || extension === "xlsx" || extension === "pptx") return extension
+  if (extension === "csv" || extension === "docx" || extension === "xlsx" || extension === "pptx") return extension
   return undefined
 }
 
 export function resolvePreviewKind(content: string, explicitKind?: string | null, explicitMime?: string | null): PreviewKind {
-  if (explicitKind === "mermaid" || explicitKind === "image" || explicitKind === "audio" || explicitKind === "video" || explicitKind === "model" || explicitKind === "docx" || explicitKind === "xlsx" || explicitKind === "pptx") {
+  if (explicitKind === "mermaid" || explicitKind === "image" || explicitKind === "audio" || explicitKind === "video" || explicitKind === "model" || explicitKind === "csv" || explicitKind === "docx" || explicitKind === "xlsx" || explicitKind === "pptx") {
     return explicitKind
   }
   const fromUri = previewKindFromUri(content, explicitMime)

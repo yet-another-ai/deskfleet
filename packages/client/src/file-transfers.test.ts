@@ -157,6 +157,7 @@ test.each([
   ["before.MP4", "video/mp4", [0, 0, 0, 24]],
   ["after.webm", "video/webm", [0x1a, 0x45, 0xdf, 0xa3]],
   ["audio.mp3", "audio/mpeg", [0xff, 0xfb]],
+  ["报告.CSV", "text/csv", [0x61, 0x2c, 0x62, 0x0a]],
   ["报告.DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", [0x50, 0x4b, 0x03, 0x04]],
   ["预算.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", [0x50, 0x4b, 0x03, 0x04]],
   ["方案.PPTX", "application/vnd.openxmlformats-officedocument.presentationml.presentation", [0x50, 0x4b, 0x03, 0x04]],
