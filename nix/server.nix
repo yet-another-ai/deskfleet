@@ -33,6 +33,7 @@ let
       (source + "/Cargo.lock")
       workspaceMetadata
       (source + "/apps/server/src")
+      (source + "/packages/mcp/src/remote-tools.json")
       (source + "/crates/control-store/src")
       (source + "/crates/model/src")
       (source + "/crates/protocol/src")

@@ -1,4 +1,4 @@
-//! Machine credentials fix the source Team; only this route can relay Agent MCP operations.
+//! Route Agent MCP requests from an authenticated Machine or hosted Session to a Team registration.
 use crate::{
     AppState, auth,
     error::{ApiError, Result},
@@ -24,23 +24,60 @@ pub async fn call(
         .store
         .authorize_machine(&body.user_id, &source.id, MachineAction::Manage)
         .await?;
-    if body.device_id.is_empty() || body.session_id.is_empty() || !body.arguments.is_object() {
-        return Err(ApiError::bad("invalid Agent MCP delegation"));
-    }
     let actor = PeerActor {
         kind: "user".into(),
         user_id: body.user_id.clone(),
         device_id: body.device_id.clone(),
         source_machine: Some(json!({"id": source.machine_id, "originId": source.origin_id})),
     };
-    let source_context = json!({"teamId": source.team_id, "machineId": source.machine_id, "sessionId": body.session_id});
-    if body.operation == RemoteMcpOperation::Machines {
-        if body.machine_id.is_some() || body.arguments != json!({}) {
+    dispatch(
+        &state,
+        Source {
+            team_id: &source.team_id,
+            session_id: &body.session_id,
+            machine_id: Some(&source.machine_id),
+        },
+        actor,
+        body.operation,
+        body.machine_id.as_deref(),
+        &body.arguments,
+    )
+    .await
+}
+
+pub(crate) struct Source<'a> {
+    pub team_id: &'a str,
+    pub session_id: &'a str,
+    /// Hosted Super Agent Sessions have no source Machine.
+    pub machine_id: Option<&'a str>,
+}
+
+pub(crate) async fn dispatch(
+    state: &web::Data<AppState>,
+    source: Source<'_>,
+    actor: PeerActor,
+    operation: RemoteMcpOperation,
+    machine_id: Option<&str>,
+    arguments: &Value,
+) -> Result<web::Json<Value>> {
+    if actor.device_id.is_empty() || source.session_id.is_empty() || !arguments.is_object() {
+        return Err(ApiError::bad("invalid Agent MCP delegation"));
+    }
+    let source_context = match source.machine_id {
+        Some(id) => {
+            json!({"teamId": source.team_id, "machineId": id, "sessionId": source.session_id})
+        }
+        None => {
+            json!({"teamId": source.team_id, "kind": "superAgent", "sessionId": source.session_id})
+        }
+    };
+    if operation == RemoteMcpOperation::Machines {
+        if machine_id.is_some() || arguments != &json!({}) {
             return Err(ApiError::bad(
                 "machine discovery takes no target or arguments",
             ));
         }
-        let machines = state.store.machines(&body.user_id, &source.team_id).await?;
+        let machines = state.store.machines(&actor.user_id, source.team_id).await?;
         let online = state
             .hub
             .online_machines(
@@ -54,7 +91,7 @@ pub async fn call(
         // expose no cached catalog or conversation data to an Agent.
         let mut pending = tokio::task::JoinSet::new();
         for mut machine in machines.into_iter().filter(|machine| {
-            online.contains(&machine.id) && machine.machine_id != source.machine_id
+            online.contains(&machine.id) && Some(machine.machine_id.as_str()) != source.machine_id
         }) {
             machine.online = true;
             let state = state.clone();
@@ -97,16 +134,14 @@ pub async fn call(
             json!({"teamId": source.team_id, "machines": available}),
         ));
     }
-    let machine_id = body
-        .machine_id
-        .as_deref()
+    let machine_id = machine_id
         .filter(|id| !id.is_empty())
         .ok_or_else(|| ApiError::bad("a target machine is required"))?;
-    if machine_id == source.machine_id {
+    if Some(machine_id) == source.machine_id {
         return Err(ApiError::bad("select another machine"));
     }
     let action = if matches!(
-        body.operation,
+        operation,
         RemoteMcpOperation::SessionCreate
             | RemoteMcpOperation::SessionSend
             | RemoteMcpOperation::WorkspaceCreate
@@ -119,7 +154,7 @@ pub async fn call(
     };
     let target = state
         .store
-        .authorize_registration(&body.user_id, &source.team_id, machine_id, action)
+        .authorize_registration(&actor.user_id, source.team_id, machine_id, action)
         .await?;
     let result = state
         .hub
@@ -127,7 +162,7 @@ pub async fn call(
             &target.id,
             "remoteMcp",
             json!({
-                "source": source_context, "operation": body.operation, "arguments": body.arguments,
+                "source": source_context, "operation": operation, "arguments": arguments,
             }),
             Some(actor),
         )

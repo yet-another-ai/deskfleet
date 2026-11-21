@@ -139,6 +139,31 @@ test("a permission change during MCP startup prevents tool dispatch", async t =>
   await assert.rejects(service.handle("remoteMcp", { source, operation: "mcpCall", arguments: { serverId: f.config.id, name: "record" } }, actor, target), /operate/)
 })
 
+test("a hosted Super Agent dispatches Sessions under the initiating user and live target consent", async t => {
+  const f = await fixture(t)
+  const hosted = { kind: "superAgent", teamId: target.teamId, sessionId: "cloud-session" }
+  const user = { kind: "user" as const, userId: "bob", deviceId: "login-bob" }
+  const create = () => f.service.handle("remoteMcp", {
+    source: hosted, operation: "sessionCreate", arguments: { provider: "agent", prompt: "Run the checks" },
+  }, user, target)
+  await assert.rejects(create(), /start or message Sessions/)
+  await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: true })
+  assert.equal((await f.service.handle("remoteMcpDiscover", hosted, user, target) as { allowSessions: boolean }).allowSessions, true)
+  await create()
+  const [method, params, author] = f.calls[1] as [string, Record<string, unknown>, unknown]
+  assert.equal(method, "_deskfleet/input/submit")
+  assert.equal(params.sessionId, "created-session")
+  assert.deepEqual(params.content, [{ type: "text", text: "Run the checks" }])
+  assert.deepEqual(author, user)
+
+  await writeRemoteAgentSettings(f.directory, { allowRead: false, allowOperate: false, allowSessions: false })
+  await assert.rejects(create(), /start or message Sessions/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", hosted, actor, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, teamId: "other" }, user, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, machineId: "forged" }, user, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", source, user, target), /delegated user/)
+})
+
 test("remote requests cannot cross Teams, impersonate the source, or tunnel Agent messaging", async t => {
   const f = await fixture(t)
   await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: true })

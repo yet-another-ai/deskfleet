@@ -20,10 +20,16 @@ try {
   assert.equal(JSON.parse(info).status, "ready", "Eve must be able to refresh its diagnostic cache")
 
   docker("network", "create", network)
+  // The Rust fixture serves the DeskFleet API and model on this Linux bridge only.
+  const gateway = docker("network", "inspect", "--format", "{{(index .IPAM.Config 0).Gateway}}", network)
+  const fixtureAddress = `${gateway}:3101`
   await startPostgres(network, database, true)
   docker("run", "--name", bootstrap, "--network", network, "--env", world, image, "bootstrap")
   docker("run", "--detach", "--name", agent, "--network", network, "--publish", "127.0.0.1::3100",
-    "--env", world, "--env", "DESKFLEET_SUPER_AGENT_SECRET=fixture-secret", image)
+    "--env", world, "--env", "DESKFLEET_SUPER_AGENT_SECRET=fixture-secret",
+    "--env", `DESKFLEET_SUPER_AGENT_API_URL=http://${fixtureAddress}`,
+    "--env", `DESKFLEET_SUPER_AGENT_BASE_URL=http://${fixtureAddress}/v1`,
+    "--env", "DESKFLEET_SUPER_AGENT_MODEL=smoke-model", "--env", "DESKFLEET_SUPER_AGENT_CONTEXT_WINDOW_TOKENS=32768", image)
   const address = `127.0.0.1:${publishedPort(agent, 3100)}`
   const origin = `http://${address}`
   await ready("the Eve HTTP listener", async () => {
@@ -53,17 +59,17 @@ try {
   // This Actix fixture uses a local Statsig gate and the image's real Eve endpoint.
   const output = execFileSync("cargo", [
     "test", "--locked", ...(profile ? [profile] : []), "-p", "deskfleet-server", "--lib",
-    "cloud_agent::tests::image::create_empty_session", "--", "--ignored", "--exact",
+    "cloud_agent::tests::image::dispatch_session", "--", "--ignored", "--exact",
   ], {
     encoding: "utf8", stdio: ["ignore", "pipe", "inherit"],
     env: {
-      ...process.env, DESKFLEET_TEST_EVE_ADDRESS: address,
+      ...process.env, DESKFLEET_TEST_EVE_ADDRESS: address, DESKFLEET_TEST_API_ADDRESS: fixtureAddress,
       TEST_DATABASE_URL: `postgres://postgres:smoke-test@127.0.0.1:${publishedPort(database, 5432)}/deskfleet`,
     },
   })
   process.stdout.write(output)
   assert.match(output, /test result: ok\. 1 passed;/u, "The Rust/Eve image integration test must run")
-  console.log("Super Agent image passed PostgreSQL bootstrap, service authentication and DeskFleet Session creation")
+  console.log("Super Agent image passed PostgreSQL bootstrap, service authentication, Machine discovery and Session dispatch")
 } catch (error) {
   printLogs(bootstrap, agent, database)
   throw error

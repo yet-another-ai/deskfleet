@@ -85,6 +85,15 @@ impl ControlStore {
         Ok(json!({"token":token,"user":user,"sessionId":id,"expiresAt":timestamp(expires)}))
     }
     pub async fn authenticate(&self, token: &str) -> Result<AuthSession> {
+        self.active_login(sessions::Column::TokenHash.eq(secret_hash(token)))
+            .await
+    }
+    /// Resolve a trusted service delegation against the current login and account state.
+    pub async fn delegated_login(&self, login_id: &str) -> Result<AuthSession> {
+        self.active_login(Expr::col((sessions::Entity, sessions::Column::Id)).eq(login_id))
+            .await
+    }
+    async fn active_login(&self, predicate: Expr) -> Result<AuthSession> {
         let row = self
             .db
             .query_one(
@@ -101,7 +110,7 @@ impl ControlStore {
                         (users::Entity, users::Column::Name),
                         (users::Entity, users::Column::Email),
                     ])
-                    .and_where(sessions::Column::TokenHash.eq(secret_hash(token))),
+                    .and_where(predicate),
             )
             .await?
             .ok_or(Error::Unauthorized)?;

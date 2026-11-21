@@ -1,0 +1,331 @@
+[
+  {
+    "name": "deskfleet_remote_machines",
+    "operation": "machines",
+    "description": "List other online machines in this Session's Team that permit remote Agent access. Returns their IDs and current read/operate/session/workspace permissions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_machine",
+    "operation": "machine",
+    "description": "Read a remote machine's Workspaces, directories and public Agent provider information. Requires the target's read, session or workspace permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_sessions",
+    "operation": "sessions",
+    "description": "List Agent Sessions on another machine, optionally filtered by Workspace. Requires the target's read permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_session",
+    "operation": "session",
+    "description": "Read a remote Agent Session's state and conversation snapshot. Requires the target's read permission. Does not send messages or resume the Agent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId",
+        "sessionId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_session_history",
+    "operation": "history",
+    "description": "Read recorded conversation/tool events on another machine. Start at afterSeq 0 and continue with the last event's seq. Requires read permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "afterSeq": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "machineId",
+        "sessionId",
+        "afterSeq"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_session_create",
+    "operation": "sessionCreate",
+    "description": "Create an Agent Session on another machine and optionally submit its first prompt. Omit workspaceId to start a machine-scoped Session in the remote home directory. Requires the target's session permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "enum": [
+            "worktree",
+            "directory"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoningEffort": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "machineId",
+        "provider"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_session_send",
+    "operation": "sessionSend",
+    "description": "Submit a prompt to an Agent Session on another machine. Backlog messages resume a stopped or interrupted Session; steer messages require an active turn. Requires the target's session permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delivery": {
+          "enum": [
+            "backlog",
+            "steer"
+          ]
+        },
+        "turnId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId",
+        "sessionId",
+        "prompt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_workspace_create",
+    "operation": "workspaceCreate",
+    "description": "Create a Workspace on another machine from one or more existing remote absolute directory paths; the first path is the default directory. Requires the target's workspace permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "directories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "Ordered absolute directory paths; the first directory is the Workspace default."
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "directories"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_mcp_servers",
+    "operation": "mcpServers",
+    "description": "List enabled, configured MCP servers on another machine. Returns server IDs and names without connection credentials. Requires read or operate permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_mcp_tools",
+    "operation": "mcpTools",
+    "description": "Discover a configured remote MCP server's tools and argument schemas. Pass nextCursor as cursor for another page. Requires read or operate permission.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "machineId",
+        "serverId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "deskfleet_remote_mcp_call",
+    "operation": "mcpCall",
+    "description": "Call a tool from a configured MCP server on another machine. Use its discovered name and argument schema. Always requires the target's operate permission, including tools marked read-only. A failed or timed-out call may already have taken effect; do not blindly retry. This does not expose DeskFleet Agent messaging or scheduled-task tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "machineId",
+        "serverId",
+        "name",
+        "arguments"
+      ],
+      "additionalProperties": false
+    }
+  }
+]
