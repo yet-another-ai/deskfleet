@@ -41,7 +41,7 @@ runs:
       continue-on-error: true
       uses: jdx/mise-action@v5
       with:
-        version: 2026.11.9
+        version: 2026.11.12
         install_args: --locked ${{ inputs.tools }}
         cache: false
         # An explicit empty input suppresses mise-action's automatic token default.
@@ -52,7 +52,7 @@ runs:
       if: steps.mise.outcome == 'failure'
       uses: jdx/mise-action@v5
       with:
-        version: 2026.11.9
+        version: 2026.11.12
         install_args: --locked ${{ inputs.tools }}
         cache: false
         github_token: ${{ inputs.github-token }}
