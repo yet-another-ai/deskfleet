@@ -9,7 +9,10 @@ import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
 const record = z.record(z.string(), z.unknown())
-const sourceSchema = z.object({ teamId: nonEmpty, machineId: nonEmpty, sessionId: nonEmpty })
+const sourceSchema = z.union([
+  z.strictObject({ teamId: nonEmpty, machineId: nonEmpty, sessionId: nonEmpty }),
+  z.strictObject({ teamId: nonEmpty, kind: z.literal("superAgent"), sessionId: nonEmpty }),
+])
 
 /** This service is reached only through the authenticated backend control socket. */
 export class RemoteMcp {
@@ -33,14 +36,19 @@ export class RemoteMcp {
   async handle(method: "remoteMcpDiscover" | "remoteMcp", value: unknown, actor: AgentActor | undefined, target: { teamId: string; machineId: string }): Promise<unknown> {
     this.#closing.signal.throwIfAborted()
     const envelope = record.parse(value)
-    const parsedSource = sourceSchema.safeParse(method === "remoteMcpDiscover" ? envelope : record.parse(envelope.source))
-    if (!parsedSource.success || actor?.kind !== "user" || !actor.userId || !actor.deviceId
-      || parsedSource.data.teamId !== target.teamId || parsedSource.data.machineId === target.machineId
-      || parsedSource.data.machineId !== actor.sourceMachine?.id || !actor.sourceMachine?.originId) {
-      throw new Error("Remote MCP requires a delegated user from another machine in this Team")
+    const { data: source } = sourceSchema.safeParse(method === "remoteMcpDiscover" ? envelope : envelope.source)
+    if (!source || source.teamId !== target.teamId || actor?.kind !== "user" || !actor.userId || !actor.deviceId)
+      throw new Error("Remote MCP requires a delegated user in this Team")
+    if ("machineId" in source
+      ? source.machineId === target.machineId || source.machineId !== actor.sourceMachine?.id || !actor.sourceMachine?.originId
+      : actor.sourceMachine !== undefined)
+      throw new Error("Remote MCP source does not match the delegated user")
+    const readAccess = async () => {
+      const { allowSuperAgent, ...peerAccess } = await readRemoteAgentSettings(this.#directory)
+      if ("machineId" in source) return peerAccess
+      return { allowRead: allowSuperAgent, allowOperate: allowSuperAgent, allowSessions: allowSuperAgent, allowWorkspaces: allowSuperAgent }
     }
-    const settings = await readRemoteAgentSettings(this.#directory)
-    if (method === "remoteMcpDiscover") return settings
+    if (method === "remoteMcpDiscover") return readAccess()
     const operation = envelope.operation as RemoteMcpOperation
     const params = record.parse(envelope.arguments)
     const rawFileParams = record.safeParse(params.params).data
@@ -48,24 +56,25 @@ export class RemoteMcp {
       || (operation === "filesWrite" && params.method === "abort" && typeof rawFileParams?.transferId === "string" && this.#transfers.has(rawFileParams.transferId))
     const authorize = async () => {
       this.#closing.signal.throwIfAborted()
-      const current = await readRemoteAgentSettings(this.#directory)
+      const current = await readAccess()
       if (operation === "sessionCreate" || operation === "sessionSend") {
-        if (!current.allowSessions) throw new Error("This machine does not allow other machines' Agents to start or message Sessions on it")
+        if (!current.allowSessions) throw new Error("This machine does not allow remote Agents to start or message Sessions on it")
       } else if (operation === "workspaceCreate") {
-        if (!current.allowWorkspaces) throw new Error("This machine does not allow other machines' Agents to create Workspaces on it")
+        if (!current.allowWorkspaces) throw new Error("This machine does not allow remote Agents to create Workspaces on it")
       } else if (operation === "mcpCall" || operation === "filesWrite") {
-        if (!current.allowOperate) throw new Error("This machine does not allow other machines' Agents to operate it")
+        if (!current.allowOperate) throw new Error("This machine does not allow remote Agents to operate it")
       } else if (operation === "mcpServers" || operation === "mcpTools" || operation === "filesRead") {
         if (!current.allowRead && !current.allowOperate) throw new Error("This machine does not allow remote Agent access")
       } else if (operation === "machine") {
-        if (!current.allowRead && !current.allowSessions && !current.allowWorkspaces) throw new Error("This machine does not allow other machines' Agents to read it")
-      } else if (!current.allowRead) throw new Error("This machine does not allow other machines' Agents to read it")
+        if (!current.allowRead && !current.allowSessions && !current.allowWorkspaces) throw new Error("This machine does not allow remote Agents to read it")
+      } else if (!current.allowRead) throw new Error("This machine does not allow remote Agents to read it")
+      return current
     }
-    if (!isFileCleanup) await authorize()
+    const access = isFileCleanup ? undefined : await authorize()
     switch (operation) {
       case "machine":
         z.strictObject({}).parse(params)
-        return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access: settings }
+        return { catalog: await this.#operations.catalog.native.snapshot(), providers: this.#operations.providers.metadata(), access }
       case "sessions": {
         const { workspaceId } = z.strictObject({ workspaceId: nonEmpty.optional() }).parse(params)
         return (await this.#operations.agents.journal.list()).filter(session => workspaceId === undefined || session.workspaceId === workspaceId)

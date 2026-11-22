@@ -154,6 +154,15 @@ The API evaluates the Statsig `super_agent` rollout for the account and selected
 Team on every client request. Web and Electron discover the decision through
 the Team availability endpoint. The meter keeps settling accepted work after
 rollout removal. The server uses a private service credential for the runtime.
+On each message, Actix supplies the sender's login ID, Team and bound cloud
+Session to Eve's authenticated channel. Eve's DeskFleet MCP connection forwards
+the active turn's principal to the API. Each tool call resolves the active
+login and rechecks Team access, rollout and Session ownership. The API uses
+the shared remote MCP relay to reach the target registration. Target daemons
+recognize the cloud Session as a Super Agent source and check the host's
+`allowSuperAgent` setting on discovery and execution. This single opt-in
+grants the hosted tool catalog for that machine. Agents running on other
+machines use the host's separate remote Agent permissions.
 The cloud service owns conversation execution and replay. The control store owns Team membership,
 request receipts, Session bindings and the cloud token ledger. Each API instance
 can claim outstanding Session streams to meter. The cursor advances after the

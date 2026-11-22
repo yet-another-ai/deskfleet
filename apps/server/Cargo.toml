@@ -52,6 +52,3 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
-
-[package.metadata.cargo-shear]
-ignored = ["openssl"]

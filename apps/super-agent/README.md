@@ -11,8 +11,9 @@ Version-tag builds publish `ghcr.io/yet-another-ai/deskfleet-super-agent` for
 Linux amd64 and arm64. Use the same version tag as your DeskFleet server.
 On a private Docker network shared with the API and PostgreSQL, create an
 `eve.env` file with `WORKFLOW_POSTGRES_URL`, `DESKFLEET_SUPER_AGENT_SECRET`,
-and the model settings described below. Use a PostgreSQL hostname reachable
-from the container.
+and the model settings described below. Set `DESKFLEET_SUPER_AGENT_API_URL`
+to the Rust API origin reachable from Eve (for example `http://api:8080`).
+Use a PostgreSQL hostname reachable from the container.
 
 Set `DESKFLEET_VERSION` to your server's release version and substitute your
 application network for `deskfleet`. Run `bootstrap` on the first deployment
@@ -85,6 +86,8 @@ mise exec -- pnpm --filter @deskfleet/super-agent start --host 127.0.0.1 --port 
 ```
 
 Set `DESKFLEET_SUPER_AGENT_URL=http://127.0.0.1:3100` on the Rust server.
+Eve connects back to `http://127.0.0.1:8080` by default. Set
+`DESKFLEET_SUPER_AGENT_API_URL` on Eve if the Rust server listens elsewhere.
 Configure its `DESKFLEET_STATSIG_SERVER_KEY` and `DESKFLEET_STATSIG_ENVIRONMENT`
 (default `production`). In that Statsig environment, enable the feature gate
 `super_agent` for the intended accounts or Teams. The feature defaults to off,
@@ -104,6 +107,24 @@ replicas use credits for admission. Changes to a plan's allowance apply to
 existing Teams on their next request. The initial hosted allowance is zero. Select
 unlimited to allow new work without a credit cap. Self-hosted deployments can
 use their own model account with unlimited credits.
+
+## Dispatch work to a Machine
+
+On the target desktop, open **Settings → Preferences → This computer** and
+enable **Allow Super Agent to use this computer**. On a headless daemon, set
+`"allowSuperAgent": true` in `<host directory>/remote-agent-settings.json`.
+This single switch grants all hosted machine tools. Super Agent can inspect
+Workspaces and providers, create Workspaces and Sessions, send follow-ups,
+read Session history, and invoke the machine's configured MCP tools. Turn the
+switch off to withdraw access.
+
+Ask Super Agent to list available machines and providers, then describe the
+task and the target Workspace.
+
+The built-in DeskFleet MCP connection lists online registrations in the
+conversation's Team. Each tool call runs with the current message sender's
+login and checks the target's current permissions. Upgrade the target daemon,
+API and Eve service together to use hosted dispatch.
 
 ## Team API
 

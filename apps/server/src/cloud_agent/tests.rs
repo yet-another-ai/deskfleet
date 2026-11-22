@@ -1,4 +1,5 @@
 mod image;
+mod mcp;
 mod rich_messages;
 
 use super::*;

@@ -12,6 +12,8 @@ import { readRemoteAgentSettings, writeRemoteAgentSettings } from "./remote-agen
 const target = { teamId: "team", machineId: "target" }
 const source = { teamId: "team", machineId: "source", sessionId: "source-session" }
 const actor = { kind: "user" as const, userId: "user", deviceId: "login", sourceMachine: { id: "source", originId: "origin" } }
+const noAccess = { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false }
+const fullAccess = { allowRead: true, allowOperate: true, allowSessions: true, allowWorkspaces: true }
 
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "df-remote-mcp-"))
@@ -49,8 +51,8 @@ async function fixture(t: TestContext) {
 
 test("remote access defaults off, persists across readers, and disabling immediately blocks requests", async t => {
   const f = await fixture(t)
-  assert.deepEqual(await readRemoteAgentSettings(f.directory), { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false })
-  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), { allowRead: false, allowOperate: false, allowSessions: false, allowWorkspaces: false })
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { ...noAccess, allowSuperAgent: false })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), noAccess)
   for (const method of ["machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "filesRead", "filesWrite"]) await assert.rejects(f.call(method), /does not allow/)
   await writeRemoteAgentSettings(f.directory, { allowRead: true, allowOperate: false })
   await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
@@ -137,6 +139,45 @@ test("a permission change during MCP startup prevents tool dispatch", async t =>
     assert.fail("revoked tool must not execute")
   })
   await assert.rejects(service.handle("remoteMcp", { source, operation: "mcpCall", arguments: { serverId: f.config.id, name: "record" } }, actor, target), /operate/)
+})
+
+test("a hosted Super Agent dispatches Sessions under the initiating user and live target consent", async t => {
+  const f = await fixture(t)
+  const hosted = { kind: "superAgent", teamId: target.teamId, sessionId: "cloud-session" }
+  const user = { kind: "user" as const, userId: "bob", deviceId: "login-bob" }
+  const call = (operation: string, args: Record<string, unknown> = {}) =>
+    f.service.handle("remoteMcp", { source: hosted, operation, arguments: args }, user, target)
+  const create = () => call("sessionCreate", { provider: "agent", prompt: "Run the checks" })
+  const settingsPath = join(f.directory, "remote-agent-settings.json")
+  await writeFile(settingsPath, JSON.stringify(fullAccess))
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { ...fullAccess, allowSuperAgent: false })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", hosted, user, target), noAccess)
+  await assert.rejects(create(), /start or message Sessions/)
+  await writeFile(settingsPath, '{"allowSuperAgent":true}')
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { ...noAccess, allowSuperAgent: true })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", hosted, user, target), fullAccess)
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), noAccess)
+  await assert.rejects(f.call("sessionCreate", { provider: "agent" }), /start or message Sessions/)
+  assert.deepEqual((await call("machine") as { access: unknown }).access, fullAccess)
+  assert.deepEqual(await call("sessions", { workspaceId: "workspace" }), [{ id: "session", workspaceId: "workspace" }])
+  await create()
+  const [method, params, author] = f.calls[1] as [string, Record<string, unknown>, unknown]
+  assert.equal(method, "_deskfleet/input/submit")
+  assert.equal(params.sessionId, "created-session")
+  assert.deepEqual(params.content, [{ type: "text", text: "Run the checks" }])
+  assert.deepEqual(author, user)
+
+  assert.deepEqual(await call("workspaceCreate", { name: "Hosted repo", directories: [{ path: "/srv/repo" }] }), {
+    id: "created-workspace", name: "Hosted repo", directories: [{ path: "/srv/repo" }],
+  })
+  assert.equal((await call("mcpCall", { serverId: f.config.id, name: "record", arguments: {} }) as { structuredContent: { recorded: boolean } }).structuredContent.recorded, true)
+  await writeRemoteAgentSettings(f.directory, { ...fullAccess, allowSuperAgent: false })
+  assert.deepEqual(await readRemoteAgentSettings(f.directory), { ...fullAccess, allowSuperAgent: false })
+  await assert.rejects(create(), /start or message Sessions/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", hosted, actor, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, teamId: "other" }, user, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, machineId: "forged" }, user, target), /delegated user/)
+  await assert.rejects(f.service.handle("remoteMcpDiscover", source, user, target), /delegated user/)
 })
 
 test("remote requests cannot cross Teams, impersonate the source, or tunnel Agent messaging", async t => {

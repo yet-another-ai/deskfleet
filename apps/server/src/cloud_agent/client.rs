@@ -11,6 +11,21 @@ pub(crate) struct EveClient {
 }
 
 impl EveClient {
+    pub(super) fn authenticate_service(&self, req: &actix_web::HttpRequest) -> Result<()> {
+        use sha2::{Digest, Sha256};
+        let token = req
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .ok_or_else(ApiError::unauthorized)?;
+        if openssl::memcmp::eq(&Sha256::digest(token), &Sha256::digest(&self.secret)) {
+            Ok(())
+        } else {
+            Err(ApiError::unauthorized())
+        }
+    }
+
     pub(crate) fn from_env() -> Result<Option<Self>> {
         let url = setting("DESKFLEET_SUPER_AGENT_URL");
         let secret = setting("DESKFLEET_SUPER_AGENT_SECRET");

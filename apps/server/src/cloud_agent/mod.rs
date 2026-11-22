@@ -1,6 +1,7 @@
 //! Authenticated Team gateway to the private Super Agent runtime.
 mod client;
 mod content;
+mod mcp;
 mod rollout;
 
 use crate::{
@@ -14,8 +15,9 @@ use actix_web::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 pub(crate) use client::EveClient;
 use content::Message;
-use deskfleet_control_store::{CloudPrewarm, billing::CloudTokenPeriod, policies::TeamAction};
-use deskfleet_protocol::control::User;
+use deskfleet_control_store::{
+    AuthSession, CloudPrewarm, billing::CloudTokenPeriod, policies::TeamAction,
+};
 pub(crate) use rollout::Rollout;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::json;
@@ -23,6 +25,7 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 pub(crate) fn configure(config: &mut web::ServiceConfig) {
+    config.route("/super-agent/mcp", web::post().to(mcp::handle));
     config.service(
         web::scope("/teams/{teamId}/super-agent")
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
@@ -107,19 +110,17 @@ struct StreamQuery {
 }
 
 async fn rollout_for_member(
-    req: &HttpRequest,
+    actor: &AuthSession,
     state: &AppState,
     team: &str,
     action: TeamAction,
-) -> Result<(User, bool)> {
-    let actor = auth::user(req, state).await?;
+) -> Result<bool> {
     state
         .store
         .authorize_team(&actor.user.id, team, action)
         .await?;
     let team_id = deskfleet_control_store::resource_id(team)?;
-    let enabled = state.super_agent_rollout.enabled(&actor.user, team_id);
-    Ok((actor.user, enabled))
+    Ok(state.super_agent_rollout.enabled(&actor.user, team_id))
 }
 
 async fn availability(
@@ -127,7 +128,8 @@ async fn availability(
     state: web::Data<AppState>,
     team: web::Path<String>,
 ) -> Result<HttpResponse> {
-    let (_, enabled) = rollout_for_member(&req, &state, &team, TeamAction::Read).await?;
+    let actor = auth::user(&req, &state).await?;
+    let enabled = rollout_for_member(&actor, &state, &team, TeamAction::Read).await?;
     Ok(HttpResponse::Ok().json(json!({ "enabled": enabled })))
 }
 
@@ -136,8 +138,13 @@ async fn authorize(
     state: &AppState,
     team: &str,
     action: TeamAction,
-) -> Result<User> {
-    let (user, enabled) = rollout_for_member(req, state, team, action).await?;
+) -> Result<AuthSession> {
+    let actor = auth::user(req, state).await?;
+    require_rollout(rollout_for_member(&actor, state, team, action).await?)?;
+    Ok(actor)
+}
+
+fn require_rollout(enabled: bool) -> Result<()> {
     if !enabled {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
@@ -145,7 +152,7 @@ async fn authorize(
             "Super Agent is disabled",
         ));
     }
-    Ok(user)
+    Ok(())
 }
 
 fn runtime(state: &AppState) -> Result<&EveClient> {
@@ -209,7 +216,7 @@ async fn create(
         None => "create".to_owned(),
     };
     let eve = runtime(&state)?;
-    let key = request_key(&actor.id, &team, &body.operation_id)?;
+    let key = request_key(&actor.user.id, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
     let claim = state
         .store
@@ -234,9 +241,9 @@ async fn create(
             &state,
             &team,
             &session,
+            &actor,
             &delivery_key,
             &message,
-            &actor,
             true,
         )
         .await?;
@@ -285,15 +292,15 @@ async fn message(
     require_session(&state, &team, &session).await?;
     let body: MessageRequest = read_body(&req, body).await?;
     body.message.validate()?;
-    let key = request_key(&actor.id, &team, &body.operation_id)?;
+    let key = request_key(&actor.user.id, &team, &body.operation_id)?;
     let admitted = period(&state, &team).await?.admitted;
     let delivery = deliver(
         &state,
         &team,
         &session,
+        &actor,
         &key,
         &body.message,
-        &actor,
         admitted,
     )
     .await?;
@@ -304,9 +311,9 @@ async fn deliver(
     state: &AppState,
     team: &str,
     session: &str,
+    actor: &AuthSession,
     key: &str,
     message: &Message,
-    sender: &User,
     admitted: bool,
 ) -> Result<String> {
     let eve = runtime(state)?;
@@ -321,10 +328,13 @@ async fn deliver(
             // Schedule usage collection before delivery: eve may accept the
             // message even when the HTTP acknowledgement is lost.
             state.store.wake_cloud_meter(team, session).await?;
-            let sender = json!({"id": sender.id, "name": sender.name});
+            let sender = json!({"id": actor.user.id, "name": actor.user.name});
             let response = client::send(
                 eve.post(&["eve", "v1", "session", session])?
                     .header(SENDER_HEADER, URL_SAFE_NO_PAD.encode(sender.to_string()))
+                    .header("x-deskfleet-team-id", team)
+                    .header("x-deskfleet-login-id", &actor.id)
+                    .header("x-deskfleet-session-id", session)
                     .json(&EveDelivery {
                         message,
                         idempotency_key: key,

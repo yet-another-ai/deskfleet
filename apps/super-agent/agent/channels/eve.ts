@@ -34,8 +34,13 @@ export default eveChannel({
     // Eve runs onMessage after authenticating the DeskFleet gateway.
     const sender = readSender(ctx.eve.request)
     if (!sender) return { auth: defaultEveAuth(ctx) }
+    const headers = ctx.eve.request.headers
+    const teamId = headers.get("x-deskfleet-team-id")
+    const loginId = headers.get("x-deskfleet-login-id")
+    const sessionId = headers.get("x-deskfleet-session-id")
+    const attributes: Record<string, string> = teamId && loginId && sessionId ? { teamId, loginId, sessionId } : {}
     return {
-      auth: { authenticator: "deskfleet", principalId: sender.id, principalType: "user", attributes: {} },
+      auth: { authenticator: "deskfleet", principalId: sender.id, principalType: "user", attributes },
       context: [`DeskFleet message sender: ${JSON.stringify(sender)}`],
     }
   },

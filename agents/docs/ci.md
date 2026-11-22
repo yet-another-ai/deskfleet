@@ -684,9 +684,11 @@ output. The package uses the same locked Node, pnpm and workspace dependency
 fetches as the Web build. Its image includes Eve and the PostgreSQL bootstrap
 command. The image smoke test
 bootstraps a disposable PostgreSQL database, starts Eve, checks its private
-channel authentication, and creates an empty Session and reads its history
-through the Rust Team API. The test uses a local Statsig gate override and
-requires no model credential.
+channel authentication, and sends a task through the Rust Team API. A scripted
+model drives Eve through MCP discovery and Session creation on a fixture
+daemon connection. The test checks the delegated actor and reads the resulting
+reply through the Team API. It uses a local Statsig gate override and requires
+no model credential.
 
 Eve uses Gateway model IDs and context windows to compile its dynamic model
 selector. `nix/super-agent-model-catalog.json` pins that input for offline

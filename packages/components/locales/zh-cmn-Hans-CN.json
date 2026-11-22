@@ -774,6 +774,8 @@
     "notificationTaskNeedsInput": "任务需要回应",
     "notificationTaskNeedsInputDescription": "智能体因等待问题回答或操作批准而暂停时通知我。",
     "remoteAgents": {
+      "allowSuperAgent": "允许 Super Agent 使用本机",
+      "allowSuperAgentDescription": "本机注册的各个团队都可以通过 Super Agent 创建工作区、启动 Agent 会话、向会话发送消息、读取会话历史，以及调用本机配置的 MCP 工具。",
       "allowRead": "允许其它机器上的 Agent 读取本机",
       "allowReadDescription": "同一团队中的 Agent 可以查看本机的工作区、Agent 会话和对话历史，以及发现 MCP 工具。",
       "allowOperate": "允许其它机器上的 Agent 操作本机",

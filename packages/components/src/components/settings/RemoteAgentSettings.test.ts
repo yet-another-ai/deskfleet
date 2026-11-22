@@ -9,7 +9,7 @@ let view: VueWrapper | undefined
 afterEach(() => { view?.unmount(); vi.restoreAllMocks(); i18n.global.locale.value = "en-US" })
 const render = () => view = mount(RemoteAgentSettings, { global: { plugins: [i18n] } })
 
-test("loads both permissions and only shows a change after it is saved", async () => {
+test("loads permissions and only shows a change after it is saved", async () => {
   let loaded!: (value: Settings) => void
   let saved!: (value: Settings) => void
   vi.spyOn(client.settings, "getRemoteAgentSettings").mockImplementation(() => new Promise(resolve => { loaded = resolve }))
@@ -35,6 +35,23 @@ test("loads both permissions and only shows a change after it is saved", async (
   expect(workspaces!.attributes("aria-checked")).toBe("true")
 })
 
+test("Super Agent access defaults to off and can be changed independently", async () => {
+  const ordinary = { allowRead: true, allowOperate: false, allowSessions: false, allowWorkspaces: true }
+  vi.spyOn(client.settings, "getRemoteAgentSettings").mockResolvedValue(ordinary)
+  const save = vi.spyOn(client.settings, "setRemoteAgentSettings").mockImplementation(async settings => settings)
+  const wrapper = render()
+  await flushPromises()
+  const superAgent = wrapper.get('[aria-labelledby="remote-agents-allowSuperAgent-label"]')
+  expect(superAgent.attributes("aria-checked")).toBe("false")
+  await superAgent.trigger("click")
+  await flushPromises()
+  expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowSuperAgent: true })
+  expect(superAgent.attributes("aria-checked")).toBe("true")
+  await wrapper.get('[aria-labelledby="remote-agents-allowRead-label"]').trigger("click")
+  await flushPromises()
+  expect(save).toHaveBeenLastCalledWith({ ...ordinary, allowRead: false, allowSuperAgent: true })
+})
+
 test("failed saves retain the confirmed permissions and failed loads can be retried", async () => {
   vi.spyOn(client.settings, "getRemoteAgentSettings").mockRejectedValueOnce(new Error("Load failed")).mockResolvedValue({ allowRead: true, allowOperate: false })
   vi.spyOn(client.settings, "setRemoteAgentSettings").mockRejectedValue(new Error("Save failed"))
@@ -55,6 +72,7 @@ test("Chinese preferences explain the separate permissions", async () => {
   i18n.global.locale.value = "zh-cmn-Hans-CN"
   const wrapper = render()
   await flushPromises()
+  expect(wrapper.text()).toContain("允许 Super Agent 使用本机")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 读取本机")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 操作本机")
   expect(wrapper.text()).toContain("允许其它机器上的 Agent 在本机启动会话并发送消息")

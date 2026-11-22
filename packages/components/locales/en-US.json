@@ -774,6 +774,8 @@
     "notificationTaskNeedsInput": "Task needs input",
     "notificationTaskNeedsInputDescription": "Notify me when an agent pauses for a question or approval.",
     "remoteAgents": {
+      "allowSuperAgent": "Allow Super Agent to use this computer",
+      "allowSuperAgentDescription": "Super Agent in each Team registered on this computer can create Workspaces, start and message Agent sessions, read their history and run configured MCP tools.",
       "allowRead": "Allow Agents on other machines to read this computer",
       "allowReadDescription": "Agents in the same team can view this computer's Workspaces, Agent sessions and conversation history, and discover its MCP tools.",
       "allowOperate": "Allow Agents on other machines to operate this computer",
