@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 mod physical_keys;
 pub use physical_keys::NativeKeyCode;
 
+#[cfg(any(target_os = "ios", test))]
+mod hid_keys;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -29,7 +32,7 @@ mod windows_keys;
 use windows::PlatformInput;
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", target_os = "android", test))]
 mod linux_keys;
 #[cfg(target_os = "linux")]
 use linux::PlatformInput;

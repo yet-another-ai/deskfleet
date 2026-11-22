@@ -74,7 +74,12 @@ machine, Session, and read-only Agent terminals. Ctrl/Cmd+F opens search within
 the focused terminal; Enter/Shift+Enter or F3/Shift+F3 navigate matches while
 search has focus, and Escape closes it and returns focus to the terminal.
 Ctrl+C copies the terminal selection when text is selected and otherwise sends
-`\x03` in interactive terminals.
+`\x03` in interactive terminals. On iPhone, iPad, and Android, physical keyboards (including Bluetooth keyboards)
+send Ctrl, Alt/Option, and navigation shortcuts using the same control characters
+and escape sequences as the terminal keypad. The viewer uses the reported key
+and falls back to its physical position for unidentified shortcuts. AltGr types
+the character produced by the keyboard layout. Dead keys and composing text
+stay with the IME.
 In interactive terminals, Cmd+Left and Cmd+Right move the cursor to the line
 start (`\x01`) and end (`\x05`). Alt+Left and Alt+Right move it by word (`\x1bb`
 and `\x1bf`).

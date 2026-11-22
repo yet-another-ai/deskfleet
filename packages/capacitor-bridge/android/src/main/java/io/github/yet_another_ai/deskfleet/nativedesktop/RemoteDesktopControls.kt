@@ -1,11 +1,12 @@
 package io.github.yet_another_ai.deskfleet.nativedesktop
 
+import android.app.Activity
 import android.content.res.Configuration
 import android.graphics.RectF
+import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import org.json.JSONArray
@@ -13,16 +14,15 @@ import org.json.JSONObject
 
 /** Platform adapter for the shared Rust NSH controls; no toolbar or keyboard layout lives here. */
 internal class RemoteDesktopControls(
-    private val root: FrameLayout,
+    private val context: Activity,
     private val send: (String) -> Unit,
     private val emit: (JSONObject) -> Unit,
     private val clipboard: () -> Unit,
     private val close: () -> Unit,
     private val toggleFullscreen: () -> Unit,
 ) {
-    private val context = root.context
     private val density get() = context.resources.displayMetrics.density
-    val input = RemoteDesktopInput(send)
+    val input = RemoteDesktopInput(send) { events -> DeskFleetBridge.nativeInputSequence(JSONArray(events).toString()) }
     var onRelease: () -> Unit = {}
     var relative = false
         private set
@@ -37,11 +37,7 @@ internal class RemoteDesktopControls(
         private set
     private var paused = false
     private var fullscreen = true
-    /** The open toolbar dropdown: "control", "config", or "monitor". */
-    private var panel: String? = null
     private var hackerOpen = false
-    private var collapsed = false
-    private var selectOpen = false
     private var imeVisible = false
     private var destroyed = false
     private var nativeHandle = 0L
@@ -49,31 +45,32 @@ internal class RemoteDesktopControls(
         .put("displays", JSONArray()).put("displayId", 0).put("control", false)
         .put("inputReady", false).put("secureAttention", false)
     private var safe = RectF()
-    private val toolbar = RectF(12f, 12f, 292f, 100f)
-    private val panelBounds = RectF(12f, 108f, 300f, 420f)
-    private val hacker = RectF(12f, 120f, 340f, 400f)
-    private var keyboardLimit = Pair(328f, 280f)
-    private var gripStart: Pair<Float, Float>? = null
-    private var gripOrigin = Pair(12f, 12f)
-    private val keyboard = RemoteDesktopKeyboard(context, input).apply { alpha = 0.01f }
+    private var gripPreviousX = 0f
+    private var gripPreviousY = 0f
+    private val keyboard = RemoteDesktopKeyboard(context, input)
     private val overlay = NshDesktopOverlay(context, ::hitTest, ::dragToolbar)
+    val surface = DeskFleetBridge.nativeMountViewer(context, keyboard, overlay)
+    private val root = surface.parent as View
 
     init {
-        root.addView(keyboard, FrameLayout.LayoutParams(1, 1))
-        root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         overlay.setErrorListener { message ->
             if (!destroyed) emit(JSONObject().put("type", "error").put("error", message))
         }
         nativeHandle = DeskFleetBridge.nativeAttachControls(overlay, this, snapshot().toString())
         overlay.runRustApp("deskfleet")
+        surface.isFocusableInTouchMode = true
+        surface.requestFocus()
+        keyboard.preIme = { event -> handleHardwareKey(event, beforeIme = true) }
         keyboard.onInput = ::publish
-        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> layout() }
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> publish() }
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            val visible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (imeVisible && !visible && keyboard.hasFocus()) surface.requestFocus()
+            imeVisible = visible
             safe = RectF(bars.left / density, bars.top / density, bars.right / density, maxOf(bars.bottom, ime.bottom) / density)
-            layout()
+            publish()
             insets
         }
     }
@@ -87,10 +84,6 @@ internal class RemoteDesktopControls(
         if (oldDisplay != ui.optInt("displayId", -1)) {
             release()
             resetPointer()
-        }
-        if (!connected()) {
-            panel = null
-            selectOpen = false
         }
         if (!ui.optBoolean("control") || !ui.optBoolean("inputReady") || !connected()) {
             if (paused) send(JSONObject().put("type", "pauseInput").put("paused", false).toString())
@@ -119,15 +112,10 @@ internal class RemoteDesktopControls(
             "toggleFullscreen" -> { fullscreen = !fullscreen; toggleFullscreen() }
             "togglePanel" -> {
                 release()
-                val next = action.getString("value")
-                panel = if (panel == next) null else next
                 hackerOpen = false
-                selectOpen = false
             }
             "selectDisplay" -> {
                 release()
-                panel = null
-                selectOpen = false
                 emit(JSONObject().put("type", "selectDisplay").put("displayId", action.getInt("value")))
             }
             "setControl" -> {
@@ -154,7 +142,6 @@ internal class RemoteDesktopControls(
             "resetZoom" -> resetZoom()
             "reconnect", "disconnect" -> {
                 release()
-                panel = null
                 emit(JSONObject().put("type", action.getString("type")))
             }
             "toggleMouseMode" -> { release(); relative = !relative; resetPointer() }
@@ -162,8 +149,6 @@ internal class RemoteDesktopControls(
             "toggleHackerKeyboard" -> if (input.enabled) {
                 release()
                 hackerOpen = !hackerOpen
-                panel = null
-                selectOpen = false
             }
             "setPasteShift" -> input.pasteShift = action.getBoolean("value")
             "toggleModifier" -> input.toggleModifier(action.getString("value"))
@@ -181,36 +166,13 @@ internal class RemoteDesktopControls(
             "close" -> close()
             "toggleCollapsed" -> {
                 release()
-                collapsed = !collapsed
-                panel = null
                 hackerOpen = false
-                selectOpen = false
                 input.clearModifiers()
             }
-            "selectOpen" -> { selectOpen = action.getBoolean("value"); if (selectOpen) release() }
-            "measured" -> {
-                val size = action.getJSONArray("value")
-                if (sameSize(toolbar, size)) return
-                toolbar.right = toolbar.left + size.getDouble(0).toFloat()
-                toolbar.bottom = toolbar.top + size.getDouble(1).toFloat()
-            }
-            "panelMeasured" -> {
-                val height = action.getDouble("value").toFloat()
-                if (kotlin.math.abs(panelBounds.height() - height) < 0.5f) return
-                panelBounds.bottom = panelBounds.top + height
-            }
-            "keyboardMeasured" -> {
-                val size = action.getJSONArray("value")
-                if (sameSize(hacker, size)) return
-                hacker.right = hacker.left + size.getDouble(0).toFloat()
-                hacker.bottom = hacker.top + size.getDouble(1).toFloat()
-            }
+            "selectOpen" -> if (action.getBoolean("value")) release()
         }
-        layout()
+        publish()
     }
-
-    private fun sameSize(rect: RectF, size: JSONArray) =
-        kotlin.math.abs(rect.width() - size.getDouble(0)) < 0.5 && kotlin.math.abs(rect.height() - size.getDouble(1)) < 0.5
 
     fun release(preserveModifiers: Boolean = false) {
         onRelease()
@@ -228,13 +190,23 @@ internal class RemoteDesktopControls(
     }
 
     fun closeKeyboard(): Boolean {
-        if (imeVisible) { hideKeyboard(); return true }
+        if (keyboard.hasFocus()) { hideKeyboard(); return true }
         if (hackerOpen) { hackerOpen = false; input.clearModifiers(); publish(); return true }
-        if (panel != null) { panel = null; selectOpen = false; publish(); return true }
-        return false
+        return DeskFleetBridge.nativeDismissPanel(nativeHandle)
     }
 
-    fun focusKeyboard() { if (input.enabled) keyboard.requestFocus() }
+    fun focusVideo() {
+        if (input.enabled && !keyboard.hasFocus()) {
+            DeskFleetBridge.nativeDismissPanel(nativeHandle)
+            surface.requestFocus()
+        }
+    }
+
+    fun handleHardwareKey(event: KeyEvent, beforeIme: Boolean = false): Boolean {
+        if (!input.enabled || destroyed || !surface.hasWindowFocus()) return false
+        if (!keyboard.hasFocus() && DeskFleetBridge.nativeControlsOwnFocus(nativeHandle)) return false
+        return keyboard.handleHardware(event, beforeIme)
+    }
 
     fun destroy() {
         if (destroyed) return
@@ -265,7 +237,7 @@ internal class RemoteDesktopControls(
     private fun toggleKeyboard() {
         if (!input.enabled) return
         release(preserveModifiers = true)
-        if (imeVisible) hideKeyboard()
+        if (keyboard.hasFocus()) hideKeyboard()
         else {
             keyboard.requestFocus()
             context.getSystemService(InputMethodManager::class.java)?.showSoftInput(keyboard, InputMethodManager.SHOW_IMPLICIT)
@@ -275,55 +247,26 @@ internal class RemoteDesktopControls(
     private fun hideKeyboard() {
         keyboard.cancelComposition()
         context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(keyboard.windowToken, 0)
-        keyboard.clearFocus()
+        if (keyboard.hasFocus()) surface.requestFocus()
     }
 
-    private fun hitTest(x: Float, y: Float): Boolean {
-        val pointX = x / density
-        val pointY = y / density
-        return !connected() || selectOpen || toolbar.contains(pointX, pointY) ||
-            (panel != null && panelBounds.contains(pointX, pointY)) ||
-            (hackerOpen && hacker.contains(pointX, pointY))
-    }
+    fun hitTest(x: Float, y: Float): Boolean =
+        DeskFleetBridge.nativeControlsHit(nativeHandle, x / density, y / density, false)
 
     private fun dragToolbar(event: MotionEvent): Boolean {
         val x = event.x / density
         val y = event.y / density
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            // The shared bar has a 1pt border and 4pt padding around its 44x40pt grip.
-            val gripLeft = toolbar.left + 5f
-            val gripTop = toolbar.top + 5f
-            if (selectOpen || x < gripLeft || x >= gripLeft + 44f || y < gripTop || y >= gripTop + 40f) return false
-            release()
-            gripStart = Pair(x, y)
-            gripOrigin = Pair(toolbar.left, toolbar.top)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (!DeskFleetBridge.nativeControlsHit(nativeHandle, x, y, true)) return false
+                release()
+            }
+            MotionEvent.ACTION_MOVE ->
+                DeskFleetBridge.nativeDragToolbar(nativeHandle, x - gripPreviousX, y - gripPreviousY)
         }
-        val start = gripStart ?: return false
-        if (event.actionMasked == MotionEvent.ACTION_MOVE) {
-            toolbar.offsetTo(gripOrigin.first + x - start.first, gripOrigin.second + y - start.second)
-            layout()
-        }
-        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) gripStart = null
+        gripPreviousX = x
+        gripPreviousY = y
         return true
-    }
-
-    private fun layout() {
-        if (destroyed) return
-        val width = root.width / density
-        val height = root.height / density
-        if (width <= 0 || height <= 0) return
-        val left = safe.left + 8f
-        val top = safe.top + 8f
-        val right = (width - safe.right - 8f).coerceAtLeast(left)
-        val bottom = (height - safe.bottom - 8f).coerceAtLeast(top)
-        val toolbarBottom = if (hackerOpen) (bottom - 88f).coerceAtLeast(top) else bottom
-        toolbar.offsetTo(toolbar.left.coerceIn(left, (right - toolbar.width()).coerceAtLeast(left)), toolbar.top.coerceIn(top, (toolbarBottom - toolbar.height()).coerceAtLeast(top)))
-        panelBounds.right = panelBounds.left + minOf(288f, (width - safe.left - safe.right - 24f).coerceAtLeast(0f))
-        val panelY = if (toolbar.bottom + 8f + panelBounds.height() <= bottom) toolbar.bottom + 8f else toolbar.top - panelBounds.height() - 8f
-        panelBounds.offsetTo(toolbar.left.coerceIn(left, (right - panelBounds.width()).coerceAtLeast(left)), panelY.coerceIn(top, (bottom - panelBounds.height()).coerceAtLeast(top)))
-        keyboardLimit = Pair((right - left).coerceAtLeast(0f), (bottom - toolbar.bottom - 8f).coerceIn(40f, 320f))
-        hacker.offsetTo(left, (bottom - minOf(hacker.height(), keyboardLimit.second)).coerceAtLeast(top))
-        publish()
     }
 
     private fun snapshot(): JSONObject {
@@ -332,19 +275,12 @@ internal class RemoteDesktopControls(
             .put("reverseScroll", reverseScroll).put("clipboardSharing", clipboardSharing)
             .put("fullscreen", fullscreen)
             .put("dark", context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
-            .put("panel", panel ?: JSONObject.NULL).put("pinchZoom", pinchZoom).put("relativeMouse", relative)
+            .put("pinchZoom", pinchZoom).put("relativeMouse", relative)
             .put("keyboardOpen", imeVisible).put("hackerOpen", hackerOpen)
-            .put("pasteShift", input.pasteShift).put("dragging", dragging).put("collapsed", collapsed)
+            .put("pasteShift", input.pasteShift).put("dragging", dragging)
             .put("modifiers", JSONArray(modifiers))
-            .put("position", JSONArray(listOf(toolbar.left, toolbar.top)))
-            .put("toolbarSize", JSONArray(listOf(toolbar.width(), toolbar.height())))
-            .put("viewport", JSONArray(listOf(
-                (root.width / density - safe.left - safe.right).coerceAtLeast(0f),
-                (root.height / density - safe.top - safe.bottom).coerceAtLeast(0f),
-            )))
-            .put("panelPosition", JSONArray(listOf(panelBounds.left, panelBounds.top))).put("panelHeight", panelBounds.height())
-            .put("keyboardPosition", JSONArray(listOf(hacker.left, hacker.top)))
-            .put("keyboardSize", JSONArray(listOf(keyboardLimit.first, keyboardLimit.second)))
+            .put("viewport", JSONArray(listOf(root.width / density, root.height / density)))
+            .put("insets", JSONArray(listOf(safe.left, safe.top, safe.right, safe.bottom)))
     }
 
     private fun publish() {

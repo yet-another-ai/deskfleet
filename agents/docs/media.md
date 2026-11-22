@@ -938,8 +938,8 @@ requires a working graphics driver and the corresponding platform libraries.
 NSH's core and platform backends are pinned to 0.6.0, with GPUI Fast 0.1.17 on
 desktop. The Android build stages the pinned crate's Java runtime sources and
 packages NSH and DeskFleet's JNI entry points together in `libnsh.so`. The iOS
-build links NSH into the existing viewer static library; a thin C bridge exposes
-its UIKit view to the Swift controller.
+build links NSH into the viewer static library. Swift calls its C interface to
+mount the viewer and forward UIKit lifecycle events.
 
 On Windows, the viewer executable uses the GUI subsystem and its launcher does
 not set `windowsHide`: that flag also hides GPUI's window, even while the peer
@@ -1123,8 +1123,11 @@ Native Android/iOS viewers use the shared NSH floating toolbar, settings, and
 Hacker Keyboard, with touch-sized buttons and a compact layout. The controls
 provide display and control settings, pause/resume, clipboard,
 disconnect/reconnect, and close actions.
-The toolbar stays within safe areas when the device rotates or the system keyboard
-opens. Collapsing the mobile toolbar closes its dropdown.
+Rust constructs the Android and iOS viewer hierarchies. Both hosts pass their
+available viewport to the shared Rust layout, which places the toolbar,
+dropdown, and Hacker Keyboard and determines which points belong to those
+controls. The toolbar stays within safe areas when the device rotates or the
+system keyboard opens. Collapsing the mobile toolbar closes its dropdown.
 
 Pinch zoom magnifies the presented video locally, up to 5× and the GPU's largest
 viewport. It changes neither the remote display nor the stream, so it also works
@@ -1143,9 +1146,21 @@ one-finger motion drags. Relative mode acts as a trackpad, preserving the cursor
 between gestures and moving it by finger displacement. Taps click at that cursor.
 Long press sends a secondary click and two-finger motion scrolls. Native viewers
 also expose a drag action for relative mode; Android and the embedded viewer support
-double-tap-and-hold dragging.
-Switching modes, losing focus,
-pausing, and disconnecting release active gestures.
+double-tap-and-hold dragging. In the iOS and Android native viewers, an external
+mouse or trackpad moves the remote cursor at the indicated point on the video
+in either touch mode. A button press on the video starts a remote drag or
+click. Secondary and middle buttons retain their identities, including when
+pressed together. Wheels and two-finger trackpad scrolling use the viewer's
+reverse-scroll setting. The overlay handles clicks that begin on its controls.
+
+Hardware keyboards work as soon as the viewer has focus and the remote host
+acknowledges input control. UIKit supplies HID positions and Android supplies
+evdev scan codes or platform key codes. Both forward key presses, releases,
+and modifiers through the same ordered channel as the pointer. A shortcut can
+recover a modifier already held when the viewer took focus. When the system
+editor is open, composing text and choosing an IME candidate stay local until
+commit. Switching modes, losing focus, pausing, and disconnecting release held
+input.
 
 **System keyboard** focuses a native IME editor (or a browser textarea).
 **Hacker Keyboard** opens a built-in special-key panel: Esc, Tab, navigation,

@@ -23,7 +23,6 @@ mod state;
 #[path = "nsh_controls_widgets.rs"]
 mod widgets;
 pub(crate) use state::{Panel, ToolbarAction, ToolbarState};
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) use widgets::PANEL_WIDTH;
 
 #[cfg(test)]
@@ -32,6 +31,8 @@ mod tests;
 
 pub(crate) const PADDING: f32 = 4.;
 pub(crate) const GRIP_WIDTH: f32 = 20.;
+pub(crate) const MOBILE_GRIP_WIDTH: f32 = 44.;
+pub(crate) const MOBILE_CONTROL_HEIGHT: f32 = 40.;
 
 #[derive(Clone)]
 pub(crate) struct ControlsBridge {
@@ -45,13 +46,17 @@ impl ControlsBridge {
         on_action: impl Fn(ToolbarAction) + Send + Sync + 'static,
     ) -> (watch::Sender<ToolbarState>, Self) {
         let (state, receiver) = watch::channel(initial);
-        (
+        (state, Self::from_receiver(receiver, on_action))
+    }
+
+    pub(crate) fn from_receiver(
+        state: watch::Receiver<ToolbarState>,
+        on_action: impl Fn(ToolbarAction) + Send + Sync + 'static,
+    ) -> Self {
+        Self {
             state,
-            Self {
-                state: receiver,
-                action: Arc::new(on_action),
-            },
-        )
+            action: Arc::new(on_action),
+        }
     }
 }
 
@@ -159,7 +164,7 @@ fn controls(bridge: ControlsBridge) -> impl IntoElement {
 
 fn control_extent(desktop: f32) -> f32 {
     if use_context::<ControlMetrics>().is_some_and(|metrics| metrics.mobile) {
-        40.
+        MOBILE_CONTROL_HEIGHT
     } else {
         desktop
     }

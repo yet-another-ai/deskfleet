@@ -2,13 +2,25 @@
 
 use deskfleet_input::InputEvent;
 
+#[derive(Clone, Copy)]
+pub(crate) enum PointerPhase {
+    Hover,
+    Begin(u8),
+    Drag(u8),
+    End,
+}
+
 pub(crate) struct TouchInput {
+    buttons: u8,
     cursor: (f64, f64),
 }
 
 impl Default for TouchInput {
     fn default() -> Self {
-        Self { cursor: (0.5, 0.5) }
+        Self {
+            cursor: (0.5, 0.5),
+            buttons: 0,
+        }
     }
 }
 
@@ -16,6 +28,52 @@ impl TouchInput {
     /// The relative-mode virtual cursor, normalized to the video.
     pub(crate) fn cursor(&self) -> (f64, f64) {
         self.cursor
+    }
+
+    /// Mobile hosts report a mask of pressed buttons throughout a single pointer
+    /// sequence. A sequence starting in the letterbox stays local until release.
+    pub(crate) fn pointer(
+        &mut self,
+        phase: PointerPhase,
+        position: (f64, f64),
+        viewport: (f64, f64, f64, f64),
+    ) -> Vec<InputEvent> {
+        let captured = self.buttons != 0;
+        let next = match phase {
+            PointerPhase::Hover => self.buttons,
+            PointerPhase::Begin(mask) => mask,
+            PointerPhase::Drag(mask) if captured => mask,
+            PointerPhase::End if captured => 0,
+            _ => return Vec::new(),
+        };
+        let point = normalized_point(position, viewport, captured);
+        // A release must also reach the host if the surface was resized away.
+        let Some((x, y)) = point.or(captured.then_some(self.cursor)) else {
+            return Vec::new();
+        };
+        self.cursor = (x, y);
+        let changed = self.buttons ^ next;
+        self.buttons = next;
+        if changed == 0 {
+            return vec![InputEvent::PointerMove { x, y }];
+        }
+        // Android and UIKit number primary, secondary, middle, back, forward. The wire
+        // protocol uses DOM button numbers (middle = 1, secondary = 2).
+        [0, 2, 1, 3, 4]
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| changed & (1 << index) != 0)
+            .map(|(index, button)| InputEvent::PointerButton {
+                button,
+                pressed: next & (1 << index) != 0,
+                x,
+                y,
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear_pointer_buttons(&mut self) {
+        self.buttons = 0;
     }
 
     /// Kinds 0..6 are absolute move/drag/click/right-click/scroll/release.
@@ -29,6 +87,7 @@ impl TouchInput {
         viewport: (f64, f64, f64, f64),
     ) -> Vec<InputEvent> {
         if kind == 6 || kind == 14 {
+            self.clear_pointer_buttons();
             if kind == 14 {
                 self.cursor = (0.5, 0.5);
             }
@@ -99,6 +158,9 @@ fn normalized_point(
     clamp: bool,
 ) -> Option<(f64, f64)> {
     let (left, top, width, height) = viewport;
+    if width <= 0. || height <= 0. {
+        return None;
+    }
     let x = (position.0 - left) / width;
     let y = (position.1 - top) / height;
     if !x.is_finite()
@@ -180,6 +242,104 @@ mod tests {
                 x: 0.5,
                 y: 0.5
             }]
+        );
+    }
+
+    #[test]
+    fn hardware_pointer_moves_and_tracks_chorded_buttons_until_release() {
+        let mut input = TouchInput::default();
+        let center = (400., 300.);
+        assert_eq!(
+            input.pointer(PointerPhase::Hover, center, VIEWPORT),
+            [InputEvent::PointerMove { x: 0.5, y: 0.5 }]
+        );
+        let button = |button, pressed, x, y| InputEvent::PointerButton {
+            button,
+            pressed,
+            x,
+            y,
+        };
+        assert_eq!(
+            input.pointer(PointerPhase::Begin(2), center, VIEWPORT),
+            [button(2, true, 0.5, 0.5)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(3), center, VIEWPORT),
+            [button(0, true, 0.5, 0.5)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(1), center, VIEWPORT),
+            [button(2, false, 0.5, 0.5)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::End, (400., 0.), VIEWPORT),
+            [button(0, false, 0.5, 0.)]
+        );
+    }
+
+    #[test]
+    fn middle_and_navigation_buttons_keep_their_dom_numbers_across_partial_releases() {
+        let mut input = TouchInput::default();
+        let center = (400., 300.);
+        let button = |button, pressed| InputEvent::PointerButton {
+            button,
+            pressed,
+            x: 0.5,
+            y: 0.5,
+        };
+        assert_eq!(
+            input.pointer(PointerPhase::Begin(4), center, VIEWPORT),
+            [button(1, true)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(28), center, VIEWPORT),
+            [button(3, true), button(4, true)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(16), center, VIEWPORT),
+            [button(1, false), button(3, false)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::End, center, VIEWPORT),
+            [button(4, false)]
+        );
+    }
+
+    #[test]
+    fn dragging_onto_video_or_resuming_after_release_cannot_start_a_click() {
+        let mut input = TouchInput::default();
+        let center = (400., 300.);
+        assert!(
+            input
+                .pointer(PointerPhase::Begin(1), (400., 0.), VIEWPORT)
+                .is_empty()
+        );
+        assert!(
+            input
+                .pointer(PointerPhase::Drag(1), center, VIEWPORT)
+                .is_empty()
+        );
+        assert!(
+            input
+                .pointer(PointerPhase::End, center, VIEWPORT)
+                .is_empty()
+        );
+
+        assert!(
+            !input
+                .pointer(PointerPhase::Begin(2), center, VIEWPORT)
+                .is_empty()
+        );
+        input.events(6, center, (0., 0.), VIEWPORT);
+        assert!(
+            input
+                .pointer(PointerPhase::Drag(2), center, VIEWPORT)
+                .is_empty()
+        );
+        assert!(
+            input
+                .pointer(PointerPhase::End, center, VIEWPORT)
+                .is_empty()
         );
     }
 

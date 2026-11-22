@@ -4,6 +4,10 @@
 mod android;
 #[cfg(target_os = "android")]
 mod android_decoder;
+#[cfg(target_os = "android")]
+mod android_keyboard;
+#[cfg(target_os = "android")]
+mod android_window;
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod av1_config;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -22,8 +26,20 @@ mod input_reply;
 mod input_text;
 #[cfg(target_os = "ios")]
 mod ios_controls;
+#[cfg(any(target_os = "ios", test))]
+mod ios_key_state;
+#[cfg(target_os = "ios")]
+mod ios_keyboard;
+#[cfg(target_os = "ios")]
+mod ios_pointer;
+#[cfg(target_os = "ios")]
+mod ios_window;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod macos_decoder;
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+mod mobile_layout;
+#[cfg(any(target_os = "android", target_os = "ios", test))]
+mod mobile_overlay;
 #[cfg(target_os = "android")]
 mod nsh_android;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

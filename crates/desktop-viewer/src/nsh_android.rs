@@ -11,14 +11,22 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::strings::JNIString;
-use jni::sys::jlong;
+use jni::sys::{jboolean, jfloat, jlong};
 use jni::{EnvUnowned, jni_sig, jni_str};
-use tokio::sync::watch;
+use serde::Deserialize;
 
+use crate::mobile_overlay::MobileOverlay;
 use crate::nsh_controls::{ControlsBridge, ToolbarState, controls_root};
 
+#[derive(Deserialize)]
+struct AndroidControlsState {
+    #[serde(flatten)]
+    toolbar: ToolbarState,
+    insets: [f32; 4],
+}
+
 struct ControlsHost {
-    state: watch::Sender<ToolbarState>,
+    overlay: Arc<Mutex<MobileOverlay>>,
     bridge: ControlsBridge,
     alive: Arc<AtomicBool>,
 }
@@ -45,7 +53,8 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
             let handle = env
                 .get_field(&view, jni_str!("handle"), jni_sig!("J"))?
                 .j()?;
-            let initial = match serde_json::from_str::<ToolbarState>(&state_json.to_string()) {
+            let input = match serde_json::from_str::<AndroidControlsState>(&state_json.to_string())
+            {
                 Ok(state) => state,
                 Err(error) => {
                     env.throw_new(
@@ -59,33 +68,34 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
             let callback = env.new_global_ref(callback)?;
             let alive = Arc::new(AtomicBool::new(true));
             let callback_alive = Arc::clone(&alive);
-            let (state, bridge) = ControlsBridge::new(initial, move |action| {
-                if !callback_alive.load(Ordering::Acquire) {
-                    return;
-                }
-                let Ok(payload) = serde_json::to_string(&action) else {
-                    return;
-                };
-                if let Err(error) =
-                    vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
-                        let value = JString::from_str(env, &payload)?;
-                        env.call_method(
-                            &callback,
-                            jni_str!("onControlsAction"),
-                            jni_sig!("(Ljava/lang/String;)V"),
-                            &[JValue::Object(value.as_ref())],
-                        )?;
-                        Ok(())
-                    })
-                {
-                    tracing::error!(%error, "Android viewer controls callback failed");
-                }
-            });
+            let (overlay, bridge) =
+                MobileOverlay::attach(input.toolbar, input.insets, move |action| {
+                    if !callback_alive.load(Ordering::Acquire) {
+                        return;
+                    }
+                    let Ok(payload) = serde_json::to_string(&action) else {
+                        return;
+                    };
+                    if let Err(error) =
+                        vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+                            let value = JString::from_str(env, &payload)?;
+                            env.call_method(
+                                &callback,
+                                jni_str!("onControlsAction"),
+                                jni_sig!("(Ljava/lang/String;)V"),
+                                &[JValue::Object(value.as_ref())],
+                            )?;
+                            Ok(())
+                        })
+                    {
+                        tracing::error!(%error, "Android viewer controls callback failed");
+                    }
+                });
             if let Ok(mut hosts) = hosts().lock()
                 && let Some(previous) = hosts.insert(
                     handle,
                     ControlsHost {
-                        state,
+                        overlay,
                         bridge,
                         alive,
                     },
@@ -127,7 +137,8 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
 ) {
     unowned_env
         .with_env(|env| -> Result<(), jni::errors::Error> {
-            let state = match serde_json::from_str::<ToolbarState>(&state_json.to_string()) {
+            let input = match serde_json::from_str::<AndroidControlsState>(&state_json.to_string())
+            {
                 Ok(state) => state,
                 Err(error) => {
                     env.throw_new(
@@ -137,16 +148,11 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
                     return Ok(());
                 }
             };
-            if let Ok(hosts) = hosts().lock()
-                && let Some(host) = hosts.get(&handle)
-            {
-                host.state.send_if_modified(|current| {
-                    if *current == state {
-                        return false;
-                    }
-                    *current = state;
-                    true
-                });
+            if let Some(overlay) = overlay(handle) {
+                overlay
+                    .lock()
+                    .expect("viewer layout lock")
+                    .update(input.toolbar, input.insets);
             }
             Ok(())
         })
@@ -166,4 +172,66 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
     {
         host.alive.store(false, Ordering::Release);
     }
+}
+
+fn overlay(handle: jlong) -> Option<Arc<Mutex<MobileOverlay>>> {
+    hosts()
+        .lock()
+        .ok()?
+        .get(&handle)
+        .map(|host| Arc::clone(&host.overlay))
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeControlsHit<
+    'local,
+>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    x: jfloat,
+    y: jfloat,
+    grip: jboolean,
+) -> jboolean {
+    overlay(handle).map_or(!grip, |overlay| {
+        overlay.lock().expect("viewer layout lock").hit(x, y, grip)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeDragToolbar<
+    'local,
+>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+    dx: jfloat,
+    dy: jfloat,
+) {
+    if let Some(overlay) = overlay(handle) {
+        overlay.lock().expect("viewer layout lock").drag(dx, dy);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeDismissPanel<
+    'local,
+>(
+    _unowned_env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jboolean {
+    overlay(handle)
+        .is_some_and(|overlay| overlay.lock().expect("viewer layout lock").dismiss_panel())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeControlsOwnFocus<
+    'local,
+>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jboolean {
+    overlay(handle).is_none_or(|overlay| overlay.lock().expect("viewer layout lock").owns_focus())
 }

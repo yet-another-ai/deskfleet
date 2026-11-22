@@ -191,6 +191,37 @@ test("sends physical keys and repeat state; a normal mouse-up preserves a held m
   expect(f.send).toHaveBeenCalledWith({ type: "key", code: "ShiftLeft", pressed: false, repeat: false })
 })
 
+test("forwards a modifier held before video focus and releases it when the right-side key lifts", () => {
+  const f = fixture("Linux armv8l")
+  f.key("keydown", "KeyC", false, { ctrlKey: true })
+  f.key("keyup", "KeyC", false, { ctrlKey: true })
+  f.key("keyup", "ControlRight")
+  f.key("keydown", "KeyD")
+  expect(f.send.mock.calls.map(([event]) => event.type === "key" && [event.code, event.pressed])).toEqual([
+    ["ControlLeft", true], ["KeyC", true], ["KeyC", false], ["ControlLeft", false], ["KeyD", true],
+  ])
+})
+
+test("uses the physical modifier side and clears flag-only Command chords on iPhone", () => {
+  const f = fixture("iPhone")
+  f.key("keydown", "ShiftRight", false, { shiftKey: true })
+  f.key("keydown", "KeyC", false, { shiftKey: true, metaKey: true })
+  f.key("keyup", "MetaRight", false, { shiftKey: true })
+  f.key("keyup", "ShiftRight")
+  expect(f.send.mock.calls.map(([event]) => event.type === "key" && [event.code, event.pressed])).toEqual([
+    ["ShiftRight", true], ["MetaLeft", true], ["KeyC", true],
+    ["MetaLeft", false], ["KeyC", false], ["ShiftRight", false],
+  ])
+})
+
+test("AltGr flags on a physical right Alt do not synthesize a Control key", () => {
+  const f = fixture("Linux armv8l")
+  vi.spyOn(KeyboardEvent.prototype, "getModifierState").mockImplementation(name => name === "AltGraph")
+  f.key("keydown", "AltRight", false, { ctrlKey: true, altKey: true })
+  f.key("keydown", "KeyE", false, { ctrlKey: true, altKey: true })
+  expect(f.send.mock.calls.map(([event]) => event.type === "key" && event.code)).toEqual(["AltRight", "KeyE"])
+})
+
 test("preserves chorded mouse transitions and capture until the last button releases", () => {
   const f = fixture()
   f.key("keydown", "ShiftLeft")

@@ -67,6 +67,21 @@ impl Sender {
         self.wake()
     }
 
+    /// A deliberate chord or paste releases held input in order, after prior
+    /// keystrokes. A focus-loss release through `send` still discards stale work.
+    #[cfg(any(target_os = "ios", target_os = "android", test))]
+    pub(crate) fn send_sequence(&self, events: Vec<InputEvent>) -> Result<(), Error> {
+        let mut pending = self.pending.lock().map_err(|_| "input queue poisoned")?;
+        if events.len() > CAPACITY - pending.len() {
+            pending.clear();
+            pending.push_back(InputEvent::ReleaseAll);
+        } else {
+            pending.extend(events);
+        }
+        drop(pending);
+        self.wake()
+    }
+
     fn wake(&self) -> Result<(), Error> {
         match self.ready.try_send(()) {
             Ok(()) | Err(mpsc::error::TrySendError::Full(())) => Ok(()),
@@ -174,6 +189,31 @@ mod tests {
         drop(sender);
         assert_eq!(receiver.recv().await.unwrap(), Some(InputEvent::ReleaseAll));
         assert_eq!(receiver.recv().await.unwrap(), Some(key("KeyB")));
+        assert_eq!(receiver.recv().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn text_and_virtual_chords_keep_prior_keystrokes_in_order() {
+        let (sender, mut receiver) = channel();
+        let strokes = [key("Enter"), InputEvent::ReleaseAll, key("KeyB")];
+        sender.send(strokes[0].clone()).unwrap();
+        sender.send_sequence(strokes[1..].to_vec()).unwrap();
+        drop(sender);
+        for event in strokes {
+            assert_eq!(receiver.recv().await.unwrap(), Some(event));
+        }
+    }
+
+    #[tokio::test]
+    async fn overflow_discards_an_entire_virtual_chord() {
+        let (sender, mut receiver) = channel();
+        for _ in 1..CAPACITY {
+            sender.send(button()).unwrap();
+        }
+        let chord = crate::nsh_keyboard::chord_events(&["ControlLeft", "KeyC"]);
+        sender.send_sequence(chord).unwrap();
+        drop(sender);
+        assert_eq!(receiver.recv().await.unwrap(), Some(InputEvent::ReleaseAll));
         assert_eq!(receiver.recv().await.unwrap(), None);
     }
 

@@ -1,6 +1,6 @@
 //! One Hacker Keyboard component for every native viewer host.
 
-#[cfg(any(test, not(any(target_os = "android", target_os = "ios"))))]
+#[cfg(any(test, not(target_os = "android")))]
 use deskfleet_input::InputEvent;
 use nsh_base::button;
 use nsh_core::prelude::*;
@@ -182,16 +182,16 @@ pub(crate) fn key_events(modifiers: [bool; 4], code: &str) -> Vec<InputEvent> {
 }
 
 /// One shortcut chord: earlier codes are held while the last is pressed.
-#[cfg(any(test, not(any(target_os = "android", target_os = "ios"))))]
-pub(crate) fn chord_events(codes: &[&str]) -> Vec<InputEvent> {
+#[cfg(any(test, not(target_os = "android")))]
+pub(crate) fn chord_events(codes: &[impl AsRef<str>]) -> Vec<InputEvent> {
     let key = |code: &str, pressed| InputEvent::Key {
         code: code.into(),
         pressed,
         repeat: false,
     };
     let mut events = vec![InputEvent::ReleaseAll];
-    events.extend(codes.iter().map(|code| key(code, true)));
-    events.extend(codes.iter().rev().map(|code| key(code, false)));
+    events.extend(codes.iter().map(|code| key(code.as_ref(), true)));
+    events.extend(codes.iter().rev().map(|code| key(code.as_ref(), false)));
     events
 }
 

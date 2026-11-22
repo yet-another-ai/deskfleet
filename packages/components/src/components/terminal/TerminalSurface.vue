@@ -11,6 +11,7 @@ import { computed, onBeforeUnmount, onMounted, onUnmounted, useTemplateRef, watc
 import { DEFAULT_TERMINAL_FONT } from "@deskfleet/client/appearance"
 import type { TerminalColors } from "@deskfleet/client/terminal-theme"
 import { useAppearanceStore } from "../../stores/appearance.ts"
+import { terminalKey, terminalShortcut, unreliableKeyCode } from "./terminal-keys.ts"
 import TerminalToolbar from "./TerminalToolbar.vue"
 
 /** Sixel / iTerm2 inline images; size reports stay on for apps that query CSI t metrics. */
@@ -68,9 +69,34 @@ const CURSOR_SEQUENCES: Record<string, { alt: string; meta: string } | undefined
   ArrowRight: { alt: "\x1bf", meta: "\x05" },
 }
 
+// iPadOS also requests desktop pages using the MacIntel platform identifier.
+const appleMobile = /iPad|iPhone|iPod/.test(navigator.platform) || /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+const mobileKeyboard = appleMobile || /Android/i.test(navigator.userAgent)
+const desktopMac = navigator.platform.startsWith("Mac") && !appleMobile
 terminal.loadAddon(fit)
 terminal.attachCustomKeyEventHandler(event => {
-  if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+  if (event.isComposing || event.key === "Dead" || event.key === "AltGraph") return true
+  // Android can report the Enter that accepts an IME candidate as Process/229
+  // with isComposing already false. Let xterm consume the committed text.
+  if (event.key === "Process" && event.keyCode === 229 && event.code === "Enter"
+      && !event.ctrlKey && !event.altKey && !event.metaKey) return true
+  // Android's desktop-site UA can hide its OS. A malformed legacy code
+  // still identifies these shortcut events, including Ctrl+letter with no code.
+  const logicalKeys = mobileKeyboard || unreliableKeyCode(event)
+  if (desktopMac && event.altKey && !event.ctrlKey && event.key.length === 1) return true
+  if ((logicalKeys || navigator.maxTouchPoints > 0) && (!appleMobile || event.ctrlKey) && event.getModifierState("AltGraph")) {
+    // xterm 6 handles AltGr as a third-level shift on Windows only. Android
+    // keyboards may expose Ctrl+Alt with the actual layout-resolved character.
+    if (!props.interactive || Array.from(event.key).length !== 1 || event.key.charCodeAt(0) < 32) return true
+    return sendShortcut(event, event.key)
+  }
+  const key = logicalKeys ? terminalKey(event) : event.key
+  if (logicalKeys && /^(?:Control|Shift|Alt|Meta)(?:Left|Right)?$/.test(key)) {
+    event.preventDefault()
+    return false
+  }
+  if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && key.toLowerCase() === "f") {
     if (event.type === "keydown") {
       event.preventDefault()
       void toolbar.value?.openSearch()
@@ -78,7 +104,7 @@ terminal.attachCustomKeyEventHandler(event => {
     return false
   }
 
-  if (event.ctrlKey && !event.altKey && event.key === "c" && terminal.hasSelection()) {
+  if (event.ctrlKey && !event.altKey && key === "c" && terminal.hasSelection()) {
     if (event.type === "keydown") {
       event.preventDefault()
       void navigator.clipboard?.writeText(terminal.getSelection())?.catch(() => {})
@@ -87,16 +113,21 @@ terminal.attachCustomKeyEventHandler(event => {
   }
 
   const cursor = !event.ctrlKey && !event.shiftKey && event.altKey !== event.metaKey
-    ? CURSOR_SEQUENCES[event.key]
+    ? CURSOR_SEQUENCES[key]
     : undefined
-  if (!cursor) return true
+  const sequence = cursor ? (event.metaKey ? cursor.meta : cursor.alt)
+    : logicalKeys && props.interactive ? terminalShortcut(event, key, terminal.modes.applicationCursorKeysMode) : undefined
+  return sequence === undefined || sendShortcut(event, sequence)
+})
 
+function sendShortcut(event: KeyboardEvent, sequence: string): false {
   if (event.type === "keydown") {
     event.preventDefault()
-    terminal.input(event.metaKey ? cursor.meta : cursor.alt)
+    event.stopPropagation()
+    terminal.input(sequence)
   }
   return false
-})
+}
 let webglAddon: WebglAddon | undefined
 let imageAddon: ImageAddon | undefined
 let ligaturesAddon: LigaturesAddon | undefined

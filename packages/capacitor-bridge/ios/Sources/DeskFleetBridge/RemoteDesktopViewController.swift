@@ -1,57 +1,21 @@
-import QuartzCore
 import UIKit
 
-final class MetalVideoView: UIView {
-    override class var layerClass: AnyClass { CAMetalLayer.self }
+@_silgen_name("deskfleet_ios_mount_window")
+private func mountWindow(_ root: UnsafeMutableRawPointer, _ keyboard: UnsafeMutableRawPointer,
+                         _ controls: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer
+@_silgen_name("deskfleet_ios_send_key_chord")
+private func sendKeyChord(_ codes: UnsafeRawPointer)
+@_silgen_name("deskfleet_ios_video_stop")
+private func stopVideo(_ video: UnsafeMutableRawPointer)
 
-    private var surfaceAttached = false
-    private var lastDrawableSize: CGSize = .zero
-    var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .black
-        isOpaque = true
-        isMultipleTouchEnabled = true
-        metalLayer.pixelFormat = .bgra8Unorm_srgb
-        metalLayer.framebufferOnly = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        let scale = window?.screen.scale ?? UIScreen.main.scale
-        contentScaleFactor = scale
-        metalLayer.contentsScale = scale
-        let width = UInt32(max((bounds.width * scale).rounded(), 1))
-        let height = UInt32(max((bounds.height * scale).rounded(), 1))
-        let size = CGSize(width: Int(width), height: Int(height))
-        metalLayer.drawableSize = size
-
-        if !surfaceAttached {
-            surfaceAttached = true
-            lastDrawableSize = size
-            deskfleetIosSurfaceCreated(Unmanaged.passUnretained(metalLayer).toOpaque(), width, height)
-        } else if lastDrawableSize != size {
-            lastDrawableSize = size
-            deskfleetIosSurfaceChanged(width, height)
-        }
-    }
-
-    func detachSurface() {
-        guard surfaceAttached else { return }
-        surfaceAttached = false
-        lastDrawableSize = .zero
-        deskfleetIosSurfaceDestroyed()
-    }
-}
+@_silgen_name("deskfleet_ios_pointer_install")
+private func installPointer(_ video: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer?
+@_silgen_name("deskfleet_ios_pointer_configure")
+private func configurePointer(_ pointer: UnsafeMutableRawPointer, _ enabled: Bool, _ reverseScroll: Bool)
 
 final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDelegate {
     private static let maxClipboardBytes = 32 * 1024
-    private let metalView = MetalVideoView(frame: .zero)
+    private var metalView: UIView!
     private let controls = RemoteDesktopControls()
     private let keyboard = RemoteDesktopKeyboard()
     private var modifiers = RemoteDesktopModifiers()
@@ -64,6 +28,7 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
     /// Set once a gesture pinches; its remaining pan never scrolls or drags the remote.
     private var panSuppressed = false
     private let pan = UIPanGestureRecognizer()
+    private var pointer: UnsafeMutableRawPointer? // Borrowed from the video view.
     private var fullscreen = true
     private var state: [String: Any] = [:]
     private var relative = false
@@ -74,6 +39,7 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
     private var terminalPaste = false
     private var dragging = false
     private var dragLocked = false
+    private var viewerVisible = false
     private var closeSent = false
     private var lastSyncedClipboard: String?
     private var lastPasteboardChangeCount: Int = UIPasteboard.general.changeCount
@@ -91,25 +57,19 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
-        metalView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(metalView)
-        view.addSubview(keyboard)
-        view.addSubview(controls)
-        keyboard.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-        NSLayoutConstraint.activate([
-            metalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            metalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            metalView.topAnchor.constraint(equalTo: view.topAnchor),
-            metalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+        let video = mountWindow(Unmanaged.passUnretained(view!).toOpaque(),
+                                Unmanaged.passUnretained(keyboard).toOpaque(),
+                                Unmanaged.passUnretained(controls).toOpaque())
+        metalView = Unmanaged<UIView>.fromOpaque(video).takeUnretainedValue()
+        keyboard.video = metalView
+        keyboard.canForwardShortcut = { [weak self] in self?.inputEnabled == true }
         controls.action = { [weak self] action in self?.handleAction(action) }
         keyboard.sendText = { [weak self] text in
             guard let self, self.inputEnabled else { return }
             if let code = self.modifiers.code(for: text) {
                 self.pressKey(code)
             } else {
-                self.releaseInput()
+                self.releaseInput(forTyping: true)
                 let mac = self.state["platform"] as? String == "darwin"
                 self.send(["type": "text", "text": text, "pasteCode": mac ? "MetaLeft" : "ControlLeft", "pasteShift": !mac && self.terminalPaste])
                 self.updateControls()
@@ -117,65 +77,73 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
         }
         keyboard.sendKey = { [weak self] code in self?.pressKey(code) }
         keyboard.visibilityChanged = { [weak self] _ in
-            self?.updateControls()
-            self?.view.setNeedsLayout()
+            // UIKit must finish changing the text responder before restoring hardware focus.
+            DispatchQueue.main.async { [weak self] in self?.updateControls() }
         }
 
+        pointer = installPointer(Unmanaged.passUnretained(metalView).toOpaque())
+        let directTouches = [UITouch.TouchType.direct, .pencil].map { NSNumber(value: $0.rawValue) }
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
+        tap.allowedTouchTypes = directTouches
         metalView.addGestureRecognizer(tap)
         let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.allowedTouchTypes = directTouches
         longPress.minimumPressDuration = 0.5
         metalView.addGestureRecognizer(longPress)
+        pan.allowedTouchTypes = directTouches
         pan.addTarget(self, action: #selector(handlePan(_:)))
         pan.minimumNumberOfTouches = 1
         pan.maximumNumberOfTouches = 2
         metalView.addGestureRecognizer(pan)
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.allowedTouchTypes = directTouches
         pinch.delegate = self
         metalView.addGestureRecognizer(pinch)
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(handleFocusLost), name: UIApplication.willResignActiveNotification, object: nil)
         center.addObserver(self, selector: #selector(handleDidBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(windowFocusChanged(_:)), name: UIWindow.didResignKeyNotification, object: nil)
+        center.addObserver(self, selector: #selector(windowFocusChanged(_:)), name: UIWindow.didBecomeKeyNotification, object: nil)
         center.addObserver(self, selector: #selector(handlePasteboardChanged), name: UIPasteboard.changedNotification, object: nil)
-        center.addObserver(self, selector: #selector(handleKeyboardFrameChanged), name: UIResponder.keyboardDidChangeFrameNotification, object: nil)
         updateControls()
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        var available = view.safeAreaLayoutGuide.layoutFrame.insetBy(dx: 8, dy: 8)
-        // keyboardLayoutGuide follows docked keyboards, rotation, and split view.
-        let keyboardTop = view.keyboardLayoutGuide.layoutFrame.minY
-        available.size.height = max(52, min(available.maxY, keyboardTop - 8) - available.minY)
-        controls.frame = available
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        viewerVisible = true
+        updateHardwareFocus()
         UIApplication.shared.isIdleTimerDisabled = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        viewerVisible = false
         UIApplication.shared.isIdleTimerDisabled = false
-        handleFocusLost()
+        if !closeSent { handleFocusLost() }
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        metalView.detachSurface()
-        controls.stop()
+        detachWindow()
         if DeskFleetBridge.activeController === self { DeskFleetBridge.activeController = nil }
         if isBeingDismissed && !closeSent { closeSent = true; deskfleetIosTouch(7, 0, 0, 0, 0) }
     }
 
+    private func detachWindow() {
+        NotificationCenter.default.removeObserver(self)
+        if let metalView { stopVideo(Unmanaged.passUnretained(metalView).toOpaque()) }
+        controls.stop()
+    }
+
     func prepareForExternalStop() {
+        guard !closeSent else { return }
+        viewerVisible = false
         closeSent = true
         releaseInput()
         keyboard.resignFirstResponder()
-        metalView.detachSurface()
-        controls.stop()
+        updateHardwareFocus()
+        detachWindow()
     }
 
     func applyViewerCommand(_ command: [String: Any]) {
@@ -201,12 +169,25 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
             if changedDisplay { deskfleetIosTouch(14, 0, 0, 0, 0) }
             updateControls()
         } else if ["stop", "close"].contains(command["type"] as? String ?? "") {
+            state.removeValue(forKey: "inputReady")
+            updateHardwareFocus()
             releaseInput()
             keyboard.resignFirstResponder()
         }
     }
 
+    private func updateHardwareFocus() {
+        guard let metalView else { return }
+        let activeInput = viewerVisible && inputEnabled && view.window?.isKeyWindow == true
+            && view.window?.windowScene?.activationState == .foregroundActive
+        if let pointer { configurePointer(pointer, activeInput, reverseScroll) }
+        let capture = activeInput && !keyboard.isFirstResponder && !controls.ownsKeyboardFocus
+        if capture && !metalView.isFirstResponder { metalView.becomeFirstResponder() }
+        if !capture && metalView.isFirstResponder { metalView.resignFirstResponder() }
+    }
+
     private func updateControls() {
+        updateHardwareFocus()
         controls.update(state: state, relative: relative, paused: paused, dragging: dragLocked,
                         keyboard: keyboard.isFirstResponder, hacker: hackerOpen, terminalPaste: terminalPaste,
                         modifiers: modifiers.selected, reverseScroll: reverseScroll,
@@ -266,7 +247,7 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
         case "secureAttention" where inputEnabled: sendInput(["type": "secureAttention"])
         case "shortcut" where inputEnabled:
             guard let codes = event["value"] as? [String], let key = codes.last else { return }
-            releaseInput()
+            releaseInput(forTyping: true)
             sendKey(key, modifiers: Array(codes.dropLast()))
         case "setPinchZoom":
             pinchZoom = event["value"] as? Bool == true
@@ -283,18 +264,19 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
         updateControls()
     }
 
-    private func releaseInput(resetPan: Bool = true) {
+    private func releaseInput(resetPan: Bool = true, forTyping: Bool = false) {
         dragging = false
         dragLocked = false
         if resetPan { inputState.endPan() }
         modifiers.reset()
-        sendInput(["type": "releaseAll"])
-        deskfleetIosTouch(6, 0, 0, 0, 0)
+        if let metalView { resetHardwareKeys(Unmanaged.passUnretained(metalView).toOpaque()) }
+        // Chord and committed-text batches include their own ordered release.
+        if !forTyping { deskfleetIosTouch(6, 0, 0, 0, 0) }
     }
 
     private func pressKey(_ code: String) {
         let selected = modifiers.take()
-        releaseInput()
+        releaseInput(forTyping: true)
         sendKey(code, modifiers: selected)
         updateControls()
     }
@@ -303,9 +285,15 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
         releaseInput()
         keyboard.resignFirstResponder()
         updateControls()
+        metalView?.resignFirstResponder()
+        if let pointer { configurePointer(pointer, false, reverseScroll) }
     }
 
-    @objc private func handleKeyboardFrameChanged() { view.setNeedsLayout() }
+    @objc private func windowFocusChanged(_ notification: Notification) {
+        guard let window = notification.object as? UIWindow, window === viewIfLoaded?.window else { return }
+        if notification.name == UIWindow.didResignKeyNotification { handleFocusLost() }
+        else { updateHardwareFocus() }
+    }
 
     private func send(_ command: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: command),
@@ -323,8 +311,8 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
 
     private func sendKey(_ code: String, modifiers: [String]) {
         guard inputEnabled else { return }
-        for key in modifiers + [code] { sendInput(["type": "key", "code": key, "pressed": true, "repeat": false]) }
-        for key in ([code] + modifiers.reversed()) { sendInput(["type": "key", "code": key, "pressed": false, "repeat": false]) }
+        let codes = (modifiers + [code]) as NSArray
+        withExtendedLifetime(codes) { sendKeyChord(Unmanaged.passUnretained(codes).toOpaque()) }
     }
 
     private func scaledPoint(_ recognizer: UIGestureRecognizer) -> (Double, Double) {
@@ -355,7 +343,7 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
         switch recognizer.state {
         case .began, .changed:
-            guard pinchZoom, connected, recognizer.numberOfTouches >= 2 else { return }
+            guard pinchZoom, connected else { return }
             if !pinching {
                 pinching = true
                 panSuppressed = true
@@ -412,15 +400,18 @@ final class RemoteDesktopViewController: UIViewController, UIGestureRecognizerDe
     }
 
     private func handleCloseTapped() {
+        viewerVisible = false
         releaseInput()
         keyboard.resignFirstResponder()
         if !closeSent { closeSent = true; deskfleetIosTouch(7, 0, 0, 0, 0) }
-        metalView.detachSurface()
-        controls.stop()
+        detachWindow()
         dismiss(animated: false)
     }
 
-    @objc private func handleDidBecomeActive() { syncLocalClipboardToRemote(force: false) }
+    @objc private func handleDidBecomeActive() {
+        updateHardwareFocus()
+        syncLocalClipboardToRemote(force: false)
+    }
     @objc private func handlePasteboardChanged() { syncLocalClipboardToRemote(force: false) }
 
     func applyRemoteClipboard(_ rawText: String) {
