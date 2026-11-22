@@ -72,7 +72,6 @@ function saveReading(id: string): void {
 }
 onBeforeUnmount(() => saveReading(props.readingId))
 const { arrivedState } = useScroll(scroller, {
-  offset: { bottom: 100 },
   onScroll() {
     if (restoringScroll || followingSpring) return
     followBottom.value = arrivedState.bottom

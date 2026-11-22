@@ -82,7 +82,7 @@ const startupStatus = computed(() => {
   return undefined
 })
 const located = useTranscriptLocate(displayedTranscript, sessionId, () => props.locateEntry)
-const { observe, printing } = useConversationViewport()
+const { observe, printing } = useConversationViewport(() => props.locateEntry)
 const reading = inject(conversationReadingKey, undefined)
 const fallbackReading = ref(createConversationReading())
 watch(sessionId, () => { fallbackReading.value = createConversationReading() })

@@ -66,3 +66,54 @@ test("restores the saved history position when its transcript becomes available"
     disposePinia(pinia)
   }
 })
+
+test("a small scroll away from the bottom keeps its position through a transcript resize and new revision", async () => {
+  let resizeTranscript!: () => void
+  const NativeResizeObserver = window.ResizeObserver
+  vi.spyOn(window, "ResizeObserver").mockImplementation(class extends NativeResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      super(callback)
+      this.observe = element => {
+        if (element.firstElementChild?.hasAttribute("data-transcript-fixture")) {
+          resizeTranscript = () => callback([], this)
+        }
+      }
+    }
+  })
+  const pinia = createPinia()
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: SessionConversationPane }] })
+  await router.push("/")
+  const wrapper = mount(SessionConversationPane, {
+    props: { readingId: "30", ready: true },
+    slots: { default: "<div data-transcript-fixture />" },
+    global: { plugins: [pinia, router, i18n], stubs: { ReadingSpotlight: true } },
+  })
+  try {
+    await nextTick()
+    const viewport = wrapper.get<HTMLElement>("[data-session-scroll-viewport]")
+    let height = 1600
+    Object.defineProperties(viewport.element, {
+      scrollHeight: { get: () => height },
+      clientHeight: { value: 400 },
+      scrollTop: { value: 1200, writable: true },
+    })
+    const scroll = vi.spyOn(viewport.element, "scrollTo").mockImplementation(() => {})
+    await viewport.trigger("scroll")
+    viewport.element.scrollTop -= 12
+    await viewport.trigger("scroll")
+    height += 300
+    resizeTranscript()
+    await wrapper.setProps({ revision: 1 })
+    expect(scroll).not.toHaveBeenCalled()
+    expect(wrapper.find("[data-scroll-to-bottom]").exists()).toBe(true)
+
+    viewport.element.scrollTop = height - viewport.element.clientHeight
+    await viewport.trigger("scroll")
+    height += 100
+    resizeTranscript()
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ top: height })
+  } finally {
+    wrapper.unmount()
+    disposePinia(pinia)
+  }
+})

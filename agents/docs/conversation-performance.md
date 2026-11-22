@@ -553,10 +553,12 @@ the existing Session projection. The reading state holds measured heights and
 disclosure settings. Live responses, the latest row, locate targets and the row
 containing keyboard focus stay mounted. Printing mounts the full transcript.
 
-On each intersection update, the renderer holds the first visible row at the
-same viewport offset as estimated sizes become measured sizes. At the bottom,
-it preserves the bottom edge. This also applies after jumping directly to an
-unseen row from the outline. The renderer still holds the Session event history
+As estimated sizes become measured sizes, the renderer preserves the offset
+of the first visible row, including after an outline jump. For a search result
+whose midpoint is visible, it preserves that midpoint's offset, so mounting a
+neighbor keeps the result in place. Scrolling away from the bottom releases
+bottom-follow. Reaching the bottom again resumes following new output and
+transcript resizes. The renderer still holds the Session event history
 and projection. One exceptionally large active response can dominate the heap
 because the unit of recycling is a transcript row.
 
