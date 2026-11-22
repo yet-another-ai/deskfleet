@@ -11,10 +11,10 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.1"
+    "@deepseek-ai/dsh": "0.2.2-rc.5"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "2.7.0"
+    "@agentclientprotocol/sdk": "2.8.0"
   },
   "files": [
     "package.json",
