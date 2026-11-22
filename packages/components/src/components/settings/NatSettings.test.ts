@@ -36,6 +36,7 @@ async function submit(wrapper: VueWrapper) {
 afterEach(() => {
   view?.unmount()
   view = undefined
+  vi.unstubAllGlobals()
   i18n.global.locale.value = "en-US"
 })
 
@@ -60,7 +61,9 @@ test("starts only on click, uses the configured service, and prevents duplicate 
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()
 })
 
-test("clears the previous result on retry and recovers after a failed probe", async () => {
+test("clears the previous result on retry and recovers after a failed probe without reporting an unhandled global error", async () => {
+  const reportError = vi.fn()
+  vi.stubGlobal("reportError", reportError)
   const testNat = vi.fn<NetworkDiagnosticsApi["testNat"]>().mockResolvedValueOnce(fullCone)
   const wrapper = render({ testNat })
   await submit(wrapper)
@@ -68,6 +71,7 @@ test("clears the previous result on retry and recovers after a failed probe", as
   testNat.mockRejectedValueOnce(new Error("STUN hostname could not be resolved"))
   await wrapper.get("button").trigger("click")
   await flushPromises()
+  expect(reportError).not.toHaveBeenCalled()
   expect(wrapper.find("h2").exists()).toBe(false)
   expect(wrapper.get('[role="alert"]').text()).toBe("STUN hostname could not be resolved")
   expect(wrapper.get("button").attributes("disabled")).toBeUndefined()

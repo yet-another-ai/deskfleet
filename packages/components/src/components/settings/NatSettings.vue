@@ -17,7 +17,7 @@ const { state: result, isLoading: testing, error, executeImmediate } = useAsyncS
     return diagnostics.testNat()
   },
   null,
-  { immediate: false },
+  { immediate: false, onError: () => {} },
 )
 const natType = computed(() => {
   if (!result.value) return "unknown"
