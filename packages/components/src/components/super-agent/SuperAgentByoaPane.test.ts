@@ -158,12 +158,23 @@ test("creates a BYOA Super Agent with YOLO enabled when configured on the Team o
   )
 })
 
-test("reuses the created BYOA session on retry without prematurely listing it before submit succeeds", async () => {
+test("reuses the created session on registration failure and transitions with draft preserved when initial submit fails", async () => {
   const { central, agents, wrapper, onSessionChange } = await setup()
+  agents.state = "connected"
   const created = agentSnapshot()
-  created.session = { ...created.session, id: "byoa-session-2", lifecycle: "provisioning", superAgent: true }
+  created.session = { ...created.session, id: "byoa-session-2", lifecycle: "ready", superAgent: true }
   const createSpy = vi.spyOn(agents, "create").mockImplementation(async () => {
     agents.sessions[created.session.id] = created.session
+    agents.views[created.session.id] = {
+      snapshot: created,
+      events: [],
+      historySeq: "0",
+      snapshotSeq: "0",
+      loading: false,
+      syncing: false,
+      error: null,
+      relayDeniedReason: undefined,
+    }
     return created
   })
   central.registerSuperAgentMachineSession
@@ -182,9 +193,13 @@ test("reuses the created BYOA session on retry without prematurely listing it be
     .mockRejectedValueOnce(new Error("Daemon temporarily unreachable"))
     .mockResolvedValue({ operationId: "op-2", commandId: "cmd-2", sessionId: "byoa-session-2", inputId: "in-2" })
 
+  onSessionChange.mockImplementation((session, selectIt) => {
+    if (selectIt) void wrapper.setProps({ sessionId: session.sessionId, sessionMeta: session })
+  })
+
   await wrapper.get("textarea").setValue("Audit machines")
 
-  // Attempt 1: create succeeds, central registration fails.
+  // Attempt 1: create succeeds, central registration fails -> stays on New with pendingCreation.
   await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(createSpy).toHaveBeenCalledTimes(1)
@@ -193,23 +208,22 @@ test("reuses the created BYOA session on retry without prematurely listing it be
   expect(onSessionChange).not.toHaveBeenCalled()
   expect(wrapper.get('[role="alert"]').text()).toContain("Central temporarily unreachable")
 
-  // Attempt 2: reuses created session, registration succeeds, submit fails (still not listed prematurely).
+  // Attempt 2: reuses created session, registration succeeds -> switches to session with draft & error intact even when initial submit fails.
   await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(createSpy).toHaveBeenCalledTimes(1)
   expect(central.registerSuperAgentMachineSession).toHaveBeenCalledTimes(2)
   expect(submitSpy).toHaveBeenCalledTimes(1)
-  expect(onSessionChange).not.toHaveBeenCalled()
+  expect(onSessionChange).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "byoa-session-2" }), true)
+  expect(wrapper.props("sessionId")).toBe("byoa-session-2")
   expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe("Audit machines")
   expect(wrapper.get('[role="alert"]').text()).toContain("Daemon temporarily unreachable")
 
-  // Attempt 3: reuses created session & registration, submit succeeds and selects session.
+  // Attempt 3: sends directly into the selected session without creating a duplicate.
   await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(createSpy).toHaveBeenCalledTimes(1)
-  expect(central.registerSuperAgentMachineSession).toHaveBeenCalledTimes(2)
   expect(submitSpy).toHaveBeenCalledTimes(2)
-  expect(onSessionChange).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sessionId: "byoa-session-2" }), true)
 })
 
 test("clears a failed pending creation when navigating to another BYOA conversation", async () => {

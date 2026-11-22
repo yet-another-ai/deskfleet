@@ -78,7 +78,7 @@ const context = defineModel<AgentSessionContext>("context", { default: "director
 /** Absolute working directory for a new directory Session; omitted means the machine/workspace default. */
 const cwd = defineModel<string | undefined>("cwd")
 /** Optional isolated YOLO state for callers (e.g. BYOA Super Agent) that do not share `agents.draftYolo`. */
-const draftYolo = defineModel<boolean>("draftYolo")
+const draftYolo = defineModel<boolean | null>("draftYolo", { default: null })
 /** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
 const baseBranch = defineModel<string>("baseBranch")
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
@@ -201,7 +201,7 @@ async function toggleYolo(): Promise<void> {
   const next = !yoloEnabled.value
   if (next && (await yoloConfirmation.reveal()).isCanceled) return
   if (!id) {
-    if (draftYolo.value !== undefined) draftYolo.value = next
+    if (draftYolo.value !== null) draftYolo.value = next
     else agents.draftYolo = next
   } else await agents.setYolo(id, next)
 }

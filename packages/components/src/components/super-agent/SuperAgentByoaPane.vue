@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Cpu, ExternalLink, Layers3, ListTree, LoaderCircle } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { Machine } from "@deskfleet/client/central"
 import type { SuperAgentByoaTarget, SuperAgentSession } from "@deskfleet/client/super-agent"
@@ -121,20 +121,21 @@ const mentions = computed<ComposerMention[]>({
 interface PendingByoaSession {
   sessionId: string
   targetKey: string
-  registered?: SuperAgentSession
 }
 
 const busy = ref(false)
 const actionError = shallowRef<unknown>()
 const pendingCreation = shallowRef<PendingByoaSession>()
 const byoaDraftYolo = ref(!!props.target?.yolo)
+let transitioningSessionId: string | undefined
 
 watch(() => props.target?.yolo, value => {
   if (!props.sessionId && !pendingCreation.value) byoaDraftYolo.value = !!value
 })
 
 watchImmediate(() => props.sessionId, id => {
-  actionError.value = undefined
+  const transitioning = !!id && id === transitioningSessionId
+  if (!transitioning) actionError.value = undefined
   if (id) {
     pendingCreation.value = undefined
     byoaDraftYolo.value = !!props.target?.yolo
@@ -248,25 +249,31 @@ async function createAndSubmit(): Promise<void> {
         requestedDelivery: "backlog",
         createdAt: new Date().toISOString(),
       }
-      let registered = reusablePending?.registered
-      if (!registered) {
-        registered = account
-          ? await account.central.registerSuperAgentMachineSession(props.teamId, {
-            machineId: props.machine.id,
-            sessionId: id,
-            providerId,
-            providerName: effectiveProviderName.value || null,
-            title,
-            lastActiveAt: Date.now(),
-          })
-          : {
-            sessionId: id, title, lastActiveAt: Date.now(), engine: "byoa",
-            machineId: props.machine.id, machineName: props.machine.name,
-            providerId, providerName: effectiveProviderName.value || null,
-          }
-        if (pendingCreation.value?.sessionId === id) {
-          pendingCreation.value = { ...pendingCreation.value, registered }
+      const registered: SuperAgentSession = account
+        ? await account.central.registerSuperAgentMachineSession(props.teamId, {
+          machineId: props.machine.id,
+          sessionId: id,
+          providerId,
+          providerName: effectiveProviderName.value || null,
+          title,
+          lastActiveAt: Date.now(),
+        })
+        : {
+          sessionId: id, title, lastActiveAt: Date.now(), engine: "byoa",
+          machineId: props.machine.id, machineName: props.machine.name,
+          providerId, providerName: effectiveProviderName.value || null,
         }
+      if (pendingCreation.value?.sessionId === id) pendingCreation.value = undefined
+      if (!disposed) {
+        agents.drafts[id] = text
+        if (currentAttachments.length) agents.draftAttachments[id] = currentAttachments
+        if (currentMentions.length) agents.draftMentions[id] = currentMentions
+        delete agents.drafts[key]
+        delete agents.draftAttachments[key]
+        delete agents.draftMentions[key]
+        byoaDraftYolo.value = !!props.target?.yolo
+        transitioningSessionId = id
+        props.onSessionChange(registered, true)
       }
       const content = currentAttachments.length || currentMentions.length
         ? await buildComposerPrompt({
@@ -276,17 +283,18 @@ async function createAndSubmit(): Promise<void> {
         })
         : text
       await agents.submit(id, content, "backlog", undefined, text, submittedDraft)
-      if (pendingCreation.value?.sessionId === id) pendingCreation.value = undefined
       if (!disposed) {
-        delete agents.drafts[key]
-        delete agents.draftAttachments[key]
-        delete agents.draftMentions[key]
-        byoaDraftYolo.value = !!props.target?.yolo
-        props.onSessionChange(registered, true)
+        if (agents.drafts[id] === text) delete agents.drafts[id]
+        if (agents.draftAttachments[id] === currentAttachments) delete agents.draftAttachments[id]
+        if (agents.draftMentions[id] === currentMentions) delete agents.draftMentions[id]
       }
     } finally {
       delete agents.preparingDrafts[id]
       delete agents.optimisticInputs[id]
+      if (transitioningSessionId === id) {
+        await nextTick()
+        if (transitioningSessionId === id) transitioningSessionId = undefined
+      }
     }
   })
 }
