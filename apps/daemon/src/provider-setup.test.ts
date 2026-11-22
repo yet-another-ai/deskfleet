@@ -669,16 +669,43 @@ test("background installer mode preserves interactive setup and only opts Codex 
   }
 })
 
-test("background Codex installer exits without answering its final launch prompt", { skip: process.platform !== "win32" }, async () => {
+test("background Codex installer exits without answering its final launch prompt", {
+  skip: process.platform !== "win32", timeout: 20_000,
+}, async t => {
   const shell = "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
   const launch = await resolveProviderInstaller(input("codex"), {
     platform: "win32", env: { ...process.env, PATH: "C:\\Program Files\\PowerShell\\7" },
     executable: async path => path === shell,
   }, { nonInteractive: true })
-  // Keep the real command construction and PowerShell runner, replacing only the
-  // network response with the installer's final prompt and its supported opt-out.
-  const script = `function Invoke-RestMethod { 'if ($env:CODEX_NON_INTERACTIVE -ne "1") { Read-Host "Start Codex now?" }; Write-Output "Installed"' }; ${launch.args.at(-1)}`
-  const value = await runProbeCommand(launch.command, [...launch.args.slice(0, -1), script], launch.env, launch.cwd, undefined, 10_000)
+  assert.equal(launch.env.CODEX_NON_INTERACTIVE, "1")
+  assert.equal(launch.args.includes("-NonInteractive"), true)
+  // Keep the real installer command construction. Run the mock through -File so
+  // Windows CreateProcess quoting cannot mangle the nested PowerShell script, and
+  // throw instead of Read-Host so a missing opt-out fails under closed stdin
+  // instead of hanging until SIGKILL.
+  const directory = await mkdtemp(join(tmpdir(), "df-codex-installer-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const scriptPath = join(directory, "install-mock.ps1")
+  await writeFile(scriptPath, [
+    "function Invoke-RestMethod {",
+    "  @'",
+    "if ($env:CODEX_NON_INTERACTIVE -ne '1') { throw 'Start Codex now?' }",
+    "Write-Output 'Installed'",
+    "'@",
+    "}",
+    launch.args.at(-1)!,
+    "",
+  ].join("\n"))
+  const commandIndex = launch.args.lastIndexOf("-Command")
+  assert.ok(commandIndex >= 0)
+  const value = await runProbeCommand(
+    launch.command,
+    [...launch.args.slice(0, commandIndex), "-File", scriptPath],
+    launch.env,
+    launch.cwd,
+    undefined,
+    15_000,
+  )
   assert.equal(value.code, 0)
   assert.match(value.stdout, /Installed/u)
   assert.doesNotMatch(value.stdout, /Start Codex now/u)
