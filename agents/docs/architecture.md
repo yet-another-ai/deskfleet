@@ -38,11 +38,13 @@ changing the daemon's lifetime.
 
 Native viewers share a pure-Rust NSH control surface: the floating toolbar, its
 Control, Config, and Monitor dropdowns, and the Hacker Keyboard use the same
-components, translations, theme, and typed actions. Desktop hosts these components in GPUI; Android mounts NSH's native
-views over its video surface, and iOS mounts NSH's UIKit view over its Metal view.
-Platform hosts own window and surface lifetimes, local input state, touch gestures,
-and the system IME bridge. Decoded pixels stay in Rust and never pass through the
-NSH engine. Control gathers input (pointer, keyboards, shortcuts, clipboard, and
+components, translations, theme, and typed actions. Desktop hosts these components
+in GPUI. The Rust mobile hosts compose the NSH overlay, video surface, and IME editor in an Android activity or
+iOS view controller. One Rust layout places the controls and hit-tests the same
+bounds for both platforms. Kotlin and Swift supply the application lifecycle,
+platform input callbacks, clipboard, and system IME adapters. On iOS the Rust
+Metal view receives hardware keys and hosts mouse and trackpad recognizers.
+Decoded pixels stay in Rust and never pass through the NSH engine. Control gathers input (pointer, keyboards, shortcuts, clipboard, and
 mobile pinch zoom); Config gathers display, control permission, full screen, and
 the connection; Monitor shows receiver-side stream health.
 One desktop viewer process keeps

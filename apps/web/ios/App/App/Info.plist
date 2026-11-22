@@ -34,6 +34,8 @@
 	<string>DeskFleet uses your microphone to dictate messages.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>DeskFleet uses system speech recognition to turn your speech into message drafts.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

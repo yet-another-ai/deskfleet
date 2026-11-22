@@ -7,10 +7,10 @@ pub(crate) use ndk::native_window::NativeWindow;
 
 #[cfg(target_os = "ios")]
 #[derive(Clone, Debug)]
-pub(crate) struct NativeWindow(objc2_core_foundation::CFRetained<objc2_core_foundation::CFType>);
+pub(crate) struct NativeWindow(objc2::rc::Retained<objc2_quartz_core::CAMetalLayer>);
 
 #[cfg(target_os = "ios")]
-// SAFETY: `CAMetalLayer` reference counting via `CFRetain`/`CFRelease` is thread-safe,
+// SAFETY: `CAMetalLayer` reference counting is thread-safe,
 // and `wgpu`'s Metal backend synchronizes layer access internally.
 unsafe impl Send for NativeWindow {}
 #[cfg(target_os = "ios")]
@@ -19,17 +19,12 @@ unsafe impl Sync for NativeWindow {}
 
 #[cfg(target_os = "ios")]
 impl NativeWindow {
-    /// # Safety
-    /// `layer` must be a valid non-null `CAMetalLayer` pointer.
-    pub(crate) unsafe fn retain_layer(layer: std::ptr::NonNull<std::ffi::c_void>) -> Self {
-        // SAFETY: `CAMetalLayer` is toll-free bridged with CoreFoundation reference counting.
-        Self(unsafe { objc2_core_foundation::CFRetained::retain(layer.cast()) })
+    pub(crate) fn from_layer(layer: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer>) -> Self {
+        Self(layer)
     }
 
     fn as_ptr(&self) -> *mut std::ffi::c_void {
-        std::ptr::from_ref::<objc2_core_foundation::CFType>(self.0.as_ref())
-            .cast_mut()
-            .cast()
+        objc2::rc::Retained::as_ptr(&self.0).cast_mut().cast()
     }
 
     fn width(&self) -> i32 {

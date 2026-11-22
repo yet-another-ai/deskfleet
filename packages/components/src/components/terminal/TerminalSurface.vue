@@ -11,6 +11,7 @@ import { computed, onBeforeUnmount, onMounted, onUnmounted, useTemplateRef, watc
 import { DEFAULT_TERMINAL_FONT } from "@deskfleet/client/appearance"
 import type { TerminalColors } from "@deskfleet/client/terminal-theme"
 import { useAppearanceStore } from "../../stores/appearance.ts"
+import { ipadKey, ipadShortcut } from "./terminal-keys.ts"
 import TerminalToolbar from "./TerminalToolbar.vue"
 
 /** Sixel / iTerm2 inline images; size reports stay on for apps that query CSI t metrics. */
@@ -68,9 +69,13 @@ const CURSOR_SEQUENCES: Record<string, { alt: string; meta: string } | undefined
   ArrowRight: { alt: "\x1bf", meta: "\x05" },
 }
 
+// iPadOS also requests desktop pages using the MacIntel platform identifier.
+const ipad = navigator.platform === "iPad" || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
 terminal.loadAddon(fit)
 terminal.attachCustomKeyEventHandler(event => {
-  if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+  if (event.isComposing) return true
+  const key = ipad ? ipadKey(event) : event.key
+  if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && key.toLowerCase() === "f") {
     if (event.type === "keydown") {
       event.preventDefault()
       void toolbar.value?.openSearch()
@@ -78,7 +83,7 @@ terminal.attachCustomKeyEventHandler(event => {
     return false
   }
 
-  if (event.ctrlKey && !event.altKey && event.key === "c" && terminal.hasSelection()) {
+  if (event.ctrlKey && !event.altKey && key === "c" && terminal.hasSelection()) {
     if (event.type === "keydown") {
       event.preventDefault()
       void navigator.clipboard?.writeText(terminal.getSelection())?.catch(() => {})
@@ -87,13 +92,16 @@ terminal.attachCustomKeyEventHandler(event => {
   }
 
   const cursor = !event.ctrlKey && !event.shiftKey && event.altKey !== event.metaKey
-    ? CURSOR_SEQUENCES[event.key]
+    ? CURSOR_SEQUENCES[key]
     : undefined
-  if (!cursor) return true
+  const sequence = cursor ? (event.metaKey ? cursor.meta : cursor.alt)
+    : ipad && props.interactive ? ipadShortcut(event, key, terminal.modes.applicationCursorKeysMode) : undefined
+  if (sequence === undefined) return true
 
   if (event.type === "keydown") {
     event.preventDefault()
-    terminal.input(event.metaKey ? cursor.meta : cursor.alt)
+    event.stopPropagation()
+    terminal.input(sequence)
   }
   return false
 })

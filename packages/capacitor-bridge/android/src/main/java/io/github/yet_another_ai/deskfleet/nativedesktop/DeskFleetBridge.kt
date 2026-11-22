@@ -12,6 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.Surface
+import android.view.SurfaceView
+import android.view.View
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -377,6 +379,10 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativeSurfaceChanged(width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceDestroyed()
         @JvmStatic external fun nativeTouch(kind: Int, x: Double, y: Double, dx: Double, dy: Double)
+        @JvmStatic external fun nativeMountViewer(activity: Activity, keyboard: View, overlay: NshView): SurfaceView
+        @JvmStatic external fun nativeDismissPanel(handle: Long): Boolean
+        @JvmStatic external fun nativeControlsHit(handle: Long, x: Float, y: Float, grip: Boolean): Boolean
+        @JvmStatic external fun nativeDragToolbar(handle: Long, dx: Float, dy: Float)
         @JvmStatic external fun nativeAttachControls(view: NshView, callback: Any, stateJson: String): Long
         @JvmStatic external fun nativeUpdateControls(handle: Long, stateJson: String)
         @JvmStatic external fun nativeDetachControls(handle: Long)

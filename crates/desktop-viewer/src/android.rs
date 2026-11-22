@@ -43,7 +43,17 @@ impl AndroidNotifier {
     }
 }
 
+#[cfg(target_os = "ios")]
+pub(crate) fn ios_pointer(phase: crate::input::PointerPhase, position: (f64, f64)) {
+    send_render(RenderCommand::Pointer { phase, position });
+}
+
 enum RenderCommand {
+    #[cfg(target_os = "ios")]
+    Pointer {
+        phase: crate::input::PointerPhase,
+        position: (f64, f64),
+    },
     Window(WindowEvent),
     SurfaceAttached {
         window: NativeWindow,
@@ -55,6 +65,8 @@ enum RenderCommand {
         height: u32,
     },
     SurfaceDestroyed,
+    #[cfg(target_os = "ios")]
+    ViewInput(Vec<InputEvent>),
     Touch {
         kind: i32,
         x: f64,
@@ -169,6 +181,10 @@ impl AndroidViewer {
                 self.set_zoom(Zoom::default());
             }
             RenderCommand::Window(WindowEvent::InputEnabled(enabled)) => {
+                #[cfg(target_os = "ios")]
+                if !enabled {
+                    self.touch.clear_pointer_buttons();
+                }
                 self.control = enabled;
             }
             RenderCommand::Window(WindowEvent::FrameReady) => {}
@@ -187,9 +203,32 @@ impl AndroidViewer {
                     self.redraw = true;
                 }
             }
+            #[cfg(target_os = "ios")]
+            RenderCommand::Pointer { phase, position } => {
+                if self.control {
+                    let viewport = self.layout().map_or((0., 0., 0., 0.), |(surface, fit, _)| {
+                        self.zoom.rect(surface, fit)
+                    });
+                    for event in self.touch.pointer(phase, position, viewport) {
+                        self.input.send(event)?;
+                    }
+                }
+            }
             RenderCommand::SurfaceDestroyed => {
+                #[cfg(target_os = "ios")]
+                self.touch.clear_pointer_buttons();
                 let _ = self.input.send(InputEvent::ReleaseAll);
                 self.renderer = None;
+            }
+            #[cfg(target_os = "ios")]
+            RenderCommand::ViewInput(events) => {
+                let release = events.first() == Some(&InputEvent::ReleaseAll);
+                if release {
+                    self.touch.clear_pointer_buttons();
+                }
+                if self.control || (release && events.len() == 1) {
+                    self.input.send_sequence(events)?;
+                }
             }
             RenderCommand::Touch { kind: 7, .. } => {
                 let _ = protocol::emit(json!({"type":"closeRequested"}));
@@ -391,8 +430,26 @@ fn start_session(emitter: Box<dyn Fn(String) -> io::Result<()> + Send + Sync>) {
     }
 }
 
+#[cfg(target_os = "ios")]
+pub(crate) fn send_view_input(events: Vec<InputEvent>) {
+    // Use the same ordered queue as the pointer, including modifier + click.
+    send_render(RenderCommand::ViewInput(events));
+}
+
 fn send_command(raw: &str) {
     match serde_json::from_str::<Command>(raw) {
+        #[cfg(target_os = "ios")]
+        Ok(Command::Input { event }) => send_view_input(vec![event]),
+        #[cfg(target_os = "ios")]
+        Ok(Command::Text {
+            text,
+            paste_code,
+            paste_shift,
+        }) => {
+            if let Some(events) = crate::input_text::paste_events(text, paste_code, paste_shift) {
+                send_view_input(events);
+            }
+        }
         Ok(command) => {
             let tx = active_slot()
                 .lock()
@@ -629,32 +686,25 @@ pub extern "C" fn deskfleet_ios_stop() {
 }
 
 #[cfg(target_os = "ios")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn deskfleet_ios_surface_created(
-    layer: *mut std::ffi::c_void,
+pub(crate) fn attach_video_layer(
+    layer: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer>,
     width: u32,
     height: u32,
 ) {
-    if let Some(layer) = std::ptr::NonNull::new(layer) {
-        // SAFETY: Caller guarantees `layer` is a live `CAMetalLayer` object.
-        let window = unsafe { NativeWindow::retain_layer(layer) };
-        send_render(RenderCommand::SurfaceAttached {
-            window,
-            width: width.max(1),
-            height: height.max(1),
-        });
-    }
+    send_render(RenderCommand::SurfaceAttached {
+        window: NativeWindow::from_layer(layer),
+        width,
+        height,
+    });
 }
 
 #[cfg(target_os = "ios")]
-#[unsafe(no_mangle)]
-pub extern "C" fn deskfleet_ios_surface_changed(width: u32, height: u32) {
+pub(crate) fn resize_video_layer(width: u32, height: u32) {
     send_render(RenderCommand::SurfaceResized { width, height });
 }
 
 #[cfg(target_os = "ios")]
-#[unsafe(no_mangle)]
-pub extern "C" fn deskfleet_ios_surface_destroyed() {
+pub(crate) fn detach_video_layer() {
     send_render(RenderCommand::SurfaceDestroyed);
 }
 

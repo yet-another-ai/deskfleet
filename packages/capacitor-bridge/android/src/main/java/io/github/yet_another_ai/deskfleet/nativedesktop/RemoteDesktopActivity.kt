@@ -2,13 +2,9 @@ package io.github.yet_another_ai.deskfleet.nativedesktop
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.graphics.Color
 import android.os.Bundle
 import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.WindowManager
-import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -35,25 +31,18 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         updateSystemBars()
 
-        val surfaceView = SurfaceView(this).apply {
-            holder.addCallback(this@RemoteDesktopActivity)
-        }
         clipboardManager = getSystemService(ClipboardManager::class.java)?.also {
             it.addPrimaryClipChangedListener(clipListener)
         }
 
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            addView(surfaceView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-        }
-        controls = RemoteDesktopControls(root, DeskFleetBridge::nativeSendCommand,
+        controls = RemoteDesktopControls(this, DeskFleetBridge::nativeSendCommand,
             DeskFleetBridge::emitViewerAction, { syncLocalClipboardToRemote(force = true) }, ::requestCloseAndFinish) {
             fullscreen = !fullscreen
             updateSystemBars()
         }
-        touch = RemoteDesktopTouch(surfaceView, controls).also { it.attach() }
+        controls.surface.holder.addCallback(this)
+        touch = RemoteDesktopTouch(controls.surface, controls).also { it.attach() }
         controls.onRelease = touch::reset
-        setContentView(root)
         DeskFleetBridge.viewerUiState?.let(controls::applyState)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

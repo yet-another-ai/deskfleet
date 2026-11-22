@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 mod physical_keys;
 pub use physical_keys::NativeKeyCode;
 
+#[cfg(any(target_os = "ios", test))]
+mod hid_keys;
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]

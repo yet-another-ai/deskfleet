@@ -4,6 +4,7 @@ import { useIntervalFn, useTimeoutFn } from "@vueuse/core"
 import type { Terminal } from "@xterm/xterm"
 import { onBeforeUnmount, ref } from "vue"
 import { useI18n } from "vue-i18n"
+import { csiCursor, ctrlChar, encodeKey } from "./terminal-keys.ts"
 
 export type ModifierState = "off" | "armed" | "locked"
 
@@ -51,95 +52,13 @@ const functionKeys: KeySpec[] = Array.from({ length: 12 }, (_, index) => {
   return { id: label, label }
 })
 
-const CURSOR_LETTERS: Record<string, string | undefined> = {
-  ArrowUp: "A",
-  ArrowDown: "B",
-  ArrowRight: "C",
-  ArrowLeft: "D",
-  Home: "H",
-  End: "F",
-}
-const F_KEY_TILDE_CODES = [15, 17, 18, 19, 20, 21, 23, 24] as const
-
-function ctrlChar(ch: string): string {
-  const code = ch.charCodeAt(0)
-  if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return String.fromCharCode(code & 0x1f)
-  switch (ch) {
-    case "@":
-    case " ":
-    case "2":
-      return "\x00"
-    case "[":
-    case "3":
-      return "\x1b"
-    case "\\":
-    case "|":
-    case "4":
-      return "\x1c"
-    case "]":
-    case "5":
-      return "\x1d"
-    case "^":
-    case "~":
-    case "6":
-      return "\x1e"
-    case "_":
-    case "-":
-    case "/":
-    case "7":
-      return "\x1f"
-    case "?":
-    case "8":
-      return "\x7f"
-    default:
-      return ch
-  }
-}
-
-function csiCursor(letter: string, ctrlActive: boolean, altActive: boolean, appCursor: boolean): string {
-  if (altActive && !ctrlActive && (letter === "D" || letter === "C")) {
-    return letter === "D" ? "\x1bb" : "\x1bf"
-  }
-  const mod = 1 + (altActive ? 2 : 0) + (ctrlActive ? 4 : 0)
-  if (mod > 1) return `\x1b[1;${mod}${letter}`
-  return appCursor ? `\x1bO${letter}` : `\x1b[${letter}`
-}
-
-function csiTilde(code: number, ctrlActive: boolean, altActive: boolean): string {
-  const mod = 1 + (altActive ? 2 : 0) + (ctrlActive ? 4 : 0)
-  return mod > 1 ? `\x1b[${code};${mod}~` : `\x1b[${code}~`
-}
-
-function encodeKey(keyId: string, ctrlActive: boolean, altActive: boolean): string {
-  const appCursor = Boolean(props.terminal.modes?.applicationCursorKeysMode)
-  if (keyId === "Escape") return altActive ? "\x1b\x1b" : "\x1b"
-  if (keyId === "Tab") return altActive ? "\x1b\t" : "\t"
-  const cursorLetter = CURSOR_LETTERS[keyId]
-  if (cursorLetter) return csiCursor(cursorLetter, ctrlActive, altActive, appCursor)
-  if (keyId === "PageUp") return csiTilde(5, ctrlActive, altActive)
-  if (keyId === "PageDown") return csiTilde(6, ctrlActive, altActive)
-  if (keyId.startsWith("F") && keyId.length > 1) {
-    const index = Number(keyId.slice(1))
-    if (index >= 1 && index <= 4) {
-      const letter = ["P", "Q", "R", "S"][index - 1]!
-      const mod = 1 + (altActive ? 2 : 0) + (ctrlActive ? 4 : 0)
-      return mod > 1 ? `\x1b[1;${mod}${letter}` : `\x1bO${letter}`
-    }
-    if (index >= 5 && index <= 12) {
-      return csiTilde(F_KEY_TILDE_CODES[index - 5]!, ctrlActive, altActive)
-    }
-  }
-  const ch = ctrlActive ? ctrlChar(keyId) : keyId
-  return altActive ? `\x1b${ch}` : ch
-}
-
 function consumeArmedModifiers(): void {
   if (ctrl.value === "armed") ctrl.value = "off"
   if (alt.value === "armed") alt.value = "off"
 }
 
 function sendKey(keyId: string): void {
-  const sequence = encodeKey(keyId, ctrl.value !== "off", alt.value !== "off")
+  const sequence = encodeKey(keyId, ctrl.value !== "off", alt.value !== "off", props.terminal.modes.applicationCursorKeysMode)
   consumeArmedModifiers()
   sendingVirtualKey = true
   try {

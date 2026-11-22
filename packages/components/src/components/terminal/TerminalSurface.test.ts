@@ -49,6 +49,7 @@ class FakeTerminal {
   options: Record<string, unknown>
   cols = 100
   rows = 30
+  modes = { applicationCursorKeysMode: false }
   selection = ""
   hasSelection = vi.fn(() => Boolean(this.selection))
   getSelection = vi.fn(() => this.selection)
@@ -413,5 +414,33 @@ test("opens local search without sending its shortcut to the shell and keeps sea
   wrapper.vm.reset()
   expect(terminal.reset).toHaveBeenCalledOnce()
   expect(reset).toHaveBeenCalledOnce()
+  wrapper.unmount()
+})
+
+test("iPad hardware shortcuts reach the terminal once using logical keys and preserve IME input", () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("iPad")
+  const wrapper = mount(TerminalSurface, { props: { interactive: true } })
+  const terminal = terminals.at(-1)!
+  terminal.modes.applicationCursorKeysMode = true
+  const handle = terminal.attachCustomKeyEventHandler.mock.calls[0]![0] as (event: KeyboardEvent) => boolean
+  for (const init of [
+    { key: "c", code: "KeyC", keyCode: 13, ctrlKey: true },
+    { key: "Process", code: "KeyD", keyCode: 229, ctrlKey: true },
+    { key: "∫", code: "KeyB", altKey: true },
+    { key: "Process", code: "BracketLeft", ctrlKey: true },
+    { key: "UIKeyInputUpArrow" },
+    { key: "ArrowRight", ctrlKey: true, shiftKey: true },
+    { key: "Tab", shiftKey: true },
+    { key: "F12", altKey: true },
+  ]) {
+    const down = new KeyboardEvent("keydown", { ...init, cancelable: true })
+    expect(handle(down), init.key).toBe(false)
+    expect(down.defaultPrevented).toBe(true)
+    handle(new KeyboardEvent("keypress", init))
+    handle(new KeyboardEvent("keyup", init))
+  }
+  expect(handle(new KeyboardEvent("keydown", { key: "Process", code: "KeyC", ctrlKey: true, isComposing: true }))).toBe(true)
+  expect(handle(new KeyboardEvent("keydown", { key: "a", code: "KeyA" }))).toBe(true)
+  expect(wrapper.emitted("input")?.flat()).toEqual(["\x03", "\x04", "\x1bb", "\x1b", "\x1bOA", "\x1b[1;6C", "\x1b[Z", "\x1b[24;3~"])
   wrapper.unmount()
 })

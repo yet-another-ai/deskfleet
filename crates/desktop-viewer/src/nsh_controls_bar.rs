@@ -7,7 +7,10 @@
 use nsh_core::prelude::*;
 
 use super::widgets::{hint, icon_button, trigger};
-use super::{GRIP_WIDTH, Live, PADDING, Panel, ToolbarAction, ToolbarState, emit};
+use super::{
+    GRIP_WIDTH, Live, MOBILE_CONTROL_HEIGHT, MOBILE_GRIP_WIDTH, PADDING, Panel, ToolbarAction,
+    ToolbarState, emit,
+};
 use crate::nsh_ui::{Palette, icon, label};
 use crate::protocol::Status;
 use crate::stream_stats::{Quality, StreamStats};
@@ -90,8 +93,16 @@ fn grip(state: &ToolbarState, p: Palette) -> impl IntoElement {
     view()
         .role(AccessibilityRole::Button)
         .on_press(|| emit(ToolbarAction::FocusHandle))
-        .w(px(if state.mobile { 44. } else { GRIP_WIDTH }))
-        .h(px(if state.mobile { 40. } else { 28. }))
+        .w(px(if state.mobile {
+            MOBILE_GRIP_WIDTH
+        } else {
+            GRIP_WIDTH
+        }))
+        .h(px(if state.mobile {
+            MOBILE_CONTROL_HEIGHT
+        } else {
+            28.
+        }))
         .flex_shrink_0()
         .rounded(px(6.))
         .items_center()
