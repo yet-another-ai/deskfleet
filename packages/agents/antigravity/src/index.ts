@@ -1,4 +1,4 @@
-import type { PromptResponse, SessionNotification, Usage } from "@agentclientprotocol/sdk/unstable"
+import type { ForkSessionRequest, InitializeResponse, NewSessionRequest, PromptResponse, ResumeSessionRequest, SessionNotification, Usage } from "@agentclientprotocol/sdk/unstable"
 import {
   clampQuota, connectAcpProcess, jsonVersionParser, launchProviderCommand, resolveBashScriptInstaller,
   resolvePowerShellScriptInstaller, runUsageJsonCommand, supportsAutoInstallPlatform,
@@ -119,6 +119,38 @@ interface Turn {
   wake?: () => void
 }
 
+function supportsAntigravitySystemPromptAppend(initialization: InitializeResponse): boolean {
+  const meta = initialization.agentCapabilities?._meta
+  if (!meta || typeof meta !== "object") return false
+  const antigravity = (meta as Record<string, unknown>).antigravity
+  if (!antigravity || typeof antigravity !== "object") return false
+  const systemPrompt = (antigravity as Record<string, unknown>).systemPrompt
+  return Boolean(systemPrompt && typeof systemPrompt === "object" && (systemPrompt as Record<string, unknown>).append === true)
+}
+
+function withAntigravitySystemPrompt<T extends NewSessionRequest | ResumeSessionRequest | ForkSessionRequest>(params: T): T {
+  const { systemPrompt, ...rest } = params
+  if (!systemPrompt || systemPrompt.mode !== "append") return params
+  const text = systemPrompt.content
+    .flatMap(block => block.type === "text" && block.text.trim() ? [block.text.trim()] : [])
+    .join("\n\n")
+  if (!text) return rest as unknown as T
+  const existingMeta = params._meta && typeof params._meta === "object" ? params._meta as Record<string, unknown> : {}
+  const existingAntigravity = existingMeta.antigravity && typeof existingMeta.antigravity === "object"
+    ? existingMeta.antigravity as Record<string, unknown>
+    : {}
+  return {
+    ...rest,
+    _meta: {
+      ...existingMeta,
+      antigravity: {
+        ...existingAntigravity,
+        systemPrompt: { append: text },
+      },
+    },
+  } as unknown as T
+}
+
 /**
  * Bridges turn steering for `agy acp` by chaining active `session/prompt` legs
  * and merging usage. A normal completion stays open while the provider still
@@ -133,8 +165,19 @@ export function wrapAntigravityConnection(
 ): AgentConnection {
   const workWaitMs = options.workWaitMs ?? WORK_WAIT_MS
   const turns = new Map<string, Turn>()
-  const initialization = {
+  const translateSystemPrompt = !connection.initialization.agentCapabilities?.sessionCapabilities?.systemPrompt
+    && supportsAntigravitySystemPromptAppend(connection.initialization)
+  const initialization: InitializeResponse = {
     ...connection.initialization,
+    ...(translateSystemPrompt ? {
+      agentCapabilities: {
+        ...connection.initialization.agentCapabilities,
+        sessionCapabilities: {
+          ...connection.initialization.agentCapabilities?.sessionCapabilities,
+          systemPrompt: {},
+        },
+      },
+    } : {}),
     _meta: {
       ...connection.initialization._meta,
       steering: { supported: true, supportsPromptRequired: true },
@@ -144,6 +187,11 @@ export function wrapAntigravityConnection(
   return {
     ...connection,
     initialization,
+    newSession: params => connection.newSession(translateSystemPrompt ? withAntigravitySystemPrompt(params) : params),
+    resume: params => connection.resume(translateSystemPrompt ? withAntigravitySystemPrompt(params) : params),
+    ...(connection.forkSession ? {
+      forkSession: (params: ForkSessionRequest) => connection.forkSession!(translateSystemPrompt ? withAntigravitySystemPrompt(params) : params),
+    } : {}),
     async prompt(params) {
       const { sessionId } = params
       const turn: Turn = {

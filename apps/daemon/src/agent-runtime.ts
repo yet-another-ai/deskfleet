@@ -338,13 +338,25 @@ export class AgentRuntime {
           }
         }
       }
-      const superAgentPrompt = snapshot.session.superAgent && capabilities?.sessionCapabilities?.systemPrompt
+      const hasDeskfleetMcp = this.#mcpLease?.servers.some(server => server.name === "deskfleet") === true
+      const appendedInstructions: string[] = []
+      if (snapshot.session.superAgent) {
+        appendedInstructions.push(
+          "You are acting as the DeskFleet Super Agent coordinator for this Team. Help the user plan and orchestrate work across Workspaces on this machine and across other consenting machines in the Team using the DeskFleet MCP tools. Describe work as dispatched when a tool confirms creation or delivery, and as complete only when the target Session reports completion.",
+        )
+      }
+      if (hasDeskfleetMcp) {
+        appendedInstructions.push(
+          "When delegating subagent, parallel, or cross-workspace work, prefer the DeskFleet MCP tools (such as deskfleet_session_create, deskfleet_session_send, deskfleet_sessions, deskfleet_session, and deskfleet_session_history, plus their remote equivalents) over provider-native subagents so delegated Sessions remain observable, auditable, and follow DeskFleet permissions.",
+        )
+      }
+      const systemPrompt = appendedInstructions.length && capabilities?.sessionCapabilities?.systemPrompt
         ? {
           systemPrompt: {
             mode: "append" as const,
             content: [{
               type: "text" as const,
-              text: "You are acting as the DeskFleet Super Agent coordinator for this Team. Help the user plan and orchestrate work across Workspaces on this machine and across other consenting machines in the Team using the DeskFleet MCP tools. Describe work as dispatched when a tool confirms creation or delivery, and as complete only when the target Session reports completion.",
+              text: appendedInstructions.join("\n\n"),
             }],
           },
         }
@@ -353,7 +365,7 @@ export class AgentRuntime {
         cwd: worktree.directories[0].path,
         mcpServers: this.#mcpLease?.servers ?? [],
         ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}),
-        ...superAgentPrompt,
+        ...systemPrompt,
       }
       let providerSessionId = snapshot.session.providerSessionId
       let responseOptions: acp.SessionConfigOption[] | undefined

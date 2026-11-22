@@ -389,6 +389,7 @@ export async function connectAcpProcess(launch: AgentProcess, client: AgentClien
               mcpServers: params.mcpServers ?? [],
               ...(params.additionalDirectories?.length ? { additionalDirectories: params.additionalDirectories } : {}),
               ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
+              ...(params._meta ? { _meta: params._meta } : {}),
             })
             sessionScope.complete(params.sessionId)
             return present(params.sessionId, loaded)

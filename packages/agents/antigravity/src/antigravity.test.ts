@@ -283,3 +283,40 @@ test("wrapAntigravityConnection stops steering and returns cancelled on cancel()
   assert.deepEqual(await conn.steer(msg("after-cancel"), "d1"), { outcome: "inactive" })
   assert.deepEqual(await turn, { stopReason: "cancelled" })
 })
+
+test("wrapAntigravityConnection bridges _meta.antigravity.systemPrompt.append for newSession, resume, and forkSession", async () => {
+  const seen: { method: string; params: Record<string, unknown> }[] = []
+  const conn = wrapAntigravityConnection(stubConnection({
+    initialization: {
+      protocolVersion: 1,
+      agentCapabilities: {
+        sessionCapabilities: { resume: {}, fork: {} },
+        _meta: { antigravity: { tier: true, systemPrompt: { append: true } } },
+      },
+    },
+    newSession: async params => { seen.push({ method: "new", params: params as unknown as Record<string, unknown> }); return { sessionId: "s1" } },
+    resume: async params => { seen.push({ method: "resume", params: params as unknown as Record<string, unknown> }); return {} },
+    forkSession: async params => { seen.push({ method: "fork", params: params as unknown as Record<string, unknown> }); return { sessionId: "s2" } },
+    prompt: async () => ({ stopReason: "end_turn" }),
+  }))
+
+  assert.deepEqual(conn.initialization.agentCapabilities?.sessionCapabilities?.systemPrompt, {})
+  const systemPrompt = { mode: "append" as const, content: [{ type: "text" as const, text: "Prefer DeskFleet MCP." }] }
+  await conn.newSession({ cwd: "/work", mcpServers: [], systemPrompt, _meta: { custom: true, antigravity: { tier: "pro" } } })
+  await conn.resume({ sessionId: "s1", cwd: "/work", mcpServers: [], systemPrompt })
+  await conn.forkSession!({ sessionId: "s1", cwd: "/work", mcpServers: [], systemPrompt })
+
+  assert.equal(seen[0]?.params.systemPrompt, undefined)
+  assert.deepEqual(seen[0]?.params._meta, {
+    custom: true,
+    antigravity: { tier: "pro", systemPrompt: { append: "Prefer DeskFleet MCP." } },
+  })
+  assert.equal(seen[1]?.params.systemPrompt, undefined)
+  assert.deepEqual(seen[1]?.params._meta, {
+    antigravity: { systemPrompt: { append: "Prefer DeskFleet MCP." } },
+  })
+  assert.equal(seen[2]?.params.systemPrompt, undefined)
+  assert.deepEqual(seen[2]?.params._meta, {
+    antigravity: { systemPrompt: { append: "Prefer DeskFleet MCP." } },
+  })
+})
