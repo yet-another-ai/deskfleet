@@ -77,6 +77,8 @@ const mentions = defineModel<ComposerMention[]>("mentions", { default: () => [] 
 const context = defineModel<AgentSessionContext>("context", { default: "directory" })
 /** Absolute working directory for a new directory Session; omitted means the machine/workspace default. */
 const cwd = defineModel<string | undefined>("cwd")
+/** Optional isolated YOLO state for callers (e.g. BYOA Super Agent) that do not share `agents.draftYolo`. */
+const draftYolo = defineModel<boolean | null>("draftYolo", { default: null })
 /** The base branch for a new worktree Session; only offered when `showTarget` and `context === "worktree"`. */
 const baseBranch = defineModel<string>("baseBranch")
 const baseRevisions = defineModel<GitPreparationSnapshot["baseRevisions"]>("baseRevisions")
@@ -183,7 +185,7 @@ const dictation = reactive(useComposerDictation({
   draft, mentions, textarea,
 }))
 const dictationLabel = computed(() => t(dictation.error ? `dictation.errors.${dictation.error}` : dictation.active ? "dictation.stop" : "dictation.start"))
-const yoloEnabled = computed(() => sessionId.value ? !!agents.sessions[sessionId.value]?.yolo : agents.draftYolo)
+const yoloEnabled = computed(() => sessionId.value ? !!agents.sessions[sessionId.value]?.yolo : (draftYolo.value ?? agents.draftYolo))
 const yoloConfirmation = useConfirmDialog()
 const { isRevealed: confirmingYolo } = yoloConfirmation
 watch([
@@ -198,8 +200,10 @@ async function toggleYolo(): Promise<void> {
   const id = sessionId.value
   const next = !yoloEnabled.value
   if (next && (await yoloConfirmation.reveal()).isCanceled) return
-  if (!id) agents.draftYolo = next
-  else await agents.setYolo(id, next)
+  if (!id) {
+    if (draftYolo.value !== null) draftYolo.value = next
+    else agents.draftYolo = next
+  } else await agents.setYolo(id, next)
 }
 const completionId = useId()
 const completion = reactive(useComposerCompletions({

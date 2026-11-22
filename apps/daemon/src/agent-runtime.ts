@@ -331,14 +331,30 @@ export class AgentRuntime {
       if (this.#mcp) {
         const creation = (await this.journal.commands(this.sessionId)).find(command => command.isCanonical && (command.method === "_deskfleet/session/create" || command.method === "_deskfleet/session/fork"))
         if (!creation) throw new Error("This Session has no initiating command for MCP delegation")
-        this.#mcpLease = this.#mcp.lease(this.sessionId, snapshot.session.workspaceId, creation.actor)
+        this.#mcpLease = this.#mcp.lease(this.sessionId, snapshot.session.workspaceId, creation.actor, !!snapshot.session.superAgent)
         for (const server of this.#mcpLease.servers) {
           if ("type" in server && !capabilities?.mcpCapabilities?.[server.type]) {
             throw new Error(`This Agent does not support the ${server.type.toUpperCase()} transport required by MCP server "${server.name}". Change or disable that server in MCP Servers settings.`)
           }
         }
       }
-      const params = { cwd: worktree.directories[0].path, mcpServers: this.#mcpLease?.servers ?? [], ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}) }
+      const superAgentPrompt = snapshot.session.superAgent && capabilities?.sessionCapabilities?.systemPrompt
+        ? {
+          systemPrompt: {
+            mode: "append" as const,
+            content: [{
+              type: "text" as const,
+              text: "You are acting as the DeskFleet Super Agent coordinator for this Team. Help the user plan and orchestrate work across Workspaces on this machine and across other consenting machines in the Team using the DeskFleet MCP tools. Describe work as dispatched when a tool confirms creation or delivery, and as complete only when the target Session reports completion.",
+            }],
+          },
+        }
+        : undefined
+      const params = {
+        cwd: worktree.directories[0].path,
+        mcpServers: this.#mcpLease?.servers ?? [],
+        ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}),
+        ...superAgentPrompt,
+      }
       let providerSessionId = snapshot.session.providerSessionId
       let responseOptions: acp.SessionConfigOption[] | undefined
       this.#openingConfiguration = true

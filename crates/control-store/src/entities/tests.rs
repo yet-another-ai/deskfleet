@@ -255,6 +255,16 @@ async fn entity_mappings_match_migrated_schema() {
         .all(db)
         .await
         .expect("cp_site_settings mapping");
+    cp_super_agent_machine_sessions::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_super_agent_machine_sessions mapping");
+    cp_team_super_agent::Entity::find()
+        .limit(0)
+        .all(db)
+        .await
+        .expect("cp_team_super_agent mapping");
     cp_team_turn_servers::Entity::find()
         .limit(0)
         .all(db)

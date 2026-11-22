@@ -5,7 +5,7 @@ import type { AdminPlanQuota } from "../../../client/src/central.ts"
 import type { AdminTeamBillingPage, AdminTeamBillingQuery, TeamBilling } from "../../../client/src/billing.ts"
 import type { AccountDeletionRequestPage } from "../../../client/src/account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "../../../client/src/ai-usage.ts"
-import type { SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
+import type { RegisterSuperAgentMachineSessionInput, SuperAgentConfig, SuperAgentConfigUpdate, SuperAgentSession, SuperAgentUsage } from "../../../client/src/super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "../../../client/src/site-usage.ts"
 import type { CentralApi, CentralEvent, LocalEnrollment, Machine, SiteSettings, TurnSettings, CloudflareTurnSettings, CloudflareTurnSettingsUpdate, Team, TeamMember, TeamTurnAvailability, TeamTurnSettingsUpdate } from "../../../client/src/central.ts"
 
@@ -59,6 +59,7 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       { userId: "user-2", name: "Bob", email: "bob@example.test", role: "member" as const },
     ],
     enrollment: options.enrollment,
+    superAgentConfig: { mode: "hosted", hostedConfigured: true, canConfigure: true, byoa: null } as SuperAgentConfig,
   }
   const status = () => ({ serverUrl: "https://fleet.example", siteAdmin: state.signedIn && state.siteAdmin, user: state.signedIn ? { id: "user-1", name: "Ada", email: "ada@example.test" } : undefined })
   const teamTurnSettings = () => ({ availability: state.teamTurn.availability, urls: [...state.teamTurn.urls], secretConfigured: state.teamTurn.secret !== undefined })
@@ -137,7 +138,35 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
     }),
     members: vi.fn(async (_teamId: string) => state.members.map(member => ({ ...member }))),
     superAgentAvailability: vi.fn(async (_teamId: string) => ({ enabled: false })),
+    superAgentConfig: vi.fn(async (_teamId: string): Promise<SuperAgentConfig> => ({ ...state.superAgentConfig, byoa: state.superAgentConfig.byoa ? { ...state.superAgentConfig.byoa } : null })),
+    updateSuperAgentConfig: vi.fn(async (_teamId: string, update: SuperAgentConfigUpdate): Promise<SuperAgentConfig> => {
+      const nextByoa = update.byoa === undefined
+        ? state.superAgentConfig.byoa
+        : update.byoa === null
+          ? null
+          : {
+            machineId: update.byoa.machineId,
+            machineName: state.machines.find(m => m.id === update.byoa!.machineId)?.name ?? update.byoa.machineId,
+            machineOnline: state.machines.find(m => m.id === update.byoa!.machineId)?.online ?? true,
+            providerId: update.byoa.providerId,
+            providerName: update.byoa.providerName ?? null,
+            cwd: update.byoa.cwd ?? null,
+            yolo: !!update.byoa.yolo,
+          }
+      state.superAgentConfig = { ...state.superAgentConfig, mode: update.mode, byoa: nextByoa }
+      return { ...state.superAgentConfig, byoa: nextByoa ? { ...nextByoa } : null }
+    }),
     superAgentSessions: vi.fn(async (_teamId: string): Promise<SuperAgentSession[]> => []),
+    registerSuperAgentMachineSession: vi.fn(async (_teamId: string, input: RegisterSuperAgentMachineSessionInput): Promise<SuperAgentSession> => ({
+      sessionId: input.sessionId,
+      title: input.title ?? null,
+      lastActiveAt: input.lastActiveAt ?? Date.now(),
+      engine: "byoa",
+      machineId: input.machineId,
+      machineName: state.machines.find(m => m.id === input.machineId)?.name ?? input.machineId,
+      providerId: input.providerId,
+      providerName: input.providerName ?? null,
+    })),
     superAgentUsage: vi.fn(async (_teamId: string): Promise<SuperAgentUsage> => ({
       runtimeConfigured: true, admitted: true, usedCredits: "0", includedCredits: null, usedTokens: 0, includedTokens: null, plan: "selfHosted",
       start: "2026-11-01T00:00:00Z", end: "2026-12-01T00:00:00Z",

@@ -1,5 +1,6 @@
 //! Authenticated Team gateway to the private Super Agent runtime.
 mod client;
+mod config;
 mod content;
 mod mcp;
 mod rollout;
@@ -24,14 +25,20 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
-pub(crate) fn configure(config: &mut web::ServiceConfig) {
-    config.route("/super-agent/mcp", web::post().to(mcp::handle));
-    config.service(
+pub(crate) fn configure(cfg: &mut web::ServiceConfig) {
+    cfg.route("/super-agent/mcp", web::post().to(mcp::handle));
+    cfg.service(
         web::scope("/teams/{teamId}/super-agent")
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-store")))
             .route("/availability", web::get().to(availability))
+            .route("/config", web::get().to(config::get_config))
+            .route("/config", web::put().to(config::update_config))
             .route("/sessions", web::get().to(list))
             .route("/sessions", web::post().to(create))
+            .route(
+                "/machine-sessions",
+                web::post().to(config::register_machine_session),
+            )
             .route("/sessions/{sessionId}/messages", web::post().to(message))
             .route("/sessions/{sessionId}/cancel", web::post().to(cancel_turn))
             .route("/sessions/{sessionId}/stream", web::get().to(stream))
@@ -196,7 +203,7 @@ async fn list(
     team: web::Path<String>,
 ) -> Result<HttpResponse> {
     authorize(&req, &state, &team, TeamAction::Read).await?;
-    let sessions = state.store.cloud_sessions(&team).await?;
+    let sessions = state.store.super_agent_sessions(&team).await?;
     Ok(HttpResponse::Ok().json(sessions))
 }
 

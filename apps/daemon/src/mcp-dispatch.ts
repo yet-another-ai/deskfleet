@@ -7,7 +7,7 @@ import { dispatchRemoteFiles, dispatchRemoteFileTransfer } from "./mcp-files.ts"
 import type { ScheduledTask } from "./schedule-protocol.ts"
 import type { RemoteMcpOperation, RemoteMcpRequest } from "../../../crates/protocol/control.ts"
 
-export interface McpScope { sessionId: string; workspaceId?: string }
+export interface McpScope { sessionId: string; workspaceId?: string; superAgent?: boolean }
 
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
 const sessionCreateSchema = z.strictObject({
@@ -69,9 +69,9 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-/** Workspace Sessions share their Workspace; machine-scoped Sessions can delegate into Workspaces without seeing other machine-scoped Sessions. */
+/** Workspace Sessions share their Workspace; machine-scoped and Super Agent Sessions can delegate into any Workspace without seeing other machine-scoped Sessions. */
 function sameDelegation(session: { id: string; workspaceId?: string }, scope: McpScope): boolean {
-  if (scope.workspaceId !== undefined) return session.workspaceId === scope.workspaceId
+  if (scope.workspaceId !== undefined && !scope.superAgent) return session.workspaceId === scope.workspaceId
   return session.id === scope.sessionId || session.workspaceId !== undefined
 }
 
@@ -82,7 +82,10 @@ export async function dispatchMcp(
 ): Promise<unknown> {
   const params = object(value)
   const source = await operations.agents.requireActive(scope.sessionId)
-  if (source.session.workspaceId !== scope.workspaceId) throw new Error("MCP delegation scope no longer exists")
+  if (source.session.workspaceId !== scope.workspaceId || Boolean(source.session.superAgent) !== Boolean(scope.superAgent)) {
+    throw new Error("MCP delegation scope no longer exists")
+  }
+  const crossWorkspace = scope.workspaceId === undefined || scope.superAgent === true
   if (method.startsWith("remoteMcp/")) {
     const operation = method.slice("remoteMcp/".length)
     if (!["machines", "machine", "sessions", "session", "history", "sessionCreate", "sessionSend", "workspaceCreate", "mcpServers", "mcpTools", "mcpCall", "files", "fileUpload", "fileDownload"].includes(operation)) throw new Error("Unsupported remote MCP operation")
@@ -108,7 +111,7 @@ export async function dispatchMcp(
       ...catalog,
       sessionId: scope.sessionId,
       ...(scope.workspaceId === undefined ? {} : { workspaceId: scope.workspaceId }),
-      workspaces: scope.workspaceId === undefined
+      workspaces: crossWorkspace
         ? catalog.workspaces
         : catalog.workspaces.filter(workspace => workspace.id === scope.workspaceId),
       // Machine-scoped worktrees live here; never leak other Sessions' checkouts.
@@ -116,7 +119,7 @@ export async function dispatchMcp(
     }
   }
   if (method === "workspaceCreate") {
-    if (scope.workspaceId !== undefined) throw new Error("Workspace is outside this MCP delegation")
+    if (!crossWorkspace) throw new Error("Workspace is outside this MCP delegation")
     return createMcpWorkspace(operations.catalog, params)
   }
   if (method === "_deskfleet/session/list") {
@@ -129,7 +132,7 @@ export async function dispatchMcp(
     return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
-    if (scope.workspaceId !== undefined) {
+    if (!crossWorkspace) {
       if (params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) throw new Error("Session is outside this MCP delegation")
       return createMcpSession(operations.agents, { ...params, workspaceId: scope.workspaceId }, actor)
     }

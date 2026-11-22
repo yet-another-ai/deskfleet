@@ -178,6 +178,14 @@ test("a hosted Super Agent dispatches Sessions under the initiating user and liv
   await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, teamId: "other" }, user, target), /delegated user/)
   await assert.rejects(f.service.handle("remoteMcpDiscover", { ...hosted, machineId: "forged" }, user, target), /delegated user/)
   await assert.rejects(f.service.handle("remoteMcpDiscover", source, user, target), /delegated user/)
+
+  const byoa = { ...source, kind: "superAgent" as const }
+  await writeRemoteAgentSettings(f.directory, { ...noAccess, allowSuperAgent: true })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", byoa, actor, target), fullAccess)
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", source, actor, target), noAccess)
+  await writeRemoteAgentSettings(f.directory, { ...noAccess, allowRead: true, allowSuperAgent: false })
+  assert.deepEqual(await f.service.handle("remoteMcpDiscover", byoa, actor, target), { ...noAccess, allowRead: true })
+  await assert.rejects(f.service.handle("remoteMcpDiscover", byoa, user, target), /delegated user/)
 })
 
 test("remote requests cannot cross Teams, impersonate the source, or tunnel Agent messaging", async t => {

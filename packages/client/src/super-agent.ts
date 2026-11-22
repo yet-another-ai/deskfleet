@@ -1,10 +1,58 @@
 import type { BillingPlan } from "./billing.ts"
 
+export type SuperAgentMode = "hosted" | "byoa"
+
+export interface SuperAgentByoaTarget {
+  machineId: string
+  machineName: string
+  machineOnline: boolean
+  providerId: string
+  providerName?: string | null
+  cwd?: string | null
+  yolo: boolean
+}
+
+export interface SuperAgentConfig {
+  mode: SuperAgentMode
+  hostedConfigured: boolean
+  canConfigure: boolean
+  byoa: SuperAgentByoaTarget | null
+}
+
+export interface SuperAgentByoaUpdate {
+  machineId: string
+  providerId: string
+  providerName?: string | null
+  cwd?: string | null
+  yolo?: boolean
+}
+
+export interface SuperAgentConfigUpdate {
+  mode: SuperAgentMode
+  /** Omit to keep any saved BYOA registration; pass null to clear it while in hosted mode. */
+  byoa?: SuperAgentByoaUpdate | null
+}
+
+export interface RegisterSuperAgentMachineSessionInput {
+  machineId: string
+  sessionId: string
+  providerId: string
+  providerName?: string | null
+  title?: string | null
+  lastActiveAt?: number
+}
+
 export interface SuperAgentSession {
   sessionId: string
   title: string | null
   /** UTC milliseconds. Older idle sessions predate activity tracking. */
   lastActiveAt: number
+  /** Defaults to "hosted" when omitted by older servers or fixtures. */
+  engine?: SuperAgentMode
+  machineId?: string | null
+  machineName?: string | null
+  providerId?: string | null
+  providerName?: string | null
 }
 
 export interface SuperAgentUsage {

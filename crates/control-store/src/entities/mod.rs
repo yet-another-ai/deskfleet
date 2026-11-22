@@ -50,6 +50,8 @@ pub(crate) mod cp_sessions;
 pub(crate) mod cp_site_admins;
 pub(crate) mod cp_site_audit;
 pub(crate) mod cp_site_settings;
+pub(crate) mod cp_super_agent_machine_sessions;
+pub(crate) mod cp_team_super_agent;
 pub(crate) mod cp_team_turn_servers;
 pub(crate) mod cp_teams;
 pub(crate) mod cp_turn_collector;

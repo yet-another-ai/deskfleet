@@ -30,12 +30,17 @@ pub async fn call(
         device_id: body.device_id.clone(),
         source_machine: Some(json!({"id": source.machine_id, "originId": source.origin_id})),
     };
+    let super_agent = state
+        .store
+        .is_super_agent_machine_session(&source.id, &body.session_id)
+        .await?;
     dispatch(
         &state,
         Source {
             team_id: &source.team_id,
             session_id: &body.session_id,
             machine_id: Some(&source.machine_id),
+            super_agent,
         },
         actor,
         body.operation,
@@ -50,6 +55,8 @@ pub(crate) struct Source<'a> {
     pub session_id: &'a str,
     /// Hosted Super Agent Sessions have no source Machine.
     pub machine_id: Option<&'a str>,
+    /// True for hosted Super Agent Sessions and registered BYOA Super Agent machine Sessions.
+    pub super_agent: bool,
 }
 
 pub(crate) async fn dispatch(
@@ -64,6 +71,9 @@ pub(crate) async fn dispatch(
         return Err(ApiError::bad("invalid Agent MCP delegation"));
     }
     let source_context = match source.machine_id {
+        Some(id) if source.super_agent => {
+            json!({"teamId": source.team_id, "machineId": id, "kind": "superAgent", "sessionId": source.session_id})
+        }
         Some(id) => {
             json!({"teamId": source.team_id, "machineId": id, "sessionId": source.session_id})
         }

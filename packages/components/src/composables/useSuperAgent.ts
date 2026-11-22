@@ -1,19 +1,24 @@
 import { CentralRequestError, HttpError } from "@deskfleet/client/request-diagnostics"
 import { withCentralRequestTrigger } from "@deskfleet/client/reporting-central"
-import type { SuperAgentHistory, SuperAgentMessage, SuperAgentSession, SuperAgentTranscriptPart, SuperAgentTurn, SuperAgentUsage } from "@deskfleet/client/super-agent"
+import type { SuperAgentConfig, SuperAgentHistory, SuperAgentMessage, SuperAgentMode, SuperAgentSession, SuperAgentTranscriptPart, SuperAgentTurn, SuperAgentUsage } from "@deskfleet/client/super-agent"
 import { useDocumentVisibility, useTimeoutPoll } from "@vueuse/core"
 import { computed, onScopeDispose, ref, shallowRef, watch } from "vue"
 import type { ComposerAttachment } from "../services/composer-attachments.ts"
 import { buildSuperAgentMessage } from "../services/super-agent-message.ts"
 import { useAccountSession } from "./account-session-context.ts"
 
+export function superAgentSessionKey(session: Pick<SuperAgentSession, "sessionId" | "engine" | "machineId">): string {
+  return session.engine === "byoa" ? `byoa:${session.machineId ?? ""}:${session.sessionId}` : `hosted:${session.sessionId}`
+}
+
 export function useSuperAgent() {
   const account = useAccountSession()
   const automatic = account && withCentralRequestTrigger(account.central, "background")
   const user = account && withCentralRequestTrigger(account.central, "user")
   const visibility = useDocumentVisibility()
+  const config = shallowRef<SuperAgentConfig>()
   const sessions = shallowRef<SuperAgentSession[]>([])
-  const selected = ref<string>()
+  const selectedKey = ref<string>()
   const usage = shallowRef<SuperAgentUsage>()
   const messages = shallowRef<SuperAgentMessage[]>([])
   const turns = shallowRef<SuperAgentTurn[]>([])
@@ -22,21 +27,35 @@ export function useSuperAgent() {
   const pending = shallowRef<SuperAgentMessage[]>([])
   const draft = ref("")
   const attachments = shallowRef<ComposerAttachment[]>([])
+  const loadingConfig = ref(false)
   const loadingList = ref(false)
   const loadingHistory = ref(false)
   const sending = ref(false)
+  const configError = shallowRef<unknown>()
   const listError = shallowRef<unknown>()
   const usageError = shallowRef<unknown>()
   const readError = shallowRef<unknown>()
   const sendError = shallowRef<unknown>()
   const cancelError = shallowRef<unknown>()
   const cancellingId = ref<string>()
+
+  const selectedSession = computed(() => selectedKey.value
+    ? sessions.value.find(session => superAgentSessionKey(session) === selectedKey.value)
+    : undefined)
+  const selected = computed(() => selectedSession.value?.sessionId)
+  const activeEngine = computed<SuperAgentMode | undefined>(() => {
+    if (selectedSession.value) return selectedSession.value.engine ?? "hosted"
+    if (loadingConfig.value || configError.value) return undefined
+    return config.value?.mode
+  })
+  const isHostedSelected = computed(() => !!selectedSession.value && (selectedSession.value.engine ?? "hosted") === "hosted")
   const activeTurn = computed(() => turns.value.findLast(turn => turn.state === "running"))
   const cancelling = computed(() => !!cancellingId.value && cancellingId.value === activeTurn.value?.id)
-  const canCancel = computed(() => !!activeTurn.value && !cancelling.value && !sending.value && !loadingHistory.value && !readError.value && status.value !== "ended")
-  const canSend = computed(() => !!account?.superAgentEnabled.value && !!usage.value?.admitted && !loadingList.value && !listError.value && !loadingHistory.value
+  const canCancel = computed(() => isHostedSelected.value && !!activeTurn.value && !cancelling.value && !sending.value && !loadingHistory.value && !readError.value && status.value !== "ended")
+  const canSend = computed(() => activeEngine.value === "hosted" && !!account?.superAgentEnabled.value && !!usage.value?.admitted && !loadingList.value && !listError.value && !loadingHistory.value
     && !readError.value && !sending.value && status.value !== "ended")
-  const title = computed(() => sessions.value.find(session => session.sessionId === selected.value)?.title)
+  const title = computed(() => selectedSession.value?.title)
+
   let scopeRevision = 0
   let sessionRevision = 0
   let nextIndex = 0
@@ -53,6 +72,31 @@ export function useSuperAgent() {
     if (code === "super_agent_disabled") {
       void account?.refreshSuperAgentAvailability()
     }
+  }
+
+  async function refreshConfig(): Promise<void> {
+    const teamId = account?.teamId.value
+    if (!teamId || !automatic) return
+    const revision = scopeRevision
+    loadingConfig.value = true
+    try {
+      const result = await automatic.superAgentConfig(teamId)
+      if (revision !== scopeRevision) return
+      config.value = result
+      configError.value = undefined
+    } catch (error) {
+      if (revision !== scopeRevision) return
+      checkGate(error)
+      configError.value = error
+    } finally {
+      if (revision === scopeRevision) loadingConfig.value = false
+    }
+  }
+
+  function applyConfig(next: SuperAgentConfig): void {
+    config.value = next
+    configError.value = undefined
+    if (next.mode === "hosted") void refreshUsage()
   }
 
   async function refreshUsage(): Promise<void> {
@@ -73,8 +117,9 @@ export function useSuperAgent() {
 
   async function readHistory(): Promise<void> {
     const teamId = account?.teamId.value
-    const sessionId = selected.value
-    if (!teamId || !sessionId || !automatic || reading) return
+    const current = selectedSession.value
+    if (!teamId || !current || (current.engine ?? "hosted") !== "hosted" || !automatic || reading) return
+    const sessionId = current.sessionId
     const revision = sessionRevision
     reading = true
     try {
@@ -128,21 +173,22 @@ export function useSuperAgent() {
       }
     }
   }
+
   const poll = useTimeoutPoll(readHistory, () => pending.value.length || status.value === "working" ? 1500 : 10_000, { immediate: false })
-  watch(() => !!selected.value && !loadingHistory.value && !readError.value && status.value !== "ended" && visibility.value === "visible", active => {
+  watch(() => isHostedSelected.value && !loadingHistory.value && !readError.value && status.value !== "ended" && visibility.value === "visible", active => {
     if (active) poll.resume()
     else poll.pause()
   })
   watch(visibility, active => {
     if (active !== "visible" || !account?.superAgentEnabled.value) return
     void refreshUsage()
-    if (selected.value && status.value !== "ended") void readHistory()
+    if (isHostedSelected.value && status.value !== "ended") void readHistory()
   })
 
-  function resetSession(id?: string): void {
+  function resetSession(key?: string, isHosted = false): void {
     ++sessionRevision
     poll.pause()
-    selected.value = id
+    selectedKey.value = key
     messages.value = []
     turns.value = []
     previews.value = undefined
@@ -161,12 +207,30 @@ export function useSuperAgent() {
     reading = false
     nextIndex = 0
     pendingSenders = undefined
-    loadingHistory.value = !!id
+    loadingHistory.value = isHosted
   }
-  function select(id?: string): void {
-    if (sending.value || id === selected.value) return
-    resetSession(id)
-    if (id) void readHistory()
+
+  function select(target?: string | SuperAgentSession): void {
+    if (sending.value) return
+    if (!target) {
+      if (selectedKey.value !== undefined) resetSession(undefined, false)
+      return
+    }
+    const session = typeof target === "string"
+      ? sessions.value.find(item => superAgentSessionKey(item) === target || item.sessionId === target)
+      : target
+    const key = session ? superAgentSessionKey(session) : `hosted:${target}`
+    if (key === selectedKey.value) return
+    const hosted = (session?.engine ?? "hosted") === "hosted"
+    resetSession(key, hosted)
+    if (hosted) void readHistory()
+  }
+
+  function upsertSession(session: SuperAgentSession, selectIt = false): void {
+    const key = superAgentSessionKey(session)
+    sessions.value = [session, ...sessions.value.filter(item => superAgentSessionKey(item) !== key)]
+      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    if (selectIt) selectedKey.value = key
   }
 
   async function loadSessions(): Promise<void> {
@@ -179,7 +243,7 @@ export function useSuperAgent() {
       if (revision !== scopeRevision) return
       sessions.value = result
       listError.value = undefined
-      if (!selected.value && result[0]) select(result[0].sessionId)
+      if (!selectedKey.value && result[0]) select(result[0])
     } catch (error) {
       if (revision !== scopeRevision) return
       checkGate(error)
@@ -201,14 +265,14 @@ export function useSuperAgent() {
     sendError.value = undefined
     try {
       const content = buildSuperAgentMessage(text, files)
-      let sessionId = selected.value
+      let sessionId = isHostedSelected.value ? selectedSession.value?.sessionId : undefined
       if (!sessionId) {
         createOperation ??= crypto.randomUUID()
         const created = await user.createSuperAgentSession(teamId, createOperation)
         if (revision !== scopeRevision) return
         sessionId = created.sessionId
-        selected.value = sessionId
-        sessions.value = [{ sessionId, title: null, lastActiveAt: Date.now() }, ...sessions.value]
+        const createdSession: SuperAgentSession = { sessionId, title: null, lastActiveAt: Date.now(), engine: "hosted" }
+        upsertSession(createdSession, true)
       }
       if (delivery?.text !== text || delivery.attachments !== files) delivery = { text, attachments: files, operationId: crypto.randomUUID() }
       const { deliveryId } = await user.sendSuperAgentMessage(teamId, sessionId, delivery.operationId, content)
@@ -219,10 +283,10 @@ export function useSuperAgent() {
         if (draft.value.trim() === text) draft.value = ""
         if (attachments.value === files) attachments.value = []
       }
-      const current = sessions.value.find(session => session.sessionId === sessionId)
+      const current = sessions.value.find(session => session.sessionId === sessionId && (session.engine ?? "hosted") === "hosted")
       const firstText = typeof content === "string" ? content : content.filter(part => part.type === "text").find(part => part.text.trim())?.text
-      const title = current?.title ?? (firstText ? [...(firstText.trim().split("\n", 1)[0] ?? "")].slice(0, 80).join("") : null)
-      sessions.value = [{ sessionId, title, lastActiveAt: Date.now() }, ...sessions.value.filter(session => session.sessionId !== sessionId)]
+      const nextTitle = current?.title ?? (firstText ? [...(firstText.trim().split("\n", 1)[0] ?? "")].slice(0, 80).join("") : null)
+      upsertSession({ sessionId, title: nextTitle, lastActiveAt: Date.now(), engine: "hosted" })
       if (!rejected && !messages.value.some(message => message.id === deliveryId)) {
         if (status.value === "failed") status.value = undefined
         const parts: SuperAgentTranscriptPart[] | undefined = typeof content === "string" ? undefined : content.map(part => part.type === "text"
@@ -269,6 +333,9 @@ export function useSuperAgent() {
   watch([() => account?.account.value.serverUrl, () => account?.account.value.user?.id, () => account?.teamId.value, () => account?.superAgentEnabled.value], () => {
     ++scopeRevision
     resetSession()
+    config.value = undefined
+    configError.value = undefined
+    loadingConfig.value = false
     sessions.value = []
     usage.value = undefined
     usageError.value = undefined
@@ -276,12 +343,17 @@ export function useSuperAgent() {
     loadingList.value = false
     sending.value = false
     if (account?.superAgentEnabled.value) {
+      void refreshConfig()
       void loadSessions()
       void refreshUsage()
     }
   }, { immediate: true, flush: "sync" })
 
   onScopeDispose(() => { ++scopeRevision; ++sessionRevision })
-  return { sessions, selected, title, usage, messages, turns, previews, status, pending, draft, attachments, loadingList, loadingHistory, sending,
-    canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError, loadSessions, readHistory, refreshUsage, select, send, cancel }
+  return {
+    config, loadingConfig, configError, refreshConfig, applyConfig,
+    sessions, selected, selectedKey, selectedSession, activeEngine, title, usage, messages, turns, previews, status, pending, draft, attachments,
+    loadingList, loadingHistory, sending, canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError,
+    loadSessions, readHistory, refreshUsage, select, upsertSession, send, cancel,
+  }
 }

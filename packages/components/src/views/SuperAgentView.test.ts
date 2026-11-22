@@ -1,26 +1,26 @@
 import { HttpError } from "@deskfleet/client/request-diagnostics"
-import type { SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
+import type { SuperAgentConfig, SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
 import { createMemoryHistory, createRouter } from "vue-router"
 import { accountSessionKey, createAccountSession } from "../composables/useAccountSession.ts"
 import { i18n } from "../i18n/index.ts"
-import { fakeCentral } from "../test/central.ts"
+import { fakeCentral, machineFixture } from "../test/central.ts"
 import SuperAgentView from "./SuperAgentView.vue"
 
 const cleanup: (() => void)[] = []
 afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose(); vi.useRealTimers() })
 
-async function setup(configure?: (central: ReturnType<typeof fakeCentral>["central"]) => void) {
+async function setup(configure?: (central: ReturnType<typeof fakeCentral>["central"], state: ReturnType<typeof fakeCentral>["state"]) => void) {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible")
-  const { central } = fakeCentral({ teams: [
+  const { central, state } = fakeCentral({ teams: [
     { id: "alpha", name: "Product", role: "admin" },
     { id: "beta", name: "Support", role: "member" },
   ] })
   central.superAgentAvailability.mockImplementation(async team => ({ enabled: team === "alpha" }))
-  configure?.(central)
+  configure?.(central, state)
   const account = createAccountSession(central)
   await flushPromises()
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/super-agent", component: SuperAgentView }] })
@@ -229,4 +229,128 @@ test.each(["text", "attachment"])("quota exhaustion allows cancellation with an 
   if (draftKind === "attachment") expect(wrapper.find('button[aria-label="Remove release.txt"]').exists()).toBe(true)
   expect(wrapper.find('button[aria-label="Cancel turn"]').exists()).toBe(false)
   expect(wrapper.text()).not.toContain("Cancelling the turn…")
+})
+
+test("lists unified Cloud and BYOA conversations with engine labels and opens the runtime configuration dialog", async () => {
+  const { central, wrapper } = await setup((central, state) => {
+    state.machines.push(machineFixture("m1", "alpha", "Mac Studio", true))
+    central.catalog = vi.fn(async () => ({
+      machineId: "m1",
+      lastObservedAt: at,
+      snapshot: {
+        teamId: "alpha",
+        machineId: "m1",
+        machineName: "Mac Studio",
+        workspaces: [{ id: "ws-1", name: "Web App", worktrees: [] }],
+        sessions: [],
+        terminals: [],
+      },
+      providers: {
+        templates: [],
+        providers: [{ id: "claude-code", template: "claude", name: "Claude Code", status: "ready" }],
+      },
+    })) as unknown as typeof central.catalog
+    central.rpc = vi.fn(async () => ({ providers: [{ id: "claude-code", name: "Claude Code" }] })) as unknown as typeof central.rpc
+    central.superAgentSessions.mockResolvedValue([
+      { sessionId: "cloud-1", title: "Cloud roadmap", lastActiveAt: Date.parse(at), engine: "hosted" },
+      {
+        sessionId: "byoa-1", title: "Local audit", lastActiveAt: Date.parse(at) - 1000, engine: "byoa",
+        machineId: "m1", machineName: "Mac Studio", providerId: "claude-code", providerName: "Claude Code",
+      },
+    ])
+    central.superAgentHistory.mockResolvedValue({ nextIndex: 1, messages: [{ id: "r1", role: "assistant", text: "Hosted reply", at }] })
+  })
+
+  vi.useRealTimers()
+  await wrapper.get('button[aria-label="Conversations"]').trigger("keydown", { key: "ArrowDown" })
+  await flushPromises()
+  const historyItems = new DOMWrapper(document.body).findAll('#super-agent-history [role="menuitem"]')
+  expect(historyItems).toHaveLength(2)
+  expect(historyItems[0]!.text()).toContain("Cloud roadmap")
+  expect(historyItems[0]!.text()).toContain("Cloud")
+  expect(historyItems[1]!.text()).toContain("Local audit")
+  expect(historyItems[1]!.text()).toContain("Mac Studio · Claude Code")
+
+  await wrapper.get('[data-super-agent-config-trigger]').trigger("click")
+  await flushPromises()
+  const body = new DOMWrapper(document.body)
+  await body.get('[data-super-agent-mode="byoa"]').trigger("click")
+  await flushPromises()
+  expect(body.find('[data-super-agent-byoa-fields]').exists()).toBe(true)
+  expect(body.find('[name="super-agent-workspace"]').exists()).toBe(false)
+  expect(body.text()).toContain("Mac Studio")
+  expect(body.text()).toContain("Claude Code")
+  await body.get('[data-super-agent-yolo]').trigger("click")
+  await flushPromises()
+  await body.get('[data-super-agent-config-save]').trigger("click")
+  await flushPromises()
+  expect(central.updateSuperAgentConfig).toHaveBeenCalledWith("alpha", {
+    mode: "byoa",
+    byoa: {
+      machineId: "m1",
+      providerId: "claude-code",
+      providerName: "Claude Code",
+      cwd: null,
+      yolo: true,
+    },
+  })
+  expect(wrapper.get('[data-super-agent-config-trigger]').text()).toContain("Mac Studio")
+})
+
+test("offers switching to a local Agent when hosted credits are exhausted and machines are enrolled", async () => {
+  const { wrapper } = await setup(central => {
+    central.machines.mockResolvedValue([machineFixture("m1", "alpha", "Dev Box", true)])
+    central.superAgentUsage.mockResolvedValue({
+      runtimeConfigured: true, admitted: false, includedCredits: 100, usedCredits: "100",
+      includedTokens: 100, usedTokens: 100, start: at, end: at, plan: "go",
+    })
+  })
+  expect(wrapper.text()).toContain("Use local Agent")
+})
+
+test("waits for Team config before enabling Cloud send on an empty history and flips cleanly to BYOA", async () => {
+  const configDeferred = Promise.withResolvers<SuperAgentConfig>()
+  const { central, wrapper } = await setup((central, state) => {
+    state.machines.push(machineFixture("m1", "alpha", "Mac Studio", true))
+    central.superAgentConfig.mockReturnValue(configDeferred.promise)
+    central.superAgentSessions.mockResolvedValue([])
+  })
+
+  expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
+  expect(wrapper.text()).not.toContain("Plan a release")
+  await wrapper.get(".composer-send").trigger("click")
+  await flushPromises()
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
+
+  configDeferred.resolve({
+    mode: "byoa",
+    hostedConfigured: true,
+    canConfigure: true,
+    byoa: {
+      machineId: "m1",
+      machineName: "Mac Studio",
+      machineOnline: true,
+      providerId: "claude-code",
+      providerName: "Claude Code",
+      yolo: false,
+    },
+  })
+  await flushPromises()
+
+  expect(wrapper.find('[data-super-agent-config-trigger]').text()).toContain("Mac Studio")
+  expect(wrapper.text()).toContain("Mac Studio")
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
+})
+
+test("keeps Cloud composer disabled when Team config fails to load on an empty history", async () => {
+  const { central, wrapper } = await setup(central => {
+    central.superAgentConfig.mockRejectedValueOnce(new Error("Config unavailable"))
+    central.superAgentSessions.mockResolvedValue([])
+  })
+
+  expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
+  expect(wrapper.get('[role="alert"]').text()).toContain("Couldn’t load Super Agent settings")
+  await wrapper.get(".composer-send").trigger("click")
+  await flushPromises()
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
 })
