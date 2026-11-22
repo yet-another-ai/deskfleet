@@ -5,7 +5,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { Activity, FolderSync, MonitorPlay, Network, SquareTerminal } from "@lucide/vue"
 import { watchImmediate } from "@vueuse/core"
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "reka-ui"
-import { computed, defineAsyncComponent, ref, useTemplateRef } from "vue"
+import { computed, ref, useTemplateRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 import PaneHeader from "../components/chrome/PaneHeader.vue"
@@ -14,16 +14,18 @@ import UiScrollArea from "../components/common/UiScrollArea.vue"
 import UiTabTitle from "../components/common/UiTabTitle.vue"
 import { useFileTarget } from "../composables/useFileTarget.ts"
 import { useScrollFade } from "../composables/useScrollFade.ts"
+import { defineRecoverableAsyncComponent } from "../services/async-component.ts"
 import { useFleetStore } from "../stores/fleet.ts"
 import { useTerminalsStore } from "../stores/terminals.ts"
 
 const platformClient = usePlatformClient()
+const allowReload = () => platformClient.platform === "web"
 
-const TerminalWorkspace = defineAsyncComponent(() => import("../components/terminal/TerminalWorkspace.vue"))
-const FileTransferPanel = defineAsyncComponent(() => import("../components/files/FileTransferPanel.vue"))
-const DesktopView = defineAsyncComponent(() => import("./DesktopView.vue"))
-const SystemStatusPanel = defineAsyncComponent(() => import("../components/system/SystemStatusPanel.vue"))
-const PortForwardPanel = defineAsyncComponent(() => import("../components/ports/PortForwardPanel.vue"))
+const TerminalWorkspace = defineRecoverableAsyncComponent(() => import("../components/terminal/TerminalWorkspace.vue"), { allowReload })
+const FileTransferPanel = defineRecoverableAsyncComponent(() => import("../components/files/FileTransferPanel.vue"), { allowReload })
+const DesktopView = defineRecoverableAsyncComponent(() => import("./DesktopView.vue"), { allowReload })
+const SystemStatusPanel = defineRecoverableAsyncComponent(() => import("../components/system/SystemStatusPanel.vue"), { allowReload })
+const PortForwardPanel = defineRecoverableAsyncComponent(() => import("../components/ports/PortForwardPanel.vue"), { allowReload })
 
 const props = defineProps<{ machineId: string }>()
 const { t } = useI18n()

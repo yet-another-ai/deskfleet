@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router"
 import { client } from "@deskfleet/client/platform"
+import { installRouterModuleRecovery } from "../services/module-recovery.ts"
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -227,3 +228,5 @@ export const router = createRouter({
     { path: "/:pathMatch(.*)*", redirect: "/" },
   ],
 })
+
+installRouterModuleRecovery(router, { enabled: () => client.platform === "web" })

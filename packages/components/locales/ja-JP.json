@@ -898,7 +898,10 @@
   },
   "remoteControl": {
     "terminal": "ターミナル", "desktop": "デスクトップ",
-    "filesUnavailable": "このマシンではファイル転送を利用できません。"
+    "filesUnavailable": "このマシンではファイル転送を利用できません。",
+    "moduleLoadFailed": "このビューを読み込めませんでした。接続を確認するか、ページを再読み込みしてください。",
+    "retryModuleLoad": "再試行",
+    "reloadPage": "ページを再読み込み"
   },
   "ports": {
     "title": "ポート転送",
