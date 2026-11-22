@@ -28,7 +28,7 @@ const { t, locale } = useI18n()
 const account = useAccountSession()
 const platform = usePlatformClient()
 const {
-  config, configError, refreshConfig, applyConfig,
+  config, loadingConfig, configError, refreshConfig, applyConfig,
   sessions, selected, selectedKey, selectedSession, activeEngine, title, usage, messages, turns, previews, status, pending, draft, attachments,
   loadingList, loadingHistory, sending, canSend, canCancel, cancelling, listError, usageError, readError, sendError, cancelError,
   loadSessions, readHistory, refreshUsage, select, upsertSession, send, cancel,
@@ -41,7 +41,7 @@ const switchingCloud = ref(false)
 const projection = computed(() => projectSuperAgentConversation(messages.value, pending.value, turns.value, previews.value))
 const readingId = computed(() => JSON.stringify(["super-agent", account?.account.value.serverUrl, account?.account.value.user?.id, account?.teamId.value, selectedKey.value]))
 const displayLocale = computed(() => intlLocale(locale.value as AppLocale))
-const loading = computed(() => loadingList.value || loadingHistory.value)
+const loading = computed(() => loadingList.value || loadingHistory.value || (!selected.value && loadingConfig.value))
 const startupStatus = computed(() => {
   if (status.value === "failed" || status.value === "ended") return undefined
   if (pending.value.length) return t("superAgent.queued")
@@ -195,7 +195,7 @@ async function switchToCloud(): Promise<void> {
     <template #default="{ focusedEntry }">
       <p v-if="loading" class="m-auto flex items-center gap-2 text-sm text-ui-text-muted" role="status"><LoaderCircle :size="16" :stroke-width="2" class="animate-spin" aria-hidden="true" />{{ t('agent.loading') }}</p>
       <AgentConversation v-else-if="projection.length || startupStatus" :session-id="selected" :projection="projection" :turns="turns" :startup-status="startupStatus" :unattributed-user-label="t('superAgent.teamMember')" :locate-entry="focusedEntry" />
-      <SessionWelcome v-else-if="!listError && !readError" :heading="t('superAgent.heading')">
+      <SessionWelcome v-else-if="!listError && !readError && !configError && activeEngine === 'hosted'" :heading="t('superAgent.heading')">
         <p class="m-0 text-center text-sm text-ui-text-muted">{{ t("superAgent.intro") }}</p>
         <div v-if="canSend" class="mt-3 flex flex-wrap justify-center gap-2">
           <UiButton v-for="item in suggestions" :key="item.label" variant="ghost" @click="suggest(item.prompt)">

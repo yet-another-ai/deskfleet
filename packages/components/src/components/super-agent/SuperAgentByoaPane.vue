@@ -126,12 +126,22 @@ const mentions = computed<ComposerMention[]>({
   set: value => { agents.draftMentions[draftKey.value] = value },
 })
 
+interface PendingByoaSession {
+  sessionId: string
+  targetKey: string
+  registered?: SuperAgentSession
+}
+
 const busy = ref(false)
 const actionError = shallowRef<unknown>()
+const pendingCreation = shallowRef<PendingByoaSession>()
 
 watchImmediate(() => props.sessionId, id => {
   actionError.value = undefined
-  if (id) void agents.open(id)
+  if (id) {
+    if (pendingCreation.value?.sessionId === id) pendingCreation.value = undefined
+    void agents.open(id)
+  }
 })
 watch(() => props.machine.online, online => {
   if (online && props.sessionId) void agents.open(props.sessionId)
@@ -209,12 +219,21 @@ async function createAndSubmit(): Promise<void> {
   const title = sessionTitleFromDraft(text, currentAttachments)
   const workspaceId = props.target?.workspaceId ?? undefined
   const cwd = props.target?.cwd ?? undefined
+  const targetKey = JSON.stringify([props.machine.id, providerId, workspaceId ?? null, cwd ?? null])
   await runAction(async () => {
-    const created = await agents.create(
-      workspaceId, title, "directory", providerId, undefined, undefined, undefined,
-      { deferStartup: true, superAgent: true, ...(cwd ? { cwd } : {}) },
-    )
-    const id = created.session.id
+    const pending = pendingCreation.value
+    const existingSession = pending?.targetKey === targetKey ? agents.sessions[pending.sessionId] : undefined
+    const reusablePending = pending?.targetKey === targetKey
+      && (!existingSession || (existingSession.lifecycle !== "provision_failed" && existingSession.lifecycle !== "deleting" && existingSession.archiveState === "active"))
+      ? pending
+      : undefined
+    const id = reusablePending
+      ? reusablePending.sessionId
+      : (await agents.create(
+        workspaceId, title, "directory", providerId, undefined, undefined, false,
+        { deferStartup: true, superAgent: true, ...(cwd ? { cwd } : {}) },
+      )).session.id
+    if (!reusablePending) pendingCreation.value = { sessionId: id, targetKey }
     agents.preparingDrafts[id] = true
     try {
       const userId = account?.account.value.user?.id
@@ -232,23 +251,30 @@ async function createAndSubmit(): Promise<void> {
         requestedDelivery: "backlog",
         createdAt: new Date().toISOString(),
       }
-      const registered: SuperAgentSession = account
-        ? await account.central.registerSuperAgentMachineSession(props.teamId, {
-          machineId: props.machine.id,
-          sessionId: id,
-          providerId,
-          providerName: effectiveProviderName.value || null,
-          workspaceId: workspaceId ?? null,
-          workspaceName: props.target?.workspaceName ?? null,
-          title,
-          lastActiveAt: Date.now(),
-        })
-        : {
-          sessionId: id, title, lastActiveAt: Date.now(), engine: "byoa",
-          machineId: props.machine.id, machineName: props.machine.name,
-          providerId, providerName: effectiveProviderName.value || null,
-          workspaceId: workspaceId ?? null, workspaceName: props.target?.workspaceName ?? null,
+      let registered = reusablePending?.registered
+      if (!registered) {
+        registered = account
+          ? await account.central.registerSuperAgentMachineSession(props.teamId, {
+            machineId: props.machine.id,
+            sessionId: id,
+            providerId,
+            providerName: effectiveProviderName.value || null,
+            workspaceId: workspaceId ?? null,
+            workspaceName: props.target?.workspaceName ?? null,
+            title,
+            lastActiveAt: Date.now(),
+          })
+          : {
+            sessionId: id, title, lastActiveAt: Date.now(), engine: "byoa",
+            machineId: props.machine.id, machineName: props.machine.name,
+            providerId, providerName: effectiveProviderName.value || null,
+            workspaceId: workspaceId ?? null, workspaceName: props.target?.workspaceName ?? null,
+          }
+        if (pendingCreation.value?.sessionId === id) {
+          pendingCreation.value = { ...pendingCreation.value, registered }
         }
+        if (!disposed) props.onSessionChange(registered, false)
+      }
       const content = currentAttachments.length || currentMentions.length
         ? await buildComposerPrompt({
           draft: text, attachments: currentAttachments, mentions: currentMentions,
@@ -257,6 +283,7 @@ async function createAndSubmit(): Promise<void> {
         })
         : text
       await agents.submit(id, content, "backlog", undefined, text, submittedDraft)
+      if (pendingCreation.value?.sessionId === id) pendingCreation.value = undefined
       if (!disposed) {
         delete agents.drafts[key]
         delete agents.draftAttachments[key]

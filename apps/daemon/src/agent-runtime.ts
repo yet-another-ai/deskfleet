@@ -338,7 +338,6 @@ export class AgentRuntime {
           }
         }
       }
-      const params = { cwd: worktree.directories[0].path, mcpServers: this.#mcpLease?.servers ?? [], ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}) }
       const superAgentPrompt = snapshot.session.superAgent && capabilities?.sessionCapabilities?.systemPrompt
         ? {
           systemPrompt: {
@@ -350,6 +349,12 @@ export class AgentRuntime {
           },
         }
         : undefined
+      const params = {
+        cwd: worktree.directories[0].path,
+        mcpServers: this.#mcpLease?.servers ?? [],
+        ...(supportsAdditionalDirectories && additionalDirectories.length ? { additionalDirectories } : {}),
+        ...superAgentPrompt,
+      }
       let providerSessionId = snapshot.session.providerSessionId
       let responseOptions: acp.SessionConfigOption[] | undefined
       this.#openingConfiguration = true
@@ -364,7 +369,7 @@ export class AgentRuntime {
           if (!canContinueSession(connection.initialization)) throw new Error("This agent cannot resume the saved conversation")
           responseOptions = (await connection.resume({ ...params, sessionId: providerSessionId })).configOptions ?? undefined
         } else {
-          const created = await connection.newSession({ ...params, ...superAgentPrompt })
+          const created = await connection.newSession(params)
           providerSessionId = created.sessionId
           responseOptions = created.configOptions ?? undefined
         }

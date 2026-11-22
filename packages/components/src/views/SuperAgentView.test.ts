@@ -1,5 +1,5 @@
 import { HttpError } from "@deskfleet/client/request-diagnostics"
-import type { SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
+import type { SuperAgentConfig, SuperAgentHistory, SuperAgentUsage } from "@deskfleet/client/super-agent"
 import { DOMWrapper, flushPromises, mount } from "@vue/test-utils"
 import { createPinia } from "pinia"
 import { afterEach, expect, test, vi } from "vitest"
@@ -305,4 +305,50 @@ test("offers switching to a local Agent when hosted credits are exhausted and ma
     })
   })
   expect(wrapper.text()).toContain("Use local Agent")
+})
+
+test("waits for Team config before enabling Cloud send on an empty history and flips cleanly to BYOA", async () => {
+  const configDeferred = Promise.withResolvers<SuperAgentConfig>()
+  const { central, wrapper } = await setup((central, state) => {
+    state.machines.push(machineFixture("m1", "alpha", "Mac Studio", true))
+    central.superAgentConfig.mockReturnValue(configDeferred.promise)
+    central.superAgentSessions.mockResolvedValue([])
+  })
+
+  expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
+  expect(wrapper.text()).not.toContain("Plan a release")
+  await wrapper.get(".composer-send").trigger("click")
+  await flushPromises()
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
+
+  configDeferred.resolve({
+    mode: "byoa",
+    hostedConfigured: true,
+    canConfigure: true,
+    byoa: {
+      machineId: "m1",
+      machineName: "Mac Studio",
+      machineOnline: true,
+      providerId: "claude-code",
+      providerName: "Claude Code",
+    },
+  })
+  await flushPromises()
+
+  expect(wrapper.find('[data-super-agent-config-trigger]').text()).toContain("Mac Studio")
+  expect(wrapper.text()).toContain("Mac Studio")
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
+})
+
+test("keeps Cloud composer disabled when Team config fails to load on an empty history", async () => {
+  const { central, wrapper } = await setup(central => {
+    central.superAgentConfig.mockRejectedValueOnce(new Error("Config unavailable"))
+    central.superAgentSessions.mockResolvedValue([])
+  })
+
+  expect(wrapper.get("textarea").attributes("disabled")).toBeDefined()
+  expect(wrapper.get('[role="alert"]').text()).toContain("Couldn’t load Super Agent settings")
+  await wrapper.get(".composer-send").trigger("click")
+  await flushPromises()
+  expect(central.createSuperAgentSession).not.toHaveBeenCalled()
 })

@@ -43,7 +43,11 @@ export function useSuperAgent() {
     ? sessions.value.find(session => superAgentSessionKey(session) === selectedKey.value)
     : undefined)
   const selected = computed(() => selectedSession.value?.sessionId)
-  const activeEngine = computed<SuperAgentMode>(() => selectedSession.value?.engine ?? config.value?.mode ?? "hosted")
+  const activeEngine = computed<SuperAgentMode | undefined>(() => {
+    if (selectedSession.value) return selectedSession.value.engine ?? "hosted"
+    if (loadingConfig.value || configError.value) return undefined
+    return config.value?.mode
+  })
   const isHostedSelected = computed(() => !!selectedSession.value && (selectedSession.value.engine ?? "hosted") === "hosted")
   const activeTurn = computed(() => turns.value.findLast(turn => turn.state === "running"))
   const cancelling = computed(() => !!cancellingId.value && cancellingId.value === activeTurn.value?.id)

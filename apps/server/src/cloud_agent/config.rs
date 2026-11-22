@@ -49,7 +49,10 @@ async fn enrich(
             workspace_name,
             cwd,
         }) => {
-            let online = state.hub.online_machines(&[registration_id.clone()]).await;
+            let online = state
+                .hub
+                .online_machines(std::slice::from_ref(&registration_id))
+                .await;
             Some(ByoaTargetResponse {
                 machine_id,
                 machine_name,

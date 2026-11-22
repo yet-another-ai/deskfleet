@@ -766,11 +766,13 @@ export class AgentSessions {
       const title = typeof command.params.title === "string" ? truncateGeneratedTitle(command.params.title) : source.session.title
       const creation = { ...command, sessionId: undefined, workspaceId: source.session.workspaceId }
       const yoloFields = source.session.yolo ? { yolo: true, yoloActor: command.actor } : {}
+      const superAgentFields = source.session.superAgent ? { superAgent: true } : {}
       const child = await this.#admissions.allocate(command, "fork", admissionGeneration =>
         this.journal.create(creation, source.session.workspaceId, title, context, source.session.provider, {
           admissionGeneration,
           inheritedTurnCount: consumedTurns(source),
           ...yoloFields,
+          ...superAgentFields,
         }))
       command.sessionId = child.id
       command.workspaceId = child.workspaceId
