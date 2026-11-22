@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import sharp from "sharp"
+import { parse as parseYaml } from "yaml"
 import { expect, test } from "vitest"
 import {
   composeMacAppIcon,
@@ -12,6 +13,7 @@ const root = resolve(import.meta.dirname, "../../../..")
 const artwork = resolve(root, "packages/components/src/assets/deskfleet.svg")
 const iconMac = resolve(root, "apps/desktop/build/icon-mac.png")
 const iconFullBleed = resolve(root, "apps/desktop/build/icon.png")
+const electronBuilder = resolve(root, "apps/desktop/electron-builder.yml")
 
 async function opaqueBounds(png: Buffer): Promise<{ left: number, top: number, width: number, height: number }> {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -69,4 +71,17 @@ test("committed icon-mac.png matches the optical grid and stays distinct from th
   expect(fullBleedBounds.top).toBe(0)
   expect(fullBleedBounds.width).toBe(MACOS_APP_ICON_CANVAS)
   expect(fullBleedBounds.height).toBe(MACOS_APP_ICON_CANVAS)
+})
+
+test("electron-builder pins full-bleed icons for Linux and Windows so they do not inherit mac.icon", () => {
+  // LinuxTargetHelper resolves [linux.icon, mac.icon ?? config.icon]; without an
+  // explicit linux.icon the optically inset mac asset would shrink AppImage icons.
+  const config = parseYaml(readFileSync(electronBuilder, "utf8")) as {
+    mac?: { icon?: string }
+    win?: { icon?: string }
+    linux?: { icon?: string }
+  }
+  expect(config.mac?.icon).toBe("build/icon-mac.png")
+  expect(config.win?.icon).toBe("build/icon.png")
+  expect(config.linux?.icon).toBe("build/icon.png")
 })
