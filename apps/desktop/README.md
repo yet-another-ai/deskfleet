@@ -775,8 +775,10 @@ The static vector brand master lives in
 `mise exec -- pnpm --filter @deskfleet/desktop icons` to regenerate the app, tray,
 Web, and website icons from it. The website and modern favicons use SVG. Native
 icons, touch icons, fallback favicons, and social previews use generated raster
-assets. `build/icon.png` is the source for the macOS
-`.icns` and Windows `.ico`. The tray uses `build/trayTemplate*.png` on macOS,
+assets. `build/icon.png` is the full-bleed source for the Windows `.ico`, Linux
+packages, and in-app About/window icons. `build/icon-mac.png` follows Apple's
+824-on-1024 grid so the packaged macOS `.icns` matches neighboring Dock and
+Finder icons. The tray uses `build/trayTemplate*.png` on macOS,
 with the artwork's luminance adapted to an alpha mask for system tinting, and
 full-color `build/tray*.png` elsewhere. Commit generated assets with the source.
 

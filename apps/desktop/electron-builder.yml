@@ -55,6 +55,8 @@ files:
   - package.json
 
 mac:
+  # Apple's 824-on-1024 grid; full-bleed icon.png looks oversized in Dock/Finder (#652).
+  icon: build/icon-mac.png
   extraResources:
     - from: out/auv/auv
       to: ../MacOS/auv
@@ -74,6 +76,8 @@ mac:
     - zip
 
 win:
+  # Keep the full-bleed master for Windows; do not inherit mac.icon.
+  icon: build/icon.png
   extraResources:
     - from: out/auv/auv.exe
       to: bin/auv.exe
@@ -91,6 +95,9 @@ nsis:
   include: build/windows-desktop-service.nsh
 
 linux:
+  # electron-builder's LinuxTargetHelper falls back to mac.icon when linux.icon is
+  # unset; pin the full-bleed master so AppImage/tar.gz stay optically unchanged.
+  icon: build/icon.png
   extraResources:
     - from: out/auv
       to: bin
