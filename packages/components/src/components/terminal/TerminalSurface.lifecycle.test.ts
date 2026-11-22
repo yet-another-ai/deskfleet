@@ -59,8 +59,16 @@ test("Android keyboard events and committed IME text reach interactive xterm onD
   const wrapper = mount(TerminalSurface, { props: { interactive: true }, attachTo: document.body })
   const textarea = wrapper.vm.terminal.textarea!
   const key = (type: string, init: KeyboardEventInit) => {
-    textarea.dispatchEvent(new KeyboardEvent(type, { ...init, bubbles: true, cancelable: true }))
+    const event = new KeyboardEvent(type, { ...init, bubbles: true, cancelable: true })
+    textarea.dispatchEvent(event)
+    return event
   }
+  // A mobile keyboard can report Enter's legacy code for a bare modifier.
+  const control = { key: "Control", code: "ControlLeft", keyCode: 13 }
+  expect(key("keydown", { ...control, ctrlKey: true }).defaultPrevented).toBe(true)
+  key("keyup", control)
+  expect(wrapper.emitted("input")).toBeUndefined()
+
   const chord = { key: "Process", code: "Digit1", altKey: true, shiftKey: true, keyCode: 229 }
   for (const type of ["keydown", "keypress", "keyup"]) key(type, chord)
   // A reliable arrow is decoded by xterm itself.

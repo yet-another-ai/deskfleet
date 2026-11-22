@@ -92,7 +92,10 @@ terminal.attachCustomKeyEventHandler(event => {
     return sendShortcut(event, event.key)
   }
   const key = logicalKeys ? terminalKey(event) : event.key
-  if (logicalKeys && /^(?:Control|Shift|Alt|Meta)(?:Left|Right)?$/.test(key)) return false
+  if (logicalKeys && /^(?:Control|Shift|Alt|Meta)(?:Left|Right)?$/.test(key)) {
+    event.preventDefault()
+    return false
+  }
   if (props.tools && (event.ctrlKey || event.metaKey) && !event.altKey && key.toLowerCase() === "f") {
     if (event.type === "keydown") {
       event.preventDefault()

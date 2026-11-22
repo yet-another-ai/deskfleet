@@ -465,7 +465,9 @@ test.each([
     { key: "PageDown", keyCode: 34, shiftKey: true },
   ]) expect(handle(new KeyboardEvent("keydown", init))).toBe(true)
 
-  expect(handle(new KeyboardEvent("keydown", { key: "Control", keyCode: 13, ctrlKey: true }))).toBe(false)
+  const control = new KeyboardEvent("keydown", { key: "Control", keyCode: 13, ctrlKey: true, cancelable: true })
+  expect(handle(control)).toBe(false)
+  expect(control.defaultPrevented).toBe(true)
   for (const type of ["keydown", "keypress", "keyup"]) {
     const event = new KeyboardEvent(type, { key: "@", code: "KeyQ", ctrlKey: !platform.startsWith("Linux"), altKey: true, keyCode: 81, cancelable: true })
     Object.defineProperty(event, "getModifierState", { value: (key: string) => key === "AltGraph" })
