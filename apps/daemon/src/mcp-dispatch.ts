@@ -13,6 +13,7 @@ const nonEmpty = z.string().refine(v => v.trim().length > 0)
 const sessionCreateSchema = z.strictObject({
   workspaceId: nonEmpty.optional(), provider: nonEmpty, context: z.enum(["worktree", "directory"]).default("directory"),
   title: nonEmpty.optional(), prompt: nonEmpty.optional(), baseBranch: nonEmpty.optional(),
+  yolo: z.boolean().optional(),
   configuration: z.strictObject({ model: nonEmpty.optional(), reasoningEffort: nonEmpty.optional(), mode: nonEmpty.optional() }).optional(),
 })
 const sessionSendSchema = z.strictObject({
@@ -47,11 +48,17 @@ export async function createMcpWorkspace(catalog: MachineOperations["catalog"], 
   return catalog.handle({ method: "workspaceCreate", params: validated })
 }
 
+function resolveChildYolo(requested: boolean | undefined, parentYolo: boolean | undefined): boolean | undefined {
+  if (parentYolo) return requested === false ? undefined : true
+  if (requested === true) throw new Error("Only a YOLO Session can create a YOLO child Session")
+  return undefined
+}
+
 export async function createMcpSession(agents: MachineOperations["agents"], params: Record<string, unknown>, actor: AgentActor): Promise<unknown> {
-  const { workspaceId, provider, context, title, prompt, baseBranch, configuration } = validateSessionCreate(params)
+  const { workspaceId, provider, context, title, prompt, baseBranch, yolo, configuration } = validateSessionCreate(params)
   const snapshot = await agents.handle("_deskfleet/session/create", {
     ...(workspaceId ? { workspaceId } : {}), operationId: randomUUID(), ...(title ? { title } : {}),
-    provider, context, ...(baseBranch ? { baseBranch } : {}), ...configuration,
+    provider, context, ...(baseBranch ? { baseBranch } : {}), ...(yolo ? { yolo: true } : {}), ...configuration,
   }, actor) as AgentSnapshot
   if (snapshot.session?.lifecycle && snapshot.session.lifecycle !== "ready") throw new Error(snapshot.session.error ?? "Session provisioning failed")
   if (prompt === undefined) return snapshot
@@ -93,17 +100,23 @@ export async function dispatchMcp(
     const { machineId, ...args } = params
     if (operation !== "machines" && (typeof machineId !== "string" || !machineId)) throw new Error("A target machine is required")
     if (operation === "machines" && machineId !== undefined) throw new Error("Machine discovery takes no target")
-    if (operation === "sessionCreate") validateSessionCreate(args)
+    let remoteArgs = args
+    if (operation === "sessionCreate") {
+      const parsed = validateSessionCreate(args)
+      const effectiveYolo = resolveChildYolo(parsed.yolo, source.session.yolo)
+      const { yolo: _requestedYolo, ...rest } = args
+      remoteArgs = effectiveYolo ? { ...rest, yolo: true } : rest
+    }
     if (operation === "sessionSend") validateSessionSend(args)
     if (operation === "workspaceCreate") validateWorkspaceCreate(args)
     const { userId, deviceId } = actor
-    const callRemote = (remoteOperation: RemoteMcpOperation, remoteArgs: Record<string, unknown>) =>
-      remote({ userId, deviceId, sessionId: scope.sessionId, operation: remoteOperation, ...(typeof machineId === "string" ? { machineId } : {}), arguments: remoteArgs })
+    const callRemote = (remoteOperation: RemoteMcpOperation, callArgs: Record<string, unknown>) =>
+      remote({ userId, deviceId, sessionId: scope.sessionId, operation: remoteOperation, ...(typeof machineId === "string" ? { machineId } : {}), arguments: callArgs })
     if (operation === "files") return dispatchRemoteFiles(args, callRemote)
     if (operation === "fileUpload" || operation === "fileDownload") {
       return dispatchRemoteFileTransfer(operation === "fileUpload" ? "upload" : "download", machineId as string, args, callRemote)
     }
-    return callRemote(operation as RemoteMcpOperation, args)
+    return callRemote(operation as RemoteMcpOperation, remoteArgs)
   }
   if (method === "catalogList") {
     const catalog = await operations.catalog.native.snapshot()
@@ -132,18 +145,21 @@ export async function dispatchMcp(
     return method === "_deskfleet/input/submit" ? sendMcpSession(operations.agents, params, actor) : operations.agents.handle(method, params, actor)
   }
   if (method === "_deskfleet/session/create") {
-    if (!crossWorkspace) {
-      if (params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) throw new Error("Session is outside this MCP delegation")
-      return createMcpSession(operations.agents, { ...params, workspaceId: scope.workspaceId }, actor)
+    if (!crossWorkspace && params.workspaceId !== undefined && params.workspaceId !== scope.workspaceId) {
+      throw new Error("Session is outside this MCP delegation")
     }
-    const parsed = validateSessionCreate(params)
-    if (parsed.workspaceId !== undefined) {
+    const candidate = !crossWorkspace ? { ...params, workspaceId: scope.workspaceId } : params
+    const parsed = validateSessionCreate(candidate)
+    const effectiveYolo = resolveChildYolo(parsed.yolo, source.session.yolo)
+    const { yolo: _requestedYolo, ...rest } = candidate
+    const normalized = effectiveYolo ? { ...rest, yolo: true } : rest
+    if (crossWorkspace && parsed.workspaceId !== undefined) {
       const catalog = await operations.catalog.native.snapshot()
       if (!catalog.workspaces.some(workspace => workspace.id === parsed.workspaceId)) {
         throw new Error(`Unknown Workspace: ${parsed.workspaceId}`)
       }
     }
-    return createMcpSession(operations.agents, params, actor)
+    return createMcpSession(operations.agents, normalized, actor)
   }
   if (method === "providerList") return operations.providers.metadata()
   if (method === "scheduleList") {

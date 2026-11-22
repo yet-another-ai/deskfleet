@@ -239,5 +239,20 @@ test("local and remote MCP session tools create Workspace or machine-scoped Sess
   assert.equal(localNewWorkspace.name, "Local Created Workspace")
   const delegatedIntoCreated = await machineCall("deskfleet_session_create", { workspaceId: localNewWorkspace.id, provider: "codex", title: "Created workspace task" }) as AgentSnapshot
   assert.equal(delegatedIntoCreated.session.workspaceId, localNewWorkspace.id)
+  assert.equal(delegatedIntoCreated.session.yolo, undefined)
   assert.notEqual(machineSession.session.id, delegatedIntoCreated.session.id)
+
+  const yoloParent = await localSessions.handle("_deskfleet/session/create", { workspaceId: localWorkspace.id, operationId: randomUUID(), provider: "codex", context: "directory", yolo: true }, actor) as AgentSnapshot
+  assert.equal(yoloParent.session.yolo, true)
+  const yoloCall = invoke({ servers: localProvider.servers.at(-1)!, close() {} })
+  const inheritedLocal = await yoloCall("deskfleet_session_create", { provider: "codex", title: "YOLO local child" }) as AgentSnapshot
+  assert.equal(inheritedLocal.session.yolo, true)
+  const optedDownLocal = await yoloCall("deskfleet_session_create", { provider: "codex", title: "Manual local child", yolo: false }) as AgentSnapshot
+  assert.equal(optedDownLocal.session.yolo, undefined)
+  const inheritedRemote = await yoloCall("deskfleet_remote_session_create", { machineId: "2", provider: "codex", title: "YOLO remote child" }) as AgentSnapshot
+  assert.equal(inheritedRemote.session.yolo, true)
+  const optedDownRemote = await yoloCall("deskfleet_remote_session_create", { machineId: "2", provider: "codex", title: "Manual remote child", yolo: false }) as AgentSnapshot
+  assert.equal(optedDownRemote.session.yolo, undefined)
+  await assert.rejects(call("deskfleet_session_create", { provider: "codex", yolo: true }), /Only a YOLO Session/)
+  await assert.rejects(call("deskfleet_remote_session_create", { machineId: "2", provider: "codex", yolo: true }), /Only a YOLO Session/)
 })

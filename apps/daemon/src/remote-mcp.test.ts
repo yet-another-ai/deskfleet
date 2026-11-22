@@ -107,6 +107,10 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   assert.deepEqual({ ...(f.calls[3] as [string, Record<string, unknown>])[1], operationId: "op" }, {
     operationId: "op", provider: "agent", context: "directory",
   })
+  await f.call("sessionCreate", { provider: "agent", yolo: true })
+  assert.deepEqual({ ...(f.calls[4] as [string, Record<string, unknown>])[1], operationId: "op" }, {
+    operationId: "op", provider: "agent", context: "directory", yolo: true,
+  })
   const sent = await f.call("sessionSend", { sessionId: "created-session", prompt: "Continue" }) as { sessionId: string; inputId: string }
   assert.equal(sent.sessionId, "created-session")
   assert.equal(sent.inputId, "in-1")
@@ -125,7 +129,7 @@ test("real MCP discovery paginates; even a read-only tool needs operate permissi
   assert.deepEqual(await f.call("workspaceCreate", { name: "Remote repo", directories: [{ path: "/srv/repo" }] }), {
     id: "created-workspace", name: "Remote repo", directories: [{ path: "/srv/repo" }],
   })
-  assert.deepEqual(f.calls[5], ["catalog", { method: "workspaceCreate", params: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } }])
+  assert.deepEqual(f.calls[6], ["catalog", { method: "workspaceCreate", params: { name: "Remote repo", directories: [{ path: "/srv/repo" }] } }])
   await assert.rejects(f.call("workspaceCreate", { name: "Dupes", directories: [{ path: "/srv/repo" }, { path: "/srv/repo" }] }), /unique/)
 })
 

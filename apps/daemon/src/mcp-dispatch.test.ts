@@ -284,3 +284,48 @@ test("a Workspace-bound BYOA Super Agent Session keeps cross-Workspace MCP deleg
   await assert.rejects(dispatchMcp(operations, "catalogList", {}, actor, { sessionId: "1", workspaceId: "10", superAgent: true }), /scope/)
 })
 
+test("MCP session creation inherits YOLO from YOLO parents, allows opt-down, and blocks non-YOLO escalation", async () => {
+  const { calls, operations } = fixture()
+  const yoloScope = { sessionId: "95", workspaceId: "10" }
+  const list = await operations.agents.journal.list()
+  ;(list as unknown as Record<string, unknown>[]).push({ id: "95", workspaceId: "10", yolo: true })
+
+  // Non-YOLO parent cannot escalate locally or remotely, and omits yolo when false or unset.
+  await assert.rejects(
+    dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", yolo: true }, actor, scope),
+    /Only a YOLO Session/,
+  )
+  const remoteRequests: unknown[] = []
+  const remote = async (request: unknown) => { remoteRequests.push(request); return "remote" }
+  await assert.rejects(
+    dispatchMcp(operations, "remoteMcp/sessionCreate", { machineId: "target", provider: "codex", yolo: true }, actor, scope, remote),
+    /Only a YOLO Session/,
+  )
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", yolo: false }, actor, scope)
+  assert.equal("yolo" in (calls.at(-1) as [string, Record<string, unknown>])[1], false)
+  await dispatchMcp(operations, "remoteMcp/sessionCreate", { machineId: "target", provider: "codex" }, actor, scope, remote)
+  assert.deepEqual(remoteRequests.at(-1), {
+    userId: "creator", deviceId: "login", sessionId: "1", operation: "sessionCreate", machineId: "target",
+    arguments: { provider: "codex" },
+  })
+
+  // YOLO parent propagates yolo: true by default locally and remotely.
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", context: "worktree" }, actor, yoloScope)
+  assert.equal((calls.at(-1) as [string, Record<string, unknown>])[1].yolo, true)
+  await dispatchMcp(operations, "remoteMcp/sessionCreate", { machineId: "target", provider: "codex" }, actor, yoloScope, remote)
+  assert.deepEqual(remoteRequests.at(-1), {
+    userId: "creator", deviceId: "login", sessionId: "95", operation: "sessionCreate", machineId: "target",
+    arguments: { provider: "codex", yolo: true },
+  })
+
+  // YOLO parent can explicitly opt down with yolo: false locally and remotely.
+  await dispatchMcp(operations, "_deskfleet/session/create", { provider: "codex", yolo: false }, actor, yoloScope)
+  assert.equal("yolo" in (calls.at(-1) as [string, Record<string, unknown>])[1], false)
+  await dispatchMcp(operations, "remoteMcp/sessionCreate", { machineId: "target", provider: "codex", yolo: false }, actor, yoloScope, remote)
+  assert.deepEqual(remoteRequests.at(-1), {
+    userId: "creator", deviceId: "login", sessionId: "95", operation: "sessionCreate", machineId: "target",
+    arguments: { provider: "codex" },
+  })
+})
+
+

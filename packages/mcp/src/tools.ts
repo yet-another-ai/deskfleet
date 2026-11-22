@@ -19,7 +19,18 @@ const target = { oneOf: [
   object({ kind: { const: "existing" }, sessionId: id }, ["kind", "sessionId"]),
 ] }
 const fields = { title: id, prompt: id, enabled: { type: "boolean" }, yolo: { type: "boolean", description: "When true, dispatched Sessions auto-approve permission requests. Omit or false keeps manual approval." }, target, trigger }
-const sessionFields = { provider: id, context: { enum: ["worktree", "directory"] }, title: id, prompt: id, baseBranch: id, configuration }
+const sessionFields = {
+  provider: id,
+  context: { enum: ["worktree", "directory"] },
+  title: id,
+  prompt: id,
+  baseBranch: id,
+  yolo: {
+    type: "boolean",
+    description: "Auto-approve permission requests in the created Session. Defaults to true when the parent Session is YOLO (pass false to opt down); rejected when the parent Session is not YOLO.",
+  },
+  configuration,
+}
 const directories = {
   type: "array",
   items: object({ path: id }, ["path"]),
