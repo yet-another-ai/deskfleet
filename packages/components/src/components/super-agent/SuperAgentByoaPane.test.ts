@@ -162,7 +162,7 @@ test("reuses the created session on registration failure and transitions with dr
   const { central, agents, wrapper, onSessionChange } = await setup()
   agents.state = "connected"
   const created = agentSnapshot()
-  created.session = { ...created.session, id: "byoa-session-2", lifecycle: "ready", superAgent: true }
+  created.session = { ...created.session, id: "byoa-session-2", lifecycle: "provisioning", superAgent: true }
   const createSpy = vi.spyOn(agents, "create").mockImplementation(async () => {
     agents.sessions[created.session.id] = created.session
     agents.views[created.session.id] = {
@@ -216,10 +216,11 @@ test("reuses the created session on registration failure and transitions with dr
   expect(submitSpy).toHaveBeenCalledTimes(1)
   expect(onSessionChange).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "byoa-session-2" }), true)
   expect(wrapper.props("sessionId")).toBe("byoa-session-2")
+  expect(wrapper.get("textarea").attributes("disabled")).toBeUndefined()
   expect(wrapper.get<HTMLTextAreaElement>("textarea").element.value).toBe("Audit machines")
   expect(wrapper.get('[role="alert"]').text()).toContain("Daemon temporarily unreachable")
 
-  // Attempt 3: sends directly into the selected session without creating a duplicate.
+  // Attempt 3: sends directly into the selected provisioning session without creating a duplicate.
   await wrapper.get(".composer-send").trigger("click")
   await flushPromises()
   expect(createSpy).toHaveBeenCalledTimes(1)

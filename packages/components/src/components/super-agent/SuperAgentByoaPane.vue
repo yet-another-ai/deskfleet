@@ -304,7 +304,8 @@ const contextLabel = computed(() => t("superAgent.byoaRunningOn", { machine: pro
 const composerDisabled = computed(() => {
   if (!props.machine.online) return true
   if (props.sessionId) {
-    return !connected.value || !!view.value?.syncing || !!view.value?.error || snapshot.value?.session.lifecycle !== "ready"
+    const lifecycle = snapshot.value?.session.lifecycle
+    return !connected.value || !!view.value?.syncing || !!view.value?.error || (lifecycle !== "ready" && lifecycle !== "provisioning")
   }
   return !props.target?.providerId
 })
@@ -367,7 +368,8 @@ const composerDisabled = computed(() => {
         <AgentNotice v-if="!active" :text="t(archiveState === 'archived' ? 'agent.archived' : 'agent.archiving')">
           <UiButton v-if="archiveState === 'archived'" size="sm" type="button" :disabled="!machine.online || busy" @click="runAction(() => agents.restore(sessionId!))">{{ t("agent.restore") }}</UiButton>
         </AgentNotice>
-        <ErrorNotice v-if="snapshot.session.error" :error="snapshot.session.error" />
+        <ErrorNotice v-if="snapshot.session.lifecycle === 'provision_failed'" :title="t('agent.lifecycle.provision_failed')" :error="snapshot.session.error" />
+        <ErrorNotice v-else-if="snapshot.session.error" :error="snapshot.session.error" />
         <AgentNotice v-if="run?.state === 'stopping'" tone="progress" :text="t(`agent.runState.${run.state}`)" />
         <AgentPermissions :permissions="snapshot.permissions" :disabled="!active || !connected || busy || !!view?.syncing || !!view?.error" @respond="(id, option) => runAction(() => agents.respond(sessionId!, id, option))" />
         <SessionAllowance :snapshot="snapshot" />
