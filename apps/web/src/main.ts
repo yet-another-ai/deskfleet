@@ -17,12 +17,14 @@ import { browserClient } from "@deskfleet/client/browser"
 import { configureClient } from "@deskfleet/client/platform"
 import { useFeatureGate } from "@deskfleet/components/services/analytics.ts"
 import { captureCentralRequestError, initializeErrorReporting } from "@deskfleet/components/services/error-reporting.ts"
+import { installVitePreloadRecovery } from "@deskfleet/components/services/module-recovery.ts"
 import { watch } from "vue"
 import { capacitorClientOptions } from "./capacitor-auth.ts"
 import { listenForNativeResume } from "./native-resume.ts"
 import "virtual:uno.css"
 
 initializeErrorReporting("web")
+installVitePreloadRecovery()
 const configuredServerUrl = import.meta.env.VITE_DESKFLEET_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : location.origin)
 const adapter = await browserClient(configuredServerUrl, captureCentralRequestError, {
   ...capacitorClientOptions(configuredServerUrl),

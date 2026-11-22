@@ -1115,7 +1115,10 @@
   "remoteControl": {
     "terminal": "Terminal",
     "desktop": "Desktop",
-    "filesUnavailable": "File transfer is unavailable for this machine."
+    "filesUnavailable": "File transfer is unavailable for this machine.",
+    "moduleLoadFailed": "Could not load this view. Check your connection or reload the page.",
+    "retryModuleLoad": "Try again",
+    "reloadPage": "Reload page"
   },
   "ports": {
     "title": "Port forwarding",

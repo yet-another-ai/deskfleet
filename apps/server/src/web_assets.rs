@@ -79,14 +79,18 @@ async fn cache_control(
     next: Next<impl MessageBody>,
 ) -> actix_web::Result<ServiceResponse<impl MessageBody>> {
     let mut response = next.call(request).await?;
+    let path = response.request().path();
     let policy = if response.status().is_success() || response.status() == StatusCode::NOT_MODIFIED
     {
-        if is_hashed_asset(response.request().path()) {
+        if is_hashed_asset(path) {
             "public, max-age=31536000, immutable"
         } else {
             "no-cache"
         }
     } else {
+        if response.status() == StatusCode::NOT_FOUND && path.starts_with("/assets/") {
+            tracing::warn!(path, "requested web asset was not found");
+        }
         // A missing bundle during deployment must not become a cached failure.
         "no-store"
     };

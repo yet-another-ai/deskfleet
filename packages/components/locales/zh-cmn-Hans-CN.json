@@ -1115,7 +1115,10 @@
   "remoteControl": {
     "terminal": "终端",
     "desktop": "桌面",
-    "filesUnavailable": "此机器暂不可使用文件传输。"
+    "filesUnavailable": "此机器暂不可使用文件传输。",
+    "moduleLoadFailed": "无法加载此视图，请检查网络连接或重新加载页面。",
+    "retryModuleLoad": "重试",
+    "reloadPage": "重新加载页面"
   },
   "ports": {
     "title": "端口映射",
