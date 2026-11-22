@@ -75,8 +75,6 @@ const machineSummary = computed(() => fleet.machines[0] ?? {
   terminals: [],
 })
 
-const effectiveWorkspaceId = computed(() => props.sessionMeta?.workspaceId ?? props.target?.workspaceId ?? undefined)
-const effectiveWorkspaceName = computed(() => props.sessionMeta?.workspaceName ?? props.target?.workspaceName ?? undefined)
 const effectiveProviderId = computed(() => props.sessionMeta?.providerId ?? props.target?.providerId ?? "")
 const effectiveProviderName = computed(() => {
   const id = effectiveProviderId.value
@@ -89,13 +87,7 @@ const location = computed<SessionTarget | null>(() => {
     const found = fleet.findSession(props.sessionId)
     if (found) return found
   }
-  const workspace = effectiveWorkspaceId.value
-    ? machineSummary.value.workspaces.find(item => item.id === effectiveWorkspaceId.value)
-    : undefined
-  return {
-    machine: machineSummary.value,
-    ...(workspace ? { workspace } : {}),
-  }
+  return { machine: machineSummary.value }
 })
 const resourceTarget = useFileTarget(() => props.machine.id)
 
@@ -135,11 +127,17 @@ interface PendingByoaSession {
 const busy = ref(false)
 const actionError = shallowRef<unknown>()
 const pendingCreation = shallowRef<PendingByoaSession>()
+const byoaDraftYolo = ref(!!props.target?.yolo)
+
+watch(() => props.target?.yolo, value => {
+  if (!props.sessionId && !pendingCreation.value) byoaDraftYolo.value = !!value
+})
 
 watchImmediate(() => props.sessionId, id => {
   actionError.value = undefined
   if (id) {
-    if (pendingCreation.value?.sessionId === id) pendingCreation.value = undefined
+    pendingCreation.value = undefined
+    byoaDraftYolo.value = !!props.target?.yolo
     void agents.open(id)
   }
 })
@@ -198,8 +196,6 @@ async function submit(delivery: "backlog" | "steer"): Promise<void> {
         sessionId,
         providerId,
         providerName: effectiveProviderName.value || null,
-        workspaceId: effectiveWorkspaceId.value ?? null,
-        workspaceName: effectiveWorkspaceName.value ?? null,
         title: snapshot.value?.session.title || props.sessionMeta?.title || sessionTitleFromDraft(currentDraft, currentAttachments),
         lastActiveAt: Date.now(),
       }).catch(() => undefined)
@@ -217,9 +213,9 @@ async function createAndSubmit(): Promise<void> {
   const currentMentions = mentions.value
   const submittedDraft = { mentions: currentMentions, attachmentIds: currentAttachments.map(item => item.id) }
   const title = sessionTitleFromDraft(text, currentAttachments)
-  const workspaceId = props.target?.workspaceId ?? undefined
   const cwd = props.target?.cwd ?? undefined
-  const targetKey = JSON.stringify([props.machine.id, providerId, workspaceId ?? null, cwd ?? null])
+  const enableYolo = byoaDraftYolo.value
+  const targetKey = JSON.stringify([props.machine.id, providerId, cwd ?? null])
   await runAction(async () => {
     const pending = pendingCreation.value
     const existingSession = pending?.targetKey === targetKey ? agents.sessions[pending.sessionId] : undefined
@@ -230,10 +226,11 @@ async function createAndSubmit(): Promise<void> {
     const id = reusablePending
       ? reusablePending.sessionId
       : (await agents.create(
-        workspaceId, title, "directory", providerId, undefined, undefined, false,
+        undefined, title, "directory", providerId, undefined, undefined, enableYolo,
         { deferStartup: true, superAgent: true, ...(cwd ? { cwd } : {}) },
       )).session.id
     if (!reusablePending) pendingCreation.value = { sessionId: id, targetKey }
+    else if (existingSession && !!existingSession.yolo !== enableYolo) await agents.setYolo(id, enableYolo)
     agents.preparingDrafts[id] = true
     try {
       const userId = account?.account.value.user?.id
@@ -259,8 +256,6 @@ async function createAndSubmit(): Promise<void> {
             sessionId: id,
             providerId,
             providerName: effectiveProviderName.value || null,
-            workspaceId: workspaceId ?? null,
-            workspaceName: props.target?.workspaceName ?? null,
             title,
             lastActiveAt: Date.now(),
           })
@@ -268,12 +263,10 @@ async function createAndSubmit(): Promise<void> {
             sessionId: id, title, lastActiveAt: Date.now(), engine: "byoa",
             machineId: props.machine.id, machineName: props.machine.name,
             providerId, providerName: effectiveProviderName.value || null,
-            workspaceId: workspaceId ?? null, workspaceName: props.target?.workspaceName ?? null,
           }
         if (pendingCreation.value?.sessionId === id) {
           pendingCreation.value = { ...pendingCreation.value, registered }
         }
-        if (!disposed) props.onSessionChange(registered, false)
       }
       const content = currentAttachments.length || currentMentions.length
         ? await buildComposerPrompt({
@@ -288,6 +281,7 @@ async function createAndSubmit(): Promise<void> {
         delete agents.drafts[key]
         delete agents.draftAttachments[key]
         delete agents.draftMentions[key]
+        byoaDraftYolo.value = !!props.target?.yolo
         props.onSessionChange(registered, true)
       }
     } finally {
@@ -297,9 +291,7 @@ async function createAndSubmit(): Promise<void> {
   })
 }
 
-const contextLabel = computed(() => effectiveWorkspaceName.value
-  ? t("superAgent.byoaRunningOnWorkspace", { machine: props.machine.name, provider: effectiveProviderName.value, workspace: effectiveWorkspaceName.value })
-  : t("superAgent.byoaRunningOn", { machine: props.machine.name, provider: effectiveProviderName.value }))
+const contextLabel = computed(() => t("superAgent.byoaRunningOn", { machine: props.machine.name, provider: effectiveProviderName.value }))
 
 const composerDisabled = computed(() => {
   if (!props.machine.online) return true
@@ -382,6 +374,7 @@ const composerDisabled = computed(() => {
         v-model="draft"
         v-model:attachments="attachments"
         v-model:mentions="mentions"
+        v-model:draft-yolo="byoaDraftYolo"
         :location="location"
         :usage="sessionId ? usage : undefined"
         :disabled="composerDisabled"

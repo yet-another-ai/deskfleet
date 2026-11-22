@@ -105,19 +105,19 @@ test("reads and updates Team Super Agent configuration and registers BYOA machin
   const root = "https://fleet.example/api/teams/team%2F1/super-agent"
   const config = {
     mode: "byoa" as const, hostedConfigured: true, canConfigure: true,
-    byoa: { machineId: "m1", machineName: "Mac Studio", machineOnline: true, providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App" },
+    byoa: { machineId: "m1", machineName: "Mac Studio", machineOnline: true, providerId: "claude-code", providerName: "Claude Code", yolo: true },
   }
   const registered = {
     sessionId: "42", title: "Release audit", lastActiveAt: 1700000000000, engine: "byoa" as const,
-    machineId: "m1", machineName: "Mac Studio", providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App",
+    machineId: "m1", machineName: "Mac Studio", providerId: "claude-code", providerName: "Claude Code",
   }
   f.responses.push(config, config, registered)
   expect(await f.client.superAgentConfig("team/1")).toEqual(config)
-  expect(await f.client.updateSuperAgentConfig("team/1", { mode: "byoa", byoa: { machineId: "m1", providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App" } })).toEqual(config)
-  expect(await f.client.registerSuperAgentMachineSession("team/1", { machineId: "m1", sessionId: "42", providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App", title: "Release audit" })).toEqual(registered)
+  expect(await f.client.updateSuperAgentConfig("team/1", { mode: "byoa", byoa: { machineId: "m1", providerId: "claude-code", providerName: "Claude Code", yolo: true } })).toEqual(config)
+  expect(await f.client.registerSuperAgentMachineSession("team/1", { machineId: "m1", sessionId: "42", providerId: "claude-code", providerName: "Claude Code", title: "Release audit" })).toEqual(registered)
   await expectRequest(f.fetch, 1, root + "/config", { method: "GET" })
-  await expectRequest(f.fetch, 2, root + "/config", { method: "PUT", body: JSON.stringify({ mode: "byoa", byoa: { machineId: "m1", providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App" } }) })
-  await expectRequest(f.fetch, 3, root + "/machine-sessions", { method: "POST", body: JSON.stringify({ machineId: "m1", sessionId: "42", providerId: "claude-code", providerName: "Claude Code", workspaceId: "ws-1", workspaceName: "App", title: "Release audit" }) })
+  await expectRequest(f.fetch, 2, root + "/config", { method: "PUT", body: JSON.stringify({ mode: "byoa", byoa: { machineId: "m1", providerId: "claude-code", providerName: "Claude Code", yolo: true } }) })
+  await expectRequest(f.fetch, 3, root + "/machine-sessions", { method: "POST", body: JSON.stringify({ machineId: "m1", sessionId: "42", providerId: "claude-code", providerName: "Claude Code", title: "Release audit" }) })
 })
 
 test("sends ordered rich message parts when creating and continuing a Super Agent Session", async () => {

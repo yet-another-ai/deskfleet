@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cloud, Cpu, LoaderCircle } from "@lucide/vue"
+import { Cloud, Cpu, LoaderCircle, Zap } from "@lucide/vue"
 import { computed, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import type { CentralApi, Machine } from "@deskfleet/client/central"
@@ -8,11 +8,9 @@ import ErrorNotice from "../common/ErrorNotice.vue"
 import UiButton from "../common/UiButton.vue"
 import UiField from "../common/UiField.vue"
 import UiSelect from "../common/UiSelect.vue"
+import UiSwitch from "../common/UiSwitch.vue"
 
 interface ProviderOption { id: string; name: string }
-interface WorkspaceOption { id: string; name: string }
-
-const NO_WORKSPACE = "__none__"
 
 const props = defineProps<{
   teamId: string
@@ -30,10 +28,9 @@ const id = useId()
 const mode = ref<SuperAgentMode>(props.config.mode)
 const machineId = ref(props.config.byoa?.machineId ?? props.localMachineId ?? props.machines.find(m => m.online)?.id ?? props.machines[0]?.id ?? "")
 const providerId = ref(props.config.byoa?.providerId ?? "")
-const workspaceId = ref(props.config.byoa?.workspaceId ?? NO_WORKSPACE)
 const cwd = ref(props.config.byoa?.cwd ?? "")
+const yolo = ref(!!props.config.byoa?.yolo)
 const providers = ref<ProviderOption[]>([])
-const workspaces = ref<WorkspaceOption[]>([])
 const loadingMachine = ref(false)
 const machineLoadError = ref<unknown>()
 const saving = ref(false)
@@ -47,10 +44,13 @@ function syncFromConfig(next: SuperAgentConfig): void {
   if (next.byoa) {
     machineId.value = next.byoa.machineId
     providerId.value = next.byoa.providerId
-    workspaceId.value = next.byoa.workspaceId ?? NO_WORKSPACE
     cwd.value = next.byoa.cwd ?? ""
-  } else if (!machineId.value) {
-    machineId.value = props.localMachineId ?? props.machines.find(m => m.online)?.id ?? props.machines[0]?.id ?? ""
+    yolo.value = !!next.byoa.yolo
+  } else {
+    yolo.value = false
+    if (!machineId.value) {
+      machineId.value = props.localMachineId ?? props.machines.find(m => m.online)?.id ?? props.machines[0]?.id ?? ""
+    }
   }
 }
 
@@ -63,7 +63,6 @@ async function loadMachineOptions(targetMachineId: string): Promise<void> {
   const revision = ++discoveryRevision
   if (!targetMachineId) {
     providers.value = []
-    workspaces.value = []
     loadingMachine.value = false
     machineLoadError.value = undefined
     return
@@ -81,15 +80,11 @@ async function loadMachineOptions(targetMachineId: string): Promise<void> {
     const live = liveProvidersResult.status === "fulfilled" ? liveProvidersResult.value : undefined
     const list = live?.providers?.length ? live.providers : (catalog?.providers?.providers ?? [])
     providers.value = list.map(item => ({ id: item.id, name: item.name }))
-    workspaces.value = (catalog?.snapshot.workspaces ?? []).map(item => ({ id: item.id, name: item.name }))
     if (catalogResult.status === "rejected" && liveProvidersResult.status === "rejected") {
       machineLoadError.value = catalogResult.reason
     }
     if (providers.value.length && !providers.value.some(item => item.id === providerId.value)) {
       providerId.value = providers.value[0]!.id
-    }
-    if (workspaceId.value !== NO_WORKSPACE && !workspaces.value.some(item => item.id === workspaceId.value)) {
-      workspaceId.value = NO_WORKSPACE
     }
   } finally {
     if (revision === discoveryRevision) loadingMachine.value = false
@@ -117,12 +112,7 @@ const providerOptions = computed(() => {
   }
   return list.map(item => ({ value: item.id, label: item.name }))
 })
-const workspaceOptions = computed(() => [
-  { value: NO_WORKSPACE, label: t("superAgent.workspaceNone") },
-  ...workspaces.value.map(item => ({ value: item.id, label: item.name })),
-])
 
-const selectedWorkspaceId = computed(() => workspaceId.value === NO_WORKSPACE ? null : workspaceId.value)
 const trimmedCwd = computed(() => cwd.value.trim() || null)
 
 const changed = computed(() => {
@@ -132,8 +122,8 @@ const changed = computed(() => {
   return !current
     || current.machineId !== machineId.value
     || current.providerId !== providerId.value
-    || (current.workspaceId ?? null) !== selectedWorkspaceId.value
     || (current.cwd ?? null) !== trimmedCwd.value
+    || !!current.yolo !== yolo.value
 })
 const valid = computed(() => mode.value === "hosted" || (!!machineId.value && !!providerId.value))
 
@@ -144,7 +134,6 @@ async function submit(): Promise<void> {
   saved.value = false
   try {
     const selectedProvider = providerOptions.value.find(item => item.value === providerId.value)
-    const selectedWorkspace = workspaces.value.find(item => item.id === selectedWorkspaceId.value)
     const updated = await props.api.updateSuperAgentConfig(props.teamId, mode.value === "byoa"
       ? {
         mode: "byoa",
@@ -152,9 +141,8 @@ async function submit(): Promise<void> {
           machineId: machineId.value,
           providerId: providerId.value,
           providerName: selectedProvider?.label ?? null,
-          workspaceId: selectedWorkspaceId.value,
-          workspaceName: selectedWorkspace?.name ?? null,
           cwd: trimmedCwd.value,
+          yolo: yolo.value,
         },
       }
       : { mode: "hosted" })
@@ -242,19 +230,6 @@ async function submit(): Promise<void> {
           <p v-else-if="!loadingMachine" class="m-0 text-xs text-ui-text-muted">{{ t("superAgent.noProviders") }}</p>
         </div>
 
-        <div class="flex flex-col gap-1.5">
-          <label :for="`${id}-workspace`" class="text-[13px] font-medium">{{ t("superAgent.selectWorkspace") }}</label>
-          <UiSelect
-            :id="`${id}-workspace`"
-            v-model="workspaceId"
-            name="super-agent-workspace"
-            :options="workspaceOptions"
-            :disabled="readonly || saving || loadingMachine"
-            :portal-to="portalTo"
-          />
-          <p class="m-0 text-xs text-ui-text-muted">{{ t("superAgent.workspaceHint") }}</p>
-        </div>
-
         <UiField
           v-model="cwd"
           :label="t('superAgent.cwdLabel')"
@@ -264,6 +239,24 @@ async function submit(): Promise<void> {
           autocomplete="off"
           spellcheck="false"
         />
+
+        <div class="flex items-start justify-between gap-3 border-t border-ui-border pt-3">
+          <div class="flex min-w-0 flex-col gap-0.5">
+            <label :for="`${id}-yolo`" class="flex items-center gap-1.5 text-[13px] font-medium">
+              <Zap :size="14" :class="yolo ? 'text-ui-accent' : 'text-ui-text-muted'" aria-hidden="true" />
+              {{ t("superAgent.yoloLabel") }}
+            </label>
+            <p class="m-0 text-xs leading-4.5 text-ui-text-muted">{{ t("superAgent.yoloDescription") }}</p>
+          </div>
+          <UiSwitch
+            :id="`${id}-yolo`"
+            v-model="yolo"
+            name="super-agent-yolo"
+            data-super-agent-yolo
+            :disabled="readonly || saving"
+            class="mt-0.5 shrink-0"
+          />
+        </div>
       </template>
     </div>
 

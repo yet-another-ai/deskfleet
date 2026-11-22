@@ -17,11 +17,8 @@ struct ByoaTargetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     provider_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    workspace_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    workspace_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
+    yolo: bool,
 }
 
 #[derive(Serialize)]
@@ -45,9 +42,8 @@ async fn enrich(
             machine_name,
             provider_id,
             provider_name,
-            workspace_id,
-            workspace_name,
             cwd,
+            yolo,
         }) => {
             let online = state
                 .hub
@@ -59,9 +55,8 @@ async fn enrich(
                 machine_online: online.contains(&registration_id),
                 provider_id,
                 provider_name,
-                workspace_id,
-                workspace_name,
                 cwd,
+                yolo,
             })
         }
         None => None,

@@ -11,8 +11,6 @@ pub struct Model {
     pub session_id: String,
     pub provider_id: String,
     pub provider_name: Option<String>,
-    pub workspace_id: Option<String>,
-    pub workspace_name: Option<String>,
     pub title: Option<String>,
     pub last_active_at: i64,
 }

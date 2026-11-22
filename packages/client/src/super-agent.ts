@@ -8,9 +8,8 @@ export interface SuperAgentByoaTarget {
   machineOnline: boolean
   providerId: string
   providerName?: string | null
-  workspaceId?: string | null
-  workspaceName?: string | null
   cwd?: string | null
+  yolo: boolean
 }
 
 export interface SuperAgentConfig {
@@ -24,9 +23,8 @@ export interface SuperAgentByoaUpdate {
   machineId: string
   providerId: string
   providerName?: string | null
-  workspaceId?: string | null
-  workspaceName?: string | null
   cwd?: string | null
+  yolo?: boolean
 }
 
 export interface SuperAgentConfigUpdate {
@@ -40,8 +38,6 @@ export interface RegisterSuperAgentMachineSessionInput {
   sessionId: string
   providerId: string
   providerName?: string | null
-  workspaceId?: string | null
-  workspaceName?: string | null
   title?: string | null
   lastActiveAt?: number
 }
@@ -57,8 +53,6 @@ export interface SuperAgentSession {
   machineName?: string | null
   providerId?: string | null
   providerName?: string | null
-  workspaceId?: string | null
-  workspaceName?: string | null
 }
 
 export interface SuperAgentUsage {

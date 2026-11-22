@@ -10,9 +10,8 @@ pub struct Model {
     pub registration_id: Option<i64>,
     pub provider_id: Option<String>,
     pub provider_name: Option<String>,
-    pub workspace_id: Option<String>,
-    pub workspace_name: Option<String>,
     pub cwd: Option<String>,
+    pub yolo: bool,
     pub updated_at: i64,
 }
 

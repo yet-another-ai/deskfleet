@@ -74,8 +74,7 @@ const headerSegments = computed(() => {
   if (activeEngine.value === "byoa") {
     const machine = selectedSession.value?.machineName ?? activeByoaMachine.value?.name ?? config.value?.byoa?.machineName
     const provider = selectedSession.value?.providerName ?? selectedSession.value?.providerId ?? config.value?.byoa?.providerName ?? config.value?.byoa?.providerId
-    const workspace = selectedSession.value?.workspaceName ?? config.value?.byoa?.workspaceName
-    const detail = [machine, provider, workspace].filter(Boolean).join(" · ")
+    const detail = [machine, provider].filter(Boolean).join(" · ")
     return [t("superAgent.title"), detail || t("superAgent.byoaBadge")]
   }
   return [t("superAgent.title")]

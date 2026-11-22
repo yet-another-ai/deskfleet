@@ -150,9 +150,8 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
             machineOnline: state.machines.find(m => m.id === update.byoa!.machineId)?.online ?? true,
             providerId: update.byoa.providerId,
             providerName: update.byoa.providerName ?? null,
-            workspaceId: update.byoa.workspaceId ?? null,
-            workspaceName: update.byoa.workspaceName ?? null,
             cwd: update.byoa.cwd ?? null,
+            yolo: !!update.byoa.yolo,
           }
       state.superAgentConfig = { ...state.superAgentConfig, mode: update.mode, byoa: nextByoa }
       return { ...state.superAgentConfig, byoa: nextByoa ? { ...nextByoa } : null }
@@ -167,8 +166,6 @@ export function fakeCentral(options: FakeCentralOptions = {}) {
       machineName: state.machines.find(m => m.id === input.machineId)?.name ?? input.machineId,
       providerId: input.providerId,
       providerName: input.providerName ?? null,
-      workspaceId: input.workspaceId ?? null,
-      workspaceName: input.workspaceName ?? null,
     })),
     superAgentUsage: vi.fn(async (_teamId: string): Promise<SuperAgentUsage> => ({
       runtimeConfigured: true, admitted: true, usedCredits: "0", includedCredits: null, usedTokens: 0, includedTokens: null, plan: "selfHosted",

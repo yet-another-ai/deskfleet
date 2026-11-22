@@ -256,7 +256,6 @@ test("lists unified Cloud and BYOA conversations with engine labels and opens th
       {
         sessionId: "byoa-1", title: "Local audit", lastActiveAt: Date.parse(at) - 1000, engine: "byoa",
         machineId: "m1", machineName: "Mac Studio", providerId: "claude-code", providerName: "Claude Code",
-        workspaceId: "ws-1", workspaceName: "Web App",
       },
     ])
     central.superAgentHistory.mockResolvedValue({ nextIndex: 1, messages: [{ id: "r1", role: "assistant", text: "Hosted reply", at }] })
@@ -278,8 +277,11 @@ test("lists unified Cloud and BYOA conversations with engine labels and opens th
   await body.get('[data-super-agent-mode="byoa"]').trigger("click")
   await flushPromises()
   expect(body.find('[data-super-agent-byoa-fields]').exists()).toBe(true)
+  expect(body.find('[name="super-agent-workspace"]').exists()).toBe(false)
   expect(body.text()).toContain("Mac Studio")
   expect(body.text()).toContain("Claude Code")
+  await body.get('[data-super-agent-yolo]').trigger("click")
+  await flushPromises()
   await body.get('[data-super-agent-config-save]').trigger("click")
   await flushPromises()
   expect(central.updateSuperAgentConfig).toHaveBeenCalledWith("alpha", {
@@ -288,9 +290,8 @@ test("lists unified Cloud and BYOA conversations with engine labels and opens th
       machineId: "m1",
       providerId: "claude-code",
       providerName: "Claude Code",
-      workspaceId: null,
-      workspaceName: null,
       cwd: null,
+      yolo: true,
     },
   })
   expect(wrapper.get('[data-super-agent-config-trigger]').text()).toContain("Mac Studio")
@@ -331,6 +332,7 @@ test("waits for Team config before enabling Cloud send on an empty history and f
       machineOnline: true,
       providerId: "claude-code",
       providerName: "Claude Code",
+      yolo: false,
     },
   })
   await flushPromises()

@@ -50,11 +50,8 @@ pub struct SuperAgentByoaTarget {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    pub yolo: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -72,11 +69,9 @@ pub struct SuperAgentByoaUpdate {
     #[serde(default)]
     pub provider_name: Option<String>,
     #[serde(default)]
-    pub workspace_id: Option<String>,
-    #[serde(default)]
-    pub workspace_name: Option<String>,
-    #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub yolo: bool,
 }
 
 fn present_option<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
@@ -111,10 +106,6 @@ pub struct SuperAgentSessionSummary {
     pub provider_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -125,10 +116,6 @@ pub struct RegisterSuperAgentMachineSession {
     pub provider_id: String,
     #[serde(default)]
     pub provider_name: Option<String>,
-    #[serde(default)]
-    pub workspace_id: Option<String>,
-    #[serde(default)]
-    pub workspace_name: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -217,9 +204,8 @@ async fn read_config(db: &impl ConnectionTrait, team: i64) -> Result<TeamSuperAg
                     machine_name: registration.name,
                     provider_id,
                     provider_name: row.provider_name,
-                    workspace_id: row.workspace_id,
-                    workspace_name: row.workspace_name,
                     cwd: row.cwd,
+                    yolo: row.yolo,
                 })
         }
         _ => None,
@@ -250,59 +236,42 @@ impl ControlStore {
             TeamAction::ManageSuperAgent,
         )?;
         let existing = team_config::Entity::find_by_id(team).one(&tx).await?;
-        let (registration_id, provider_id, provider_name, workspace_id, workspace_name, cwd) =
-            match &input.byoa {
-                Some(Some(byoa)) => {
-                    let registration =
-                        resolve_registration_by_machine(&tx, team, &byoa.machine_id).await?;
-                    let provider_id =
-                        required_field(&byoa.provider_id, 256, "invalid Super Agent provider ID")?;
-                    let provider_name = optional_field(
-                        byoa.provider_name.as_deref(),
-                        256,
-                        "invalid Super Agent provider name",
-                    )?;
-                    let workspace_id = optional_field(
-                        byoa.workspace_id.as_deref(),
-                        256,
-                        "invalid Super Agent workspace ID",
-                    )?;
-                    let workspace_name = if workspace_id.is_some() {
-                        optional_field(
-                            byoa.workspace_name.as_deref(),
-                            256,
-                            "invalid Super Agent workspace name",
-                        )?
-                    } else {
-                        None
-                    };
-                    let cwd = optional_field(
-                        byoa.cwd.as_deref(),
-                        4096,
-                        "invalid Super Agent working directory",
-                    )?;
-                    (
-                        Some(registration.id),
-                        Some(provider_id),
-                        provider_name,
-                        workspace_id,
-                        workspace_name,
-                        cwd,
-                    )
-                }
-                Some(None) => (None, None, None, None, None, None),
-                None => match existing {
-                    Some(row) => (
-                        row.registration_id,
-                        row.provider_id,
-                        row.provider_name,
-                        row.workspace_id,
-                        row.workspace_name,
-                        row.cwd,
-                    ),
-                    None => (None, None, None, None, None, None),
-                },
-            };
+        let (registration_id, provider_id, provider_name, cwd, yolo) = match &input.byoa {
+            Some(Some(byoa)) => {
+                let registration =
+                    resolve_registration_by_machine(&tx, team, &byoa.machine_id).await?;
+                let provider_id =
+                    required_field(&byoa.provider_id, 256, "invalid Super Agent provider ID")?;
+                let provider_name = optional_field(
+                    byoa.provider_name.as_deref(),
+                    256,
+                    "invalid Super Agent provider name",
+                )?;
+                let cwd = optional_field(
+                    byoa.cwd.as_deref(),
+                    4096,
+                    "invalid Super Agent working directory",
+                )?;
+                (
+                    Some(registration.id),
+                    Some(provider_id),
+                    provider_name,
+                    cwd,
+                    byoa.yolo,
+                )
+            }
+            Some(None) => (None, None, None, None, false),
+            None => match existing {
+                Some(row) => (
+                    row.registration_id,
+                    row.provider_id,
+                    row.provider_name,
+                    row.cwd,
+                    row.yolo,
+                ),
+                None => (None, None, None, None, false),
+            },
+        };
 
         if input.mode == SuperAgentMode::Byoa {
             let Some(reg_id) = registration_id else {
@@ -324,9 +293,8 @@ impl ControlStore {
             registration_id: Set(registration_id),
             provider_id: Set(provider_id),
             provider_name: Set(provider_name),
-            workspace_id: Set(workspace_id),
-            workspace_name: Set(workspace_name),
             cwd: Set(cwd),
+            yolo: Set(yolo),
             updated_at: Set(updated_at),
         })
         .on_conflict(
@@ -336,9 +304,8 @@ impl ControlStore {
                     team_config::Column::RegistrationId,
                     team_config::Column::ProviderId,
                     team_config::Column::ProviderName,
-                    team_config::Column::WorkspaceId,
-                    team_config::Column::WorkspaceName,
                     team_config::Column::Cwd,
+                    team_config::Column::Yolo,
                     team_config::Column::UpdatedAt,
                 ])
                 .to_owned(),
@@ -392,14 +359,6 @@ impl ControlStore {
                         machine_sessions::Entity,
                         machine_sessions::Column::ProviderName,
                     ))
-                    .column((
-                        machine_sessions::Entity,
-                        machine_sessions::Column::WorkspaceId,
-                    ))
-                    .column((
-                        machine_sessions::Entity,
-                        machine_sessions::Column::WorkspaceName,
-                    ))
                     .column((registrations::Entity, registrations::Column::MachineId))
                     .expr_as(
                         Expr::col((registrations::Entity, registrations::Column::Name)),
@@ -437,8 +396,6 @@ impl ControlStore {
                 machine_name: None,
                 provider_id: None,
                 provider_name: None,
-                workspace_id: None,
-                workspace_name: None,
             });
         }
         for row in rows {
@@ -451,8 +408,6 @@ impl ControlStore {
                 machine_name: Some(row.try_get("", "machine_name")?),
                 provider_id: Some(row.try_get("", "provider_id")?),
                 provider_name: row.try_get("", "provider_name")?,
-                workspace_id: row.try_get("", "workspace_id")?,
-                workspace_name: row.try_get("", "workspace_name")?,
             });
         }
         sessions.sort_by(|left, right| {
@@ -485,20 +440,6 @@ impl ControlStore {
             256,
             "invalid Super Agent provider name",
         )?;
-        let workspace_id = optional_field(
-            input.workspace_id.as_deref(),
-            256,
-            "invalid Super Agent workspace ID",
-        )?;
-        let workspace_name = if workspace_id.is_some() {
-            optional_field(
-                input.workspace_name.as_deref(),
-                256,
-                "invalid Super Agent workspace name",
-            )?
-        } else {
-            None
-        };
         let title = clean_title(input.title.as_deref());
         let last_active_at = input
             .last_active_at
@@ -509,8 +450,7 @@ impl ControlStore {
         let existing = machine_sessions::Entity::find_by_id((reg_id, session_id.clone()))
             .one(&tx)
             .await?;
-        let (final_title, final_active, final_provider_name, final_workspace_name) = match existing
-        {
+        let (final_title, final_active, final_provider_name) = match existing {
             Some(row) => {
                 if row.team_id != team {
                     return Err(Error::Conflict(
@@ -523,7 +463,6 @@ impl ControlStore {
                     Ordering::Less | Ordering::Equal => last_active_at,
                 };
                 let merged_provider_name = provider_name.or(row.provider_name);
-                let merged_workspace_name = workspace_name.or(row.workspace_name);
                 machine_sessions::Entity::update_many()
                     .col_expr(
                         machine_sessions::Column::Title,
@@ -537,20 +476,11 @@ impl ControlStore {
                         machine_sessions::Column::ProviderName,
                         Expr::val(merged_provider_name.clone()),
                     )
-                    .col_expr(
-                        machine_sessions::Column::WorkspaceName,
-                        Expr::val(merged_workspace_name.clone()),
-                    )
                     .filter(machine_sessions::Column::RegistrationId.eq(reg_id))
                     .filter(machine_sessions::Column::SessionId.eq(&session_id))
                     .exec(&tx)
                     .await?;
-                (
-                    merged_title,
-                    merged_active,
-                    merged_provider_name,
-                    merged_workspace_name,
-                )
+                (merged_title, merged_active, merged_provider_name)
             }
             None => {
                 machine_sessions::Entity::insert(machine_sessions::ActiveModel {
@@ -559,14 +489,12 @@ impl ControlStore {
                     session_id: Set(session_id.clone()),
                     provider_id: Set(provider_id.clone()),
                     provider_name: Set(provider_name.clone()),
-                    workspace_id: Set(workspace_id.clone()),
-                    workspace_name: Set(workspace_name.clone()),
                     title: Set(title.clone()),
                     last_active_at: Set(last_active_at),
                 })
                 .exec_without_returning(&tx)
                 .await?;
-                (title, last_active_at, provider_name, workspace_name)
+                (title, last_active_at, provider_name)
             }
         };
         tx.commit().await?;
@@ -579,8 +507,6 @@ impl ControlStore {
             machine_name: Some(registration.name),
             provider_id: Some(provider_id),
             provider_name: final_provider_name,
-            workspace_id,
-            workspace_name: final_workspace_name,
         })
     }
 
@@ -636,13 +562,13 @@ mod tests {
         assert!(matches!(clear.byoa, Some(None)));
 
         let set: TeamSuperAgentConfigUpdate = serde_json::from_str(
-            r#"{"mode":"byoa","byoa":{"machineId":"12","providerId":"claude-code","workspaceId":"7"}}"#,
+            r#"{"mode":"byoa","byoa":{"machineId":"12","providerId":"claude-code","yolo":true}}"#,
         )
         .unwrap();
         assert_eq!(set.mode, SuperAgentMode::Byoa);
         let byoa = set.byoa.unwrap().unwrap();
         assert_eq!(byoa.machine_id, "12");
         assert_eq!(byoa.provider_id, "claude-code");
-        assert_eq!(byoa.workspace_id.as_deref(), Some("7"));
+        assert!(byoa.yolo);
     }
 }
