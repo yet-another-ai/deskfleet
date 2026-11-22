@@ -8,13 +8,15 @@ DeskFleet は、ネイティブデスクトップアプリ（メインプロセ�
 
 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) からお使いの Mac に対応するディスクイメージをダウンロードします。Apple Silicon 搭載 Mac では `-mac-arm64.dmg`、Intel 搭載 Mac では `-mac-x64.dmg` で終わるファイルを選びます。ディスクイメージを開き、DeskFleet を「アプリケーション」フォルダーにドラッグします。
 
-Apple Silicon 搭載 Mac では、公式の Homebrew Tap からもインストールできます。
+Apple Silicon および Intel 搭載 Mac では、公式の Homebrew Tap からもインストールできます。
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-- **Nix（nix-darwin、Apple Silicon）**: リリース版 flake を入力に追加し、`deskfleet` overlay を適用して `environment.systemPackages` に `pkgs.deskfleet` を追加します。nix-darwin が署名済みのアプリバンドルを `/Applications/Nix Apps` に配置し、更新を管理します。詳細は [Nix 配布ガイド](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution) を参照してください。
+Intel 向けデスクトップ Cask は、コンパニオン Tap のパッケージング変更（[`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8)）のマージ後に利用できます。それまでは Intel での Homebrew インストールに依存しないでください。公開済み Tap の Apple Silicon 向け Cask は引き続き利用できます。
+
+- **Nix（nix-darwin、Apple Silicon および Intel）**: リリース版 flake を入力に追加し、`deskfleet` overlay を適用して `environment.systemPackages` に `pkgs.deskfleet` を追加します。nix-darwin が署名済みのアプリバンドルを `/Applications/Nix Apps` に配置し、更新を管理します。詳細は [Nix 配布ガイド](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution) を参照してください。
 
 ### Windows（`x64`）
 
@@ -64,6 +66,7 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 1. [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) から対象プラットフォーム向けのヘッドレスデーモンアーカイブをダウンロードします。
    Apple Silicon Mac では `deskfleet-macos-arm64.tar.gz`、Intel Mac では `deskfleet-macos-x64.tar.gz` を使用します。
+   コンパニオン Tap のパッケージング変更（[`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8)）のマージ後は、Apple Silicon / Intel Mac で `brew install yet-another-ai/tap/deskfleet-daemon` も利用できます（デーモンのみ。`brew services start` の前に登録を完了してください）。
    Linux 向けには `deskfleet-linux-x64.tar.gz` と `deskfleet-linux-arm64.tar.gz`、Windows 向けには `deskfleet-windows-x64.tar.gz` があります。
    以下のコマンドでソースコードからパッケージ化することもできます。
    ```sh

@@ -327,17 +327,18 @@ Pages build. Drafts and prereleases do not replace the website's stable download
 failed requests and unavailable assets retain a link to GitHub Releases.
 
 The installation section offers DMGs for Apple Silicon and Intel, Homebrew for
-Apple Silicon, the Windows installer, and AppImage, DEB, RPM, AUR, Linux Nix,
-and desktop archives on Linux. The macOS updater uses the ZIP for its
-architecture. Apple Silicon nix-darwin installations use the same arm64 ZIP
-and follow the instructions in the guide. DEB, RPM, Linux Nix, and Linux desktop
+both macOS architectures, the Windows installer, and AppImage, DEB, RPM, AUR,
+Linux Nix, and desktop archives on Linux. The macOS updater uses the ZIP for its
+architecture. nix-darwin installations use the matching arm64 or x64 ZIP and
+follow the instructions in the guide. DEB, RPM, Linux Nix, and Linux desktop
 archives appear only when the published release contains their assets. The Nix command
-uses that release's versioned flake URL. Homebrew uses the official tap. AUR
-links to the `deskfleet-bin` package page and remains available independently of
+uses that release's versioned flake URL. Homebrew uses the official tap for the
+desktop cask and, once the companion tap packaging lands, the daemon formula.
+AUR links to the `deskfleet-bin` package page and remains available independently of
 GitHub release assets. Neither Homebrew nor AUR displays GitHub's release
-version as its own. Headless downloads remain separate server/daemon archives.
-English, Chinese, and Japanese pages share the same selection logic and
-localized instructions.
+version as its own. Headless downloads remain separate server/daemon archives
+(`deskfleet-macos-{arm64,x64}.tar.gz` on macOS). English, Chinese, and Japanese
+pages share the same selection logic and localized instructions.
 
 ### iOS distribution signing and TestFlight
 
@@ -467,29 +468,39 @@ or either Linux architecture.
 
 ### Homebrew distribution
 
-The macOS Apple Silicon Cask is maintained in
+macOS desktop and daemon packaging is maintained in
 [`yet-another-ai/homebrew-tap`](https://github.com/yet-another-ai/homebrew-tap).
 DeskFleet owns application versions, signing, and release assets; the tap owns
-the Cask, release metadata validation, synchronization, and utility checks.
-The Cask installs the same signed and notarized DMG as the release page and
-retains the app's built-in updater. Install with:
+the Cask, daemon formula, release metadata validation, synchronization, and
+utility checks. The Cask installs the signed and notarized Apple Silicon or
+Intel DMG matching the host and retains the app's built-in updater. The formula
+installs only `deskfleet-daemon` from `deskfleet-macos-{arm64,x64}.tar.gz` and
+exposes `brew services`. Install with:
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
+brew install yet-another-ai/tap/deskfleet-daemon
 ```
 
-Cask synchronization lives only in the tap. It runs on a schedule and by manual
-dispatch there; DeskFleet does not notify the tap and does not need a
-`TAP_SYNC_TOKEN` or any other cross-repository secret for Homebrew. The tap
-reads GitHub's latest stable Release, validates the DMG metadata, and updates
-its synchronization PR. Homebrew verifies the installer's SHA-256 during
-installation. Drafts, prereleases, and unreleased version changes do not
-advance the Cask. Preserve published assets: the tap rejects same-version
-digest changes and automatic downgrades.
+Intel desktop cask support and the daemon formula require the companion tap
+packaging in
+[`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8).
+Merge that tap PR before relying on those install paths. The published tap
+already serves the Apple Silicon desktop cask.
 
-Configure the tap's required check and auto-merge before relying on automatic
-updates. The initial Cask can use an existing stable Release. Tap setup and
-maintenance are documented in its
+Packaging synchronization lives only in the tap. It runs on a schedule and by
+manual dispatch there; DeskFleet does not notify the tap and does not need a
+`TAP_SYNC_TOKEN` or any other cross-repository secret for Homebrew. The tap
+reads GitHub's latest stable Release, validates both macOS DMGs and both macOS
+daemon archives, and updates its synchronization PR. Homebrew verifies each
+installer's SHA-256 during installation. Drafts, prereleases, and unreleased
+version changes do not advance packaging. Preserve published assets: the tap
+rejects same-version digest changes and automatic downgrades. Every stable
+release must continue publishing all four macOS artifacts the tap sync requires:
+`deskfleet-<ver>-mac-{arm64,x64}.dmg` and `deskfleet-macos-{arm64,x64}.tar.gz`.
+
+Configure the tap's required check before relying on scheduled updates. Tap
+setup and maintenance are documented in its
 [maintenance guide](https://github.com/yet-another-ai/homebrew-tap/blob/main/agents/docs/maintenance.md).
 
 If tap synchronization or PR checks fail, repair the reported problem and
@@ -501,8 +512,8 @@ gh workflow run sync-deskfleet.yml --repo yet-another-ai/homebrew-tap --ref main
 
 Manual dispatch reconciles the latest stable Release without a tag input. A
 delayed or failed sync leaves the published Release and desktop updater
-available; the tap retains its previous Cask until synchronization and merge
-succeed.
+available; the tap retains its previous packaging until synchronization and
+merge succeed.
 
 ### AUR distribution
 
@@ -584,20 +595,22 @@ users that require signatures must sign or verify them independently.
 ### Nix distribution
 
 Nix installs the prebuilt Linux desktop archive for `x86_64-linux` or
-`aarch64-linux`. On Apple Silicon, the same release flake exposes the signed
-macOS app bundle for nix-darwin. For tagged releases, Build compiles the desktop
-app once per architecture under the existing `production` environment and
-packages Linux as an AppImage and a `tar.gz`, and macOS as a signed ZIP. The
-archives already contain the official API, Statsig, and Sentry configuration.
-Changes to those variables take effect in the next release. The same Linux
-archive supplies the DEB, RPM, AUR, and Linux Nix packages.
+`aarch64-linux`. On macOS, the same release flake exposes the signed Apple
+Silicon and Intel app bundles for nix-darwin. For tagged releases, Build compiles
+the desktop app once per architecture under the existing `production`
+environment and packages Linux as an AppImage and a `tar.gz`, and macOS as a
+signed ZIP. The archives already contain the official API, Statsig, and Sentry
+configuration. Changes to those variables take effect in the next release. The
+same Linux archive supplies the DEB, RPM, AUR, and Linux Nix packages.
 
 Every release automatically generates `deskfleet-nix.tar.gz` from the templates
 under `nix/`. This bundle contains a flake with a locked nixpkgs input and the
 versioned GitHub Release URLs and SHA-256 hashes of both Linux desktop archives
-and the macOS app ZIP. The repository's `nix/flake.nix` is a release template;
-install from a generated release bundle. For a release containing that asset,
-replace `<VERSION>` with its version without the `v` prefix:
+and both macOS app ZIPs (`mac-arm64` and `mac-x64`). Hashes are computed from the
+published archives at packaging time; do not invent them. The repository's
+`nix/flake.nix` is a release template; install from a generated release bundle.
+For a release containing that asset, replace `<VERSION>` with its version without
+the `v` prefix:
 
 ```sh
 nix profile add 'https://github.com/yet-another-ai/deskfleet/releases/download/v<VERSION>/deskfleet-nix.tar.gz'

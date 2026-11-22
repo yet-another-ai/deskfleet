@@ -8,13 +8,15 @@
 
 从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载与你的 Mac 对应的磁盘映像。Apple Silicon Mac 选择以 `-mac-arm64.dmg` 结尾的文件，Intel Mac 选择以 `-mac-x64.dmg` 结尾的文件。打开磁盘映像后，将 DeskFleet 拖入“应用程序”文件夹。
 
-在 Apple Silicon Mac 上，你也可以通过官方 Homebrew Tap 安装 DeskFleet：
+在 Apple Silicon 与 Intel Mac 上，你也可以通过官方 Homebrew Tap 安装 DeskFleet：
 
 ```sh
 brew install --cask yet-another-ai/tap/deskfleet
 ```
 
-- **Nix（nix-darwin，Apple Silicon）**：将发布版 flake 添加为输入，应用其 `deskfleet` overlay，并把 `pkgs.deskfleet` 加入 `environment.systemPackages`。nix-darwin 会把已签名的应用包安装到 `/Applications/Nix Apps` 并管理升级。详见 [Nix 分发说明](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution)。
+Intel 桌面 Cask 需要先合并配套的 Tap 打包变更（[`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8)）；在此之前请勿依赖 Intel 上的 Homebrew 安装。已发布 Tap 上的 Apple Silicon 桌面 Cask 仍可使用。
+
+- **Nix（nix-darwin，Apple Silicon 与 Intel）**：将发布版 flake 添加为输入，应用其 `deskfleet` overlay，并把 `pkgs.deskfleet` 加入 `environment.systemPackages`。nix-darwin 会把已签名的应用包安装到 `/Applications/Nix Apps` 并管理升级。详见 [Nix 分发说明](https://github.com/yet-another-ai/deskfleet/blob/main/agents/docs/ci.md#nix-distribution)。
 
 ### Windows（`x64`）
 
@@ -64,6 +66,7 @@ brew install --cask yet-another-ai/tap/deskfleet
 
 1. 从 [GitHub Releases](https://github.com/yet-another-ai/deskfleet/releases) 下载对应平台的无桌面 daemon 压缩包。
    Apple Silicon Mac 使用 `deskfleet-macos-arm64.tar.gz`，Intel Mac 使用 `deskfleet-macos-x64.tar.gz`。
+   合并配套 Tap 打包变更（[`yet-another-ai/homebrew-tap#8`](https://github.com/yet-another-ai/homebrew-tap/pull/8)）后，也可在 Apple Silicon 或 Intel Mac 上执行 `brew install yet-another-ai/tap/deskfleet-daemon`（仅安装 daemon；请先完成注册再使用 `brew services start`）。
    Linux 版本为 `deskfleet-linux-x64.tar.gz` 和 `deskfleet-linux-arm64.tar.gz`，Windows 版本为 `deskfleet-windows-x64.tar.gz`。
    也可以运行以下命令从源码打包。
    ```sh
