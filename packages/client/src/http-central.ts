@@ -7,7 +7,7 @@ import type { IceCandidate } from "./desktop-media.ts"
 import type { BillingInterval, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
-import { readSuperAgentHistory, superAgentPath, type SuperAgentSession, type SuperAgentHistory, type SuperAgentMessageContent, type SuperAgentUsage } from "./super-agent.ts"
+import { readSuperAgentHistory, superAgentPath, type RegisterSuperAgentMachineSessionInput, type SuperAgentConfig, type SuperAgentConfigUpdate, type SuperAgentSession, type SuperAgentHistory, type SuperAgentMessageContent, type SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import { authenticatePasskey } from "./passkeys.ts"
@@ -298,7 +298,12 @@ export class HttpCentralClient implements CentralApi, SiteAdministrationApi {
   members(teamId: string) { return this.request<TeamMember[]>("GET", `/api/teams/${encodeURIComponent(teamId)}/members`) }
   teamUsage(teamId: string) { return this.request<TeamUsage>("GET", `/api/teams/${encodeURIComponent(teamId)}/usage`) }
   superAgentAvailability(teamId: string) { return this.request<{ enabled: boolean }>("GET", `${superAgentPath(teamId)}/availability`) }
+  superAgentConfig(teamId: string) { return this.request<SuperAgentConfig>("GET", `${superAgentPath(teamId)}/config`) }
+  updateSuperAgentConfig(teamId: string, config: SuperAgentConfigUpdate) { return this.request<SuperAgentConfig>("PUT", `${superAgentPath(teamId)}/config`, config) }
   superAgentSessions(teamId: string) { return this.request<SuperAgentSession[]>("GET", `${superAgentPath(teamId)}/sessions`) }
+  registerSuperAgentMachineSession(teamId: string, session: RegisterSuperAgentMachineSessionInput) {
+    return this.request<SuperAgentSession>("POST", `${superAgentPath(teamId)}/machine-sessions`, session)
+  }
   superAgentUsage(teamId: string) { return this.request<SuperAgentUsage>("GET", `${superAgentPath(teamId)}/usage`) }
   createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent) {
     return this.request<{ sessionId: string; deliveryId?: string }>("POST", `${superAgentPath(teamId)}/sessions`, { operationId, message })

@@ -4,7 +4,7 @@ import type { ProviderDisplaySnapshot } from "./providers.ts"
 import type { BillingInterval, BillingPlan, CreditRates, HostedPlan, PlanQuota, TeamBilling, AdminTeamBillingPage, AdminTeamBillingQuery } from "./billing.ts"
 import type { AccountDeletionRequestPage, AccountDeletionRequestQuery } from "./account-deletion.ts"
 import type { AiUsageQuery, TeamAiUsage, TeamAiUsageSessions } from "./ai-usage.ts"
-import type { SuperAgentHistory, SuperAgentMessageContent, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
+import type { RegisterSuperAgentMachineSessionInput, SuperAgentConfig, SuperAgentConfigUpdate, SuperAgentHistory, SuperAgentMessageContent, SuperAgentSession, SuperAgentUsage } from "./super-agent.ts"
 import type { SiteUsagePeriod, SiteUsageTrends } from "./site-usage.ts"
 import type { ScheduleSnapshot, SearchPage, SearchQuery } from "./search.ts"
 import type { CatalogSnapshot } from "./catalog.ts"
@@ -113,7 +113,10 @@ export interface SiteAdministrationApi {
 /** Explicit control-plane operations, shared by browser and the narrow Electron bridge. */
 export interface CentralApi {
   superAgentAvailability(teamId: string): Promise<{ enabled: boolean }>
+  superAgentConfig(teamId: string): Promise<SuperAgentConfig>
+  updateSuperAgentConfig(teamId: string, config: SuperAgentConfigUpdate): Promise<SuperAgentConfig>
   superAgentSessions(teamId: string): Promise<SuperAgentSession[]>
+  registerSuperAgentMachineSession(teamId: string, session: RegisterSuperAgentMachineSessionInput): Promise<SuperAgentSession>
   superAgentUsage(teamId: string): Promise<SuperAgentUsage>
   createSuperAgentSession(teamId: string, operationId: string, message?: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId?: string }>
   sendSuperAgentMessage(teamId: string, sessionId: string, operationId: string, message: SuperAgentMessageContent): Promise<{ sessionId: string; deliveryId: string }>

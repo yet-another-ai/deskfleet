@@ -22,6 +22,7 @@ pub mod signaling_limits;
 mod site;
 mod site_usage;
 mod storage_cleanup;
+mod super_agent;
 mod team_turn;
 mod teams;
 mod turn_settings;
@@ -42,6 +43,10 @@ pub use push::{
     SessionTaskNotification, TaskNotificationKind,
 };
 pub use realtime::RealtimeRoute;
+pub use super_agent::{
+    RegisterSuperAgentMachineSession, SuperAgentByoaTarget, SuperAgentByoaUpdate, SuperAgentMode,
+    SuperAgentSessionSummary, TeamSuperAgentConfig, TeamSuperAgentConfigUpdate,
+};
 pub use team_turn::TeamTurnServer;
 pub use turn_usage::{TurnUsage, TurnUsageSide};
 

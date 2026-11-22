@@ -677,7 +677,11 @@ export class AgentSessions {
     if (command.params.yolo !== undefined && typeof command.params.yolo !== "boolean") {
       throw new Error("Invalid YOLO flag")
     }
+    if (command.params.superAgent !== undefined && typeof command.params.superAgent !== "boolean") {
+      throw new Error("Invalid Super Agent flag")
+    }
     const yoloFields = command.params.yolo ? { yolo: true, yoloActor: command.actor } : {}
+    const superAgentFields = command.params.superAgent ? { superAgent: true } : {}
     const context = command.params.context
     if (context !== "worktree" && context !== "directory") throw new Error("Invalid Session context")
     if (!command.workspaceId && context !== "directory") throw new Error("Sessions without a workspace use the home directory")
@@ -698,6 +702,7 @@ export class AgentSessions {
       this.journal.create(command, command.workspaceId, title, context, provider, {
         admissionGeneration,
         ...yoloFields,
+        ...superAgentFields,
       }))
     command.sessionId = session.id
     const provision = async (includeCommandEvent: boolean): Promise<void> => {

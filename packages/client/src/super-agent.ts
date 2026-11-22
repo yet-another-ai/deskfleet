@@ -1,10 +1,64 @@
 import type { BillingPlan } from "./billing.ts"
 
+export type SuperAgentMode = "hosted" | "byoa"
+
+export interface SuperAgentByoaTarget {
+  machineId: string
+  machineName: string
+  machineOnline: boolean
+  providerId: string
+  providerName?: string | null
+  workspaceId?: string | null
+  workspaceName?: string | null
+  cwd?: string | null
+}
+
+export interface SuperAgentConfig {
+  mode: SuperAgentMode
+  hostedConfigured: boolean
+  canConfigure: boolean
+  byoa: SuperAgentByoaTarget | null
+}
+
+export interface SuperAgentByoaUpdate {
+  machineId: string
+  providerId: string
+  providerName?: string | null
+  workspaceId?: string | null
+  workspaceName?: string | null
+  cwd?: string | null
+}
+
+export interface SuperAgentConfigUpdate {
+  mode: SuperAgentMode
+  /** Omit to keep any saved BYOA registration; pass null to clear it while in hosted mode. */
+  byoa?: SuperAgentByoaUpdate | null
+}
+
+export interface RegisterSuperAgentMachineSessionInput {
+  machineId: string
+  sessionId: string
+  providerId: string
+  providerName?: string | null
+  workspaceId?: string | null
+  workspaceName?: string | null
+  title?: string | null
+  lastActiveAt?: number
+}
+
 export interface SuperAgentSession {
   sessionId: string
   title: string | null
   /** UTC milliseconds. Older idle sessions predate activity tracking. */
   lastActiveAt: number
+  /** Defaults to "hosted" when omitted by older servers or fixtures. */
+  engine?: SuperAgentMode
+  machineId?: string | null
+  machineName?: string | null
+  providerId?: string | null
+  providerName?: string | null
+  workspaceId?: string | null
+  workspaceName?: string | null
 }
 
 export interface SuperAgentUsage {

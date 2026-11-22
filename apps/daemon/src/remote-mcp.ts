@@ -10,7 +10,7 @@ import { readRemoteAgentSettings } from "./remote-agent-settings.ts"
 const nonEmpty = z.string().refine(v => v.trim().length > 0)
 const record = z.record(z.string(), z.unknown())
 const sourceSchema = z.union([
-  z.strictObject({ teamId: nonEmpty, machineId: nonEmpty, sessionId: nonEmpty }),
+  z.strictObject({ teamId: nonEmpty, machineId: nonEmpty, sessionId: nonEmpty, kind: z.literal("superAgent").optional() }),
   z.strictObject({ teamId: nonEmpty, kind: z.literal("superAgent"), sessionId: nonEmpty }),
 ])
 
@@ -45,7 +45,17 @@ export class RemoteMcp {
       throw new Error("Remote MCP source does not match the delegated user")
     const readAccess = async () => {
       const { allowSuperAgent, ...peerAccess } = await readRemoteAgentSettings(this.#directory)
-      if ("machineId" in source) return peerAccess
+      if ("machineId" in source) {
+        if (source.kind === "superAgent") {
+          return {
+            allowRead: allowSuperAgent || peerAccess.allowRead,
+            allowOperate: allowSuperAgent || peerAccess.allowOperate,
+            allowSessions: allowSuperAgent || peerAccess.allowSessions,
+            allowWorkspaces: allowSuperAgent || peerAccess.allowWorkspaces,
+          }
+        }
+        return peerAccess
+      }
       return { allowRead: allowSuperAgent, allowOperate: allowSuperAgent, allowSessions: allowSuperAgent, allowWorkspaces: allowSuperAgent }
     }
     if (method === "remoteMcpDiscover") return readAccess()

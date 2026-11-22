@@ -136,6 +136,7 @@ async fn call_tool(
         team_id: &scope.team_id,
         session_id: &scope.session_id,
         machine_id: None,
+        super_agent: true,
     };
     let result = match remote_mcp::dispatch(
         state,

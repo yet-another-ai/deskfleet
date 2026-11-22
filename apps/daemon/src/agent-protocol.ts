@@ -55,6 +55,8 @@ export interface AgentSessionRecord {
   yolo?: boolean
   /** Actor that enabled YOLO mode for this Session, used for permission audit attribution. */
   yoloActor?: AgentActor
+  /** Whether this Session acts as a Team Super Agent with cross-workspace delegation. */
+  superAgent?: boolean
   createdAt: string
   updatedAt: string
   capabilities?: { steering: boolean; resume: boolean; fork?: boolean; additionalDirectories?: boolean; promptCapabilities?: AgentPromptCapabilities }
@@ -213,7 +215,7 @@ export interface AgentMethods {
   "_deskfleet/session/configure": { params: AgentMutation & AgentConfigurationSelection; result: AgentConfiguration }
   "_deskfleet/session/switch-agent": { params: AgentMutation & { provider: string }; result: AgentSnapshot }
   "_deskfleet/session/list": { params: Record<string, never>; result: AgentSessionRecord[] }
-  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; /** Absolute directory used as the Session's primary cwd; only with `directory` context. */ cwd?: string; baseBranch?: string; baseRevisions?: GitPreparedRevision[]; deferStartup?: boolean; yolo?: boolean } & AgentConfigurationSelection; result: AgentSnapshot }
+  "_deskfleet/session/create": { params: { workspaceId?: string; operationId: string; title?: string; provider: string; context: AgentSessionContext; /** Absolute directory used as the Session's primary cwd; only with `directory` context. */ cwd?: string; baseBranch?: string; baseRevisions?: GitPreparedRevision[]; deferStartup?: boolean; yolo?: boolean; superAgent?: boolean } & AgentConfigurationSelection; result: AgentSnapshot }
   "_deskfleet/session/fork": { params: AgentMutation & { context: AgentSessionContext; title?: string }; result: AgentSnapshot }
   "_deskfleet/session/subscribe": { params: { sessionId: string }; result: AgentSnapshot }
   "_deskfleet/session/history": { params: { sessionId: string; afterSeq: string; limit?: number }; result: AgentEvent[] }

@@ -64,6 +64,7 @@ async fn create(local: &LocalCatalog) -> AgentCreatedSession {
             admission_generation: None,
             yolo: false,
             yolo_actor: None,
+            super_agent: false,
         })
         .await
         .unwrap()
@@ -144,6 +145,7 @@ async fn identity_allocator_and_atomic_creation_survive_restart() {
                 admission_generation: None,
                 yolo: false,
                 yolo_actor: None,
+                super_agent: false,
             })
             .await
             .is_err()
@@ -782,6 +784,7 @@ async fn admission_deletion_requires_a_local_creation_and_deletion_receipt() {
             admission_generation: Some(operation_id.clone()),
             yolo: false,
             yolo_actor: None,
+            super_agent: false,
         })
         .await
         .unwrap();

@@ -328,6 +328,7 @@ impl LocalCatalog {
             viewers: Vec::new(),
             yolo: request.yolo,
             yolo_actor: request.yolo_actor,
+            super_agent: request.super_agent,
             created_at: request.command.received_at.clone(),
             updated_at: request.command.received_at.clone(),
             capabilities: None,

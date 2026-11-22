@@ -54,6 +54,7 @@ async fn noncanonical_or_unrelated_delete_receipts_do_not_release_admission() {
             admission_generation: Some(operation_id.clone()),
             yolo: false,
             yolo_actor: None,
+            super_agent: false,
         })
         .await
         .unwrap();

@@ -61,6 +61,7 @@ impl LocalCatalog {
                     if next.id != current.id
                         || next.workspace_id != current.workspace_id
                         || next.context != current.context
+                        || next.super_agent != current.super_agent
                         || next.created_at != current.created_at
                         || next.inherited_turn_count != current.inherited_turn_count
                     {

@@ -260,3 +260,27 @@ test("cross-machine file tools reuse FilesService and FileTransferManager with l
   assert.deepEqual(await readdir(join(downloadDir, "saves", "empty")), [])
 })
 
+test("a Workspace-bound BYOA Super Agent Session keeps cross-Workspace MCP delegation", async () => {
+  const { calls, operations } = fixture()
+  const superScope = { sessionId: "90", workspaceId: "10", superAgent: true }
+  const superSession = { id: "90", workspaceId: "10", superAgent: true }
+  const list = await operations.agents.journal.list()
+  ;(list as unknown as Record<string, unknown>[]).push(superSession)
+
+  assert.deepEqual(await dispatchMcp(operations, "catalogList", {}, actor, superScope), {
+    teamId: "1", machineId: "1", machineName: "host", sessionId: "90", workspaceId: "10",
+    workspaces: [{ id: "10" }, { id: "20" }], sessions: [],
+  })
+  assert.deepEqual(
+    ((await dispatchMcp(operations, "_deskfleet/session/list", {}, actor, superScope)) as { id: string }[]).map(s => s.id),
+    ["1", "2", "90"],
+  )
+  assert.deepEqual(
+    await dispatchMcp(operations, "workspaceCreate", { name: "New repo", directories: [{ path: "/srv/new" }] }, actor, superScope),
+    { id: "30", name: "New repo", directories: [{ path: "/srv/new" }] },
+  )
+  await dispatchMcp(operations, "_deskfleet/session/create", { workspaceId: "20", provider: "codex", context: "directory" }, actor, superScope)
+  assert.equal((calls.at(-1) as [string, Record<string, unknown>])[1].workspaceId, "20")
+  await assert.rejects(dispatchMcp(operations, "catalogList", {}, actor, { sessionId: "1", workspaceId: "10", superAgent: true }), /scope/)
+})
+

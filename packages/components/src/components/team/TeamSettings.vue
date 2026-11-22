@@ -6,6 +6,7 @@ import { useAccountSession } from "../../composables/useAccountSession.ts"
 import SettingsRow from "../settings/SettingsRow.vue"
 import TeamMachines from "./TeamMachines.vue"
 import TeamMembers from "./TeamMembers.vue"
+import TeamSuperAgentSettings from "./TeamSuperAgentSettings.vue"
 import TeamTurnSettings from "./TeamTurnSettings.vue"
 
 const { t } = useI18n()
@@ -47,6 +48,7 @@ async function rename(): Promise<void> {
     </section>
     <TeamMembers :key="team.id" :team="team" :user-id="session.account.value.user?.id" />
     <TeamMachines />
+    <TeamSuperAgentSettings v-if="session.superAgentEnabled.value" :key="`super-agent-${team.id}`" class="mt-8" :api="session.central" :team-id="team.id" :machines="session.machines.value" :local-machine-id="session.localMachineId.value" />
     <TeamTurnSettings v-if="admin" :key="team.id" class="mt-8" :api="session.central" :team-id="team.id" @plans="session.openSettings('plans')" />
   </template>
 </template>
