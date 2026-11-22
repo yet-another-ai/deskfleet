@@ -9,7 +9,7 @@ import { usePlatformClient } from "../composables/usePlatformClient.ts"
 import { createSidebarFilter } from "../composables/useSidebarFilter.ts"
 import { createSidebarOrder } from "../composables/useSidebarOrder.ts"
 import type { PreviewDescriptor, PreviewSource } from "../services/preview.ts"
-import { springScrollIntoView } from "../services/spring-scroll.ts"
+import { scrollToConversationEntry } from "../services/conversation-locate.ts"
 
 export interface MermaidSource { sessionId?: string; entryId?: string; diagramId?: string }
 export interface MermaidLocateRequest extends MermaidSource { id: number; code: string }
@@ -48,7 +48,7 @@ export function performMermaidLocateDom(request: MermaidLocateRequest | null = p
   clearTimeout(locatedTimer)
   for (const prev of document.querySelectorAll<HTMLElement>("[data-mermaid-located]")) delete prev.dataset.mermaidLocated
   target.dataset.mermaidLocated = "true"
-  springScrollIntoView(target)
+  scrollToConversationEntry(target, request.sessionId)
   locatedTimer = setTimeout(() => { delete target.dataset.mermaidLocated }, 1600)
   return true
 }

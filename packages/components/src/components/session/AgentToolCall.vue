@@ -40,7 +40,7 @@ const open = computed(() => hasDetails.value && (toggled.value ?? props.defaultO
       <ChevronRight v-if="hasDetails" :size="14" :stroke-width="2" class="shrink-0 opacity-0 ui-motion group-hover/tool:opacity-100" :class="open && 'rotate-90 opacity-100'" aria-hidden="true" />
     </CollapsibleTrigger>
     <SpringCollapse class="ui-collapsible">
-      <AgentToolDetails :tool="tool" :live="live" class="mt-1 mb-2 ml-6 rounded-lg border border-ui-border bg-ui-surface p-3" />
+      <AgentToolDetails :tool="tool" :disclosure-id="disclosureId" :live="live" class="mt-1 mb-2 ml-6 rounded-lg border border-ui-border bg-ui-surface p-3" />
     </SpringCollapse>
   </CollapsibleRoot>
 </template>

@@ -5,7 +5,7 @@ import { watchImmediate } from "@vueuse/core"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import { containsConversationEntry, type ConversationStep } from "../../services/agent-conversation.ts"
-import { useConversationDisclosure } from "../../stores/conversation-reading.ts"
+import { useConversationDisclosure, useConversationDisclosures } from "../../stores/conversation-reading.ts"
 import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
@@ -13,6 +13,7 @@ import AgentElicitation from "./AgentElicitation.vue"
 
 const props = defineProps<{ step: ConversationStep; live?: boolean; disabled?: boolean; sessionLabels?: Record<string, string>; locateEntry?: string }>()
 const { t } = useI18n()
+const disclosures = useConversationDisclosures()
 const toggled = useConversationDisclosure(() => `protocol:${props.step.id}`)
 const open = computed(() => toggled.value ?? (props.step.kind === "subagent"
   ? props.step.session.state?.state !== "idle" : props.step.kind === "compaction" && props.step.compaction.status === "failed"))
@@ -28,7 +29,9 @@ const childError = computed(() => {
 })
 const label = (id: string | null | undefined) => id && props.sessionLabels?.[id] || t("agent.protocol.session")
 watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
-  if (id && containsConversationEntry(step, id)) toggled.value = true
+  if (!id || !containsConversationEntry(step, id)) return
+  toggled.value = true
+  if (step.kind === "tool") disclosures()[`tool:${step.id}`] = true
 })
 </script>
 
@@ -51,7 +54,7 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
     </CollapsibleTrigger>
     <CollapsibleContent>
       <div class="flex flex-col gap-2 border-t border-ui-border px-3 py-2">
-        <AgentContent v-if="step.compaction.summary?.length" :content="step.compaction.summary" markdown :final="step.compaction.status !== 'in_progress' || !live" />
+        <AgentContent v-if="step.compaction.summary?.length" :content="step.compaction.summary" :disclosure-id="step.id" markdown :final="step.compaction.status !== 'in_progress' || !live" />
         <p v-if="step.compaction.error" class="m-0 whitespace-pre-wrap text-ui-danger">{{ step.compaction.error }}</p>
       </div>
     </CollapsibleContent>
@@ -87,13 +90,13 @@ watchImmediate([() => props.locateEntry, () => props.step], ([id, step]) => {
         <span aria-hidden="true">{{ label(step.message.senderSessionId) }}</span><ArrowRight :size="12" aria-hidden="true" /><span aria-hidden="true">{{ label(step.message.recipientSessionId) }}</span>
       </template>
     </div>
-    <AgentContent v-if="step.message.content?.length" :content="step.message.content" markdown :final="!live" />
+    <AgentContent v-if="step.message.content?.length" :content="step.message.content" :disclosure-id="step.id" markdown :final="!live" />
   </div>
   <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="live" />
   <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
   <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
   <div v-else-if="step.kind === 'message'" :class="step.role !== 'assistant' && 'text-ui-text-muted'">
     <p v-if="step.role !== 'assistant'" class="m-0 mb-1 text-xs">{{ t(step.role === 'thought' ? 'agent.thinking' : 'agent.protocol.userMessage') }}</p>
-    <AgentContent :content="step.content" :markdown="step.role !== 'user'" :final="!live" />
+    <AgentContent :content="step.content" :disclosure-id="step.id" :markdown="step.role !== 'user'" :final="!live" />
   </div>
 </template>

@@ -73,8 +73,8 @@ function diagramDiagnostics() {
   }
 }
 
-function closedDisclosures() {
-  return [...conversation.value!.querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]:not([disabled])')]
+function closedDisclosures(row: HTMLElement) {
+  return [...row.querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]:not([disabled])')]
     .filter(button => button.hasAttribute("data-turn-work") || button.hasAttribute("data-activity-trigger") || button.classList.contains("group/tool") || button.classList.contains("group/thought"))
 }
 
@@ -85,26 +85,37 @@ async function disclosureFrame() {
   await nextTick()
 }
 
-async function openDisclosures() {
+async function openDisclosures(row: HTMLElement) {
   // Opening outer work exposes activity groups, which expose individual tools.
   for (let depth = 0; depth < 4; depth++) {
     await disclosureFrame()
-    const buttons = closedDisclosures()
+    const buttons = closedDisclosures(row)
     if (!buttons.length) return
     for (const button of buttons) button.click()
   }
   await disclosureFrame()
-  if (closedDisclosures().length) throw new Error("Expanded fixture still contains closed work, thought, activity, or tool disclosures")
+  if (closedDisclosures(row).length) throw new Error("Expanded fixture still contains closed work, thought, activity, or tool disclosures")
 }
 
 async function run(mountedAt: number) {
   await nextTick()
   await frame()
-  const collapsedAtMount = conversation.value!.querySelectorAll('[data-turn-work][aria-expanded="false"]').length
-  if (collapsedAtMount !== props.options.turns) throw new Error(`Expected ${props.options.turns} collapsed historical turns, received ${collapsedAtMount}`)
+  const rows = [...conversation.value!.querySelectorAll<HTMLElement>(":scope > div > ol > li")]
+  if (rows.length !== 2 * (props.options.turns + 1)) throw new Error("Missing transcript row anchors")
+  if (conversation.value!.querySelector('[data-turn-work][aria-expanded="true"]')) throw new Error("Historical work should start collapsed")
   const mountMs = performance.now() - mountedAt
   const unfoldStarted = performance.now()
-  if (props.options.expanded) await openDisclosures()
+  if (props.options.expanded) {
+    for (let i = 0; i < props.options.turns; i++) {
+      const row = rows[i * 2 + 1]!
+      row.scrollIntoView({ block: "start", behavior: "instant" })
+      await disclosureFrame()
+      await disclosureFrame()
+      if (!row.querySelector("[data-turn-work]")) throw new Error(`Historical turn ${i} failed to mount`)
+      await openDisclosures(row)
+    }
+    scroller.value!.scrollTop = 0
+  }
   await frame()
   const unfoldMs = performance.now() - unfoldStarted
   if (props.options.scroll === "bottom") scroller.value!.scrollTop = scroller.value!.scrollHeight
@@ -177,7 +188,15 @@ async function run(mountedAt: number) {
         }
         if (!expansion && delivered >= Math.floor(fixture.pending.length / 2) && props.options.turns > 0) {
           expansion = (async () => {
-            const button = conversation.value!.querySelector<HTMLButtonElement>('[data-turn-work]')!
+            // Pin the first historical response while the benchmark operates its controls
+            // from the configured scroll position. Locate the final answer to keep work collapsed.
+            const firstTurn = snapshot.value.turns[0]!
+            const answer = projection.value.findLast(step => step.kind === "message" && step.turnId === firstTurn.id && step.role === "assistant")
+            if (!answer) throw new Error("Missing first historical answer")
+            locateEntry.value = answer.id
+            await disclosureFrame()
+            const button = rows[1]!.querySelector<HTMLButtonElement>('[data-turn-work]')
+            if (!button) throw new Error("Historical disclosure failed to mount")
             // Measure an actual expand even in the initially expanded scenario.
             if (button.getAttribute("aria-expanded") === "true") { button.click(); await disclosureFrame() }
             const expandingAt = performance.now()
@@ -205,7 +224,7 @@ async function run(mountedAt: number) {
                 await frame()
               }
               diagramReopenStatus = "timeout"
-            })()
+            })().finally(() => { locateEntry.value = undefined })
           })()
         }
         if (delivered === fixture.pending.length) { resolve(); return }
@@ -222,7 +241,7 @@ async function run(mountedAt: number) {
   // End-of-stream moves the final answer out of the completed work disclosure.
   // Inspect only that response, avoiding a history-sized layout/text scan on
   // every settling frame. Require visible prose and highlighted sentinel code.
-  const finalResponse = conversation.value!.querySelector<HTMLElement>(":scope > ol > li:last-child")
+  const finalResponse = conversation.value!.querySelector<HTMLElement>(":scope > div > ol > li:last-child")
   if (!finalResponse) throw new Error("Final response did not mount")
   const deadline = lastDeliveryAt + 15_000
   let settledAt = 0
@@ -283,7 +302,7 @@ defineExpose({ run })
 </script>
 
 <template>
-  <div ref="scroller" class="benchmark-scroller">
+  <div ref="scroller" data-session-scroll-viewport class="benchmark-scroller">
     <div ref="conversation" class="benchmark-conversation">
       <AgentConversation :events="events" :snapshot="snapshot" :projection="projection" :locate-entry="locateEntry" />
     </div>

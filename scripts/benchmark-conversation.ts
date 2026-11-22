@@ -79,12 +79,13 @@ if (!values["skip-build"]) {
       const filename = id.split("?")[0]!.replaceAll("\\", "/")
       if (!filename.endsWith(".vue")) return
       const markdown = markdownComponents.test(filename)
-      if (!markdown && !/\/(?:AgentConversation|AgentResponse|Harness)\.vue$/u.test(filename)) return
+      const rowBoundary = filename.endsWith("/ConversationRowContent.vue")
+      if (!markdown && !rowBoundary && !/\/(?:AgentConversation|AgentResponse|Harness)\.vue$/u.test(filename)) return
       // TypeScript SFCs can emit their compiled component in a ?vue&type=script
       // subrequest; the main .vue module then only re-exports it.
       if (!/\bdefine(?:Vapor)?Component\b|__vapor:\s*true/u.test(code)) return
       const mode = /\bdefineVaporComponent\b|__vapor:\s*true/u.test(code) ? "vapor" : "vdom"
-      assert.equal(mode, markdown ? markdownRenderer : "vapor", `Unexpected compiler mode for ${filename}`)
+      assert.equal(mode, rowBoundary ? "vdom" : markdown ? markdownRenderer : "vapor", `Unexpected compiler mode for ${filename}`)
       compiledRenderers[relative(root, filename).replaceAll("\\", "/")] = mode
     },
   }
@@ -99,8 +100,27 @@ if (!values["skip-build"]) {
   })
   assert.equal(compiledRenderers["packages/components/src/components/session/AgentMarkdown.vue"], markdownRenderer)
   assert.equal(compiledRenderers["packages/components/src/components/session/AgentConversation.vue"], "vapor")
+  assert.equal(compiledRenderers["packages/components/src/components/session/ConversationRowContent.vue"], "vdom")
   const git = (args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
-  const sources = ["pnpm-lock.yaml", "scripts/benchmark-conversation.ts", "apps/desktop/scripts/benchmark-conversation.ts", "packages/components/src/components/session/AgentConversation.vue", "packages/components/src/components/session/AgentMarkdown.vue", "packages/components/src/services/agent-markdown.ts", "packages/components/src/services/mermaid.ts", "packages/components/src/services/mermaid-svg.ts", "packages/components/benchmarks/conversation/fixture.ts", "packages/components/benchmarks/conversation/Harness.vue", "packages/components/benchmarks/conversation/scrollback.ts", "packages/components/benchmarks/conversation/IsolatedMarkdown.vue", "packages/components/benchmarks/conversation/main.ts"]
+  const sources = [
+    "pnpm-lock.yaml",
+    "scripts/benchmark-conversation.ts",
+    "apps/desktop/scripts/benchmark-conversation.ts",
+    "packages/components/src/components/session/AgentConversation.vue",
+    "packages/components/src/components/session/ConversationRowContent.vue",
+    "packages/components/src/composables/useConversationViewport.ts",
+    "packages/components/src/composables/useTranscriptLocate.ts",
+    "packages/components/src/stores/conversation-reading.ts",
+    "packages/components/src/components/session/AgentMarkdown.vue",
+    "packages/components/src/services/agent-markdown.ts",
+    "packages/components/src/services/mermaid.ts",
+    "packages/components/src/services/mermaid-svg.ts",
+    "packages/components/benchmarks/conversation/fixture.ts",
+    "packages/components/benchmarks/conversation/Harness.vue",
+    "packages/components/benchmarks/conversation/scrollback.ts",
+    "packages/components/benchmarks/conversation/IsolatedMarkdown.vue",
+    "packages/components/benchmarks/conversation/main.ts",
+  ]
   await writeFile(resolve(buildDir, "provenance.json"), JSON.stringify({
     markdownRenderer, compiledRenderers,
     commit: git(["rev-parse", "HEAD"]), dirty: Boolean(git(["status", "--porcelain"])),

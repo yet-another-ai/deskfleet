@@ -61,16 +61,22 @@ async function main(): Promise<void> {
         const result = await Promise.race([
           window.webContents.executeJavaScript(config.isolated
             ? `window.runIsolatedMarkdownBenchmark(${JSON.stringify({ ...config.isolated, chunks: config.chunks, intervalMs: config.intervalMs })})`
-            : `window.runConversationBenchmark(${JSON.stringify(options)})`),
+            : `window.runConversationBenchmark(${JSON.stringify(options)}, true)`),
           new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error("Benchmark exceeded 180 seconds")), 180_000); timer.unref() }),
         ])
-        results.push({ ...options, round: round + 1, electron: process.versions.electron, chrome: process.versions.chrome, ...result })
         if (config.trace) await contentTracing.stopRecording(resolve(config.output, `${turns}-${round + 1}.pftrace`))
-        await writeFile(resolve(config.output, "results.json"), JSON.stringify(results, null, 2))
         if (config.profile) {
           const { profile } = await window.webContents.debugger.sendCommand("Profiler.stop")
           await writeFile(resolve(config.output, `${turns}-${round + 1}.cpuprofile`), JSON.stringify(profile))
         }
+        if (!config.isolated) {
+          if (!window.webContents.debugger.isAttached()) window.webContents.debugger.attach("1.3")
+          await window.webContents.debugger.sendCommand("HeapProfiler.collectGarbage")
+          result.heap = await window.webContents.debugger.sendCommand("Runtime.getHeapUsage")
+          result.domCounters = await window.webContents.debugger.sendCommand("Memory.getDOMCounters")
+        }
+        results.push({ ...options, round: round + 1, electron: process.versions.electron, chrome: process.versions.chrome, ...result })
+        await writeFile(resolve(config.output, "results.json"), JSON.stringify(results, null, 2))
         console.log(`Completed ${turns} historical turns, round ${round + 1}/${config.rounds}`)
       } finally { window.destroy() }
     }

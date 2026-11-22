@@ -10,7 +10,7 @@ import "../../src/styles.css"
 // The fixture exercises rendering only; no machine/account transport is connected.
 configureClient({ platform: "linux", locale: "en-US" } as DeskfleetDesktopApi)
 const benchmarkReady = Promise.all([import("./Harness.vue"), import("../../src/i18n/index.ts")]).then(([{ default: Harness }, { i18n }]) => {
-  const runConversationBenchmark = async (options: BenchmarkOptions) => {
+  const runConversationBenchmark = async (options: BenchmarkOptions, keepMounted = false) => {
     const pinia = createPinia()
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] })
     const app = createApp(Harness, { options })
@@ -23,7 +23,10 @@ const benchmarkReady = Promise.all([import("./Harness.vue"), import("../../src/i
     performance.mark("conversation-mount-start")
     const instance = app.mount("#app") as unknown as { run(started: number): Promise<unknown> }
     try { return await instance.run(started) }
-    finally { app.unmount(); disposePinia(pinia) }
+    finally {
+      // Electron samples the mounted renderer heap, then destroys this window.
+      if (!keepMounted) { app.unmount(); disposePinia(pinia) }
+    }
   }
   const runIsolatedMarkdownBenchmark = async (options: { renderer: "upstream" | "upstream-hook" | "deskfleet"; corpus: "prose" | "rich"; chunks: number; intervalMs: number; repeats?: number }) => {
     const { default: IsolatedMarkdown } = await import("./IsolatedMarkdown.vue")

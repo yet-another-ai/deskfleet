@@ -49,9 +49,10 @@ onBeforeUnmount(() => {
     :title="node.title ?? undefined"
     mode="inline"
   />
-  <span v-else-if="state?.url" class="ui-remote-image block">
+  <!-- Keep a URI-based locate target throughout loading, retries and blob URL replacement. -->
+  <span v-else :data-preview="uri" :data-preview-content="uri" class="ui-remote-image" :class="{ block: state?.url }">
     <PreviewViewer
-      :data-preview="uri"
+      v-if="state?.url"
       :kind="previewKindFromMime(state.mimeType) ?? 'image'"
       :content="state.url"
       :data="state.data"
@@ -62,9 +63,8 @@ onBeforeUnmount(() => {
       :title="node.title || uri.split(/[\\/]/u).at(-1)"
       mode="inline"
     />
-  </span>
-  <span v-else-if="state?.error" class="ui-remote-image">
     <button
+      v-else-if="state?.error"
       type="button"
       class="ui-button"
       :data-resource-retry="uri"
@@ -72,8 +72,6 @@ onBeforeUnmount(() => {
     >
       {{ alt || t("files.imageUnavailable") }}
     </button>
-  </span>
-  <span v-else class="ui-remote-image">
-    <span class="text-sm text-ui-text-muted">{{ t("files.loadingResource") }}</span>
+    <span v-else class="text-sm text-ui-text-muted">{{ t("files.loadingResource") }}</span>
   </span>
 </template>

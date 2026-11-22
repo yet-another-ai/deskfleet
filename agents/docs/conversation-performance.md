@@ -72,7 +72,7 @@ The text includes English and Chinese prose, headings, emphasis, inline code,
 nested lists, blockquotes, tables, links, TypeScript fences, and inline/block math.
 Every fourth mixed section also contains long single-line JSON and a small
 Mermaid flowchart. Historical text is represented by multiple journal chunks,
-so increasing the turn count increases both event replay and mounted content.
+so increasing the turn count adds replay work and historical row anchors.
 No external image or file resource is fetched.
 
 The harness uses the production event-count watcher pattern from `SessionView`
@@ -116,7 +116,9 @@ update; `deliveryBatches` and `largestDeliveryBatch` make this visible.
 | `finalCatchupMs` | Time from final text delivery through completion and final-answer readiness, including three stable frames. |
 | `initialDom` / `finalDom` | Element, Markdown, code-block, disclosure, hidden-descendant, and diagram counts at the scenario boundaries. Hidden descendants only count nodes under the HTML `hidden` attribute. |
 | `diagramValidation` | Post-measurement counts of duplicate SVG IDs, unresolved local references, and missing expected fixture labels. Diagnostic failures remain visible in JSON without preventing comparison with an older renderer. |
-| `scrollbackValidation` | Post-measurement checks for visible top/middle/bottom rows, scroll alignment, retained DOM/disclosures, and locating a collapsed thought. Readiness times are separate from streaming. |
+| `heap.usedSize` | Bytes of V8 heap in use after scrollback and a CDP garbage collection while the conversation is still mounted. The Electron runner samples this outside the timing window. |
+| `domCounters` | CDP document, DOM node and event listener counts after the same collection. The node count includes detached nodes retained by the renderer. |
+| `scrollbackValidation` | Post-measurement checks for visible top/middle/bottom rows, scroll alignment, historical Markdown disposal and remount, disclosure state, and locating a collapsed thought. Readiness times are separate from streaming. |
 
 Final readiness inspects only the last response, avoiding an extra
 history-sized layout/text scan on every settling frame. It requires visible
@@ -474,7 +476,7 @@ unregistered mutable validator.
 Passing nodes also avoids `MarkdownRender`'s fallback signature calculation.
 Vapor compilation remains enabled.
 
-`AgentConversation` applies `content-visibility: auto` to historical transcript
+The earlier containment implementation applied `content-visibility: auto` to historical transcript
 rows. Chromium can skip style, layout and paint for distant rows while retaining
 their DOM, components and disclosure state. Remembered intrinsic block sizes
 preserve measured row heights; unseen input/response rows start with 5rem/24rem
@@ -485,8 +487,8 @@ reading history can leave its rich content skipped.
 
 Mermaid's strict security mode, SVG styles, cache and diagram rendering are
 unchanged. The fixture still waits for every mounted historical diagram before
-streaming. This bounds browser rendering work; it does not virtualize Vue
-components or reduce retained DOM memory.
+streaming. That implementation bounded browser rendering work while keeping Vue
+components and historical DOM in memory.
 
 After the measured window, the full benchmark checks real scrollback at the top,
 middle and bottom, then locates a thought through collapsed work/activity
@@ -539,6 +541,69 @@ Local evidence: `result/conversation/fix-stable-{prose,bottom,history}/` and
 Metadata records exact build/source hashes. The native-anchor overlay manifest
 records the baseline's benchmark-only changes. The parser/component tests pass
 22/22, the full renderer suite passes 1,391 tests, and root/desktop typechecks pass.
+
+## Recycling historical conversation rows
+
+The scroll container observes transcript rows with an 800 px vertical margin.
+With fewer than 20 rows, initial rendering proceeds immediately. Longer
+conversations wait for visibility before mounting historical content. Distant rows keep a list anchor and a
+height placeholder. Their Vue content, including Markdown tokens, highlighted
+code and diagram DOM, unmounts. Reentering the margin remounts the content from
+the existing Session projection. The reading state holds measured heights and
+disclosure settings. Live responses, the latest row, locate targets and the row
+containing keyboard focus stay mounted. Printing mounts the full transcript.
+
+On each intersection update, the renderer holds the first visible row at the
+same viewport offset as estimated sizes become measured sizes. At the bottom,
+it preserves the bottom edge. This also applies after jumping directly to an
+unseen row from the outline. The renderer still holds the Session event history
+and projection. One exceptionally large active response can dominate the heap
+because the unit of recycling is a transcript row.
+
+The expanded benchmark visits historical responses before streaming so each
+nested disclosure can be opened on a mounted row. During streaming the harness
+briefly pins the first historical response to exercise its controls. Scrollback
+checks verify that a distant answer's Markdown disconnects, that returning to
+the row restores its disclosures, and that a located thought opens and aligns
+with the viewport.
+
+The row component uses a VDOM conditional slot inside the Vapor transcript.
+With the locked Vue 3.6 RC, the equivalent Vapor slot kept subscriptions to
+unmounted Markdown components and their detached DOM. In a 20-turn expanded
+heap snapshot the Vapor row retained 93,583 detached native nodes. Using VDOM
+only for the row reduced that count to 8,440. The benchmark build checks the
+compiler mode for this component.
+
+### Measured memory use
+
+The following medians cover three rounds per scenario on Linux with an Intel
+Core i9-13900K and system Electron 45.1.0. The baseline used production sources
+from `192e11c53` and the same fixture and traversal as the candidate. The table
+counts attached elements at the end of streaming. The V8 heap sample follows
+top, middle and bottom visits, a collapsed-thought locate and garbage collection.
+Expanded runs additionally visit and open every historical response before
+streaming.
+
+| History and view | Attached elements before → after | Mounted Markdown before → after | V8 heap before → after |
+| --- | ---: | ---: | ---: |
+| 20 turns, collapsed at bottom | 17,855 → 2,113 | 22 → 1 | 72.7 → 42.8 MiB |
+| 80 turns, collapsed at bottom | 60,290 → 2,353 | 82 → 1 | 168.1 → 49.8 MiB |
+| 20 turns, expanded in history | 30,430 → 5,446 | 41 → 3 | 101.2 → 52.4 MiB |
+| 80 turns, expanded in history | 115,600 → 5,686 | 161 → 3 | 285.6 → 62.2 MiB |
+
+A separate 20-turn expanded stress run traversed the entire transcript five
+times. After each traversal and garbage collection the renderer reported
+15,370 DOM nodes and 580 listeners. V8 heap usage was 47.81 MiB after the first
+pass and 49.01 MiB after the fifth.
+
+In the 80-turn collapsed case the median p95 update-to-frame interval rose from
+19.5 to 31.6 ms. Three more candidate rounds on the idle machine gave 31.9 ms.
+The earlier run reopened a distant diagram in 311 ms, while the idle run took
+112 ms versus 151 ms at baseline. In the expanded/history case, update-to-frame
+p95 fell from 23.4 to 17.3 ms. All candidate samples passed the scrollback and locate
+checks. The 80-turn expanded baseline hit a neighboring button when probing
+the located thought in each round. The baseline harness recorded these misses
+and completed the heap measurements.
 
 ## Fleet projection and persistent-cache stalls
 

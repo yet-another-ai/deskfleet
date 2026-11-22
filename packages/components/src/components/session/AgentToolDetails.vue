@@ -5,7 +5,7 @@ import UiScrollArea from "../common/UiScrollArea.vue"
 import AgentContent from "./AgentContent.vue"
 import AgentTerminal from "./AgentTerminal.vue"
 
-defineProps<{ tool: ConversationTool; live?: boolean; rawContent?: boolean }>()
+defineProps<{ tool: ConversationTool; disclosureId?: string; live?: boolean; rawContent?: boolean }>()
 </script>
 
 <template>
@@ -18,7 +18,7 @@ defineProps<{ tool: ConversationTool; live?: boolean; rawContent?: boolean }>()
       <pre class="m-0 whitespace-pre-wrap break-words font-mono select-text">{{ readableValue(tool.content) }}</pre>
     </UiScrollArea>
     <template v-for="(block, index) in rawContent ? [] : tool.content" :key="index">
-      <AgentContent v-if="block.type === 'content'" :content="[block.content]" class="text-xs" />
+      <AgentContent v-if="block.type === 'content'" :content="[block.content]" :disclosure-id="`${disclosureId ?? tool.toolCallId}:${index}`" class="text-xs" />
       <AgentTerminal v-else-if="block.type === 'terminal'" :key="block.terminalId" :terminal-id="block.terminalId" :output="tool.terminals?.[block.terminalId]" :live="live" />
       <div v-else-if="block.type === 'diff'" class="overflow-hidden rounded-md border border-ui-border font-mono select-text">
         <div class="truncate border-b border-ui-border px-2 py-1 text-ui-text-muted">{{ block.path }}</div>

@@ -39,7 +39,7 @@ const awaitingApproval = computed(() => tools.value.some(step => step.permission
           <AgentToolCall v-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="live" :default-open="step.id === expandedToolId" />
           <template v-else>
             <div class="text-xs">{{ t('agent.thinking') }}</div>
-            <AgentContent :content="step.content" markdown :final="!live || step.id !== lastStepId" class="mt-1" />
+            <AgentContent :content="step.content" :disclosure-id="step.id" markdown :final="!live || step.id !== lastStepId" class="mt-1" />
           </template>
         </div>
       </div>

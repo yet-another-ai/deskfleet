@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { ChevronRight, CircleAlert, CircleX, LoaderCircle } from "@lucide/vue"
 import { useIntervalFn, useNow, watchImmediate } from "@vueuse/core"
-import { computed, inject, reactive, watch } from "vue"
+import { computed, watch } from "vue"
 import { CollapsibleContent, CollapsibleRoot, CollapsibleTrigger } from "reka-ui"
 import { useI18n } from "vue-i18n"
 import type { ConversationResponse, ConversationStep } from "../../services/agent-conversation.ts"
 import { containsConversationEntry, groupResponseActivity, summarizeTools } from "../../services/agent-conversation.ts"
 import { isRemoteMcpTool } from "../../services/remote-mcp-tool.ts"
 import { elapsed, formatDuration } from "../../services/agent-format.ts"
-import { pendingMermaidLocate, type MermaidLocateRequest } from "../../stores/layout.ts"
-import { pendingPreviewLocate, type PreviewLocateRequest } from "../../stores/previews.ts"
 import AgentContent from "./AgentContent.vue"
 import AgentPlan from "./AgentPlan.vue"
 import AgentToolCall from "./AgentToolCall.vue"
@@ -17,10 +15,8 @@ import AgentElicitation from "./AgentElicitation.vue"
 import AgentActivityGroup from "./AgentActivityGroup.vue"
 import AgentMessageActions from "./AgentMessageActions.vue"
 import AgentProtocolActivity from "./AgentProtocolActivity.vue"
-import { conversationReadingKey, useConversationDisclosure } from "../../stores/conversation-reading.ts"
-const reading = inject(conversationReadingKey, undefined)
-const localDisclosures = reactive<Record<string, boolean | null>>({})
-const disclosures = () => reading?.().disclosures ?? localDisclosures
+import { useConversationDisclosure, useConversationDisclosures } from "../../stores/conversation-reading.ts"
+const disclosures = useConversationDisclosures()
 const props = defineProps<{ response: ConversationResponse; disabled?: boolean; canFork?: boolean; forkDisabled?: boolean; locateEntry?: string }>()
 const emit = defineEmits<{ fork: [] }>()
 const { t } = useI18n()
@@ -70,30 +66,12 @@ const outcome = computed(() => props.response.last && props.response.turn && ["c
 const thoughts = { has: (id: string) => !!disclosures()[`thought:${id}`], add: (id: string) => { disclosures()[`thought:${id}`] = true }, delete: (id: string) => { disclosures()[`thought:${id}`] = false } }
 const toggleThought = (id: string) => thoughts.has(id) ? thoughts.delete(id) : thoughts.add(id)
 
-type LocateRequest = PreviewLocateRequest | MermaidLocateRequest | { entryId: string }
-const pendingLocate = computed(() => pendingPreviewLocate.value ?? pendingMermaidLocate.value ?? (props.locateEntry ? { entryId: props.locateEntry } : undefined))
-
-function stepMatchesLocate(step: ConversationStep, target: LocateRequest): boolean {
-  if (target.entryId) return containsConversationEntry(step, target.entryId)
-  const content = "content" in target ? target.content : "code" in target ? target.code : undefined
-  if (content === undefined) return false
-  if (step.kind === "subagent") return step.steps.some(child => stepMatchesLocate(child, target))
-  const blocks = step.kind === "message" ? step.content : step.kind === "compaction" ? step.compaction.summary : step.kind === "session_message" ? step.message.content : undefined
-  if (blocks) {
-    return blocks.some(block =>
-      (block.type === "text" && block.text.includes(content))
-      || ((block.type === "image" || block.type === "audio") && `data:${block.mimeType};base64,${block.data}` === content)
-      || (block.type === "resource_link" && block.uri === content),
-    )
-  }
-  return false
-}
-
-watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
-  if (!target) return
+watchImmediate([() => props.locateEntry, steps], ([id, currentSteps]) => {
+  if (!id) return
   for (const step of currentSteps) {
-    if (!stepMatchesLocate(step, target)) continue
+    if (!containsConversationEntry(step, id)) continue
     toggled.value = true
+    if (step.kind === "tool") disclosures()[`tool:${step.id}`] = true
     if (step.kind === "message" && step.role === "thought") thoughts.add(step.id)
     const activity = groupedSteps.value.find(group => group.kind === "activity" && group.steps.some(item => item.id === step.id))
     if (activity) activities.set(activity.id, true)
@@ -120,17 +98,17 @@ watchImmediate([pendingLocate, steps], ([target, currentSteps]) => {
         <AgentToolCall v-else-if="step.kind === 'tool'" :tool="step.tool" :disclosure-id="step.id" :permission="step.permission" :live="response.live" :default-open="step.id === endingToolId" />
         <AgentPlan v-else-if="step.kind === 'plan'" :entries="step.entries" />
         <AgentElicitation v-else-if="step.kind === 'elicitation'" :elicitation="step.elicitation" :disabled="disabled" />
-        <AgentProtocolActivity v-else-if="step.kind !== 'message'" :step="step" :live="response.live" :disabled="disabled" :session-labels="sessionLabels" :locate-entry="pendingLocate?.entryId" />
+        <AgentProtocolActivity v-else-if="step.kind !== 'message'" :step="step" :live="response.live" :disabled="disabled" :session-labels="sessionLabels" :locate-entry="locateEntry" />
         <CollapsibleRoot v-else-if="step.role === 'thought'" :open="thoughts.has(step.id)" class="text-sm text-ui-text-muted" @update:open="toggleThought(step.id)">
           <CollapsibleTrigger type="button" class="group/thought inline-flex cursor-pointer items-center gap-1 rounded-sm outline-offset-2 ui-motion hover:text-ui-text">
             {{ t('agent.thinking') }}<ChevronRight :size="14" :stroke-width="2" class="opacity-0 ui-motion group-hover/thought:opacity-100 group-focus-visible/thought:opacity-100" :class="thoughts.has(step.id) && 'rotate-90 opacity-100'" aria-hidden="true" />
           </CollapsibleTrigger>
-          <CollapsibleContent><AgentContent :content="step.content" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="mt-1" /></CollapsibleContent>
+          <CollapsibleContent><AgentContent :content="step.content" :disclosure-id="step.id" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="mt-1" /></CollapsibleContent>
         </CollapsibleRoot>
-        <AgentContent v-else :content="step.content" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="py-1" />
+        <AgentContent v-else :content="step.content" :disclosure-id="step.id" markdown :final="!response.live || step.id !== steps.at(-1)?.id" class="py-1" />
       </div>
     </CollapsibleContent>
-    <AgentContent v-if="answer" :content="answer.content" markdown :final="true" :data-conversation-entry="answer.id" />
+    <AgentContent v-if="answer" :content="answer.content" :disclosure-id="answer.id" markdown :final="true" :data-conversation-entry="answer.id" />
     <p v-if="summary.length" class="m-0 text-ui-text-muted">{{ summary.join(' \u00b7 ') }}</p>
     <div v-if="outcome" class="flex items-start gap-1.5 text-sm" :class="outcome.state === 'failed' ? 'text-ui-danger' : 'text-ui-text-muted'">
       <CircleX v-if="outcome.state === 'failed'" :size="15" :stroke-width="2" class="mt-0.5 shrink-0" aria-hidden="true" />
