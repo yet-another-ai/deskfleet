@@ -141,6 +141,8 @@ function selectPeriodicModel(modelId: string): void {
       <DropdownMenuPortal>
         <DropdownMenuContent :as="SpringSurface" ref="root" data-agent-configuration-menu :aria-label="t('composer.configuration')" :aria-busy="loading" class="ui-menu z-50 flex max-h-[var(--reka-popper-available-height)] w-72 flex-col overflow-hidden p-0" side="top" align="start" :side-offset="8" :collision-padding="8" loop>
           <UiScrollArea :focusable="false" fade-size="sm" class="min-h-0 flex-auto" content-class="p-1">
+            <!-- Place initial loading status at the top of the bottom-anchored menu so items below never shift down when loading finishes. -->
+            <p v-if="loading" data-agent-configuration-loading class="-mx-1 m-0 mb-1 flex items-center gap-1.5 border-b border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
             <DropdownMenuSub v-for="control in controls" :key="control.id" :open="active === control.id" @update:open="active = $event ? control.id : active === control.id ? null : active">
               <DropdownMenuSubTrigger as="button" type="button" :data-agent-control="control.id" :data-value="control.value" :disabled="control.disabled" class="ui-menu-item gap-3 focus:outline-none" :class="active === control.id && 'bg-ui-hover'">
                 <span>{{ control.label }}</span>
@@ -172,9 +174,8 @@ function selectPeriodicModel(modelId: string): void {
             <AgentConfigOptionMenu v-for="option in extraOptions" :key="option.id" :option="option" :open="active === `config:${option.id}`" :disabled="disabled || loading || !sessionReady" @update:open="active = $event ? `config:${option.id}` : active === `config:${option.id}` ? null : active" @change="changeConfigOption(option.id, $event)" />
             <template v-if="showUsage">
               <DropdownMenuSeparator class="-mx-1 my-1 h-px bg-ui-border" />
-              <AgentProviderUsageMenu :provider-id="providerId!" :open="active === 'usage'" @update:open="active = $event ? 'usage' : active === 'usage' ? null : active" />
+              <AgentProviderUsageMenu :provider-id="providerId!" :open="active === 'usage'" :prefetch="expanded" @update:open="active = $event ? 'usage' : active === 'usage' ? null : active" />
             </template>
-            <p v-if="loading" class="-mx-1 m-0 mt-1 flex items-center gap-1.5 border-t border-ui-border px-3.5 py-2 text-xs text-ui-text-muted" role="status"><LoaderCircle :size="13" class="shrink-0 animate-spin" aria-hidden="true" />{{ t('composer.loadingConfiguration') }}</p>
             <div v-if="error" class="-mx-1 mt-1 border-t border-ui-border px-1 pt-2 text-xs">
               <p role="alert" class="m-0 break-words px-2.5 text-ui-danger">{{ error }}</p>
               <DropdownMenuItem as="button" type="button" class="ui-menu-item mt-2" @select.prevent="reload">{{ t('composer.reloadConfiguration') }}</DropdownMenuItem>

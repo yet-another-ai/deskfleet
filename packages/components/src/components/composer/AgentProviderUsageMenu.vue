@@ -10,7 +10,7 @@ import { intlLocale, type AppLocale } from "../../../../client/src/i18n.ts"
 import { useAgentSessionsStore } from "../../stores/agent-sessions.ts"
 import UiScrollArea from "../common/UiScrollArea.vue"
 
-const props = defineProps<{ providerId: string; open: boolean }>()
+const props = defineProps<{ providerId: string; open: boolean; prefetch?: boolean }>()
 const emit = defineEmits<{ "update:open": [value: boolean] }>()
 const { t, locale } = useI18n()
 const agents = useAgentSessionsStore()
@@ -39,12 +39,21 @@ const groups = computed(() => {
   return result
 })
 
-async function load(): Promise<void> {
+async function load(force = false): Promise<void> {
+  if (!force) {
+    const cached = agents.cachedAgentUsage?.(props.providerId) ?? null
+    if (cached !== null) {
+      items.value = cached
+      error.value = null
+      loading.value = false
+      return
+    }
+  }
   const id = ++requestId
   loading.value = true
   error.value = null
   try {
-    const quota = await agents.agentUsage(props.providerId)
+    const quota = await (force ? agents.agentUsage(props.providerId, { force: true }) : agents.agentUsage(props.providerId))
     if (id === requestId) items.value = quota
   } catch (reason) {
     if (id === requestId) error.value = reason instanceof Error ? reason.message : String(reason)
@@ -53,14 +62,16 @@ async function load(): Promise<void> {
   }
 }
 
-watch(() => [props.providerId, props.open] as const, ([providerId, isOpen], previous) => {
+watch(() => [props.providerId, props.open, Boolean(props.prefetch)] as const, ([providerId, isOpen, shouldPrefetch], previous) => {
   if (previous && providerId !== previous[0]) {
     requestId++
-    items.value = null
+    items.value = agents.cachedAgentUsage?.(providerId) ?? null
     error.value = null
     loading.value = false
   }
-  if (isOpen && items.value === null && !loading.value) void load()
+  if ((isOpen || shouldPrefetch) && items.value === null && !loading.value && (!error.value || isOpen && !previous?.[1])) {
+    void load()
+  }
 }, { immediate: true })
 
 function meterTone(remaining: number): string {
@@ -85,7 +96,7 @@ function meterTone(remaining: number): string {
           </p>
           <div v-else-if="error" class="text-xs">
             <p role="alert" class="m-0 break-words text-ui-danger">{{ error }}</p>
-            <DropdownMenuItem as="button" type="button" class="ui-menu-item -mx-2 mt-2" @select.prevent="load">{{ t("composer.reloadConfiguration") }}</DropdownMenuItem>
+            <DropdownMenuItem as="button" type="button" class="ui-menu-item -mx-2 mt-2" @select.prevent="load(true)">{{ t("composer.reloadConfiguration") }}</DropdownMenuItem>
           </div>
           <p v-else-if="!groups.length" class="m-0 text-xs text-ui-text-muted">{{ t("composer.usageEmpty") }}</p>
           <div v-else class="flex flex-col gap-3">

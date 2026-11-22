@@ -27,8 +27,20 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   const error = ref<string | null>(null)
   const requestedModel = ref<string>()
   let requestId = 0
+  let refreshingRequest: number | null = null
   let probe: ConfigurationProbe | undefined
   let confirmedTarget: { provider: string; workspaceId?: string } | undefined
+
+  function hasPopulatedControls(value: AgentConfiguration | null): boolean {
+    return Boolean(
+      value && (
+        value.models?.options.length
+        || value.reasoningEfforts?.options.length
+        || value.modes?.options.length
+        || value.configOptions?.length
+      ),
+    )
+  }
 
   function retire(current = probe): void {
     if (!current || current.retired) return
@@ -90,7 +102,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     }
   }
 
-  async function configure(choices?: Choices, composer = false, refresh = false): Promise<void> {
+  async function configure(choices?: Choices, composer = false, refresh = false, silent = false): Promise<void> {
     const currentRequest = ++requestId
     const { workspaceId, sessionId, providerId } = target()
     if (!sessionId && !providerId) return
@@ -108,7 +120,10 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
         return
       }
     }
-    loading.value = true
+    if (!silent) {
+      refreshingRequest = null
+      loading.value = true
+    }
     const changingModel = choices?.model !== undefined && choices.reasoningEffort === undefined && choices.mode === undefined
     requestedModel.value = !sessionId && changingModel && configuration.value?.models?.options.some(option => option.id === choices.model) ? choices.model : undefined
     if (!sessionId) {
@@ -125,6 +140,7 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
         void readDraft(current)
       })
     }
+    if (silent) refreshingRequest = currentRequest
     try {
       if (choices) await agents.configureSession(sessionId, choices)
       else if (composer) await agents.sessionConfiguration(sessionId, true)
@@ -132,16 +148,25 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
     } catch (cause) {
       if (currentRequest === requestId) error.value = cause instanceof Error ? cause.message : String(cause)
     } finally {
-      if (currentRequest === requestId) loading.value = false
+      if (refreshingRequest === currentRequest) refreshingRequest = null
+      if (!silent && currentRequest === requestId) loading.value = false
     }
   }
 
-  function ensureLoaded(): void {
-    if (!loading.value && (target().sessionId || !configuration.value)) void configure()
+  function ensureLoaded(allowSilent = false): void {
+    const { sessionId } = target()
+    if (loading.value || (allowSilent && refreshingRequest !== null)) return
+    if (sessionId) {
+      const sessionError = agents.sessions[sessionId]?.error
+      const silent = allowSilent && !sessionError && hasPopulatedControls(configuration.value)
+      void configure(undefined, false, false, silent)
+      return
+    }
+    if (!configuration.value) void configure()
   }
   function toggle(): void {
     expanded.value = !expanded.value
-    if (expanded.value) ensureLoaded()
+    if (expanded.value) ensureLoaded(true)
   }
   function changeModel(model: string): Promise<void> {
     // The provider owns dependent effort/mode choices after a model change.
@@ -170,13 +195,14 @@ export function useAgentConfiguration(target: () => { workspaceId?: string; sess
   }
   function invalidate(): void {
     ++requestId
+    refreshingRequest = null
     retire()
     discovered.value = null
     confirmedTarget = undefined
     error.value = null
     loading.value = false
     requestedModel.value = undefined
-    if (expanded.value || open?.()) void configure()
+    if (expanded.value || open?.()) ensureLoaded(expanded.value && !open?.())
   }
   watch(() => [target().workspaceId, target().sessionId, target().providerId, providers.revision], (current, previous) => {
     const targetChanged = current.slice(0, 3).some((value, index) => value !== previous[index])
