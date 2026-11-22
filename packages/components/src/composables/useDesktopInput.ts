@@ -5,6 +5,10 @@ import { MAX_DESKTOP_CLIPBOARD_BYTES, type DesktopInputMessage, type DesktopPoin
 
 interface Point { x: number; y: number }
 const buttonMasks: readonly (readonly [DesktopPointerButton, number])[] = [[0, 1], [1, 4], [2, 2], [3, 8], [4, 16]]
+const modifiers = [
+  ["ctrlKey", "ControlLeft", "ControlRight"], ["altKey", "AltLeft", "AltRight"],
+  ["shiftKey", "ShiftLeft", "ShiftRight"], ["metaKey", "MetaLeft", "MetaRight"],
+] as const
 
 /** Match object-fit: contain, including letterboxing and capture scaling. */
 export function desktopPoint(
@@ -41,8 +45,9 @@ export function useDesktopInput(
 ) {
   const buttons = new Set<DesktopPointerButton>()
   const keys = new Set<string>()
+  const inferredModifiers = new Set<string>()
   const pointers = new Set<number>()
-  const macClient = navigator.platform.startsWith("Mac")
+  const appleClient = /^(Mac|iPad|iPhone|iPod)/.test(navigator.platform)
   let lastPoint: Point = { x: 0.5, y: 0.5 }
   let lastObservedLocal: string | null = null
   let lastRemoteSynced: string | null = null
@@ -177,6 +182,7 @@ export function useDesktopInput(
     if (buttons.size || keys.size) send({ type: "releaseAll" })
     buttons.clear()
     keys.clear()
+    inferredModifiers.clear()
     const releasingPointers = [...pointers]
     pointers.clear()
     for (const pointerId of releasingPointers) {
@@ -267,12 +273,13 @@ export function useDesktopInput(
     if (send({ type: "key", code, pressed: true, repeat })) keys.add(code)
   }
 
-  function deliverKeyUp(code: string): void {
+  function deliverKeyUp(code: string, endingCommand = true): void {
     if (!keys.has(code)) return
     send({ type: "key", code, pressed: false, repeat: false })
     keys.delete(code)
-    if (macClient && (code === "MetaLeft" || code === "MetaRight")) {
-      // macOS browsers can omit key-up events for keys used while Command is held.
+    if (endingCommand && appleClient && (code === "MetaLeft" || code === "MetaRight")
+      && !keys.has("MetaLeft") && !keys.has("MetaRight")) {
+      // Apple browsers can omit key-up events for keys used while Command is held.
       for (const held of [...keys]) {
         if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(held)) continue
         send({ type: "key", code: held, pressed: false, repeat: false })
@@ -281,13 +288,33 @@ export function useDesktopInput(
     }
   }
 
+  function forwardKey(event: KeyboardEvent, pressed: boolean): void {
+    // A keyboard may already have modifiers held when the video receives focus.
+    // A modifier reported only in flags has no side until we see its own event.
+    if (!pressed) deliverKeyUp(event.code)
+    let promoted = false
+    for (const [flag, left, right] of modifiers) {
+      const explicit = event.code === left || event.code === right
+      if (explicit || !event[flag]) {
+        if (!inferredModifiers.delete(left)) continue
+        if (pressed && event.code === left) promoted = true
+        else deliverKeyUp(left, !(pressed && explicit))
+      } else if (pressed && !keys.has(left) && !keys.has(right)) {
+        // AltGr may set both Alt and Ctrl flags without a physical Ctrl press.
+        if (flag === "ctrlKey" && event.getModifierState("AltGraph")) continue
+        deliverKeyDown(left, false)
+        if (keys.has(left)) inferredModifiers.add(left)
+      }
+    }
+    if (pressed && !promoted) deliverKeyDown(event.code, event.repeat)
+  }
+
   function keyDown(event: KeyboardEvent): void {
     if (!enabled.value || event.isComposing || !event.code || event.code === "Unidentified") return
     event.preventDefault()
     event.stopPropagation()
-    const { code, repeat } = event
     if (pasteBarrierQueue !== null) {
-      pasteBarrierQueue.push(() => deliverKeyDown(code, repeat))
+      pasteBarrierQueue.push(() => forwardKey(event, true))
       return
     }
     if (
@@ -296,12 +323,12 @@ export function useDesktopInput(
       && typeof navigator.clipboard?.readText === "function"
     ) {
       const generation = ++pasteBarrierGeneration
-      pasteBarrierQueue = [() => deliverKeyDown(code, false)]
+      pasteBarrierQueue = [() => forwardKey(event, true)]
       pasteBarrierTimer = setTimeout(() => flushPasteBarrier(generation), 150)
       void syncLocalClipboardForPaste(generation).finally(() => flushPasteBarrier(generation))
       return
     }
-    deliverKeyDown(code, repeat)
+    forwardKey(event, true)
   }
 
   function keyUp(event: KeyboardEvent): void {
@@ -309,13 +336,13 @@ export function useDesktopInput(
     if (pasteBarrierQueue !== null) {
       event.preventDefault()
       event.stopPropagation()
-      pasteBarrierQueue.push(() => deliverKeyUp(code))
+      pasteBarrierQueue.push(() => forwardKey(event, false))
       return
     }
-    if (!keys.has(code)) return
+    if (!keys.has(code) && !modifiers.some(([, left, right]) => code === right && inferredModifiers.has(left))) return
     event.preventDefault()
     event.stopPropagation()
-    deliverKeyUp(code)
+    forwardKey(event, false)
   }
 
   function contextMenu(event: MouseEvent): void {

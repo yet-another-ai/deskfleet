@@ -1146,17 +1146,21 @@ one-finger motion drags. Relative mode acts as a trackpad, preserving the cursor
 between gestures and moving it by finger displacement. Taps click at that cursor.
 Long press sends a secondary click and two-finger motion scrolls. Native viewers
 also expose a drag action for relative mode; Android and the embedded viewer support
-double-tap-and-hold dragging. On iPad, an external mouse or trackpad moves the
-remote cursor at the indicated point on the video in either touch mode. Button presses and releases
-support dragging and secondary clicks. Wheel and two-finger trackpad scrolling
-follow the viewer's reverse-scroll setting.
+double-tap-and-hold dragging. In the iOS and Android native viewers, an external
+mouse or trackpad moves the remote cursor at the indicated point on the video
+in either touch mode. A button press on the video starts a remote drag or
+click. Secondary and middle buttons retain their identities, including when
+pressed together. Wheels and two-finger trackpad scrolling use the viewer's
+reverse-scroll setting. The overlay handles clicks that begin on its controls.
 
-The iPad video view takes hardware keyboard focus when the viewer is active and
-remote control is ready. Physical key positions and modifier transitions use
-the same input channel as the pointer. Opening the IME or interacting with a
-toolbar dropdown transfers focus to the local controls.
-Switching modes, losing focus,
-pausing, and disconnecting release active gestures.
+Hardware keyboards work as soon as the viewer has focus and the remote host
+acknowledges input control. UIKit supplies HID positions and Android supplies
+evdev scan codes or platform key codes. Both forward key presses, releases,
+and modifiers through the same ordered channel as the pointer. A shortcut can
+recover a modifier already held when the viewer took focus. When the system
+editor is open, composing text and choosing an IME candidate stay local until
+commit. Switching modes, losing focus, pausing, and disconnecting release held
+input.
 
 **System keyboard** focuses a native IME editor (or a browser textarea).
 **Hacker Keyboard** opens a built-in special-key panel: Esc, Tab, navigation,

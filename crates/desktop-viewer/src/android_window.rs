@@ -4,7 +4,7 @@
 #![allow(unsafe_code)] // JNI export called by DeskFleetBridge.nativeMountViewer.
 
 use jni::objects::{JClass, JObject, JValue};
-use jni::sys::jobject;
+use jni::sys::{jdouble, jint, jobject};
 use jni::{EnvUnowned, jni_sig, jni_str};
 
 #[unsafe(no_mangle)]
@@ -68,4 +68,29 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
             Ok(surface.into_raw())
         })
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
+}
+
+/// The Android UI thread routes an entire button sequence to its starting view.
+/// Rust uses the current video viewport and the same button state as UIKit.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativePointer<
+    'local,
+>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    phase: jint,
+    buttons: jint,
+    x: jdouble,
+    y: jdouble,
+) {
+    use crate::input::PointerPhase;
+    let mask = (buttons & 0x1f) as u8;
+    let phase = match phase {
+        0 => PointerPhase::Hover,
+        1 => PointerPhase::Begin(mask),
+        2 => PointerPhase::Drag(mask),
+        3 => PointerPhase::End,
+        _ => return,
+    };
+    crate::android::send_pointer(phase, (x, y));
 }

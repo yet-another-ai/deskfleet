@@ -1,7 +1,6 @@
 //! Physical key transitions from the Metal and text views' UIKit responders.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
 
 use deskfleet_input::{InputEvent, NativeKeyCode};
 use objc2::MainThreadMarker;
@@ -10,69 +9,11 @@ use objc2_foundation::{NSArray, NSSet, NSString};
 use objc2_ui_kit::{UIKeyModifierFlags as Flags, UIPress};
 
 use crate::android::send_view_input;
-
-const MODIFIERS: [(Flags, &str, &str); 4] = [
-    (Flags::Control, "ControlLeft", "ControlRight"),
-    (Flags::Alternate, "AltLeft", "AltRight"),
-    (Flags::Shift, "ShiftLeft", "ShiftRight"),
-    (Flags::Command, "MetaLeft", "MetaRight"),
-];
-
-#[derive(Default)]
-struct Held {
-    actual: HashSet<&'static str>,
-    inferred: HashSet<&'static str>,
-}
-
-fn key(code: &str, pressed: bool, repeat: bool) -> InputEvent {
-    InputEvent::Key {
-        code: code.into(),
-        pressed,
-        repeat,
-    }
-}
-
-impl Held {
-    fn transition(
-        &mut self,
-        code: &'static str,
-        flags: Flags,
-        pressed: bool,
-        events: &mut Vec<InputEvent>,
-    ) {
-        for (flag, left, right) in MODIFIERS {
-            // A modifier can already be held when the video gains focus. Use
-            // UIKit's flags only until an actual sided transition arrives.
-            let explicit = code == left || code == right;
-            if (explicit || !flags.contains(flag)) && self.inferred.remove(left) {
-                events.push(key(left, false, false));
-            }
-            if !explicit
-                && pressed
-                && flags.contains(flag)
-                && !self.actual.contains(left)
-                && !self.actual.contains(right)
-                && self.inferred.insert(left)
-            {
-                events.push(key(left, true, false));
-            }
-        }
-        if pressed {
-            events.push(key(code, true, !self.actual.insert(code)));
-        } else if self.actual.remove(code) {
-            events.push(key(code, false, false));
-        }
-        if self.actual.is_empty() {
-            for left in self.inferred.drain() {
-                events.push(key(left, false, false));
-            }
-        }
-    }
-}
+use crate::ios_key_state::HeldKeys;
 
 #[derive(Default)]
 pub(crate) struct HardwareKeyboard {
-    held: RefCell<Held>,
+    held: RefCell<HeldKeys>,
 }
 
 impl HardwareKeyboard {
@@ -120,7 +61,7 @@ impl HardwareKeyboard {
                 let intercept = if pressed {
                     !composing && usage < 0xe0 && (chord || navigation)
                 } else {
-                    held.actual.contains(code)
+                    held.contains(code)
                 };
                 if !intercept {
                     other.push(press);
@@ -133,7 +74,14 @@ impl HardwareKeyboard {
         keys.sort_unstable_by_key(|(usage, _, _)| (0xe0..=0xe7).contains(usage) != pressed);
         let mut events = Vec::new();
         for (_, code, flags) in keys {
-            held.transition(code, flags, pressed, &mut events);
+            let active = [
+                Flags::Control,
+                Flags::Alternate,
+                Flags::Shift,
+                Flags::Command,
+            ]
+            .map(|modifier| flags.contains(modifier));
+            held.transition(code, active, pressed, &mut events);
         }
         if !events.is_empty() {
             send_view_input(events)
@@ -143,8 +91,7 @@ impl HardwareKeyboard {
 
     pub(crate) fn release(&self) {
         let mut held = self.held.borrow_mut();
-        if !held.actual.is_empty() || !held.inferred.is_empty() {
-            *held = Held::default();
+        if held.reset() {
             send_view_input(vec![InputEvent::ReleaseAll]);
         }
     }

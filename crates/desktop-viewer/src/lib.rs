@@ -5,6 +5,8 @@ mod android;
 #[cfg(target_os = "android")]
 mod android_decoder;
 #[cfg(target_os = "android")]
+mod android_keyboard;
+#[cfg(target_os = "android")]
 mod android_window;
 #[cfg(any(target_os = "macos", target_os = "ios", test))]
 mod av1_config;
@@ -24,6 +26,8 @@ mod input_reply;
 mod input_text;
 #[cfg(target_os = "ios")]
 mod ios_controls;
+#[cfg(any(target_os = "ios", test))]
+mod ios_key_state;
 #[cfg(target_os = "ios")]
 mod ios_keyboard;
 #[cfg(target_os = "ios")]

@@ -91,12 +91,13 @@ internal class RemoteDesktopTouch(private val surface: SurfaceView, private val 
     @SuppressLint("ClickableViewAccessibility")
     fun attach() {
         surface.setOnTouchListener { _, event ->
+            if (event.isDesktopPointer()) return@setOnTouchListener false
             if (event.actionMasked == MotionEvent.ACTION_DOWN) pinching = false
             if (controls.pinchZoom && controls.connected()) scale.onTouchEvent(event)
             if (!controls.input.enabled) { reset(); return@setOnTouchListener true }
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 active = true
-                controls.focusKeyboard()
+                controls.focusVideo()
                 multiTouch = false
                 longPressed = false
                 lastX = event.x.toDouble(); lastY = event.y.toDouble()

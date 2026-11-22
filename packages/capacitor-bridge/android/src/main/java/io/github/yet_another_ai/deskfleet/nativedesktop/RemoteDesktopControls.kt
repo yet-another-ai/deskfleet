@@ -3,6 +3,7 @@ package io.github.yet_another_ai.deskfleet.nativedesktop
 import android.app.Activity
 import android.content.res.Configuration
 import android.graphics.RectF
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
@@ -21,7 +22,7 @@ internal class RemoteDesktopControls(
     private val toggleFullscreen: () -> Unit,
 ) {
     private val density get() = context.resources.displayMetrics.density
-    val input = RemoteDesktopInput(send)
+    val input = RemoteDesktopInput(send) { events -> DeskFleetBridge.nativeInputSequence(JSONArray(events).toString()) }
     var onRelease: () -> Unit = {}
     var relative = false
         private set
@@ -57,12 +58,17 @@ internal class RemoteDesktopControls(
         }
         nativeHandle = DeskFleetBridge.nativeAttachControls(overlay, this, snapshot().toString())
         overlay.runRustApp("deskfleet")
+        surface.isFocusableInTouchMode = true
+        surface.requestFocus()
+        keyboard.preIme = { event -> handleHardwareKey(event, beforeIme = true) }
         keyboard.onInput = ::publish
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> publish() }
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            val visible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (imeVisible && !visible && keyboard.hasFocus()) surface.requestFocus()
+            imeVisible = visible
             safe = RectF(bars.left / density, bars.top / density, bars.right / density, maxOf(bars.bottom, ime.bottom) / density)
             publish()
             insets
@@ -184,12 +190,23 @@ internal class RemoteDesktopControls(
     }
 
     fun closeKeyboard(): Boolean {
-        if (imeVisible) { hideKeyboard(); return true }
+        if (keyboard.hasFocus()) { hideKeyboard(); return true }
         if (hackerOpen) { hackerOpen = false; input.clearModifiers(); publish(); return true }
         return DeskFleetBridge.nativeDismissPanel(nativeHandle)
     }
 
-    fun focusKeyboard() { if (input.enabled) keyboard.requestFocus() }
+    fun focusVideo() {
+        if (input.enabled && !keyboard.hasFocus()) {
+            DeskFleetBridge.nativeDismissPanel(nativeHandle)
+            surface.requestFocus()
+        }
+    }
+
+    fun handleHardwareKey(event: KeyEvent, beforeIme: Boolean = false): Boolean {
+        if (!input.enabled || destroyed || !surface.hasWindowFocus()) return false
+        if (!keyboard.hasFocus() && DeskFleetBridge.nativeControlsOwnFocus(nativeHandle)) return false
+        return keyboard.handleHardware(event, beforeIme)
+    }
 
     fun destroy() {
         if (destroyed) return
@@ -220,7 +237,7 @@ internal class RemoteDesktopControls(
     private fun toggleKeyboard() {
         if (!input.enabled) return
         release(preserveModifiers = true)
-        if (imeVisible) hideKeyboard()
+        if (keyboard.hasFocus()) hideKeyboard()
         else {
             keyboard.requestFocus()
             context.getSystemService(InputMethodManager::class.java)?.showSoftInput(keyboard, InputMethodManager.SHOW_IMPLICIT)
@@ -230,10 +247,10 @@ internal class RemoteDesktopControls(
     private fun hideKeyboard() {
         keyboard.cancelComposition()
         context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(keyboard.windowToken, 0)
-        keyboard.clearFocus()
+        if (keyboard.hasFocus()) surface.requestFocus()
     }
 
-    private fun hitTest(x: Float, y: Float): Boolean =
+    fun hitTest(x: Float, y: Float): Boolean =
         DeskFleetBridge.nativeControlsHit(nativeHandle, x / density, y / density, false)
 
     private fun dragToolbar(event: MotionEvent): Boolean {

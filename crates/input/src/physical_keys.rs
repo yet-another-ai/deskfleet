@@ -1,8 +1,15 @@
 //! Bidirectional physical-key tables shared by capture and injection.
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux", test))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "android",
+    test
+))]
 macro_rules! key_mapping {
     ($native:ty; $($code:literal $(| $alias:literal)* => $value:tt,)*) => {
+        #[cfg(any(not(target_os = "android"), test))]
         pub(super) fn keycode(code: &str) -> Option<$native> {
             Some(match code {
                 $($code $(| $alias)* => $value,)*
@@ -46,7 +53,7 @@ impl NativeKeyCode {
     #[must_use]
     pub fn code(self) -> Option<&'static str> {
         match self {
-            #[cfg(any(target_os = "linux", test))]
+            #[cfg(any(target_os = "linux", target_os = "android", test))]
             Self::Evdev(code) => crate::linux_keys::physical_code(code),
             #[cfg(any(target_os = "ios", test))]
             Self::KeyboardHid(code) => crate::hid_keys::physical_code(code),

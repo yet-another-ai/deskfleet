@@ -417,8 +417,19 @@ test("opens local search without sending its shortcut to the shell and keeps sea
   wrapper.unmount()
 })
 
-test("iPad hardware shortcuts reach the terminal once using logical keys and preserve IME input", () => {
-  vi.spyOn(navigator, "platform", "get").mockReturnValue("iPad")
+test.each([
+  { platform: "iPad", userAgent: "Mobile Safari", touchPoints: 5 },
+  { platform: "MacIntel", userAgent: "Safari", touchPoints: 5 },
+  { platform: "iPhone", userAgent: "iPhone Safari", touchPoints: 5 },
+  { platform: "Linux aarch64", userAgent: "Android Chrome", touchPoints: 5 },
+  { platform: "Linux x86_64", userAgent: "Desktop Chrome", touchPoints: 5 },
+])("$platform forwards mobile hardware shortcuts exactly once and preserves composition", ({ platform, userAgent, touchPoints }) => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform)
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent)
+  vi.spyOn(navigator, "maxTouchPoints", "get").mockReturnValue(touchPoints)
+  // happy-dom aliases every Alt press to AltGraph; real WebViews distinguish
+  // the layout modifier from ordinary Alt. The dedicated AltGr event is below.
+  vi.spyOn(KeyboardEvent.prototype, "getModifierState").mockReturnValue(false)
   const wrapper = mount(TerminalSurface, { props: { interactive: true } })
   const terminal = terminals.at(-1)!
   terminal.modes.applicationCursorKeysMode = true
@@ -432,6 +443,12 @@ test("iPad hardware shortcuts reach the terminal once using logical keys and pre
     { key: "ArrowRight", ctrlKey: true, shiftKey: true },
     { key: "Tab", shiftKey: true },
     { key: "F12", altKey: true },
+    { key: "Process", code: "Digit1", keyCode: 229, altKey: true, shiftKey: true },
+    { key: "Process", code: "Digit2", keyCode: 229, ctrlKey: true, shiftKey: true },
+    { key: "ArrowDown", keyCode: 13, ctrlKey: true },
+    { key: "Unidentified", code: "ArrowLeft", keyCode: 229 },
+    { key: "z", keyCode: 0, ctrlKey: true },
+    { key: "\x03", keyCode: 229, ctrlKey: true },
   ]) {
     const down = new KeyboardEvent("keydown", { ...init, cancelable: true })
     expect(handle(down), init.key).toBe(false)
@@ -440,7 +457,27 @@ test("iPad hardware shortcuts reach the terminal once using logical keys and pre
     handle(new KeyboardEvent("keyup", init))
   }
   expect(handle(new KeyboardEvent("keydown", { key: "Process", code: "KeyC", ctrlKey: true, isComposing: true }))).toBe(true)
-  expect(handle(new KeyboardEvent("keydown", { key: "a", code: "KeyA" }))).toBe(true)
-  expect(wrapper.emitted("input")?.flat()).toEqual(["\x03", "\x04", "\x1bb", "\x1b", "\x1bOA", "\x1b[1;6C", "\x1b[Z", "\x1b[24;3~"])
+  for (const init of [
+    { key: "a", code: "KeyA" },
+    { key: "Process", code: "Digit1", shiftKey: true, keyCode: 229 },
+    { key: "Dead", code: "Quote", altKey: true },
+    { key: "Process", keyCode: 229, code: "Enter" },
+    { key: "PageDown", keyCode: 34, shiftKey: true },
+  ]) expect(handle(new KeyboardEvent("keydown", init))).toBe(true)
+
+  expect(handle(new KeyboardEvent("keydown", { key: "Control", keyCode: 13, ctrlKey: true }))).toBe(false)
+  for (const type of ["keydown", "keypress", "keyup"]) {
+    const event = new KeyboardEvent(type, { key: "@", code: "KeyQ", ctrlKey: !platform.startsWith("Linux"), altKey: true, keyCode: 81, cancelable: true })
+    Object.defineProperty(event, "getModifierState", { value: (key: string) => key === "AltGraph" })
+    expect(handle(event)).toBe(false)
+  }
+  terminal.selection = "selected"
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue()
+  expect(handle(new KeyboardEvent("keydown", { key: "\x03", keyCode: 229, ctrlKey: true, cancelable: true }))).toBe(false)
+  expect(copy).toHaveBeenCalledWith("selected")
+  expect(wrapper.emitted("input")?.flat()).toEqual([
+    "\x03", "\x04", "\x1bb", "\x1b", "\x1bOA", "\x1b[1;6C", "\x1b[Z", "\x1b[24;3~",
+    "\x1b!", "\x00", "\x1b[1;5B", "\x1bOD", "\x1a", "\x03", "@",
+  ])
   wrapper.unmount()
 })

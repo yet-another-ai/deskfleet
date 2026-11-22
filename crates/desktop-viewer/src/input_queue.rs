@@ -69,7 +69,7 @@ impl Sender {
 
     /// A deliberate chord or paste releases held input in order, after prior
     /// keystrokes. A focus-loss release through `send` still discards stale work.
-    #[cfg(any(target_os = "ios", test))]
+    #[cfg(any(target_os = "ios", target_os = "android", test))]
     pub(crate) fn send_sequence(&self, events: Vec<InputEvent>) -> Result<(), Error> {
         let mut pending = self.pending.lock().map_err(|_| "input queue poisoned")?;
         if events.len() > CAPACITY - pending.len() {

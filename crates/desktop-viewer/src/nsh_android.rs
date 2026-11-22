@@ -224,3 +224,14 @@ pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_D
     overlay(handle)
         .is_some_and(|overlay| overlay.lock().expect("viewer layout lock").dismiss_panel())
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_yet_1another_1ai_deskfleet_nativedesktop_DeskFleetBridge_nativeControlsOwnFocus<
+    'local,
+>(
+    _env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> jboolean {
+    overlay(handle).is_none_or(|overlay| overlay.lock().expect("viewer layout lock").owns_focus())
+}

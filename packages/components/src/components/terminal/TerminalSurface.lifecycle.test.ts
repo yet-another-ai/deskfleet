@@ -52,3 +52,36 @@ test("unmount cancels viewport refreshes when terminal ligatures are enabled", (
   }).not.toThrow()
   expect(frames.size).toBe(0)
 })
+
+test("Android keyboard events and committed IME text reach interactive xterm onData", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Android Chrome")
+  vi.spyOn(KeyboardEvent.prototype, "getModifierState").mockReturnValue(false)
+  const wrapper = mount(TerminalSurface, { props: { interactive: true }, attachTo: document.body })
+  const textarea = wrapper.vm.terminal.textarea!
+  const key = (type: string, init: KeyboardEventInit) => {
+    textarea.dispatchEvent(new KeyboardEvent(type, { ...init, bubbles: true, cancelable: true }))
+  }
+  const chord = { key: "Process", code: "Digit1", altKey: true, shiftKey: true, keyCode: 229 }
+  for (const type of ["keydown", "keypress", "keyup"]) key(type, chord)
+  // A reliable arrow is decoded by xterm itself.
+  key("keydown", { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 })
+  key("keyup", { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 })
+
+  // Plain Shift+1 is committed as text by the Android input method.
+  key("keydown", { key: "Process", code: "Digit1", shiftKey: true, keyCode: 229 })
+  textarea.value = "!"
+  textarea.dispatchEvent(new InputEvent("input", { data: "!", inputType: "insertText", bubbles: true, composed: true }))
+  await vi.waitFor(() => expect(wrapper.emitted("input")?.flat()).toEqual(["\x1b!", "\x1b[D", "!"]))
+  textarea.value = ""
+
+  textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }))
+  key("keydown", { key: "Process", code: "KeyC", ctrlKey: true, keyCode: 229, isComposing: true })
+  textarea.value = "漢"
+  textarea.dispatchEvent(new CompositionEvent("compositionend", { data: "漢", bubbles: true }))
+  await vi.waitFor(() => expect(wrapper.emitted("input")?.flat()).toEqual(["\x1b!", "\x1b[D", "!", "漢"]))
+
+  await wrapper.setProps({ interactive: false })
+  key("keydown", { key: "Process", code: "KeyC", ctrlKey: true, keyCode: 229 })
+  expect(wrapper.emitted("input")).toHaveLength(4)
+  wrapper.unmount()
+})

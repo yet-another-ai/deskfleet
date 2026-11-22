@@ -14,6 +14,8 @@ import android.view.inputmethod.InputMethodManager
 internal class RemoteDesktopKeyboard(context: Context, private val input: RemoteDesktopInput) : View(context) {
     private var clearComposition: () -> Unit = {}
     var onInput: () -> Unit = {}
+    var preIme: (KeyEvent) -> Boolean = { false }
+    private var composing: () -> Boolean = { false }
 
     init {
         isFocusable = true
@@ -31,7 +33,10 @@ internal class RemoteDesktopKeyboard(context: Context, private val input: Remote
         outAttrs.initialSelEnd = 0
         return object : BaseInputConnection(this, true) {
             private val buffer = SpannableStringBuilder()
-            init { clearComposition = { buffer.clear(); removeComposingSpans(buffer) } }
+            init {
+                clearComposition = { buffer.clear(); removeComposingSpans(buffer) }
+                composing = { getComposingSpanStart(buffer) >= 0 }
+            }
             override fun getEditable() = buffer
 
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
@@ -63,7 +68,13 @@ internal class RemoteDesktopKeyboard(context: Context, private val input: Remote
                 return deleteSurroundingText(beforeLength, afterLength)
             }
 
-            override fun sendKeyEvent(event: KeyEvent): Boolean = handleKey(event) || super.sendKeyEvent(event)
+            override fun sendKeyEvent(event: KeyEvent): Boolean {
+                val code = fallbackCode(event.keyCode)
+                if (code == null || event.action !in KEY_ACTIONS) return super.sendKeyEvent(event)
+                input.key(code, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0)
+                onInput()
+                return true
+            }
 
             override fun performEditorAction(actionCode: Int): Boolean {
                 input.stroke("Enter")
@@ -84,15 +95,46 @@ internal class RemoteDesktopKeyboard(context: Context, private val input: Remote
         if (hasFocus()) context.getSystemService(InputMethodManager::class.java)?.restartInput(this)
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = handleKey(event) || super.onKeyDown(keyCode, event)
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = handleKey(event) || super.onKeyUp(keyCode, event)
+    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean =
+        preIme(event) || super.onKeyPreIme(keyCode, event)
 
-    private fun handleKey(event: KeyEvent): Boolean {
-        val code = when (event.keyCode) {
-            in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> "Key${('A'.code + event.keyCode - KeyEvent.KEYCODE_A).toChar()}"
-            in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> "Digit${event.keyCode - KeyEvent.KEYCODE_0}"
-            in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> "F${event.keyCode - KeyEvent.KEYCODE_F1 + 1}"
-            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "Enter"
+    fun handleHardware(event: KeyEvent, beforeIme: Boolean): Boolean {
+        if (!event.isFromSource(android.view.InputDevice.SOURCE_KEYBOARD) || event.isSystem ||
+            event.flags and KeyEvent.FLAG_SOFT_KEYBOARD != 0 || event.action !in KEY_ACTIONS) return false
+        val code = (if (event.scanCode > 0) DeskFleetBridge.nativePhysicalKeyCode(event.scanCode) else null)
+            ?: fallbackCode(event.keyCode) ?: return false
+        val owned = input.ownsHardwareKey(code)
+        if (beforeIme && !owned && !event.isCtrlPressed && !event.isMetaPressed && !event.isAltPressed) return false
+        if (hasFocus() && composing() && !owned) return false
+        if (event.isCanceled) input.release()
+        else input.hardwareKey(code, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0, event.metaState)
+        onInput()
+        return true
+    }
+
+    companion object {
+        private val KEY_ACTIONS = setOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)
+
+        // Virtual devices and some IMEs have no evdev scan position.
+        private fun fallbackCode(keyCode: Int): String? = when (keyCode) {
+            in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> "Key${('A'.code + keyCode - KeyEvent.KEYCODE_A).toChar()}"
+            in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> "Digit${keyCode - KeyEvent.KEYCODE_0}"
+            in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> "F${keyCode - KeyEvent.KEYCODE_F1 + 1}"
+            KeyEvent.KEYCODE_ENTER -> "Enter"
+            KeyEvent.KEYCODE_NUMPAD_ENTER -> "NumpadEnter"
+            in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> "Numpad${keyCode - KeyEvent.KEYCODE_NUMPAD_0}"
+            KeyEvent.KEYCODE_NUMPAD_ADD -> "NumpadAdd"
+            KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> "NumpadSubtract"
+            KeyEvent.KEYCODE_NUMPAD_MULTIPLY -> "NumpadMultiply"
+            KeyEvent.KEYCODE_NUMPAD_DIVIDE -> "NumpadDivide"
+            KeyEvent.KEYCODE_NUMPAD_DOT -> "NumpadDecimal"
+            KeyEvent.KEYCODE_NUMPAD_EQUALS -> "NumpadEqual"
+            KeyEvent.KEYCODE_CAPS_LOCK -> "CapsLock"
+            KeyEvent.KEYCODE_SCROLL_LOCK -> "ScrollLock"
+            KeyEvent.KEYCODE_NUM_LOCK -> "NumLock"
+            KeyEvent.KEYCODE_INSERT -> "Insert"
+            KeyEvent.KEYCODE_BREAK -> "Pause"
+            KeyEvent.KEYCODE_SYSRQ -> "PrintScreen"
             KeyEvent.KEYCODE_DEL -> "Backspace"
             KeyEvent.KEYCODE_FORWARD_DEL -> "Delete"
             KeyEvent.KEYCODE_TAB -> "Tab"
@@ -125,11 +167,7 @@ internal class RemoteDesktopKeyboard(context: Context, private val input: Remote
             KeyEvent.KEYCODE_PERIOD -> "Period"
             KeyEvent.KEYCODE_SLASH -> "Slash"
             KeyEvent.KEYCODE_GRAVE -> "Backquote"
-            else -> return false
+            else -> null
         }
-        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
-        input.key(code, event.action == KeyEvent.ACTION_DOWN, event.repeatCount > 0)
-        onInput()
-        return true
     }
 }

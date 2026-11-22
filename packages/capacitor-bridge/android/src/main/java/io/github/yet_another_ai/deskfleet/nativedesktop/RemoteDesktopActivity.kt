@@ -3,6 +3,8 @@ package io.github.yet_another_ai.deskfleet.nativedesktop
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
+import android.view.MotionEvent
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
@@ -16,6 +18,7 @@ import java.lang.ref.WeakReference
 class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
     private lateinit var controls: RemoteDesktopControls
+    private lateinit var pointer: RemoteDesktopPointer
     private lateinit var touch: RemoteDesktopTouch
     private var fullscreen = true
     private var closeSent = false
@@ -42,6 +45,7 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         controls.surface.holder.addCallback(this)
         touch = RemoteDesktopTouch(controls.surface, controls).also { it.attach() }
+        pointer = RemoteDesktopPointer(controls)
         controls.onRelease = touch::reset
         DeskFleetBridge.viewerUiState?.let(controls::applyState)
 
@@ -52,14 +56,27 @@ class RemoteDesktopActivity : AppCompatActivity(), SurfaceHolder.Callback {
         })
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean =
+        (::pointer.isInitialized && pointer.dispatch(event)) || super.dispatchTouchEvent(event)
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        (::pointer.isInitialized && pointer.dispatch(event)) || super.dispatchGenericMotionEvent(event)
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        (::pointer.isInitialized && pointer.handlesNavigation(event)) ||
+        (::controls.isInitialized && controls.handleHardwareKey(event)) || super.dispatchKeyEvent(event)
+
+    override fun dispatchKeyShortcutEvent(event: KeyEvent): Boolean =
+        (::controls.isInitialized && controls.handleHardwareKey(event)) || super.dispatchKeyShortcutEvent(event)
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             updateSystemBars()
             window.decorView.post { syncLocalClipboardToRemote(onFocus = true) }
         } else {
+            if (::pointer.isInitialized) pointer.reset()
             if (::controls.isInitialized) controls.release()
-            DeskFleetBridge.nativeTouch(6, 0.0, 0.0, 0.0, 0.0)
         }
     }
 

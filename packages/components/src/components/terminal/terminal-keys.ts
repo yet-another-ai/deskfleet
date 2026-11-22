@@ -10,6 +10,7 @@ const PUNCTUATION: Record<string, string | undefined> = {
   Space: "  ", Backquote: "`~", Minus: "-_", Equal: "=+", BracketLeft: "[{", BracketRight: "]}",
   Backslash: "\\|", Semicolon: ";:", Quote: "'\"", Comma: ",<", Period: ".>", Slash: "/?",
 }
+const SHIFT_DIGITS = ")!@#$%^&*("
 const F_KEY_TILDE_CODES = [15, 17, 18, 19, 20, 21, 23, 24] as const
 
 export function ctrlChar(ch: string): string {
@@ -88,21 +89,30 @@ export function encodeKey(keyId: string, ctrlActive: boolean, altActive: boolean
   return altActive ? `\x1b${ch}` : ch
 }
 
-/** WKWebView can report 0, 13, or 229 as the legacy keyCode for an iPad
- * hardware shortcut. Use its logical key before xterm 6's keyCode-based decoder. */
-export function ipadKey(event: KeyboardEvent): string {
-  let key = event.key
-  if (key.startsWith("UIKeyInput")) key = key.slice("UIKeyInput".length).replace(/^(Up|Down|Left|Right)Arrow$/, "Arrow$1")
-  if (event.code && (!key || key === "Unidentified" || key === "Process" || key.charCodeAt(0) < 32)) key = event.code
-  // Option can supply an already-translated character (e.g. Option+B = ∫).
-  if (event.altKey && key.length === 1 && key.charCodeAt(0) > 127) key = event.code
-  if (/^Key[A-Z]$/.test(key)) key = event.shiftKey ? key.slice(3) : key.slice(3).toLowerCase()
-  else if (/^Digit[0-9]$/.test(key)) key = key.slice(5)
-  else if (Object.hasOwn(PUNCTUATION, key)) key = PUNCTUATION[key]![Number(event.shiftKey)]!
-  return key
+export function unreliableKeyCode(event: KeyboardEvent): boolean {
+  return event.keyCode === 0 || event.keyCode === 229 || (event.keyCode === 13 && event.key !== "Enter")
 }
 
-export function ipadShortcut(event: KeyboardEvent, key: string, appCursor: boolean): string | undefined {
+/** A mobile WebView can report 0, 13 or 229 for a physical shortcut. Prefer the
+ * layout-resolved key; use a US physical position only when the key is missing. */
+export function terminalKey(event: KeyboardEvent): string {
+  let key = event.key
+  if (key.startsWith("UIKeyInput")) key = key.slice("UIKeyInput".length).replace(/^(Up|Down|Left|Right)Arrow$/, "Arrow$1")
+  if (!event.code && event.ctrlKey && key.length === 1 && key.charCodeAt(0) < 32) {
+    return String.fromCharCode(key.charCodeAt(0) + 64).toLowerCase()
+  }
+  if (event.code && (!key || key === "Unidentified" || key === "Process" || key.charCodeAt(0) < 32)) key = event.code
+  // Option may already have translated the character (e.g. Option+B = ∫).
+  if (event.altKey && !event.ctrlKey && key.length === 1 && key.charCodeAt(0) > 127 && event.code) key = event.code
+  if (/^Key[A-Z]$/.test(key)) return event.shiftKey ? key.slice(3) : key.slice(3).toLowerCase()
+  if (/^Digit[0-9]$/.test(key)) {
+    const digit = key.slice(5)
+    return event.shiftKey ? SHIFT_DIGITS[Number(digit)]! : digit
+  }
+  return Object.hasOwn(PUNCTUATION, key) ? PUNCTUATION[key]![Number(event.shiftKey)]! : key
+}
+
+export function terminalShortcut(event: KeyboardEvent, key: string, appCursor: boolean): string | undefined {
   if (event.metaKey) return
 
   if (key.length === 1 && (event.ctrlKey || event.altKey)) {
@@ -111,9 +121,9 @@ export function ipadShortcut(event: KeyboardEvent, key: string, appCursor: boole
     if (event.ctrlKey && !event.altKey && ch === key) return
     return event.altKey ? "\x1b" + ch : ch
   }
-  // Keep xterm's normal navigation and scrollback shortcuts when its legacy
-  // keycode is available. WKWebView's unidentified navigation events need encoding.
-  if (event.keyCode !== 0 && event.keyCode !== 229) return
+  // A reliable legacy code lets xterm own navigation, including local scrollback.
+  // A spurious 13 otherwise turns mobile navigation keys into carriage returns.
+  if (!unreliableKeyCode(event)) return
   if (!Object.hasOwn(CURSOR_LETTERS, key) && !/^(Escape|Tab|Backspace|Enter|Insert|Delete|PageUp|PageDown|F(?:[1-9]|1[0-2]))$/.test(key)) return
   return encodeKey(key, event.ctrlKey, event.altKey, appCursor, event.shiftKey)
 }

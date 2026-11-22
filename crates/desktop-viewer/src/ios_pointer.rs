@@ -1,4 +1,4 @@
-//! Indirect pointer events on the iPad video surface. UIKit hit testing keeps
+//! Indirect pointer events on the native iOS video surface. UIKit hit testing keeps
 //! toolbar events on their own view. Physical pointers use video coordinates
 //! even when the touch surface is configured as a relative trackpad.
 
@@ -17,7 +17,7 @@ use objc2_ui_kit::{
     UIPanGestureRecognizer, UIScrollTypeMask, UITouch, UITouchType, UIView,
 };
 
-use crate::android::{deskfleet_ios_touch, ios_pointer};
+use crate::android::{deskfleet_ios_touch, send_pointer};
 use crate::input::PointerPhase;
 
 #[derive(Default)]
@@ -65,7 +65,7 @@ define_class!(
             }
             if let Some(view) = self.view() {
                 let point = recognizer.locationInView(Some(&view));
-                ios_pointer(PointerPhase::Hover, pixels(point, &view));
+                send_pointer(PointerPhase::Hover, pixels(point, &view));
             }
         }
 
@@ -92,7 +92,7 @@ impl PointerRecognizer {
         if let Some(view) = self.view()
             && let Some(touch) = touches.anyObject()
         {
-            ios_pointer(phase, pixels(touch.locationInView(Some(&view)), &view));
+            send_pointer(phase, pixels(touch.locationInView(Some(&view)), &view));
         }
     }
 }

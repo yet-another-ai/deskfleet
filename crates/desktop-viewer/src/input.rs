@@ -2,7 +2,6 @@
 
 use deskfleet_input::InputEvent;
 
-#[cfg(any(target_os = "ios", test))]
 #[derive(Clone, Copy)]
 pub(crate) enum PointerPhase {
     Hover,
@@ -12,7 +11,6 @@ pub(crate) enum PointerPhase {
 }
 
 pub(crate) struct TouchInput {
-    #[cfg(any(target_os = "ios", test))]
     buttons: u8,
     cursor: (f64, f64),
 }
@@ -21,7 +19,6 @@ impl Default for TouchInput {
     fn default() -> Self {
         Self {
             cursor: (0.5, 0.5),
-            #[cfg(any(target_os = "ios", test))]
             buttons: 0,
         }
     }
@@ -33,9 +30,8 @@ impl TouchInput {
         self.cursor
     }
 
-    /// UIKit reports a mask of pressed buttons throughout a single pointer
+    /// Mobile hosts report a mask of pressed buttons throughout a single pointer
     /// sequence. A sequence starting in the letterbox stays local until release.
-    #[cfg(any(target_os = "ios", test))]
     pub(crate) fn pointer(
         &mut self,
         phase: PointerPhase,
@@ -61,7 +57,7 @@ impl TouchInput {
         if changed == 0 {
             return vec![InputEvent::PointerMove { x, y }];
         }
-        // UIKit numbers primary, secondary, middle, back, forward. The wire
+        // Android and UIKit number primary, secondary, middle, back, forward. The wire
         // protocol uses DOM button numbers (middle = 1, secondary = 2).
         [0, 2, 1, 3, 4]
             .into_iter()
@@ -76,7 +72,6 @@ impl TouchInput {
             .collect()
     }
 
-    #[cfg(any(target_os = "ios", test))]
     pub(crate) fn clear_pointer_buttons(&mut self) {
         self.buttons = 0;
     }
@@ -92,7 +87,6 @@ impl TouchInput {
         viewport: (f64, f64, f64, f64),
     ) -> Vec<InputEvent> {
         if kind == 6 || kind == 14 {
-            #[cfg(any(target_os = "ios", test))]
             self.clear_pointer_buttons();
             if kind == 14 {
                 self.cursor = (0.5, 0.5);
@@ -280,6 +274,34 @@ mod tests {
         assert_eq!(
             input.pointer(PointerPhase::End, (400., 0.), VIEWPORT),
             [button(0, false, 0.5, 0.)]
+        );
+    }
+
+    #[test]
+    fn middle_and_navigation_buttons_keep_their_dom_numbers_across_partial_releases() {
+        let mut input = TouchInput::default();
+        let center = (400., 300.);
+        let button = |button, pressed| InputEvent::PointerButton {
+            button,
+            pressed,
+            x: 0.5,
+            y: 0.5,
+        };
+        assert_eq!(
+            input.pointer(PointerPhase::Begin(4), center, VIEWPORT),
+            [button(1, true)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(28), center, VIEWPORT),
+            [button(3, true), button(4, true)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::Drag(16), center, VIEWPORT),
+            [button(1, false), button(3, false)]
+        );
+        assert_eq!(
+            input.pointer(PointerPhase::End, center, VIEWPORT),
+            [button(4, false)]
         );
     }
 

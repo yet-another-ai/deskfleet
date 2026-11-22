@@ -378,7 +378,11 @@ class DeskFleetBridge : Plugin() {
         @JvmStatic external fun nativeSurfaceCreated(surface: Surface, width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceChanged(width: Int, height: Int)
         @JvmStatic external fun nativeSurfaceDestroyed()
+        @JvmStatic external fun nativePointer(phase: Int, buttons: Int, x: Double, y: Double)
         @JvmStatic external fun nativeTouch(kind: Int, x: Double, y: Double, dx: Double, dy: Double)
+        @JvmStatic external fun nativePhysicalKeyCode(scan: Int): String?
+        @JvmStatic external fun nativeInputSequence(eventsJson: String)
+        @JvmStatic external fun nativeControlsOwnFocus(handle: Long): Boolean
         @JvmStatic external fun nativeMountViewer(activity: Activity, keyboard: View, overlay: NshView): SurfaceView
         @JvmStatic external fun nativeDismissPanel(handle: Long): Boolean
         @JvmStatic external fun nativeControlsHit(handle: Long, x: Float, y: Float, grip: Boolean): Boolean
