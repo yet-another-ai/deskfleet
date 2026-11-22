@@ -115,8 +115,9 @@ export function installRouterModuleRecovery(
     if (pendingNavigation?.to === to) pendingNavigation = undefined
   })
   const removeError = router.onError((error, to) => {
+    if (to && pendingNavigation?.to !== to) return
     const targetHash = to?.fullPath ? `#${to.fullPath}` : pendingNavigation?.hash
-    if (!to || pendingNavigation?.to === to) pendingNavigation = undefined
+    pendingNavigation = undefined
     if (options.enabled && !options.enabled()) return
     if (!isDynamicImportError(error)) return
     recoverFromModuleImportError(targetHash, options.env)

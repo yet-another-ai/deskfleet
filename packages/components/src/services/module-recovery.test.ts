@@ -189,6 +189,69 @@ test("a canceled earlier navigation does not clear the newer navigation's pendin
   expect(reload).toHaveBeenCalledTimes(1)
 })
 
+test("a late import failure from a superseded navigation does not undo a newer navigation's recovery", async () => {
+  const storage = memoryStorage()
+  let hash = "#/sessions/1"
+  const reload = vi.fn()
+  const target = new EventTarget() as unknown as Window
+  const env = {
+    storage,
+    pathname: "/",
+    search: "",
+    get hash() { return hash },
+    setHash: (next: string) => { hash = next },
+    reload,
+  }
+  cleanups.push(installVitePreloadRecovery(target, env))
+
+  let rejectStale!: (error: unknown) => void
+  let failNewer!: () => void
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: "/", component: defineComponent({ template: "<div />" }) },
+      {
+        path: "/stale",
+        component: () => new Promise((_resolve, reject) => {
+          rejectStale = reject
+        }),
+      },
+      {
+        path: "/machines/:machineId/control",
+        component: () => new Promise((resolve, reject) => {
+          failNewer = () => {
+            const event = Object.assign(new Event("vite:preloadError", { cancelable: true }), {
+              payload: new TypeError("Importing a module script failed."),
+            })
+            target.dispatchEvent(event)
+            if (event.defaultPrevented) resolve(undefined as never)
+            else reject(event.payload)
+          }
+        }),
+      },
+    ],
+  })
+  cleanups.push(installRouterModuleRecovery(router, { enabled: () => true, env }))
+  await router.push("/")
+
+  const staleNav = router.push("/stale")
+  await flushPromises()
+  const newerNav = router.push("/machines/9/control")
+  await flushPromises()
+
+  // Newer navigation fails and reloads toward /machines/9/control.
+  failNewer()
+  await newerNav.catch(() => {})
+  expect(hash).toBe("#/machines/9/control")
+  expect(reload).toHaveBeenCalledTimes(1)
+
+  // Stale navigation's import later rejects; onError must ignore it instead of redirecting back to /stale.
+  rejectStale(new TypeError("Importing a module script failed."))
+  await staleNav.catch(() => {})
+  expect(hash).toBe("#/machines/9/control")
+  expect(reload).toHaveBeenCalledTimes(1)
+})
+
 test("installRouterModuleRecovery reloads toward the failed route only when enabled", async () => {
   const storage = memoryStorage()
   const reload = vi.fn()
