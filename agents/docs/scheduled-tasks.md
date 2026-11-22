@@ -113,7 +113,11 @@ and schedule list/create/update/delete/run operations. Workspace Sessions remain
 isolated to their own Workspace; machine-scoped Sessions can inspect all local
 Workspaces, register new Workspaces, and inspect, create, or prompt Workspace
 Sessions without seeing other machine-scoped Sessions. Generated arguments
-cannot replace the actor or retrieve provider launch secrets. The separate
+cannot replace the actor or retrieve provider launch secrets. Child Sessions
+created through `deskfleet_session_create` or `deskfleet_remote_session_create`
+inherit YOLO permission auto-approval by default when the issuing Session has
+YOLO enabled (passing `yolo: false` opts down to manual approval), and reject
+`yolo: true` when the issuing Session is not YOLO. The separate
 remote tools below extend discovery and operation to other machines without
 expanding a Workspace Session's local delegation.
 

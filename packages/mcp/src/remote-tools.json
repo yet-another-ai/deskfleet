@@ -143,6 +143,10 @@
           "type": "string",
           "minLength": 1
         },
+        "yolo": {
+          "type": "boolean",
+          "description": "Auto-approve permission requests in the created Session. Defaults to true when the parent Session is YOLO (pass false to opt down); rejected when the parent Session is not YOLO."
+        },
         "configuration": {
           "type": "object",
           "properties": {
