@@ -146,7 +146,9 @@ lives in `packages/components/src/assets/deskfleet.svg`. The shared `BrandLogo`
 component and the website display this SVG.
 `mise exec -- pnpm --filter @deskfleet/desktop icons` regenerates the application,
 tray, Web favicon, PWA installation icons, and website assets from the SVG. Native
-icons, touch icons, PWA icons, fallback favicons, and the social preview use raster formats.
+icons, touch icons, PWA icons, fallback favicons, and the social preview use raster
+formats. The macOS app icon (`apps/desktop/build/icon-mac.png`) is optically inset
+to Apple's 824-on-1024 grid so Dock and Finder size matches system defaults.
 
 ## Local Docker Compose
 

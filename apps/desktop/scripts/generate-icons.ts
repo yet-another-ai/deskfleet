@@ -3,6 +3,7 @@
 import { copyFile, mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import sharp from "sharp"
+import { composeMacAppIcon } from "./mac-app-icon.ts"
 
 const root = resolve(import.meta.dirname, "../../..")
 const artwork = resolve(root, "packages/components/src/assets/deskfleet.svg")
@@ -51,8 +52,10 @@ async function template(destination: string, size: number): Promise<void> {
 
 await Promise.all(publicDirectories.map(directory => mkdir(directory, { recursive: true })))
 
-// electron-builder derives the macOS .icns and Windows .ico from this image.
+// Full-bleed master for Windows .ico, Linux packaging, and in-app About/window icons.
 await resize(resolve(desktopBuild, "icon.png"), 1024)
+// macOS Dock/Finder .icns uses Apple's optically inset grid; see mac-app-icon.ts.
+await writeFile(resolve(desktopBuild, "icon-mac.png"), await composeMacAppIcon(artwork))
 // The native viewer embeds this size for window/task-switcher icons on every OS.
 await resize(resolve(desktopBuild, "viewer-icon.png"), 256)
 for (const [suffix, size] of [["", 16], ["@2x", 32]] as const) {

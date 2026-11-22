@@ -55,6 +55,8 @@ files:
   - package.json
 
 mac:
+  # Apple's 824-on-1024 grid; full-bleed icon.png looks oversized in Dock/Finder (#652).
+  icon: build/icon-mac.png
   extraResources:
     - from: out/auv/auv
       to: ../MacOS/auv
